@@ -30,39 +30,39 @@ README and the in-app tour stay in lockstep.
 Terminals, AI agents, and project context in one window. Add a folder from
 the sidebar to get started — everything else flows from there.
 
-<!-- drag videos/dist/welcome.mp4 here -->
+https://github.com/user-attachments/assets/08a8056c-6497-4ffc-9dec-95664c8006ee
 
 ### 2. Slash commands & agent skills
 Type `/` in any chat to switch runtime mode, archive, clear, or invoke an
 agent-defined skill. Claude SDK commands and Codex skills appear inline
 alongside Switchboard built-ins.
 
-<!-- drag videos/dist/slash-menu.mp4 here -->
+https://github.com/user-attachments/assets/74c46508-ca77-4ac6-b3f7-25a195336407
 
 ### 3. Plan mode & runtime modes
 Plan mode locks the agent to read-only tools. Sandbox prompts before writes.
 Accept-edits and Full-access skip the prompts. Block events render as a red
 denial pill in chat.
 
-<!-- drag videos/dist/plan-mode.mp4 here -->
+https://github.com/user-attachments/assets/173b404f-0e12-489f-ae4f-484abf3bb22f
 
 ### 4. Multi-pane terminals & chat
 Split any pane horizontally or vertically — terminals and chats live in the
 same tmux-style tree. Drag the handle to resize, ⌘W closes the focused pane.
 
-<!-- drag videos/dist/panes.mp4 here -->
+https://github.com/user-attachments/assets/2cc1312e-4f2a-4b29-b232-b5797f650dff
 
 ### 5. Session resume & full-text search
 Past sessions live in the sidebar — click to resume any thread. ⌘⇧F searches
 every message across every project; click a result to jump straight to it.
 
-<!-- drag videos/dist/resume-search.mp4 here -->
+https://github.com/user-attachments/assets/86c50159-f723-40d6-9315-0836ac48f302
 
 ### 6. Switch agents on the fly
 Use the agent dropdown in any chat to swap between Claude Code, Codex, and
 OpenCode mid-session. The status bar and model picker update in lockstep.
 
-<!-- drag videos/dist/switch-agent.mp4 here -->
+https://github.com/user-attachments/assets/aa42e86a-e986-46e2-9e58-5efd2547a048
 
 ---
 
