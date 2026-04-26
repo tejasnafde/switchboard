@@ -52,15 +52,29 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 22 (not 20) — `@electron/rebuild@4` and `node-abi@4` both
+          # require >=22.12.0. Node 20 emits EBADENGINE warnings and
+          # the CDN binary fetch flakes more often on the older runtime.
+          node-version: '22'
           cache: 'npm'
 
       # `npm ci` (NOT `npm install`) — deterministic, faster, and it
       # honors optionalDependencies for the host platform automatically.
       # Do NOT pass `--no-optional`; that's what makes the per-platform
       # claude-agent-sdk binary install correctly.
+      #
+      # Retry on transient failures: the Electron download CDN (and the
+      # Claude SDK's per-platform tarball) occasionally 502s on the
+      # windows-latest runner. Three attempts with a short backoff is
+      # enough to ride out the typical hiccup without masking a real
+      # dependency error.
       - name: Install dependencies
-        run: npm ci
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: npm ci
 
       - name: Build renderer + main
         run: npm run build
