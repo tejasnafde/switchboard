@@ -51,8 +51,17 @@ mac:
   # optional native packages (each arch ships its own claude binary;
   # electron-builder's universal builder can't reconcile them).
   # To build for Intel: `npm run dist:x64`.
+  # Both dmg AND zip are required:
+  #   - dmg: drag-to-install for fresh downloads from the Releases page
+  #   - zip: what electron-updater fetches to swap the bundle in place
+  #          on auto-update. Without it, latest-mac.yml has no `url` for
+  #          the updater to fetch and the renderer logs
+  #          "Couldn't check: ZIP file not provided".
   target:
     - target: dmg
+      arch:
+        - arm64
+    - target: zip
       arch:
         - arm64
   # Unsigned for now. When a cert is available, populate:
