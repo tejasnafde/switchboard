@@ -21,7 +21,13 @@ function resolveShell(requested?: string): string {
   return '/bin/sh'
 }
 
-describe('resolveShell', () => {
+// The stub above only models POSIX shell resolution. The production resolver
+// in `src/main/terminal/pty-manager.ts` has a Windows branch (pwsh →
+// powershell → COMSPEC → cmd). These tests assert the POSIX fallback chain;
+// skip them on win32 where `/bin/*` paths don't exist.
+const describePosix = process.platform === 'win32' ? describe.skip : describe
+
+describePosix('resolveShell (POSIX)', () => {
   it('returns the requested shell if it exists', () => {
     expect(resolveShell('/bin/sh')).toBe('/bin/sh')
   })

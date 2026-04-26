@@ -10,7 +10,8 @@ describe('session scanner - Claude Code paths', () => {
   it('Claude Code directory exists at ~/.claude/projects', () => {
     const claudeDir = join(homedir(), '.claude', 'projects')
     expect(typeof claudeDir).toBe('string')
-    expect(claudeDir).toContain('.claude/projects')
+    // Platform-agnostic: '.claude/projects' on POSIX, '.claude\\projects' on Windows.
+    expect(claudeDir).toContain(join('.claude', 'projects'))
   })
 
   it('encodes project path correctly for Claude Code lookup', () => {
@@ -94,6 +95,6 @@ describe('session scanner - exact dir matching (no parent/child bleed)', () => {
 describe('session scanner - Codex paths', () => {
   it('Codex sessions stored in dated directories', () => {
     const codexDir = join(homedir(), '.codex', 'sessions')
-    expect(codexDir).toContain('.codex/sessions')
+    expect(codexDir).toContain(join('.codex', 'sessions'))
   })
 })

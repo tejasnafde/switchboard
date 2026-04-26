@@ -25,6 +25,14 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
+# Default GITHUB_TOKEN ships with read-only contents on new repos; electron-
+# builder needs `contents: write` to create the Release and upload artifacts.
+# Without this we get `403 Resource not accessible by integration` on the
+# `POST /repos/.../releases` call. See:
+# https://docs.github.com/actions/security-guides/automatic-token-authentication
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build & publish (${{ matrix.os }})
