@@ -963,7 +963,7 @@ function UpdateCheckRow() {
         Updates are checked automatically when the app launches. Builds are unsigned —
         on macOS, Gatekeeper may re-quarantine each version (right-click → Open, or run{' '}
         <code style={{ fontFamily: 'var(--font-mono)' }}>
-          xattr -d com.apple.quarantine /Applications/Switchboard.app
+          xattr -dr com.apple.quarantine /Applications/Switchboard.app
         </code>
         ). On Windows, click "More info → Run anyway" the first time only.
       </div>
