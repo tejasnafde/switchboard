@@ -12,6 +12,15 @@ directories:
   buildResources: resources/icons
   output: release
 
+# Re-sign the macOS bundle ad-hoc after pack. Required for unsigned
+# auto-update: ShipIt validates the bundle's internal signature before
+# swapping; without ad-hoc signing the inherited Electron-framework
+# signatures reference resources whose hashes electron-builder rewrote
+# during pack, and the validation fails with "code has no resources
+# but signature indicates they must be present." See build/afterPack.js
+# for the full explanation.
+afterPack: build/afterPack.js
+
 # Auto-update channel. electron-updater reads `latest-mac.yml` /
 # `latest.yml` from the GitHub Release matching this owner+repo. The
 # repo is public, so no token is needed at update-check time. Publishing
