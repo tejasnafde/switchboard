@@ -1,6 +1,11 @@
 node_modules/
 out/
 dist/
+# Exception: tour MP4s rendered by HyperFrames live at videos/dist/ and
+# are bundled into the packaged app via electron-builder's extraResources.
+# CI doesn't render videos, so they have to live in git. ~700KB total.
+!videos/dist/
+!videos/dist/*.mp4
 *.tsbuildinfo
 .DS_Store
 

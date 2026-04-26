@@ -27,6 +27,15 @@ files:
   - resources/icons/**/*
   - resources/shell/**/*
   - package.json
+# Tour MP4s land at <Resources>/videos/dist/<id>.mp4 in the packaged app.
+# The main process resolves them via the `sb-tour://` custom protocol —
+# search roots include `process.resourcesPath/videos/dist`. Without this
+# block the videos are absent from the bundle and the Settings tour
+# falls back to "Clip not found".
+extraResources:
+  - from: videos/dist
+    to: videos/dist
+    filter: ["*.mp4"]
 # Pull in node-pty and better-sqlite3 native builds. `asarUnpack` keeps
 # their .node binaries outside the asar archive so Electron can load them.
 asarUnpack:

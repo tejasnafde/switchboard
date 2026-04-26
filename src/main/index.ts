@@ -151,6 +151,9 @@ function registerTourProtocol(): void {
   // in dev returns out/, not the project root, so the naive resolve
   // misses).
   const roots = [
+    // Packaged app: extraResources lands here. Check first so dev's stale
+    // `out/` doesn't shadow a fresh DMG install.
+    join(process.resourcesPath, 'videos', 'dist'),
     join(app.getAppPath(), 'videos', 'dist'),
     join(app.getAppPath(), '..', 'videos', 'dist'),
     join(app.getAppPath(), '..', '..', 'videos', 'dist'),
