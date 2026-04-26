@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard — Resume & Search</title>
+<link rel="stylesheet" href="../_shared/theme.css" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  .stage { width: 100%; height: 100%; display: flex; }
+  .sidebar {
+    width: 280px; background: var(--bg-secondary); border-right: 1px solid var(--border);
+    padding: 16px 12px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .sb-header { font-size: 11px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.7px; margin: 8px 6px 4px; font-weight: 600; }
+  .sb-row { padding: 8px 10px; border-radius: 4px; font-size: 13px;
+    color: var(--text-secondary); cursor: pointer;
+    display: flex; align-items: center; gap: 8px; }
+  .sb-row .badge { font-size: 9.5px; padding: 1px 5px; border-radius: 3px;
+    background: var(--bg-tertiary); color: var(--text-muted); font-family: var(--font-mono); }
+  .sb-row.active { background: var(--bg-hover); color: var(--text-primary); }
+
+  .main { flex: 1; position: relative; padding: 60px; overflow: hidden; }
+  .placeholder { color: var(--text-muted); font-size: 14px; }
+
+  /* Search modal */
+  .backdrop {
+    position: absolute; inset: 0;
+    background: rgba(0,0,0,0.55); backdrop-filter: blur(3px);
+    opacity: 0; transition: opacity 250ms ease;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 80px;
+  }
+  .backdrop.show { opacity: 1; }
+  .search-modal {
+    width: 640px; background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: 10px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    transform: translateY(-8px); transition: transform 250ms ease;
+  }
+  .backdrop.show .search-modal { transform: translateY(0); }
+  .search-input {
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    font-size: 15px; font-family: var(--font-sans); color: var(--text-primary);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .search-input .glyph { color: var(--text-muted); font-size: 16px; }
+  .search-input .typed { font-weight: 500; }
+  .search-input .caret {
+    display: inline-block; width: 2px; height: 16px;
+    background: var(--text-primary); animation: blink 1s steps(1) infinite;
+    vertical-align: text-bottom; margin-left: 2px;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .results { padding: 6px 0; max-height: 360px; overflow: hidden; }
+  .result {
+    padding: 10px 20px; font-size: 13px; color: var(--text-secondary);
+    border-left: 2px solid transparent;
+    opacity: 0; transition: opacity 220ms ease, background 120ms ease;
+  }
+  .result.show { opacity: 1; }
+  .result.highlight { background: var(--bg-hover); border-left-color: var(--accent); color: var(--text-primary); }
+  .result .title { font-weight: 600; color: var(--text-primary); margin-bottom: 2px; }
+  .result mark { background: rgba(138,180,255,0.25); color: var(--accent); padding: 0 2px; border-radius: 2px; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="resume-search" data-start="0" data-duration="10" data-width="1280" data-height="720">
+<div class="stage">
+  <div class="sidebar">
+    <div class="sb-header">switchboard</div>
+    <div class="sb-row"><span class="badge">claude</span>refactor auth flow</div>
+    <div class="sb-row"><span class="badge">codex</span>review PR #482</div>
+    <div class="sb-row"><span class="badge">claude</span>image upload bug</div>
+    <div class="sb-row"><span class="badge">opencode</span>nim glm explorations</div>
+    <div class="sb-header">archive worker</div>
+    <div class="sb-row"><span class="badge">claude</span>add markdown export</div>
+  </div>
+  <div class="main">
+    <div class="placeholder">Press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>F</kbd> to search every message across every project.</div>
+    <div id="bd" class="backdrop">
+      <div class="search-modal">
+        <div class="search-input">
+          <span class="glyph">⌕</span>
+          <span class="typed" id="typed"></span>
+          <span class="caret"></span>
+        </div>
+        <div class="results">
+          <div id="r1" class="result"><div class="title">refactor <mark>auth flow</mark></div>"…the JWT validation in <mark>auth</mark> needs to handle expired tokens before refresh…"</div>
+          <div id="r2" class="result"><div class="title">review PR #482</div>"new <mark>auth</mark> middleware looks correct, suggest hoisting the rate limiter…"</div>
+          <div id="r3" class="result"><div class="title">image upload bug</div>"unrelated to <mark>auth</mark>; the multipart boundary parser is dropping CRLF…"</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+<script>
+  const bd = document.getElementById('bd')
+  const typed = document.getElementById('typed')
+  const r = ['r1','r2','r3'].map((i) => document.getElementById(i))
+  function renderAt(t) {
+    // Pacing:
+    //   0.0–1.0s   sidebar visible, placeholder hint readable
+    //   1.0s       search modal opens
+    //   1.4–3.4s   type "auth flow" at 0.22s/char (slow enough to read)
+    //   3.8–4.5s   results slide in
+    //   5.0–6.5s   highlight result 1
+    //   6.5–8.0s   highlight result 2
+    //   8.0–10s    settle on result 1 (the one a user would click)
+    bd.classList.toggle('show', t >= 1.0)
+
+    const phrase = 'auth flow'
+    const startT = 1.4, perChar = 0.22
+    const charsTyped = Math.max(0, Math.min(phrase.length, Math.floor((t - startT) / perChar)))
+    typed.textContent = phrase.slice(0, charsTyped)
+
+    r[0].classList.toggle('show', t >= 3.8)
+    r[1].classList.toggle('show', t >= 4.1)
+    r[2].classList.toggle('show', t >= 4.4)
+
+    r.forEach((e) => e.classList.remove('highlight'))
+    if      (t >= 5.0 && t < 6.5) r[0].classList.add('highlight')
+    else if (t >= 6.5 && t < 8.0) r[1].classList.add('highlight')
+    else if (t >= 8.0)            r[0].classList.add('highlight')
+  }
+  window.__timelines = window.__timelines || {};
+  const __proxy = { t: 0 };
+  const tl = gsap.timeline({ paused: true });
+  tl.to(__proxy, { t: 10, duration: 10, ease: 'none', onUpdate: () => renderAt(__proxy.t) }, 0);
+  window.__timelines["resume-search"] = tl;
+  setTimeout(() => { if (tl.time() === 0 && !tl.isActive()) tl.play(); }, 50);
+</script>
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard — Switch agent</title>
+<link rel="stylesheet" href="../_shared/theme.css" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  .stage { width: 100%; height: 100%; display: flex; flex-direction: column; padding: 60px 80px; gap: 18px; }
+
+  .toolbar {
+    display: flex; gap: 12px; align-items: center;
+    padding: 10px 14px; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: 8px;
+    position: relative;
+  }
+  .label { font-size: 11px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.7px; }
+  .agent-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-radius: 6px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-tertiary); cursor: pointer;
+    font-size: 13px; color: var(--text-primary); font-weight: 500;
+  }
+  .agent-pill .chev { color: var(--text-muted); margin-left: 2px; font-size: 10px; }
+  .agent-pill .dot  { width: 7px; height: 7px; border-radius: 50%; }
+  .d-claude { background: #ffb070; }
+  .d-codex  { background: #8ab4ff; }
+  .d-open   { background: #7bd88f; }
+
+  .dropdown {
+    position: absolute; top: 48px; left: 90px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+    min-width: 220px; padding: 6px;
+    opacity: 0; transform: translateY(-4px); pointer-events: none;
+    transition: opacity 200ms ease, transform 200ms ease;
+    z-index: 5;
+  }
+  .dropdown.show { opacity: 1; transform: translateY(0); }
+  .dd-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 4px; font-size: 13px;
+    color: var(--text-primary); cursor: pointer;
+  }
+  .dd-item.active { background: var(--bg-hover); }
+  .dd-item .desc { color: var(--text-muted); font-size: 11.5px; margin-left: auto; }
+
+  .chat {
+    flex: 1; background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .msg {
+    align-self: flex-start; max-width: 75%; font-size: 14px; color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .statusbar {
+    height: 28px; background: var(--bg-secondary);
+    border-top: 1px solid var(--border);
+    display: flex; align-items: center;
+    padding: 0 16px; gap: 18px;
+    font-size: 11.5px; color: var(--text-muted); font-family: var(--font-mono);
+  }
+  .statusbar .running { color: var(--success); }
+  .statusbar .agent-name { color: var(--text-secondary); transition: color 200ms ease; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="switch-agent" data-start="0" data-duration="10" data-width="1280" data-height="720">
+<div class="stage">
+  <div class="toolbar">
+    <span class="label">Agent</span>
+    <span id="pill" class="agent-pill">
+      <span id="pillDot" class="dot d-claude"></span>
+      <span id="pillName">Claude Code</span>
+      <span class="chev">▾</span>
+    </span>
+    <div id="dd" class="dropdown">
+      <div id="dd-claude" class="dd-item active"><span class="dot d-claude"></span>Claude Code<span class="desc">--resume capable</span></div>
+      <div id="dd-codex"  class="dd-item"><span class="dot d-codex"></span>Codex<span class="desc">json-rpc app-server</span></div>
+      <div id="dd-open"   class="dd-item"><span class="dot d-open"></span>OpenCode<span class="desc">jsonl streaming</span></div>
+    </div>
+    <span class="label" style="margin-left: auto">Model</span>
+    <span id="model" class="agent-pill" style="cursor: default">claude-opus-4-5</span>
+  </div>
+
+  <div class="chat">
+    <div class="msg">Same conversation, same project — just hand the keys to a different model when you want a second opinion.</div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span class="running">●</span>
+  <span id="agentName" class="agent-name">Claude Code</span>
+  <span>·</span>
+  <span id="agentMode">sandbox</span>
+  <span>·</span>
+  <span>~/projects/switchboard</span>
+</div>
+</div>
+
+<script>
+  const dd = document.getElementById('dd')
+  const items = {
+    claude: document.getElementById('dd-claude'),
+    codex:  document.getElementById('dd-codex'),
+    open:   document.getElementById('dd-open'),
+  }
+  const pillDot  = document.getElementById('pillDot')
+  const pillName = document.getElementById('pillName')
+  const model    = document.getElementById('model')
+  const sbName   = document.getElementById('agentName')
+
+  function setActive(which) {
+    Object.entries(items).forEach(([k, el]) => el.classList.toggle('active', k === which))
+  }
+  function setAgent(name, dotClass, modelText) {
+    pillName.textContent = name
+    pillDot.className = 'dot ' + dotClass
+    model.textContent = modelText
+    sbName.textContent = name
+  }
+
+  function renderAt(t) {
+    // Pacing:
+    //   0.0–1.2s   toolbar visible, "Claude Code" labelled
+    //   1.2s       dropdown opens (claude highlighted)
+    //   2.5s       hover → codex
+    //   4.0s       hover → opencode
+    //   5.5s       back to codex (the one we'll commit)
+    //   6.2s       dropdown closes; pill/model/statusbar flip to Codex
+    //   8.2s       second switch — pill/model/statusbar flip to OpenCode
+    //   8.2–10s    hold on OpenCode
+    dd.classList.toggle('show', t >= 1.2 && t < 6.2)
+
+    if      (t < 2.5) setActive('claude')
+    else if (t < 4.0) setActive('codex')
+    else if (t < 5.5) setActive('open')
+    else              setActive('codex')
+
+    if      (t < 6.2) setAgent('Claude Code', 'd-claude', 'claude-opus-4-5')
+    else if (t < 8.2) setAgent('Codex',       'd-codex',  'gpt-5')
+    else              setAgent('OpenCode',    'd-open',   'glm-5.1')
+  }
+  window.__timelines = window.__timelines || {};
+  const __proxy = { t: 0 };
+  const tl = gsap.timeline({ paused: true });
+  tl.to(__proxy, { t: 10, duration: 10, ease: 'none', onUpdate: () => renderAt(__proxy.t) }, 0);
+  window.__timelines["switch-agent"] = tl;
+  setTimeout(() => { if (tl.time() === 0 && !tl.isActive()) tl.play(); }, 50);
+</script>
+</body>
+</html>

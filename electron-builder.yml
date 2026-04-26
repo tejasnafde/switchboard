@@ -1,0 +1,92 @@
+# electron-builder configuration.
+#
+# Unsigned local builds for now — no Apple Developer certificate yet.
+# Output is a DMG in `release/`. Coworkers need to allow the unsigned
+# app through Gatekeeper on first launch (instructions live alongside
+# the DMG — see docs/releasing.md).
+
+appId: io.geoiq.switchboard
+productName: Switchboard
+copyright: Copyright © 2026 Tejas
+directories:
+  buildResources: resources/icons
+  output: release
+
+# Auto-update channel. electron-updater reads `latest-mac.yml` /
+# `latest.yml` from the GitHub Release matching this owner+repo. The
+# repo is public, so no token is needed at update-check time. Publishing
+# (creating the Release + uploading artifacts) DOES need GH_TOKEN, set
+# automatically in CI via secrets.GITHUB_TOKEN.
+publish:
+  - provider: github
+    owner: tejasnafde
+    repo: switchboard
+    releaseType: release
+files:
+  - out/**/*
+  - resources/icons/**/*
+  - resources/shell/**/*
+  - package.json
+# Pull in node-pty and better-sqlite3 native builds. `asarUnpack` keeps
+# their .node binaries outside the asar archive so Electron can load them.
+asarUnpack:
+  - "node_modules/node-pty/build/**"
+  - "node_modules/better-sqlite3/build/**"
+# Native modules are rebuilt against the packaged Electron ABI.
+npmRebuild: true
+
+mac:
+  category: public.app-category.developer-tools
+  # Target arm64 by default — Apple Silicon is dominant, and building
+  # universal hit conflicts with `@anthropic-ai/claude-agent-sdk-darwin-*`
+  # optional native packages (each arch ships its own claude binary;
+  # electron-builder's universal builder can't reconcile them).
+  # To build for Intel: `npm run dist:x64`.
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  # Unsigned for now. When a cert is available, populate:
+  #   identity: "Developer ID Application: Tejas (TEAM_ID)"
+  # and hardened runtime + notarization.
+  identity: null
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  # Icon must exist at resources/icons/switchboard-logo-1024.png; we point
+  # the DMG at the same PNG (electron-builder converts it to .icns).
+  icon: resources/icons/switchboard-logo-1024.png
+
+dmg:
+  title: Switchboard ${version}
+  # Minimal installer — Applications symlink + drag-to-install.
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+  window:
+    width: 560
+    height: 400
+
+# Windows builds. Unsigned for now — users get the SmartScreen
+# "More info → Run anyway" prompt on first install, dismissed once.
+# Auto-update is silent thereafter. NSIS = standard Windows installer
+# with desktop shortcut + uninstall entry; zip = portable, no install
+# needed. Only x64 — covers ~95% of Windows boxes; arm64 deferred.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  icon: resources/icons/switchboard-logo-1024.png
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true

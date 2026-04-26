@@ -1,0 +1,47 @@
+node_modules/
+out/
+dist/
+*.tsbuildinfo
+.DS_Store
+
+# Environment / secrets — NEVER commit. The dotenv-style files below
+# are gitignored aggressively because past releases of this app accept
+# things like ANTHROPIC_API_KEY / NVIDIA_API_KEY through the user's
+# shell rc; we never want a stray copy ending up in the repo.
+.env
+.env.local
+.env.*.local
+*.pem
+*.p12
+*.cer
+*.key
+*.keystore
+secrets.json
+.secrets/
+
+# electron-builder release artifacts. The `release/` dir holds DMG /
+# EXE / blockmap files (tens to hundreds of MB each) plus the auto-
+# update metadata files (`latest-mac.yml`, `latest.yml`). All of these
+# go to GitHub Releases via CI, never into git.
+release/
+*.dmg
+*.exe
+*.zip
+*.appx
+*.msi
+*.snap
+*.AppImage
+latest*.yml
+*.blockmap
+
+# Editor / OS / agent caches
+.idea/
+.vscode/
+.claude/
+.history/
+
+# Test + Playwright artifacts
+test-results/
+playwright-report/
+coverage/
+.vitest-cache/

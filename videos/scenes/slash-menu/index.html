@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard — Slash menu demo</title>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  /* Switchboard-ish dark theme tokens. Hand-tuned to match the app's
+     CSS variables closely enough for a 720p clip — exact parity isn't
+     the goal of the spike; legibility + brand feel are. */
+  :root {
+    --bg: #0e0f12;
+    --bg-secondary: #16181d;
+    --bg-tertiary: #1d2027;
+    --bg-hover: #2a2e38;
+    --border: #2a2e36;
+    --text-primary: #e6e8ec;
+    --text-secondary: #a8adb6;
+    --text-muted: #6b7280;
+    --accent: #8ab4ff;
+    --radius: 6px;
+    --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --font-sans: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; width: 1280px; height: 720px;
+    background: var(--bg); color: var(--text-primary);
+    font-family: var(--font-sans); overflow: hidden;
+  }
+
+  .stage {
+    width: 100%; height: 100%;
+    display: flex; align-items: flex-end; justify-content: center;
+    padding: 80px;
+  }
+
+  /* Chat input area — visually mirrors ChatInput.tsx */
+  .input-shell {
+    position: relative;
+    width: 760px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+  .textarea-mock {
+    min-height: 24px;
+    font-size: 14px;
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    line-height: 1.4;
+    white-space: pre-wrap;
+  }
+  .caret {
+    display: inline-block;
+    width: 2px; height: 16px;
+    background: var(--text-primary);
+    vertical-align: text-bottom;
+    margin-left: 1px;
+    animation: blink 1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Popover */
+  .popover {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0; right: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    max-width: 520px;
+    opacity: 0; transform: translateY(6px);
+    pointer-events: none;
+  }
+  .popover.show {
+    animation: popIn 220ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  }
+  @keyframes popIn {
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .popover-header, .popover-footer {
+    padding: 6px 10px;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    font-weight: 600;
+  }
+  .popover-header { border-bottom: 1px solid var(--border); }
+  .popover-footer {
+    border-top: 1px solid var(--border);
+    text-transform: none; letter-spacing: 0;
+    display: flex; justify-content: space-between;
+  }
+
+  .source-heading {
+    padding: 6px 10px 2px;
+    font-size: 9.5px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+  }
+
+  .row {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 6px 10px; margin: 0 4px;
+    border-radius: 4px;
+    font-size: 12.5px;
+    transition: background 90ms ease;
+  }
+  .row.active { background: var(--bg-hover); }
+  .row .name {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    min-width: 90px;
+  }
+  .row.active .name { color: var(--accent); }
+  .row .desc { color: var(--text-muted); font-size: 11.5px; }
+
+  kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    padding: 0 4px;
+    margin-right: 3px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+  }
+
+  /* The plan-mode pill that replaces the input on /plan select */
+  .mode-pill {
+    position: absolute;
+    top: -34px; left: 0;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 11px;
+    background: rgba(255, 180, 70, 0.15);
+    border: 1px solid rgba(255, 180, 70, 0.4);
+    color: #ffd28a;
+    opacity: 0;
+  }
+  .mode-pill.show {
+    animation: pillIn 300ms cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  }
+  @keyframes pillIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* === Timeline ============================================================
+     Choreography keyed off a single 6s `--t` set by JS so HyperFrames'
+     deterministic frame-by-frame render lands on consistent state.
+     Sequence:
+       0.0–0.4s  empty input, idle caret
+       0.4s      "/" appears, popover starts opening
+       0.6–2.2s  highlight cycles row 0 → row 1 → row 2 → row 0 (plan)
+       2.6s      enter — popover fades, plan pill appears
+       6.0s      hold final frame
+  */
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="slash-menu" data-start="0" data-duration="9" data-width="1280" data-height="720">
+<div class="stage">
+  <div class="input-shell">
+    <div id="modePill" class="mode-pill">🛡️ Plan mode — read-only</div>
+
+    <div id="popover" class="popover">
+      <div class="popover-header">Commands</div>
+      <div class="rows">
+        <div class="source-heading">Switchboard</div>
+        <div class="row" data-i="0">
+          <span class="name">/plan</span>
+          <span class="desc">Switch to plan mode (read-only)</span>
+        </div>
+        <div class="row" data-i="1">
+          <span class="name">/sandbox</span>
+          <span class="desc">Sandbox mode — approval required for writes</span>
+        </div>
+        <div class="row" data-i="2">
+          <span class="name">/edits</span>
+          <span class="desc">Accept edits without prompting</span>
+        </div>
+        <div class="row" data-i="3">
+          <span class="name">/full</span>
+          <span class="desc">Full access — no approval gates</span>
+        </div>
+        <div class="source-heading">Claude Code</div>
+        <div class="row" data-i="4">
+          <span class="name">/review</span>
+          <span class="desc">Review a pull request</span>
+        </div>
+        <div class="row" data-i="5">
+          <span class="name">/init</span>
+          <span class="desc">Initialize CLAUDE.md for this repo</span>
+        </div>
+      </div>
+      <div class="popover-footer">
+        <span><kbd>↑</kbd><kbd>↓</kbd> navigate · <kbd>Enter</kbd> select</span>
+        <span><kbd>Esc</kbd> dismiss</span>
+      </div>
+    </div>
+
+    <div class="textarea-mock"><span id="typed"></span><span class="caret"></span></div>
+  </div>
+</div>
+</div>
+
+<script>
+  // Drive everything from a single timeline so HyperFrames can render
+  // deterministically. window.__elapsed (seconds) is set per frame; in
+  // browser preview we tick rAF.
+  const typed = document.getElementById('typed')
+  const popover = document.getElementById('popover')
+  const rows = document.querySelectorAll('.row')
+  const pill = document.getElementById('modePill')
+
+  function setHighlight(idx) {
+    rows.forEach((r) => r.classList.remove('active'))
+    if (idx != null && rows[idx]) rows[idx].classList.add('active')
+  }
+
+  function renderAt(t) {
+    // Pacing — each phase ≥1s so the eye lands on it.
+    // 0.0–0.7s   empty input
+    // 0.7s       "/" types in, popover opens, row 0 (plan) highlighted
+    // 1.7s       walk to row 1 (sandbox)
+    // 2.7s       walk to row 2 (edits)
+    // 3.7s       walk to row 4 (Claude Code → /review) — show source switch
+    // 4.7s       back to row 0 (plan, the one we'll select)
+    // 5.7s       enter — popover fades, plan-mode pill appears
+    // 5.7–9.0s   hold on plan-mode pill
+    if (t < 0.7) {
+      typed.textContent = ''
+      popover.classList.remove('show')
+      setHighlight(null)
+      pill.classList.remove('show')
+      return
+    }
+    typed.textContent = '/'
+    popover.classList.add('show')
+
+    if (t < 1.7)        setHighlight(0)
+    else if (t < 2.7)   setHighlight(1)
+    else if (t < 3.7)   setHighlight(2)
+    else if (t < 4.7)   setHighlight(4)
+    else                setHighlight(0)
+
+    if (t >= 5.7) {
+      popover.classList.remove('show')
+      popover.style.opacity = 0
+      typed.textContent = ''
+      pill.classList.add('show')
+    }
+  }
+
+  window.__timelines = window.__timelines || {};
+  const __proxy = { t: 0 };
+  const tl = gsap.timeline({ paused: true });
+  tl.to(__proxy, { t: 9, duration: 9, ease: 'none', onUpdate: () => renderAt(__proxy.t) }, 0);
+  window.__timelines["slash-menu"] = tl;
+  setTimeout(() => { if (tl.time() === 0 && !tl.isActive()) tl.play(); }, 50);
+</script>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard — Welcome</title>
+<link rel="stylesheet" href="../_shared/theme.css" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 720px; overflow: hidden; }
+  .stage {
+    width: 1280px; height: 720px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative;
+    background:
+      radial-gradient(circle at 30% 30%, rgba(138,180,255,0.10), transparent 50%),
+      radial-gradient(circle at 70% 70%, rgba(123,216,143,0.08), transparent 50%),
+      var(--bg);
+  }
+  .grid-bg {
+    position: absolute; inset: 0; opacity: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 56px 56px;
+  }
+  .wordmark {
+    font-size: 88px; font-weight: 700; letter-spacing: -2px;
+    background: linear-gradient(135deg, var(--text-primary), var(--accent));
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent;
+    opacity: 0;
+  }
+  .tagline {
+    margin-top: 18px;
+    font-size: 22px; color: var(--text-secondary); font-weight: 400;
+    letter-spacing: 0.2px;
+    opacity: 0;
+  }
+  .badges {
+    margin-top: 36px; display: flex; gap: 14px;
+    opacity: 0;
+  }
+  .badge {
+    padding: 8px 14px; border: 1px solid var(--border-strong);
+    border-radius: 999px; font-size: 13px; color: var(--text-secondary);
+    background: rgba(255,255,255,0.02);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .d-claude { background: #ffb070; }
+  .d-codex  { background: #8ab4ff; }
+  .d-open   { background: #7bd88f; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="welcome" data-start="0" data-duration="7" data-width="1280" data-height="720">
+  <div class="stage">
+    <div id="grid" class="grid-bg"></div>
+    <div id="wordmark" class="wordmark">Switchboard</div>
+    <div id="tagline" class="tagline">Terminals, AI agents, project context — one window.</div>
+    <div id="badges" class="badges">
+      <span class="badge"><span class="dot d-claude"></span>Claude Code</span>
+      <span class="badge"><span class="dot d-codex"></span>Codex</span>
+      <span class="badge"><span class="dot d-open"></span>OpenCode</span>
+    </div>
+  </div>
+</div>
+<script>
+  window.__timelines = window.__timelines || {};
+  // Initial offsets (CSS already sets opacity: 0 on each element).
+  // We tween TO opacity:1 + y:0 so there's no race between gsap.from()
+  // recording the current zero-opacity state and the CSS hidden state.
+  gsap.set("#wordmark", { y: 12 });
+  gsap.set("#tagline",  { y: 8 });
+  gsap.set("#badges",   { y: 8 });
+
+  const tl = gsap.timeline({ paused: true });
+  // Pacing — each text beat gets ~1s of dwell before the next, then a
+  // long hold on the final frame so the brand mark reads.
+  //   0.2s  grid fades in
+  //   0.5s  "Switchboard" wordmark
+  //   1.8s  tagline
+  //   2.9s  agent badges
+  //   3.6s+ hold final composition until 7s
+  tl.to("#grid",     { opacity: 1, duration: 0.8, ease: "power2.out" }, 0.2);
+  tl.to("#wordmark", { opacity: 1, y: 0, duration: 0.9, ease: "power2.out" }, 0.5);
+  tl.to("#tagline",  { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 1.8);
+  tl.to("#badges",   { opacity: 1, y: 0, duration: 0.7, ease: "power2.out" }, 2.9);
+  tl.to({}, { duration: 3.4 }, 3.6);
+  window.__timelines["welcome"] = tl;
+  // Browser-preview shim: if nobody has seeked the timeline within 50ms
+  // (i.e. HyperFrames isn't driving), auto-play so `open index.html`
+  // shows the animation. Headless renderer will have already started
+  // seeking, leaving tl.time() != 0.
+  setTimeout(() => { if (tl.time() === 0 && !tl.isActive()) tl.play(); }, 50);
+</script>
+</body>
+</html>

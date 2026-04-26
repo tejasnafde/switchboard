@@ -1,0 +1,72 @@
+# Release pipeline.
+#
+# Trigger: pushing a tag matching `v*` (e.g. `v0.1.1`). The matrix runs
+# in parallel on macOS arm64 + Windows x64; both jobs publish artifacts
+# to the same GitHub Release (electron-builder merges on tag — do NOT
+# create the Release manually beforehand or the merge fails 422).
+#
+# We do NOT run on every push — release-only avoids burning CI minutes
+# on every commit while still catching regressions when a tag goes out.
+# A separate `ci.yml` (not in this commit) covers per-PR typecheck/test.
+#
+# Builds are unsigned. macOS users will get a Gatekeeper prompt on each
+# update; Windows users see SmartScreen "More info → Run anyway" once.
+# These tradeoffs are documented in `docs/releasing.md`.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# Cancel an in-flight run for the same tag if a re-tag happens. Avoids
+# two parallel publishes racing to upload assets.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & publish (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-14 = Apple Silicon runner. Required so npm installs the
+        # `claude-agent-sdk-darwin-arm64` optional dependency natively;
+        # cross-installing for arm64 from an Intel runner is unreliable
+        # and the SDK won't load in the packaged app.
+        os: [macos-14, windows-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # `npm ci` (NOT `npm install`) — deterministic, faster, and it
+      # honors optionalDependencies for the host platform automatically.
+      # Do NOT pass `--no-optional`; that's what makes the per-platform
+      # claude-agent-sdk binary install correctly.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build renderer + main
+        run: npm run build
+
+      # `--publish always` makes electron-builder upload artifacts to
+      # the GitHub Release matching the current tag. The matrix runs
+      # both jobs in parallel; both target the same Release and
+      # electron-builder is safe to call concurrently — it uploads with
+      # name-based dedup. GH_TOKEN is needed to write to the Release.
+      - name: Build & publish
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Disable electron-builder's notarize step explicitly. Without
+          # this it can hang on macOS waiting for an Apple ID prompt
+          # that will never come (we have no developer cert).
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
