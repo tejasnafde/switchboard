@@ -8,6 +8,18 @@
 # Doing it here — instead of asking every user to paste lines into their
 # own .zshrc — is what makes fresh installs "just work."
 
+# 0. User's login-shell config (.zshenv + .zprofile).
+#    Setting ZDOTDIR (we do, to inject keybindings below) redirects *all*
+#    of zsh's per-user startup files away from $HOME — so the
+#    `~/.zprofile` that Apple Silicon Homebrew installs (the line
+#    `eval "$(/opt/homebrew/bin/brew shellenv)"`) never runs and PATH
+#    stays at /usr/bin:/bin only. That breaks `carapace`, `starship`,
+#    `nvm`, anything the user's .zshrc references from /opt/homebrew or
+#    ~/.cargo. Source the real files manually before .zshrc so PATH is
+#    populated before the user config runs.
+[ -f "$HOME/.zshenv" ]   && source "$HOME/.zshenv"
+[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile"
+
 # 1. User's real shell config
 if [ -f "$HOME/.zshrc" ]; then
   source "$HOME/.zshrc"
