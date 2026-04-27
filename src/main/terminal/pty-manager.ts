@@ -108,7 +108,18 @@ export class PtyManager {
       const zdotdir = ensureZdotdir()
       if (zdotdir) envOverrides.ZDOTDIR = zdotdir
     }
-    const instance = pty.spawn(shell, [], {
+    // Spawn zsh/bash as a login shell so /etc/zprofile + ~/.zprofile (and
+    // bash's ~/.bash_profile) run. Electron processes launched from Finder
+    // don't inherit the user's interactive PATH; without -l, Homebrew's
+    // shellenv (which lives in ~/.zprofile on Apple Silicon) is skipped
+    // and tools like `carapace`/`starship` referenced from ~/.zshrc fail
+    // with "command not found." Terminal.app and iTerm both default to
+    // login shells for this exact reason.
+    const loginArgs =
+      !isWin && (shell.endsWith('/zsh') || shell.endsWith('/bash'))
+        ? ['-l']
+        : []
+    const instance = pty.spawn(shell, loginArgs, {
       name: 'xterm-256color',
       cols: opts.cols ?? 80,
       rows: opts.rows ?? 24,
