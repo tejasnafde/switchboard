@@ -8,6 +8,7 @@ import { createMainLogger as createLogger } from '../logger'
 import { ClaudeAdapter } from './adapters/claude-adapter'
 import { CodexAdapter } from './adapters/codex-adapter'
 import { OpencodeAdapter } from './adapters/opencode-adapter'
+import { assertCwdReadable } from '../path-access'
 import type {
   ProviderAdapter,
   ProviderKind,
@@ -58,6 +59,10 @@ export class ProviderRegistry {
     ipcMain.handle(ProviderChannels.START_SESSION, async (_event, opts: SessionStartOpts) => {
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
+
+      // Catch macOS TCC denials before the adapter spawns — otherwise the
+      // SDK fails deep in the stack with cryptic EPERMs.
+      await assertCwdReadable(opts.cwd)
 
       this.sessionAdapters.set(opts.threadId, opts.provider)
       const session = await adapter.startSession(opts, (event) => this.emitEvent(event))

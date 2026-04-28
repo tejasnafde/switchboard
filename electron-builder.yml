@@ -82,6 +82,17 @@ mac:
   # Icon must exist at resources/icons/switchboard-logo-1024.png; we point
   # the DMG at the same PNG (electron-builder converts it to .icns).
   icon: resources/icons/switchboard-logo-1024.png
+  # macOS TCC consent strings. Without these, the first time Switchboard
+  # touches ~/Desktop / ~/Documents / ~/Downloads (e.g. a project lives
+  # there), the embedded PTY/SDK can fail with EPERM and no consent
+  # dialog ever shows. Setting these makes macOS prompt the user with
+  # our copy and persist the grant in System Settings → Privacy & Security
+  # → Files and Folders → Switchboard.
+  extendInfo:
+    NSDesktopFolderUsageDescription: Switchboard needs access to your Desktop folder to open projects, run terminals, and let Claude Code / Codex read project files stored there.
+    NSDocumentsFolderUsageDescription: Switchboard needs access to your Documents folder to open projects, run terminals, and let Claude Code / Codex read project files stored there.
+    NSDownloadsFolderUsageDescription: Switchboard needs access to your Downloads folder to open projects, run terminals, and let Claude Code / Codex read project files stored there.
+    NSRemovableVolumesUsageDescription: Switchboard needs access to removable volumes if you keep projects on an external drive.
 
 dmg:
   title: Switchboard ${version}
