@@ -118,6 +118,28 @@ function migrate(db: Database.Database): void {
     }
   } catch { /* ignore */ }
 
+  // ─── Workspaces (outer sidebar grouping above projects) ──────────
+  // A project belongs to at most one workspace via the nullable
+  // `workspace_id` FK. ON DELETE SET NULL means deleting a workspace
+  // returns its projects to the implicit "Ungrouped" pseudo-bucket
+  // — never destroys data.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS project_workspaces (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      color       TEXT,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    );
+  `)
+  try {
+    const cols = db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>
+    if (!cols.some((c) => c.name === 'workspace_id')) {
+      db.exec('ALTER TABLE projects ADD COLUMN workspace_id TEXT REFERENCES project_workspaces(id) ON DELETE SET NULL')
+    }
+  } catch { /* ignore */ }
+  db.exec('CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);')
+
   // Thread ancestry — Claude's SDK can reassign `session_id` mid-conversation
   // (compaction, fork, restart), producing multiple .jsonl files for what the
   // user sees as one chat. This table maps each child session_id to its
@@ -201,16 +223,78 @@ export function addProject(path: string, name: string): void {
   ).run(path, name)
 }
 
-export function getProjects(): Array<{ path: string; name: string; added_at: number }> {
-  return getDb().prepare('SELECT * FROM projects ORDER BY added_at DESC').all() as Array<{
+export function getProjects(): Array<{ path: string; name: string; added_at: number; workspace_id: string | null }> {
+  return getDb().prepare(
+    'SELECT path, name, added_at, workspace_id FROM projects ORDER BY added_at DESC'
+  ).all() as Array<{
     path: string
     name: string
     added_at: number
+    workspace_id: string | null
   }>
 }
 
 export function removeProject(path: string): void {
   getDb().prepare('DELETE FROM projects WHERE path = ?').run(path)
+}
+
+// ─── Workspace CRUD ──────────────────────────────────────────────
+
+export interface WorkspaceRow {
+  id: string
+  name: string
+  color: string | null
+  sort_order: number
+  created_at: number
+}
+
+function makeWorkspaceId(): string {
+  // Uniqueness only matters within this DB; collision odds are nil.
+  return 'ws_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+}
+
+export function listWorkspaces(): WorkspaceRow[] {
+  return getDb().prepare(
+    'SELECT id, name, color, sort_order, created_at FROM project_workspaces ORDER BY sort_order ASC, created_at ASC'
+  ).all() as WorkspaceRow[]
+}
+
+export function createWorkspace(input: { name: string; color?: string | null }): WorkspaceRow {
+  const id = makeWorkspaceId()
+  const now = Date.now()
+  // New workspaces sort to the end. We compute max(sort_order)+1 so an
+  // explicit reorder isn't needed for the first N workspaces a user adds.
+  const maxRow = getDb().prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM project_workspaces').get() as { m: number }
+  const nextOrder = (maxRow?.m ?? -1) + 1
+  getDb().prepare(
+    'INSERT INTO project_workspaces (id, name, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(id, input.name, input.color ?? null, nextOrder, now)
+  return { id, name: input.name, color: input.color ?? null, sort_order: nextOrder, created_at: now }
+}
+
+export function renameWorkspace(id: string, name: string): void {
+  getDb().prepare('UPDATE project_workspaces SET name = ? WHERE id = ?').run(name, id)
+}
+
+export function recolorWorkspace(id: string, color: string | null): void {
+  getDb().prepare('UPDATE project_workspaces SET color = ? WHERE id = ?').run(color, id)
+}
+
+export function deleteWorkspace(id: string): void {
+  // ON DELETE SET NULL on projects.workspace_id moves orphans to Ungrouped.
+  getDb().prepare('DELETE FROM project_workspaces WHERE id = ?').run(id)
+}
+
+export function reorderWorkspaces(orderedIds: string[]): void {
+  const db = getDb()
+  const stmt = db.prepare('UPDATE project_workspaces SET sort_order = ? WHERE id = ?')
+  db.transaction(() => {
+    orderedIds.forEach((id, i) => stmt.run(i, id))
+  })()
+}
+
+export function setProjectWorkspace(projectPath: string, workspaceId: string | null): void {
+  getDb().prepare('UPDATE projects SET workspace_id = ? WHERE path = ?').run(workspaceId, projectPath)
 }
 
 // ─── Conversation CRUD ──────────────────────────────────────────

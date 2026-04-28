@@ -211,6 +211,21 @@ export interface Project {
   path: string
   name: string
   sessions: SessionSummary[]
+  /** Sidebar workspace this project belongs to. `null` = "Ungrouped". */
+  workspaceId?: string | null
+}
+
+/**
+ * Sidebar workspace — the outer grouping above projects. Users assign
+ * projects to a workspace; projects with `workspaceId == null` render
+ * under the implicit "Ungrouped" pseudo-workspace at the bottom.
+ */
+export interface Workspace {
+  id: string
+  name: string
+  color: string | null
+  sortOrder: number
+  createdAt: number
 }
 
 // ─── Conversation persistence ───────────────────────────────────

@@ -21,6 +21,18 @@ interface LayoutStore {
   rightSessionId: string | null
   chatSplitRatio: number
 
+  // ─── Persisted sidebar collapse state ────────────────────────
+  // String[] (not Set) because settings are JSON-serialized via
+  // window.api.settings. A project path is collapsed iff it's in the
+  // array; same for workspace ids. Hydrated on store creation.
+  sidebarCollapsedProjects: string[]
+  sidebarCollapsedWorkspaces: string[]
+  toggleSidebarProject: (path: string) => void
+  toggleSidebarWorkspace: (id: string) => void
+  setSidebarCollapsedProjects: (paths: string[]) => void
+  expandSidebarProject: (path: string) => void
+  expandSidebarWorkspace: (id: string) => void
+
   // DOM refs for direct manipulation (not serialized)
   sidebarEl: HTMLDivElement | null
   terminalEl: HTMLDivElement | null
@@ -46,6 +58,17 @@ interface LayoutStore {
   setChatSplitRatio: (ratio: number) => void
 }
 
+// Persistence keys for sidebar collapse state — kept tight so we don't
+// accidentally collide with the existing `projectOrder` / `theme` keys.
+const COLLAPSE_PROJECTS_KEY = 'sidebar.collapsed.projects'
+const COLLAPSE_WORKSPACES_KEY = 'sidebar.collapsed.workspaces'
+
+function persistList(key: string, list: string[]): void {
+  try {
+    void window.api?.settings?.set(key, JSON.stringify(list))
+  } catch { /* settings unavailable in tests / early boot */ }
+}
+
 function applyPanelVisibility(
   el: HTMLDivElement | null,
   visible: boolean,
@@ -66,6 +89,40 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   dualChat: false,
   rightSessionId: null,
   chatSplitRatio: 0.5,
+
+  sidebarCollapsedProjects: [],
+  sidebarCollapsedWorkspaces: [],
+
+  toggleSidebarProject: (path) => {
+    const cur = get().sidebarCollapsedProjects
+    const next = cur.includes(path) ? cur.filter((p) => p !== path) : [...cur, path]
+    persistList(COLLAPSE_PROJECTS_KEY, next)
+    set({ sidebarCollapsedProjects: next })
+  },
+  toggleSidebarWorkspace: (id) => {
+    const cur = get().sidebarCollapsedWorkspaces
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+    persistList(COLLAPSE_WORKSPACES_KEY, next)
+    set({ sidebarCollapsedWorkspaces: next })
+  },
+  setSidebarCollapsedProjects: (paths) => {
+    persistList(COLLAPSE_PROJECTS_KEY, paths)
+    set({ sidebarCollapsedProjects: paths })
+  },
+  expandSidebarProject: (path) => {
+    const cur = get().sidebarCollapsedProjects
+    if (!cur.includes(path)) return
+    const next = cur.filter((p) => p !== path)
+    persistList(COLLAPSE_PROJECTS_KEY, next)
+    set({ sidebarCollapsedProjects: next })
+  },
+  expandSidebarWorkspace: (id) => {
+    const cur = get().sidebarCollapsedWorkspaces
+    if (!cur.includes(id)) return
+    const next = cur.filter((x) => x !== id)
+    persistList(COLLAPSE_WORKSPACES_KEY, next)
+    set({ sidebarCollapsedWorkspaces: next })
+  },
 
   sidebarEl: null,
   terminalEl: null,
@@ -133,3 +190,26 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ chatSplitRatio: clamped })
   },
 }))
+
+/**
+ * Hydrate sidebar collapse state from settings DB. Called once at app boot
+ * (App.tsx). Failures are silent — the store keeps its empty defaults.
+ */
+export async function hydrateSidebarCollapse(): Promise<void> {
+  if (typeof window === 'undefined' || !window.api?.settings) return
+  try {
+    const [projJson, wsJson] = await Promise.all([
+      window.api.settings.get(COLLAPSE_PROJECTS_KEY),
+      window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
+    ])
+    const parse = (s: string | null): string[] => {
+      if (!s) return []
+      try { const v = JSON.parse(s); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] }
+      catch { return [] }
+    }
+    useLayoutStore.setState({
+      sidebarCollapsedProjects: parse(projJson),
+      sidebarCollapsedWorkspaces: parse(wsJson),
+    })
+  } catch { /* silent */ }
+}

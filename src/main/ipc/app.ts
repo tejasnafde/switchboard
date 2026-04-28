@@ -33,6 +33,13 @@ import {
   recordThreadSession,
   detachSession,
   listAllThreadSessions,
+  listWorkspaces,
+  createWorkspace,
+  renameWorkspace,
+  recolorWorkspace,
+  deleteWorkspace,
+  reorderWorkspaces,
+  setProjectWorkspace,
 } from '../db/database'
 import { JsonlParser } from '../agent/jsonl-parser'
 import { readWorkspaceConfig, writeWorkspaceConfig, watchWorkspaceConfig } from '../workspace/workspace-store'
@@ -70,7 +77,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
     const sessions = rawSessions.filter((s) => !archivedSet.has(s.id))
     log.info(`found ${sessions.length} sessions for ${folderPath} (${rawSessions.length - sessions.length} archived)`)
 
-    const project: Project = { path: folderPath, name, sessions }
+    const project: Project = { path: folderPath, name, sessions, workspaceId: null }
     return project
   })
 
@@ -133,9 +140,35 @@ export function registerAppHandlers(window: BrowserWindow): void {
           }
           return s
         })
-      projects.push({ path: row.path, name: row.name, sessions: filtered })
+      projects.push({ path: row.path, name: row.name, sessions: filtered, workspaceId: row.workspace_id ?? null })
     }
     return projects
+  })
+
+  // ─── Workspaces (sidebar grouping) ─────────────────────────────
+  ipcMain.handle(AppChannels.WORKSPACE_LIST, () => {
+    return listWorkspaces().map((w) => ({
+      id: w.id, name: w.name, color: w.color, sortOrder: w.sort_order, createdAt: w.created_at,
+    }))
+  })
+  ipcMain.handle(AppChannels.WORKSPACE_CREATE, (_e, input: { name: string; color?: string | null }) => {
+    const w = createWorkspace(input)
+    return { id: w.id, name: w.name, color: w.color, sortOrder: w.sort_order, createdAt: w.created_at }
+  })
+  ipcMain.handle(AppChannels.WORKSPACE_RENAME, (_e, id: string, name: string) => {
+    renameWorkspace(id, name); return { ok: true }
+  })
+  ipcMain.handle(AppChannels.WORKSPACE_RECOLOR, (_e, id: string, color: string | null) => {
+    recolorWorkspace(id, color); return { ok: true }
+  })
+  ipcMain.handle(AppChannels.WORKSPACE_DELETE, (_e, id: string) => {
+    deleteWorkspace(id); return { ok: true }
+  })
+  ipcMain.handle(AppChannels.WORKSPACE_REORDER, (_e, ids: string[]) => {
+    reorderWorkspaces(ids); return { ok: true }
+  })
+  ipcMain.handle(AppChannels.ASSIGN_PROJECT_WORKSPACE, (_e, projectPath: string, workspaceId: string | null) => {
+    setProjectWorkspace(projectPath, workspaceId); return { ok: true }
   })
 
   // Create a new conversation in the database

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import {
   DndContext,
   type DragEndEvent,
@@ -15,8 +15,18 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useAgentStore } from '../../stores/agent-store'
+import { useLayoutStore } from '../../stores/layout-store'
 import { onSessionRename, emitSessionRename, onSessionCreated } from '../../services/session-events'
 import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/exportMarkdown'
+import { SidebarFilter } from './SidebarFilter'
+import { WorkspaceManager } from './WorkspaceManager'
+import {
+  groupProjectsByWorkspace,
+  applySidebarFilter,
+  colorTokenForWorkspace,
+  type WorkspaceGroup,
+} from './sidebar-helpers'
+import type { Workspace } from '@shared/types'
 
 function useUnreadCount(sessionId: string): number {
   return useAgentStore((s) => s.sessions.find((sess) => sess.id === sessionId)?.unreadCount ?? 0)
@@ -89,14 +99,28 @@ function SortableProject({
 
 export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   const [projects, setProjects] = useState<Project[]>([])
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [scanning, setScanning] = useState<string | null>(null)
   const [scannedPaths, setScannedPaths] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [filterQuery, setFilterQuery] = useState('')
+  const [managerOpen, setManagerOpen] = useState(false)
   const editRef = useRef<HTMLInputElement>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
-  // Right-click context menu — at most one open at a time.
+
+  // Persisted collapse state — single source of truth lives in layout-store
+  // so it survives reload (and the SidebarFilter's auto-expand only touches
+  // the local view, never the persisted truth).
+  const collapsedProjects = useLayoutStore((s) => s.sidebarCollapsedProjects)
+  const collapsedWorkspaces = useLayoutStore((s) => s.sidebarCollapsedWorkspaces)
+  const toggleSidebarProject = useLayoutStore((s) => s.toggleSidebarProject)
+  const toggleSidebarWorkspace = useLayoutStore((s) => s.toggleSidebarWorkspace)
+  const setSidebarCollapsedProjects = useLayoutStore((s) => s.setSidebarCollapsedProjects)
+  const expandSidebarProject = useLayoutStore((s) => s.expandSidebarProject)
+  const expandSidebarWorkspace = useLayoutStore((s) => s.expandSidebarWorkspace)
+
+  // Right-click context menus (sessions and workspaces share the same menu shell).
   const [contextMenu, setContextMenu] = useState<{
     x: number
     y: number
@@ -104,26 +128,36 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     projectPath: string
     session: SessionSummary
   } | null>(null)
-  // "Merge into…" picker state. Holds the fragment to attach; when set,
-  // shows a modal listing sibling chats in the same project as merge targets.
+  const [projectMenu, setProjectMenu] = useState<{
+    x: number
+    y: number
+    project: Project
+  } | null>(null)
   const [mergePickerFor, setMergePickerFor] = useState<{
     sessionId: string
     projectPath: string
     session: SessionSummary
   } | null>(null)
 
-  // DnD sensors — small activation distance to distinguish click from drag
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
+  const refreshWorkspaces = useCallback(() => {
+    window.api.app.workspaces.list().then((list) => setWorkspaces(list ?? [])).catch(() => {})
+  }, [])
+
   useEffect(() => {
+    refreshWorkspaces()
     window.api.app.getProjects().then((saved: Project[]) => {
       if (saved?.length) {
-        // Start with all projects collapsed by default
-        setCollapsed(new Set(saved.map((p) => p.path)))
+        // Default-collapse only on first run — once the user has expanded
+        // anything, layout-store drives the truth across reloads.
+        const stored = useLayoutStore.getState().sidebarCollapsedProjects
+        if (stored.length === 0) {
+          setSidebarCollapsedProjects(saved.map((p) => p.path))
+        }
 
-        // Restore saved order from settings
         window.api.settings.get('projectOrder').then((orderJson: string | null) => {
           if (orderJson) {
             try {
@@ -146,7 +180,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         })
       }
     })
-  }, [])
+  }, [refreshWorkspaces, setSidebarCollapsedProjects])
 
   const handleAddProject = useCallback(async () => {
     const project = await window.api.app.openFolder()
@@ -171,13 +205,8 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   }, [])
 
   const toggleCollapse = useCallback((path: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev)
-      if (next.has(path)) next.delete(path)
-      else next.add(path)
-      return next
-    })
-  }, [])
+    toggleSidebarProject(path)
+  }, [toggleSidebarProject])
 
   const startRename = useCallback((session: SessionSummary) => {
     setEditingId(session.id)
@@ -264,14 +293,9 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         })
       )
       // Auto-expand the project so the user sees the new chat
-      setCollapsed((prev) => {
-        if (!prev.has(newSession.projectPath)) return prev
-        const next = new Set(prev)
-        next.delete(newSession.projectPath)
-        return next
-      })
+      expandSidebarProject(newSession.projectPath)
     })
-  }, [])
+  }, [expandSidebarProject])
 
   const handleExport = useCallback(async (session: SessionSummary, projectPath: string) => {
     // Use the most up-to-date messages from agent-store if the session is
@@ -339,6 +363,23 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     })
   }, [])
 
+  const handleAssignWorkspace = useCallback(async (projectPath: string, workspaceId: string | null) => {
+    setProjects((prev) => prev.map((p) => p.path === projectPath ? { ...p, workspaceId } : p))
+    try {
+      await (window.api.app as any).assignProjectWorkspace(projectPath, workspaceId)
+    } catch { /* optimistic — next refresh will correct */ }
+  }, [])
+
+  const handleCreateWorkspaceFromProject = useCallback(async (projectPath: string) => {
+    const name = window.prompt('New workspace name')
+    if (!name?.trim()) return
+    try {
+      const w = await window.api.app.workspaces.create({ name: name.trim() })
+      setWorkspaces((prev) => [...prev, w])
+      await handleAssignWorkspace(projectPath, w.id)
+    } catch { /* best-effort */ }
+  }, [handleAssignWorkspace])
+
   // Drag-to-reorder handler
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
@@ -358,6 +399,188 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
       return reordered
     })
   }, [])
+
+  // Compute the workspace-grouped tree, then apply the (debounced) filter.
+  // The filter expansion sets are merged with the persisted collapse sets:
+  // when filtering, matching ancestors auto-expand without clobbering the
+  // user's saved collapse state \u2014 clearing the filter restores it.
+  const groups: WorkspaceGroup[] = useMemo(
+    () => groupProjectsByWorkspace(projects, workspaces),
+    [projects, workspaces]
+  )
+  const filtered = useMemo(() => applySidebarFilter(filterQuery, groups), [filterQuery, groups])
+  const isFiltering = filterQuery.trim().length > 0
+  const isProjectCollapsed = (path: string) => {
+    if (isFiltering && filtered.expandProjects.has(path)) return false
+    return collapsedProjects.includes(path)
+  }
+  const isWorkspaceCollapsed = (id: string) => {
+    if (isFiltering && filtered.expandWorkspaces.has(id)) return false
+    return collapsedWorkspaces.includes(id)
+  }
+  const ungroupedKey = '__ungrouped__'
+
+  const renderProject = (
+    project: Project,
+    isDragging: boolean,
+    dragHandleProps: Record<string, any>,
+  ) => {
+    const isCollapsed = isProjectCollapsed(project.path)
+    return (
+      <div className="sidebar-project">
+        <div
+          className="sidebar-project-header"
+          onClick={() => !isDragging && toggleCollapse(project.path)}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setProjectMenu({ x: e.clientX, y: e.clientY, project })
+          }}
+        >
+          <span
+            {...dragHandleProps}
+            className="sidebar-drag-handle"
+            style={{
+              cursor: 'grab',
+              display: 'flex',
+              alignItems: 'center',
+              padding: '0 2px',
+              color: 'var(--text-muted)',
+              opacity: 0,
+              transition: 'opacity 0.12s',
+            }}
+            title="Drag to reorder"
+          >
+            <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
+              <circle cx="2" cy="2" r="1.2" />
+              <circle cx="6" cy="2" r="1.2" />
+              <circle cx="2" cy="6" r="1.2" />
+              <circle cx="6" cy="6" r="1.2" />
+              <circle cx="2" cy="10" r="1.2" />
+              <circle cx="6" cy="10" r="1.2" />
+            </svg>
+          </span>
+          <span className="sidebar-chevron">
+            {isCollapsed ? '\u25B6' : '\u25BC'}
+          </span>
+          <span className="sidebar-project-name">
+            {project.name}
+          </span>
+          <span className="sidebar-project-count">
+            {project.sessions.length || ''}
+          </span>
+          <button
+            className="sidebar-project-compose"
+            onClick={(e) => {
+              e.stopPropagation()
+              onNewChat?.(project.path)
+            }}
+            title="New thread in this project"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+          </button>
+        </div>
+
+        {!isCollapsed && (
+          <div className="sidebar-threads">
+            {project.sessions.length > 0 ? (
+              project.sessions.map((s) => {
+                const isActive = activeSessionId === s.id
+                return (
+                  <div
+                    key={s.id}
+                    className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''}`}
+                    onClick={() => {
+                      if (editingId !== s.id) {
+                        onSessionSelect?.(s, project.path)
+                      }
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        sessionId: s.id,
+                        projectPath: project.path,
+                        session: s,
+                      })
+                    }}
+                  >
+                    {editingId === s.id ? (
+                      <div className="sidebar-rename-row">
+                        <input
+                          ref={editRef}
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') commitRename(project.path, s.id)
+                            if (e.key === 'Escape') cancelRename()
+                          }}
+                          onBlur={() => commitRename(project.path, s.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          className="sidebar-rename-input"
+                        />
+                        <button
+                          className="sidebar-rename-cancel"
+                          onMouseDown={(e) => {
+                            e.preventDefault()
+                            cancelRename()
+                          }}
+                          title="Cancel (Esc)"
+                        >
+                          &times;
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className={`sidebar-thread-dot ${
+                          isActive ? 'sidebar-thread-dot-active' : ''
+                        }`} />
+                        <span className="sidebar-thread-title">
+                          {s.title}
+                        </span>
+                        <UnreadBadge sessionId={s.id} />
+                        <span className="sidebar-thread-time">
+                          {formatRelativeTime(s.startedAt)}
+                        </span>
+                        <button
+                          className="sidebar-thread-archive"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleArchive(project.path, s)
+                          }}
+                          title="Archive"
+                        >
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="3" y="3" width="18" height="4" rx="1" />
+                            <path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7" />
+                            <line x1="10" y1="12" x2="14" y2="12" />
+                          </svg>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )
+              })
+            ) : scannedPaths.has(project.path) ? (
+              <div className="sidebar-empty">No conversations found</div>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleScan(project.path) }}
+                disabled={scanning === project.path}
+                className="sidebar-scan-btn"
+              >
+                {scanning === project.path ? 'Scanning\u2026' : 'Import conversations'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="sidebar-root">
@@ -379,6 +602,9 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         </button>
       </div>
 
+      {/* Filter input \u2014 debounced 100ms, fuzzy substring on session titles */}
+      {projects.length > 0 && <SidebarFilter onChange={setFilterQuery} />}
+
       {/* Project + thread list */}
       <div className="sidebar-list">
         <DndContext
@@ -390,167 +616,55 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
             items={projects.map((p) => p.path)}
             strategy={verticalListSortingStrategy}
           >
-            {projects.map((project) => {
-              const isCollapsed = collapsed.has(project.path)
-
+            {filtered.groups.map((group) => {
+              const wsId = group.workspace?.id ?? ungroupedKey
+              const wsCollapsed = isWorkspaceCollapsed(wsId)
+              const sessionTotal = group.projects.reduce((acc, p) => acc + p.sessions.length, 0)
+              const spineColor = group.workspace ? colorTokenForWorkspace(group.workspace) : 'var(--text-muted)'
               return (
-                <SortableProject key={project.path} id={project.path}>
-                  {({ isDragging, dragHandleProps }) => (
-                    <div className="sidebar-project">
-                      {/* Project header row */}
-                      <div
-                        className="sidebar-project-header"
-                        onClick={() => !isDragging && toggleCollapse(project.path)}
-                      >
-                        {/* Drag handle */}
-                        <span
-                          {...dragHandleProps}
-                          className="sidebar-drag-handle"
-                          style={{
-                            cursor: 'grab',
-                            display: 'flex',
-                            alignItems: 'center',
-                            padding: '0 2px',
-                            color: 'var(--text-muted)',
-                            opacity: 0,
-                            transition: 'opacity 0.12s',
-                          }}
-                          title="Drag to reorder"
-                        >
-                          <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
-                            <circle cx="2" cy="2" r="1.2" />
-                            <circle cx="6" cy="2" r="1.2" />
-                            <circle cx="2" cy="6" r="1.2" />
-                            <circle cx="6" cy="6" r="1.2" />
-                            <circle cx="2" cy="10" r="1.2" />
-                            <circle cx="6" cy="10" r="1.2" />
-                          </svg>
-                        </span>
-                        <span className="sidebar-chevron">
-                          {isCollapsed ? '\u25B6' : '\u25BC'}
-                        </span>
-                        <span className="sidebar-project-name">
-                          {project.name}
-                        </span>
-                        <span className="sidebar-project-count">
-                          {project.sessions.length || ''}
-                        </span>
-                        <button
-                          className="sidebar-project-compose"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            onNewChat?.(project.path)
-                          }}
-                          title="New thread in this project"
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-                          </svg>
-                        </button>
-                      </div>
-
-                      {/* Session threads */}
-                      {!isCollapsed && (
-                        <div className="sidebar-threads">
-                          {project.sessions.length > 0 ? (
-                            project.sessions.map((s) => {
-                              const isActive = activeSessionId === s.id
-
-                              return (
-                                <div
-                                  key={s.id}
-                                  className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''}`}
-                                  onClick={() => {
-                                    if (editingId !== s.id) {
-                                      onSessionSelect?.(s, project.path)
-                                    }
-                                  }}
-                                  onContextMenu={(e) => {
-                                    e.preventDefault()
-                                    e.stopPropagation()
-                                    setContextMenu({
-                                      x: e.clientX,
-                                      y: e.clientY,
-                                      sessionId: s.id,
-                                      projectPath: project.path,
-                                      session: s,
-                                    })
-                                  }}
-                                >
-                                  {editingId === s.id ? (
-                                    <div className="sidebar-rename-row">
-                                      <input
-                                        ref={editRef}
-                                        value={editValue}
-                                        onChange={(e) => setEditValue(e.target.value)}
-                                        onKeyDown={(e) => {
-                                          if (e.key === 'Enter') commitRename(project.path, s.id)
-                                          if (e.key === 'Escape') cancelRename()
-                                        }}
-                                        onBlur={() => commitRename(project.path, s.id)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="sidebar-rename-input"
-                                      />
-                                      <button
-                                        className="sidebar-rename-cancel"
-                                        onMouseDown={(e) => {
-                                          e.preventDefault()
-                                          cancelRename()
-                                        }}
-                                        title="Cancel (Esc)"
-                                      >
-                                        &times;
-                                      </button>
-                                    </div>
-                                  ) : (
-                                    <>
-                                      <span className={`sidebar-thread-dot ${
-                                        isActive ? 'sidebar-thread-dot-active' : ''
-                                      }`} />
-                                      <span className="sidebar-thread-title">
-                                        {s.title}
-                                      </span>
-                                      <UnreadBadge sessionId={s.id} />
-                                      <span className="sidebar-thread-time">
-                                        {formatRelativeTime(s.startedAt)}
-                                      </span>
-                                      <button
-                                        className="sidebar-thread-archive"
-                                        onClick={(e) => {
-                                          e.stopPropagation()
-                                          handleArchive(project.path, s)
-                                        }}
-                                        title="Archive"
-                                      >
-                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                          <rect x="3" y="3" width="18" height="4" rx="1" />
-                                          <path d="M5 7v13a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V7" />
-                                          <line x1="10" y1="12" x2="14" y2="12" />
-                                        </svg>
-                                      </button>
-                                    </>
-                                  )}
-                                </div>
-                              )
-                            })
-                          ) : scannedPaths.has(project.path) ? (
-                            <div className="sidebar-empty">No conversations found</div>
-                          ) : (
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleScan(project.path) }}
-                              disabled={scanning === project.path}
-                              className="sidebar-scan-btn"
-                            >
-                              {scanning === project.path ? 'Scanning\u2026' : 'Import conversations'}
-                            </button>
-                          )}
-                        </div>
-                      )}
+                <section
+                  key={wsId}
+                  className={`sidebar-workspace ${wsCollapsed ? 'collapsed' : ''} ${group.workspace ? '' : 'ungrouped'}`}
+                  style={{ ['--spine' as any]: spineColor }}
+                >
+                  <header
+                    className="sidebar-workspace-header"
+                    onClick={() => toggleSidebarWorkspace(wsId)}
+                    onContextMenu={(e) => {
+                      // Right-clicking a workspace header opens the manager
+                      // \u2014 keeps the menu surface tiny without a second flavor.
+                      e.preventDefault()
+                      e.stopPropagation()
+                      setManagerOpen(true)
+                    }}
+                  >
+                    <span className="sidebar-chevron">{wsCollapsed ? '\u25B6' : '\u25BC'}</span>
+                    <span className="sidebar-workspace-name">
+                      {group.workspace?.name ?? 'Ungrouped'}
+                    </span>
+                    <span className="sidebar-workspace-count">
+                      {group.projects.length}\u00B7{sessionTotal}
+                    </span>
+                  </header>
+                  {!wsCollapsed && (
+                    <div className="sidebar-workspace-body">
+                      {group.projects.map((project) => (
+                        <SortableProject key={project.path} id={project.path}>
+                          {({ isDragging, dragHandleProps }) =>
+                            renderProject(project, isDragging, dragHandleProps)
+                          }
+                        </SortableProject>
+                      ))}
                     </div>
                   )}
-                </SortableProject>
+                </section>
               )
             })}
+            {isFiltering && filtered.matchCount === 0 && (
+              <div className="sidebar-empty" style={{ padding: '14px', textAlign: 'center' }}>
+                No matches for "{filterQuery}"
+              </div>
+            )}
           </SortableContext>
         </DndContext>
 
@@ -574,6 +688,17 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           Add Project
+        </button>
+        <button
+          onClick={() => setManagerOpen(true)}
+          className="sidebar-add-project-btn"
+          style={{ marginLeft: '6px' }}
+          title="Manage workspaces"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 7h18M3 12h18M3 17h18" />
+          </svg>
+          Workspaces
         </button>
       </div>
 
@@ -611,6 +736,62 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
               },
             },
           ]}
+        />
+      )}
+
+      {/* Right-click on a project header — workspace assignment */}
+      {projectMenu && (
+        <SidebarContextMenu
+          x={projectMenu.x}
+          y={projectMenu.y}
+          onClose={() => setProjectMenu(null)}
+          items={[
+            ...(workspaces.length > 0 ? workspaces.map((w) => ({
+              label: `Move to: ${w.name}`,
+              onClick: () => {
+                void handleAssignWorkspace(projectMenu.project.path, w.id)
+                setProjectMenu(null)
+              },
+            })) : []),
+            ...(projectMenu.project.workspaceId ? [{
+              label: 'Move to: Ungrouped',
+              onClick: () => {
+                void handleAssignWorkspace(projectMenu.project.path, null)
+                setProjectMenu(null)
+              },
+            }] : []),
+            {
+              label: 'New workspace from this project…',
+              onClick: () => {
+                void handleCreateWorkspaceFromProject(projectMenu.project.path)
+                setProjectMenu(null)
+              },
+            },
+            {
+              label: 'Manage workspaces…',
+              onClick: () => {
+                setManagerOpen(true)
+                setProjectMenu(null)
+              },
+            },
+          ]}
+        />
+      )}
+
+      {/* Workspace manager modal — rename / recolor / delete */}
+      {managerOpen && (
+        <WorkspaceManager
+          workspaces={workspaces}
+          onClose={() => setManagerOpen(false)}
+          onMutated={() => {
+            refreshWorkspaces()
+            // Re-fetch projects too: deleting a workspace SET NULL'd their
+            // workspace_id on the main side; the renderer cache needs a refresh
+            // to reflect the move-back-to-Ungrouped.
+            window.api.app.getProjects().then((saved: Project[]) => {
+              if (saved?.length) setProjects(saved)
+            }).catch(() => {})
+          }}
         />
       )}
 

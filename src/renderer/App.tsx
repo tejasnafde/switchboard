@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { useLayoutStore } from './stores/layout-store'
+import { useLayoutStore, hydrateSidebarCollapse } from './stores/layout-store'
 import { useAgentStore } from './stores/agent-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
@@ -117,6 +117,7 @@ export function App() {
   // Load saved theme on mount
   useEffect(() => {
     loadSavedTheme()
+    void hydrateSidebarCollapse()
   }, [loadSavedTheme])
 
   // Safety net: runs AFTER handle's own cleanup. Only reverts state that looks

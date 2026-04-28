@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Switchboard · Workspace Sidebar Proposal</title>
+<style>
+/* ─────────────────────────────────────────────────────────────
+   Aesthetic: archive dossier.
+   Workspaces are color-spined file dividers — the 3px color
+   rail running the height of each workspace body is the load-
+   bearing visual, not typography. Fonts match the rest of the
+   app: system sans for chrome, JetBrains Mono only where the
+   app already uses it (paths, counts, ids).
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, monospace;
+}
+
+:root, .theme-dark {
+  --bg-primary: #0d1117;
+  --bg-secondary: #131820;
+  --bg-tertiary: #1c2128;
+  --bg-hover: rgba(255, 255, 255, 0.04);
+  --bg-active: rgba(88, 166, 255, 0.10);
+  --text-primary: #e2e8f0;
+  --text-secondary: #8b949e;
+  --text-muted: #484f58;
+  --border: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --border-focus: rgba(88, 166, 255, 0.4);
+  --accent: #58a6ff;
+  --accent-subtle: rgba(88, 166, 255, 0.12);
+  --workspace-color-1: #f78166;  /* ember */
+  --workspace-color-2: #d2a8ff;  /* lilac */
+  --workspace-color-3: #7ee787;  /* lichen */
+  --workspace-color-4: #ffa657;  /* amber */
+  --workspace-color-5: #79c0ff;  /* cyan */
+  --workspace-color-6: #ff7b72;  /* rose */
+}
+
+.theme-light {
+  --bg-primary: #fafaf7;       /* archival paper */
+  --bg-secondary: #f3f1ea;
+  --bg-tertiary: #e8e5dc;
+  --bg-hover: rgba(0, 0, 0, 0.03);
+  --bg-active: rgba(37, 99, 235, 0.08);
+  --text-primary: #1a1d21;
+  --text-secondary: #5a6270;
+  --text-muted: #9c9588;
+  --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(0, 0, 0, 0.16);
+  --border-focus: rgba(37, 99, 235, 0.35);
+  --accent: #2563eb;
+  --accent-subtle: rgba(37, 99, 235, 0.08);
+  --workspace-color-1: #c2410c;
+  --workspace-color-2: #7e22ce;
+  --workspace-color-3: #15803d;
+  --workspace-color-4: #b45309;
+  --workspace-color-5: #1d4ed8;
+  --workspace-color-6: #be123c;
+}
+
+.theme-translucent {
+  --bg-primary: transparent;
+  --bg-secondary: rgba(0, 0, 0, 0.18);
+  --bg-tertiary: rgba(255, 255, 255, 0.04);
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(88, 166, 255, 0.14);
+  --text-primary: rgba(255, 255, 255, 0.96);
+  --text-secondary: rgba(255, 255, 255, 0.7);
+  --text-muted: rgba(255, 255, 255, 0.45);
+  --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-focus: rgba(88, 166, 255, 0.45);
+  --accent: #79c0ff;
+  --accent-subtle: rgba(121, 192, 255, 0.14);
+  /* tuned brighter for legibility against wallpaper */
+  --workspace-color-1: #ff9b80;
+  --workspace-color-2: #e0bfff;
+  --workspace-color-3: #95f29b;
+  --workspace-color-4: #ffba6e;
+  --workspace-color-5: #a5d4ff;
+  --workspace-color-6: #ff958c;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Stage — fakes the Electron window context so themes feel real */
+.stage {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  position: relative;
+}
+
+/* For .theme-translucent, paint a "wallpaper" gradient behind everything
+   so the floating sidebar effect is visible. */
+.theme-translucent body {
+  background:
+    radial-gradient(ellipse 80% 60% at 20% 0%, #2d1b4e 0%, transparent 50%),
+    radial-gradient(ellipse 100% 70% at 80% 100%, #1e3a5f 0%, transparent 50%),
+    radial-gradient(ellipse 60% 50% at 50% 50%, #4a1942 0%, transparent 60%),
+    #0a0a14;
+  background-attachment: fixed;
+}
+
+.theme-light body {
+  background: var(--bg-primary);
+}
+
+/* ─── Top theme switcher (demo only, not in real app) ──────── */
+.theme-rail {
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  z-index: 50;
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.theme-rail button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: color 120ms, background 120ms;
+}
+.theme-rail button:hover { color: var(--text-secondary); }
+.theme-rail button.active {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* ─── Sidebar root ───────────────────────────────────────────── */
+.sidebar {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 0 0 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.theme-translucent .sidebar {
+  backdrop-filter: blur(40px) saturate(140%);
+  -webkit-backdrop-filter: blur(40px) saturate(140%);
+}
+
+/* ─── Sidebar masthead ───────────────────────────────────────── */
+.masthead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 16px 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+.masthead .title {
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.masthead .title em {
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  margin-right: 2px;
+}
+.masthead .add-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 0;
+  display: grid;
+  place-items: center;
+  transition: color 120ms, border-color 120ms, background 120ms;
+}
+.masthead .add-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+/* ─── Filter input ───────────────────────────────────────────── */
+.filter {
+  position: relative;
+  margin: 12px 12px 8px 12px;
+}
+.filter input {
+  width: 100%;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 28px 7px 30px;
+  color: var(--text-primary);
+  font: 400 12px/1 var(--font-sans);
+  outline: none;
+  transition: border-color 120ms, background 120ms;
+}
+.filter input::placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+.filter input:focus {
+  border-color: var(--border-focus);
+  background: var(--bg-secondary);
+}
+.filter .glyph {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+.filter .kbd {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  padding: 2px 5px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+/* ─── Workspaces scroll area ─────────────────────────────────── */
+.workspaces {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 0 60px 0;
+}
+.workspaces::-webkit-scrollbar { width: 8px; }
+.workspaces::-webkit-scrollbar-track { background: transparent; }
+.workspaces::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.workspaces::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ─── Single workspace ───────────────────────────────────────── */
+.workspace {
+  --spine: var(--workspace-color-1);
+  position: relative;
+  margin: 8px 0;
+}
+
+/* The spine: 3px color rail, the visual signature of the design.
+   Runs the full height of the workspace block when expanded;
+   shrinks to a 12px nub when collapsed. */
+.workspace::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 14px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--spine);
+  border-radius: 2px;
+  opacity: 0.85;
+  transition: bottom 220ms cubic-bezier(0.32, 0.72, 0, 1), opacity 220ms;
+}
+.workspace.collapsed::before {
+  bottom: calc(100% - 26px);
+  opacity: 0.6;
+}
+
+/* Header row — chevron, workspace name, count chip */
+.workspace-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 14px 6px 18px;
+  cursor: pointer;
+  user-select: none;
+  border-radius: 0 6px 6px 0;
+  transition: background 120ms;
+}
+.workspace-header:hover { background: var(--bg-hover); }
+
+.workspace-header .chev {
+  display: inline-block;
+  width: 8px;
+  font-size: 9px;
+  color: var(--text-muted);
+  transition: transform 180ms ease;
+  transform: rotate(0deg);
+}
+.workspace.collapsed .workspace-header .chev { transform: rotate(-90deg); }
+
+.workspace-header .name {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.workspace-header .count {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+}
+
+/* Body — projects + sessions */
+.workspace-body {
+  padding: 2px 0 8px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  /* Smooth height transition is faked via max-height for the demo;
+     real impl uses a Zustand-driven conditional render. */
+  max-height: 1000px;
+  overflow: hidden;
+  transition: max-height 260ms ease, opacity 180ms;
+  opacity: 1;
+}
+.workspace.collapsed .workspace-body {
+  max-height: 0;
+  opacity: 0;
+  padding-bottom: 0;
+}
+
+/* ─── Project row ────────────────────────────────────────────── */
+.project {
+  margin: 4px 0 2px 0;
+}
+.project-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  user-select: none;
+  margin-right: 8px;
+}
+.project-header:hover { background: var(--bg-hover); }
+
+.project-header .pchev {
+  font-size: 9px;
+  color: var(--text-muted);
+  width: 10px;
+  display: inline-block;
+  transition: transform 180ms ease;
+}
+.project.collapsed .project-header .pchev { transform: rotate(-90deg); }
+
+.project-header .pname {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-header .pname b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.project-header .ptag {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.project-body {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 4px;
+  max-height: 600px;
+  overflow: hidden;
+  transition: max-height 220ms ease;
+}
+.project.collapsed .project-body { max-height: 0; }
+
+/* ─── Session (chat) row ─────────────────────────────────────── */
+.session {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px 5px 10px;
+  margin-right: 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  transition: background 100ms, color 100ms;
+  border-left: 2px solid transparent;
+  margin-left: -2px;
+}
+.session:hover { background: var(--bg-hover); color: var(--text-primary); }
+.session.active {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  border-left-color: var(--accent);
+}
+.session .stitle { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session .smeta {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.session.unread::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+.session.unread .smeta { display: none; }
+
+/* ─── Ungrouped pseudo-workspace ─────────────────────────────── */
+.workspace.ungrouped::before {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--text-muted) 0 4px,
+    transparent 4px 8px
+  );
+  opacity: 0.35;
+}
+.workspace.ungrouped .workspace-header .name {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* ─── Drag affordance (showcased on .dragging-over) ──────────── */
+.workspace.drag-target .workspace-header {
+  background: var(--accent-subtle);
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+/* ─── Color spine palette modifiers ──────────────────────────── */
+.workspace.c1 { --spine: var(--workspace-color-1); }
+.workspace.c2 { --spine: var(--workspace-color-2); }
+.workspace.c3 { --spine: var(--workspace-color-3); }
+.workspace.c4 { --spine: var(--workspace-color-4); }
+.workspace.c5 { --spine: var(--workspace-color-5); }
+.workspace.c6 { --spine: var(--workspace-color-6); }
+
+/* ─── Footer status strip ────────────────────────────────────── */
+.footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.theme-translucent .footer { background: rgba(0, 0, 0, 0.20); }
+.footer .dot {
+  display: inline-block;
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 6px;
+  box-shadow: 0 0 0 0 var(--accent);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-subtle); }
+  50% { box-shadow: 0 0 0 4px transparent; }
+}
+
+/* ─── Right-pane preview (just to ground the demo) ───────────── */
+.preview {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+.preview .annot {
+  max-width: 480px;
+  padding: 24px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 10px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-secondary);
+  line-height: 1.7;
+  background: var(--bg-secondary);
+}
+.preview .annot h3 {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+.preview .annot ul { padding-left: 18px; margin-top: 8px; }
+.preview .annot li { margin: 4px 0; }
+.preview .annot code {
+  background: var(--bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10.5px;
+}
+
+/* ─── Page-load reveal: stagger workspace entries ────────────── */
+@keyframes drift-in {
+  0%   { opacity: 0; transform: translateX(-6px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+.workspace { animation: drift-in 460ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.workspace:nth-child(1) { animation-delay: 60ms; }
+.workspace:nth-child(2) { animation-delay: 130ms; }
+.workspace:nth-child(3) { animation-delay: 200ms; }
+.workspace:nth-child(4) { animation-delay: 270ms; }
+
+</style>
+</head>
+<body class="theme-dark">
+
+<div class="theme-rail">
+  <button class="active" data-theme="dark">Dark</button>
+  <button data-theme="light">Light</button>
+  <button data-theme="translucent">Translucent</button>
+</div>
+
+<div class="stage">
+  <aside class="sidebar">
+
+    <div class="masthead">
+      <div class="title"><em>Switchboard</em>&nbsp;· Sidebar</div>
+      <button class="add-btn" title="New project">+</button>
+    </div>
+
+    <div class="filter">
+      <span class="glyph">⌕</span>
+      <input type="text" placeholder="filter chats…" />
+      <span class="kbd">⌘ /</span>
+    </div>
+
+    <div class="workspaces">
+
+      <!-- WORKSPACE: Work (expanded) -->
+      <section class="workspace c5">
+        <header class="workspace-header">
+          <span class="chev">▾</span>
+          <span class="name">Work</span>
+          <span class="count">8 · 41</span>
+        </header>
+        <div class="workspace-body">
+
+          <div class="project">
+            <header class="project-header">
+              <span class="pchev">▾</span>
+              <span class="pname">~/code/<b>switchboard</b></span>
+              <span class="ptag">main</span>
+            </header>
+            <div class="project-body">
+              <div class="session active">
+                <span class="stitle">Workspace sidebar overhaul</span>
+                <span class="smeta">2m</span>
+              </div>
+              <div class="session unread">
+                <span class="stitle">Fix opencode acp adapter image input</span>
+              </div>
+              <div class="session">
+                <span class="stitle">Plan-mode policy regression triage</span>
+                <span class="smeta">14m</span>
+              </div>
+              <div class="session">
+                <span class="stitle">Codex stream-completed event audit</span>
+                <span class="smeta">1h</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="project collapsed">
+            <header class="project-header">
+              <span class="pchev">▾</span>
+              <span class="pname">~/code/<b>switchboard-mobile</b></span>
+              <span class="ptag">react-native</span>
+            </header>
+            <div class="project-body">
+              <div class="session"><span class="stitle">iOS keyboard avoiding view bug</span><span class="smeta">3d</span></div>
+            </div>
+          </div>
+
+          <div class="project">
+            <header class="project-header">
+              <span class="pchev">▾</span>
+              <span class="pname">~/work/<b>internal-tools</b></span>
+              <span class="ptag">deno</span>
+            </header>
+            <div class="project-body">
+              <div class="session">
+                <span class="stitle">Telemetry pipeline rewrite</span>
+                <span class="smeta">yest</span>
+              </div>
+              <div class="session">
+                <span class="stitle">Auth proxy rate-limit tuning</span>
+                <span class="smeta">2d</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- WORKSPACE: Personal (color 3, collapsed for contrast) -->
+      <section class="workspace c3 collapsed">
+        <header class="workspace-header">
+          <span class="chev">▾</span>
+          <span class="name">Personal</span>
+          <span class="count">3 · 12</span>
+        </header>
+        <div class="workspace-body">
+          <div class="project">
+            <header class="project-header">
+              <span class="pchev">▾</span>
+              <span class="pname">~/projects/<b>blog</b></span>
+              <span class="ptag">astro</span>
+            </header>
+            <div class="project-body">
+              <div class="session"><span class="stitle">Draft: a year of agents</span><span class="smeta">5d</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- WORKSPACE: Open Source (color 1, expanded, drag-target demo) -->
+      <section class="workspace c1 drag-target">
+        <header class="workspace-header">
+          <span class="chev">▾</span>
+          <span class="name">Open Source</span>
+          <span class="count">2 · 6</span>
+        </header>
+        <div class="workspace-body">
+          <div class="project">
+            <header class="project-header">
+              <span class="pchev">▾</span>
+              <span class="pname">~/oss/<b>codex-fork</b></span>
+              <span class="ptag">tracking</span>
+            </header>
+            <div class="project-body">
+              <div class="session">
+                <span class="stitle">Patch: stream timeout under cellular</span>
+                <span class="smeta">9d</span>
+              </div>
+              <div class="session">
+                <span class="stitle">Upstream maintainer review notes</span>
+                <span class="smeta">2w</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- UNGROUPED — typographic & visually demoted on purpose -->
+      <section class="workspace ungrouped">
+        <header class="workspace-header">
+          <span class="chev">▾</span>
+          <span class="name">Ungrouped</span>
+          <span class="count">1 · 2</span>
+        </header>
+        <div class="workspace-body">
+          <div class="project">
+            <header class="project-header">
+              <span class="pchev">▾</span>
+              <span class="pname">~/Desktop/<b>scratch</b></span>
+            </header>
+            <div class="project-body">
+              <div class="session"><span class="stitle">Quick repro: drag-drop file regression</span><span class="smeta">just now</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <div class="footer">
+      <span><span class="dot"></span>idle</span>
+      <span>14 chats</span>
+    </div>
+
+  </aside>
+
+  <main class="preview">
+    <div class="annot">
+      <h3>Workspace sidebar</h3>
+      <strong style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">Aesthetic notes</strong>
+      <ul>
+        <li>Fonts match the existing app — system sans for chrome, JetBrains Mono only where the app already uses it (project paths, count chips, session timestamps).</li>
+        <li>Workspace names: uppercase tracked sans, weight 600 — sits as a header tier above project rows without introducing a new typeface.</li>
+        <li>Each workspace owns a 3px color spine (<code>--workspace-color-1..6</code>) that runs the full height of the expanded body. Collapsed workspaces shrink it to a 12px nub — the rail visibly retracts.</li>
+        <li>"Ungrouped" gets a dotted spine and muted tracked-caps name — it's a holding bay, not a peer.</li>
+        <li>Drag-target workspaces (<code>.drag-target</code> on "Open Source") get an <code>--accent-subtle</code> wash + dashed outline.</li>
+        <li>Filter input lives between masthead and the workspace stack. <code>⌘/</code> kbd hint mirrors xterm <code>⌘F</code>.</li>
+        <li>Three theme palettes; workspace colors are <em>retuned per theme</em> for legibility (a saturated red on translucent looks washed out without a brighter token).</li>
+      </ul>
+    </div>
+  </main>
+</div>
+
+<script>
+  // Theme switcher
+  const buttons = document.querySelectorAll('.theme-rail button');
+  buttons.forEach(b => b.addEventListener('click', () => {
+    buttons.forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    document.body.className = 'theme-' + b.dataset.theme;
+  }));
+
+  // Toggle workspace collapse on header click
+  document.querySelectorAll('.workspace-header').forEach(h => {
+    h.addEventListener('click', () => {
+      h.parentElement.classList.toggle('collapsed');
+    });
+  });
+
+  // Toggle project collapse on header click
+  document.querySelectorAll('.project-header').forEach(h => {
+    h.addEventListener('click', (e) => {
+      e.stopPropagation();
+      h.parentElement.classList.toggle('collapsed');
+    });
+  });
+</script>
+
+</body>
+</html>

@@ -173,6 +173,24 @@ const api = {
     quitAndInstall: () => {
       ipcRenderer.send('app:quit-and-install')
     },
+
+    // ─── Workspaces (sidebar grouping above projects) ──────────
+    workspaces: {
+      list: (): Promise<import('@shared/types').Workspace[]> =>
+        ipcRenderer.invoke(AppChannels.WORKSPACE_LIST),
+      create: (input: { name: string; color?: string | null }): Promise<import('@shared/types').Workspace> =>
+        ipcRenderer.invoke(AppChannels.WORKSPACE_CREATE, input),
+      rename: (id: string, name: string) =>
+        ipcRenderer.invoke(AppChannels.WORKSPACE_RENAME, id, name),
+      recolor: (id: string, color: string | null) =>
+        ipcRenderer.invoke(AppChannels.WORKSPACE_RECOLOR, id, color),
+      delete: (id: string) =>
+        ipcRenderer.invoke(AppChannels.WORKSPACE_DELETE, id),
+      reorder: (ids: string[]) =>
+        ipcRenderer.invoke(AppChannels.WORKSPACE_REORDER, ids),
+    },
+    assignProjectWorkspace: (projectPath: string, workspaceId: string | null) =>
+      ipcRenderer.invoke(AppChannels.ASSIGN_PROJECT_WORKSPACE, projectPath, workspaceId),
   },
 
   settings: {

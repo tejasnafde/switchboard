@@ -40,6 +40,14 @@ export const AppChannels = {
   RELAUNCH: 'app:relaunch',
   /** main → renderer push: status changes from electron-updater. */
   UPDATE_STATUS: 'app:update-status',
+  // Workspaces (sidebar outer grouping above projects)
+  WORKSPACE_LIST: 'app:workspace-list',
+  WORKSPACE_CREATE: 'app:workspace-create',
+  WORKSPACE_RENAME: 'app:workspace-rename',
+  WORKSPACE_RECOLOR: 'app:workspace-recolor',
+  WORKSPACE_DELETE: 'app:workspace-delete',
+  WORKSPACE_REORDER: 'app:workspace-reorder',
+  ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
 } as const
 
 export const AgentChannels = {
