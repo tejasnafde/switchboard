@@ -26,6 +26,7 @@ export type {
   RuntimeStatusEvent,
   RuntimeSessionEvent,
   RuntimeContextWindowEvent,
+  RuntimeModelVariantsEvent,
   RuntimePlanProposedEvent,
   RuntimeQuestionAskedEvent,
   RuntimeQuestionAnsweredEvent,

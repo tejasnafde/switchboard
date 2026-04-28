@@ -27,6 +27,20 @@ interface AgentSession {
    * turn/start. Claude doesn't surface this as a UI control.
    */
   reasoningEffort?: ReasoningEffort
+  /**
+   * Cumulative session cost in USD reported by the agent. ACP-backed
+   * adapters populate this from `usage_update.cost.amount`; other adapters
+   * leave it undefined. StatusBar shows it next to the context-window count.
+   */
+  costUsd?: number
+  /**
+   * Variants advertised by the agent for the currently selected model
+   * (e.g. 'low' / 'medium' / 'high' / 'max'). Empty/undefined for models
+   * without variants. The renderer pairs this with `currentVariant` to
+   * render a thinking-budget chip group next to the model picker.
+   */
+  availableVariants?: string[]
+  currentVariant?: string
 }
 
 interface AgentStore {
@@ -56,6 +70,9 @@ interface AgentStore {
   setRuntimeMode: (sessionId: string, mode: RuntimeMode) => void
   setModel: (sessionId: string, model: string) => void
   setReasoningEffort: (sessionId: string, effort: ReasoningEffort) => void
+  setCostUsd: (sessionId: string, costUsd: number) => void
+  setVariants: (sessionId: string, available: string[], current: string) => void
+  setCurrentVariant: (sessionId: string, variant: string) => void
   /**
    * Switch the agent backend (claude-code / codex / opencode) for a
    * session. Required so consumers like StatusBar — which read from the
@@ -203,6 +220,29 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === sessionId ? { ...s, reasoningEffort: effort } : s
+      ),
+    })),
+
+  setCostUsd: (sessionId, costUsd) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, costUsd } : s
+      ),
+    })),
+
+  setVariants: (sessionId, available, current) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId
+          ? { ...s, availableVariants: available, currentVariant: current }
+          : s
+      ),
+    })),
+
+  setCurrentVariant: (sessionId, variant) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, currentVariant: variant } : s
       ),
     })),
 

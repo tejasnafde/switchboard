@@ -318,6 +318,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </div>
               </SettingsSection>
 
+              <SettingsSection title="OpenCode — Adapter">
+                <OpencodeAcpToggle />
+              </SettingsSection>
+
               <SettingsSection title="OpenCode — API Keys">
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: 1.6 }}>
                   Keys are stored in Switchboard's settings DB and injected into OpenCode's spawn env
@@ -966,6 +970,54 @@ function UpdateCheckRow() {
           xattr -dr com.apple.quarantine /Applications/Switchboard.app
         </code>
         ). On Windows, click "More info → Run anyway" the first time only.
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Toggle between the new ACP-based OpenCode adapter (default) and the
+ * legacy shell-out adapter that spawns a fresh `opencode run` subprocess
+ * per turn. The flag takes effect on the next session start; in-flight
+ * sessions keep using whichever adapter they were created with.
+ */
+function OpencodeAcpToggle() {
+  // Setting key parses as boolean: stored 'true' / 'false'. Default true.
+  const [useAcp, setUseAcp] = useState(true)
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    window.api.settings.get('opencode.useAcpAdapter').then((v: string | null) => {
+      if (v === 'false' || v === '0') setUseAcp(false)
+      setLoaded(true)
+    }).catch(() => setLoaded(true))
+  }, [])
+
+  const toggle = useCallback(async (next: boolean) => {
+    setUseAcp(next)
+    try {
+      await window.api.settings.set('opencode.useAcpAdapter', next ? 'true' : 'false')
+    } catch { /* ignore */ }
+  }, [])
+
+  if (!loaded) return null
+
+  return (
+    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={useAcp}
+          onChange={(e) => toggle(e.target.checked)}
+        />
+        <span>Use ACP adapter (recommended)</span>
+      </label>
+      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.6, paddingLeft: '22px' }}>
+        Boots a single long-lived <code style={{ fontFamily: 'var(--font-mono)' }}>opencode acp</code> process per
+        chat (vs. a fresh subprocess per turn). Live tool progress, real plan mode,
+        approval prompts, image input, model variants, and session cost. Disable to
+        fall back to the legacy <code style={{ fontFamily: 'var(--font-mono)' }}>opencode run</code> adapter.
+        Takes effect on the next session start.
       </div>
     </div>
   )

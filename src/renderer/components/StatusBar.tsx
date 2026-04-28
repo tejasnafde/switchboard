@@ -81,6 +81,18 @@ export function StatusBar() {
 
       <span style={{ flex: 1 }} />
 
+      {/* Cumulative session cost (ACP adapters only — currently OpenCode).
+          Hidden when zero or undefined so Claude/Codex sessions stay clean. */}
+      {typeof session?.costUsd === 'number' && session.costUsd > 0 && (
+        <span title="Cumulative session cost reported by the agent">
+          ${session.costUsd < 0.01 ? session.costUsd.toFixed(4) : session.costUsd.toFixed(3)}
+        </span>
+      )}
+
+      {typeof session?.costUsd === 'number' && session.costUsd > 0 && terminalPaneCount > 0 && (
+        <span style={{ opacity: 0.4 }}>·</span>
+      )}
+
       {/* Terminal count */}
       {terminalPaneCount > 0 && (
         <span title="Terminal panes in the active session">

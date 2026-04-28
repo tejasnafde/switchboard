@@ -254,6 +254,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             usedTokens: event.usedTokens,
             maxTokens: event.maxTokens ?? null,
           })
+          // ACP adapters (currently OpenCode) also forward cumulative cost
+          // here. Push it onto the session so StatusBar can display it.
+          if (typeof event.costUsd === 'number') {
+            useAgentStore.getState().setCostUsd(tid, event.costUsd)
+          }
+          break
+        }
+        case 'model.variants': {
+          // Agent-reported variant set for the currently selected model
+          // (OpenCode ACP). Drives the chip group next to the model picker.
+          useAgentStore.getState().setVariants(tid, event.availableVariants, event.currentVariant)
           break
         }
         case 'plan.proposed': {

@@ -37,6 +37,7 @@ export type RuntimeEvent =
   | RuntimeStatusEvent
   | RuntimeSessionEvent
   | RuntimeContextWindowEvent
+  | RuntimeModelVariantsEvent
   | RuntimePlanProposedEvent
   | RuntimeQuestionAskedEvent
   | RuntimeQuestionAnsweredEvent
@@ -125,6 +126,25 @@ export interface RuntimeContextWindowEvent {
   threadId: string
   usedTokens: number
   maxTokens: number | null
+  /** Cumulative session cost in USD, when the agent reports it. ACP's
+   * `usage_update` carries this; legacy adapters omit it. */
+  costUsd?: number
+}
+
+/**
+ * Emitted when the agent reports an updated set of model variants for the
+ * currently selected model (ACP's `_meta.opencode.availableVariants`).
+ * Variants like 'low' / 'medium' / 'high' / 'max' map to thinking-budget
+ * tiers — not all models support them, hence the dynamic shape.
+ */
+export interface RuntimeModelVariantsEvent {
+  type: 'model.variants'
+  threadId: string
+  modelId: string
+  /** Empty array when the model has no variants. */
+  availableVariants: string[]
+  /** The variant currently in effect (empty string if base model). */
+  currentVariant: string
 }
 
 /** Agent exited plan mode with a proposed plan (markdown) */
