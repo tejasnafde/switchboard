@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard — Workspaces</title>
+<link rel="stylesheet" href="../_shared/theme.css" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  .stage { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 60px; }
+
+  .sidebar {
+    width: 420px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+  }
+
+  .sb-head {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    font-size: 11px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.7px;
+    font-weight: 600;
+  }
+  .sb-head .glyph { color: var(--text-secondary); }
+
+  .sb-filter {
+    margin: 10px 14px 6px;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    transition: border-color 200ms;
+  }
+  .sb-filter.focused { border-color: var(--accent); }
+  .sb-filter .gx { color: var(--text-muted); font-size: 13px; }
+  .sb-filter .qry {
+    flex: 1; color: var(--text-primary); font-family: var(--font-sans);
+    font-size: 12.5px; min-height: 14px;
+  }
+  .sb-filter .caret {
+    width: 1px; height: 13px; background: var(--accent);
+    margin-left: 1px; opacity: 0;
+  }
+
+  .sb-body { padding: 6px 0 14px; min-height: 440px; }
+
+  /* Workspace section */
+  .ws {
+    position: relative;
+    margin: 4px 14px;
+    border-radius: 6px;
+    padding: 4px 0 6px 14px;
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  .ws::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 6px; bottom: 6px;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--ws-color, var(--text-muted));
+    transition: bottom 350ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .ws.collapsed::before { bottom: calc(100% - 28px); }
+  .ws.ungrouped::before { background: transparent; border-left: 2px dotted var(--border-strong); width: 0; left: 1px; }
+
+  .ws-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 6px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+    cursor: default;
+  }
+  .ws-head .chev { font-size: 10px; color: var(--text-muted); transition: transform 250ms; }
+  .ws.collapsed .ws-head .chev { transform: rotate(-90deg); }
+  .ws-head .name { color: var(--text-primary); font-weight: 600; letter-spacing: 0.04em; }
+  .ws.ungrouped .ws-head .name { color: var(--text-muted); font-weight: 500; }
+  .ws-head .count {
+    margin-left: auto;
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-muted); letter-spacing: 0;
+    text-transform: none;
+  }
+
+  .ws-body {
+    overflow: hidden;
+    transition: max-height 350ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 250ms;
+    max-height: 400px;
+  }
+  .ws.collapsed .ws-body { max-height: 0; opacity: 0; }
+
+  .proj {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px 5px 10px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    border-radius: 4px;
+    transition: background 180ms, opacity 220ms;
+  }
+  .proj .pchev { color: var(--text-muted); font-size: 9px; width: 8px; }
+  .proj .pname { color: var(--text-primary); }
+  .proj.dim { opacity: 0.18; }
+
+  /* Session row beneath project (only shown when filter expands) */
+  .sess {
+    margin-left: 26px;
+    padding: 4px 8px;
+    color: var(--text-secondary);
+    font-size: 11.5px;
+    border-radius: 4px;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: max-height 250ms, opacity 200ms, padding 200ms;
+  }
+  .sess.show { max-height: 26px; opacity: 1; }
+  .sess mark {
+    background: rgba(138, 180, 255, 0.22);
+    color: var(--accent);
+    padding: 0 2px; border-radius: 2px;
+  }
+
+  .label {
+    position: absolute;
+    bottom: -34px; left: 0;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+    opacity: 0;
+  }
+  .sidebar { position: relative; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="workspaces" data-start="0" data-duration="11" data-width="1280" data-height="720">
+<div class="stage">
+  <div class="sidebar" id="sb">
+    <div class="sb-head">
+      <span class="glyph">▾</span>
+      <span>Switchboard</span>
+    </div>
+
+    <div class="sb-filter" id="filter">
+      <span class="gx">⌕</span>
+      <span class="qry" id="qry"></span>
+      <span class="caret" id="caret"></span>
+    </div>
+
+    <div class="sb-body">
+      <!-- Workspace: Work -->
+      <section class="ws" id="ws-work" style="--ws-color: var(--accent);">
+        <div class="ws-head">
+          <span class="chev">▾</span>
+          <span class="name">Work</span>
+          <span class="count">3</span>
+        </div>
+        <div class="ws-body">
+          <div class="proj" id="p-api">
+            <span class="pchev">▸</span>
+            <span class="pname">~/code/api-gateway</span>
+          </div>
+          <div class="sess" id="s-api"><mark>fix</mark> auth header bug</div>
+          <div class="proj" id="p-web">
+            <span class="pchev">▸</span>
+            <span class="pname">~/code/web-dashboard</span>
+          </div>
+          <div class="sess" id="s-web">login redirect <mark>bug</mark></div>
+          <div class="proj" id="p-svc">
+            <span class="pchev">▸</span>
+            <span class="pname">~/code/billing-svc</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Workspace: Personal -->
+      <section class="ws" id="ws-personal" style="--ws-color: #d8915d;">
+        <div class="ws-head">
+          <span class="chev">▾</span>
+          <span class="name">Personal</span>
+          <span class="count">2</span>
+        </div>
+        <div class="ws-body">
+          <div class="proj" id="p-blog">
+            <span class="pchev">▸</span>
+            <span class="pname">~/projects/blog</span>
+          </div>
+          <div class="proj" id="p-photos">
+            <span class="pchev">▸</span>
+            <span class="pname">~/projects/photos-cli</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Ungrouped -->
+      <section class="ws ungrouped" id="ws-ungrouped">
+        <div class="ws-head">
+          <span class="chev">▾</span>
+          <span class="name">Ungrouped</span>
+          <span class="count">1</span>
+        </div>
+        <div class="ws-body">
+          <div class="proj" id="p-scratch">
+            <span class="pchev">▸</span>
+            <span class="pname">~/Desktop/scratch</span>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="label" id="caption" data-layout-allow-overflow>filter chats — title-only, debounced 100ms</div>
+  </div>
+</div>
+</div>
+<script>
+  window.__timelines = window.__timelines || {};
+  const tl = gsap.timeline({ paused: true });
+
+  // 0.0 — sidebar slides in
+  tl.from("#sb", { y: 24, opacity: 0, duration: 0.7, ease: "power3.out" }, 0.0);
+
+  // 0.6–1.6 — workspaces stagger in
+  tl.to("#ws-work",       { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 0.7);
+  tl.to("#ws-personal",   { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 1.0);
+  tl.to("#ws-ungrouped",  { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, 1.3);
+
+  // 2.4 — collapse Personal to demonstrate
+  tl.add(() => document.getElementById("ws-personal").classList.add("collapsed"), 2.4);
+  // 3.4 — re-expand
+  tl.add(() => document.getElementById("ws-personal").classList.remove("collapsed"), 3.4);
+
+  // 4.0 — focus filter, type "bug"
+  tl.add(() => document.getElementById("filter").classList.add("focused"), 4.0);
+  tl.to("#caret", { opacity: 1, duration: 0.05, repeat: 8, yoyo: true, ease: "steps(1)" }, 4.0);
+
+  const word = "bug";
+  word.split("").forEach((ch, i) => {
+    tl.add(() => { document.getElementById("qry").textContent += ch; }, 4.2 + i * 0.18);
+  });
+
+  // 5.0 — non-matching projects dim
+  tl.add(() => {
+    ["p-svc", "p-blog", "p-photos", "p-scratch"].forEach((id) => {
+      document.getElementById(id).classList.add("dim");
+    });
+    document.getElementById("ws-ungrouped").style.opacity = 0.25;
+    document.getElementById("ws-personal").style.opacity = 0.25;
+  }, 5.0);
+
+  // 5.3 — reveal matching session rows
+  tl.add(() => document.getElementById("s-api").classList.add("show"), 5.3);
+  tl.add(() => document.getElementById("s-web").classList.add("show"), 5.45);
+
+  // 6.4 — show caption
+  tl.to("#caption", { opacity: 1, duration: 0.4 }, 6.2);
+
+  // 8.6 — clear filter
+  tl.add(() => {
+    document.getElementById("qry").textContent = "";
+    document.getElementById("filter").classList.remove("focused");
+    ["p-svc", "p-blog", "p-photos", "p-scratch"].forEach((id) => {
+      document.getElementById(id).classList.remove("dim");
+    });
+    document.getElementById("s-api").classList.remove("show");
+    document.getElementById("s-web").classList.remove("show");
+    document.getElementById("ws-ungrouped").style.opacity = 1;
+    document.getElementById("ws-personal").style.opacity = 1;
+  }, 8.6);
+
+  tl.to("#caption", { opacity: 0, duration: 0.4 }, 8.6);
+
+  // 9.4 — settle
+  tl.to("#sb", { scale: 1, duration: 1.2 }, 9.4);
+
+  window.__timelines["workspaces"] = tl;
+</script>
+</body>
+</html>

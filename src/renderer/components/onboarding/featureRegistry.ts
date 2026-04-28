@@ -40,7 +40,7 @@ export type TryItAction =
  * Bump when the tour list changes meaningfully. Auto-open fires on the
  * next launch for any user whose `tour.lastSeenVersion` is older.
  */
-export const TOUR_VERSION = '2026-04-28'
+export const TOUR_VERSION = '2026-04-29'
 
 export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   {
@@ -48,6 +48,12 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     title: 'Welcome to Switchboard',
     description:
       'Terminals, AI agents, and project context in one window. Add a folder from the sidebar to get started — everything else flows from there.',
+  },
+  {
+    id: 'workspaces',
+    title: 'Sidebar workspaces',
+    description:
+      'Group projects under named, color-tagged workspaces — Work, Personal, side quests. Filter the whole tree by chat title with the new search input. Collapse state persists across launches.',
   },
   {
     id: 'workspace-config',
