@@ -292,6 +292,7 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
                 isActive={visible && isActiveWindow}
                 cwd={pane.cwd}
                 command={pane.command}
+                wait_for={pane.wait_for}
                 stale={pane.stale}
                 onClose={() => handleClosePane(pid)}
                 onFocus={() => handleSwitchPane(pid)}

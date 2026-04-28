@@ -42,6 +42,23 @@ export function useTerminalLifecycle() {
     spawnTerminalsForSession(activeSessionId, session.projectPath)
   }, [activeSessionId])
 
+  // Watch for workspace.yaml changes to hot-reload
+  useEffect(() => {
+    if (!window.api.app.onWorkspaceChanged) return
+    const cleanup = window.api.app.onWorkspaceChanged((projectPath) => {
+      const activeId = useAgentStore.getState().activeSessionId
+      if (!activeId) return
+      
+      const session = useAgentStore.getState().sessions.find((s) => s.id === activeId)
+      if (session && session.projectPath === projectPath) {
+        // Clear layout and respawn from new config
+        useTerminalStore.getState().clearSessionLayout(activeId)
+        spawnTerminalsForSession(activeId, projectPath, true)
+      }
+    })
+    return cleanup
+  }, [])
+
   // Persist layouts every 30s (so relaunch restores state)
   useEffect(() => {
     const interval = setInterval(() => {
@@ -75,24 +92,26 @@ export function useTerminalLifecycle() {
 
 // ─── Hydration helpers ──────────────────────────────────────────────
 
-interface SavedPane { label?: string; cwd?: string; command?: string }
+interface SavedPane { label?: string; cwd?: string; command?: string; wait_for?: string }
 interface SavedWindow { panes?: SavedPane[] }
 interface SavedRow { windows?: SavedWindow[]; panes?: SavedPane[] /* legacy */ }
 
-async function spawnTerminalsForSession(sessionId: string, projectPath?: string) {
+async function spawnTerminalsForSession(sessionId: string, projectPath?: string, forceWorkspaceConfig = false) {
   const store = useTerminalStore.getState()
 
   // 1. Try SQLite
-  try {
-    const layoutJson = await window.api.app.getSessionLayout(sessionId)
-    if (layoutJson) {
-      const saved = JSON.parse(layoutJson) as { rows?: SavedRow[] }
-      if (saved.rows && Array.isArray(saved.rows) && saved.rows.length > 0) {
-        restoreFromSaved(sessionId, saved.rows, projectPath)
-        return
+  if (!forceWorkspaceConfig) {
+    try {
+      const layoutJson = await window.api.app.getSessionLayout(sessionId)
+      if (layoutJson) {
+        const saved = JSON.parse(layoutJson) as { rows?: SavedRow[] }
+        if (saved.rows && Array.isArray(saved.rows) && saved.rows.length > 0) {
+          restoreFromSaved(sessionId, saved.rows, projectPath)
+          return
+        }
       }
-    }
-  } catch { /* fall through */ }
+    } catch { /* fall through */ }
+  }
 
   // 2. Try workspace.yaml
   if (projectPath) {
@@ -136,6 +155,7 @@ function restoreFromSaved(sessionId: string, rows: SavedRow[], projectPath?: str
         label: p.label || 'Terminal',
         cwd: resolveCwd(p.cwd, projectPath),
         command: p.command,
+        wait_for: p.wait_for,
         stale: true,
       })
 
@@ -158,6 +178,7 @@ function restoreFromSaved(sessionId: string, rows: SavedRow[], projectPath?: str
             label: panes[i].label || `Terminal ${i + 1}`,
             cwd: resolveCwd(panes[i].cwd, projectPath),
             command: panes[i].command,
+            wait_for: panes[i].wait_for,
             stale: true,
           })
         }
@@ -182,6 +203,7 @@ function spawnFromConfig(sessionId: string, config: WorkspaceConfig, projectPath
             label: p.label,
             cwd: resolveCwd(p.cwd, projectPath),
             command: p.on_start,
+            wait_for: p.wait_for,
           })
           firstWindow = false
         } else if (pi === 0) {
@@ -189,12 +211,14 @@ function spawnFromConfig(sessionId: string, config: WorkspaceConfig, projectPath
             label: p.label,
             cwd: resolveCwd(p.cwd, projectPath),
             command: p.on_start,
+            wait_for: p.wait_for,
           })
         } else {
           store.splitActiveWindow(sessionId, 'row', {
             label: p.label,
             cwd: resolveCwd(p.cwd, projectPath),
             command: p.on_start,
+            wait_for: p.wait_for,
           })
         }
       }
@@ -207,12 +231,14 @@ function spawnFromConfig(sessionId: string, config: WorkspaceConfig, projectPath
           label: t.label,
           cwd: resolveCwd(t.cwd, projectPath),
           command: t.on_start,
+          wait_for: t.wait_for,
         })
       } else {
         store.splitActiveWindow(sessionId, 'row', {
           label: t.label,
           cwd: resolveCwd(t.cwd, projectPath),
           command: t.on_start,
+          wait_for: t.wait_for,
         })
       }
     }

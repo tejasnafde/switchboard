@@ -3,6 +3,9 @@ import { join } from 'path'
 import { app } from 'electron'
 import type { IPty } from 'node-pty'
 import type { TerminalCreateOptions } from '@shared/types'
+import { createMainLogger as createLogger } from '../logger'
+
+const log = createLogger('pty')
 
 /**
  * Prepare a ZDOTDIR for zsh shells so our keybinding fixes apply without
@@ -39,6 +42,8 @@ export type PtyExitCallback = (id: string, exitCode: number, signal?: number) =>
 interface ManagedPty {
   pty: IPty
   id: string
+  waitFor?: string
+  initialCommand?: string
 }
 
 /**
@@ -131,10 +136,13 @@ export class PtyManager {
       ...(isWin ? { useConpty: true } : {}),
     })
 
-    const managed: ManagedPty = { pty: instance, id: opts.id }
+    const managed: ManagedPty = { pty: instance, id: opts.id, waitFor: opts.waitFor, initialCommand: opts.initialCommand }
     this.ptys.set(opts.id, managed)
 
-    instance.onData((data) => this.onData(opts.id, data))
+    instance.onData((data) => {
+      this.onData(opts.id, data)
+      this.checkWaitingCommands(data)
+    })
     instance.onExit(({ exitCode, signal }) => {
       this.ptys.delete(opts.id)
       this.onExit(opts.id, exitCode, signal)
@@ -142,11 +150,31 @@ export class PtyManager {
 
     // Run initial command after shell has time to initialize
     if (opts.initialCommand) {
-      setTimeout(() => {
-        if (this.ptys.has(opts.id)) {
-          instance.write(opts.initialCommand + '\n')
-        }
-      }, 500)
+      if (opts.waitFor) {
+        log.info(`terminal ${opts.id} waiting for "${opts.waitFor}" before running command...`)
+      } else {
+        setTimeout(() => {
+          if (this.ptys.has(opts.id)) {
+            instance.write(opts.initialCommand + '\n')
+          }
+        }, 500)
+      }
+    }
+  }
+
+  private checkWaitingCommands(data: string) {
+    for (const [waitingId, managed] of this.ptys.entries()) {
+      if (managed.waitFor && managed.initialCommand && data.includes(managed.waitFor)) {
+        log.info(`terminal ${waitingId} saw "${managed.waitFor}", executing deferred command...`)
+        // Clear the waitFor condition so we only execute once
+        managed.waitFor = undefined
+        // Delay slightly so the shell is fully ready just in case
+        setTimeout(() => {
+          if (this.ptys.has(waitingId)) {
+            managed.pty.write(managed.initialCommand + '\n')
+          }
+        }, 200)
+      }
     }
   }
 

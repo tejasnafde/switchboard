@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard — Workspace Config</title>
+<link rel="stylesheet" href="../_shared/theme.css" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  .stage { width: 100%; height: 100%; padding: 40px; display: flex; gap: 24px; }
+  .editor-container {
+    flex: 1; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    background: var(--bg-secondary); position: relative; display: flex; flex-direction: column;
+  }
+  .editor-header {
+    height: 40px; border-bottom: 1px solid var(--border); display: flex; align-items: center;
+    padding: 0 16px; font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary);
+    background: var(--bg-tertiary);
+  }
+  .editor-body {
+    flex: 1; padding: 20px; font-family: var(--font-mono); font-size: 15px;
+    line-height: 1.6; color: var(--text-primary);
+  }
+  .keyword { color: #ff7b72; }
+  .string { color: #a5d6ff; }
+  .comment { color: #8b949e; }
+  
+  .terminal-container {
+    flex: 1; border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    background: var(--bg-secondary); position: relative;
+  }
+  
+  .pane {
+    position: absolute; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 14px; transition: all 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    overflow: hidden; font-family: var(--font-mono); font-size: 12px;
+    color: var(--text-secondary);
+    top: 2%; height: 96%;
+  }
+  
+  .pane.left { left: 2%; width: 96%; }
+  
+  .pane .title {
+    font-size: 10.5px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.6px;
+    margin-bottom: 8px; display: flex; gap: 8px; align-items: center;
+  }
+  .pane .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+  .pane .dot.running { background: var(--success); }
+  .pane pre { margin: 0; line-height: 1.5; color: var(--text-primary); opacity: 0; }
+  
+  #yaml-typing { opacity: 0; }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="workspace" data-start="0" data-duration="10" data-width="1280" data-height="720">
+<div class="stage">
+  
+  <div class="editor-container" id="editor">
+    <div class="editor-header">.switchboard/workspace.yaml</div>
+    <div class="editor-body">
+<pre><span class="keyword">rows</span>:
+  - <span class="keyword">panes</span>:
+      - <span class="keyword">label</span>: <span class="string">"Web Server"</span>
+        <span class="keyword">on_start</span>: <span class="string">"npm run dev"</span><span id="yaml-typing">
+  - <span class="keyword">panes</span>:
+      - <span class="keyword">label</span>: <span class="string">"Database"</span>
+        <span class="keyword">on_start</span>: <span class="string">"docker compose up"</span></span></pre>
+    </div>
+  </div>
+
+  <div class="terminal-container" id="terminals">
+    <div id="p1" class="pane left">
+      <div class="title"><span class="dot running"></span>Web Server</div>
+      <pre id="t1-text">$ npm run dev
+> switchboard@0.1.0 dev
+  VITE v5.4 ready in 412 ms</pre>
+    </div>
+    
+    <div id="p2" class="pane" style="left: 51%; width: 47%; opacity: 0;">
+      <div class="title"><span class="dot running"></span>Database</div>
+      <pre id="t2-text">$ docker compose up
+[+] Running 1/1
+ ✔ Container switchboard-db Started</pre>
+    </div>
+  </div>
+  
+</div>
+</div>
+<script>
+  window.__timelines = window.__timelines || {};
+  const tl = gsap.timeline({ paused: true });
+  
+  // Initially only one pane
+  tl.from("#editor", { x: -40, opacity: 0, duration: 0.8, ease: "power3.out" }, 0.2);
+  tl.from("#terminals", { x: 40, opacity: 0, duration: 0.8, ease: "power3.out" }, 0.4);
+  tl.to("#t1-text", { opacity: 1, duration: 0.4 }, 1.2);
+  
+  // At 3s, type the new config
+  tl.to("#yaml-typing", { opacity: 1, duration: 0.01 }, 3);
+  
+  // At 4.5s, the hot reload triggers!
+  // Resize p1 to make room for p2
+  tl.to("#p1", { width: "47%", duration: 0.6, ease: "power3.inOut" }, 4.5);
+  // Reveal p2
+  tl.to("#p2", { opacity: 1, duration: 0.6, ease: "power3.inOut" }, 4.5);
+  
+  // Type p2 output
+  tl.to("#t2-text", { opacity: 1, duration: 0.4 }, 5.5);
+
+  window.__timelines["workspace"] = tl;
+</script>
+</body>
+</html>

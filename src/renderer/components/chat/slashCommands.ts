@@ -48,7 +48,7 @@ export interface SlashCommandContext {
  *   - `codex`: same as above but inserts `/<name> ` (Codex CLI also reads
  *     leading-slash commands from user input).
  */
-export type SlashCommandSource = 'switchboard' | 'claude-code' | 'codex'
+export type SlashCommandSource = 'switchboard' | 'claude-code' | 'codex' | 'opencode'
 
 export interface SlashCommand {
   /** `plan`, `sandbox`, etc. (no leading slash) */

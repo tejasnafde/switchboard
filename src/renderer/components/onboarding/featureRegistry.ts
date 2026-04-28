@@ -40,7 +40,7 @@ export type TryItAction =
  * Bump when the tour list changes meaningfully. Auto-open fires on the
  * next launch for any user whose `tour.lastSeenVersion` is older.
  */
-export const TOUR_VERSION = '2026-04-26'
+export const TOUR_VERSION = '2026-04-28'
 
 export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   {
@@ -48,6 +48,12 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     title: 'Welcome to Switchboard',
     description:
       'Terminals, AI agents, and project context in one window. Add a folder from the sidebar to get started — everything else flows from there.',
+  },
+  {
+    id: 'workspace-config',
+    title: 'Workspace Orchestration',
+    description:
+      'Drop a .switchboard/workspace.yaml into any project to declare terminals, define startup commands, and orchestrate wait-then launch chains. Live edits hot-reload the layout instantly.',
   },
   {
     id: 'slash-menu',

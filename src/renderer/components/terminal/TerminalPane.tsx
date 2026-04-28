@@ -20,6 +20,7 @@ interface TerminalPaneProps {
   isActive: boolean
   cwd?: string
   command?: string
+  wait_for?: string
   /**
    * Pane was restored from a saved layout and hasn't been manually
    * started yet. Renders a "Start terminal" overlay instead of
@@ -133,7 +134,7 @@ export const TerminalPane = memo(function TerminalPane(props: TerminalPaneProps)
       <div style={{ flex: '1 1 0%', position: 'relative', minHeight: 0 }}>
         {stale
           ? <StalePaneOverlay sessionId={props.sessionId} id={props.id} command={props.command} cwd={props.cwd} />
-          : <LivePane {...props} />}
+          : <LivePane {...props} wait_for={props.wait_for} />}
         {searchOpen && (
           <InPaneSearchBar
             onQuery={handleQuery}
@@ -149,8 +150,8 @@ export const TerminalPane = memo(function TerminalPane(props: TerminalPaneProps)
   )
 })
 
-function LivePane({ id, sessionId, cwd, command, onFocus }: TerminalPaneProps) {
-  const { containerRef } = useTerminal({ id, sessionId, cwd, initialCommand: command })
+function LivePane({ id, sessionId, cwd, command, wait_for, onFocus }: TerminalPaneProps & { wait_for?: string }) {
+  const { containerRef } = useTerminal({ id, sessionId, cwd, initialCommand: command, waitFor: wait_for })
   return (
     <div
       ref={containerRef}

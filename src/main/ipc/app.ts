@@ -1,4 +1,4 @@
-import { ipcMain, dialog, type BrowserWindow } from 'electron'
+import { ipcMain, dialog, app, type BrowserWindow } from 'electron'
 import { basename } from 'path'
 import { readFile, writeFile } from 'fs/promises'
 import { AppChannels } from '@shared/ipc-channels'
@@ -35,7 +35,7 @@ import {
   listAllThreadSessions,
 } from '../db/database'
 import { JsonlParser } from '../agent/jsonl-parser'
-import { readWorkspaceConfig, writeWorkspaceConfig } from '../workspace/workspace-store'
+import { readWorkspaceConfig, writeWorkspaceConfig, watchWorkspaceConfig } from '../workspace/workspace-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
 
 const log = createLogger('ipc:app')
@@ -278,6 +278,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
 
   // Get conversations for a project
   ipcMain.handle(AppChannels.GET_CONVERSATIONS, (_event, projectPath: string) => {
+    watchWorkspaceConfig(projectPath) // Start watching as soon as project is loaded
     return getConversationsForProject(projectPath)
   })
 
@@ -323,6 +324,12 @@ export function registerAppHandlers(window: BrowserWindow): void {
 
   ipcMain.handle(AppChannels.GET_ARCHIVED_CONVERSATIONS, () => {
     return getArchivedConversations()
+  })
+
+  ipcMain.handle(AppChannels.RELAUNCH, () => {
+    log.info('relaunching app...')
+    app.relaunch()
+    app.exit(0)
   })
 
   // Export conversation as markdown — renderer serializes, main writes.

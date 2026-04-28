@@ -11,6 +11,8 @@ export interface TerminalCreateOptions {
   env?: Record<string, string>
   /** Command to run in the terminal after shell init */
   initialCommand?: string
+  /** Wait for this string in ANY terminal's output before running initialCommand */
+  waitFor?: string
 }
 
 export interface TerminalResizePayload {
@@ -81,9 +83,8 @@ export type AgentStatus = 'idle' | 'running' | 'thinking' | 'error' | 'exited'
 export interface ProviderSkill {
   name: string
   description?: string
-  /** Hint shown after `/cmd` in the menu (e.g. "<file path>"). */
   argumentHint?: string
-  source: 'claude-code' | 'codex'
+  source: 'claude-code' | 'codex' | 'opencode'
 }
 
 export interface AgentStartOptions {

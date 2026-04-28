@@ -6,6 +6,7 @@ export interface WorkspaceTerminal {
   label: string
   cwd?: string
   on_start?: string
+  wait_for?: string
 }
 
 export interface WorkspaceRow {
@@ -26,6 +27,7 @@ function parseTerminalEntry(raw: unknown, index: number): WorkspaceTerminal | nu
     label: typeof entry.label === 'string' ? entry.label : `Terminal ${index + 1}`,
     cwd: typeof entry.cwd === 'string' ? entry.cwd : undefined,
     on_start: typeof entry.on_start === 'string' ? entry.on_start : undefined,
+    wait_for: typeof entry.wait_for === 'string' ? entry.wait_for : undefined,
   }
 }
 
@@ -103,5 +105,6 @@ function serializeTerminal(t: WorkspaceTerminal): Record<string, string> {
   const obj: Record<string, string> = { label: t.label }
   if (t.cwd) obj.cwd = t.cwd
   if (t.on_start) obj.on_start = t.on_start
+  if (t.wait_for) obj.wait_for = t.wait_for
   return obj
 }

@@ -115,6 +115,7 @@ const api = {
     detachSession: (claudeSessionId: string) =>
       ipcRenderer.invoke(AppChannels.DETACH_SESSION, claudeSessionId),
     listAncestry: () => ipcRenderer.invoke(AppChannels.LIST_ANCESTRY),
+    relaunch: () => ipcRenderer.invoke(AppChannels.RELAUNCH),
     saveMessage: (params: SaveMessageParams) =>
       ipcRenderer.invoke(AppChannels.SAVE_MESSAGE, params),
     renameConversation: (id: string, title: string) =>
@@ -141,6 +142,11 @@ const api = {
       ipcRenderer.invoke(AppChannels.GET_WORKSPACE_CONFIG, projectPath),
     saveWorkspaceConfig: (projectPath: string, yamlContent: string) =>
       ipcRenderer.invoke(AppChannels.SAVE_WORKSPACE_CONFIG, projectPath, yamlContent),
+    onWorkspaceChanged: (callback: (projectPath: string) => void) => {
+      const wrapped = (_e: any, projectPath: string) => callback(projectPath)
+      ipcRenderer.on('app:workspace-changed', wrapped)
+      return () => { ipcRenderer.removeListener('app:workspace-changed', wrapped) }
+    },
     /**
      * Manual "check for updates" trigger. Returns the most recent
      * status the main process saw (or `unsupported` in dev). Live

@@ -11,6 +11,7 @@ interface UseTerminalOptions {
   sessionId: string
   cwd?: string
   initialCommand?: string
+  waitFor?: string
 }
 
 /**
@@ -18,7 +19,7 @@ interface UseTerminalOptions {
  * The terminal persists in the registry across React re-renders and panel toggles.
  * Only destroyed when explicitly closed via the X button.
  */
-export function useTerminal({ id, sessionId, cwd, initialCommand }: UseTerminalOptions) {
+export function useTerminal({ id, sessionId, cwd, initialCommand, waitFor }: UseTerminalOptions) {
   const containerRef = useRef<HTMLDivElement>(null)
   const updatePaneStatus = useTerminalStore((s) => s.updatePaneStatus)
 
@@ -27,7 +28,7 @@ export function useTerminal({ id, sessionId, cwd, initialCommand }: UseTerminalO
     if (!container) return
 
     // Get or create terminal — idempotent, safe for StrictMode
-    getOrCreateTerminal(id, cwd, initialCommand)
+    getOrCreateTerminal(id, cwd, initialCommand, waitFor)
     attachToContainer(id, container)
 
     // Listen for PTY exit

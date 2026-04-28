@@ -634,6 +634,56 @@ export class OpencodeAdapter implements ProviderAdapter {
     })
   }
 
+  async listSkills(threadId: string): Promise<import('@shared/types').ProviderSkill[]> {
+    if (cachedPath === undefined) cachedPath = findOpencodePath()
+    if (!cachedPath) return []
+
+    const shellEnv = loadShellEnv()
+    const mergedEnv: Record<string, string> = shellEnv
+      ? { ...shellEnv, ...(process.env as Record<string, string>) }
+      : { ...(process.env as Record<string, string>) }
+    for (const key of OPENCODE_API_KEYS) {
+      try {
+        const val = getSetting(`opencode.env.${key}`)
+        if (val && val.length > 0) mergedEnv[key] = val
+      } catch { /* ignore */ }
+    }
+
+    return new Promise<import('@shared/types').ProviderSkill[]>((resolve) => {
+      const out = spawnSync(cachedPath!, ['debug', 'skill'], {
+        env: mergedEnv,
+        timeout: 10000,
+        encoding: 'utf8',
+      })
+      
+      if (out.error || out.status !== 0) {
+        log.warn(`opencode debug skill failed: ${out.error?.message ?? `status=${out.status}`}`)
+        resolve([])
+        return
+      }
+      
+      try {
+        // opencode debug skill outputs JSON array of skills
+        const skillsRaw = JSON.parse(out.stdout)
+        if (!Array.isArray(skillsRaw)) {
+          resolve([])
+          return
+        }
+        
+        const parsed: import('@shared/types').ProviderSkill[] = skillsRaw.map(s => ({
+          name: s.name,
+          description: s.description,
+          source: 'opencode'
+        }))
+        
+        resolve(parsed)
+      } catch (err: any) {
+        log.warn(`failed to parse opencode skills: ${err.message}`)
+        resolve([])
+      }
+    })
+  }
+
   async stopSession(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return

@@ -286,7 +286,7 @@ Current focus: Phase 9 (electron-builder packaging + signing + auto-update + `sw
 ### 8a — Workspace state persistence
 - [ ] On quit: save full workspace state to `~/.switchboard/state/{project-hash}.json`
 - [ ] State includes: layout dimensions, open terminals (commands, CWD), active agent sessions, sidebar collapsed state
-- [ ] On relaunch: restore state, reconnect to still-running processes if possible
+- [x] On relaunch: restore state, reconnect to still-running processes if possible
 - [ ] Handle stale state gracefully (process died while app was closed)
 
 ### 8b — Conversation persistence

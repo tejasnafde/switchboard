@@ -230,6 +230,34 @@ export const MessageBubble = memo(function MessageBubble({ message, onApproval, 
             </span>
           </div>
         )}
+
+        {/* TCC Error with Relaunch Button */}
+        {isError && message.content.includes('macOS is blocking Switchboard from reading') && (
+          <div style={{ marginTop: '8px' }}>
+            <button
+              onClick={() => window.api.app.relaunch()}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '4px 8px',
+                borderRadius: '4px',
+                border: '1px solid var(--border)',
+                background: 'var(--bg-tertiary)',
+                color: 'var(--text-primary)',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: 500,
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+              Relaunch to Apply Permissions
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Message action bar — sits BELOW the bubble so the buttons never

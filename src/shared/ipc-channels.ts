@@ -37,6 +37,7 @@ export const AppChannels = {
   DETACH_SESSION: 'app:detach-session',
   LIST_ANCESTRY: 'app:list-ancestry',
   CHECK_FOR_UPDATES: 'app:check-for-updates',
+  RELAUNCH: 'app:relaunch',
   /** main → renderer push: status changes from electron-updater. */
   UPDATE_STATUS: 'app:update-status',
 } as const

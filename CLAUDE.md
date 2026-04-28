@@ -38,7 +38,7 @@ Electron workspace that multiplexes terminals and agent chats (Claude Code + Cod
 - `canUseTool` overrides the SDK's `permissionMode: 'plan'` — we enforce plan mode explicitly via `decidePermission`
 - **macOS TCC for project paths under `~/Desktop`/`~/Documents`/`~/Downloads`**: PTYs and the embedded SDK inherit Switchboard.app's TCC grants. If the user toggles "Files and Folders" on after launching, the running process is still denied — every FS call returns `EPERM` until ⌘Q + relaunch. We mitigate two ways:
   1. `electron-builder.yml` declares `NSDesktopFolderUsageDescription` / `NSDocumentsFolderUsageDescription` / `NSDownloadsFolderUsageDescription` via `mac.extendInfo`, so first access triggers a proper consent dialog.
-  2. `src/main/path-access.ts` (`assertCwdReadable`) runs as a pre-flight in `provider-registry`'s `START_SESSION` handler. If the cwd is TCC-protected and `fs.access(R_OK)` returns `EPERM`/`EACCES`, we throw `TccAccessError` with copy that names the cause and the fix. The error surfaces in chat as a system message instead of a deep-stack SDK failure.
+  2. `src/main/path-access.ts` (`assertCwdReadable`) runs as a pre-flight in `provider-registry`'s `START_SESSION` handler. If the cwd is TCC-protected and `fs.access(R_OK)` returns `EPERM`/`EACCES`, we throw `TccAccessError` with copy that names the cause and the fix. The error surfaces in chat as a system message instead of a deep-stack SDK failure, complete with an inline "Relaunch to Apply Permissions" button.
 
 ## Architecture
 
@@ -116,7 +116,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 - Claude Code SDK integration end-to-end: streaming text, tool calls, context window metrics, interrupt
 - Codex app-server integration: basic chat + plan-mode + AskUserQuestion + image support (Phase B done)
-- **OpenCode adapter** (2026-04-26): `opencode run --format json` with NVIDIA NIM / Gemini / built-in free tier, dynamic model list via `opencode models`, shell-env probing for API keys, settings-DB key injection, placeholder + heartbeat + 3-min timeout (free-tier-aware error message) for cold-boot UX
+- **OpenCode adapter** (2026-04-26): `opencode run --format json` with NVIDIA NIM / Gemini / built-in free tier, dynamic model list via `opencode models`, shell-env probing for API keys, settings-DB key injection, placeholder + heartbeat + 3-min timeout (free-tier-aware error message) for cold-boot UX. Also wires up OpenCode's `debug skill` endpoint to provide dynamically discovered agent skills!
 - Plan mode with hard-deny + read-only allow-list
 - AskUserQuestion → QuestionCard (numbered shortcuts, auto-advance)
 - ExitPlanMode → PlanCard (markdown + Implement/Iterate)
@@ -146,7 +146,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 ## What's NOT working yet
 
 - **Cursor import** (read `state.vscdb`) — not started
-- **electron-builder packaging + auto-update** — Phase 9 (in flight). Code-signing for macOS deferred (no Apple Developer account); ad-hoc unsigned `.dmg` for personal/dev distribution + Windows `.exe` builds are the near-term target.
+- **electron-builder packaging + auto-update** — Phase 9 (in flight). Code-signing for macOS deferred (no Apple Developer account); ad-hoc unsigned `.dmg` for personal/dev distribution + Windows `.exe` builds are the near-term target. `electron-updater` integration is implemented and wired up via `main/updater.ts`.
 - **workspace.yaml hot-reload** + `on_start` wait/then orchestration — partial; runtime hydration works
 - **HyperFrames onboarding videos** (Phase D) — feasibility spike pending
 
@@ -155,7 +155,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 `ProviderAdapter.listSkills?(threadId)` is the seam:
 - **Claude adapter** captures `system/init.{slash_commands|commands}` and prefers live `query.supportedCommands()`. Cached on the active session.
 - **Codex adapter** sends JSON-RPC `skills/list`, caches result. Older builds get a graceful empty cache (logged, not retried).
-- **OpenCode** has no skill registry — preload returns `[]`.
+- **OpenCode** queries `opencode debug skill` to discover skills.
 - IPC: `ProviderChannels.LIST_SKILLS` → `provider:list-skills` (preload `window.api.provider.listSkills(threadId)`).
 - UI: `ChatInput` fetches on session start with retry-while-empty (handles late `system/init`); `mergeWithAgentSkills` keeps built-ins first, name-collisions resolve in favor of built-ins so `/clear` always means "clear chat" not whatever a skill named `clear` does. `SlashCommandMenu` renders source-grouped sections + argument-hint suffix. Agent-source selections insert `/<name> ` into the textarea (no special wire path) — the SDK / CLI parses leading slash from the prompt itself.
 

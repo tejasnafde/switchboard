@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { TerminalStatus } from '@shared/types'
+import { destroyTerminal } from '../services/terminal-registry'
 
 // ─── Types ─────────────────────────────────────────────────────────
 
@@ -14,6 +15,7 @@ export interface PaneState {
   sessionId: string
   cwd?: string
   command?: string
+  wait_for?: string
   /**
    * True when the pane was restored from a previous session's saved layout
    * and hasn't been manually started yet. TerminalPane renders a
@@ -49,6 +51,7 @@ interface PaneOptions {
   label: string
   cwd?: string
   command?: string
+  wait_for?: string
   /** Restored from saved layout — pane starts in a "stale" state awaiting user confirmation. */
   stale?: boolean
 }
@@ -82,6 +85,7 @@ function makePane(sessionId: string, opts: PaneOptions): PaneState {
     sessionId,
     cwd: opts.cwd,
     command: opts.command,
+    wait_for: opts.wait_for,
     stale: opts.stale ?? false,
   }
 }
@@ -520,6 +524,13 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   setActiveSession: (sessionId) => set({ activeSessionId: sessionId }),
 
   clearSessionLayout: (sessionId) => {
+    // Before clearing, we should kill the actual PTYs to prevent orphans
+    const paneIds = get().getAllPaneIds(sessionId)
+    for (const pid of paneIds) {
+      window.api.terminal.kill(pid)
+      destroyTerminal(pid)
+    }
+    
     set((state) => {
       const { [sessionId]: _removed, ...rest } = state.layouts
       return { layouts: rest }
