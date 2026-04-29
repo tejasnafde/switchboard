@@ -642,7 +642,10 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
                     <span className="sidebar-workspace-name">
                       {group.workspace?.name ?? 'Ungrouped'}
                     </span>
-                    <span className="sidebar-workspace-count">
+                    <span
+                      className="sidebar-workspace-count"
+                      title={`${group.projects.length} project${group.projects.length === 1 ? '' : 's'}, ${sessionTotal} thread${sessionTotal === 1 ? '' : 's'}`}
+                    >
                       {group.projects.length}{'\u00B7'}{sessionTotal}
                     </span>
                   </header>
