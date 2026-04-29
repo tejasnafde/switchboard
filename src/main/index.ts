@@ -212,7 +212,20 @@ function registerTourProtocol(): void {
   })
 }
 
+// Smoke-test entrypoint. The build pipeline boots the packaged main bundle
+// with `--smoke-test` to catch import-time failures (e.g. ERR_REQUIRE_ESM
+// from an ESM-only dep that got externalized as CJS) before we cut a tag.
+// Registered before the real whenReady handler so it fires first and
+// terminates the process before any window/DB initialization runs.
+if (process.argv.includes('--smoke-test')) {
+  app.whenReady().then(() => {
+    console.log('[smoke-test] main module loaded + app ready, exiting 0')
+    app.exit(0)
+  })
+}
+
 app.whenReady().then(() => {
+  if (process.argv.includes('--smoke-test')) return
   // Initialize database
   getDb()
   registerTourProtocol()

@@ -7,6 +7,7 @@
     "dev": "unset ELECTRON_RUN_AS_NODE && electron-vite dev",
     "prebuild": "npm run typecheck && npm test",
     "build": "electron-vite build",
+    "postbuild": "node scripts/smoke-test.mjs",
     "build:fast": "electron-vite build",
     "preview": "unset ELECTRON_RUN_AS_NODE && electron-vite preview",
     "typecheck:main": "tsc --noEmit -p tsconfig.main.json",
