@@ -171,7 +171,13 @@ export function FileTreePane(): React.ReactElement | null {
       }}
     >
       <ul style={{ listStyle: 'none', margin: 0, padding: '4px 0' }}>
+        {/*
+          Key by repoRoot so switching active session forces a fresh
+          mount — otherwise React reuses the existing DirNode subtree
+          and you keep seeing the previous project's cached entries.
+        */}
         <DirNode
+          key={repoRoot}
           repoRoot={repoRoot}
           subPath=""
           name={rootName}

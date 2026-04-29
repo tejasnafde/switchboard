@@ -329,6 +329,14 @@ export function App() {
     termSetActiveSession(activeAgentSessionId)
   }, [activeAgentSessionId, termSetActiveSession])
 
+  // Clear the file viewer when the active session changes — the viewer
+  // is global state, but the file path it points at is only meaningful
+  // inside one project's repoRoot. Without this, switching to another
+  // chat shows a stale path that ENOENTs on read.
+  useEffect(() => {
+    useLayoutStore.setState({ viewerFilePath: null, viewerLineRange: null })
+  }, [activeAgentSessionId])
+
   // Terminal lifecycle — spawn/kill PTYs on session change
   useTerminalLifecycle()
 

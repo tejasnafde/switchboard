@@ -237,13 +237,25 @@ export function captureSelection(): boolean {
     const { start, end } = root ? viewerSelectionLineRange(root) : { start: 1, end: 1 }
     const sid = useAgentStore.getState().activeSessionId
     if (!sid) return false
-    const block = formatFileViewerContext({
+    const content = formatFileViewerContext({
       path,
       startLine: start,
       endLine: end,
       content: text,
     })
-    useDraftStore.getState().appendDraft(sid, block)
+    const fileName = path.split('/').pop() ?? path
+    const range = start === end ? `${start}` : `${start}-${end}`
+    const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    useDraftStore.getState().addPill(sid, {
+      id: pillId,
+      kind: 'file',
+      label: `${fileName} (${range})`,
+      content,
+    })
+    // Notify the active ChatInput so it can insert the chip inline at the
+    // current caret position (Lexical-backed editor). Decoupled via a
+    // window event to keep this module free of Lexical/React imports.
+    window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))
     return true
   }
 
@@ -254,8 +266,16 @@ export function captureSelection(): boolean {
     if (!sid) return false
     const session = useAgentStore.getState().sessions.find((s) => s.id === sid)
     const agent = session ? agentShortLabel(session.type) : 'agent'
-    const block = formatChatMessageContext({ agent, selection: text })
-    useDraftStore.getState().appendDraft(sid, block)
+    const content = formatChatMessageContext({ agent, selection: text })
+    const preview = text.trim().split('\n')[0].slice(0, 40)
+    const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+    useDraftStore.getState().addPill(sid, {
+      id: pillId,
+      kind: 'chat-message',
+      label: `${agent}: "${preview}${preview.length === 40 ? '…' : ''}"`,
+      content,
+    })
+    window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))
     return true
   }
 
@@ -276,8 +296,16 @@ export function appendTerminalSelectionToDraft(): boolean {
   if (!found) return false
 
   const ctx = captureTerminalContext(found.sessionId, found.paneId, found.selection)
-  const block = formatTerminalContext(ctx)
-  useDraftStore.getState().appendDraft(found.sessionId, block)
+  const content = formatTerminalContext(ctx)
+  const lineCount = found.selection.split('\n').length
+  const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  useDraftStore.getState().addPill(found.sessionId, {
+    id: pillId,
+    kind: 'terminal',
+    label: `${ctx.paneLabel} (${lineCount} line${lineCount === 1 ? '' : 's'})`,
+    content,
+  })
+  window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: found.sessionId, pillId } }))
   return true
 }
 

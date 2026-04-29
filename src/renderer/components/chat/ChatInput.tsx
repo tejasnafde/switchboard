@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect, type KeyboardEvent, type ClipboardEvent, type DragEvent } from 'react'
+import { useState, useCallback, useMemo, useRef, useEffect, type DragEvent } from 'react'
 import { ContextWindowMeter, type ContextWindowUsage } from './ContextWindowMeter'
 import { useDraftStore } from '../../stores/draft-store'
 import {
@@ -18,6 +18,8 @@ import {
   type SlashCommand,
   type SlashCommandContext,
 } from './slashCommands'
+import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
+import { serializeBodyWithPills } from '../../services/chatInputBody'
 
 type RuntimeMode = 'plan' | 'sandbox' | 'full-access' | 'accept-edits'
 
@@ -62,6 +64,12 @@ const AGENTS: { value: AgentType; label: string; available: boolean }[] = [
 ]
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
+
+// Module-level constant — referential equality across renders so the
+// `pills` selector doesn't fabricate a new array when a session has
+// no pills yet. Without this, every render produced a fresh `[]` and
+// downstream memos invalidated.
+const EMPTY_PILLS: import('../../stores/draft-store').DraftPill[] = []
 
 export function ChatInput({
   sessionId,
@@ -114,9 +122,26 @@ export function ChatInput({
   const draft = useDraftStore((s) => (sessionId ? s.drafts[sessionId] ?? '' : ''))
   const setDraft = useDraftStore((s) => s.setDraft)
   const clearDraft = useDraftStore((s) => s.clearDraft)
+  // CRITICAL: select the raw map and derive `pills` via useMemo with a
+  // stable EMPTY_PILLS sentinel. The previous `?? []` selector returned a
+  // brand-new array literal on every render whenever the session had no
+  // pills, which cascaded into a new `pillsById` object → new RichChatTextarea
+  // props → Lexical OnChangePlugin re-registering → infinite update loop.
+  const pillsBySession = useDraftStore((s) => s.pillsBySession)
+  const pills = useMemo(
+    () => (sessionId ? pillsBySession[sessionId] ?? EMPTY_PILLS : EMPTY_PILLS),
+    [pillsBySession, sessionId],
+  )
+  const removePill = useDraftStore((s) => s.removePill)
+  const clearPills = useDraftStore((s) => s.clearPills)
 
-  // Local mirror so textarea stays responsive; kept in sync with store
+  // Local mirror of the body string. Lexical owns the editor state; this
+  // is the plain-text-with-pill-tokens representation that flows through
+  // draft persistence, slash detection, and Send.
   const [value, setValue] = useState(draft)
+  // Live caret offset into `value`. Updated on every editor change so we
+  // can re-detect slash triggers without dipping into the editor.
+  const [caret, setCaret] = useState<number | null>(null)
   const [images, setImages] = useState<ImageAttachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [previewImage, setPreviewImage] = useState<ImageAttachment | null>(null)
@@ -172,36 +197,66 @@ export function ChatInput({
 
   const slashRangeRef = useRef<{ start: number; end: number } | null>(null)
   const dragDepthRef = useRef(0)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const richRef = useRef<RichChatTextareaHandle>(null)
   const filePickerRef = useRef<HTMLInputElement>(null)
+  // Track which pill ids we've already inserted into the editor so the
+  // sync effect (below) doesn't double-insert when `pills` updates for
+  // unrelated reasons (e.g. removePill firing).
+  const insertedPillsRef = useRef<Set<string>>(new Set())
 
   // Sync local `value` whenever the store's draft changes (either because
-  // the user switched sessions, OR because an external action — ⌘L context
-  // bridge, slash command, "forward to" — wrote to the draft). The local
-  // mirror keeps the textarea responsive during typing, but it must re-hydrate
-  // from the store on these external writes or the new content stays
-  // invisible until the user switches sessions.
+  // the user switched sessions, OR because an external action — slash
+  // command, "forward to" — wrote to the draft). Lexical's HydrationPlugin
+  // watches `value` and reconciles the editor when it diverges from the
+  // serialized editor state.
   useEffect(() => {
     if (draft !== value) setValue(draft)
-  // `value` intentionally excluded: we only sync FROM store TO local when
-  // draft changes externally. Including value would cause a loop on typing
-  // (draft updates → effect sees draft !== value → setValue → re-render...).
+  // `value` intentionally excluded — see textarea-era comment.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, draft])
 
-  // Auto-resize the textarea on EVERY value change — including external
-  // writes (⌘L, slash commands, forward-to). Splitting this from the
-  // draft-sync effect above is critical: when draft changes externally,
-  // the sync effect schedules setValue(draft) but the textarea DOM still
-  // shows the old content during that render, so reading scrollHeight
-  // there gives the stale (smaller) height. Running resize after `value`
-  // updates means the DOM is already showing the new content.
-  useLayoutEffect(() => {
-    const t = textareaRef.current
-    if (!t) return
-    t.style.height = 'auto'
-    t.style.height = `${Math.min(t.scrollHeight, 200)}px`
-  }, [value])
+  // Map of pill id → metadata, used by the editor to render chips and by
+  // Send to expand `[[pill:id]]` tokens into wire content.
+  const pillsById = useMemo(() => {
+    const out: Record<string, typeof pills[number]> = {}
+    for (const p of pills) out[p.id] = p
+    return out
+  }, [pills])
+
+  // ⌘L pill insertion: contextBridge.captureSelection() calls
+  // addPill(sessionId, pill) and dispatches `sb-pill-added`. We listen
+  // and insert the pill at the current caret position via Lexical's
+  // INSERT_PILL_COMMAND. Going through a window event keeps contextBridge
+  // free of Lexical/React coupling.
+  useEffect(() => {
+    if (!sessionId) return
+    const handler = (ev: Event): void => {
+      const e = ev as CustomEvent<{ sessionId: string; pillId: string }>
+      if (e.detail.sessionId !== sessionId) return
+      if (insertedPillsRef.current.has(e.detail.pillId)) return
+      const pill = useDraftStore.getState().pillsBySession[sessionId]?.find((p) => p.id === e.detail.pillId)
+      if (!pill) return
+      richRef.current?.insertPill(pill)
+      insertedPillsRef.current.add(e.detail.pillId)
+    }
+    window.addEventListener('sb-pill-added', handler)
+    return () => window.removeEventListener('sb-pill-added', handler)
+  }, [sessionId])
+
+  // Pill ×-button removal: PillNode dispatches `sb-pill-remove` after
+  // detaching itself from the editor. We sync by removing the metadata
+  // from the draft-store so the chip catalog doesn't accumulate stale
+  // entries.
+  useEffect(() => {
+    if (!sessionId) return
+    const handler = (ev: Event): void => {
+      const e = ev as CustomEvent<{ id: string }>
+      removePill(sessionId, e.detail.id)
+      insertedPillsRef.current.delete(e.detail.id)
+    }
+    window.addEventListener('sb-pill-remove', handler)
+    return () => window.removeEventListener('sb-pill-remove', handler)
+  }, [sessionId, removePill])
 
 
 
@@ -228,13 +283,22 @@ export function ChatInput({
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
-    if ((!trimmed && images.length === 0) || disabled) return
-    onSend(trimmed, undefined, images.length > 0 ? images : undefined)
+    const hasPills = pills.length > 0
+    if ((!trimmed && images.length === 0 && !hasPills) || disabled) return
+    // Pills are inline `[[pill:id]]` tokens in `value`. Expand each into
+    // its full content (path marker + fenced block, terminal block, or
+    // chat-message quote) before handing off. Tokens whose pills were
+    // already removed get dropped silently.
+    const body = serializeBodyWithPills(trimmed, pillsById)
+    onSend(body, undefined, images.length > 0 ? images : undefined)
     setValue('')
-    if (sessionId) clearDraft(sessionId)
+    if (sessionId) {
+      clearDraft(sessionId)
+      if (hasPills) clearPills(sessionId)
+    }
+    insertedPillsRef.current.clear()
     setImages([])
-    if (textareaRef.current) textareaRef.current.style.height = 'auto'
-  }, [value, images, disabled, onSend, sessionId, clearDraft])
+  }, [value, pills, pillsById, images, disabled, onSend, sessionId, clearDraft, clearPills])
 
   // ─── Slash command handling ─────────────────────────────────
   const dismissSlash = useCallback(() => {
@@ -242,35 +306,61 @@ export function ChatInput({
     slashRangeRef.current = null
   }, [])
 
+  // Editor → host change pipe. RichChatTextarea calls this with the
+  // serialized plain-text-with-pill-tokens body whenever Lexical's editor
+  // state mutates. We mirror it into local `value`, persist to the draft
+  // store (per-session), and re-run slash trigger detection so the menu
+  // tracks live typing.
+  //
+  // Stable identity matters: this callback is a prop on RichChatTextarea,
+  // and unstable props would make the editor's plugins re-register every
+  // render — that's exactly what caused the original infinite-update loop.
+  const handleEditorChange = useCallback((next: string) => {
+    setValue(next)
+    if (sessionId) setDraft(sessionId, next)
+    // Caret may not have been reported yet for this change — fall back to
+    // end-of-string for slash detection. The follow-up onCaretChange will
+    // correct the trigger range if needed.
+    const cur = caret ?? next.length
+    const trigger = detectSlashTrigger(next, cur)
+    if (trigger) {
+      setSlashQuery(trigger.query)
+      setSlashActiveIdx(0)
+      slashRangeRef.current = { start: trigger.rangeStart, end: trigger.rangeEnd }
+      // Refresh agent skills the moment the user opens `/` — handles the
+      // case where `system/init` arrives after mount.
+      if (agentSkills.length === 0) fetchSkills()
+    } else if (slashQuery !== null) {
+      dismissSlash()
+    }
+  }, [sessionId, setDraft, caret, slashQuery, dismissSlash, agentSkills.length, fetchSkills])
+
+  const handleEditorCaret = useCallback((c: number | null) => {
+    setCaret(c)
+  }, [])
+
   const runSlashCommand = useCallback((cmd: SlashCommand) => {
     const range = slashRangeRef.current
-    const ta = textareaRef.current
-    if (!ta || !range) { dismissSlash(); return }
+    if (!range) { dismissSlash(); return }
 
     const source = cmd.source ?? 'switchboard'
 
     // Agent-source commands (Claude/Codex skills): don't fire a local
     // action — instead, replace the partial `/que` the user typed with
     // the canonical `/<name> ` and let them fill in any args before
-    // hitting Enter. The agent SDK/CLI parses the leading slash from the
-    // sent prompt and runs the corresponding handler.
+    // hitting Enter. The agent SDK/CLI parses the leading slash from
+    // the sent prompt and runs the corresponding handler.
     if (source !== 'switchboard') {
       const inserted = `/${cmd.name} `
-      const next = value.slice(0, range.start) + inserted + value.slice(range.end)
-      setValue(next)
-      if (sessionId) setDraft(sessionId, next)
+      richRef.current?.replaceRange(range.start, range.end, inserted)
+      // replaceRange writes through to onChange → setValue + setDraft.
       dismissSlash()
-      const caret = range.start + inserted.length
-      requestAnimationFrame(() => {
-        if (ta) { ta.focus(); ta.setSelectionRange(caret, caret) }
-      })
+      requestAnimationFrame(() => richRef.current?.focus())
       return
     }
 
     // Switchboard built-in: strip the /command text and run its action.
-    const next = value.slice(0, range.start) + value.slice(range.end)
-    setValue(next)
-    if (sessionId) setDraft(sessionId, next)
+    richRef.current?.replaceRange(range.start, range.end, '')
     dismissSlash()
 
     const ctx: SlashCommandContext = {
@@ -284,67 +374,41 @@ export function ChatInput({
     }
     cmd.run?.(ctx)
 
-    // Restore focus + caret to where /cmd used to start
-    requestAnimationFrame(() => {
-      if (ta) {
-        ta.focus()
-        ta.setSelectionRange(range.start, range.start)
-      }
-    })
-  }, [value, sessionId, setDraft, dismissSlash, onRuntimeModeChange, onClearMessages, onArchive, onShowSlashHelp, onInterrupt])
+    requestAnimationFrame(() => richRef.current?.focus())
+  }, [sessionId, dismissSlash, onRuntimeModeChange, onClearMessages, onArchive, onShowSlashHelp, onInterrupt])
 
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      // Slash menu intercepts ↑/↓/Enter/Escape/Tab when open
-      if (slashQuery !== null) {
-        const matches = filterSlashCommands(slashQuery, mergedCommands)
-        if (matches.length > 0) {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault()
-            setSlashActiveIdx((i) => (i + 1) % matches.length)
-            return
-          }
-          if (e.key === 'ArrowUp') {
-            e.preventDefault()
-            setSlashActiveIdx((i) => (i - 1 + matches.length) % matches.length)
-            return
-          }
-          if (e.key === 'Enter' || e.key === 'Tab') {
-            e.preventDefault()
-            runSlashCommand(matches[slashActiveIdx] ?? matches[0])
-            return
-          }
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault()
-          dismissSlash()
-          return
-        }
-      }
-
-      if (e.key === 'Enter' && !e.shiftKey) {
+  // Slash menu navigation. Bound at the wrapper-div level so it fires
+  // BEFORE Lexical's own Enter-handler (we preventDefault to swallow).
+  // Send-on-Enter for the editor-without-slash-menu case is handled by
+  // RichChatTextarea's `onEnter` prop instead.
+  const handleEditorKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (slashQuery === null) return
+      const matches = filterSlashCommands(slashQuery, mergedCommands)
+      if (matches.length === 0 && e.key !== 'Escape') return
+      if (e.key === 'ArrowDown') {
         e.preventDefault()
-        handleSend()
+        setSlashActiveIdx((i) => (i + 1) % Math.max(matches.length, 1))
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSlashActiveIdx((i) => (i - 1 + Math.max(matches.length, 1)) % Math.max(matches.length, 1))
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault()
+        e.stopPropagation()
+        if (matches.length > 0) runSlashCommand(matches[slashActiveIdx] ?? matches[0])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        dismissSlash()
       }
     },
-    [handleSend, slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands]
+    [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands],
   )
-
-  const handleInput = useCallback(() => {
-    const textarea = textareaRef.current
-    if (!textarea) return
-    textarea.style.height = 'auto'
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`
-  }, [])
-
-  const handlePaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(e.clipboardData.files)
-    if (files.length === 0) return
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
-    if (imageFiles.length === 0) return
-    e.preventDefault()
-    addImages(imageFiles)
-  }, [addImages])
 
   const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
     if (!e.dataTransfer.types.includes('Files')) return
@@ -374,7 +438,7 @@ export function ChatInput({
     setIsDragOver(false)
     const files = Array.from(e.dataTransfer.files)
     addImages(files)
-    textareaRef.current?.focus()
+    richRef.current?.focus()
   }, [addImages])
 
   return (
@@ -471,14 +535,20 @@ export function ChatInput({
           const files = Array.from(e.target.files ?? [])
           if (files.length > 0) addImages(files)
           if (filePickerRef.current) filePickerRef.current.value = ''
-          textareaRef.current?.focus()
+          richRef.current?.focus()
         }}
         style={{ display: 'none' }}
       />
 
-      {/* Text input */}
-      <div style={{ position: 'relative', display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
-        {/* Slash command popover — positioned above the textarea */}
+      {/* Rich text input — Lexical-backed contenteditable that renders
+          pill chips inline at the caret position (Cursor-style). The host
+          sees a plain string body with `[[pill:id]]` tokens; pillsById
+          maps tokens to chip metadata + serialized content. */}
+      <div
+        style={{ position: 'relative', display: 'flex', gap: '8px', alignItems: 'flex-end' }}
+        onKeyDownCapture={handleEditorKeyDown}
+      >
+        {/* Slash command popover — positioned above the editor */}
         {slashQuery !== null && (
           <SlashCommandMenu
             query={slashQuery}
@@ -489,55 +559,27 @@ export function ChatInput({
             commands={mergedCommands}
           />
         )}
-        <textarea
-          ref={textareaRef}
+        {/* IMPORTANT: this wrapper must NOT use display:flex — Lexical's
+            ContentEditable warns that flex parents cause Chrome focusing
+            bugs (caret hiding, click-outside selection drift). Use block
+            layout and let the inner ContentEditable size itself. */}
+        <div
           data-chat-input-textarea
-          value={value}
-          onChange={(e) => {
-            const v = e.target.value
-            const caret = e.target.selectionStart ?? v.length
-            setValue(v)
-            if (sessionId) setDraft(sessionId, v)
-            // Detect slash trigger at caret. Commit caret position so
-            // runSlashCommand knows where to splice the `/cmd` out.
-            const trigger = detectSlashTrigger(v, caret)
-            if (trigger) {
-              slashRangeRef.current = { start: trigger.rangeStart, end: trigger.rangeEnd }
-              // First-open of this slash session — kick a fresh fetch so
-              // any commands the SDK announced AFTER our initial mount
-              // (system/init lands post-sendTurn) show up immediately.
-              if (slashQuery === null) fetchSkills()
-              setSlashQuery(trigger.query)
-              setSlashActiveIdx(0)
-            } else if (slashQuery !== null) {
-              dismissSlash()
-            }
-          }}
-          onBlur={() => {
-            // Small delay so onMouseDown on the menu item wins over blur
-            setTimeout(() => dismissSlash(), 120)
-          }}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          onPaste={handlePaste}
-          disabled={disabled}
-          placeholder={placeholder}
-          rows={1}
-          style={{
-            flex: 1,
-            resize: 'none',
-            padding: '10px 12px',
-            borderRadius: 'var(--radius)',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-primary)',
-            color: 'var(--text-primary)',
-            fontSize: '13px',
-            fontFamily: 'var(--font-sans)',
-            lineHeight: 1.5,
-            outline: 'none',
-            maxHeight: '200px',
-          }}
-        />
+          style={{ display: 'block', position: 'relative', flex: 1, minWidth: 0 }}
+          onBlur={() => { setTimeout(() => dismissSlash(), 120) }}
+        >
+          <RichChatTextarea
+            ref={richRef}
+            value={value}
+            onChange={handleEditorChange}
+            onCaretChange={handleEditorCaret}
+            onEnter={handleSend}
+            onPasteFiles={addImages}
+            pillsById={pillsById}
+            placeholder={placeholder}
+            disabled={disabled}
+          />
+        </div>
         {isRunning && onInterrupt && (
           <button
             onClick={onInterrupt}
