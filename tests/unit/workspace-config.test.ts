@@ -156,4 +156,115 @@ terminals: "not an array"
     expect(parsed.terminals[0].on_start).toBe('npm run dev')
     expect(parsed.terminals[1].label).toBe('test')
   })
+
+  // ── Named templates (multi-template support) ─────────────────
+
+  it('top-level terminals materialize as templates.default (back-compat)', () => {
+    const yaml = `
+terminals:
+  - label: dev
+    on_start: "npm run dev"
+`
+    const config = parseWorkspaceConfig(yaml)
+    expect(config.templates).toBeDefined()
+    expect(config.templates!.default).toBeDefined()
+    expect(config.templates!.default.terminals).toHaveLength(1)
+    expect(config.templates!.default.terminals[0].label).toBe('dev')
+  })
+
+  it('top-level rows materialize as templates.default (back-compat)', () => {
+    const yaml = `
+rows:
+  - panes:
+      - label: a
+      - label: b
+`
+    const config = parseWorkspaceConfig(yaml)
+    expect(config.templates!.default.rows).toBeDefined()
+    expect(config.templates!.default.rows).toHaveLength(1)
+    expect(config.templates!.default.rows![0].panes).toHaveLength(2)
+  })
+
+  it('parses templates: { name: { terminals } } block into named templates', () => {
+    const yaml = `
+templates:
+  backend:
+    terminals:
+      - label: api
+        cwd: services/api
+      - label: db
+        on_start: psql
+  monitoring:
+    terminals:
+      - label: logs
+        on_start: tail -f logs/app.log
+`
+    const config = parseWorkspaceConfig(yaml)
+    expect(config.templates).toBeDefined()
+    expect(Object.keys(config.templates!).sort()).toEqual(['backend', 'monitoring'])
+    expect(config.templates!.backend.terminals).toHaveLength(2)
+    expect(config.templates!.backend.terminals[0].label).toBe('api')
+    expect(config.templates!.backend.terminals[0].cwd).toBe('services/api')
+    expect(config.templates!.monitoring.terminals[0].on_start).toBe('tail -f logs/app.log')
+  })
+
+  it('parses templates with rows layout', () => {
+    const yaml = `
+templates:
+  split:
+    rows:
+      - panes:
+          - label: top
+      - panes:
+          - label: bottom-left
+          - label: bottom-right
+`
+    const config = parseWorkspaceConfig(yaml)
+    expect(config.templates!.split.rows).toHaveLength(2)
+    expect(config.templates!.split.rows![1].panes).toHaveLength(2)
+  })
+
+  it('mixes top-level (default) with named templates', () => {
+    const yaml = `
+terminals:
+  - label: shell
+templates:
+  backend:
+    terminals:
+      - label: api
+`
+    const config = parseWorkspaceConfig(yaml)
+    expect(config.templates!.default.terminals[0].label).toBe('shell')
+    expect(config.templates!.backend.terminals[0].label).toBe('api')
+  })
+
+  it('serializes a multi-template config and round-trips', async () => {
+    const { serializeWorkspaceConfig } = await import('../../src/shared/workspace-config')
+    const config: WorkspaceConfig = {
+      terminals: [{ label: 'shell' }],
+      templates: {
+        default: { terminals: [{ label: 'shell' }] },
+        backend: { terminals: [{ label: 'api', cwd: 'services/api' }] },
+        monitoring: { terminals: [{ label: 'logs', on_start: 'tail -f logs/app.log' }] },
+      },
+    }
+    const yaml = serializeWorkspaceConfig(config)
+    const parsed = parseWorkspaceConfig(yaml)
+    expect(Object.keys(parsed.templates!).sort()).toEqual(['backend', 'default', 'monitoring'])
+    expect(parsed.templates!.backend.terminals[0].cwd).toBe('services/api')
+    expect(parsed.templates!.monitoring.terminals[0].on_start).toBe('tail -f logs/app.log')
+  })
+
+  it('skips invalid template entries (non-object) gracefully', () => {
+    const yaml = `
+templates:
+  good:
+    terminals:
+      - label: a
+  bad: "not an object"
+  alsobad: 42
+`
+    const config = parseWorkspaceConfig(yaml)
+    expect(Object.keys(config.templates!)).toEqual(['good'])
+  })
 })

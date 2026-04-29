@@ -118,6 +118,17 @@ function migrate(db: Database.Database): void {
     }
   } catch { /* ignore */ }
 
+  // Migration (v0.1.20): track which workspace template a session
+  // hydrated from, so the per-chat picker can show the correct
+  // current selection and so hot-reloads of workspace.yaml know
+  // which named template to respawn.
+  try {
+    const cols = db.prepare("PRAGMA table_info(session_layouts)").all() as Array<{ name: string }>
+    if (!cols.some((c) => c.name === 'template_name')) {
+      db.exec('ALTER TABLE session_layouts ADD COLUMN template_name TEXT')
+    }
+  } catch { /* ignore */ }
+
   // ─── Workspaces (outer sidebar grouping above projects) ──────────
   // A project belongs to at most one workspace via the nullable
   // `workspace_id` FK. ON DELETE SET NULL means deleting a workspace
@@ -646,17 +657,28 @@ export function removeSetting(key: string): void {
 
 // ─── Session Layout CRUD ───────────────────────────────────────
 
-export function saveSessionLayout(sessionId: string, layoutJson: string): void {
-  getDb().prepare(
-    'INSERT OR REPLACE INTO session_layouts (session_id, layout_json, updated_at) VALUES (?, ?, ?)'
-  ).run(sessionId, layoutJson, Date.now())
+export interface StoredSessionLayout {
+  layoutJson: string
+  /** Name of the workspace template this layout was hydrated from. */
+  templateName: string | null
 }
 
-export function getSessionLayout(sessionId: string): string | null {
+export function saveSessionLayout(
+  sessionId: string,
+  layoutJson: string,
+  templateName?: string | null,
+): void {
+  getDb().prepare(
+    'INSERT OR REPLACE INTO session_layouts (session_id, layout_json, template_name, updated_at) VALUES (?, ?, ?, ?)'
+  ).run(sessionId, layoutJson, templateName ?? null, Date.now())
+}
+
+export function getSessionLayout(sessionId: string): StoredSessionLayout | null {
   const row = getDb().prepare(
-    'SELECT layout_json FROM session_layouts WHERE session_id = ?'
-  ).get(sessionId) as { layout_json: string } | undefined
-  return row?.layout_json ?? null
+    'SELECT layout_json, template_name FROM session_layouts WHERE session_id = ?'
+  ).get(sessionId) as { layout_json: string; template_name: string | null } | undefined
+  if (!row) return null
+  return { layoutJson: row.layout_json, templateName: row.template_name }
 }
 
 export function removeSessionLayout(sessionId: string): void {

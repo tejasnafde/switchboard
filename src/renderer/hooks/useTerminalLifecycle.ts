@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
-import { parseWorkspaceConfig, type WorkspaceConfig } from '@shared/workspace-config'
+import { parseWorkspaceConfig, type WorkspaceTemplate } from '@shared/workspace-config'
+import { planTemplateSpawn, resolveTemplateFallback, resolveCwd, type SpawnOp } from '../services/templatePlanner'
 
 /**
  * Manages terminal lifecycle tied to agent sessions.
@@ -14,10 +15,13 @@ import { parseWorkspaceConfig, type WorkspaceConfig } from '@shared/workspace-co
  * - When switching sessions: PTYs STAY ALIVE — we just show/hide based on active session
  * - PTYs only killed when: user closes a pane or session is deleted
  *
- * workspace.yaml mapping:
- *   - Each `terminals:` entry = one window with one pane
- *   - `rows:[].panes:[]` — each `panes` entry becomes a window in that row
- *     (same horizontal row); use `addPaneToWindow` if you want tabs.
+ * workspace.yaml mapping (v0.1.20+):
+ *   - Templates live under `templates: { default: { ... }, backend: { ... } }`
+ *     in workspace.yaml. The legacy top-level `terminals:` / `rows:` keys
+ *     materialize as `templates.default` for back-compat.
+ *   - Each session records which template name it hydrated from in
+ *     `session_layouts.template_name` so the picker chip + hot-reload
+ *     know what's active.
  */
 export function useTerminalLifecycle() {
   const hydratedSessionsRef = useRef<Set<string>>(new Set())
@@ -48,12 +52,15 @@ export function useTerminalLifecycle() {
     const cleanup = window.api.app.onWorkspaceChanged((projectPath) => {
       const activeId = useAgentStore.getState().activeSessionId
       if (!activeId) return
-      
+
       const session = useAgentStore.getState().sessions.find((s) => s.id === activeId)
       if (session && session.projectPath === projectPath) {
-        // Clear layout and respawn from new config
+        // Capture the session's current template name BEFORE clearing
+        // so the respawn can ask for the same one — the resolver will
+        // fall back to default if the user just deleted it from YAML.
+        const currentTemplate = useTerminalStore.getState().getSessionTemplateName(activeId)
         useTerminalStore.getState().clearSessionLayout(activeId)
-        spawnTerminalsForSession(activeId, projectPath, true)
+        spawnTerminalsForSession(activeId, projectPath, true, currentTemplate)
       }
     })
     return cleanup
@@ -82,7 +89,8 @@ export function useTerminalLifecycle() {
             }),
           })),
         }
-        window.api.app.saveSessionLayout(sessionId, JSON.stringify(layoutData)).catch(() => {})
+        const templateName = useTerminalStore.getState().getSessionTemplateName?.(sessionId) ?? null
+        window.api.app.saveSessionLayout(sessionId, JSON.stringify(layoutData), templateName).catch(() => {})
       }
     }, 30000)
 
@@ -96,31 +104,48 @@ interface SavedPane { label?: string; cwd?: string; command?: string; wait_for?:
 interface SavedWindow { panes?: SavedPane[] }
 interface SavedRow { windows?: SavedWindow[]; panes?: SavedPane[] /* legacy */ }
 
-async function spawnTerminalsForSession(sessionId: string, projectPath?: string, forceWorkspaceConfig = false) {
+async function spawnTerminalsForSession(
+  sessionId: string,
+  projectPath?: string,
+  forceWorkspaceConfig = false,
+  requestedTemplate: string | null = null,
+) {
   const store = useTerminalStore.getState()
 
-  // 1. Try SQLite
+  // 1. Try SQLite — restore the prior live layout exactly. Picker
+  //    badge gets the saved template_name back so the user sees the
+  //    name they chose last session.
   if (!forceWorkspaceConfig) {
     try {
-      const layoutJson = await window.api.app.getSessionLayout(sessionId)
-      if (layoutJson) {
-        const saved = JSON.parse(layoutJson) as { rows?: SavedRow[] }
-        if (saved.rows && Array.isArray(saved.rows) && saved.rows.length > 0) {
-          restoreFromSaved(sessionId, saved.rows, projectPath)
+      const saved = await window.api.app.getSessionLayout(sessionId)
+      if (saved && saved.layoutJson) {
+        const parsed = JSON.parse(saved.layoutJson) as { rows?: SavedRow[] }
+        if (parsed.rows && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
+          restoreFromSaved(sessionId, parsed.rows, projectPath)
+          if (saved.templateName) useTerminalStore.getState().setSessionTemplateName(sessionId, saved.templateName)
           return
         }
       }
     } catch { /* fall through */ }
   }
 
-  // 2. Try workspace.yaml
+  // 2. Try workspace.yaml — hydrate from named template (or default).
   if (projectPath) {
     try {
       const yamlContent = await window.api.app.getWorkspaceConfig(projectPath)
       if (yamlContent) {
         const config = parseWorkspaceConfig(yamlContent)
-        spawnFromConfig(sessionId, config, projectPath)
-        return
+        const resolved = resolveTemplateFallback(config, requestedTemplate)
+        if (resolved) {
+          if (resolved.fellBack && resolved.removedName) {
+            window.dispatchEvent(new CustomEvent('sb-template-fallback', {
+              detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.templateName },
+            }))
+          }
+          spawnFromTemplate(sessionId, resolved.template, projectPath)
+          useTerminalStore.getState().setSessionTemplateName(sessionId, resolved.templateName)
+          return
+        }
       }
     } catch { /* fall through */ }
   }
@@ -187,68 +212,73 @@ function restoreFromSaved(sessionId: string, rows: SavedRow[], projectPath?: str
   }
 }
 
-function spawnFromConfig(sessionId: string, config: WorkspaceConfig, projectPath: string) {
+/**
+ * Walk a planner op list and dispatch each op to the terminal store.
+ * Pure top-of-store — no PTY work happens here, just layout shape.
+ */
+function spawnFromTemplate(sessionId: string, template: WorkspaceTemplate, projectPath: string) {
   const store = useTerminalStore.getState()
-
-  if (config.rows && config.rows.length > 0) {
-    let firstWindow = true
-    for (let ri = 0; ri < config.rows.length; ri++) {
-      const row = config.rows[ri]
-      if (row.panes.length === 0) continue
-
-      for (let pi = 0; pi < row.panes.length; pi++) {
-        const p = row.panes[pi]
-        if (firstWindow) {
-          store.addWindow(sessionId, {
-            label: p.label,
-            cwd: resolveCwd(p.cwd, projectPath),
-            command: p.on_start,
-            wait_for: p.wait_for,
-          })
-          firstWindow = false
-        } else if (pi === 0) {
-          store.splitActiveWindow(sessionId, 'column', {
-            label: p.label,
-            cwd: resolveCwd(p.cwd, projectPath),
-            command: p.on_start,
-            wait_for: p.wait_for,
-          })
-        } else {
-          store.splitActiveWindow(sessionId, 'row', {
-            label: p.label,
-            cwd: resolveCwd(p.cwd, projectPath),
-            command: p.on_start,
-            wait_for: p.wait_for,
-          })
-        }
-      }
-    }
-  } else if (config.terminals.length > 0) {
-    for (let i = 0; i < config.terminals.length; i++) {
-      const t = config.terminals[i]
-      if (i === 0) {
-        store.addWindow(sessionId, {
-          label: t.label,
-          cwd: resolveCwd(t.cwd, projectPath),
-          command: t.on_start,
-          wait_for: t.wait_for,
-        })
-      } else {
-        store.splitActiveWindow(sessionId, 'row', {
-          label: t.label,
-          cwd: resolveCwd(t.cwd, projectPath),
-          command: t.on_start,
-          wait_for: t.wait_for,
-        })
-      }
+  const ops: SpawnOp[] = planTemplateSpawn(template, projectPath)
+  for (const op of ops) {
+    if (op.kind === 'addWindow') {
+      store.addWindow(sessionId, op.opts)
+    } else if (op.kind === 'splitColumn') {
+      store.splitActiveWindow(sessionId, 'column', op.opts)
+    } else {
+      store.splitActiveWindow(sessionId, 'row', op.opts)
     }
   }
 }
 
-function resolveCwd(cwd: string | undefined, projectPath: string | undefined): string | undefined {
-  if (!cwd) return projectPath || undefined
-  if (cwd.startsWith('/')) return cwd
-  if (!projectPath) return cwd
-  if (cwd === '.') return projectPath
-  return `${projectPath}/${cwd}`
+// ─── Public: switch the active template for a session ──────────────
+
+/**
+ * Tear down the session's current panes and re-hydrate from a named
+ * template. Called by the per-chat picker chip in the terminal strip
+ * header. If the requested template doesn't exist (race with a save
+ * that just deleted it), falls back to `default` and dispatches the
+ * `sb-template-fallback` event so the UI can toast.
+ */
+export async function applyTemplate(
+  sessionId: string,
+  templateName: string,
+  projectPath: string,
+): Promise<void> {
+  const yamlContent = await window.api.app.getWorkspaceConfig(projectPath)
+  if (!yamlContent) return
+  const config = parseWorkspaceConfig(yamlContent)
+  const resolved = resolveTemplateFallback(config, templateName)
+  if (!resolved) return
+
+  const store = useTerminalStore.getState()
+  store.clearSessionLayout(sessionId)
+  spawnFromTemplate(sessionId, resolved.template, projectPath)
+  useTerminalStore.getState().setSessionTemplateName(sessionId, resolved.templateName)
+
+  if (resolved.fellBack && resolved.removedName) {
+    window.dispatchEvent(new CustomEvent('sb-template-fallback', {
+      detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.templateName },
+    }))
+  }
+
+  // Persist immediately so a relaunch picks up the new selection.
+  void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), resolved.templateName).catch(() => {})
+}
+
+function snapshotLayoutJson(sessionId: string): string {
+  const layout = useTerminalStore.getState().getLayout(sessionId)
+  const layoutData = {
+    rows: layout.rows.map((row) => ({
+      windows: row.windowIds.map((wid) => {
+        const win = layout.windows[wid]
+        return {
+          panes: win.paneIds.map((pid) => {
+            const pane = layout.panes[pid]
+            return { label: pane?.label ?? 'Terminal', cwd: pane?.cwd, command: pane?.command }
+          }),
+        }
+      }),
+    })),
+  }
+  return JSON.stringify(layoutData)
 }

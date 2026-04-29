@@ -316,8 +316,8 @@ export function registerAppHandlers(window: BrowserWindow): void {
   })
 
   // Session layout persistence
-  ipcMain.handle(AppChannels.SAVE_SESSION_LAYOUT, (_event, sessionId: string, layoutJson: string) => {
-    saveSessionLayout(sessionId, layoutJson)
+  ipcMain.handle(AppChannels.SAVE_SESSION_LAYOUT, (_event, sessionId: string, layoutJson: string, templateName?: string | null) => {
+    saveSessionLayout(sessionId, layoutJson, templateName ?? null)
     return { ok: true }
   })
 

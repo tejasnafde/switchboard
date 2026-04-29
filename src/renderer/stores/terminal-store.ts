@@ -99,6 +99,12 @@ function activePaneInWindow(layout: SessionLayout): string | null {
 
 interface TerminalStore {
   layouts: Record<string, SessionLayout>
+  /**
+   * Per-session workspace-template selection. Set when the session
+   * hydrates from a named template; surfaced by `TemplatePicker` and
+   * persisted into `session_layouts.template_name`.
+   */
+  templateNames: Record<string, string>
   /** Deprecated — kept for backward compat in older callers */
   globalActivePaneId: string | null
   activeSessionId: string | null
@@ -137,10 +143,15 @@ interface TerminalStore {
   // Session lifecycle
   setActiveSession: (sessionId: string | null) => void
   clearSessionLayout: (sessionId: string) => void
+
+  // Template tracking — used by the per-chat picker chip
+  getSessionTemplateName: (sessionId: string) => string | null
+  setSessionTemplateName: (sessionId: string, name: string | null) => void
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   layouts: {},
+  templateNames: {},
   globalActivePaneId: null,
   activeSessionId: null,
 
@@ -530,10 +541,23 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
       window.api.terminal.kill(pid)
       destroyTerminal(pid)
     }
-    
+
     set((state) => {
       const { [sessionId]: _removed, ...rest } = state.layouts
       return { layouts: rest }
+    })
+  },
+
+  // ── Template tracking ────────────────────────────────────────
+
+  getSessionTemplateName: (sessionId) => get().templateNames[sessionId] ?? null,
+
+  setSessionTemplateName: (sessionId, name) => {
+    set((state) => {
+      const next = { ...state.templateNames }
+      if (name == null) delete next[sessionId]
+      else next[sessionId] = name
+      return { templateNames: next }
     })
   },
 }))

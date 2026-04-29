@@ -58,6 +58,7 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [quickPromptOpen, setQuickPromptOpen] = useState(false)
+  const [templateToast, setTemplateToast] = useState<string | null>(null)
   const [tourOpen, setTourOpen] = useState(false)
   const [tourStartAt, setTourStartAt] = useState(0)
 
@@ -116,6 +117,24 @@ export function App() {
     window.addEventListener('tour:replay', handler)
     return () => window.removeEventListener('tour:replay', handler)
   }, [])
+
+  // Toast when a session's template was deleted from workspace.yaml and
+  // we fell back to default. Auto-dismisses after 4s.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ removedName: string; fallbackName: string }>).detail
+      if (!detail) return
+      setTemplateToast(`Template "${detail.removedName}" was removed; using ${detail.fallbackName}`)
+    }
+    window.addEventListener('sb-template-fallback', handler)
+    return () => window.removeEventListener('sb-template-fallback', handler)
+  }, [])
+
+  useEffect(() => {
+    if (!templateToast) return
+    const t = setTimeout(() => setTemplateToast(null), 4000)
+    return () => clearTimeout(t)
+  }, [templateToast])
 
   // Load saved theme on mount
   useEffect(() => {
@@ -707,6 +726,27 @@ export function App() {
         startAt={tourStartAt}
         onTryIt={handleTryIt}
       />
+      {templateToast && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 36,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'var(--bg-secondary)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border)',
+            borderRadius: '6px',
+            padding: '8px 14px',
+            fontSize: '12px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            zIndex: 2000,
+            maxWidth: '480px',
+          }}
+        >
+          {templateToast}
+        </div>
+      )}
     </div>
   )
 }

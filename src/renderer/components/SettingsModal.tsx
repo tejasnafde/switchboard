@@ -1,8 +1,16 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { emitSessionRename } from '../services/session-events'
 import { FEATURE_TOUR_STEPS } from './onboarding/featureRegistry'
 import type { UpdateStatus } from '@shared/update-status'
+import {
+  parseWorkspaceConfig,
+  serializeWorkspaceConfig,
+  serializeTemplateBody,
+  parseTemplateBodyYaml,
+  type WorkspaceConfig,
+} from '@shared/workspace-config'
+import { templateListReducer } from '../services/templateListReducer'
 import {
   areNotificationsEnabled,
   setNotificationsEnabled,
@@ -56,9 +64,18 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [loadingArchived, setLoadingArchived] = useState(false)
   const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProject[]>([])
   const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null)
-  const [workspaceYaml, setWorkspaceYaml] = useState('')
-  const [workspaceDirty, setWorkspaceDirty] = useState(false)
+  // Parsed config drives the template list. The body editor is a per-template
+  // YAML buffer; on save we feed it back into the reducer + serialize.
+  const [workspaceConfig, setWorkspaceConfig] = useState<WorkspaceConfig>({ terminals: [], templates: { default: { terminals: [] } } })
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('default')
+  const [bodyYaml, setBodyYaml] = useState('')
+  const [bodyDirty, setBodyDirty] = useState(false)
   const [workspaceSaveState, setWorkspaceSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
+  const [renamingTemplate, setRenamingTemplate] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [addingTemplate, setAddingTemplate] = useState(false)
+  const [addValue, setAddValue] = useState('')
 
   const loadArchived = useCallback(async () => {
     setLoadingArchived(true)
@@ -85,30 +102,134 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }).catch(() => {})
   }, [open, activeTab, selectedWorkspace])
 
-  // When selected project changes, load its yaml
+  // When selected project changes, load + parse its yaml
   useEffect(() => {
     if (!selectedWorkspace) return
     window.api.app.getWorkspaceConfig(selectedWorkspace).then((yaml: string | null) => {
-      setWorkspaceYaml(yaml ?? DEFAULT_WORKSPACE_YAML)
-      setWorkspaceDirty(false)
+      const text = yaml ?? DEFAULT_WORKSPACE_YAML
+      let parsed: WorkspaceConfig
+      try {
+        parsed = parseWorkspaceConfig(text)
+      } catch {
+        parsed = { terminals: [], templates: { default: { terminals: [] } } }
+      }
+      // Ensure `default` always exists — the reducer + lifecycle assume it.
+      if (!parsed.templates || !parsed.templates.default) {
+        parsed = {
+          ...parsed,
+          templates: { default: { terminals: parsed.terminals ?? [], rows: parsed.rows }, ...(parsed.templates ?? {}) },
+        }
+      }
+      setWorkspaceConfig(parsed)
+      setSelectedTemplate('default')
+      setBodyYaml(serializeTemplateBody(parsed.templates!.default))
+      setBodyDirty(false)
       setWorkspaceSaveState('idle')
+      setWorkspaceError(null)
     }).catch(() => {
-      setWorkspaceYaml(DEFAULT_WORKSPACE_YAML)
+      const fresh: WorkspaceConfig = { terminals: [], templates: { default: { terminals: [] } } }
+      setWorkspaceConfig(fresh)
+      setSelectedTemplate('default')
+      setBodyYaml(serializeTemplateBody(fresh.templates!.default))
+      setBodyDirty(false)
     })
   }, [selectedWorkspace])
 
-  const handleWorkspaceSave = useCallback(async () => {
+  // When the user picks a different template name, swap the body editor.
+  useEffect(() => {
+    const tpl = workspaceConfig.templates?.[selectedTemplate]
+    if (!tpl) return
+    setBodyYaml(serializeTemplateBody(tpl))
+    setBodyDirty(false)
+    setWorkspaceError(null)
+  }, [selectedTemplate, workspaceConfig])
+
+  const persist = useCallback(async (config: WorkspaceConfig) => {
     if (!selectedWorkspace) return
     setWorkspaceSaveState('saving')
+    setWorkspaceError(null)
     try {
-      await window.api.app.saveWorkspaceConfig(selectedWorkspace, workspaceYaml)
-      setWorkspaceDirty(false)
+      const text = serializeWorkspaceConfig(config)
+      await window.api.app.saveWorkspaceConfig(selectedWorkspace, text)
+      setWorkspaceConfig(config)
       setWorkspaceSaveState('saved')
       setTimeout(() => setWorkspaceSaveState('idle'), 1500)
-    } catch {
+    } catch (e) {
       setWorkspaceSaveState('error')
+      setWorkspaceError(e instanceof Error ? e.message : String(e))
     }
-  }, [selectedWorkspace, workspaceYaml])
+  }, [selectedWorkspace])
+
+  const handleSaveBody = useCallback(async () => {
+    let body
+    try {
+      body = parseTemplateBodyYaml(bodyYaml)
+    } catch (e) {
+      setWorkspaceError(e instanceof Error ? e.message : 'Invalid YAML')
+      setWorkspaceSaveState('error')
+      return
+    }
+    if (!body) {
+      setWorkspaceError('Template body must define `terminals:` or `rows:`.')
+      setWorkspaceSaveState('error')
+      return
+    }
+    const result = templateListReducer(workspaceConfig, { type: 'replaceTemplateBody', name: selectedTemplate, body })
+    if (!result.ok) {
+      setWorkspaceError(result.error)
+      setWorkspaceSaveState('error')
+      return
+    }
+    await persist(result.config)
+    setBodyDirty(false)
+  }, [bodyYaml, workspaceConfig, selectedTemplate, persist])
+
+  const handleAddTemplate = useCallback(async () => {
+    const name = addValue.trim()
+    if (!name) { setAddingTemplate(false); return }
+    const result = templateListReducer(workspaceConfig, { type: 'addTemplate', name })
+    if (!result.ok) {
+      setWorkspaceError(result.error)
+      return
+    }
+    await persist(result.config)
+    setSelectedTemplate(name)
+    setAddingTemplate(false)
+    setAddValue('')
+  }, [addValue, workspaceConfig, persist])
+
+  const handleRenameTemplate = useCallback(async (from: string) => {
+    const to = renameValue.trim()
+    if (!to || to === from) { setRenamingTemplate(null); return }
+    const result = templateListReducer(workspaceConfig, { type: 'renameTemplate', from, to })
+    if (!result.ok) {
+      setWorkspaceError(result.error)
+      return
+    }
+    await persist(result.config)
+    if (selectedTemplate === from) setSelectedTemplate(to)
+    setRenamingTemplate(null)
+    setRenameValue('')
+  }, [renameValue, workspaceConfig, selectedTemplate, persist])
+
+  const handleDeleteTemplate = useCallback(async (name: string) => {
+    const result = templateListReducer(workspaceConfig, { type: 'deleteTemplate', name })
+    if (!result.ok) {
+      setWorkspaceError(result.error)
+      return
+    }
+    await persist(result.config)
+    if (selectedTemplate === name) setSelectedTemplate('default')
+  }, [workspaceConfig, selectedTemplate, persist])
+
+  const templateNames = useMemo(() => {
+    const names = Object.keys(workspaceConfig.templates ?? {})
+    return names.sort((a, b) => {
+      if (a === 'default') return -1
+      if (b === 'default') return 1
+      return a.localeCompare(b)
+    })
+  }, [workspaceConfig])
 
   const handleUnarchive = useCallback(async (conv: ArchivedConv) => {
     setArchived((prev) => prev.filter((c) => c.id !== conv.id))
@@ -350,10 +471,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
           {activeTab === 'workspaces' && (
             <div>
-              <SettingsSection title="Project Workspace Configs">
+              <SettingsSection title="Project Workspace Templates">
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: 1.6 }}>
-                  Each project can define the terminal panes that spawn when you open a chat in it.
-                  Configs are stored in app support (per-user, not in the project directory).
+                  Each project defines named terminal templates in <code style={{ fontFamily: 'var(--font-mono)' }}>&lt;project&gt;/.switchboard/workspace.yaml</code>.
+                  New chats start from the <code style={{ fontFamily: 'var(--font-mono)' }}>default</code> template;
+                  switch templates per chat from the terminal strip header.
                 </div>
 
                 {workspaceProjects.length === 0 ? (
@@ -373,7 +495,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                         background: 'var(--bg-tertiary)',
                         color: 'var(--text-primary)',
                         fontSize: '12px',
-                        marginBottom: '8px',
+                        marginBottom: '10px',
                         outline: 'none',
                       }}
                     >
@@ -382,55 +504,198 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       ))}
                     </select>
 
-                    <textarea
-                      value={workspaceYaml}
-                      onChange={(e) => { setWorkspaceYaml(e.target.value); setWorkspaceDirty(true); setWorkspaceSaveState('idle') }}
-                      spellCheck={false}
-                      style={{
-                        width: '100%',
-                        minHeight: '220px',
-                        padding: '8px 10px',
-                        borderRadius: '4px',
+                    <div style={{ display: 'flex', gap: '10px', minHeight: '260px' }}>
+                      {/* Left rail: template list */}
+                      <div style={{
+                        width: '140px',
+                        flexShrink: 0,
                         border: '1px solid var(--border)',
-                        background: 'var(--bg-primary)',
-                        color: 'var(--text-primary)',
-                        fontSize: '12px',
-                        fontFamily: 'var(--font-mono)',
-                        lineHeight: 1.5,
-                        resize: 'vertical',
-                        outline: 'none',
-                      }}
-                    />
+                        borderRadius: '4px',
+                        background: 'var(--bg-tertiary)',
+                        padding: '4px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '2px',
+                      }}>
+                        {templateNames.map((name) => {
+                          const isSelected = name === selectedTemplate
+                          const isRenaming = renamingTemplate === name
+                          return (
+                            <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                              {isRenaming ? (
+                                <input
+                                  autoFocus
+                                  value={renameValue}
+                                  onChange={(e) => setRenameValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') handleRenameTemplate(name)
+                                    if (e.key === 'Escape') { setRenamingTemplate(null); setRenameValue('') }
+                                  }}
+                                  onBlur={() => handleRenameTemplate(name)}
+                                  style={{
+                                    flex: 1,
+                                    padding: '4px 6px',
+                                    fontSize: '11.5px',
+                                    fontFamily: 'var(--font-mono)',
+                                    border: '1px solid var(--accent)',
+                                    borderRadius: '3px',
+                                    background: 'var(--bg-primary)',
+                                    color: 'var(--text-primary)',
+                                    outline: 'none',
+                                  }}
+                                />
+                              ) : (
+                                <button
+                                  onClick={() => setSelectedTemplate(name)}
+                                  onDoubleClick={() => {
+                                    if (name === 'default') return
+                                    setRenamingTemplate(name)
+                                    setRenameValue(name)
+                                  }}
+                                  title={name === 'default' ? 'default \u2014 implicit fallback (cannot rename / delete)' : 'Double-click to rename'}
+                                  style={{
+                                    flex: 1,
+                                    textAlign: 'left',
+                                    padding: '5px 8px',
+                                    fontSize: '11.5px',
+                                    fontFamily: 'var(--font-mono)',
+                                    border: 'none',
+                                    borderRadius: '3px',
+                                    background: isSelected ? 'var(--accent-subtle)' : 'transparent',
+                                    color: isSelected ? 'var(--accent)' : 'var(--text-primary)',
+                                    cursor: 'pointer',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                    whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {name}
+                                </button>
+                              )}
+                              {!isRenaming && name !== 'default' && (
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Delete template "${name}"?`)) handleDeleteTemplate(name)
+                                  }}
+                                  title="Delete template"
+                                  style={{
+                                    background: 'none',
+                                    border: 'none',
+                                    color: 'var(--text-muted)',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    lineHeight: 1,
+                                    padding: '2px 4px',
+                                  }}
+                                >
+                                  &times;
+                                </button>
+                              )}
+                            </div>
+                          )
+                        })}
 
-                    <div style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      marginTop: '8px',
-                      fontSize: '11px',
-                    }}>
-                      <span style={{ color: 'var(--text-muted)' }}>
-                        {workspaceSaveState === 'saving' && 'Saving\u2026'}
-                        {workspaceSaveState === 'saved' && 'Saved'}
-                        {workspaceSaveState === 'error' && <span style={{ color: 'var(--error)' }}>Save failed</span>}
-                        {workspaceSaveState === 'idle' && workspaceDirty && 'Unsaved changes'}
-                      </span>
-                      <button
-                        onClick={handleWorkspaceSave}
-                        disabled={!workspaceDirty || workspaceSaveState === 'saving'}
-                        style={{
-                          padding: '5px 14px',
-                          borderRadius: '4px',
-                          border: 'none',
-                          background: workspaceDirty ? 'var(--accent)' : 'var(--bg-tertiary)',
-                          color: workspaceDirty ? '#fff' : 'var(--text-muted)',
-                          cursor: workspaceDirty ? 'pointer' : 'default',
-                          fontSize: '11.5px',
-                          fontWeight: 500,
-                        }}
-                      >
-                        Save
-                      </button>
+                        {addingTemplate ? (
+                          <input
+                            autoFocus
+                            value={addValue}
+                            onChange={(e) => setAddValue(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleAddTemplate()
+                              if (e.key === 'Escape') { setAddingTemplate(false); setAddValue('') }
+                            }}
+                            onBlur={handleAddTemplate}
+                            placeholder="template name"
+                            style={{
+                              padding: '5px 8px',
+                              fontSize: '11.5px',
+                              fontFamily: 'var(--font-mono)',
+                              border: '1px solid var(--accent)',
+                              borderRadius: '3px',
+                              background: 'var(--bg-primary)',
+                              color: 'var(--text-primary)',
+                              outline: 'none',
+                              marginTop: '2px',
+                            }}
+                          />
+                        ) : (
+                          <button
+                            onClick={() => { setAddingTemplate(true); setAddValue('') }}
+                            style={{
+                              marginTop: '2px',
+                              padding: '5px 8px',
+                              fontSize: '11px',
+                              fontFamily: 'var(--font-mono)',
+                              border: '1px dashed var(--border)',
+                              borderRadius: '3px',
+                              background: 'transparent',
+                              color: 'var(--text-muted)',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                            }}
+                          >
+                            + new template
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Right pane: body editor */}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                        <textarea
+                          value={bodyYaml}
+                          onChange={(e) => { setBodyYaml(e.target.value); setBodyDirty(true); setWorkspaceSaveState('idle'); setWorkspaceError(null) }}
+                          spellCheck={false}
+                          style={{
+                            width: '100%',
+                            flex: 1,
+                            minHeight: '220px',
+                            padding: '8px 10px',
+                            borderRadius: '4px',
+                            border: '1px solid var(--border)',
+                            background: 'var(--bg-primary)',
+                            color: 'var(--text-primary)',
+                            fontSize: '12px',
+                            fontFamily: 'var(--font-mono)',
+                            lineHeight: 1.5,
+                            resize: 'vertical',
+                            outline: 'none',
+                          }}
+                        />
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          marginTop: '8px',
+                          fontSize: '11px',
+                          gap: '8px',
+                        }}>
+                          <span style={{ color: workspaceError ? 'var(--error)' : 'var(--text-muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={workspaceError ?? undefined}>
+                            {workspaceError
+                              ? workspaceError
+                              : workspaceSaveState === 'saving' ? 'Saving\u2026'
+                              : workspaceSaveState === 'saved' ? 'Saved'
+                              : bodyDirty ? `Editing "${selectedTemplate}" \u2014 unsaved`
+                              : `Editing "${selectedTemplate}"`}
+                          </span>
+                          <button
+                            onClick={handleSaveBody}
+                            disabled={!bodyDirty || workspaceSaveState === 'saving'}
+                            style={{
+                              padding: '5px 14px',
+                              borderRadius: '4px',
+                              border: 'none',
+                              background: bodyDirty ? 'var(--accent)' : 'var(--bg-tertiary)',
+                              color: bodyDirty ? '#fff' : 'var(--text-muted)',
+                              cursor: bodyDirty ? 'pointer' : 'default',
+                              fontSize: '11.5px',
+                              fontWeight: 500,
+                              flexShrink: 0,
+                            }}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </>
                 )}

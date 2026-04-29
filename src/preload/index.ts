@@ -124,10 +124,10 @@ const api = {
       ipcRenderer.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
     setVibrancy: (enabled: boolean) =>
       ipcRenderer.invoke(AppChannels.SET_VIBRANCY, enabled),
-    saveSessionLayout: (sessionId: string, layoutJson: string) =>
-      ipcRenderer.invoke(AppChannels.SAVE_SESSION_LAYOUT, sessionId, layoutJson),
+    saveSessionLayout: (sessionId: string, layoutJson: string, templateName?: string | null) =>
+      ipcRenderer.invoke(AppChannels.SAVE_SESSION_LAYOUT, sessionId, layoutJson, templateName ?? null),
     getSessionLayout: (sessionId: string) =>
-      ipcRenderer.invoke(AppChannels.GET_SESSION_LAYOUT, sessionId),
+      ipcRenderer.invoke(AppChannels.GET_SESSION_LAYOUT, sessionId) as Promise<{ layoutJson: string; templateName: string | null } | null>,
     searchMessages: (query: string) =>
       ipcRenderer.invoke(AppChannels.SEARCH_MESSAGES, query),
     archiveConversation: (id: string, projectPath?: string, title?: string) =>
