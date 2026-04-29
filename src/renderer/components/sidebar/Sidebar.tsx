@@ -643,7 +643,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
                       {group.workspace?.name ?? 'Ungrouped'}
                     </span>
                     <span className="sidebar-workspace-count">
-                      {group.projects.length}\u00B7{sessionTotal}
+                      {group.projects.length}{'\u00B7'}{sessionTotal}
                     </span>
                   </header>
                   {!wsCollapsed && (
@@ -692,7 +692,6 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         <button
           onClick={() => setManagerOpen(true)}
           className="sidebar-add-project-btn"
-          style={{ marginLeft: '6px' }}
           title="Manage workspaces"
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

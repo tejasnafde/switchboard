@@ -724,6 +724,9 @@ html, body, #root {
   padding: 8px 10px;
   border-top: 1px solid var(--border);
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .sidebar-add-project-btn {
