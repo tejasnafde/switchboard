@@ -124,6 +124,7 @@ export {
   type PermissionDecision,
 } from '../policy'
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage } from '../policy'
+import { shapeQuestionAnswers } from './question-answers'
 
 // ─── Prompt queue — push new SDKUserMessages into a running query ──
 
@@ -239,6 +240,13 @@ interface ActiveSession {
   /** Whether the SDK is already draining the query iterator (only set once) */
   draining: boolean
   /**
+   * Wall-clock timestamp (ms) when the most recent user message was pushed.
+   * Read on `turn.completed` to compute `durationMs`. Reset to null after
+   * each completion so a stale value can't leak into a follow-up turn that
+   * the user hasn't sent yet.
+   */
+  turnStartedAt: number | null
+  /**
    * Slash commands the SDK exposes for this session — captured from the
    * `system/init` event's `slash_commands` field. Surfaced to the renderer
    * via `listSkills()` so the chat-input slash menu can include
@@ -296,6 +304,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       currentMessageId: null,
       draining: false,
       skills: [],
+      turnStartedAt: null,
     }
 
     this.sessions.set(opts.threadId, active)
@@ -363,6 +372,10 @@ export class ClaudeAdapter implements ProviderAdapter {
       parent_tool_use_id: null,
     } as SDKUserMessage
     active.prompt.push(userMsg)
+    // Stamp wall-clock turn start now (not when SDK actually picks it up).
+    // The user-perceived "Worked for X" should include any queueing delay
+    // — that's the experience they're judging.
+    active.turnStartedAt = Date.now()
 
     // If we haven't started the SDK query yet, kick it off now
     if (!active.draining) {
@@ -433,21 +446,18 @@ export class ClaudeAdapter implements ProviderAdapter {
           })
           active.onEvent({ type: 'question.answered', threadId, requestId, answers: userAnswers })
 
-          // Map string[][] (parallel to questions) → Record<questionId, value>.
-          // Single-select: value is the one selected label or free-text.
-          // Multi-select: value is an array of selected labels.
-          const answersById: Record<string, string | string[]> = {}
-          questions.forEach((q, i) => {
-            const picked = userAnswers[i] ?? []
-            answersById[q.id] = q.multiSelect ? picked : (picked[0] ?? '')
-          })
+          // Shape into the SDK's wire contract: answers keyed by question
+          // *text* (not header/id), multi-select joined as comma-space string.
+          // See `question-answers.ts` for the regression that motivated the
+          // helper — keying by header silently dropped every answer.
+          const shaped = shapeQuestionAnswers(questions, userAnswers)
 
-          log.info(`question answered: ${threadId} requestId=${requestId} answers=${JSON.stringify(answersById).slice(0, 300)}`)
+          log.info(`question answered: ${threadId} requestId=${requestId} answers=${JSON.stringify(shaped.answers).slice(0, 300)}`)
           return {
             behavior: 'allow',
             updatedInput: {
               ...toolInput,
-              answers: answersById,
+              ...shaped,
             },
           } as PermissionResult
         }
@@ -852,12 +862,16 @@ export class ClaudeAdapter implements ProviderAdapter {
         const result = msg as ResultMsg
         active.currentMessageId = null
 
+        const durationMs =
+          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
+        active.turnStartedAt = null
         active.onEvent({
           type: 'turn.completed',
           threadId,
           costUsd: result.total_cost_usd,
           numTurns: result.num_turns,
           usedTokens: result.usage?.input_tokens,
+          ...(durationMs !== undefined ? { durationMs } : {}),
         })
 
         if (result.session_id) {

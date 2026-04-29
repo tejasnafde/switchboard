@@ -101,6 +101,13 @@ export interface RuntimeTurnCompletedEvent {
   usedTokens?: number
   maxTokens?: number
   numTurns?: number
+  /**
+   * Wall-clock duration of the turn in milliseconds, measured from when the
+   * adapter accepted the user message to when the agent finished responding.
+   * Optional — adapters that can't measure (e.g. legacy paths) omit it.
+   * Rendered by MessageBubble as "Worked for X.Xs" Cursor-style.
+   */
+  durationMs?: number
 }
 
 export interface RuntimeErrorEvent {

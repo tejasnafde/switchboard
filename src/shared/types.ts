@@ -177,6 +177,13 @@ export interface ChatMessage {
     reason: string
     mode: 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
   }
+  /**
+   * Wall-clock duration of the assistant turn that produced this message,
+   * in ms. Set on the LAST assistant message of a turn when `turn.completed`
+   * fires. Rendered by MessageBubble as "Worked for X.Xs" under the bubble,
+   * Cursor-style.
+   */
+  turnDurationMs?: number
 }
 
 export interface AgentMessagePayload {

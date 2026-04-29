@@ -7,11 +7,28 @@ const TERMINAL_MIN = 200
 const TERMINAL_MAX = 800
 const TERMINAL_DEFAULT = 400
 
+export type RightPaneMode = 'terminal' | 'files'
+
 interface LayoutStore {
   sidebarWidth: number
   terminalWidth: number
   sidebarVisible: boolean
   terminalVisible: boolean
+
+  /**
+   * What the right-pane container shows. `'terminal'` = the existing
+   * tmux-style window/pane strip. `'files'` = the file tree + viewer
+   * (Cursor-glass-inspired). ⌘⇧E toggles. Persisted via settings DB.
+   */
+  rightPaneMode: RightPaneMode
+  setRightPaneMode: (mode: RightPaneMode) => void
+  toggleRightPaneMode: () => void
+
+  /** Active file path open in the viewer (repo-relative). */
+  viewerFilePath: string | null
+  /** Optional line range to scroll/highlight in the viewer. */
+  viewerLineRange: { start: number; end: number } | null
+  openInViewer: (path: string, lineRange?: { start: number; end: number } | null) => void
 
   // Side-by-side chat panels. When `dualChat` is true, App renders two
   // ChatPanel instances with `rightSessionId` bound to the right panel.
@@ -62,6 +79,7 @@ interface LayoutStore {
 // accidentally collide with the existing `projectOrder` / `theme` keys.
 const COLLAPSE_PROJECTS_KEY = 'sidebar.collapsed.projects'
 const COLLAPSE_WORKSPACES_KEY = 'sidebar.collapsed.workspaces'
+const RIGHT_PANE_MODE_KEY = 'layout.rightPaneMode'
 
 function persistList(key: string, list: string[]): void {
   try {
@@ -89,6 +107,28 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   dualChat: false,
   rightSessionId: null,
   chatSplitRatio: 0.5,
+
+  rightPaneMode: 'terminal',
+  setRightPaneMode: (mode) => {
+    try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, mode) } catch { /* ignore */ }
+    set({ rightPaneMode: mode })
+  },
+  toggleRightPaneMode: () => {
+    const next: RightPaneMode = get().rightPaneMode === 'terminal' ? 'files' : 'terminal'
+    try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, next) } catch { /* ignore */ }
+    set({ rightPaneMode: next })
+  },
+
+  viewerFilePath: null,
+  viewerLineRange: null,
+  openInViewer: (path, lineRange = null) => {
+    set({
+      viewerFilePath: path,
+      viewerLineRange: lineRange,
+      rightPaneMode: 'files',
+    })
+    try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
+  },
 
   sidebarCollapsedProjects: [],
   sidebarCollapsedWorkspaces: [],
@@ -198,18 +238,36 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson] = await Promise.all([
+    const [projJson, wsJson, modeStr] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
+      window.api.settings.get(RIGHT_PANE_MODE_KEY),
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
       try { const v = JSON.parse(s); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] }
       catch { return [] }
     }
+    const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
     useLayoutStore.setState({
       sidebarCollapsedProjects: parse(projJson),
       sidebarCollapsedWorkspaces: parse(wsJson),
+      rightPaneMode: mode,
     })
+  } catch { /* silent */ }
+}
+
+/**
+ * Standalone hydration for the right-pane mode setting. Split out so tests
+ * (and any caller that only needs this slice) don't have to stub the whole
+ * collapse-state surface. Defaults to `'terminal'` on missing/unrecognized
+ * values so users upgrading from a previous build keep their existing UI.
+ */
+export async function hydrateRightPaneMode(): Promise<void> {
+  if (typeof window === 'undefined' || !window.api?.settings) return
+  try {
+    const v = await window.api.settings.get(RIGHT_PANE_MODE_KEY)
+    const mode: RightPaneMode = v === 'files' ? 'files' : 'terminal'
+    useLayoutStore.setState({ rightPaneMode: mode })
   } catch { /* silent */ }
 }

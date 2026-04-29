@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels } from '@shared/ipc-channels'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -191,6 +191,25 @@ const api = {
     },
     assignProjectWorkspace: (projectPath: string, workspaceId: string | null) =>
       ipcRenderer.invoke(AppChannels.ASSIGN_PROJECT_WORKSPACE, projectPath, workspaceId),
+  },
+
+  // ─── Files (file-tree pane + viewer + chip resolver) ──────────
+  files: {
+    listDir: (
+      repoRoot: string,
+      subPath?: string,
+    ): Promise<{ ok: boolean; error?: string; entries: Array<{ name: string; isDir: boolean; isGitignored: boolean }> }> =>
+      ipcRenderer.invoke(FilesChannels.LIST_DIR, repoRoot, subPath ?? ''),
+    readFile: (
+      repoRoot: string,
+      subPath: string,
+    ): Promise<{ ok: boolean; error?: string; content: string; truncated: boolean; totalBytes: number }> =>
+      ipcRenderer.invoke(FilesChannels.READ_FILE, repoRoot, subPath),
+    resolve: (
+      repoRoot: string,
+      subPath: string,
+    ): Promise<{ ok: boolean; exists: boolean; absPath?: string }> =>
+      ipcRenderer.invoke(FilesChannels.RESOLVE, repoRoot, subPath),
   },
 
   settings: {

@@ -9,6 +9,7 @@ import { join } from 'path'
 import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
+import { registerFilesHandlers } from './ipc/files'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
 import { getDb, closeDb, getSetting } from './db/database'
@@ -285,6 +286,7 @@ app.whenReady().then(() => {
   registerTerminalHandlers(mainWindow)
   registerAgentHandlers(mainWindow)
   registerAppHandlers(mainWindow)
+  registerFilesHandlers()
   // Auto-update — silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what
   // version to compare against. See `src/main/updater.ts`.
@@ -300,6 +302,7 @@ app.whenReady().then(() => {
       registerTerminalHandlers(mainWindow)
       registerAgentHandlers(mainWindow)
       registerAppHandlers(mainWindow)
+      registerFilesHandlers()
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(mainWindow)

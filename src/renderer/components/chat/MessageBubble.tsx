@@ -2,6 +2,7 @@ import { memo, useMemo, useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { marked } from 'marked'
 import { agentShortLabel, type ChatMessage } from '@shared/types'
+import { fmtDuration } from '@shared/format'
 import { ToolCallBlock } from './ToolCallBlock'
 import { ApprovalCard } from './ApprovalCard'
 import { PlanCard } from './PlanCard'
@@ -9,6 +10,8 @@ import { QuestionCard } from './QuestionCard'
 import { useAgentStore } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { useLayoutStore } from '../../stores/layout-store'
+import { enhanceFilePills } from '../../services/messagePills'
+import { formatFilePathRef, type FilePathRef } from '@shared/filePathRef'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -61,6 +64,64 @@ export const MessageBubble = memo(function MessageBubble({ message, onApproval, 
     })
   }, [renderedContent])
 
+  // Inline file-pill enhancement: replace `<code>src/foo.ts:42-58</code>`
+  // with clickable chips that open the file viewer at that line range.
+  // Verifies existence on disk via debounced files:resolve before swapping
+  // — paths the agent hallucinated stay as plain code.
+  useEffect(() => {
+    const root = markdownRef.current
+    if (!root) return
+    const store = useAgentStore.getState()
+    const session = store.sessions.find((s) => s.id === store.activeSessionId)
+    const projectPath = session?.projectPath
+    if (!projectPath) return
+
+    enhanceFilePills(root, (ref: FilePathRef, originalText: string) => {
+      const span = document.createElement('span')
+      span.className = 'file-chip'
+      span.style.cssText = [
+        'display:inline-flex',
+        'align-items:center',
+        'gap:4px',
+        'padding:1px 6px',
+        'margin:0 1px',
+        'border:1px solid var(--border)',
+        'border-radius:4px',
+        'background:var(--bg-tertiary)',
+        'font-family:var(--font-mono)',
+        'font-size:12px',
+        'cursor:pointer',
+        'vertical-align:baseline',
+      ].join(';')
+      span.textContent = originalText
+      span.title = `Open ${formatFilePathRef(ref)}`
+      span.setAttribute('data-context-source', 'file-chip')
+      span.addEventListener('click', (e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        useLayoutStore.getState().openInViewer(
+          ref.path,
+          ref.startLine && ref.endLine
+            ? { start: ref.startLine, end: ref.endLine }
+            : null,
+        )
+      })
+
+      // Async existence check — if the file doesn't resolve, revert to plain code.
+      const api = (window as any).api
+      if (api?.files?.resolve) {
+        api.files.resolve(projectPath, ref.path).then((res: { exists: boolean }) => {
+          if (!res?.exists) {
+            const code = document.createElement('code')
+            code.textContent = originalText
+            span.replaceWith(code)
+          }
+        }).catch(() => { /* ignore — leave optimistic chip */ })
+      }
+      return span
+    })
+  }, [renderedContent])
+
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isError = isSystem && /^Error:/i.test(message.content)
@@ -87,6 +148,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onApproval, 
     <div
       className="message-bubble-row"
       data-message-id={message.id}
+      data-context-source={message.role === 'assistant' ? 'chat-message' : undefined}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -228,6 +290,24 @@ export const MessageBubble = memo(function MessageBubble({ message, onApproval, 
                 ? 'Plan mode — switch to Sandbox/Edits to execute'
                 : message.denial.reason}
             </span>
+          </div>
+        )}
+
+        {/* Per-turn duration ("Worked for 1.4s") — Cursor-style indicator
+            shown only on the last assistant message of a completed turn. */}
+        {message.role === 'assistant' && typeof message.turnDurationMs === 'number' && (
+          <div
+            style={{
+              fontSize: '10.5px',
+              color: 'var(--text-muted)',
+              marginTop: '4px',
+              fontFamily: 'var(--font-mono)',
+              letterSpacing: '0.2px',
+              userSelect: 'none',
+            }}
+            title={`Turn took ${message.turnDurationMs}ms`}
+          >
+            Worked for {fmtDuration(message.turnDurationMs)}
           </div>
         )}
 

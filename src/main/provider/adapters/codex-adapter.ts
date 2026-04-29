@@ -107,6 +107,8 @@ interface ActiveSession {
   threadId: string | null
   /** Cached `skills/list` response. Populated on first listSkills() call. */
   skills: ProviderSkill[] | null
+  /** Wall-clock turn-start timestamp; null when no turn is in flight. */
+  turnStartedAt: number | null
 }
 
 /**
@@ -218,6 +220,7 @@ export class CodexAdapter implements ProviderAdapter {
       assistantMessageText: new Map(),
       threadId: null,
       skills: null,
+      turnStartedAt: null,
     }
 
     this.sessions.set(opts.threadId, active)
@@ -297,6 +300,7 @@ export class CodexAdapter implements ProviderAdapter {
     }
 
     active.session.status = 'running'
+    active.turnStartedAt = Date.now()
     active.onEvent({ type: 'status', threadId, status: 'running' })
 
     const approvalPolicy = RUNTIME_MODE_TO_CODEX_POLICY[active.session.runtimeMode] ?? 'on-request'
@@ -667,11 +671,15 @@ export class CodexAdapter implements ProviderAdapter {
         active.onEvent({ type: 'status', threadId, status: 'error' })
       } else {
         active.session.status = 'idle'
+        const durationMs =
+          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
+        active.turnStartedAt = null
         active.onEvent({
           type: 'turn.completed',
           threadId,
           costUsd: notification.params?.totalCostUsd,
           numTurns: notification.params?.numTurns,
+          ...(durationMs !== undefined ? { durationMs } : {}),
         })
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       }

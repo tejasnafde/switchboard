@@ -16,6 +16,8 @@ import { getTerminalInstance } from './terminal-registry'
 import { useTerminalStore } from '../stores/terminal-store'
 import { useAgentStore } from '../stores/agent-store'
 import { useDraftStore } from '../stores/draft-store'
+import { agentShortLabel } from '@shared/types'
+import { formatFileViewerContext, formatChatMessageContext } from './contextFormatters'
 
 // Cap on captured terminal output so a runaway selection doesn't blow
 // the agent's context window. Modern context windows are 200k+ so 4k was
@@ -150,6 +152,115 @@ export function findActiveTerminalSelection(): {
     if (sel) return { sessionId: agentSid, paneId: pid, selection: sel }
   }
   return null
+}
+
+/**
+ * Walk up from an element to find the nearest `[data-context-source]`
+ * ancestor. Returns its value (`'terminal' | 'file-viewer' | 'chat-message'`)
+ * or null if there isn't one — caller should fall back to the legacy
+ * terminal-only path.
+ */
+export function findContextSource(el: Element | null): string | null {
+  let cur: Element | null = el
+  while (cur) {
+    const v = cur.getAttribute?.('data-context-source')
+    if (v) return v
+    cur = cur.parentElement
+  }
+  return null
+}
+
+/**
+ * Read the currently-selected text from the document selection. Returns
+ * an empty string when there's no selection (or the selection is empty
+ * after trim).
+ */
+function getDomSelectionText(): string {
+  const sel = typeof window !== 'undefined' ? window.getSelection?.() : null
+  const text = sel?.toString() ?? ''
+  return text
+}
+
+/**
+ * Determine which line range a viewer selection covers. The viewer
+ * highlight markup uses `<span class="line">` per Shiki's default — we
+ * count line-spans in the start container's ancestry to derive the
+ * 1-based line numbers. Best-effort; falls back to start=end=1 if the
+ * structure doesn't match.
+ */
+function viewerSelectionLineRange(viewerRoot: Element): { start: number; end: number } {
+  const sel = window.getSelection?.()
+  if (!sel || sel.rangeCount === 0) return { start: 1, end: 1 }
+  const range = sel.getRangeAt(0)
+  const lines = Array.from(viewerRoot.querySelectorAll('.line, [data-line]'))
+  if (lines.length === 0) return { start: 1, end: 1 }
+  const findLineIndex = (node: Node): number => {
+    let cur: Node | null = node
+    while (cur && !(cur instanceof Element && (cur.classList.contains('line') || cur.hasAttribute('data-line')))) {
+      cur = cur.parentNode
+    }
+    if (!cur) return 0
+    const idx = lines.indexOf(cur as Element)
+    return idx >= 0 ? idx + 1 : 1
+  }
+  return {
+    start: findLineIndex(range.startContainer),
+    end: findLineIndex(range.endContainer),
+  }
+}
+
+/**
+ * Unified ⌘L entry point. Inspects the focused/selection-anchor element
+ * for `data-context-source` and dispatches to the appropriate formatter:
+ *
+ *   - 'terminal' → existing terminal selection flow
+ *   - 'file-viewer' → `@<path>:<start>-<end>` pill + fenced code block
+ *   - 'chat-message' → `> from <agent>: "..."` quoted block
+ *   - null/unknown → fall back to terminal flow (preserves legacy ⌘L)
+ *
+ * Returns `true` if anything was appended, `false` otherwise.
+ */
+export function captureSelection(): boolean {
+  const sel = typeof window !== 'undefined' ? window.getSelection?.() : null
+  const anchor = sel?.anchorNode
+  const anchorEl =
+    anchor instanceof Element
+      ? anchor
+      : (anchor?.parentElement ?? null)
+  const source = findContextSource(anchorEl)
+
+  if (source === 'file-viewer') {
+    const root = anchorEl?.closest('[data-context-source="file-viewer"]') as HTMLElement | null
+    const path = root?.getAttribute('data-file-path') ?? ''
+    const text = getDomSelectionText()
+    if (!path || !text.trim()) return appendTerminalSelectionToDraft()
+    const { start, end } = root ? viewerSelectionLineRange(root) : { start: 1, end: 1 }
+    const sid = useAgentStore.getState().activeSessionId
+    if (!sid) return false
+    const block = formatFileViewerContext({
+      path,
+      startLine: start,
+      endLine: end,
+      content: text,
+    })
+    useDraftStore.getState().appendDraft(sid, block)
+    return true
+  }
+
+  if (source === 'chat-message') {
+    const text = getDomSelectionText()
+    if (!text.trim()) return false
+    const sid = useAgentStore.getState().activeSessionId
+    if (!sid) return false
+    const session = useAgentStore.getState().sessions.find((s) => s.id === sid)
+    const agent = session ? agentShortLabel(session.type) : 'agent'
+    const block = formatChatMessageContext({ agent, selection: text })
+    useDraftStore.getState().appendDraft(sid, block)
+    return true
+  }
+
+  // Default: legacy terminal flow.
+  return appendTerminalSelectionToDraft()
 }
 
 /**

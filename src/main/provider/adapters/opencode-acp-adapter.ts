@@ -105,6 +105,8 @@ interface ActiveSession {
   availableModels: ModelInfo[]
   /** In-flight prompt promise (so we know a turn is active). */
   inFlightPrompt: Promise<void> | null
+  /** Wall-clock turn-start timestamp; null when no turn is in flight. */
+  turnStartedAt: number | null
 }
 
 /**
@@ -330,6 +332,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       skills: [],
       availableModels: [],
       inFlightPrompt: null,
+      turnStartedAt: null,
     }
     this.sessions.set(opts.threadId, active)
 
@@ -471,6 +474,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     }
 
     active.session.status = 'running'
+    active.turnStartedAt = Date.now()
     active.onEvent({ type: 'status', threadId, status: 'running' })
 
     const prompt: ContentBlock[] = []
@@ -492,10 +496,14 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     const promptPromise = active.connection.prompt({ sessionId, prompt })
       .then((res) => {
         active.session.status = 'idle'
+        const durationMs =
+          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
+        active.turnStartedAt = null
         active.onEvent({
           type: 'turn.completed',
           threadId,
           ...(res?.usage?.totalTokens !== undefined ? { usedTokens: res.usage.totalTokens } : {}),
+          ...(durationMs !== undefined ? { durationMs } : {}),
         })
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       })

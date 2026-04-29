@@ -17,7 +17,7 @@ Electron workspace that multiplexes terminals and agent chats (Claude Code + Cod
 ## Commands
 
 - `npm run dev` — launches Electron (auto-unsets `ELECTRON_RUN_AS_NODE`)
-- `npm test` — vitest (~190 tests)
+- `npm test` — vitest (~320 tests)
 - `npm run test:watch` — vitest in watch mode
 - `npm run typecheck` — main + renderer tsc
 - `npm run build` — **gated build**: `prebuild` runs typecheck + test before the actual build fires
@@ -117,6 +117,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - Claude Code SDK integration end-to-end: streaming text, tool calls, context window metrics, interrupt
 - Codex app-server integration: basic chat + plan-mode + AskUserQuestion + image support (Phase B done)
 - **OpenCode adapter** (2026-04-26): `opencode run --format json` with NVIDIA NIM / Gemini / built-in free tier, dynamic model list via `opencode models`, shell-env probing for API keys, settings-DB key injection, placeholder + heartbeat + 3-min timeout (free-tier-aware error message) for cold-boot UX. Also wires up OpenCode's `debug skill` endpoint to provide dynamically discovered agent skills!
+- **OpenCode ACP adapter** (2026-04-28, default): newer Agent Client Protocol variant (`opencode-acp-adapter.ts`), gated by setting `opencode.useAcpAdapter` (default `true`). Legacy CLI adapter (`opencode-adapter.ts`) retained as one-release fallback. Helper: `adapters/opencode/env.ts` for shared env-probing.
 - Plan mode with hard-deny + read-only allow-list
 - AskUserQuestion → QuestionCard (numbered shortcuts, auto-advance)
 - ExitPlanMode → PlanCard (markdown + Implement/Iterate)
@@ -128,7 +129,13 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - Tmux-style terminal windows + tabs + splits with proper cwd
 - Pre-commit hook + CI (GitHub Actions: typecheck + test + build)
 - **Slash command menu in chat input** with agent-skill exposure (2026-04-26): Claude SDK `init.commands` + Codex `skills/list` surfaced alongside Switchboard's 9 built-ins. Source-grouped sections in the menu; agent-source selections insert `/<name> ` for the user to fill in args. OpenCode has no skill registry — falls back to built-ins only.
-- **`⌘L` context bridge**: terminal selection → formatted context block appended to active chat draft (`src/renderer/services/contextBridge.ts`, 50k char cap, multi-line wraps in fenced code block)
+- **`⌘L` multi-source context bridge** (2026-04-29): single keybinding routes by the focused element's `data-context-source` attribute (`terminal | file-viewer | chat-message`). Terminal selection → fenced code block w/ pane label header (50k char cap). File-viewer selection → `@<path>:<start>-<end>` pill + fenced block. Chat-message selection → `> from <agent>: "..."` quoted block. All three append to the active session's draft via `useDraftStore.appendDraft`. Pure formatters (`formatTerminalContext`, `formatFileViewerContext`, `formatChatMessageContext`) are unit-tested.
+- **Per-turn duration badge** (2026-04-29): adapters stamp `turnStartedAt` on `sendTurn` and emit `durationMs` on `turn.completed`. MessageBubble renders "Worked for X.Xs" under the assistant message via `fmtDuration` from `src/shared/format.ts`. Wired across all 4 adapters (claude, codex, opencode, opencode-acp).
+- **Right-pane "Files" mode** (2026-04-29, ⌘⇧E to toggle): the right column flips between the existing terminal strip and a file tree + viewer. `layout-store.rightPaneMode` (persisted under `layout.rightPaneMode`). Both panes stay mounted (positioned overlay) so toggling preserves xterm/pty state and Shiki highlighter cache.
+- **File tree pane** with VS Code-style gitignore annotation: `files:list-dir` IPC enumerates a directory and tags each entry with `isGitignored`. Renderer applies `data-gitignored="true"` for 50% opacity but keeps entries clickable. Parsed `.gitignore` cached in main by `(absPath, mtimeMs)` so hot tree expansions don't re-parse. Path-traversal-safe (`resolveWithinRepo` rejects `..`-escapes).
+- **File viewer pane** with Shiki highlighting: `files:read-file` IPC enforces a 2 MB hard cap (returns `truncated:true` flag). Highlighter is a module-level singleton (`src/renderer/services/shikiHighlighter.ts`) with concurrent-init coalescing — one WASM cold-start per session, regardless of viewer mount count. Theme-aware (github-dark / github-light follows `theme-store`). Auto-scrolls to line range from `viewerLineRange` when set.
+- **Inline file pills in agent messages** (2026-04-29): `MessageBubble` post-process walks rendered markdown DOM; inline `<code>` tokens that match `looksLikeRepoPath()` become clickable chips. Path heuristic in `src/shared/filePathRef.ts` (must contain `/`, must end in `.<ext>` or have `:line[-line]` suffix; rejects URLs and absolute paths to avoid false positives). Click → `layout-store.openInViewer(path, lineRange)` flips right pane to `files` and scrolls. Existence verified via `files:resolve` IPC; non-existent paths revert to plain code.
+- **`⌘L` context bridge** (legacy alias retained for the terminal flow inside the multi-source dispatch above)
 - **`⌘K` quick prompt**: floating prompt bar that sends a one-shot turn to the active session, optionally pre-fills with current terminal selection
 - **Side-by-side dual chat panels** (`⌘|` toggle, `dualChat`/`rightSessionId`/`chatSplitRatio` in layout-store)
 - **"Send to other panel"** forward action on messages
@@ -145,10 +152,10 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 ## What's NOT working yet
 
-- **Cursor import** (read `state.vscdb`) — not started
-- **electron-builder packaging + auto-update** — Phase 9 (in flight). Code-signing for macOS deferred (no Apple Developer account); ad-hoc unsigned `.dmg` for personal/dev distribution + Windows `.exe` builds are the near-term target. `electron-updater` integration is implemented and wired up via `main/updater.ts`.
+- **electron-builder packaging + auto-update** — Phase 9 complete; unsigned macOS arm64/x64 `.dmg`/`.zip` and Windows `.exe`/`.zip` builds shippable via `npm run dist:*`. `electron-updater` wired via `main/updater.ts` (auto-check + manual). Awaiting Apple Developer cert for code-signing only.
 - **workspace.yaml hot-reload** + `on_start` wait/then orchestration — partial; runtime hydration works
-- **HyperFrames onboarding videos** (Phase D) — feasibility spike pending
+- **HyperFrames onboarding videos** (Phase D) — `FeatureTourModal.tsx` + `featureRegistry.ts` framework shipped with `sb-tour://` protocol; `videos/dist/*.mp4` artifacts not yet rendered.
+- **Cursor import** (read `state.vscdb`) — not started
 
 ## Skill exposure (shipped 2026-04-26)
 
@@ -161,7 +168,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
 
-## Test suite (~190 tests)
+## Test suite (~320 tests)
 
 Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
@@ -193,7 +200,11 @@ src/
 │   │   ├── types.ts                   # ProviderAdapter + re-exports from shared/provider-events
 │   │   └── adapters/
 │   │       ├── claude-adapter.ts      # SDK integration, canUseTool, plan-mode policy, image blocks
-│   │       └── codex-adapter.ts       # JSON-RPC over stdio (Phase B target)
+│   │       ├── codex-adapter.ts       # JSON-RPC over stdio (Phase B done)
+│   │       ├── opencode-adapter.ts    # Legacy CLI fallback (gated by opencode.useAcpAdapter)
+│   │       ├── opencode-acp-adapter.ts # Default OpenCode adapter via ACP
+│   │       ├── opencode/env.ts        # Shared env-probe helper
+│   │       └── question-answers.ts    # Pure helper: shape AskUserQuestion answers for SDK wire format
 │   ├── terminal/pty-manager.ts        # PTY lifecycle
 │   └── logger.ts                      # File logger
 ├── preload/index.ts                   # Typed window.api (SwitchboardAPI), strongly-typed provider.onEvent
@@ -233,5 +244,5 @@ src/
 │   ├── types.ts                       # ChatMessage, Session, Project, MessageImage, denial?
 │   ├── auto-title.ts                  # generateTitle from first message
 │   └── models.ts                      # Model catalog per agent
-└── tests/unit/                        # ~190 tests
+└── tests/unit/                        # ~320 tests
 ```

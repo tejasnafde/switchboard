@@ -50,6 +50,12 @@ export const AppChannels = {
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
 } as const
 
+export const FilesChannels = {
+  LIST_DIR: 'files:list-dir',
+  READ_FILE: 'files:read-file',
+  RESOLVE: 'files:resolve',
+} as const
+
 export const AgentChannels = {
   START: 'agent:start',
   SEND: 'agent:send',

@@ -231,6 +231,22 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
               maxTokens: event.maxTokens ?? null,
             })
           }
+          // Stamp wall-clock duration on the last assistant message so the
+          // bubble can render "Worked for X.Xs" Cursor-style.
+          if (event.durationMs !== undefined) {
+            const store = useAgentStore.getState()
+            const sessForDur = store.sessions.find((s) => s.id === tid)
+            if (sessForDur) {
+              for (let i = sessForDur.messages.length - 1; i >= 0; i--) {
+                if (sessForDur.messages[i].role === 'assistant') {
+                  store.updateMessage(tid, sessForDur.messages[i].id, {
+                    turnDurationMs: event.durationMs,
+                  })
+                  break
+                }
+              }
+            }
+          }
           // Native OS notification if user isn't looking at this chat.
           const store = useAgentStore.getState()
           const sess = store.sessions.find((s) => s.id === tid)

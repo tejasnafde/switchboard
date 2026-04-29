@@ -8,6 +8,7 @@ import { ResizeHandle } from './components/layout/ResizeHandle'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatPanel } from './components/chat/ChatPanel'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
+import { FilesPane } from './components/files/FilesPane'
 import { SettingsModal } from './components/SettingsModal'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
@@ -16,7 +17,7 @@ import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
-import { appendTerminalSelectionToDraft } from './services/contextBridge'
+import { appendTerminalSelectionToDraft, captureSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated } from './services/session-events'
 import type { SessionSummary, ChatMessage } from '@shared/types'
@@ -46,6 +47,8 @@ export function App() {
     chatSplitRatio,
     openRightPanel,
     closeRightPanel,
+    rightPaneMode,
+    toggleRightPaneMode,
   } = useLayoutStore()
 
   const { addSession, setActiveSession, setMessages } = useAgentStore()
@@ -340,6 +343,12 @@ export function App() {
           e.preventDefault()
           toggleTerminal()
         }
+        // ⌘+Shift+E — toggle right pane between terminal and files (Cursor-glass-style)
+        else if ((e.key === 'e' || e.key === 'E') && e.shiftKey) {
+          e.preventDefault()
+          toggleRightPaneMode()
+          if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
+        }
         // ⌘+Shift+P — command palette
         else if ((e.key === 'p' || e.key === 'P') && e.shiftKey) {
           e.preventDefault()
@@ -425,10 +434,13 @@ export function App() {
         // and hits Send as normal.
         else if ((e.key === 'l' || e.key === 'L') && !e.shiftKey) {
           e.preventDefault()
-          const appended = appendTerminalSelectionToDraft()
+          // Routes by `data-context-source` on the selection's anchor:
+          // terminal | file-viewer | chat-message. Falls back to legacy
+          // terminal-only flow when nothing is wired up.
+          const appended = captureSelection()
           if (!appended) {
             // eslint-disable-next-line no-console
-            console.info('[Switchboard] ⌘L: no terminal selection found. Select text in a terminal first.')
+            console.info('[Switchboard] ⌘L: no selection found. Select text in a terminal, file viewer, or chat message first.')
           } else {
             // Focus the chat input so user can immediately type their question.
             // (ChatInput's textarea doesn't have a stable ref at the App level,
@@ -509,7 +521,7 @@ export function App() {
     // Capture phase so we get events before element-level handlers (xterm, etc.)
     window.addEventListener('keydown', handleKeyDown, true)
     return () => window.removeEventListener('keydown', handleKeyDown, true)
-  }, [toggleSidebar, toggleTerminal])
+  }, [toggleSidebar, toggleTerminal, toggleRightPaneMode])
 
   const handleSidebarResizeEnd = useCallback(
     (px: number) => setSidebarWidth(px),
@@ -617,7 +629,9 @@ export function App() {
           visible={terminalVisible}
         />
 
-        {/* Terminal */}
+        {/* Right pane: terminal OR files (toggle via ⌘⇧E). Both stay mounted —
+             hiding instead of unmounting preserves xterm/pty state and Shiki
+             cache between toggles, matching the terminal-registry pattern. */}
         <div
           ref={terminalRef}
           style={{
@@ -626,9 +640,27 @@ export function App() {
             overflow: 'hidden',
             display: 'flex',
             borderLeft: terminalVisible ? '1px solid var(--border)' : 'none',
+            position: 'relative',
           }}
         >
-          <TerminalStrip />
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: rightPaneMode === 'terminal' ? 'flex' : 'none',
+            }}
+          >
+            <TerminalStrip />
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: rightPaneMode === 'files' ? 'flex' : 'none',
+            }}
+          >
+            <FilesPane />
+          </div>
         </div>
       </div>
 

@@ -267,6 +267,8 @@ interface ActiveSession {
   currentMessageId: string | null
   /** Accumulated text for the current message (for incremental updates) */
   currentMessageText: string
+  /** Wall-clock turn-start timestamp; null when no turn is in flight. */
+  turnStartedAt: number | null
 }
 
 export class OpencodeAdapter implements ProviderAdapter {
@@ -316,6 +318,7 @@ export class OpencodeAdapter implements ProviderAdapter {
       child: existing?.child ?? null,
       currentMessageId: null,
       currentMessageText: '',
+      turnStartedAt: null,
     })
 
     onEvent({ type: 'status', threadId: opts.threadId, status: 'idle' })
@@ -343,6 +346,7 @@ export class OpencodeAdapter implements ProviderAdapter {
     if (runtimeMode) active.session.runtimeMode = runtimeMode
 
     active.session.status = 'running'
+    active.turnStartedAt = Date.now()
     active.onEvent({ type: 'status', threadId, status: 'running' })
 
     const args = buildRunArgs({
@@ -534,7 +538,14 @@ export class OpencodeAdapter implements ProviderAdapter {
       }
 
       if (!sawStop && sawAnyEvent) {
-        active.onEvent({ type: 'turn.completed', threadId })
+        const durationMs =
+          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
+        active.turnStartedAt = null
+        active.onEvent({
+          type: 'turn.completed',
+          threadId,
+          ...(durationMs !== undefined ? { durationMs } : {}),
+        })
       }
 
       active.session.status = 'idle'
@@ -841,10 +852,14 @@ function handleEvent(
           ? tokens.input + tokens.output
           : undefined
 
+        const durationMs =
+          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
+        active.turnStartedAt = null
         active.onEvent({
           type: 'turn.completed',
           threadId,
           usedTokens: total,
+          ...(durationMs !== undefined ? { durationMs } : {}),
         })
 
         if (total !== undefined) {
