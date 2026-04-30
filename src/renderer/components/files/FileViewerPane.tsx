@@ -238,8 +238,27 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
 
   if (!path) {
     return (
-      <div style={{ padding: 12, fontSize: 12, opacity: 0.6 }}>
-        Click a file in the tree to view it.
+      <div style={{ padding: 12, fontSize: 12, opacity: 0.6, display: 'flex', alignItems: 'center', gap: 8 }}>
+        {treeCollapsed && (
+          <button
+            type="button"
+            onClick={toggleTreeCollapsed}
+            title="Show file tree"
+            style={{
+              background: 'transparent',
+              border: '1px solid var(--border)',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '2px 6px',
+              fontSize: 11,
+              lineHeight: 1,
+              borderRadius: 3,
+            }}
+          >
+            ▶ Show tree
+          </button>
+        )}
+        <span>Click a file in the tree to view it{treeCollapsed ? ', or ⌘P to quick-open.' : '.'}</span>
       </div>
     )
   }
