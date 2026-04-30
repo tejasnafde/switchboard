@@ -271,12 +271,17 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
       tabIndex={-1}
       style={{
         height: '100%',
-        overflow: 'auto',
+        // Outer is a flex column laying out [header][body] — the body owns
+        // scrolling in BOTH axes so we don't double-scroll with the container.
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
         fontFamily: 'var(--font-mono)',
         fontSize: 12,
         lineHeight: 1.5,
         background: 'var(--bg-primary)',
         position: 'relative',
+        minWidth: 0,
       }}
     >
       {searchOpen && (
@@ -297,6 +302,7 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
           display: 'flex',
           alignItems: 'center',
           gap: 10,
+          flexShrink: 0,
         }}
       >
         {treeCollapsed && (
@@ -371,11 +377,17 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
       ) : (
         <div
           ref={contentRef}
+          className={isMarkdown && mdMode === 'preview' ? 'sb-file-viewer-md' : 'sb-file-viewer-code'}
           style={{
+            // Body is the single scroll container — owns both axes. Code
+            // mode keeps `pre` content as-is so long lines extend right and
+            // the body's overflow-x scrollbar engages. Markdown preview
+            // wraps, so it just needs vertical scroll.
+            flex: '1 1 0',
+            minHeight: 0,
+            minWidth: 0,
+            overflow: 'auto',
             padding: isMarkdown && mdMode === 'preview' ? '12px 16px' : '8px 0',
-            // Code paths need horizontal scroll for long lines; markdown
-            // preview wraps naturally so we let it flow.
-            overflowX: isMarkdown && mdMode === 'preview' ? 'visible' : 'auto',
           }}
           dangerouslySetInnerHTML={{ __html: html }}
         />

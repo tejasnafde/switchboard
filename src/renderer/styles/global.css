@@ -955,3 +955,27 @@ mark.sb-search-mark.active {
   color: #1a1a1a;
   box-shadow: 0 0 0 1px rgba(255, 200, 80, 1);
 }
+
+/* File viewer: code mode needs the inner <pre> to honor its natural
+ * width so the body's overflow-x scrollbar engages on long lines.
+ * Shiki emits `<pre class="shiki">` with no inline overflow style;
+ * default UA `pre` rules apply and that's what we want — but we want
+ * the OUTER body to scroll, not the pre, so we kill any margin and
+ * keep `white-space: pre` (xterm-style, no wrap). */
+.sb-file-viewer-code pre {
+  margin: 0;
+  padding: 0 12px;
+  white-space: pre;
+  /* Pre sizes to widest line; body div scrolls horizontally. */
+  width: max-content;
+  min-width: 100%;
+}
+.sb-file-viewer-code code {
+  white-space: pre;
+}
+.sb-file-viewer-md pre {
+  /* In markdown preview, code blocks inside the rendered HTML get their
+   * own horizontal scroll so long code lines don't blow the layout. */
+  overflow-x: auto;
+  max-width: 100%;
+}
