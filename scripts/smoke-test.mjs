@@ -45,11 +45,22 @@ if (typeof electronPath !== 'string') {
 // check (we exit at `app.whenReady()` before any renderer loads), running
 // without the sandbox is safe and matches how `electron-builder`'s own
 // post-pack tests behave on the same runners.
+//
+// Headless ubuntu-latest runners also have no X server — Chromium's
+// ozone/x11 backend aborts ("Missing X server or $DISPLAY") before
+// `app.whenReady()` fires. Wrap under `xvfb-run` (preinstalled on
+// ubuntu-latest) when DISPLAY is missing.
 const isLinux = process.platform === 'linux'
+const needsXvfb = isLinux && !process.env.DISPLAY
 const electronArgs = [mainBundle, '--smoke-test']
 if (isLinux) electronArgs.push('--no-sandbox')
 
-const child = spawn(electronPath, electronArgs, {
+const command = needsXvfb ? 'xvfb-run' : electronPath
+const args = needsXvfb
+  ? ['--auto-servernum', '--server-args=-screen 0 1024x768x24', electronPath, ...electronArgs]
+  : electronArgs
+
+const child = spawn(command, args, {
   cwd: repoRoot,
   stdio: 'inherit',
   env: {
