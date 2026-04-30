@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard — File Viewer & ⌘L Context</title>
+<link rel="stylesheet" href="../_shared/theme.css" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  /* Fixed-canvas layout. */
+  .stage { position: relative; width: 1280px; height: 720px; }
+
+  .caption {
+    position: absolute; top: 28px; left: 40px; right: 40px; height: 28px;
+    font-family: var(--font-sans); font-size: 16px; color: var(--text-secondary);
+    display: flex; align-items: center; gap: 8px; opacity: 0;
+  }
+  .caption strong { color: var(--text-primary); font-weight: 600; }
+
+  /* Two-column shell: left = "files / terminal / agent message" surface,
+     right = chat input + composed message. */
+  .left {
+    position: absolute; top: 72px; left: 40px; width: 720px; height: 612px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-secondary); overflow: hidden;
+  }
+  .right {
+    position: absolute; top: 72px; left: 776px; width: 464px; height: 612px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+
+  /* === File-tree column inside .left === */
+  .tree {
+    position: absolute; top: 0; left: 0; width: 200px; height: 100%;
+    border-right: 1px solid var(--border); padding: 10px 8px;
+    font-family: var(--font-mono); font-size: 11.5px;
+    color: var(--text-secondary); overflow: hidden;
+  }
+  .tree .row {
+    padding: 3px 6px; border-radius: 3px; cursor: pointer;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .tree .row.dir { color: var(--text-primary); }
+  .tree .row .caret { color: var(--text-muted); font-size: 9px; width: 8px; }
+  .tree .row.active { background: var(--bg-hover); color: var(--text-primary); }
+  .tree .row.indent { padding-left: 22px; }
+  .tree .row.dim { opacity: 0.45; }
+
+  /* === Right pane content area inside .left === */
+  .viewer {
+    position: absolute; top: 0; left: 200px; right: 0; bottom: 0;
+    display: flex; flex-direction: column; opacity: 0;
+  }
+  .viewer-header {
+    height: 34px; flex-shrink: 0; border-bottom: 1px solid var(--border);
+    background: var(--bg-tertiary); display: flex; align-items: center;
+    padding: 0 12px; gap: 10px; font-family: var(--font-mono); font-size: 11px;
+    color: var(--text-secondary);
+  }
+  .viewer-header .path { flex: 1; color: var(--text-primary); }
+  .viewer-header .toggle {
+    display: inline-flex; border: 1px solid var(--border); border-radius: 4px;
+    overflow: hidden;
+  }
+  .viewer-header .toggle button {
+    background: transparent; color: var(--text-muted); border: none;
+    padding: 3px 9px; font-size: 10.5px; font-family: var(--font-mono);
+    cursor: pointer;
+  }
+  .viewer-header .toggle button.on {
+    background: var(--accent); color: var(--bg);
+  }
+
+  .viewer-body {
+    flex: 1; overflow: hidden; padding: 14px 16px;
+    font-family: var(--font-mono); font-size: 12px;
+    color: var(--text-primary); line-height: 1.55;
+    position: relative;
+  }
+  .viewer-body.preview {
+    font-family: var(--font-sans); font-size: 13.5px; line-height: 1.6;
+  }
+  .viewer-body h2 {
+    margin: 0 0 8px 0; font-size: 18px; color: var(--text-primary);
+  }
+  .viewer-body p { margin: 0 0 10px 0; color: var(--text-secondary); }
+  .viewer-body code.inline {
+    background: var(--bg-tertiary); padding: 1px 5px; border-radius: 3px;
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--accent);
+  }
+
+  /* Terminal output mock (used in act 2) */
+  .terminal-mock {
+    position: absolute; top: 0; left: 200px; right: 0; bottom: 0;
+    background: var(--bg); padding: 14px 16px;
+    font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
+    color: var(--text-primary); white-space: pre; overflow: hidden;
+    opacity: 0;
+  }
+  .terminal-mock .label {
+    font-size: 10px; color: var(--text-muted); margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+  }
+
+  /* Agent-message mock (used in act 3) — looks like a chat bubble */
+  .agent-mock {
+    position: absolute; top: 0; left: 200px; right: 0; bottom: 0;
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 10px;
+    opacity: 0;
+  }
+  .agent-mock .role {
+    font-size: 10.5px; color: var(--text-muted); text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .agent-mock .bubble {
+    font-family: var(--font-sans); font-size: 13.5px; line-height: 1.55;
+    color: var(--text-primary);
+  }
+  .agent-mock .bubble code {
+    background: var(--bg-tertiary); padding: 1px 5px; border-radius: 3px;
+    font-family: var(--font-mono); font-size: 11.5px; color: var(--accent);
+  }
+
+  /* Selection highlight rectangle (pure visual) */
+  .selection {
+    position: absolute; background: rgba(138, 180, 255, 0.28);
+    border-radius: 2px; pointer-events: none; opacity: 0;
+  }
+
+  /* === Right column: chat input box === */
+  .chat-input {
+    background: var(--bg-secondary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; min-height: 90px;
+    display: flex; flex-direction: column; gap: 8px;
+    flex-shrink: 0;
+  }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg-tertiary); border: 1px solid var(--border-strong);
+    color: var(--text-primary); padding: 3px 8px; border-radius: 12px;
+    font-size: 10.5px; font-family: var(--font-mono);
+    opacity: 0; transform: scale(0.6);
+  }
+  .pill .remove { color: var(--text-muted); cursor: pointer; }
+  .chat-input textarea {
+    background: transparent; border: none; outline: none; resize: none;
+    color: var(--text-primary); font-family: var(--font-sans); font-size: 13px;
+    min-height: 40px;
+  }
+  .chat-input .send-row {
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--text-muted); font-size: 10.5px;
+  }
+  .chat-input .send-btn {
+    background: var(--accent); color: var(--bg); border: none;
+    border-radius: 4px; padding: 4px 12px; font-family: var(--font-mono);
+    font-size: 10.5px; cursor: pointer;
+  }
+
+  /* Sent message bubble (appears in right column on send) */
+  .sent-bubble {
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+    font-family: var(--font-sans); font-size: 12.5px;
+    color: var(--text-primary); line-height: 1.5; opacity: 0;
+  }
+  .sent-bubble .ctx-block {
+    background: var(--bg); border-left: 2px solid var(--accent);
+    margin: 6px 0 4px 0; padding: 6px 9px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);
+    white-space: pre; overflow: hidden; max-height: 60px;
+  }
+  .sent-bubble .ctx-quote {
+    border-left: 2px solid var(--text-muted);
+    padding: 4px 9px; margin: 4px 0;
+    color: var(--text-secondary); font-size: 12px;
+    font-style: italic;
+  }
+  .sent-bubble .ctx-pill-label {
+    color: var(--accent); font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  /* ⌘L key indicator that flashes on press */
+  .keypress {
+    position: absolute; top: 220px; left: 70%; transform: translateX(-50%);
+    background: rgba(20, 24, 30, 0.96); backdrop-filter: blur(8px);
+    border: 1px solid var(--accent); color: var(--text-primary);
+    padding: 8px 14px; border-radius: 8px;
+    font-family: var(--font-mono); font-size: 13px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+    display: inline-flex; align-items: center; gap: 6px;
+    opacity: 0;
+  }
+  .keypress kbd {
+    font-size: 11px; padding: 2px 6px;
+    background: var(--bg-tertiary); border: 1px solid var(--border);
+    color: var(--text-primary); border-radius: 3px;
+  }
+
+  .cursor {
+    position: absolute; width: 18px; height: 18px;
+    pointer-events: none; z-index: 100; left: 600px; top: 500px;
+  }
+  .cursor svg { width: 100%; height: 100%; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="file-viewer-context" data-start="0" data-duration="20" data-width="1280" data-height="720">
+<div class="stage">
+
+  <div class="caption" id="caption">
+    <strong>File viewer & ⌘L context bridge</strong>
+    <span id="caption-text">— pull any selection into the chat input as structured context.</span>
+  </div>
+
+  <!-- LEFT: file tree + viewer/terminal/agent surfaces -->
+  <div class="left" data-layout-allow-overflow>
+    <div class="tree">
+      <div class="row dir"><span class="caret">▾</span><span>my-app</span></div>
+      <div class="row indent"><span>📁 src</span></div>
+      <div class="row indent"><span>📁 tests</span></div>
+      <div class="row indent active" id="row-readme"><span>📄 README.md</span></div>
+      <div class="row indent"><span>📄 package.json</span></div>
+      <div class="row indent dim"><span>📁 node_modules</span></div>
+    </div>
+
+    <!-- Act 1: file viewer with markdown preview/raw toggle -->
+    <div class="viewer" id="viewer">
+      <div class="viewer-header">
+        <span class="path">my-app/README.md</span>
+        <div class="toggle">
+          <button id="btn-preview" class="on">Preview</button>
+          <button id="btn-raw">Raw</button>
+        </div>
+      </div>
+      <div class="viewer-body preview" id="viewer-body">
+        <h2 id="readme-h">My App</h2>
+        <p id="readme-p1">A small app for reviewing pull requests against
+          a feature branch. Run <code class="inline">npm run dev</code>
+          to start the local server.</p>
+        <p id="readme-p2">Set <code class="inline">REVIEW_TOKEN</code> in
+          your environment so the GitHub adapter can authenticate.</p>
+      </div>
+      <div class="selection" id="sel-file"></div>
+    </div>
+
+    <!-- Act 2: terminal output -->
+    <div class="terminal-mock" id="terminal-mock">
+      <div class="label">● db · query</div>
+<span id="term-text">app=&gt; SELECT id, email, status FROM users
+       WHERE created_at &gt; now() - interval '1 day';
+ id  |        email         | status
+-----+----------------------+--------
+ 142 | ada@example.com      | active
+ 143 | grace@example.com    | active
+ 144 | linus@example.com    | invited
+(3 rows)</span>
+      <div class="selection" id="sel-term"></div>
+    </div>
+
+    <!-- Act 3: agent message bubble -->
+    <div class="agent-mock" id="agent-mock">
+      <div class="role">● Claude Code · plan</div>
+      <div class="bubble" id="agent-bubble">
+        <p style="margin:0 0 8px 0;">Here's the plan for the auth refactor:</p>
+        <p id="agent-line" style="margin:0 0 8px 0;">
+          Move the <code>verifyToken</code> middleware out of
+          <code>routes/api.ts</code> and into a shared
+          <code>middleware/auth.ts</code> so every route can opt in via
+          a single import.
+        </p>
+        <p style="margin:0;color:var(--text-secondary);">Then update the
+          two consumers and add a unit test.</p>
+      </div>
+      <div class="selection" id="sel-agent"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: chat input + sent message -->
+  <div class="right">
+    <div class="chat-input" id="chat-input">
+      <div class="pills" id="pills"></div>
+      <textarea id="textarea" placeholder="Ask a question, paste context with ⌘L…"></textarea>
+      <div class="send-row">
+        <span>⌘↵ to send</span>
+        <button class="send-btn">Send</button>
+      </div>
+    </div>
+    <div class="sent-bubble" id="sent-bubble">
+      <div id="sent-content"></div>
+    </div>
+  </div>
+
+  <!-- ⌘L keypress flash -->
+  <div class="keypress" id="keypress">
+    <kbd>⌘</kbd><kbd>L</kbd><span style="color:var(--text-muted);">→ context</span>
+  </div>
+
+  <!-- Cursor -->
+  <div class="cursor" id="cursor" data-layout-ignore>
+    <svg viewBox="0 0 24 24">
+      <path d="M3 2 L3 18 L7.5 14 L10 20 L13 19 L10.5 13 L17 13 Z"
+            fill="#ffffff" stroke="#000000" stroke-width="1" stroke-linejoin="round"/>
+    </svg>
+  </div>
+
+</div>
+</div>
+
+<script>
+  // ─────────────────────────────────────────────────────────────────────
+  // Tour clip: file viewer & ⌘L context bridge (≈20s)
+  //
+  // Three mini-acts, each ending with a sent message in the right column:
+  //
+  //   ACT 1 (0–7s): File viewer
+  //     0.0–1.0   intro fade in; tree visible, viewer empty
+  //     1.0–2.0   click README.md → viewer fills (markdown preview)
+  //     2.0–3.0   click "Raw" toggle → preview swaps to raw markdown
+  //     3.0–3.7   click back to "Preview"
+  //     3.7–5.5   highlight a phrase, ⌘L flashes, pill appears in input
+  //     5.5–7.0   send → sent bubble shows the @-pill + fenced excerpt
+  //
+  //   ACT 2 (7–13s): Terminal output
+  //     7.0–8.5   surface morphs into a terminal-output panel (db query)
+  //     8.5–10.5  highlight one row of results, ⌘L, pill appears
+  //     10.5–13   send → sent bubble shows the fenced terminal excerpt
+  //
+  //   ACT 3 (13–20s): Agent message
+  //     13.0–14.5 surface morphs into an agent-message panel (plan)
+  //     14.5–16.5 highlight a sentence about middleware refactor, ⌘L
+  //     16.5–19   send → sent bubble shows the quoted agent excerpt
+  //     19–20     final hold + summary caption
+  // ─────────────────────────────────────────────────────────────────────
+
+  const $ = (id) => document.getElementById(id);
+  const cursor = $('cursor');
+  const captionText = $('caption-text');
+
+  function setCaption(t) { captionText.textContent = t; }
+  function moveCursor(t, x, y, dur=0.55) {
+    tl.to(cursor, { left: x+'px', top: y+'px', duration: dur, ease: 'power2.inOut' }, t);
+  }
+  function clickPulse(t) {
+    tl.to(cursor, { scale: 0.85, duration: 0.07 }, t);
+    tl.to(cursor, { scale: 1.0,  duration: 0.16, ease: 'power2.out' }, t + 0.07);
+  }
+  function flashKeypress(t) {
+    tl.fromTo('#keypress',
+      { opacity: 0, scale: 0.85 },
+      { opacity: 1, scale: 1, duration: 0.18 },
+      t);
+    tl.to('#keypress', { opacity: 0, scale: 0.95, duration: 0.3 }, t + 0.55);
+  }
+
+  // Selection rect helper — animate a faux text-highlight inside a viewer.
+  function showSelection(elId, t, x, y, w, h, dur=0.25) {
+    tl.set('#'+elId, { left: x+'px', top: y+'px', width: w+'px', height: h+'px', opacity: 0 }, t);
+    tl.to ('#'+elId, { opacity: 1, duration: dur }, t);
+  }
+  function hideSelection(elId, t) {
+    tl.to('#'+elId, { opacity: 0, duration: 0.2 }, t);
+  }
+
+  // Pill builder: append a pill to the input area.
+  function appendPill(t, text) {
+    tl.call(() => {
+      const pills = document.getElementById('pills');
+      const el = document.createElement('span');
+      el.className = 'pill';
+      el.innerHTML = `<span class="ctx-pill-label">${text}</span><span class="remove">×</span>`;
+      pills.appendChild(el);
+      gsap.fromTo(el, { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.3, ease: 'back.out(2)' });
+    }, [], t);
+  }
+  function clearPills(t) {
+    tl.call(() => { document.getElementById('pills').innerHTML = ''; }, [], t);
+  }
+
+  // Sent-bubble swap — replaces content and fades in.
+  function showSent(t, html) {
+    tl.call(() => { document.getElementById('sent-content').innerHTML = html; }, [], t);
+    tl.fromTo('#sent-bubble', { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.4 }, t);
+  }
+  function hideSent(t) {
+    tl.to('#sent-bubble', { opacity: 0, duration: 0.3 }, t);
+  }
+
+  window.__timelines = window.__timelines || {};
+  const tl = gsap.timeline({ paused: true, defaults: { ease: 'power2.out' } });
+
+  // ── Intro ──
+  tl.from('.left',  { y: 30, opacity: 0, duration: 0.7 }, 0.1);
+  tl.from('.right', { y: 30, opacity: 0, duration: 0.7 }, 0.25);
+  tl.to('#caption', { opacity: 1, duration: 0.5 }, 0.4);
+
+  // ═══ ACT 1: File viewer ═══
+  // 1.0–2.0 — click README.md → viewer fills
+  moveCursor(0.9, 130, 180, 0.6);   // hover README.md row in tree
+  clickPulse(1.45);
+  tl.to('#viewer', { opacity: 1, duration: 0.35 }, 1.45);
+
+  // 2.0–3.0 — click "Raw" toggle, viewer body switches to raw md text
+  moveCursor(2.1, 700, 92, 0.55);   // hover Raw button (within viewer header)
+  clickPulse(2.6);
+  tl.set('#btn-raw',     { className: 'on' }, 2.7);
+  tl.set('#btn-preview', { className: '' }, 2.7);
+  tl.set('#viewer-body', { className: 'viewer-body' }, 2.7);
+  tl.call(() => {
+    const body = document.getElementById('viewer-body');
+    body.innerHTML =
+`<span style="color:#ff7b72;"># My App</span>
+
+A small app for reviewing pull requests against
+a feature branch. Run \`npm run dev\` to start
+the local server.
+
+Set \`REVIEW_TOKEN\` in your environment so the
+GitHub adapter can authenticate.`;
+    body.style.whiteSpace = 'pre';
+  }, [], 2.7);
+
+  // 3.0–3.7 — back to Preview
+  moveCursor(3.0, 645, 92, 0.45);
+  clickPulse(3.45);
+  tl.set('#btn-preview', { className: 'on' }, 3.55);
+  tl.set('#btn-raw',     { className: '' }, 3.55);
+  tl.set('#viewer-body', { className: 'viewer-body preview' }, 3.55);
+  tl.call(() => {
+    const body = document.getElementById('viewer-body');
+    body.style.whiteSpace = '';
+    body.innerHTML =
+`<h2>My App</h2>
+<p>A small app for reviewing pull requests against a feature branch. Run <code class="inline">npm run dev</code> to start the local server.</p>
+<p id="readme-p2">Set <code class="inline">REVIEW_TOKEN</code> in your environment so the GitHub adapter can authenticate.</p>`;
+  }, [], 3.55);
+  tl.call(() => setCaption('— markdown files toggle Preview ↔ Raw.'), [], 3.6);
+
+  // 3.7–5.5 — select a phrase in viewer, ⌘L, pill appears
+  // The phrase "REVIEW_TOKEN in your environment" sits in the second paragraph.
+  // Approx pixel coords inside the canvas:
+  //   .viewer is at left (40 + 200) = 240, top 72 + 34 (header) ≈ 106
+  //   Body padding 14, line ~22px → "REVIEW_TOKEN in your environment" sits around y ≈ 178
+  showSelection('sel-file', 3.8, 14, 92, 320, 22);
+  // anchor inside viewer-body which is positioned at (200,34) inside .left,
+  // .left at (40,72). So canvas x = 40+200+14+14 ≈ 268. We'll just use viewer-relative coords.
+  moveCursor(3.85, 480, 290, 0.5);
+  flashKeypress(4.4);
+  appendPill(4.7, '@README.md:6-7');
+  // textarea fills with a question
+  tl.call(() => {
+    document.getElementById('textarea').value = 'where does this token get read?';
+  }, [], 5.0);
+  hideSelection('sel-file', 5.2);
+
+  // 5.5–7.0 — send → sent bubble shows pill + fenced excerpt
+  moveCursor(5.5, 1190, 252, 0.4);  // toward Send button
+  clickPulse(5.95);
+  showSent(6.05, `
+    <div><span class="ctx-pill-label">@README.md:6-7</span></div>
+    <div class="ctx-block">Set REVIEW_TOKEN in your environment
+so the GitHub adapter can authenticate.</div>
+    <div>where does this token get read?</div>
+  `);
+  // clear input pills + textarea after send
+  tl.call(() => {
+    document.getElementById('pills').innerHTML = '';
+    document.getElementById('textarea').value = '';
+  }, [], 6.4);
+
+  // ═══ ACT 2: Terminal output ═══
+  // 7.0–8.5 — viewer fades, terminal mock fades in
+  hideSent(7.0);
+  tl.to('#viewer',          { opacity: 0, duration: 0.4 }, 7.0);
+  tl.to('#terminal-mock',   { opacity: 1, duration: 0.5 }, 7.4);
+  // tree row indicator: simulate "selected pane" focus on a different node
+  tl.set('#row-readme', { className: 'row indent' }, 7.4);
+  tl.call(() => setCaption('— ⌘L on a terminal selection captures the pane label too.'), [], 7.6);
+
+  // 8.5–10.5 — highlight a row of query results, ⌘L, pill appears
+  // The terminal-mock is at canvas (40+200, 72) = (240, 72).
+  // Row " 143 | grace@example.com    | active" sits at line index 5 of <pre>,
+  // ~ 14 padding + 8 label-margin + 5*22 (lh ≈ 22 for 12px/1.55) ≈ 132 inside mock
+  showSelection('sel-term', 8.5, 14, 132, 380, 22);
+  moveCursor(8.55, 470, 220, 0.5);
+  flashKeypress(9.1);
+  appendPill(9.4, '@terminal · db · query');
+  tl.call(() => {
+    document.getElementById('textarea').value = 'is this user’s onboarding stuck?';
+  }, [], 9.7);
+  hideSelection('sel-term', 9.9);
+
+  // send
+  moveCursor(10.0, 1190, 252, 0.4);
+  clickPulse(10.45);
+  showSent(10.55, `
+    <div><span class="ctx-pill-label">from db · query</span></div>
+    <div class="ctx-block"> 143 | grace@example.com    | active</div>
+    <div>is this user's onboarding stuck?</div>
+  `);
+  tl.call(() => {
+    document.getElementById('pills').innerHTML = '';
+    document.getElementById('textarea').value = '';
+  }, [], 11.0);
+
+  // ═══ ACT 3: Agent message ═══
+  // 13.0–14.5 — terminal fades, agent-message mock fades in
+  hideSent(13.0);
+  tl.to('#terminal-mock',  { opacity: 0, duration: 0.4 }, 13.0);
+  tl.to('#agent-mock',     { opacity: 1, duration: 0.5 }, 13.4);
+  tl.call(() => setCaption('— or pull a quote from any agent reply (chat, plan, reasoning).'), [], 13.6);
+
+  // 14.5–16.5 — highlight the middleware sentence, ⌘L, pill appears
+  // agent-mock is at (240, 72). The middleware sentence is ~line 2 of bubble.
+  // bubble starts after .role (14px+10gap) + first <p>(~24px) so y≈ 90 inside mock.
+  showSelection('sel-agent', 14.5, 16, 90, 460, 64);
+  moveCursor(14.55, 510, 220, 0.5);
+  flashKeypress(15.1);
+  appendPill(15.4, '@from Claude Code');
+  tl.call(() => {
+    document.getElementById('textarea').value = 'sounds good — what about the existing tests?';
+  }, [], 15.7);
+  hideSelection('sel-agent', 15.95);
+
+  // send
+  moveCursor(16.0, 1190, 252, 0.4);
+  clickPulse(16.45);
+  showSent(16.55, `
+    <div><span class="ctx-pill-label">from Claude Code:</span></div>
+    <div class="ctx-quote">Move the verifyToken middleware out of routes/api.ts and into a shared middleware/auth.ts so every route can opt in via a single import.</div>
+    <div>sounds good — what about the existing tests?</div>
+  `);
+
+  // 19–20 — hold + final caption
+  tl.call(() => setCaption('— files, terminals, agent messages — one keybinding for all three.'), [], 18.6);
+
+  window.__timelines["file-viewer-context"] = tl;
+</script>
+</body>
+</html>

@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FileTreePane } from './FileTreePane'
 import { FileViewerPane } from './FileViewerPane'
+import { useLayoutStore } from '../../stores/layout-store'
 
 const TREE_MIN = 140
 const TREE_MAX = 600
@@ -28,6 +29,8 @@ export function FilesPane(): React.ReactElement {
   const [treeWidth, setTreeWidth] = useState<number>(() => loadStoredWidth())
   const containerRef = useRef<HTMLDivElement>(null)
   const draggingRef = useRef(false)
+  const collapsed = useLayoutStore((s) => s.fileTreeCollapsed)
+  const toggleCollapsed = useLayoutStore((s) => s.toggleFileTreeCollapsed)
 
   // Persist width changes (debounced via the natural ondrag cadence)
   useEffect(() => {
@@ -56,36 +59,65 @@ export function FilesPane(): React.ReactElement {
 
   return (
     <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%' }}>
-      <div
-        style={{
-          flex: `0 0 ${treeWidth}px`,
-          minWidth: 0,
-          overflow: 'hidden',
-          borderRight: '1px solid var(--border)',
-        }}
-      >
-        <FileTreePane />
-      </div>
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-        style={{
-          flex: '0 0 4px',
-          cursor: 'col-resize',
-          background: 'transparent',
-          // Show a faint hover affordance so the handle is discoverable.
-          transition: 'background 120ms',
-        }}
-        onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--border)' }}
-        onMouseLeave={(e) => {
-          if (!draggingRef.current) (e.currentTarget as HTMLElement).style.background = 'transparent'
-        }}
-        title="Drag to resize"
-      />
+      {!collapsed && (
+        <>
+          <div
+            style={{
+              flex: `0 0 ${treeWidth}px`,
+              minWidth: 0,
+              overflow: 'hidden',
+              borderRight: '1px solid var(--border)',
+              position: 'relative',
+            }}
+          >
+            <button
+              type="button"
+              onClick={toggleCollapsed}
+              title="Hide file tree"
+              style={{
+                position: 'absolute',
+                top: 4,
+                right: 4,
+                zIndex: 5,
+                width: 18,
+                height: 18,
+                padding: 0,
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-muted)',
+                cursor: 'pointer',
+                fontSize: 11,
+                lineHeight: 1,
+                borderRadius: 3,
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+            >
+              ◀
+            </button>
+            <FileTreePane />
+          </div>
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            style={{
+              flex: '0 0 4px',
+              cursor: 'col-resize',
+              background: 'transparent',
+              transition: 'background 120ms',
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--border)' }}
+            onMouseLeave={(e) => {
+              if (!draggingRef.current) (e.currentTarget as HTMLElement).style.background = 'transparent'
+            }}
+            title="Drag to resize"
+          />
+        </>
+      )}
       <div style={{ flex: '1 1 0%', minWidth: 0, overflow: 'hidden' }}>
         <FileViewerPane />
       </div>

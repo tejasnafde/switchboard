@@ -51,8 +51,12 @@ export function InPaneSearchBar({
       // `terminal.focus()` and yanks focus right back from our input).
       // mousedown is the one that matters — focus moves on mousedown,
       // not click — so we capture it before xterm's listener fires.
-      onMouseDownCapture={(e) => {
-        e.stopPropagation()
+      // Bubble-phase handlers — stopping propagation in the capture phase
+      // also blocks descendant onClick / onMouseDown (the × button), so
+      // the close button never fires (and the user has to click the
+      // input + press Escape to dismiss). Bubble phase runs AFTER the
+      // descendants, which is exactly what we want here.
+      onMouseDown={(e) => {
         // Re-assert input focus on the next tick. If the user clicked on
         // a non-input child (the gap, the count span), the browser's
         // default would defocus the input; instead we keep the caret in
@@ -62,8 +66,11 @@ export function InPaneSearchBar({
           e.preventDefault()
           requestAnimationFrame(() => inputRef.current?.focus())
         }
+        // Block propagation up to the underlying terminal / chat pane,
+        // which would otherwise yank focus away from us.
+        e.stopPropagation()
       }}
-      onClickCapture={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
       // stopPropagation so keystrokes typed in the search box don't bubble
       // up to the pane's ⌘F handler (which would re-focus or close it).
       onKeyDown={(e) => {

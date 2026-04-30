@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { useAgentStore } from './agent-store'
 
 const SIDEBAR_MIN = 140
 const SIDEBAR_MAX = 500
@@ -29,6 +30,21 @@ interface LayoutStore {
   /** Optional line range to scroll/highlight in the viewer. */
   viewerLineRange: { start: number; end: number } | null
   openInViewer: (path: string, lineRange?: { start: number; end: number } | null) => void
+
+  /**
+   * Per-session memory of "what was last open in the viewer". Switching
+   * sessions reads from this map so each chat keeps its own viewer
+   * context. Persisted whole.
+   */
+  viewerStateBySession: Record<string, { path: string; lineRange: { start: number; end: number } | null }>
+  hydrateViewerForSession: (sessionId: string | null) => void
+
+  /**
+   * File-tree column collapse state (right pane "Files" mode). Lives
+   * here so both `FilesPane` and `FileViewerPane` can read/write it.
+   */
+  fileTreeCollapsed: boolean
+  toggleFileTreeCollapsed: () => void
 
   // Side-by-side chat panels. When `dualChat` is true, App renders two
   // ChatPanel instances with `rightSessionId` bound to the right panel.
@@ -80,6 +96,8 @@ interface LayoutStore {
 const COLLAPSE_PROJECTS_KEY = 'sidebar.collapsed.projects'
 const COLLAPSE_WORKSPACES_KEY = 'sidebar.collapsed.workspaces'
 const RIGHT_PANE_MODE_KEY = 'layout.rightPaneMode'
+const VIEWER_STATE_BY_SESSION_KEY = 'layout.viewerStateBySession'
+const FILE_TREE_COLLAPSED_KEY = 'layout.fileTreeCollapsed'
 
 function persistList(key: string, list: string[]): void {
   try {
@@ -121,13 +139,45 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 
   viewerFilePath: null,
   viewerLineRange: null,
+  viewerStateBySession: {},
   openInViewer: (path, lineRange = null) => {
+    // Tag this onto the active session so toggling away and back lands
+    // the user on the same file. Reading agent-store from inside a
+    // layout-store action is the simplest way to avoid prop-drilling
+    // sessionId through every caller; we accept the import edge.
+    let activeId: string | null = null
+    try { activeId = useAgentStore.getState().activeSessionId } catch { /* test env */ }
+    const map = { ...get().viewerStateBySession }
+    if (activeId) {
+      map[activeId] = { path, lineRange }
+      try { void window.api?.settings?.set(VIEWER_STATE_BY_SESSION_KEY, JSON.stringify(map)) } catch { /* ignore */ }
+    }
     set({
       viewerFilePath: path,
       viewerLineRange: lineRange,
       rightPaneMode: 'files',
+      viewerStateBySession: map,
     })
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
+  },
+  hydrateViewerForSession: (sessionId) => {
+    if (!sessionId) {
+      set({ viewerFilePath: null, viewerLineRange: null })
+      return
+    }
+    const remembered = get().viewerStateBySession[sessionId]
+    if (remembered) {
+      set({ viewerFilePath: remembered.path, viewerLineRange: remembered.lineRange })
+    } else {
+      set({ viewerFilePath: null, viewerLineRange: null })
+    }
+  },
+
+  fileTreeCollapsed: false,
+  toggleFileTreeCollapsed: () => {
+    const next = !get().fileTreeCollapsed
+    try { void window.api?.settings?.set(FILE_TREE_COLLAPSED_KEY, next ? '1' : '0') } catch { /* ignore */ }
+    set({ fileTreeCollapsed: next })
   },
 
   sidebarCollapsedProjects: [],
@@ -238,21 +288,42 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson, modeStr] = await Promise.all([
+    const [projJson, wsJson, modeStr, viewerStateJson, treeCollapsedStr] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
       window.api.settings.get(RIGHT_PANE_MODE_KEY),
+      window.api.settings.get(VIEWER_STATE_BY_SESSION_KEY),
+      window.api.settings.get(FILE_TREE_COLLAPSED_KEY),
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
       try { const v = JSON.parse(s); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] }
       catch { return [] }
     }
+    const parseViewerMap = (s: string | null): Record<string, { path: string; lineRange: { start: number; end: number } | null }> => {
+      if (!s) return {}
+      try {
+        const v = JSON.parse(s)
+        if (!v || typeof v !== 'object') return {}
+        const out: Record<string, { path: string; lineRange: { start: number; end: number } | null }> = {}
+        for (const [k, val] of Object.entries(v)) {
+          if (val && typeof val === 'object' && typeof (val as any).path === 'string') {
+            const lr = (val as any).lineRange
+            const lineRange = lr && typeof lr.start === 'number' && typeof lr.end === 'number'
+              ? { start: lr.start, end: lr.end } : null
+            out[k] = { path: (val as any).path, lineRange }
+          }
+        }
+        return out
+      } catch { return {} }
+    }
     const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
     useLayoutStore.setState({
       sidebarCollapsedProjects: parse(projJson),
       sidebarCollapsedWorkspaces: parse(wsJson),
       rightPaneMode: mode,
+      viewerStateBySession: parseViewerMap(viewerStateJson),
+      fileTreeCollapsed: treeCollapsedStr === '1',
     })
   } catch { /* silent */ }
 }

@@ -20,9 +20,11 @@ interface TerminalWindowProps {
 export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFocusWindow }: TerminalWindowProps) {
   const activePaneId = window.activePaneId
   const activePane = panes[activePaneId]
-  const { setActivePane, removePane, removeWindow, addPaneToWindow } = useTerminalStore()
+  const { setActivePane, removePane, removeWindow, addPaneToWindow, updatePaneLabel } = useTerminalStore()
 
   const [tabsOpen, setTabsOpen] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [renameValue, setRenameValue] = useState('')
   const tabsBtnRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
 
@@ -99,26 +101,80 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
           position: 'relative',
         }}
       >
+        {/* Status / focus dot. Green only on the focused window — that's
+            the visual cue for "this is the pane keystrokes go to". Errors
+            still surface red regardless of focus. Inactive windows get
+            a muted dim dot so the slot is still discoverable. */}
         <span style={{
           width: '5px',
           height: '5px',
           borderRadius: '50%',
           background:
-            activePane.status === 'running' ? 'var(--success)'
-            : activePane.status === 'error' ? 'var(--error)'
+            activePane.status === 'error' ? 'var(--error)'
+            : isActiveWindow ? 'var(--success)'
             : 'var(--text-muted)',
+          opacity: isActiveWindow || activePane.status === 'error' ? 1 : 0.45,
           flexShrink: 0,
+          transition: 'background 0.12s, opacity 0.12s',
         }} />
 
-        <span style={{
-          flex: 1,
-          color: isActiveWindow ? 'var(--text-primary)' : 'var(--text-secondary)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-          {activePane.label}
-        </span>
+        {renaming ? (
+          <input
+            autoFocus
+            value={renameValue}
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const trimmed = renameValue.trim()
+                if (trimmed && trimmed !== activePane.label) {
+                  updatePaneLabel(sessionId, activePaneId, trimmed)
+                }
+                setRenaming(false)
+              } else if (e.key === 'Escape') {
+                setRenaming(false)
+              }
+            }}
+            onBlur={() => {
+              const trimmed = renameValue.trim()
+              if (trimmed && trimmed !== activePane.label) {
+                updatePaneLabel(sessionId, activePaneId, trimmed)
+              }
+              setRenaming(false)
+            }}
+            style={{
+              flex: 1,
+              minWidth: 0,
+              padding: '1px 4px',
+              fontSize: '11px',
+              fontFamily: 'inherit',
+              color: 'var(--text-primary)',
+              background: 'var(--bg-primary)',
+              border: '1px solid var(--accent)',
+              borderRadius: '3px',
+              outline: 'none',
+            }}
+          />
+        ) : (
+          <span
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              setRenameValue(activePane.label)
+              setRenaming(true)
+            }}
+            title="Double-click to rename"
+            style={{
+              flex: 1,
+              color: isActiveWindow ? 'var(--text-primary)' : 'var(--text-secondary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              cursor: 'text',
+            }}
+          >
+            {activePane.label}
+          </span>
+        )}
 
         {/* Tab count + dropdown */}
         {tabIndicator && (

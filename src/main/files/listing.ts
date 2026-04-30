@@ -78,6 +78,35 @@ export interface CappedRead {
   totalBytes: number
 }
 
+/**
+ * Recursive walk of `repoRoot`, returning repo-relative paths. Used by
+ * the ⌘P quick-open modal — gitignored files are *included* (the user
+ * explicitly asked to skim build output / lockfiles too) but the giant
+ * always-noise dirs `.git` and `node_modules` are skipped to keep the
+ * traversal under a few seconds even on monorepos.
+ */
+const ALWAYS_SKIP = new Set(['.git', 'node_modules'])
+export async function listAllFiles(repoRoot: string, cap = 10000): Promise<string[]> {
+  const out: string[] = []
+  const stack: string[] = [repoRoot]
+  while (stack.length > 0 && out.length < cap) {
+    const dir = stack.pop() as string
+    let dirents
+    try { dirents = await fs.readdir(dir, { withFileTypes: true }) } catch { continue }
+    for (const d of dirents) {
+      if (ALWAYS_SKIP.has(d.name)) continue
+      const abs = join(dir, d.name)
+      if (d.isDirectory()) stack.push(abs)
+      else if (d.isFile()) {
+        const rel = relative(repoRoot, abs).split(/[\\/]/).join('/')
+        out.push(rel)
+        if (out.length >= cap) break
+      }
+    }
+  }
+  return out
+}
+
 export async function readFileCapped(absPath: string, capBytes: number): Promise<CappedRead> {
   const stat = await fs.stat(absPath)
   const handle = await fs.open(absPath, 'r')

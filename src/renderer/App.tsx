@@ -15,6 +15,7 @@ import { SearchModal } from './components/SearchModal'
 import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
+import { QuickOpenModal } from './components/files/QuickOpenModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendTerminalSelectionToDraft, captureSelection } from './services/contextBridge'
@@ -58,6 +59,19 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [quickPromptOpen, setQuickPromptOpen] = useState(false)
+  const [quickOpenOpen, setQuickOpenOpen] = useState(false)
+  // Refs mirror modal-open state so the keybinding effect (which only
+  // depends on toggle callbacks) reads fresh values without re-binding
+  // listeners on every state change.
+  const modalStateRef = useRef({ settings: false, palette: false, search: false, picker: false, quickPrompt: false, quickOpen: false })
+  modalStateRef.current = {
+    settings: settingsOpen,
+    palette: paletteOpen,
+    search: searchOpen,
+    picker: sessionPickerOpen,
+    quickPrompt: quickPromptOpen,
+    quickOpen: quickOpenOpen,
+  }
   const [templateToast, setTemplateToast] = useState<string | null>(null)
   const [tourOpen, setTourOpen] = useState(false)
   const [tourStartAt, setTourStartAt] = useState(0)
@@ -348,12 +362,11 @@ export function App() {
     termSetActiveSession(activeAgentSessionId)
   }, [activeAgentSessionId, termSetActiveSession])
 
-  // Clear the file viewer when the active session changes — the viewer
-  // is global state, but the file path it points at is only meaningful
-  // inside one project's repoRoot. Without this, switching to another
-  // chat shows a stale path that ENOENTs on read.
+  // Restore the per-session viewer file when the active session changes.
+  // Each chat keeps its own viewer context — switching back to a chat
+  // lands on the file you were last reading there.
   useEffect(() => {
-    useLayoutStore.setState({ viewerFilePath: null, viewerLineRange: null })
+    useLayoutStore.getState().hydrateViewerForSession(activeAgentSessionId)
   }, [activeAgentSessionId])
 
   // Terminal lifecycle — spawn/kill PTYs on session change
@@ -380,6 +393,16 @@ export function App() {
         else if ((e.key === 'p' || e.key === 'P') && e.shiftKey) {
           e.preventDefault()
           setPaletteOpen((prev) => !prev)
+        }
+        // ⌘+P — fuzzy file finder (Quick Open). Skip when another modal
+        // is already up so we don't stack them, and bail when focus is
+        // in any text input so users typing "p" with their cmd key down
+        // don't accidentally trigger it.
+        else if ((e.key === 'p' || e.key === 'P') && !e.shiftKey && !e.altKey) {
+          const m = modalStateRef.current
+          if (m.settings || m.palette || m.search || m.picker || m.quickPrompt || m.quickOpen) return
+          e.preventDefault()
+          setQuickOpenOpen(true)
         }
         // ⌘+Shift+F — search across conversations
         else if ((e.key === 'f' || e.key === 'F') && e.shiftKey) {
@@ -719,6 +742,10 @@ export function App() {
       <QuickPromptModal
         open={quickPromptOpen}
         onClose={() => setQuickPromptOpen(false)}
+      />
+      <QuickOpenModal
+        open={quickOpenOpen}
+        onClose={() => setQuickOpenOpen(false)}
       />
       <FeatureTourModal
         open={tourOpen}

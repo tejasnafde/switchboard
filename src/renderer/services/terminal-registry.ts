@@ -16,6 +16,40 @@ export interface TerminalInstance {
 const registry = new Map<string, TerminalInstance>()
 
 /**
+ * Per-pane timestamp of the last PTY output byte. Used by the dirty-pane
+ * check on `applyTemplate` — if a pane has produced output recently the
+ * user is about to kill something live (dev server, REPL, ssh session)
+ * and we should confirm before tearing it down.
+ *
+ * Lives outside the registry because it's incremented on a hot path
+ * (every output chunk) and we don't want to mutate the TerminalInstance
+ * struct repeatedly.
+ */
+const lastOutputAt = new Map<string, number>()
+
+const RECENT_OUTPUT_WINDOW_MS = 30_000
+
+/**
+ * Returns the labels of panes that have produced PTY output in the last
+ * 30 seconds. Used by `applyTemplate` to confirm before tearing down a
+ * session's panes.
+ */
+export function getRecentOutputPaneLabels(
+  paneIds: string[],
+  panes: Record<string, { label?: string }>,
+): string[] {
+  const cutoff = Date.now() - RECENT_OUTPUT_WINDOW_MS
+  const out: string[] = []
+  for (const id of paneIds) {
+    const ts = lastOutputAt.get(id) ?? 0
+    if (ts >= cutoff) {
+      out.push(panes[id]?.label || id)
+    }
+  }
+  return out
+}
+
+/**
  * Read-only access to a registered terminal instance (e.g. to call
  * `instance.terminal.getSelection()` for the ⌘L context bridge).
  * Returns undefined when no instance with that id is registered.
@@ -84,9 +118,14 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
 
   const cleanupFns: (() => void)[] = []
 
-  // Wire PTY I/O
+  // Wire PTY I/O. We also stamp `lastOutputAt` on every output chunk
+  // so the dirty-pane check on template-switch knows which panes are
+  // "live". Cheap — a single Map.set per chunk.
   const removeOutput = window.api.terminal.onOutput((ptyId, data) => {
-    if (ptyId === id) terminal.write(data)
+    if (ptyId === id) {
+      terminal.write(data)
+      lastOutputAt.set(id, Date.now())
+    }
   })
   cleanupFns.push(removeOutput)
 
@@ -203,6 +242,7 @@ export function destroyTerminal(id: string): void {
   inst.terminal.dispose()
   window.api.terminal.kill(id)
   registry.delete(id)
+  lastOutputAt.delete(id)
 }
 
 export function updateAllTerminalThemes(): void {

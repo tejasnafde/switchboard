@@ -54,6 +54,7 @@ export const FilesChannels = {
   LIST_DIR: 'files:list-dir',
   READ_FILE: 'files:read-file',
   RESOLVE: 'files:resolve',
+  LIST_ALL: 'files:list-all',
 } as const
 
 export const AgentChannels = {

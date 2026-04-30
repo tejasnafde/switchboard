@@ -11,11 +11,13 @@
  * route it through `contextBridge.captureSelection()` and append a
  * `@<path>:<start>-<end>` pill + code block to the active draft.
  */
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { marked } from 'marked'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { useThemeStore } from '../../stores/theme-store'
 import { getHighlighter } from '../../services/shikiHighlighter'
+import { InPaneSearchBar } from '../InPaneSearchBar'
 
 const LANG_BY_EXT: Record<string, string> = {
   ts: 'typescript',
@@ -43,6 +45,8 @@ function detectLang(path: string): string {
 export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement | null {
   const path = useLayoutStore((s) => s.viewerFilePath)
   const lineRange = useLayoutStore((s) => s.viewerLineRange)
+  const treeCollapsed = useLayoutStore((s) => s.fileTreeCollapsed)
+  const toggleTreeCollapsed = useLayoutStore((s) => s.toggleFileTreeCollapsed)
   const sessions = useAgentStore((s) => s.sessions)
   const activeId = useAgentStore((s) => s.activeSessionId)
   const repoRoot = sessions.find((s) => s.id === activeId)?.projectPath
@@ -52,7 +56,22 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
   const [truncated, setTruncated] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [html, setHtml] = useState<string>('')
+  // Markdown files default to rendered preview; users toggle to raw
+  // when they want to see the underlying source / select raw text.
+  // Per-mount default — no need to persist; viewer is short-lived.
+  const [mdMode, setMdMode] = useState<'preview' | 'raw'>('preview')
   const containerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const isMarkdown = useMemo(() => path?.toLowerCase().endsWith('.md') ?? false, [path])
+
+  // ── In-pane ⌘F search ────────────────────────────────────────
+  // Walks the rendered HTML container with a TreeWalker and wraps text
+  // matches in <mark.sb-search-mark>. The current match scrolls into
+  // view; ↑/↓ steps through. Pattern mirrors ChatPanel.
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchIdx, setSearchIdx] = useState(0)
+  const [searchTotal, setSearchTotal] = useState(0)
 
   // Load file
   useEffect(() => {
@@ -79,11 +98,26 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
     return () => { cancelled = true }
   }, [repoRoot, path])
 
-  // Highlight
+  // Highlight (or markdown-render). The output is always raw HTML —
+  // the renderer at the bottom drops it through `dangerouslySetInnerHTML`.
+  // For .md in preview mode we run `marked` directly; otherwise we run
+  // Shiki for syntax highlighting (raw markdown source uses lang=markdown).
   const lang = useMemo(() => (path ? detectLang(path) : 'plaintext'), [path])
   useEffect(() => {
     if (!content) { setHtml(''); return }
     let cancelled = false
+
+    // Markdown preview path — bypass Shiki, render through marked.
+    if (isMarkdown && mdMode === 'preview') {
+      try {
+        const md = marked.parse(content, { async: false }) as string
+        if (!cancelled) setHtml(md)
+      } catch {
+        if (!cancelled) setHtml(`<pre>${content}</pre>`)
+      }
+      return () => { cancelled = true }
+    }
+
     void (async () => {
       try {
         const hl = await getHighlighter()
@@ -101,7 +135,7 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
       }
     })()
     return () => { cancelled = true }
-  }, [content, lang, theme])
+  }, [content, lang, theme, isMarkdown, mdMode])
 
   // Scroll to line range when present
   useEffect(() => {
@@ -110,6 +144,97 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
     const target = lines.item(Math.max(0, lineRange.start - 1)) as HTMLElement | null
     if (target) target.scrollIntoView({ block: 'center', behavior: 'auto' })
   }, [html, lineRange])
+
+  const clearSearchMarks = useCallback(() => {
+    const root = contentRef.current
+    if (!root) return
+    root.querySelectorAll('mark.sb-search-mark').forEach((m) => {
+      const parent = m.parentNode
+      if (!parent) return
+      while (m.firstChild) parent.insertBefore(m.firstChild, m)
+      parent.removeChild(m)
+      parent.normalize()
+    })
+  }, [])
+
+  // Run search whenever query/html changes — wrap matches, count them.
+  useEffect(() => {
+    clearSearchMarks()
+    if (!searchOpen || !searchQuery || !contentRef.current) {
+      setSearchTotal(0)
+      return
+    }
+    const root = contentRef.current
+    const q = searchQuery.toLowerCase()
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    const textNodes: Text[] = []
+    let n: Node | null = walker.nextNode()
+    while (n) { textNodes.push(n as Text); n = walker.nextNode() }
+    let total = 0
+    for (const tn of textNodes) {
+      const text = tn.nodeValue ?? ''
+      const lower = text.toLowerCase()
+      if (!lower.includes(q)) continue
+      const frag = document.createDocumentFragment()
+      let i = 0
+      while (i < text.length) {
+        const at = lower.indexOf(q, i)
+        if (at === -1) {
+          frag.appendChild(document.createTextNode(text.slice(i)))
+          break
+        }
+        if (at > i) frag.appendChild(document.createTextNode(text.slice(i, at)))
+        const mark = document.createElement('mark')
+        mark.className = 'sb-search-mark'
+        mark.textContent = text.slice(at, at + q.length)
+        frag.appendChild(mark)
+        i = at + q.length
+        total += 1
+      }
+      tn.parentNode?.replaceChild(frag, tn)
+    }
+    setSearchTotal(total)
+    setSearchIdx((idx) => total === 0 ? 0 : Math.min(idx, total - 1))
+  }, [searchOpen, searchQuery, html, clearSearchMarks])
+
+  // Scroll the active match into view + flag it visually.
+  useEffect(() => {
+    const root = contentRef.current
+    if (!root) return
+    const marks = root.querySelectorAll('mark.sb-search-mark')
+    marks.forEach((m, i) => {
+      ;(m as HTMLElement).style.outline = i === searchIdx ? '2px solid var(--accent)' : ''
+    })
+    const active = marks.item(searchIdx) as HTMLElement | null
+    if (active) active.scrollIntoView({ block: 'center', behavior: 'auto' })
+  }, [searchIdx, searchTotal])
+
+  // ⌘F intercept — only when focus is inside this pane.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const cmd = e.metaKey && !e.ctrlKey
+      const ctrl = e.ctrlKey && !e.metaKey
+      if (!((cmd || ctrl) && !e.altKey && !e.shiftKey)) return
+      if (e.key !== 'f' && e.key !== 'F') return
+      const el = containerRef.current
+      if (!el) return
+      const active = document.activeElement as Element | null
+      const inside = !!active && el.contains(active)
+      if (!inside) return
+      e.preventDefault()
+      e.stopPropagation()
+      setSearchOpen(true)
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [])
+
+  const handleSearchClose = useCallback(() => {
+    setSearchOpen(false)
+    setSearchQuery('')
+    setSearchIdx(0)
+    clearSearchMarks()
+  }, [clearSearchMarks])
 
   if (!path) {
     return (
@@ -124,6 +249,7 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
       ref={containerRef}
       data-context-source="file-viewer"
       data-file-path={path}
+      tabIndex={-1}
       style={{
         height: '100%',
         overflow: 'auto',
@@ -131,19 +257,92 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
         fontSize: 12,
         lineHeight: 1.5,
         background: 'var(--bg-primary)',
+        position: 'relative',
       }}
     >
+      {searchOpen && (
+        <InPaneSearchBar
+          onQuery={(q) => { setSearchQuery(q); setSearchIdx(0) }}
+          onNext={() => setSearchIdx((i) => searchTotal === 0 ? 0 : (i + 1) % searchTotal)}
+          onPrev={() => setSearchIdx((i) => searchTotal === 0 ? 0 : (i - 1 + searchTotal) % searchTotal)}
+          onClose={handleSearchClose}
+          matches={{ current: searchTotal === 0 ? 0 : searchIdx + 1, total: searchTotal }}
+          placeholder="Find in file"
+        />
+      )}
       <div
         style={{
           padding: '6px 10px',
           borderBottom: '1px solid var(--border)',
           fontSize: 11,
-          opacity: 0.7,
           display: 'flex',
-          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 10,
         }}
       >
-        <span>{path}</span>
+        {treeCollapsed && (
+          <button
+            type="button"
+            onClick={toggleTreeCollapsed}
+            title="Show file tree"
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-muted)',
+              cursor: 'pointer',
+              padding: '0 4px',
+              fontSize: 11,
+              lineHeight: 1,
+            }}
+          >
+            ▶
+          </button>
+        )}
+        <span style={{ opacity: 0.7, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {path}
+        </span>
+        {isMarkdown && (
+          <div
+            style={{
+              display: 'inline-flex',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              overflow: 'hidden',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setMdMode('preview')}
+              style={{
+                background: mdMode === 'preview' ? 'var(--bg-hover)' : 'transparent',
+                color: 'var(--text-primary)',
+                border: 'none',
+                padding: '2px 8px',
+                fontSize: 11,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Preview
+            </button>
+            <button
+              type="button"
+              onClick={() => setMdMode('raw')}
+              style={{
+                background: mdMode === 'raw' ? 'var(--bg-hover)' : 'transparent',
+                color: 'var(--text-primary)',
+                border: 'none',
+                borderLeft: '1px solid var(--border)',
+                padding: '2px 8px',
+                fontSize: 11,
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Raw
+            </button>
+          </div>
+        )}
         {truncated && <span style={{ color: 'var(--accent-warn, #d29922)' }}>truncated</span>}
       </div>
       {error ? (
@@ -152,7 +351,13 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
         </div>
       ) : (
         <div
-          style={{ padding: '8px 0' }}
+          ref={contentRef}
+          style={{
+            padding: isMarkdown && mdMode === 'preview' ? '12px 16px' : '8px 0',
+            // Code paths need horizontal scroll for long lines; markdown
+            // preview wraps naturally so we let it flow.
+            overflowX: isMarkdown && mdMode === 'preview' ? 'visible' : 'auto',
+          }}
           dangerouslySetInnerHTML={{ __html: html }}
         />
       )}

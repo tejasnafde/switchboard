@@ -13,7 +13,7 @@ import { ipcMain } from 'electron'
 import { isAbsolute, join, normalize, relative, resolve } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { FilesChannels } from '@shared/ipc-channels'
-import { listDirAnnotated, readFileCapped } from '../files/listing'
+import { listDirAnnotated, readFileCapped, listAllFiles } from '../files/listing'
 import { createMainLogger as createLogger } from '../logger'
 
 const log = createLogger('ipc:files')
@@ -58,6 +58,17 @@ export function registerFilesHandlers(): void {
     } catch (err) {
       log.warn('read-file failed', { repoRoot, subPath, err: (err as Error).message })
       return { ok: false, error: (err as Error).message, content: '', truncated: false, totalBytes: 0 }
+    }
+  })
+
+  ipcMain.handle(FilesChannels.LIST_ALL, async (_e, repoRoot: string) => {
+    try {
+      const root = resolve(repoRoot)
+      const files = await listAllFiles(root)
+      return { ok: true, files }
+    } catch (err) {
+      log.warn('list-all failed', { repoRoot, err: (err as Error).message })
+      return { ok: false, error: (err as Error).message, files: [] }
     }
   })
 

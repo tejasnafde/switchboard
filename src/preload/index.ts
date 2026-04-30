@@ -210,6 +210,10 @@ const api = {
       subPath: string,
     ): Promise<{ ok: boolean; exists: boolean; absPath?: string }> =>
       ipcRenderer.invoke(FilesChannels.RESOLVE, repoRoot, subPath),
+    listAll: (
+      repoRoot: string,
+    ): Promise<{ ok: boolean; error?: string; files: string[] }> =>
+      ipcRenderer.invoke(FilesChannels.LIST_ALL, repoRoot),
   },
 
   settings: {

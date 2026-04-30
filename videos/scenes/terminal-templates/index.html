@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard — Terminal Templates</title>
+<link rel="stylesheet" href="../_shared/theme.css" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  /* Fixed-canvas layout (1280×720). Stage absolute-positions every box
+     so we never depend on flex height propagation in the headless render. */
+  .stage { position: relative; width: 1280px; height: 720px; }
+
+  .caption {
+    position: absolute; top: 28px; left: 40px; right: 40px; height: 28px;
+    font-family: var(--font-sans); font-size: 16px; color: var(--text-secondary);
+    display: flex; align-items: center; gap: 8px; opacity: 0;
+  }
+  .caption strong { color: var(--text-primary); font-weight: 600; }
+
+  /* Strip = the right-pane terminal area */
+  .strip {
+    position: absolute; top: 72px; left: 40px; width: 1200px; height: 612px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg-secondary); overflow: visible;
+  }
+  .strip-header {
+    position: absolute; top: 0; left: 0; right: 0; height: 38px;
+    border-bottom: 1px solid var(--border); background: var(--bg-tertiary);
+    display: flex; align-items: center; gap: 12px; padding: 0 14px;
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);
+  }
+  .strip-header .label {
+    text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--bg); color: var(--text-secondary);
+    border: 1px solid var(--border); border-radius: 4px;
+    padding: 3px 7px; font-size: 11px; font-family: var(--font-mono);
+  }
+  .chip .muted { color: var(--text-muted); }
+  .chip .star { display: inline-flex; align-items: center; }
+  .chip .name { color: var(--text-primary); }
+  .chip .arrow { color: var(--text-muted); font-size: 8px; }
+
+  .dropdown {
+    position: absolute; top: 44px; left: 88px; width: 240px;
+    background: rgba(24, 28, 38, 0.98);
+    backdrop-filter: blur(24px);
+    border: 1px solid var(--border); border-radius: 6px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    padding: 5px 0; font-family: var(--font-mono);
+    z-index: 60; opacity: 0;
+    pointer-events: none;
+  }
+  .dropdown .item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px; font-size: 12px; color: var(--text-primary);
+  }
+  .dropdown .item .star-slot { width: 12px; display: inline-flex; justify-content: center; }
+  .dropdown .item .grow { flex: 1; }
+  .dropdown .item.hover { background: var(--bg-hover); }
+  .dropdown .divider { height: 1px; background: var(--border); margin: 5px 0; }
+  .dropdown .footer-action { color: var(--text-secondary); font-size: 11.5px; padding: 5px 12px; }
+  .dropdown .footer-action.hover { background: var(--bg-hover); }
+
+  .save-inline {
+    padding: 8px 12px; display: none; flex-direction: column; gap: 6px;
+    border-top: 1px solid var(--border); margin-top: 4px;
+  }
+  .save-inline.show { display: flex; }
+  .save-inline input {
+    background: var(--bg); border: 1px solid var(--accent); border-radius: 3px;
+    padding: 4px 7px; color: var(--text-primary); font-family: var(--font-mono);
+    font-size: 12px; outline: none; width: 100%;
+  }
+  .save-inline .feedback { color: var(--success); font-size: 10.5px; }
+
+  /* Panes area has fixed pixel dims so we can compute precise pane positions. */
+  /* panes-area: top 38, bottom 1198; height 612-38-1 = 573. usable inner after 10 padding: 553h × 1180w */
+  .panes-area {
+    position: absolute; top: 38px; left: 0; right: 0; bottom: 0;
+    padding: 10px; overflow: hidden;
+  }
+
+  /* Each pane: absolute, in pixels. Bodies clip with overflow:hidden which the
+     audit treats as a content-overflow signal — mark intent so it's quiet. */
+  .pane {
+    position: absolute; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 12px; overflow: hidden;
+    font-family: var(--font-mono); font-size: 11.5px;
+    color: var(--text-secondary);
+    transition: top 500ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                left 500ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                width 500ms cubic-bezier(0.2, 0.8, 0.2, 1),
+                height 500ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  .pane .head {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+    font-size: 10.5px; color: var(--text-muted); position: relative;
+  }
+  .pane .head .dot {
+    width: 5px; height: 5px; border-radius: 50%; background: var(--text-muted);
+    opacity: 0.45;
+  }
+  .pane.focused .head .dot { background: var(--success); opacity: 1; }
+  .pane .head .name { color: var(--text-secondary); }
+  .pane.focused .head .name { color: var(--text-primary); }
+  .pane .body {
+    line-height: 1.5; color: var(--text-primary); font-size: 11px;
+    white-space: pre; overflow: hidden;
+  }
+
+  .rename-input {
+    position: absolute; top: -3px; left: 14px; width: 130px;
+    padding: 1px 5px; font-size: 10.5px; font-family: var(--font-mono);
+    background: var(--bg-secondary); color: var(--text-primary);
+    border: 1px solid var(--accent); border-radius: 3px; outline: none;
+    opacity: 0;
+  }
+
+  .cursor {
+    position: absolute; width: 18px; height: 18px;
+    pointer-events: none; z-index: 100; left: 600px; top: 500px;
+  }
+  .cursor svg { width: 100%; height: 100%; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)); }
+
+  .toast {
+    position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+    background: rgba(20, 24, 30, 0.96); backdrop-filter: blur(12px);
+    border: 1px solid var(--success); color: var(--success);
+    padding: 7px 14px; border-radius: 6px; font-family: var(--font-mono);
+    font-size: 12px; opacity: 0;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="terminal-templates" data-start="0" data-duration="14" data-width="1280" data-height="720">
+<div class="stage">
+
+  <div class="caption" id="caption">
+    <strong>Per-chat terminal templates</strong>
+    <span id="caption-text">— switch named layouts from the strip header.</span>
+  </div>
+
+  <div class="strip" data-layout-allow-overflow>
+    <div class="strip-header">
+      <span class="label">TERMINAL</span>
+      <div class="chip" id="chip">
+        <span class="muted">template:</span>
+        <span class="star" id="chip-star">
+          <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 2.5l2.9 6.4 7 .7-5.3 4.7 1.6 6.9L12 17.6 5.8 21.2l1.6-6.9L2 9.6l7-.7L12 2.5z"
+                  fill="var(--accent)" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+        </span>
+        <span class="name" id="chip-name">default</span>
+        <span class="arrow">▾</span>
+      </div>
+
+      <div class="dropdown" id="dropdown" data-layout-allow-overflow>
+        <div class="item" id="row-default">
+          <span class="star-slot" id="star-default">
+            <svg width="11" height="11" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.4 7 .7-5.3 4.7 1.6 6.9L12 17.6 5.8 21.2l1.6-6.9L2 9.6l7-.7L12 2.5z" fill="var(--accent)" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="grow">default</span>
+        </div>
+        <div class="item" id="row-staging">
+          <span class="star-slot" id="star-staging"></span>
+          <span class="grow">backend</span>
+        </div>
+        <div class="item" id="row-comms">
+          <span class="star-slot"></span>
+          <span class="grow">monitoring</span>
+        </div>
+        <div class="divider"></div>
+        <div class="footer-action" id="row-clear">Clear pin</div>
+        <div class="footer-action" id="row-save">+ Save current layout…</div>
+
+        <div class="save-inline" id="save-inline">
+          <input id="save-input" placeholder="Template name" value="" />
+          <div style="display:flex;gap:5px;">
+            <button id="save-btn" style="background:var(--accent);color:var(--bg);border:none;border-radius:3px;padding:3px 10px;font-family:var(--font-mono);font-size:10.5px;cursor:pointer;">Save</button>
+            <button style="background:transparent;color:var(--text-secondary);border:1px solid var(--border);border-radius:3px;padding:3px 10px;font-family:var(--font-mono);font-size:10.5px;">Cancel</button>
+          </div>
+          <div class="feedback" id="save-feedback"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panes-area">
+      <!--
+        Initial 2x2 layout — pixel coords inside panes-area (1180w × 553h after 10px pad).
+        Each pane gap: 6px. Half-width = (1180-6)/2 = 587. Half-height = (553-6)/2 = 273.
+      -->
+      <div class="pane focused" id="p1" data-layout-allow-overflow style="top:0;left:0;width:587px;height:273px;">
+        <div class="head"><span class="dot"></span><span class="name" id="p1-name">Terminal 1</span></div>
+        <input class="rename-input" id="p1-rename" value="" />
+        <div class="body" id="p1-body">$ ls
+README.md  src/</div>
+      </div>
+      <div class="pane" id="p2" data-layout-allow-overflow style="top:0;left:593px;width:587px;height:273px;">
+        <div class="head"><span class="dot"></span><span class="name" id="p2-name">Terminal 2</span></div>
+        <div class="body" id="p2-body">$ git status
+clean</div>
+      </div>
+      <div class="pane" id="p3" data-layout-allow-overflow style="top:280px;left:0;width:587px;height:273px;">
+        <div class="head"><span class="dot"></span><span class="name" id="p3-name">Terminal 3</span></div>
+        <div class="body" id="p3-body">$ npm test
+all green</div>
+      </div>
+      <div class="pane" id="p4" data-layout-allow-overflow style="top:280px;left:593px;width:587px;height:273px;">
+        <div class="head"><span class="dot"></span><span class="name" id="p4-name">Terminal 4</span></div>
+        <div class="body" id="p4-body">$ tail logs
+[info] booted</div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast">Saved "my-layout".</div>
+  </div>
+
+  <!-- Cursor at stage level so it can travel across the canvas -->
+  <div class="cursor" id="cursor" data-layout-ignore>
+    <svg viewBox="0 0 24 24">
+      <path d="M3 2 L3 18 L7.5 14 L10 20 L13 19 L10.5 13 L17 13 Z"
+            fill="#ffffff" stroke="#000000" stroke-width="1" stroke-linejoin="round"/>
+    </svg>
+  </div>
+
+</div>
+</div>
+
+<script>
+  // ─────────────────────────────────────────────────────────────────────
+  // Tour clip: per-chat terminal templates (≈14s)
+  //
+  // Beats:
+  //   0.0–1.4   strip + caption fade in; chip shows "default" pinned
+  //   1.4–3.0   cursor moves to chip → dropdown opens
+  //   3.0–4.6   hover backend → click → panes morph into 3-row layout
+  //   4.6–5.6   chip auto-updates to "backend" with star
+  //   5.6–7.6   double-click pane label → inline rename "remote-db"
+  //   7.6–11.0  reopen dropdown → click "+ Save current layout…" → type
+  //             "my-layout" → Save → success toast
+  //   11.0–14   final hold + summary caption
+  // ─────────────────────────────────────────────────────────────────────
+
+  const $ = (id) => document.getElementById(id);
+  const cursor = $('cursor');
+  const dropdown = $('dropdown');
+  const chipName = $('chip-name');
+  const chipStar = $('chip-star');
+  const captionText = $('caption-text');
+
+  // Approximate pixel-coords of UI targets (canvas-space).
+  // Strip is at left 40, top 72. Strip-header runs 38px. Chip sits ~120,86.
+  // Dropdown rows live ~ x:128, with 24px row-pitch from y:118 onward.
+  const POINTS = {
+    chip:        { x: 120, y: 86 },
+    rowStaging:  { x: 145, y: 145 },
+    rowSave:     { x: 155, y: 240 },
+    saveBtn:     { x: 175, y: 290 },
+    pane1Label:  { x:  90, y: 102 + 38 + 10 + 12 },  // strip-top + header + pad + label-y
+  };
+  // pane1 label center: strip(72) + header(38) + pad(10) + 12 ≈ 132; x: strip(40) + pad(10) + 30 = 80
+  POINTS.pane1Label = { x: 90, y: 132 };
+
+  function moveCursor(t, x, y, dur=0.55) {
+    tl.to(cursor, { left: x+'px', top: y+'px', duration: dur, ease: 'power2.inOut' }, t);
+  }
+  function clickPulse(t) {
+    tl.to(cursor, { scale: 0.85, duration: 0.07 }, t);
+    tl.to(cursor, { scale: 1.0,  duration: 0.16, ease: 'power2.out' }, t + 0.07);
+  }
+
+  // "backend" layout: 3 rows.
+  //   Row 1 (top): two panes side-by-side (api + worker)
+  //   Row 2 (mid): single full-width (db shell)
+  //   Row 3 (bottom): single full-width (logs)
+  //   panes-area: 1180×553 → row heights 175 / 175 / 191 (pad 6+6 between)
+  const stagingLayout = [
+    { id:'p1', top:0,     left:0,    w:587,  h:175, name:'api',        body:'$ npm run dev\nlistening :3000' },
+    { id:'p2', top:0,     left:593,  w:587,  h:175, name:'worker',     body:'$ npm run worker\nready' },
+    { id:'p3', top:181,   left:0,    w:1180, h:175, name:'db · shell', body:'app=> SELECT now();\n            now\n--------------------' },
+    { id:'p4', top:362,   left:0,    w:1180, h:191, name:'logs',       body:'$ tail -f logs/app.log\n[info] booted' },
+  ];
+
+  function setCaption(text) { captionText.textContent = text; }
+
+  window.__timelines = window.__timelines || {};
+  const tl = gsap.timeline({ paused: true, defaults: { ease: 'power2.out' } });
+
+  // 0.0–1.4 — intro
+  tl.from('.strip',  { y: 30, opacity: 0, duration: 0.7 }, 0.1);
+  tl.to('#caption',  { opacity: 1, duration: 0.5 }, 0.4);
+  tl.from('#chip',   { opacity: 0, duration: 0.4 }, 0.6);
+  // Park the cursor mid-canvas, ready to travel.
+  tl.set(cursor, { left: 600, top: 500 }, 0);
+
+  // 1.4–3.0 — open dropdown
+  moveCursor(1.4, POINTS.chip.x + 30, POINTS.chip.y + 60, 0.7);
+  moveCursor(2.15, POINTS.chip.x, POINTS.chip.y, 0.4);
+  clickPulse(2.55);
+  tl.to(dropdown, { opacity: 1, duration: 0.25 }, 2.55);
+  tl.set(dropdown, { pointerEvents: 'auto' }, 2.55);
+
+  // 3.0–4.6 — hover backend, click, panes morph
+  moveCursor(3.0, POINTS.rowStaging.x, POINTS.rowStaging.y, 0.5);
+  tl.set('#row-staging', { className: 'item hover' }, 3.55);
+  clickPulse(3.85);
+  tl.to(dropdown, { opacity: 0, duration: 0.2 }, 4.0);
+  tl.set(dropdown, { pointerEvents: 'none' }, 4.2);
+  tl.set('#row-staging', { className: 'item' }, 4.2);
+
+  stagingLayout.forEach((p) => {
+    tl.to('#'+p.id, {
+      top: p.top+'px', left: p.left+'px',
+      width: p.w+'px', height: p.h+'px',
+      duration: 0.7, ease: 'power3.inOut',
+    }, 4.0);
+    tl.set('#'+p.id+'-body', { textContent: p.body }, 4.5);
+    tl.set('#'+p.id+'-name', { textContent: p.name }, 4.5);
+  });
+  // Refocus to p3 (db · shell)
+  tl.call(() => {
+    document.querySelectorAll('.pane').forEach(el => el.classList.remove('focused'));
+    document.getElementById('p3').classList.add('focused');
+  }, [], 4.5);
+
+  // 4.6–5.6 — chip auto-updates
+  tl.call(() => { chipName.textContent = 'backend'; }, [], 4.85);
+  tl.fromTo(chipStar,
+    { scale: 0.4, opacity: 0.4 },
+    { scale: 1, opacity: 1, duration: 0.4, ease: 'back.out(2)' },
+    4.85);
+  tl.call(() => setCaption('— picking auto-pins it; star marks the chat-bound template.'), [], 5.05);
+
+  // 5.6–7.6 — double-click pane 1 label, rename to "remote-db"
+  // Pane 1 in staging layout is at top:0 left:0, head sits ~ strip-top(72)+header(38)+pad(10)+12
+  POINTS.pane1Label = { x: 90, y: 130 };
+  moveCursor(5.6, POINTS.pane1Label.x, POINTS.pane1Label.y, 0.55);
+  clickPulse(6.05);
+  clickPulse(6.22);
+  tl.set('#p1-name', { opacity: 0 }, 6.4);
+  tl.to('#p1-rename', { opacity: 1, duration: 0.18 }, 6.4);
+  // Type "remote-db" into the rename input
+  tl.call(() => {
+    const inp = document.getElementById('p1-rename');
+    const target = 'remote-db';
+    inp.value = '';
+    let i = 0;
+    const tick = () => {
+      if (i <= target.length) { inp.value = target.slice(0, i); i++; setTimeout(tick, 55); }
+    };
+    tick();
+  }, [], 6.55);
+  // Commit rename
+  tl.set('#p1-rename', { opacity: 0 }, 7.4);
+  tl.call(() => { document.getElementById('p1-name').textContent = 'remote-db'; }, [], 7.4);
+  tl.to('#p1-name', { opacity: 1, duration: 0.18 }, 7.4);
+  tl.call(() => setCaption('— double-click any label to rename, persisted with the layout.'), [], 7.5);
+
+  // 7.6–11.0 — reopen dropdown, click "+ Save current layout…"
+  moveCursor(7.7, POINTS.chip.x, POINTS.chip.y, 0.55);
+  clickPulse(8.2);
+  tl.to(dropdown, { opacity: 1, duration: 0.2 }, 8.2);
+  tl.set(dropdown, { pointerEvents: 'auto' }, 8.2);
+  // Repaint pinned indicator: backend now has the star.
+  tl.call(() => {
+    document.getElementById('star-default').innerHTML = '';
+    document.getElementById('star-staging').innerHTML =
+      '<svg width="11" height="11" viewBox="0 0 24 24"><path d="M12 2.5l2.9 6.4 7 .7-5.3 4.7 1.6 6.9L12 17.6 5.8 21.2l1.6-6.9L2 9.6l7-.7L12 2.5z" fill="var(--accent)" stroke="var(--accent)" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+  }, [], 8.25);
+  moveCursor(8.4, POINTS.rowSave.x, POINTS.rowSave.y, 0.55);
+  tl.set('#row-save', { className: 'footer-action hover' }, 8.9);
+  clickPulse(9.2);
+  tl.set('#row-save', { className: 'footer-action' }, 9.35);
+  tl.set('#save-inline', { className: 'save-inline show' }, 9.35);
+
+  // Type "my-layout" into the save input
+  tl.call(() => {
+    const inp = document.getElementById('save-input');
+    const target = 'my-layout';
+    inp.value = '';
+    let i = 0;
+    const tick = () => {
+      if (i <= target.length) { inp.value = target.slice(0, i); i++; setTimeout(tick, 55); }
+    };
+    tick();
+  }, [], 9.55);
+  // Cursor → Save button
+  moveCursor(10.25, POINTS.saveBtn.x, POINTS.saveBtn.y, 0.45);
+  clickPulse(10.7);
+  tl.call(() => { document.getElementById('save-feedback').textContent = 'Saved "my-layout".'; }, [], 10.8);
+  tl.fromTo('#toast',
+    { opacity: 0, y: 10 },
+    { opacity: 1, y: 0, duration: 0.35 },
+    10.85);
+
+  // 11.0–14 — final hold
+  tl.call(() => setCaption('— snapshot live panes back to workspace.yaml.'), [], 11.0);
+  tl.to(dropdown, { opacity: 0, duration: 0.4 }, 12.4);
+  tl.to('#toast',  { opacity: 0, duration: 0.4 }, 13.2);
+
+  window.__timelines["terminal-templates"] = tl;
+</script>
+</body>
+</html>

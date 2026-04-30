@@ -40,7 +40,7 @@ export type TryItAction =
  * Bump when the tour list changes meaningfully. Auto-open fires on the
  * next launch for any user whose `tour.lastSeenVersion` is older.
  */
-export const TOUR_VERSION = '2026-04-29'
+export const TOUR_VERSION = '2026-04-30'
 
 export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   {
@@ -48,18 +48,6 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     title: 'Welcome to Switchboard',
     description:
       'Terminals, AI agents, and project context in one window. Add a folder from the sidebar to get started — everything else flows from there.',
-  },
-  {
-    id: 'workspaces',
-    title: 'Sidebar workspaces',
-    description:
-      'Group projects under named, color-tagged workspaces — Work, Personal, side quests. Filter the whole tree by chat title with the new search input. Collapse state persists across launches.',
-  },
-  {
-    id: 'workspace-config',
-    title: 'Workspace Orchestration',
-    description:
-      'Drop a .switchboard/workspace.yaml into any project to declare terminals, define startup commands, and orchestrate wait-then launch chains. Live edits hot-reload the layout instantly.',
   },
   {
     id: 'slash-menu',
@@ -81,6 +69,30 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
       'Split any pane horizontally or vertically — terminals and chats live in the same tmux-style tree. Drag the handle to resize, ⌘W closes the focused pane.',
   },
   {
+    id: 'file-viewer-context',
+    title: 'File viewer & context bridge',
+    description:
+      '⌘⇧E flips the right pane to a file tree + viewer with Shiki highlighting and markdown preview. ⌘P fuzzy-finds any file, ⌘L pipes terminal/file selections straight into the chat draft.',
+  },
+  {
+    id: 'terminal-templates',
+    title: 'Named terminal templates',
+    description:
+      'Save the current terminal layout as a template, star your favorite, and apply it to any new chat. Templates live in workspace.yaml so they sync across machines via git.',
+  },
+  {
+    id: 'workspace-config',
+    title: 'Workspace orchestration',
+    description:
+      'Drop a .switchboard/workspace.yaml into any project to declare terminals, define startup commands, and orchestrate wait-then launch chains. Live edits hot-reload the layout instantly.',
+  },
+  {
+    id: 'switch-agent',
+    title: 'Switch agents on the fly',
+    description:
+      'Use the agent dropdown in any chat to swap between Claude Code, Codex, and OpenCode mid-session. The status bar and model picker update in lockstep.',
+  },
+  {
     id: 'resume-search',
     title: 'Session resume & full-text search',
     description:
@@ -88,9 +100,9 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     tryIt: { kind: 'open-search' },
   },
   {
-    id: 'switch-agent',
-    title: 'Switch agents on the fly',
+    id: 'workspaces',
+    title: 'Sidebar workspaces',
     description:
-      'Use the agent dropdown in any chat to swap between Claude Code, Codex, and OpenCode mid-session. The status bar and model picker update in lockstep.',
+      'Group projects under named, color-tagged workspaces — Work, Personal, side quests. Filter the whole tree by chat title with the new search input. Collapse state persists across launches.',
   },
 ]

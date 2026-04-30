@@ -38,7 +38,18 @@ if (typeof electronPath !== 'string') {
   process.exit(1)
 }
 
-const child = spawn(electronPath, [mainBundle, '--smoke-test'], {
+// On Linux CI the SUID sandbox helper (`chrome-sandbox`) needs to be owned
+// by root with mode 4755. GitHub-hosted runners ship Electron in a path
+// where neither condition holds, and Chromium aborts at startup rather
+// than fall back to the non-SUID sandbox. Since this is a one-shot boot
+// check (we exit at `app.whenReady()` before any renderer loads), running
+// without the sandbox is safe and matches how `electron-builder`'s own
+// post-pack tests behave on the same runners.
+const isLinux = process.platform === 'linux'
+const electronArgs = [mainBundle, '--smoke-test']
+if (isLinux) electronArgs.push('--no-sandbox')
+
+const child = spawn(electronPath, electronArgs, {
   cwd: repoRoot,
   stdio: 'inherit',
   env: {
