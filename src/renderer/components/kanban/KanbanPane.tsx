@@ -11,9 +11,11 @@
  * second.
  */
 
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
+import { useLayoutStore } from '../../stores/layout-store'
+import { emitSessionCreated } from '../../services/session-events'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 import { CardModal } from './CardModal'
 
@@ -24,10 +26,50 @@ export function KanbanPane(): React.ReactElement {
     return sess?.projectPath ?? null
   })
 
-  const { byProject, hydrate } = useKanbanStore()
+  const { byProject, hydrate, update: updateCard } = useKanbanStore()
+  const addSession = useAgentStore((s) => s.addSession)
+  const setActiveSession = useAgentStore((s) => s.setActiveSession)
+  const setRightPaneMode = useLayoutStore((s) => s.setRightPaneMode)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState('')
+
+  /**
+   * Card → session start. If the card already links a conversation, just
+   * jump to it. Otherwise create a fresh session whose `projectPath` is
+   * the worktree (when present) or the project root, persist it to DB,
+   * tell the sidebar via the session-events bus, and patch the card so a
+   * second click jumps instead of re-creating.
+   *
+   * We deliberately flip the right-pane mode to terminal after starting so
+   * the user can see their new chat — nothing's more confusing than
+   * clicking "Start" and watching the kanban board not change.
+   */
+  const startOrJumpToCard = useCallback(
+    async (card: KanbanCard) => {
+      const existing = card.conversationId
+        && useAgentStore.getState().sessions.some((x) => x.id === card.conversationId)
+      if (existing && card.conversationId) {
+        setActiveSession(card.conversationId)
+        setRightPaneMode('terminal')
+        return
+      }
+      const cwd = card.worktreePath ?? card.projectPath
+      const id = `agent_${Date.now()}`
+      const title = card.title
+      addSession({ id, type: 'claude-code', status: 'idle', projectPath: cwd, title })
+      setActiveSession(id)
+      window.api.app
+        .createConversation({ id, projectPath: cwd, agentType: 'claude-code', title })
+        .catch((err: unknown) => {
+          console.warn('[kanban] createConversation failed:', err)
+        })
+      emitSessionCreated({ id, projectPath: cwd, title, startedAt: Date.now(), source: 'switchboard' })
+      await updateCard(card.id, { conversationId: id })
+      setRightPaneMode('terminal')
+    },
+    [addSession, setActiveSession, setRightPaneMode, updateCard],
+  )
 
   useEffect(() => {
     if (projectPath) void hydrate(projectPath)
@@ -78,6 +120,7 @@ export function KanbanPane(): React.ReactElement {
             label={col.label}
             cards={filtered.filter((c) => c.status === col.id)}
             onOpen={(id) => setEditingId(id)}
+            onStart={(c) => { void startOrJumpToCard(c) }}
           />
         ))}
       </div>
@@ -105,10 +148,12 @@ function Column({
   label,
   cards,
   onOpen,
+  onStart,
 }: {
   label: string
   cards: KanbanCard[]
   onOpen: (id: string) => void
+  onStart: (card: KanbanCard) => void
 }): React.ReactElement {
   return (
     <div style={colStyle}>
@@ -118,7 +163,7 @@ function Column({
       </div>
       <div style={colBodyStyle}>
         {cards.map((c) => (
-          <CardTile key={c.id} card={c} onClick={() => onOpen(c.id)} />
+          <CardTile key={c.id} card={c} onOpen={() => onOpen(c.id)} onStart={() => onStart(c)} />
         ))}
         {cards.length === 0 && (
           <div style={{ opacity: 0.4, fontSize: 11, padding: 8, textAlign: 'center' }}>
@@ -130,11 +175,42 @@ function Column({
   )
 }
 
-function CardTile({ card, onClick }: { card: KanbanCard; onClick: () => void }): React.ReactElement {
+function CardTile({
+  card,
+  onOpen,
+  onStart,
+}: {
+  card: KanbanCard
+  onOpen: () => void
+  onStart: () => void
+}): React.ReactElement {
   const overBudget = card.costCapUsd != null && card.costUsedUsd != null && card.costUsedUsd >= card.costCapUsd
+  const hasSession = !!card.conversationId
+  // Tile is a div (not <button>) so we can nest the Start action button
+  // without violating the no-nested-interactives DOM rule. Click + Enter
+  // open the modal; the Start button stops propagation.
   return (
-    <button onClick={onClick} style={tileStyle} data-needs-input={card.status === 'needs_input' || undefined} data-over-budget={overBudget || undefined}>
-      <div style={tileTitleStyle}>{card.title}</div>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() }
+      }}
+      style={tileStyle}
+      data-needs-input={card.status === 'needs_input' || undefined}
+      data-over-budget={overBudget || undefined}
+    >
+      <div style={tileHeaderRowStyle}>
+        <div style={tileTitleStyle}>{card.title}</div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onStart() }}
+          title={hasSession ? 'Jump to linked chat' : 'Start a chat in this card'}
+          style={startBtnStyle}
+        >
+          {hasSession ? '↗' : '▶'}
+        </button>
+      </div>
       {card.tags.length > 0 && (
         <div style={tagsRowStyle}>
           {card.tags.map((t) => <span key={t} style={tagStyle}>{t}</span>)}
@@ -147,9 +223,9 @@ function CardTile({ card, onClick }: { card: KanbanCard; onClick: () => void }):
             ${(card.costUsedUsd ?? 0).toFixed(2)}/${card.costCapUsd.toFixed(2)}
           </span>
         )}
-        {card.conversationId && <span style={badgeStyle}>● session</span>}
+        {hasSession && <span style={badgeStyle}>● session</span>}
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -195,7 +271,15 @@ const tileStyle: CSSProperties = {
   border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)',
   cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4,
 }
-const tileTitleStyle: CSSProperties = { fontSize: 13, lineHeight: 1.3, fontWeight: 500 }
+const tileHeaderRowStyle: CSSProperties = {
+  display: 'flex', alignItems: 'flex-start', gap: 6, justifyContent: 'space-between',
+}
+const tileTitleStyle: CSSProperties = { fontSize: 13, lineHeight: 1.3, fontWeight: 500, flex: 1, minWidth: 0 }
+const startBtnStyle: CSSProperties = {
+  fontSize: 11, lineHeight: 1, padding: '2px 6px', borderRadius: 3,
+  background: 'transparent', color: 'var(--fg)',
+  border: '1px solid var(--border)', cursor: 'pointer',
+}
 const tagsRowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 4 }
 const tagStyle: CSSProperties = {
   fontSize: 10, padding: '1px 6px', borderRadius: 8,
