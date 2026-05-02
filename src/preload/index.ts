@@ -235,6 +235,12 @@ const api = {
       ipcRenderer.invoke(KanbanChannels.LIST_WORKTREES, projectPath),
     listStaleWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>
       ipcRenderer.invoke(KanbanChannels.LIST_STALE_WORKTREES, projectPath),
+    removeStaleWorktree: (
+      projectPath: string,
+      worktreePath: string,
+      opts?: { force?: boolean },
+    ): Promise<void> =>
+      ipcRenderer.invoke(KanbanChannels.REMOVE_STALE_WORKTREE, projectPath, worktreePath, opts),
   },
 
   settings: {

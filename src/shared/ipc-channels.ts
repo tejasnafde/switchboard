@@ -59,6 +59,12 @@ export const KanbanChannels = {
   REMOVE_WORKTREE: 'kanban:remove-worktree',
   LIST_WORKTREES: 'kanban:list-worktrees',
   LIST_STALE_WORKTREES: 'kanban:list-stale-worktrees',
+  /**
+   * Remove a worktree by absolute path (not card id). Used by the stale
+   * cleanup flow where the worktree may not be linked to any card. Caller
+   * passes the project root so we know which repo to operate on.
+   */
+  REMOVE_STALE_WORKTREE: 'kanban:remove-stale-worktree',
 } as const
 
 export const FilesChannels = {

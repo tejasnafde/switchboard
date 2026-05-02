@@ -18,6 +18,7 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { emitSessionCreated } from '../../services/session-events'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 import { CardModal } from './CardModal'
+import { WorktreeManagerModal } from './WorktreeManagerModal'
 
 export function KanbanPane(): React.ReactElement {
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
@@ -32,6 +33,7 @@ export function KanbanPane(): React.ReactElement {
   const setRightPaneMode = useLayoutStore((s) => s.setRightPaneMode)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [managingWorktrees, setManagingWorktrees] = useState(false)
   const [filter, setFilter] = useState('')
 
   /**
@@ -110,6 +112,13 @@ export function KanbanPane(): React.ReactElement {
           placeholder="Filter title / tag…"
           style={inputStyle}
         />
+        <button
+          onClick={() => setManagingWorktrees(true)}
+          style={secondaryBtnStyle}
+          title="Manage git worktrees for this project"
+        >
+          ⎇ Worktrees
+        </button>
         <button onClick={() => setCreating(true)} style={primaryBtnStyle}>＋ New card</button>
       </div>
 
@@ -138,6 +147,12 @@ export function KanbanPane(): React.ReactElement {
           card={editingCard}
           projectPath={projectPath}
           onClose={() => setEditingId(null)}
+        />
+      )}
+      {managingWorktrees && (
+        <WorktreeManagerModal
+          projectPath={projectPath}
+          onClose={() => { setManagingWorktrees(false); void hydrate(projectPath) }}
         />
       )}
     </div>
@@ -250,6 +265,10 @@ const inputStyle: CSSProperties = {
 const primaryBtnStyle: CSSProperties = {
   fontSize: 12, padding: '4px 10px', background: 'var(--accent, #2563eb)', color: 'white',
   border: 'none', borderRadius: 4, cursor: 'pointer',
+}
+const secondaryBtnStyle: CSSProperties = {
+  fontSize: 12, padding: '4px 10px', background: 'transparent', color: 'var(--fg)',
+  border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer',
 }
 const columnsStyle: CSSProperties = {
   flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, padding: 10, overflow: 'auto',

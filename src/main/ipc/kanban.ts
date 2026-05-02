@@ -27,6 +27,8 @@ import {
   removeWorktree,
   listWorktrees,
   findStaleWorktrees,
+  rmWorktreeDir,
+  worktreeRootFor,
 } from '../worktree'
 import type { KanbanCardCreate, KanbanCardUpdate } from '@shared/kanban'
 
@@ -112,6 +114,31 @@ export function registerKanbanHandlers(): void {
     const inUse = listInUseWorktreePaths(projectPath)
     return findStaleWorktrees(projectPath, inUse)
   })
+
+  /**
+   * Stale worktree removal — operates on a path, not a card id. Refuses to
+   * touch anything outside the project's managed `.switchboard/worktrees/`
+   * root so a malformed renderer call can't `rm -rf` arbitrary directories.
+   * Falls through to `rmWorktreeDir` if `git worktree remove` fails to
+   * clean up (e.g. the directory is already gone but git's metadata isn't,
+   * or the worktree is corrupt and force-remove still refuses).
+   */
+  ipcMain.handle(
+    KanbanChannels.REMOVE_STALE_WORKTREE,
+    async (_e, projectPath: string, worktreePath: string, opts?: { force?: boolean }) => {
+      const root = worktreeRootFor(projectPath)
+      if (!worktreePath.startsWith(root)) {
+        throw new Error(`Refusing to remove worktree outside ${root}: ${worktreePath}`)
+      }
+      try {
+        await removeWorktree(projectPath, worktreePath, { force: opts?.force })
+      } catch (err) {
+        log.warn(`stale removeWorktree failed, falling back to rm: ${err instanceof Error ? err.message : String(err)}`)
+        await rmWorktreeDir(worktreePath)
+      }
+      log.info(`removed stale worktree: ${worktreePath}`)
+    },
+  )
 
   log.info('IPC handlers registered')
 }
