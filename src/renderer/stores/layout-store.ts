@@ -8,7 +8,7 @@ const TERMINAL_MIN = 200
 const TERMINAL_MAX = 800
 const TERMINAL_DEFAULT = 400
 
-export type RightPaneMode = 'terminal' | 'files'
+export type RightPaneMode = 'terminal' | 'files' | 'kanban'
 
 interface LayoutStore {
   sidebarWidth: number
@@ -132,7 +132,9 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ rightPaneMode: mode })
   },
   toggleRightPaneMode: () => {
-    const next: RightPaneMode = get().rightPaneMode === 'terminal' ? 'files' : 'terminal'
+    // 3-mode cycle: terminal → files → kanban → terminal.
+    const cur = get().rightPaneMode
+    const next: RightPaneMode = cur === 'terminal' ? 'files' : cur === 'files' ? 'kanban' : 'terminal'
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, next) } catch { /* ignore */ }
     set({ rightPaneMode: next })
   },
@@ -318,7 +320,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
         return out
       } catch { return {} }
     }
-    const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
+    const mode: RightPaneMode = modeStr === 'files' ? 'files' : modeStr === 'kanban' ? 'kanban' : 'terminal'
     useLayoutStore.setState({
       sidebarCollapsedProjects: parse(projJson),
       sidebarCollapsedWorkspaces: parse(wsJson),
@@ -339,7 +341,7 @@ export async function hydrateRightPaneMode(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
     const v = await window.api.settings.get(RIGHT_PANE_MODE_KEY)
-    const mode: RightPaneMode = v === 'files' ? 'files' : 'terminal'
+    const mode: RightPaneMode = v === 'files' ? 'files' : v === 'kanban' ? 'kanban' : 'terminal'
     useLayoutStore.setState({ rightPaneMode: mode })
   } catch { /* silent */ }
 }

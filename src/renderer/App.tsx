@@ -9,6 +9,7 @@ import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatPanel } from './components/chat/ChatPanel'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { FilesPane } from './components/files/FilesPane'
+import { KanbanPane } from './components/kanban/KanbanPane'
 import { SettingsModal } from './components/SettingsModal'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
@@ -383,10 +384,16 @@ export function App() {
           e.preventDefault()
           toggleTerminal()
         }
-        // ⌘+Shift+E — toggle right pane between terminal and files (Cursor-glass-style)
+        // ⌘+Shift+E — cycle right pane: terminal → files → kanban → terminal
         else if ((e.key === 'e' || e.key === 'E') && e.shiftKey) {
           e.preventDefault()
           toggleRightPaneMode()
+          if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
+        }
+        // ⌘+Shift+K — jump straight to kanban
+        else if ((e.key === 'k' || e.key === 'K') && e.shiftKey) {
+          e.preventDefault()
+          useLayoutStore.getState().setRightPaneMode('kanban')
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
         }
         // ⌘+Shift+P — command palette
@@ -427,7 +434,6 @@ export function App() {
             if (sid) agentState.setActiveSession(sid)
           }
           if (!sid) {
-            // eslint-disable-next-line no-console
             console.warn('[Switchboard] ⌘T pressed but no session available. Open or create a chat first.')
             return
           }
@@ -489,7 +495,6 @@ export function App() {
           // terminal-only flow when nothing is wired up.
           const appended = captureSelection()
           if (!appended) {
-            // eslint-disable-next-line no-console
             console.info('[Switchboard] ⌘L: no selection found. Select text in a terminal, file viewer, or chat message first.')
           } else {
             // Focus the chat input so user can immediately type their question.
@@ -710,6 +715,15 @@ export function App() {
             }}
           >
             <FilesPane />
+          </div>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              display: rightPaneMode === 'kanban' ? 'flex' : 'none',
+            }}
+          >
+            <KanbanPane />
           </div>
         </div>
       </div>
