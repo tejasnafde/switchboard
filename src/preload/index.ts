@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, KanbanChannels } from '@shared/ipc-channels'
+import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -214,6 +215,26 @@ const api = {
       repoRoot: string,
     ): Promise<{ ok: boolean; error?: string; files: string[] }> =>
       ipcRenderer.invoke(FilesChannels.LIST_ALL, repoRoot),
+  },
+
+  // ─── Kanban (per-project task cards + per-card worktrees) ─────
+  kanban: {
+    list: (projectPath: string): Promise<KanbanCard[]> =>
+      ipcRenderer.invoke(KanbanChannels.LIST, projectPath),
+    create: (input: KanbanCardCreate): Promise<KanbanCard> =>
+      ipcRenderer.invoke(KanbanChannels.CREATE, input),
+    update: (id: string, patch: KanbanCardUpdate): Promise<KanbanCard | null> =>
+      ipcRenderer.invoke(KanbanChannels.UPDATE, id, patch),
+    delete: (id: string, opts?: { removeWorktree?: boolean; force?: boolean }): Promise<void> =>
+      ipcRenderer.invoke(KanbanChannels.DELETE, id, opts),
+    createWorktree: (id: string): Promise<KanbanCard | null> =>
+      ipcRenderer.invoke(KanbanChannels.CREATE_WORKTREE, id),
+    removeWorktree: (id: string, opts?: { force?: boolean }): Promise<KanbanCard | null> =>
+      ipcRenderer.invoke(KanbanChannels.REMOVE_WORKTREE, id, opts),
+    listWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>
+      ipcRenderer.invoke(KanbanChannels.LIST_WORKTREES, projectPath),
+    listStaleWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>
+      ipcRenderer.invoke(KanbanChannels.LIST_STALE_WORKTREES, projectPath),
   },
 
   settings: {

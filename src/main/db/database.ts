@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
 import { createMainLogger as createLogger } from '../logger'
+import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } from '@shared/kanban'
 
 const log = createLogger('db')
 
@@ -202,6 +203,32 @@ function migrate(db: Database.Database): void {
       if (rewrote > 0) log.info(`thread_sessions: flattened ${rewrote} chain row(s) to ultimate roots`)
     }
   } catch { /* best-effort — flattening can be re-run on next launch */ }
+
+  // ─── Kanban (v0.1.26) ────────────────────────────────────────────
+  // Per-project task cards. `tags` is JSON-encoded (SQLite has no
+  // native array type). `worktree_path` / `worktree_branch` are set
+  // iff the card opted into an isolated git worktree.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS kanban_cards (
+      id              TEXT PRIMARY KEY,
+      project_path    TEXT NOT NULL,
+      title           TEXT NOT NULL,
+      description     TEXT NOT NULL DEFAULT '',
+      tags            TEXT NOT NULL DEFAULT '[]',
+      status          TEXT NOT NULL DEFAULT 'backlog',
+      cost_cap_usd    REAL,
+      cost_used_usd   REAL,
+      conversation_id TEXT,
+      worktree_path   TEXT,
+      worktree_branch TEXT,
+      created_at      INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      updated_at      INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      completed_at    INTEGER,
+      FOREIGN KEY (project_path) REFERENCES projects(path) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_kanban_project_status
+      ON kanban_cards(project_path, status, updated_at DESC);
+  `)
 
   // Rebuild FTS index from existing messages
   try {
@@ -728,4 +755,104 @@ export function searchMessages(query: string, limit = 50): SearchResult[] {
       LIMIT ?
     `).all(sanitized, `%${sanitized}%`, limit) as SearchResult[]
   }
+}
+
+// ─── Kanban CRUD ─────────────────────────────────────────────────
+
+interface KanbanRow {
+  id: string
+  project_path: string
+  title: string
+  description: string
+  tags: string
+  status: string
+  cost_cap_usd: number | null
+  cost_used_usd: number | null
+  conversation_id: string | null
+  worktree_path: string | null
+  worktree_branch: string | null
+  created_at: number
+  updated_at: number
+  completed_at: number | null
+}
+
+function rowToCard(r: KanbanRow): KanbanCard {
+  let tags: string[] = []
+  try { const parsed = JSON.parse(r.tags); if (Array.isArray(parsed)) tags = parsed.map(String) } catch { /* malformed — show as empty */ }
+  return {
+    id: r.id,
+    projectPath: r.project_path,
+    title: r.title,
+    description: r.description,
+    tags,
+    status: r.status as KanbanStatus,
+    costCapUsd: r.cost_cap_usd,
+    costUsedUsd: r.cost_used_usd,
+    conversationId: r.conversation_id,
+    worktreePath: r.worktree_path,
+    worktreeBranch: r.worktree_branch,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    completedAt: r.completed_at,
+  }
+}
+
+export function createKanbanCard(id: string, input: KanbanCardCreate): KanbanCard {
+  const tagsJson = JSON.stringify(input.tags ?? [])
+  getDb().prepare(`
+    INSERT INTO kanban_cards (id, project_path, title, description, tags, status, cost_cap_usd)
+    VALUES (?, ?, ?, ?, ?, 'backlog', ?)
+  `).run(id, input.projectPath, input.title, input.description ?? '', tagsJson, input.costCapUsd ?? null)
+  return getKanbanCard(id)!
+}
+
+export function getKanbanCard(id: string): KanbanCard | null {
+  const row = getDb().prepare('SELECT * FROM kanban_cards WHERE id = ?').get(id) as KanbanRow | undefined
+  return row ? rowToCard(row) : null
+}
+
+export function listKanbanCards(projectPath: string): KanbanCard[] {
+  const rows = getDb().prepare(
+    'SELECT * FROM kanban_cards WHERE project_path = ? ORDER BY status, updated_at DESC'
+  ).all(projectPath) as KanbanRow[]
+  return rows.map(rowToCard)
+}
+
+export function updateKanbanCard(id: string, patch: KanbanCardUpdate): KanbanCard | null {
+  const existing = getKanbanCard(id)
+  if (!existing) return null
+  const next = { ...existing, ...patch }
+  const completedAt = patch.status === 'done' && existing.status !== 'done'
+    ? Date.now()
+    : patch.status && patch.status !== 'done' ? null : existing.completedAt
+  getDb().prepare(`
+    UPDATE kanban_cards SET
+      title = ?, description = ?, tags = ?, status = ?,
+      cost_cap_usd = ?, cost_used_usd = ?, conversation_id = ?,
+      updated_at = ?, completed_at = ?
+    WHERE id = ?
+  `).run(
+    next.title, next.description, JSON.stringify(next.tags), next.status,
+    next.costCapUsd, next.costUsedUsd, next.conversationId,
+    Date.now(), completedAt, id,
+  )
+  return getKanbanCard(id)
+}
+
+export function setKanbanWorktree(id: string, path: string | null, branch: string | null): KanbanCard | null {
+  getDb().prepare(`
+    UPDATE kanban_cards SET worktree_path = ?, worktree_branch = ?, updated_at = ? WHERE id = ?
+  `).run(path, branch, Date.now(), id)
+  return getKanbanCard(id)
+}
+
+export function deleteKanbanCard(id: string): void {
+  getDb().prepare('DELETE FROM kanban_cards WHERE id = ?').run(id)
+}
+
+export function listInUseWorktreePaths(projectPath: string): Set<string> {
+  const rows = getDb().prepare(
+    'SELECT worktree_path FROM kanban_cards WHERE project_path = ? AND worktree_path IS NOT NULL'
+  ).all(projectPath) as Array<{ worktree_path: string }>
+  return new Set(rows.map((r) => r.worktree_path))
 }

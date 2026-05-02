@@ -50,6 +50,17 @@ export const AppChannels = {
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
 } as const
 
+export const KanbanChannels = {
+  LIST: 'kanban:list',
+  CREATE: 'kanban:create',
+  UPDATE: 'kanban:update',
+  DELETE: 'kanban:delete',
+  CREATE_WORKTREE: 'kanban:create-worktree',
+  REMOVE_WORKTREE: 'kanban:remove-worktree',
+  LIST_WORKTREES: 'kanban:list-worktrees',
+  LIST_STALE_WORKTREES: 'kanban:list-stale-worktrees',
+} as const
+
 export const FilesChannels = {
   LIST_DIR: 'files:list-dir',
   READ_FILE: 'files:read-file',
