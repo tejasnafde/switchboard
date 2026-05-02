@@ -1,0 +1,204 @@
+/**
+ * Unit tests for the kanban-card → chat-launch helpers. Two pure
+ * functions: `deriveCardLaunch` (separates parent project from agent
+ * cwd so the session lands under the right project in the sidebar) and
+ * `buildKanbanFirstTurn` (the auto-sent first message).
+ */
+import { beforeEach, describe, it, expect, vi } from 'vitest'
+import {
+  deriveCardLaunch,
+  buildKanbanFirstTurn,
+  launchCardChat,
+} from '../../src/renderer/components/kanban/cardLaunch'
+import { useAgentStore } from '../../src/renderer/stores/agent-store'
+import type { KanbanCard } from '../../src/shared/kanban'
+
+function card(overrides: Partial<KanbanCard> = {}): KanbanCard {
+  return {
+    id: 'card_1',
+    projectPath: '/repo',
+    title: 'Do the thing',
+    description: '',
+    tags: [],
+    status: 'backlog',
+    costCapUsd: null,
+    costUsedUsd: null,
+    conversationId: null,
+    worktreePath: null,
+    worktreeBranch: null,
+    createdAt: 0,
+    updatedAt: 0,
+    completedAt: null,
+    ...overrides,
+  }
+}
+
+describe('deriveCardLaunch', () => {
+  it('uses the parent project path when no worktree is set', () => {
+    const out = deriveCardLaunch(card({ projectPath: '/repo' }))
+    expect(out).toEqual({ projectPath: '/repo', cwd: '/repo', title: 'Do the thing' })
+  })
+
+  it('keeps projectPath as the parent but routes cwd to the worktree', () => {
+    // The bug we are fixing: previously cwd was used as projectPath,
+    // which broke sidebar grouping (the worktree dir is not a registered
+    // project). Sidebar matches on strict equality of session.projectPath
+    // === project.path, so we must keep the parent as the grouping key.
+    const out = deriveCardLaunch(
+      card({ projectPath: '/repo', worktreePath: '/repo/.switchboard/worktrees/x' }),
+    )
+    expect(out.projectPath).toBe('/repo')
+    expect(out.cwd).toBe('/repo/.switchboard/worktrees/x')
+    expect(out.title).toBe('Do the thing')
+  })
+})
+
+describe('buildKanbanFirstTurn', () => {
+  it('returns the title alone when there is no description', () => {
+    expect(buildKanbanFirstTurn(card({ title: 'Refactor login' }))).toBe('Refactor login')
+  })
+
+  it('joins title and description with a blank line between them', () => {
+    expect(
+      buildKanbanFirstTurn(card({ title: 'Refactor login', description: 'Use OAuth instead.' })),
+    ).toBe('Refactor login\n\nUse OAuth instead.')
+  })
+
+  it('trims whitespace-only descriptions to just the title', () => {
+    expect(
+      buildKanbanFirstTurn(card({ title: 'Refactor login', description: '   \n\t' })),
+    ).toBe('Refactor login')
+  })
+
+  it('falls back to a placeholder when both are empty', () => {
+    // Defensive: card create requires a title, but an empty-string title
+    // can sneak in via update. We send *something* so the agent gets a
+    // turn instead of an immediate context-empty error.
+    expect(buildKanbanFirstTurn(card({ title: '', description: '' }))).toBe(
+      'Start working on this card.',
+    )
+  })
+})
+
+// ---------- launchCardChat ----------
+
+interface MockApi {
+  app: {
+    createConversation: ReturnType<typeof vi.fn>
+    saveMessage: ReturnType<typeof vi.fn>
+    renameConversation: ReturnType<typeof vi.fn>
+  }
+  provider: {
+    startSession: ReturnType<typeof vi.fn>
+    sendTurn: ReturnType<typeof vi.fn>
+  }
+  kanban: {
+    update: ReturnType<typeof vi.fn>
+  }
+}
+
+function installApiMock(): MockApi {
+  const api: MockApi = {
+    app: {
+      createConversation: vi.fn(async () => undefined),
+      saveMessage: vi.fn(async () => undefined),
+      renameConversation: vi.fn(async () => undefined),
+    },
+    provider: {
+      startSession: vi.fn(async () => ({ ok: true })),
+      sendTurn: vi.fn(async () => undefined),
+    },
+    kanban: {
+      update: vi.fn(async (id: string, patch: Record<string, unknown>) => ({
+        id,
+        projectPath: '/repo',
+        title: 't',
+        description: '',
+        tags: [],
+        status: 'in_progress',
+        costCapUsd: null,
+        costUsedUsd: null,
+        conversationId: null,
+        worktreePath: null,
+        worktreeBranch: null,
+        createdAt: 0,
+        updatedAt: 0,
+        completedAt: null,
+        ...patch,
+      })),
+    },
+  }
+  ;(globalThis as { window?: unknown }).window = { api }
+  return api
+}
+
+describe('launchCardChat', () => {
+  beforeEach(() => {
+    useAgentStore.setState({ sessions: [], activeSessionId: null })
+  })
+
+  it('starts the provider with cwd = worktree, registers the session under the parent project, and auto-sends the first turn', async () => {
+    const api = installApiMock()
+    const c = card({
+      id: 'card_x',
+      projectPath: '/repo',
+      worktreePath: '/repo/.switchboard/worktrees/x',
+      title: 'Refactor auth',
+      description: 'Use OAuth.',
+    })
+
+    const result = await launchCardChat(c, { openChat: false })
+
+    expect(result.sessionId).toMatch(/^agent_/)
+    // Session registered under the parent project, not the worktree, so
+    // the sidebar groups it correctly.
+    const session = useAgentStore.getState().sessions.find((s) => s.id === result.sessionId)
+    expect(session?.projectPath).toBe('/repo')
+    // Provider got the worktree as cwd.
+    expect(api.provider.startSession).toHaveBeenCalledTimes(1)
+    expect(api.provider.startSession.mock.calls[0][0]).toMatchObject({
+      threadId: result.sessionId,
+      cwd: '/repo/.switchboard/worktrees/x',
+    })
+    // First turn auto-sent with title + description.
+    expect(api.provider.sendTurn).toHaveBeenCalledTimes(1)
+    expect(api.provider.sendTurn.mock.calls[0][1]).toBe('Refactor auth\n\nUse OAuth.')
+    // Card linked to the new conversation.
+    expect(api.kanban.update).toHaveBeenCalledWith('card_x', expect.objectContaining({
+      conversationId: result.sessionId,
+    }))
+  })
+
+  it('jumps to the existing session if the card is already linked', async () => {
+    const api = installApiMock()
+    useAgentStore.setState({
+      sessions: [{
+        id: 'existing_1',
+        type: 'claude-code',
+        status: 'idle',
+        projectPath: '/repo',
+        title: 't',
+        messages: [],
+        unreadCount: 0,
+        runtimeMode: 'sandbox',
+      }],
+      activeSessionId: null,
+    })
+    const c = card({ conversationId: 'existing_1' })
+
+    const result = await launchCardChat(c, { openChat: true })
+
+    expect(result.sessionId).toBe('existing_1')
+    expect(api.provider.startSession).not.toHaveBeenCalled()
+    expect(api.provider.sendTurn).not.toHaveBeenCalled()
+  })
+
+  it('falls back to parent projectPath as cwd when no worktree is set', async () => {
+    const api = installApiMock()
+    const c = card({ projectPath: '/repo', worktreePath: null, title: 'No wt' })
+
+    await launchCardChat(c, { openChat: false })
+
+    expect(api.provider.startSession.mock.calls[0][0].cwd).toBe('/repo')
+  })
+})

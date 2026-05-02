@@ -90,6 +90,7 @@ export class ProviderRegistry {
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
 
+      log.info(`startSession ${opts.threadId} provider=${opts.provider} cwd=${opts.cwd} mode=${opts.runtimeMode ?? 'sandbox'}`)
       // Catch macOS TCC denials before the adapter spawns — otherwise the
       // SDK fails deep in the stack with cryptic EPERMs.
       await assertCwdReadable(opts.cwd)
@@ -102,7 +103,11 @@ export class ProviderRegistry {
 
     ipcMain.handle(ProviderChannels.SEND_TURN, async (_event, threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) => {
       const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) throw new Error(`No session: ${threadId}`)
+      if (!adapter) {
+        log.warn(`sendTurn ${threadId} — no adapter (session not started?)`)
+        throw new Error(`No session: ${threadId}`)
+      }
+      log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${images?.length ?? 0}`)
       await adapter.sendTurn(threadId, message, runtimeMode, images)
     })
 

@@ -522,10 +522,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       if (!providerStartedRef.current.has(sessionId)) {
         providerStartedRef.current.add(sessionId)
         try {
+          // Kanban-launched sessions run inside a per-card git worktree.
+          // The session's `projectPath` is the parent project (so the
+          // sidebar groups correctly), but the agent process must run in
+          // the worktree dir to see isolated changes. The card itself
+          // owns the worktree path, so we look it up by conversationId.
+          const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
+          const cwd = linkedCard?.worktreePath ?? projectPath ?? '.'
           await providerApi.startSession({
             threadId: sessionId,
             provider: providerKind,
-            cwd: projectPath || '.',
+            cwd,
             runtimeMode: effectiveMode,
             resumeSessionId,
             model: model || undefined,

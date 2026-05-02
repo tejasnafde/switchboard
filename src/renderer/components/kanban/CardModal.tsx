@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type CSS
 import { useKanbanStore } from '../../stores/kanban-store'
 import { downscaleImage } from '../../services/imageDownscale'
 import { insertSnippetWithNewlineGuards } from '../../services/insertSnippet'
+import { launchCardChat } from './cardLaunch'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 
 interface ProjectOption {
@@ -139,7 +140,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
         return
       }
       if (mode === 'create') {
-        await create({
+        const newCard = await create({
           projectPath: selectedProjectPath,
           title: title.trim(),
           description,
@@ -147,6 +148,17 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
           costCapUsd,
           withWorktree,
         })
+        // Opting into a worktree at create-time signals "I'm starting
+        // this work now" — auto-launch the agent in the background and
+        // promote the card to in_progress so the user doesn't have to
+        // click ▶ separately. Foreground users who just want a row in
+        // the backlog leave `withWorktree` off.
+        if (newCard && withWorktree) {
+          const result = await launchCardChat(newCard, { openChat: false })
+          if (!result.reused && newCard.status === 'backlog') {
+            void useKanbanStore.getState().move(newCard.id, 'in_progress')
+          }
+        }
       } else if (card) {
         await update(card.id, {
           title: title.trim(),

@@ -65,6 +65,15 @@ export function registerKanbanHandlers(): void {
   })
 
   ipcMain.handle(KanbanChannels.UPDATE, async (_e, id: string, patch: KanbanCardUpdate) => {
+    // Log conversation-link transitions specifically — they're the
+    // signal that a card is being launched, and the only way to trace
+    // launches end-to-end across the renderer/main boundary.
+    if (Object.prototype.hasOwnProperty.call(patch, 'conversationId')) {
+      log.info(`linked card ${id} → conversation ${patch.conversationId ?? '(cleared)'}`)
+    }
+    if (patch.status) {
+      log.info(`card ${id} status → ${patch.status}`)
+    }
     return updateKanbanCard(id, patch)
   })
 

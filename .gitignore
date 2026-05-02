@@ -45,6 +45,11 @@ latest*.yml
 .claude/
 .history/
 
+# Per-card git worktrees created by Kanban "▶" launches. These live
+# inside the repo (so xterm/file viewer can resolve them) but are local
+# checkouts, not history we want tracked.
+.switchboard/
+
 # Test + Playwright artifacts
 test-results/
 playwright-report/

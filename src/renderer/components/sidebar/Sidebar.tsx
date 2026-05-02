@@ -70,11 +70,13 @@ function useGroupUnreadCount(sessionIds: string[]): number {
   }, [sessions, sessionIds])
 }
 
-/** Aggregated unread badge on workspace headers. `expanded` softens the chip
- *  slightly (per-session badges are also visible, so the header pill is redundant). */
+/** Aggregated unread badge on workspace headers. Only rendered while
+ *  the workspace is collapsed — when expanded, the per-session pills
+ *  inside cover the same information and the workspace pill becomes
+ *  redundant noise. */
 function WorkspaceUnreadBadge({ sessionIds, expanded }: { sessionIds: string[]; expanded?: boolean }) {
   const count = useGroupUnreadCount(sessionIds)
-  if (count === 0) return null
+  if (count === 0 || expanded) return null
   return (
     <span
       title={`${count} unread`}
@@ -92,7 +94,6 @@ function WorkspaceUnreadBadge({ sessionIds, expanded }: { sessionIds: string[]; 
         padding: '0 4px',
         flexShrink: 0,
         marginLeft: 4,
-        opacity: expanded ? 0.85 : 1,
       }}
     >
       {count > 99 ? '99+' : count}

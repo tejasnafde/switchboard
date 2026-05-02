@@ -38,11 +38,11 @@ import {
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useLayoutStore } from '../../stores/layout-store'
-import { emitSessionCreated } from '../../services/session-events'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 import type { AgentStatus, Project, Workspace } from '@shared/types'
 import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
+import { launchCardChat } from './cardLaunch'
 
 const UNGROUPED = '__ungrouped__'
 
@@ -53,10 +53,7 @@ export function KanbanView(): React.ReactElement {
   const setProjectFilter = useLayoutStore((s) => s.setKanbanProjectFilter)
   const setAppView = useLayoutStore((s) => s.setAppView)
 
-  const addSession = useAgentStore((s) => s.addSession)
-  const setActiveSession = useAgentStore((s) => s.setActiveSession)
-
-  const { byProject, hydrate, update: updateCard, move } = useKanbanStore()
+  const { byProject, hydrate, move } = useKanbanStore()
 
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -137,31 +134,31 @@ export function KanbanView(): React.ReactElement {
     return m
   }, [projects])
 
-  // Create / jump-to a chat for a card. Identical to the per-session
-  // version but switches `appView` back to 'chats' so the user lands in
-  // the new conversation immediately.
-  const startOrJumpToCard = useCallback(
+  // Two CTAs:
+  //   ▶  (background) — start the agent, stay on the kanban board.
+  //   ↗  (open)       — start (or jump-to) and switch to chats view.
+  // Both go through the shared `launchCardChat` so the persistence /
+  // provider-bridge wiring stays in one place.
+  const startCardBackground = useCallback(
     async (card: KanbanCard) => {
-      const exists = card.conversationId
-        && useAgentStore.getState().sessions.some((x) => x.id === card.conversationId)
-      if (exists && card.conversationId) {
-        setActiveSession(card.conversationId)
-        setAppView('chats')
-        return
+      const result = await launchCardChat(card, { openChat: false })
+      if (!result.reused && card.status === 'backlog') {
+        // Background launch implies "start the work"; promote to in_progress
+        // so the column reflects reality without a separate drag.
+        void move(card.id, 'in_progress')
       }
-      const cwd = card.worktreePath ?? card.projectPath
-      const id = `agent_${Date.now()}`
-      const title = card.title
-      addSession({ id, type: 'claude-code', status: 'idle', projectPath: cwd, title })
-      setActiveSession(id)
-      window.api.app
-        .createConversation({ id, projectPath: cwd, agentType: 'claude-code', title })
-        .catch((err: unknown) => { console.warn('[kanban] createConversation failed:', err) })
-      emitSessionCreated({ id, projectPath: cwd, title, startedAt: Date.now(), source: 'switchboard' })
-      await updateCard(card.id, { conversationId: id })
+    },
+    [move],
+  )
+  const startCardAndOpen = useCallback(
+    async (card: KanbanCard) => {
+      const result = await launchCardChat(card, { openChat: true })
+      if (!result.reused && card.status === 'backlog') {
+        void move(card.id, 'in_progress')
+      }
       setAppView('chats')
     },
-    [addSession, setActiveSession, setAppView, updateCard],
+    [move, setAppView],
   )
 
   const editingCard = editingId ? allCards.find((c) => c.id === editingId) ?? null : null
@@ -267,7 +264,8 @@ export function KanbanView(): React.ReactElement {
               cards={filtered.filter((c) => c.status === col.id)}
               projectByPath={projectByPath}
               onOpen={(id) => setEditingId(id)}
-              onStart={(c) => { void startOrJumpToCard(c) }}
+              onStart={(c) => { void startCardBackground(c) }}
+              onStartAndOpen={(c) => { void startCardAndOpen(c) }}
               showProjectChip={!projectFilter}
               draggingId={draggingId}
             />
@@ -318,6 +316,7 @@ function Column({
   projectByPath,
   onOpen,
   onStart,
+  onStartAndOpen,
   showProjectChip,
   draggingId,
 }: {
@@ -327,6 +326,7 @@ function Column({
   projectByPath: Map<string, { name: string }>
   onOpen: (id: string) => void
   onStart: (card: KanbanCard) => void
+  onStartAndOpen: (card: KanbanCard) => void
   showProjectChip: boolean
   draggingId: string | null
 }): React.ReactElement {
@@ -353,6 +353,7 @@ function Column({
             isDragging={draggingId === c.id}
             onOpen={() => onOpen(c.id)}
             onStart={() => onStart(c)}
+            onStartAndOpen={() => onStartAndOpen(c)}
           />
         ))}
         {cards.length === 0 && (
@@ -376,6 +377,7 @@ function DraggableCardTile({
   isDragging,
   onOpen,
   onStart,
+  onStartAndOpen,
 }: {
   card: KanbanCard
   projectName: string
@@ -383,6 +385,7 @@ function DraggableCardTile({
   isDragging: boolean
   onOpen: () => void
   onStart: () => void
+  onStartAndOpen: () => void
 }): React.ReactElement {
   const { attributes, listeners, setNodeRef } = useDraggable({ id: card.id })
   return (
@@ -401,6 +404,7 @@ function DraggableCardTile({
         showProjectChip={showProjectChip}
         isSource={isDragging}
         onStart={onStart}
+        onStartAndOpen={onStartAndOpen}
       />
     </div>
   )
@@ -413,6 +417,7 @@ function CardTilePresentation({
   isSource,
   isOverlay,
   onStart,
+  onStartAndOpen,
 }: {
   card: KanbanCard
   projectName: string
@@ -420,6 +425,7 @@ function CardTilePresentation({
   isSource?: boolean
   isOverlay?: boolean
   onStart?: () => void
+  onStartAndOpen?: () => void
 }): React.ReactElement {
   // Subscribed only when a session is linked, so cardless tiles skip the lookup.
   const liveStatus = useAgentStore((s) =>
@@ -448,16 +454,50 @@ function CardTilePresentation({
     >
       <div style={tileHeaderRowStyle}>
         <div style={tileTitleStyle}>{card.title}</div>
-        {onStart && (
-          <button
-            onMouseDown={(e) => e.stopPropagation()}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => { e.stopPropagation(); onStart() }}
-            title={hasSession ? 'Jump to linked chat' : 'Start a chat for this card'}
-            style={startBtnStyle}
-          >
-            {hasSession ? '↗' : '▶'}
-          </button>
+        {(onStart || onStartAndOpen) && (
+          <div style={tileActionsStyle}>
+            {/* When the card already has a linked session there's only
+                one sensible CTA: jump into it. The background-vs-open
+                split only matters at first-launch. */}
+            {hasSession ? (
+              onStartAndOpen && (
+                <button
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); onStartAndOpen() }}
+                  title="Jump to linked chat"
+                  style={startBtnStyle}
+                >
+                  ↗
+                </button>
+              )
+            ) : (
+              <>
+                {onStart && (
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onStart() }}
+                    title="Start (background) — kicks off the agent without leaving the board"
+                    style={startBtnStyle}
+                  >
+                    ▶
+                  </button>
+                )}
+                {onStartAndOpen && (
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onStartAndOpen() }}
+                    title="Start and open chat"
+                    style={startBtnStyle}
+                  >
+                    ▶↗
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
       {card.tags.length > 0 && (
@@ -563,6 +603,7 @@ const tileHeaderRowStyle: CSSProperties = {
   display: 'flex', alignItems: 'flex-start', gap: 6, justifyContent: 'space-between',
 }
 const tileTitleStyle: CSSProperties = { fontSize: 13, lineHeight: 1.3, fontWeight: 500, flex: 1, minWidth: 0 }
+const tileActionsStyle: CSSProperties = { display: 'flex', gap: 4, flexShrink: 0 }
 const startBtnStyle: CSSProperties = {
   fontSize: 11, lineHeight: 1, padding: '2px 6px', borderRadius: 3,
   background: 'transparent', color: 'var(--fg)',
