@@ -17,6 +17,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - **No more overlay bleed-through.** First cut mounted the kanban as an absolute-positioned overlay with `background: var(--bg)`, which is *transparent* in the translucent theme — the chat UI showed through. Restructured to a true view swap: chat + terminal stack and `<KanbanView />` are siblings, and we toggle `display: none` on whichever isn't active. Same pattern as the right-pane terminal↔files toggle, so PTY + xterm + Shiki state still survives. (User feedback: "shouldnt the uis be swapped... it looks like we are overlaying the board on top of the chat".)
 - **Visible "Chats / Board" toggle in the title bar** (right of the Switchboard wordmark, left of the gear). Mirrors ⌘⇧K — discoverability for users who don't know the shortcut. The kanban is a top-level mode of the app, not a side pane: PM view ↔ engineering view.
 
+### Added (later same day)
+- **Tour clip for the two-mode swap.** New `kanban-view` step in `FEATURE_TOUR_STEPS`, slotted right after `welcome` so the app's two top-level modes are introduced before any chat-specific feature. `TOUR_VERSION` bumped to `2026-05-02` so existing users auto-see it on next launch. HyperFrames scene at `videos/scenes/kanban-view/index.html`, rendered MP4 at `videos/dist/kanban-view.mp4`.
+
 ---
 
 ## 2026-05-02 — Kanban v1 + worktrees + main-process hardening

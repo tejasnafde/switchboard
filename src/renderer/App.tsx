@@ -614,7 +614,7 @@ export function App() {
         <span style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', paddingRight: '12px', alignItems: 'center', gap: '8px' }}>
           {/* Chats ↔ Board view toggle. ⌘⇧K does the same thing — this
               gives discoverability for users who don't know the shortcut. */}
-          <ViewToggle appView={appView} />
+          <ViewToggle />
           <button
             onClick={() => setSettingsOpen(true)}
             style={{
@@ -748,7 +748,7 @@ export function App() {
             on each entry; cards live in kanban-store so re-mount is
             cheap. */}
         {appView === 'kanban' && (
-          <div style={{ flex: '1 1 0%', display: 'flex', minWidth: 0, background: 'var(--bg)' }}>
+          <div style={{ flex: '1 1 0%', display: 'flex', minWidth: 0 }}>
             <KanbanView />
           </div>
         )}
@@ -824,7 +824,8 @@ export function App() {
  * the drag region but opts out via WebkitAppRegion: 'no-drag' so clicks
  * land on the buttons.
  */
-function ViewToggle({ appView }: { appView: 'chats' | 'kanban' }): React.ReactElement {
+function ViewToggle(): React.ReactElement {
+  const appView = useLayoutStore((s) => s.appView)
   const setAppView = useLayoutStore((s) => s.setAppView)
   const baseBtn: React.CSSProperties = {
     background: 'none',
@@ -851,6 +852,7 @@ function ViewToggle({ appView }: { appView: 'chats' | 'kanban' }): React.ReactEl
         borderRadius: '6px',
         padding: '2px',
         gap: '2px',
+        cursor: 'pointer',
         WebkitAppRegion: 'no-drag',
       }}
       title="Toggle Chats ↔ Board (⌘⇧K)"

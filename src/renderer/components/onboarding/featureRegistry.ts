@@ -40,7 +40,7 @@ export type TryItAction =
  * Bump when the tour list changes meaningfully. Auto-open fires on the
  * next launch for any user whose `tour.lastSeenVersion` is older.
  */
-export const TOUR_VERSION = '2026-04-30'
+export const TOUR_VERSION = '2026-05-02'
 
 export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   {
@@ -48,6 +48,12 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     title: 'Welcome to Switchboard',
     description:
       'Terminals, AI agents, and project context in one window. Add a folder from the sidebar to get started — everything else flows from there.',
+  },
+  {
+    id: 'kanban-view',
+    title: 'Two modes: Chats & Board',
+    description:
+      'Toggle the whole app between engineering view (chats + terminals + files) and PM view (a workspace-scoped kanban board). Click the segmented toggle in the title bar, or hit ⌘⇧K. Cards on the board double as chats — click ▶ to start a conversation rooted at the card’s worktree.',
   },
   {
     id: 'slash-menu',
