@@ -9,6 +9,7 @@ import { ClaudeAdapter } from './adapters/claude-adapter'
 import { CodexAdapter } from './adapters/codex-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
+import { RuntimeEventBus } from './event-bus'
 import type {
   ProviderAdapter,
   ProviderKind,
@@ -32,6 +33,15 @@ export class ProviderRegistry {
   private sessionAdapters = new Map<string, ProviderAdapter>()
   private sessionProviders = new Map<string, ProviderKind>()
 
+  /**
+   * Event bus that decouples adapter event emission from the consumer.
+   * Today there's one consumer (the renderer bridge); the kanban board
+   * adds a second (a task-state recorder) without touching adapters.
+   */
+  readonly bus: RuntimeEventBus
+  /** Unsubscribe fn for the renderer bridge subscription. */
+  private rendererUnsub: (() => void) | null = null
+
   constructor(window: BrowserWindow) {
     this.window = window
     this.opencodeAcp = new OpencodeAcpAdapter()
@@ -40,16 +50,28 @@ export class ProviderRegistry {
       ['codex', new CodexAdapter()],
       ['opencode', this.opencodeAcp],
     ])
+    this.bus = new RuntimeEventBus()
+    this.rendererUnsub = this.bus.subscribe((event) => this.forwardToRenderer(event))
   }
 
   getAdapter(provider: ProviderKind): ProviderAdapter | undefined {
     return this.adapters.get(provider)
   }
 
-  private emitEvent(event: RuntimeEvent): void {
+  /**
+   * Renderer bridge subscriber. Forwards every event to the current
+   * window's webContents iff the window still exists. If the window has
+   * been destroyed we silently drop — other subscribers (kanban
+   * recorder, etc.) still receive it because they're independent.
+   */
+  private forwardToRenderer(event: RuntimeEvent): void {
     if (!this.window.isDestroyed()) {
       this.window.webContents.send(ProviderChannels.EVENT, event)
     }
+  }
+
+  private publish(event: RuntimeEvent): void {
+    this.bus.publish(event)
   }
 
   registerIpcHandlers(): void {
@@ -74,7 +96,7 @@ export class ProviderRegistry {
 
       this.sessionAdapters.set(opts.threadId, adapter)
       this.sessionProviders.set(opts.threadId, opts.provider)
-      const session = await adapter.startSession(opts, (event) => this.emitEvent(event))
+      const session = await adapter.startSession(opts, (event) => this.publish(event))
       return session
     })
 
@@ -150,5 +172,10 @@ export class ProviderRegistry {
     }
     this.sessionAdapters.clear()
     this.sessionProviders.clear()
+    if (this.rendererUnsub) {
+      this.rendererUnsub()
+      this.rendererUnsub = null
+    }
+    this.bus.clear()
   }
 }
