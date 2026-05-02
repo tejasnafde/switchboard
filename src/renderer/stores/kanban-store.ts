@@ -21,6 +21,8 @@ interface KanbanStore {
   create: (input: KanbanCardCreate) => Promise<KanbanCard | null>
   update: (id: string, patch: KanbanCardUpdate) => Promise<void>
   move: (id: string, status: KanbanStatus) => Promise<void>
+  /** Lookup used by the AskUserQuestion → needs_input auto-promote in ChatPanel. */
+  findByConversationId: (conversationId: string) => KanbanCard | undefined
   remove: (id: string, opts?: { removeWorktree?: boolean; force?: boolean }) => Promise<void>
   attachWorktree: (id: string) => Promise<void>
   detachWorktree: (id: string, opts?: { force?: boolean }) => Promise<void>
@@ -75,7 +77,29 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   },
 
   move: async (id, status) => {
+    // Optimistic so drag-drops feel instant — the local IPC is the
+    // only writer, so divergence is negligible and the next hydrate
+    // reconciles anyway.
+    set((s) => {
+      const next: Record<string, KanbanCard[]> = { ...s.byProject }
+      for (const [path, list] of Object.entries(s.byProject)) {
+        const idx = list.findIndex((c) => c.id === id)
+        if (idx === -1) continue
+        const patched = { ...list[idx], status, updatedAt: Date.now() }
+        next[path] = [...list.slice(0, idx), patched, ...list.slice(idx + 1)]
+        break
+      }
+      return { byProject: next }
+    })
     await get().update(id, { status })
+  },
+
+  findByConversationId: (conversationId) => {
+    for (const list of Object.values(get().byProject)) {
+      const hit = list.find((c) => c.conversationId === conversationId)
+      if (hit) return hit
+    }
+    return undefined
   },
 
   remove: async (id, opts) => {

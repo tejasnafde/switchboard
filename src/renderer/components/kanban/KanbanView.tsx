@@ -16,15 +16,31 @@
  * Card tiles show their project's basename so cross-project boards stay
  * legible. Starting a card switches `appView` back to 'chats' so the
  * user lands in the new conversation immediately.
+ *
+ * Drag-and-drop (2026-05-02) lives via `@dnd-kit/core`: columns are
+ * droppables keyed by status, tiles are draggables, drops fire
+ * `kanban-store.move`. No within-column reorder yet (cards remain
+ * createdAt-sorted until we add a `sortOrder` column).
  */
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  useDroppable,
+  type DragEndEvent,
+  type DragStartEvent,
+} from '@dnd-kit/core'
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { emitSessionCreated } from '../../services/session-events'
-import { KANBAN_COLUMNS, type KanbanCard } from '@shared/kanban'
-import type { Project, Workspace } from '@shared/types'
+import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
+import type { AgentStatus, Project, Workspace } from '@shared/types'
 import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
 
@@ -40,7 +56,7 @@ export function KanbanView(): React.ReactElement {
   const addSession = useAgentStore((s) => s.addSession)
   const setActiveSession = useAgentStore((s) => s.setActiveSession)
 
-  const { byProject, hydrate, update: updateCard } = useKanbanStore()
+  const { byProject, hydrate, update: updateCard, move } = useKanbanStore()
 
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -48,6 +64,13 @@ export function KanbanView(): React.ReactElement {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [managingWorktrees, setManagingWorktrees] = useState(false)
   const [filter, setFilter] = useState('')
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+
+  // 5px activation distance keeps clicks (open edit modal) distinct
+  // from drags. Without it every mousedown becomes a drag.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  )
 
   // Hydrate projects + workspaces once on mount. The renderer doesn't
   // have a project-list store yet (sidebar fetches its own copy on
@@ -142,11 +165,31 @@ export function KanbanView(): React.ReactElement {
   )
 
   const editingCard = editingId ? allCards.find((c) => c.id === editingId) ?? null : null
-  // "+ New card" needs a project to attach to. With a project filter
-  // selected we use that; otherwise we require one before creating —
-  // simpler than a project-picker inside the create modal, and forces
-  // the user to think about scope.
-  const newCardProjectPath = projectFilter ?? (scopedProjects.length === 1 ? scopedProjects[0].path : null)
+  // "+ New card" needs a project to attach to. We seed the modal with
+  // the most specific guess available (project filter, or the only
+  // project in scope), and pass the full scoped list so the modal can
+  // render a picker when the answer is ambiguous. The button itself
+  // stays enabled as long as *some* project is in scope.
+  const newCardDefaultPath = projectFilter ?? scopedProjects[0]?.path ?? null
+  const newCardOptions = scopedProjects.map((p) => ({ path: p.path, name: p.name }))
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setDraggingId(String(event.active.id))
+  }, [])
+
+  // Droppable id is the column's status (see useDroppable below), so
+  // we can map directly from drop target → new status.
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    setDraggingId(null)
+    const cardId = String(event.active.id)
+    const overId = event.over?.id != null ? String(event.over.id) : null
+    if (!overId || !KANBAN_COLUMNS.some((c) => c.id === overId)) return
+    const card = allCards.find((c) => c.id === cardId)
+    if (!card || card.status === overId) return
+    void move(cardId, overId as KanbanStatus)
+  }, [allCards, move])
+
+  const draggingCard = draggingId ? allCards.find((c) => c.id === draggingId) ?? null : null
 
   return (
     <div style={paneStyle}>
@@ -193,9 +236,15 @@ export function KanbanView(): React.ReactElement {
         </button>
         <button
           onClick={() => setCreating(true)}
-          disabled={!newCardProjectPath}
+          disabled={!newCardDefaultPath}
           style={primaryBtnStyle}
-          title={newCardProjectPath ? `Create card in ${newCardProjectPath.split('/').pop()}` : 'Pick a project to create a card'}
+          title={
+            !newCardDefaultPath
+              ? 'No projects in scope yet — open a project from the sidebar first'
+              : newCardOptions.length > 1
+                ? 'Create card (you’ll pick the project in the modal)'
+                : `Create card in ${newCardDefaultPath.split('/').pop()}`
+          }
         >
           ＋ New card
         </button>
@@ -208,24 +257,39 @@ export function KanbanView(): React.ReactElement {
         </button>
       </div>
 
-      <div style={columnsStyle}>
-        {KANBAN_COLUMNS.map((col) => (
-          <Column
-            key={col.id}
-            label={col.label}
-            cards={filtered.filter((c) => c.status === col.id)}
-            projectByPath={projectByPath}
-            onOpen={(id) => setEditingId(id)}
-            onStart={(c) => { void startOrJumpToCard(c) }}
-            showProjectChip={!projectFilter}
-          />
-        ))}
-      </div>
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+        <div style={columnsStyle}>
+          {KANBAN_COLUMNS.map((col) => (
+            <Column
+              key={col.id}
+              status={col.id}
+              label={col.label}
+              cards={filtered.filter((c) => c.status === col.id)}
+              projectByPath={projectByPath}
+              onOpen={(id) => setEditingId(id)}
+              onStart={(c) => { void startOrJumpToCard(c) }}
+              showProjectChip={!projectFilter}
+              draggingId={draggingId}
+            />
+          ))}
+        </div>
+        <DragOverlay dropAnimation={null}>
+          {draggingCard && (
+            <CardTilePresentation
+              card={draggingCard}
+              projectName={projectByPath.get(draggingCard.projectPath)?.name ?? draggingCard.projectPath.split('/').pop() ?? ''}
+              showProjectChip={!projectFilter}
+              isOverlay
+            />
+          )}
+        </DragOverlay>
+      </DndContext>
 
-      {creating && newCardProjectPath && (
+      {creating && newCardDefaultPath && (
         <CardModal
           mode="create"
-          projectPath={newCardProjectPath}
+          projectPath={newCardDefaultPath}
+          availableProjects={newCardOptions}
           onClose={() => setCreating(false)}
         />
       )}
@@ -248,40 +312,52 @@ export function KanbanView(): React.ReactElement {
 }
 
 function Column({
+  status,
   label,
   cards,
   projectByPath,
   onOpen,
   onStart,
   showProjectChip,
+  draggingId,
 }: {
+  status: KanbanStatus
   label: string
   cards: KanbanCard[]
   projectByPath: Map<string, { name: string }>
   onOpen: (id: string) => void
   onStart: (card: KanbanCard) => void
   showProjectChip: boolean
+  draggingId: string | null
 }): React.ReactElement {
+  const { setNodeRef, isOver } = useDroppable({ id: status })
   return (
-    <div style={colStyle}>
+    <div
+      ref={setNodeRef}
+      style={{
+        ...colStyle,
+        ...(isOver ? colDropTargetStyle : null),
+      }}
+    >
       <div style={colHeaderStyle}>
         <span>{label}</span>
         <span style={{ opacity: 0.5, fontVariantNumeric: 'tabular-nums' }}>{cards.length}</span>
       </div>
       <div style={colBodyStyle}>
         {cards.map((c) => (
-          <CardTile
+          <DraggableCardTile
             key={c.id}
             card={c}
             projectName={projectByPath.get(c.projectPath)?.name ?? c.projectPath.split('/').pop() ?? ''}
             showProjectChip={showProjectChip}
+            isDragging={draggingId === c.id}
             onOpen={() => onOpen(c.id)}
             onStart={() => onStart(c)}
           />
         ))}
         {cards.length === 0 && (
           <div style={{ opacity: 0.4, fontSize: 11, padding: 8, textAlign: 'center' }}>
-            (empty)
+            (drop cards here)
           </div>
         )}
       </div>
@@ -289,40 +365,100 @@ function Column({
   )
 }
 
-function CardTile({
+/**
+ * Drag wiring split from presentation so `DragOverlay` can re-render
+ * the same tile without conflicting `useDraggable` bindings.
+ */
+function DraggableCardTile({
   card,
   projectName,
   showProjectChip,
+  isDragging,
   onOpen,
   onStart,
 }: {
   card: KanbanCard
   projectName: string
   showProjectChip: boolean
+  isDragging: boolean
   onOpen: () => void
   onStart: () => void
 }): React.ReactElement {
-  const overBudget = card.costCapUsd != null && card.costUsedUsd != null && card.costUsedUsd >= card.costCapUsd
-  const hasSession = !!card.conversationId
+  const { attributes, listeners, setNodeRef } = useDraggable({ id: card.id })
   return (
     <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
       role="button"
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } }}
-      style={tileStyle}
+    >
+      <CardTilePresentation
+        card={card}
+        projectName={projectName}
+        showProjectChip={showProjectChip}
+        isSource={isDragging}
+        onStart={onStart}
+      />
+    </div>
+  )
+}
+
+function CardTilePresentation({
+  card,
+  projectName,
+  showProjectChip,
+  isSource,
+  isOverlay,
+  onStart,
+}: {
+  card: KanbanCard
+  projectName: string
+  showProjectChip: boolean
+  isSource?: boolean
+  isOverlay?: boolean
+  onStart?: () => void
+}): React.ReactElement {
+  // Subscribed only when a session is linked, so cardless tiles skip the lookup.
+  const liveStatus = useAgentStore((s) =>
+    card.conversationId
+      ? s.sessions.find((x) => x.id === card.conversationId)?.status
+      : undefined,
+  )
+  const unread = useAgentStore((s) =>
+    card.conversationId
+      ? s.sessions.find((x) => x.id === card.conversationId)?.unreadCount ?? 0
+      : 0,
+  )
+
+  const overBudget = card.costCapUsd != null && card.costUsedUsd != null && card.costUsedUsd >= card.costCapUsd
+  const hasSession = !!card.conversationId
+
+  return (
+    <div
+      style={{
+        ...tileStyle,
+        ...(isSource ? { opacity: 0.3 } : null),
+        ...(isOverlay ? tileOverlayStyle : null),
+      }}
       data-needs-input={card.status === 'needs_input' || undefined}
       data-over-budget={overBudget || undefined}
     >
       <div style={tileHeaderRowStyle}>
         <div style={tileTitleStyle}>{card.title}</div>
-        <button
-          onClick={(e) => { e.stopPropagation(); onStart() }}
-          title={hasSession ? 'Jump to linked chat' : 'Start a chat for this card'}
-          style={startBtnStyle}
-        >
-          {hasSession ? '↗' : '▶'}
-        </button>
+        {onStart && (
+          <button
+            onMouseDown={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => { e.stopPropagation(); onStart() }}
+            title={hasSession ? 'Jump to linked chat' : 'Start a chat for this card'}
+            style={startBtnStyle}
+          >
+            {hasSession ? '↗' : '▶'}
+          </button>
+        )}
       </div>
       {card.tags.length > 0 && (
         <div style={tagsRowStyle}>
@@ -330,6 +466,12 @@ function CardTile({
         </div>
       )}
       <div style={tileMetaRowStyle}>
+        {hasSession && <SessionLiveness status={liveStatus} />}
+        {hasSession && unread > 0 && (
+          <span style={unreadBadgeStyle} title={`${unread} unread message${unread === 1 ? '' : 's'}`}>
+            {unread} new
+          </span>
+        )}
         {showProjectChip && <span style={projectChipStyle}>{projectName}</span>}
         {card.worktreePath && <span title={card.worktreePath} style={badgeStyle}>⎇ worktree</span>}
         {card.costCapUsd != null && (
@@ -337,9 +479,29 @@ function CardTile({
             ${(card.costUsedUsd ?? 0).toFixed(2)}/${card.costCapUsd.toFixed(2)}
           </span>
         )}
-        {hasSession && <span style={badgeStyle}>● session</span>}
       </div>
     </div>
+  )
+}
+
+function SessionLiveness({ status }: { status: AgentStatus | undefined }): React.ReactElement | null {
+  if (!status || status === 'exited') return null
+  const active = status === 'running' || status === 'thinking'
+  const isError = status === 'error'
+  const color = isError ? 'var(--red, #d73a49)' : active ? 'var(--green, #3fb950)' : 'var(--fg)'
+  const label = isError ? 'error' : active ? status : 'idle'
+  return (
+    <span style={livenessRowStyle} title={`Session ${label}`}>
+      <span
+        style={{
+          ...livenessPipStyle,
+          background: color,
+          opacity: active ? 1 : 0.55,
+          animation: active ? 'sb-kanban-pulse 1.4s ease-in-out infinite' : undefined,
+        }}
+      />
+      <span style={{ color, fontSize: 10, opacity: active ? 0.95 : 0.7 }}>{label}</span>
+    </span>
   )
 }
 
@@ -369,7 +531,13 @@ const columnsStyle: CSSProperties = {
 }
 const colStyle: CSSProperties = {
   display: 'flex', flexDirection: 'column', minHeight: 0,
-  background: 'var(--bg-elev1, rgba(0,0,0,0.03))', borderRadius: 6, border: '1px solid var(--border)',
+  background: 'var(--bg-elev1, rgba(0,0,0,0.03))', borderRadius: 6,
+  border: '1px solid var(--border)',
+  transition: 'border-color 120ms ease, box-shadow 120ms ease',
+}
+const colDropTargetStyle: CSSProperties = {
+  borderColor: 'var(--accent, #2563eb)',
+  boxShadow: '0 0 0 1px var(--accent, #2563eb), 0 0 12px rgba(37,99,235,0.18)',
 }
 const colHeaderStyle: CSSProperties = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -382,7 +550,14 @@ const colBodyStyle: CSSProperties = {
 const tileStyle: CSSProperties = {
   textAlign: 'left', padding: '8px 10px', borderRadius: 4,
   border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--fg)',
-  cursor: 'pointer', display: 'flex', flexDirection: 'column', gap: 4,
+  cursor: 'grab', display: 'flex', flexDirection: 'column', gap: 4,
+  userSelect: 'none',
+}
+const tileOverlayStyle: CSSProperties = {
+  cursor: 'grabbing',
+  transform: 'rotate(-1.5deg)',
+  boxShadow: '0 12px 32px rgba(0,0,0,0.45)',
+  borderColor: 'var(--accent, #2563eb)',
 }
 const tileHeaderRowStyle: CSSProperties = {
   display: 'flex', alignItems: 'flex-start', gap: 6, justifyContent: 'space-between',
@@ -398,9 +573,19 @@ const tagStyle: CSSProperties = {
   fontSize: 10, padding: '1px 6px', borderRadius: 8,
   background: 'var(--bg-elev2, rgba(0,0,0,0.06))', color: 'var(--fg)',
 }
-const tileMetaRowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10, opacity: 0.7 }
-const badgeStyle: CSSProperties = { fontSize: 10 }
+const tileMetaRowStyle: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10, opacity: 0.85, alignItems: 'center' }
+const badgeStyle: CSSProperties = { fontSize: 10, opacity: 0.8 }
 const projectChipStyle: CSSProperties = {
   fontSize: 10, padding: '1px 6px', borderRadius: 8,
   background: 'rgba(37,99,235,0.12)', color: 'var(--accent, #2563eb)', fontFamily: 'monospace',
+}
+const livenessRowStyle: CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 4,
+}
+const livenessPipStyle: CSSProperties = {
+  width: 7, height: 7, borderRadius: '50%', display: 'inline-block',
+}
+const unreadBadgeStyle: CSSProperties = {
+  fontSize: 9, fontWeight: 600, padding: '1px 6px', borderRadius: 8,
+  background: 'var(--accent, #2563eb)', color: 'white', letterSpacing: 0.2,
 }

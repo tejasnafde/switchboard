@@ -742,16 +742,19 @@ export function App() {
           </div>
         </div>
 
-        {/* PM view: kanban board. Sibling of the engineering stack —
-            takes the full non-sidebar area when active. Mounted only
-            when shown so workspace/project filter dropdowns rehydrate
-            on each entry; cards live in kanban-store so re-mount is
-            cheap. */}
-        {appView === 'kanban' && (
-          <div style={{ flex: '1 1 0%', display: 'flex', minWidth: 0 }}>
-            <KanbanView />
-          </div>
-        )}
+        {/* PM view: kanban board. Always mounted so the project +
+            workspace lists and the filter dropdowns stay warm across
+            toggles — unmounting on every swap was causing a visible
+            empty-dropdown flicker every time the user came back. */}
+        <div
+          style={{
+            flex: '1 1 0%',
+            display: appView === 'kanban' ? 'flex' : 'none',
+            minWidth: 0,
+          }}
+        >
+          <KanbanView />
+        </div>
       </div>
 
       <StatusBar />

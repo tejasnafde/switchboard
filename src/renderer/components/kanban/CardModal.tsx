@@ -14,14 +14,31 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 
+interface ProjectOption {
+  path: string
+  name: string
+}
+
 interface Props {
   mode: 'create' | 'edit'
+  /**
+   * Default project the card lands in. For `edit`, this is fixed to
+   * `card.projectPath`. For `create`, it seeds the picker; the user can
+   * still re-target via `availableProjects` when the scope is ambiguous.
+   */
   projectPath: string
+  /**
+   * When provided in `create` mode AND length > 1, renders a dropdown
+   * letting the user choose which project the card lands in. Hidden
+   * when there's a single unambiguous answer (project filter set, or
+   * scope has only one project).
+   */
+  availableProjects?: ProjectOption[]
   card?: KanbanCard
   onClose: () => void
 }
 
-export function CardModal({ mode, projectPath, card, onClose }: Props): React.ReactElement {
+export function CardModal({ mode, projectPath, availableProjects, card, onClose }: Props): React.ReactElement {
   const create = useKanbanStore((s) => s.create)
   const update = useKanbanStore((s) => s.update)
   const remove = useKanbanStore((s) => s.remove)
@@ -38,6 +55,16 @@ export function CardModal({ mode, projectPath, card, onClose }: Props): React.Re
   const [withWorktree, setWithWorktree] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Locally-tracked project selection. In `edit` mode the project never
+  // changes — moving cards across projects would invalidate worktrees
+  // and conversation links, so we lock it. In `create` mode the user
+  // can switch when `availableProjects` has > 1 entry.
+  const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath)
+  const showProjectPicker = mode === 'create' && (availableProjects?.length ?? 0) > 1
+  const projectLabel =
+    availableProjects?.find((p) => p.path === selectedProjectPath)?.name
+    ?? selectedProjectPath.split('/').pop()
+    ?? selectedProjectPath
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -68,7 +95,7 @@ export function CardModal({ mode, projectPath, card, onClose }: Props): React.Re
       }
       if (mode === 'create') {
         await create({
-          projectPath,
+          projectPath: selectedProjectPath,
           title: title.trim(),
           description,
           tags,
@@ -114,6 +141,28 @@ export function CardModal({ mode, projectPath, card, onClose }: Props): React.Re
           <button onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
         <div style={bodyStyle}>
+          {/* Project association — visible up front so the user always
+              knows where the card lands. Switches to a dropdown when
+              the create scope spans multiple projects. */}
+          <label style={labelStyle}>
+            Project
+            {showProjectPicker ? (
+              <select
+                value={selectedProjectPath}
+                onChange={(e) => setSelectedProjectPath(e.target.value)}
+                style={inputStyle}
+              >
+                {availableProjects!.map((p) => (
+                  <option key={p.path} value={p.path}>{p.name}</option>
+                ))}
+              </select>
+            ) : (
+              <div style={projectChipStyle} title={selectedProjectPath}>
+                {projectLabel}
+              </div>
+            )}
+          </label>
+
           <label style={labelStyle}>
             Title
             <input
@@ -260,6 +309,12 @@ const worktreeRowStyle: CSSProperties = {
   padding: '6px 8px', background: 'var(--bg-elev1, rgba(0,0,0,0.03))', borderRadius: 4,
 }
 const codeStyle: CSSProperties = { fontFamily: 'monospace', fontSize: 11, opacity: 0.85 }
+const projectChipStyle: CSSProperties = {
+  fontSize: 12, padding: '5px 10px', borderRadius: 4,
+  background: 'rgba(37,99,235,0.10)', color: 'var(--accent, #2563eb)',
+  fontFamily: 'monospace', alignSelf: 'flex-start',
+  border: '1px solid rgba(37,99,235,0.25)',
+}
 const errStyle: CSSProperties = { color: 'var(--red, #d73a49)', fontSize: 12 }
 const footerStyle: CSSProperties = {
   display: 'flex', gap: 6, padding: 10, borderTop: '1px solid var(--border)',

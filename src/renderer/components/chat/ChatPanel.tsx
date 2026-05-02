@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useAgentStore, type RuntimeMode } from '../../stores/agent-store'
+import { useKanbanStore } from '../../stores/kanban-store'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { ContextWindowMeter } from './ContextWindowMeter'
@@ -305,6 +306,13 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
               status: 'pending',
             },
           })
+          // If this session is linked to a kanban card, surface the wait
+          // on the board: in_progress → needs_input. Only auto-promote
+          // from in_progress so we don't disturb backlog/done cards.
+          const askedCard = useKanbanStore.getState().findByConversationId(tid)
+          if (askedCard?.status === 'in_progress') {
+            void useKanbanStore.getState().update(askedCard.id, { status: 'needs_input' })
+          }
           break
         }
         case 'question.answered': {
@@ -315,6 +323,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             updateMessage(tid, qMsg.id, {
               question: { ...qMsg.question, status: 'answered', answers: event.answers },
             })
+          }
+          // Reverse the auto-promotion from question.asked.
+          const answeredCard = useKanbanStore.getState().findByConversationId(tid)
+          if (answeredCard?.status === 'needs_input') {
+            void useKanbanStore.getState().update(answeredCard.id, { status: 'in_progress' })
           }
           break
         }

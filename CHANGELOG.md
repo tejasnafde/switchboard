@@ -19,6 +19,13 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ### Added (later same day)
 - **Tour clip for the two-mode swap.** New `kanban-view` step in `FEATURE_TOUR_STEPS`, slotted right after `welcome` so the app's two top-level modes are introduced before any chat-specific feature. `TOUR_VERSION` bumped to `2026-05-02` so existing users auto-see it on next launch. HyperFrames scene at `videos/scenes/kanban-view/index.html`, rendered MP4 at `videos/dist/kanban-view.mp4`.
+- **Drag-and-drop column moves** (`@dnd-kit/core`). Tiles are draggable across columns; the destination column highlights with an accent border, and the dropped card lands in the new column on the same frame the overlay disappears. `kanban-store.move()` is now optimistic (cache patched synchronously, IPC follows) so drag feels instant — backed by 2 unit tests covering the synchronous patch + the no-such-card no-op. PointerSensor activation distance of 5px keeps clicks (open the edit modal) distinct from drags.
+- **AskUserQuestion auto-promotes a card to `needs_input`.** When an agent calls AskUserQuestion (Claude or Codex), the runtime's `question.asked` event handler in ChatPanel looks up the linked card via `kanbanStore.findByConversationId(threadId)` and flips status `in_progress → needs_input`. `question.answered` flips it back. The `needs_input` column finally has a population mechanism — previously it was a manual label nothing in the runtime ever set. Symmetric, idempotent; we deliberately don't auto-flip cards that aren't currently in_progress (backlog/done were placed there intentionally).
+- **Live tile state** — the per-card session pip now subscribes to `agent-store` and renders a green pulse for `running` / `thinking`, a static dot for `idle`, and red for `error`. An accent "N new" unread badge surfaces `session.unreadCount`. Pulse animation lives in `global.css` as `@keyframes sb-kanban-pulse` (distinct from the typing-indicator pulse so we can tune the ring color independently).
+
+### Fixed (later same day, follow-ups)
+- **CardModal now shows the project association** as a chip at the top of the body, or as a picker when create-mode scope spans multiple projects. Edit mode locks the project — moving a card across projects would invalidate worktrees and conversation links.
+- **Filter dropdowns are no longer empty on toggle.** `KanbanView` was being unmounted every time the user flipped to chats view; remount re-fired `getProjects` + `workspaces.list` and the dropdowns rendered empty until IPC returned. Both views are now always-mounted (display:none on the inactive one), matching the right-pane terminal↔files pattern.
 
 ---
 

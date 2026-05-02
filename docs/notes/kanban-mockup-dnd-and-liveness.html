@@ -1,0 +1,314 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kanban mockup — drag/drop + live tile state</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg-elev1: #161b22;
+    --bg-elev2: #1c2129;
+    --fg: #c9d1d9;
+    --border: #30363d;
+    --accent: #2563eb;
+    --green: #3fb950;
+    --amber: #d29922;
+    --red: #f85149;
+    --muted: #8b949e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font: 13px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui;
+    background: var(--bg); color: var(--fg);
+    padding: 24px;
+  }
+  .frame {
+    max-width: 1280px; margin: 0 auto;
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+    background: var(--bg);
+  }
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+    background: var(--bg-elev1);
+    font-size: 12px;
+  }
+  .toolbar > .title { font-weight: 600; font-size: 13px; }
+  .toolbar select, .toolbar input {
+    background: var(--bg); color: var(--fg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 4px 8px; font: inherit;
+  }
+  .spacer { flex: 1; }
+  .btn {
+    padding: 4px 12px; border-radius: 4px; font: inherit; cursor: pointer;
+    border: 1px solid var(--border); background: transparent; color: var(--fg);
+  }
+  .btn.primary { background: var(--accent); color: white; border-color: transparent; }
+  .columns {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 12px;
+    min-height: 600px;
+  }
+  .col {
+    display: flex; flex-direction: column;
+    background: var(--bg-elev1); border: 1px solid var(--border); border-radius: 6px;
+    min-height: 0;
+  }
+  .col.drop-target { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(37,99,235,0.3); }
+  .col-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px; opacity: 0.85;
+    border-bottom: 1px solid var(--border);
+  }
+  .col-body {
+    flex: 1; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .tile {
+    padding: 8px 10px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--bg);
+    display: flex; flex-direction: column; gap: 4px;
+    cursor: grab; position: relative;
+  }
+  .tile:hover { border-color: rgba(37,99,235,0.5); }
+  .tile.dragging {
+    opacity: 0.6; cursor: grabbing;
+    transform: rotate(-1.5deg);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .tile.drop-placeholder {
+    border-style: dashed; opacity: 0.4; background: rgba(37,99,235,0.05);
+  }
+  .tile-header { display: flex; justify-content: space-between; gap: 6px; align-items: flex-start; }
+  .tile-title { font-size: 13px; font-weight: 500; line-height: 1.3; flex: 1; }
+  .tile-start {
+    background: transparent; color: var(--fg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 2px 6px; font-size: 11px; cursor: pointer;
+  }
+  .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--bg-elev2); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; font-size: 10px; opacity: 0.7; align-items: center; }
+  .project-chip {
+    font-size: 10px; padding: 1px 6px; border-radius: 8px; font-family: monospace;
+    background: rgba(37,99,235,0.12); color: #66a3ff;
+  }
+  /* live-state indicators */
+  .pulse {
+    width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+    background: var(--green); animation: pulse 1.4s ease-in-out infinite;
+  }
+  .pulse.idle { background: var(--muted); animation: none; }
+  .pulse.error { background: var(--red); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(63,185,80,0.7); }
+    50%      { box-shadow: 0 0 0 6px rgba(63,185,80,0); }
+  }
+  .unread {
+    background: var(--accent); color: white;
+    padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600;
+  }
+  .needs-input {
+    border-color: var(--amber);
+    box-shadow: 0 0 0 1px rgba(210,153,34,0.25), 0 0 12px rgba(210,153,34,0.15);
+  }
+  .needs-input::before {
+    content: '⚠ awaiting reply'; position: absolute; top: -8px; right: 8px;
+    background: var(--amber); color: var(--bg); font-size: 9px; font-weight: 600;
+    padding: 1px 5px; border-radius: 3px; letter-spacing: 0.3px;
+  }
+  .cost-bar {
+    height: 3px; border-radius: 2px; background: var(--bg-elev2); overflow: hidden;
+    margin-top: 2px;
+  }
+  .cost-bar > span { display: block; height: 100%; background: var(--green); }
+  .cost-bar.warn > span { background: var(--amber); }
+  .cost-bar.over > span { background: var(--red); }
+  .legend {
+    margin: 24px auto 0; max-width: 1280px;
+    background: var(--bg-elev1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px 20px; font-size: 12px; line-height: 1.6;
+  }
+  .legend h2 { margin: 0 0 8px; font-size: 14px; }
+  .legend code { background: var(--bg-elev2); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+  .badges { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; }
+  .badges > div { display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+
+<div class="frame">
+  <div class="toolbar">
+    <span class="title">Kanban</span>
+    <select><option>All workspaces</option></select>
+    <select><option>All projects (4)</option></select>
+    <input placeholder="Filter title / tag…">
+    <span class="spacer"></span>
+    <button class="btn">⎇ Worktrees</button>
+    <button class="btn primary">＋ New card</button>
+    <button class="btn">✕ Close</button>
+  </div>
+
+  <div class="columns">
+    <!-- BACKLOG -->
+    <div class="col">
+      <div class="col-header"><span>Backlog</span><span style="opacity:0.5">3</span></div>
+      <div class="col-body">
+        <div class="tile">
+          <div class="tile-header">
+            <div class="tile-title">Migrate auth to OAuth2</div>
+            <button class="tile-start">▶</button>
+          </div>
+          <div class="tags"><span class="tag">auth</span><span class="tag">p1</span></div>
+          <div class="meta">
+            <span class="project-chip">switchboard</span>
+            <span>2d ago</span>
+          </div>
+        </div>
+
+        <div class="tile">
+          <div class="tile-header">
+            <div class="tile-title">Add CSV export to reports</div>
+            <button class="tile-start">▶</button>
+          </div>
+          <div class="meta">
+            <span class="project-chip">api-server</span>
+            <span>5h ago</span>
+          </div>
+        </div>
+
+        <div class="tile">
+          <div class="tile-header">
+            <div class="tile-title">Investigate flaky test in CI</div>
+            <button class="tile-start">▶</button>
+          </div>
+          <div class="tags"><span class="tag">bug</span></div>
+          <div class="meta">
+            <span class="project-chip">switchboard</span>
+            <span>just now</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- IN PROGRESS — drop target highlight + dragging tile -->
+    <div class="col drop-target">
+      <div class="col-header"><span>In progress</span><span style="opacity:0.5">3</span></div>
+      <div class="col-body">
+        <div class="tile">
+          <div class="tile-header">
+            <div class="tile-title">Refactor terminal-registry to a class</div>
+            <button class="tile-start">↗</button>
+          </div>
+          <div class="tags"><span class="tag">refactor</span></div>
+          <div class="meta">
+            <span class="pulse"></span>
+            <span style="color:var(--green)">running · 12s</span>
+            <span class="project-chip">switchboard</span>
+            <span>⎇ worktree</span>
+          </div>
+        </div>
+
+        <div class="tile">
+          <div class="tile-header">
+            <div class="tile-title">Wire up OpenCode skill discovery</div>
+            <button class="tile-start">↗</button>
+          </div>
+          <div class="meta">
+            <span class="pulse idle"></span>
+            <span>idle · 4m</span>
+            <span class="unread">3 new</span>
+            <span class="project-chip">switchboard</span>
+          </div>
+          <div class="cost-bar warn"><span style="width:78%"></span></div>
+          <div class="meta"><span>$3.92 / $5.00 · 78%</span></div>
+        </div>
+
+        <!-- ghost placeholder where the dragged card will land -->
+        <div class="tile drop-placeholder">
+          <div class="tile-header">
+            <div class="tile-title" style="opacity:0.6">Drop here to move →</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NEEDS INPUT -->
+    <div class="col">
+      <div class="col-header"><span>Needs input</span><span style="opacity:0.5">2</span></div>
+      <div class="col-body">
+        <div class="tile needs-input">
+          <div class="tile-header">
+            <div class="tile-title">Pick deployment region for staging</div>
+            <button class="tile-start">↗</button>
+          </div>
+          <div class="meta">
+            <span class="pulse idle" style="background:var(--amber)"></span>
+            <span style="color:var(--amber)">awaiting answer</span>
+            <span class="project-chip">api-server</span>
+          </div>
+        </div>
+
+        <!-- this is the dragging card, visually mid-transit (auto-promoted from elsewhere) -->
+        <div class="tile dragging" style="position:relative">
+          <div class="tile-header">
+            <div class="tile-title">Generate migration for users table</div>
+            <button class="tile-start">↗</button>
+          </div>
+          <div class="tags"><span class="tag">db</span><span class="tag">p0</span></div>
+          <div class="meta">
+            <span class="project-chip">api-server</span>
+            <span>⎇ worktree</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DONE -->
+    <div class="col">
+      <div class="col-header"><span>Done</span><span style="opacity:0.5">2</span></div>
+      <div class="col-body">
+        <div class="tile" style="opacity:0.65">
+          <div class="tile-header">
+            <div class="tile-title">Fix translucent-theme bleed-through</div>
+            <button class="tile-start">↗</button>
+          </div>
+          <div class="meta">
+            <span class="project-chip">switchboard</span>
+            <span>completed 1h ago</span>
+          </div>
+        </div>
+        <div class="tile" style="opacity:0.65">
+          <div class="tile-header">
+            <div class="tile-title">Render kanban tour clip</div>
+            <button class="tile-start">↗</button>
+          </div>
+          <div class="meta">
+            <span class="project-chip">switchboard</span>
+            <span>completed 2h ago</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="legend">
+  <h2>What's new in this mockup</h2>
+  <ul>
+    <li><b>Drag-and-drop column moves</b> — pointer-down on a tile starts a drag; the destination column shows an accent border and a dashed placeholder where the card will land. On drop, fires <code>kanbanStore.move(id, status)</code>.</li>
+    <li><b>Live session pulse</b> — <span class="pulse"></span> running (green, animating), <span class="pulse idle"></span> idle (gray, static), <span class="pulse" style="background:var(--red)"></span> error (red). Tile subscribes to <code>agent-store</code> via the linked <code>conversationId</code>.</li>
+    <li><b>Unread badge</b> — turns completed since the user last viewed the chat. Cleared when user opens the conversation.</li>
+    <li><b>Cost progress bar</b> — visualizes <code>costUsedUsd / costCapUsd</code>. Switches to amber at 75%, red at 100%.</li>
+    <li><b>"Needs input" auto-promotion</b> — when the runtime emits <code>question.asked</code> for a card's session, the card flips status and gets the amber halo + "awaiting reply" ribbon. On <code>question.answered</code>, demote back to in_progress.</li>
+    <li><b>Relative time</b> — <code>"12s"</code>, <code>"4m"</code>, <code>"completed 1h ago"</code>. Uses existing <code>fmtDuration</code>.</li>
+  </ul>
+  <div class="badges">
+    <div><span class="pulse"></span> running</div>
+    <div><span class="pulse idle"></span> idle</div>
+    <div><span class="pulse" style="background:var(--red)"></span> error</div>
+    <div><span class="unread">N new</span> unread turns</div>
+    <div>⚠ awaiting reply (auto-promoted)</div>
+  </div>
+</div>
+
+</body>
+</html>
