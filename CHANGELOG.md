@@ -2,6 +2,23 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-05-02 — OpenCode legacy adapter retired
+
+### Removed
+- **`opencode-adapter.ts`** (911 lines, the `opencode run --format json` shell-out variant) deleted. The ACP-based adapter has been default since 2026-04-28 and is now the only path.
+- **`opencode.useAcpAdapter` setting** removed (was: gate flag, default `true`). Existing values in the settings DB are inert and harmless.
+- **Settings → OpenCode → Adapter** toggle removed from `SettingsModal.tsx`.
+
+### Changed
+- `provider-registry.ts` simplified: dropped `resolveOpencodeAdapter()` indirection; the OpenCode entry in the adapter map points directly at the ACP instance. `OPENCODE_LIST_MODELS` IPC handler now calls the ACP adapter directly.
+- `opencode-acp-adapter.ts` header comment updated to reflect retirement (no longer "replaces" — it replaced, past tense).
+- `CLAUDE.md` "What's currently working" + file structure updated.
+
+### Why
+The ACP adapter has been default for a release with no fallback complaints. Live-streaming tool progress, real plan mode, permission RPCs, image input, and inline model catalog made the legacy CLI fallback obsolete. Carrying 911 lines of dead code (plus its toggle UI and IPC indirection) was pure tax on every refactor.
+
+---
+
 ## 2026-04-20 — Phase A (docs, UX polish, slash commands)
 
 ### Added

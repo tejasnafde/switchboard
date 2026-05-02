@@ -17,10 +17,10 @@ Electron workspace that multiplexes terminals and agent chats (Claude Code + Cod
 ## Commands
 
 - `npm run dev` — launches Electron (auto-unsets `ELECTRON_RUN_AS_NODE`)
-- `npm test` — vitest (~320 tests)
+- `npm test` — vitest (~400 tests)
 - `npm run test:watch` — vitest in watch mode
 - `npm run typecheck` — main + renderer tsc
-- `npm run build` — **gated build**: `prebuild` runs typecheck + test before the actual build fires
+- `npm run build` — **gated build**: `prebuild` runs typecheck + test before the actual build fires; `postbuild` runs `scripts/smoke-test.mjs`
 - `npm run build:fast` — escape hatch, skips the gate
 - `npm run rebuild` — rebuild `node-pty` + `better-sqlite3` for Electron
 
@@ -80,7 +80,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 2. `ChatPanel.handleSend` converts each `File` to data URL via `FileReader.readAsDataURL`
 3. `providerApi.sendTurn(..., messageImages)` passes through preload → `provider-registry` IPC → adapter
 4. Claude adapter strips the `data:image/png;base64,` prefix and builds `{type:'image', source:{type:'base64', media_type, data}}` content blocks alongside text
-5. Codex adapter currently ignores images (Phase B will fix)
+5. Codex adapter encodes images into JSON-RPC content blocks (Phase B done — see `codex-adapter.ts` `sendTurn`)
 6. On JSONL reload, `JsonlParser.extractImages` reconstructs data URLs from image blocks — historical images survive restart
 
 ### Question / Plan flow
@@ -117,7 +117,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - Claude Code SDK integration end-to-end: streaming text, tool calls, context window metrics, interrupt
 - Codex app-server integration: basic chat + plan-mode + AskUserQuestion + image support (Phase B done)
 - **OpenCode adapter** (2026-04-26): `opencode run --format json` with NVIDIA NIM / Gemini / built-in free tier, dynamic model list via `opencode models`, shell-env probing for API keys, settings-DB key injection, placeholder + heartbeat + 3-min timeout (free-tier-aware error message) for cold-boot UX. Also wires up OpenCode's `debug skill` endpoint to provide dynamically discovered agent skills!
-- **OpenCode ACP adapter** (2026-04-28, default): newer Agent Client Protocol variant (`opencode-acp-adapter.ts`), gated by setting `opencode.useAcpAdapter` (default `true`). Legacy CLI adapter (`opencode-adapter.ts`) retained as one-release fallback. Helper: `adapters/opencode/env.ts` for shared env-probing.
+- **OpenCode ACP adapter** (2026-04-28): the only OpenCode adapter. Speaks the Agent Client Protocol over a long-lived `opencode acp` child. Legacy `opencode run --format json` shell-out adapter was retired 2026-05-02 — see CHANGELOG. Helper: `adapters/opencode/env.ts` for shared env-probing.
 - Plan mode with hard-deny + read-only allow-list
 - AskUserQuestion → QuestionCard (numbered shortcuts, auto-advance)
 - ExitPlanMode → PlanCard (markdown + Implement/Iterate)
@@ -143,7 +143,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - **System notifications** on `turn.completed` for non-active sessions (`src/renderer/services/notifications.ts`)
 - **Export conversation as markdown** (`exportMarkdown.ts` + Sidebar right-click)
 - **`⌘F` in-pane search** for terminals (xterm SearchAddon with decoration overlays — requires `allowProposedApi: true`) and individual chat panes (DOM TreeWalker wraps first match in `<mark.sb-search-mark>`); shared `InPaneSearchBar` component, document-level keydown listeners scoped to focused pane via `[data-terminal-pane]` / `[data-chat-panel]` attrs
-- **Feature Tour modal** (`FeatureTourModal.tsx` + `featureRegistry.ts`) — auto-opens on first launch and after `TOUR_VERSION` bumps; replayable from Settings → Tour. MP4 clips streamed via `sb-tour://<id>.mp4` custom protocol (resolves to `videos/dist/`, served via `net.fetch('file://...')` for byte-range support)
+- **Feature Tour modal** (`FeatureTourModal.tsx` + `featureRegistry.ts` in `src/renderer/components/onboarding/`) — auto-opens on first launch and after `TOUR_VERSION` bumps; replayable from Settings → Tour. MP4 clips streamed via `sb-tour://<id>.mp4` custom protocol (resolves to `videos/dist/`, served via `net.fetch('file://...')` for byte-range support). 10 clips currently rendered in `videos/dist/`.
 - **Agent-aware UI labels**: `agentLabel()` / `agentShortLabel()` helpers in `shared/types.ts` so StatusBar / MessageBubble / etc. all reflect Claude Code / Codex / OpenCode correctly
 - Single-instance lock
 - Native app menu (`⌘,` for settings, standard Edit/View/Window)
@@ -154,7 +154,6 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 - **electron-builder packaging + auto-update** — Phase 9 complete; unsigned macOS arm64/x64 `.dmg`/`.zip` and Windows `.exe`/`.zip` builds shippable via `npm run dist:*`. `electron-updater` wired via `main/updater.ts` (auto-check + manual). Awaiting Apple Developer cert for code-signing only.
 - **workspace.yaml hot-reload** + `on_start` wait/then orchestration — partial; runtime hydration works
-- **HyperFrames onboarding videos** (Phase D) — `FeatureTourModal.tsx` + `featureRegistry.ts` framework shipped with `sb-tour://` protocol; `videos/dist/*.mp4` artifacts not yet rendered.
 - **Cursor import** (read `state.vscdb`) — not started
 
 ## Skill exposure (shipped 2026-04-26)
@@ -168,7 +167,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
 
-## Test suite (~320 tests)
+## Test suite (~400 tests)
 
 Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
@@ -201,8 +200,7 @@ src/
 │   │   └── adapters/
 │   │       ├── claude-adapter.ts      # SDK integration, canUseTool, plan-mode policy, image blocks
 │   │       ├── codex-adapter.ts       # JSON-RPC over stdio (Phase B done)
-│   │       ├── opencode-adapter.ts    # Legacy CLI fallback (gated by opencode.useAcpAdapter)
-│   │       ├── opencode-acp-adapter.ts # Default OpenCode adapter via ACP
+│   │       ├── opencode-acp-adapter.ts # OpenCode adapter (ACP / JSON-RPC over stdio)
 │   │       ├── opencode/env.ts        # Shared env-probe helper
 │   │       └── question-answers.ts    # Pure helper: shape AskUserQuestion answers for SDK wire format
 │   ├── terminal/pty-manager.ts        # PTY lifecycle
@@ -224,6 +222,8 @@ src/
 │   │   │   ├── SlashCommandMenu.tsx   # Inline / popover
 │   │   │   └── slashCommands.ts       # Trigger detector + registry
 │   │   ├── sidebar/Sidebar.tsx        # Projects + sessions + dnd + archive button
+│   │   ├── files/                     # FileTreePane, FileViewerPane, FilesPane, FileChip, shikiHighlighter
+│   │   ├── onboarding/                # FeatureTourModal + featureRegistry
 │   │   └── terminal/
 │   │       ├── TerminalStrip.tsx      # Rows of windows with resize handles
 │   │       ├── TerminalWindow.tsx     # Window (tabs)
@@ -244,5 +244,5 @@ src/
 │   ├── types.ts                       # ChatMessage, Session, Project, MessageImage, denial?
 │   ├── auto-title.ts                  # generateTitle from first message
 │   └── models.ts                      # Model catalog per agent
-└── tests/unit/                        # ~320 tests
+└── tests/unit/                        # ~400 tests
 ```

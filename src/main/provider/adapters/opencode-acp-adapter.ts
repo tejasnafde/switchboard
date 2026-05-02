@@ -2,7 +2,7 @@
  * OpenCode ACP adapter — speaks the Agent Client Protocol (Zed-led
  * standard) to a long-lived `opencode acp` child over JSON-RPC on stdio.
  *
- * Replaces the legacy shell-out adapter (`opencode-adapter.ts`), which
+ * Replaced the legacy shell-out adapter (deleted 2026-05-02), which
  * spawned `opencode run --format json` per turn with a 10–30s cold-boot.
  * The ACP child boots once per session, after which:
  *   - `session/prompt` returns first chunk in <1s
@@ -12,10 +12,6 @@
  *     `opencode debug skill` shell-out)
  *   - the model catalog arrives inline on `session/new` (was a side
  *     `opencode models` shell-out)
- *
- * Selection between this adapter and the legacy one is gated by the
- * `opencode.useAcpAdapter` setting (default `true`); see
- * `provider-registry.ts`.
  *
  * Wire layer: uses the official `@agentclientprotocol/sdk` package, the
  * same one OpenCode itself depends on. We get `ClientSideConnection`
