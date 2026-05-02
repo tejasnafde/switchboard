@@ -58,7 +58,7 @@ export function FilesPane(): React.ReactElement {
   }, [])
 
   return (
-    <div ref={containerRef} style={{ display: 'flex', width: '100%', height: '100%' }}>
+    <div ref={containerRef} data-files-pane="true" style={{ display: 'flex', width: '100%', height: '100%' }}>
       {!collapsed && (
         <>
           <div

@@ -681,6 +681,7 @@ export function App() {
             display: appView === 'chats' ? 'flex' : 'none',
             minWidth: 0,
             overflow: 'hidden',
+            position: 'relative',
           }}
         >
           {/* Chat — fills remaining space. In dual mode, renders two

@@ -10,8 +10,10 @@
  * button commits.
  */
 
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent } from 'react'
 import { useKanbanStore } from '../../stores/kanban-store'
+import { downscaleImage } from '../../services/imageDownscale'
+import { insertSnippetWithNewlineGuards } from '../../services/insertSnippet'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 
 interface ProjectOption {
@@ -61,6 +63,49 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   // can switch when `availableProjects` has > 1 entry.
   const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath)
   const showProjectPicker = mode === 'create' && (availableProjects?.length ?? 0) > 1
+  const descriptionRef = useRef<HTMLTextAreaElement>(null)
+
+  // Paste/drop image → downscale (≤1920px longest edge) and embed at the caret
+  // as `![](data:image/...;base64,…)`.
+  const insertImagesAsMarkdown = useCallback(async (files: File[]) => {
+    const images = files.filter((f) => f.type.startsWith('image/'))
+    if (images.length === 0) return
+    const results = await Promise.all(images.map((f) => downscaleImage(f)))
+    const snippet = results.map((r) => `![](${r.dataUrl})`).join('\n')
+    // Capture selection synchronously — by the time `setDescription` runs
+    // the textarea's selection may have shifted (focus loss, IME, etc.),
+    // so we read it once now and reuse it inside the updater closure.
+    const ta = descriptionRef.current
+    const start = ta?.selectionStart ?? null
+    const end = ta?.selectionEnd ?? null
+    setDescription((cur) => {
+      const s = start ?? cur.length
+      const e = end ?? cur.length
+      return insertSnippetWithNewlineGuards(cur, s, e, snippet)
+    })
+  }, [])
+
+  const handleDescriptionPaste = useCallback((e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData?.files ?? [])
+    if (files.some((f) => f.type.startsWith('image/'))) {
+      e.preventDefault()
+      void insertImagesAsMarkdown(files)
+    }
+  }, [insertImagesAsMarkdown])
+
+  const handleDescriptionDrop = useCallback((e: DragEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.dataTransfer?.files ?? [])
+    if (files.some((f) => f.type.startsWith('image/'))) {
+      e.preventDefault()
+      void insertImagesAsMarkdown(files)
+    }
+  }, [insertImagesAsMarkdown])
+  const handleDescriptionDragOver = useCallback((e: DragEvent<HTMLTextAreaElement>) => {
+    if (Array.from(e.dataTransfer?.types ?? []).includes('Files')) {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    }
+  }, [])
   const projectLabel =
     availableProjects?.find((p) => p.path === selectedProjectPath)?.name
     ?? selectedProjectPath.split('/').pop()
@@ -177,9 +222,13 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
           <label style={labelStyle}>
             Description
             <textarea
+              ref={descriptionRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Context, links, acceptance criteria…"
+              onPaste={handleDescriptionPaste}
+              onDrop={handleDescriptionDrop}
+              onDragOver={handleDescriptionDragOver}
+              placeholder="Context, links, acceptance criteria… (paste images to embed)"
               rows={5}
               style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical' }}
             />

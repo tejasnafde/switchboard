@@ -21,6 +21,7 @@ import { $getNodeByKey, DecoratorNode, type EditorConfig, type LexicalNode, type
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext'
 import type { JSX } from 'react'
 import type { DraftPillKind } from '../../../stores/draft-store'
+import { PillChipVisual } from './PillChipVisual'
 
 export type SerializedPillNode = Spread<
   {
@@ -30,12 +31,6 @@ export type SerializedPillNode = Spread<
   },
   SerializedLexicalNode
 >
-
-function tintForKind(kind: DraftPillKind): string {
-  if (kind === 'file') return 'var(--accent, #58a6ff)'
-  if (kind === 'terminal') return '#d29922'
-  return '#8957e5'
-}
 
 interface PillChipProps {
   pillId: string
@@ -57,58 +52,40 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
     })
     window.dispatchEvent(new CustomEvent('sb-pill-remove', { detail: { id: pillId } }))
   }
-  const tint = tintForKind(kind)
   return (
-    <span
-      title={label}
-      data-pill-chip="true"
-      data-pill-id={pillId}
-      // contentEditable=false is critical: without it, Lexical lets the
-      // user type inside the chip and chaos ensues. DecoratorNode wraps
-      // us in a non-editable host, but explicit doesn't hurt.
-      contentEditable={false}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '4px',
-        padding: '0 4px 0 6px',
-        margin: '0 2px',
-        borderRadius: '4px',
-        background: 'var(--bg-tertiary)',
-        border: `1px solid ${tint}33`,
-        fontFamily: 'var(--font-mono)',
-        fontSize: '12px',
-        verticalAlign: 'baseline',
-        lineHeight: '1.4',
-        userSelect: 'none',
-        whiteSpace: 'nowrap',
-        maxWidth: '260px',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
+    <PillChipVisual
+      label={label}
+      kind={kind}
+      selectable={false}
+      rootProps={{
+        'data-pill-chip': 'true',
+        'data-pill-id': pillId,
+        // contentEditable=false: without it, Lexical lets the user type
+        // inside the chip and chaos ensues.
+        contentEditable: false,
       }}
-    >
-      <span style={{ width: 4, height: 4, borderRadius: '50%', background: tint, flexShrink: 0 }} />
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
-      <button
-        type="button"
-        aria-label={`Remove ${label}`}
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRemove() }}
-        // Prevent focus stealing — without this, clicking × moves focus
-        // out of the editor and the user has to re-click into the chip.
-        onMouseDown={(e) => e.preventDefault()}
-        style={{
-          background: 'transparent',
-          border: 'none',
-          color: 'var(--text-secondary)',
-          cursor: 'pointer',
-          padding: '0 1px',
-          lineHeight: 1,
-          fontSize: '13px',
-        }}
-      >
-        ×
-      </button>
-    </span>
+      trailing={
+        <button
+          type="button"
+          aria-label={`Remove ${label}`}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRemove() }}
+          // Prevent focus stealing — without this, clicking × moves focus
+          // out of the editor and the user has to re-click into the chip.
+          onMouseDown={(e) => e.preventDefault()}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-secondary)',
+            cursor: 'pointer',
+            padding: '0 1px',
+            lineHeight: 1,
+            fontSize: '13px',
+          }}
+        >
+          ×
+        </button>
+      }
+    />
   )
 }
 

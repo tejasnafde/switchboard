@@ -219,7 +219,8 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
       const el = containerRef.current
       if (!el) return
       const active = document.activeElement as Element | null
-      const inside = !!active && el.contains(active)
+      // ⌘F from anywhere in the Files pane (tree or viewer) opens viewer search.
+      const inside = !!active && (el.contains(active) || !!active.closest('[data-files-pane]'))
       if (!inside) return
       e.preventDefault()
       e.stopPropagation()

@@ -31,7 +31,15 @@ interface ImageAttachment {
 
 interface ChatInputProps {
   sessionId?: string | null
-  onSend: (message: string, mode?: string, images?: ImageAttachment[]) => void
+  onSend: (
+    message: string,
+    mode?: string,
+    images?: ImageAttachment[],
+    extras?: {
+      displayBody?: string
+      pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
+    },
+  ) => void
   disabled?: boolean
   placeholder?: string
   agentType: AgentType
@@ -289,7 +297,18 @@ export function ChatInput({
     // chat-message quote) before handing off. Tokens whose pills were
     // already removed get dropped silently.
     const body = serializeBodyWithPills(trimmed, pillsById)
-    onSend(body, undefined, images.length > 0 ? images : undefined)
+    const pillsMeta: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }> = {}
+    for (const p of pills) {
+      if (trimmed.includes(`[[pill:${p.id}]]`)) {
+        pillsMeta[p.id] = { label: p.label, kind: p.kind }
+      }
+    }
+    onSend(
+      body,
+      undefined,
+      images.length > 0 ? images : undefined,
+      hasPills ? { displayBody: trimmed, pillsMeta } : undefined,
+    )
     setValue('')
     if (sessionId) {
       clearDraft(sessionId)

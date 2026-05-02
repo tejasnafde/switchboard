@@ -19,6 +19,7 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { onSessionRename, emitSessionRename, onSessionCreated } from '../../services/session-events'
 import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/exportMarkdown'
 import { SidebarFilter } from './SidebarFilter'
+import { decideDragOutcome } from './dragLogic'
 import { WorkspaceManager } from './WorkspaceManager'
 import {
   groupProjectsByWorkspace,
@@ -50,6 +51,50 @@ function UnreadBadge({ sessionId }: { sessionId: string }) {
       padding: '0 4px',
       flexShrink: 0,
     }}>
+      {count > 99 ? '99+' : count}
+    </span>
+  )
+}
+
+/** Sum of unread counts across a workspace group — surfaces activity when the
+ *  workspace is collapsed and per-session badges are hidden. */
+function useGroupUnreadCount(sessionIds: string[]): number {
+  // Select the sessions array (stable reference) once, then reduce with a
+  // local Map. Cheaper than `find` per id when many groups call this hook.
+  const sessions = useAgentStore((s) => s.sessions)
+  return useMemo(() => {
+    const byId = new Map(sessions.map((s) => [s.id, s.unreadCount ?? 0]))
+    let total = 0
+    for (const id of sessionIds) total += byId.get(id) ?? 0
+    return total
+  }, [sessions, sessionIds])
+}
+
+/** Aggregated unread badge on workspace headers. `expanded` softens the chip
+ *  slightly (per-session badges are also visible, so the header pill is redundant). */
+function WorkspaceUnreadBadge({ sessionIds, expanded }: { sessionIds: string[]; expanded?: boolean }) {
+  const count = useGroupUnreadCount(sessionIds)
+  if (count === 0) return null
+  return (
+    <span
+      title={`${count} unread`}
+      style={{
+        minWidth: '14px',
+        height: '14px',
+        borderRadius: '7px',
+        background: 'var(--accent)',
+        color: '#fff',
+        fontSize: '9.5px',
+        fontWeight: 600,
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '0 4px',
+        flexShrink: 0,
+        marginLeft: 4,
+        opacity: expanded ? 0.85 : 1,
+      }}
+    >
       {count > 99 ? '99+' : count}
     </span>
   )
@@ -380,25 +425,25 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     } catch { /* best-effort */ }
   }, [handleAssignWorkspace])
 
-  // Drag-to-reorder handler
+  // Same-workspace drop → reorder + persist projectOrder.
+  // Cross-workspace drop → reassign workspaceId; reorder is skipped (the
+  // regroup picks up the new bucket on next refresh).
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
-    if (!over || active.id === over.id) return
-
+    if (!over) return
+    const outcome = decideDragOutcome(projects, String(active.id), String(over.id))
+    if (outcome.type === 'noop') return
+    if (outcome.type === 'reassign') {
+      void handleAssignWorkspace(outcome.projectPath, outcome.targetWorkspaceId)
+      return
+    }
     setProjects((prev) => {
-      const oldIndex = prev.findIndex((p) => p.path === active.id)
-      const newIndex = prev.findIndex((p) => p.path === over.id)
-      if (oldIndex === -1 || newIndex === -1) return prev
-
-      const reordered = arrayMove(prev, oldIndex, newIndex)
-
-      // Persist order
+      const reordered = arrayMove(prev, outcome.oldIndex, outcome.newIndex)
       const order = reordered.map((p) => p.path)
       window.api.settings.set('projectOrder', JSON.stringify(order)).catch(() => {})
-
       return reordered
     })
-  }, [])
+  }, [projects, handleAssignWorkspace])
 
   // Compute the workspace-grouped tree, then apply the (debounced) filter.
   // The filter expansion sets are merged with the persisted collapse sets:
@@ -612,8 +657,9 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           modifiers={[restrictToVerticalAxis]}
           onDragEnd={handleDragEnd}
         >
+          {/* Items must match rendered DOM order (grouped by workspace), not raw load order. */}
           <SortableContext
-            items={projects.map((p) => p.path)}
+            items={filtered.groups.flatMap((g) => g.projects.map((p) => p.path))}
             strategy={verticalListSortingStrategy}
           >
             {filtered.groups.map((group) => {
@@ -642,6 +688,10 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
                     <span className="sidebar-workspace-name">
                       {group.workspace?.name ?? 'Ungrouped'}
                     </span>
+                    <WorkspaceUnreadBadge
+                      sessionIds={group.projects.flatMap((p) => p.sessions.map((s) => s.id))}
+                      expanded={!wsCollapsed}
+                    />
                     <span
                       className="sidebar-workspace-count"
                       title={`${group.projects.length} project${group.projects.length === 1 ? '' : 's'}, ${sessionTotal} thread${sessionTotal === 1 ? '' : 's'}`}

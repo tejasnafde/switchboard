@@ -275,7 +275,6 @@ function HydrationPlugin({
     })
     lastValueRef.current = value
     // intentionally only on mount — subsequent syncs handled below
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // External-write sync. If `value` changed AND it doesn't match the
@@ -339,6 +338,50 @@ function PasteFilesPlugin({ onPasteFiles }: { onPasteFiles?: (files: File[]) => 
   return null
 }
 
+/** Reconstruct PillNodes from `[[pill:<id>]]` tokens on paste so cut/copy round-trips chips. */
+function PasteTextPlugin({
+  pillsById,
+}: {
+  pillsById: RichChatTextareaProps['pillsById']
+}): null {
+  const [editor] = useLexicalComposerContext()
+  useEffect(() => {
+    return editor.registerCommand<ClipboardEvent>(
+      PASTE_COMMAND,
+      (event) => {
+        // Files take precedence — handled by PasteFilesPlugin.
+        if ((event.clipboardData?.files?.length ?? 0) > 0) return false
+        const text = event.clipboardData?.getData('text/plain') ?? ''
+        if (!text.includes('[[pill:')) return false
+        event.preventDefault()
+        const segs = parseBodyToSegments(text)
+        editor.update(() => {
+          const sel = $getSelection()
+          if (!$isRangeSelection(sel)) return
+          const nodes: LexicalNode[] = []
+          for (const seg of segs) {
+            if (seg.type === 'text') {
+              if (seg.text.length === 0) continue
+              const lines = seg.text.split('\n')
+              for (let i = 0; i < lines.length; i++) {
+                if (i > 0) nodes.push($createLineBreakNode())
+                if (lines[i].length > 0) nodes.push($createTextNode(lines[i]))
+              }
+            } else {
+              const meta = pillsById[seg.id]
+              if (meta) nodes.push($createPillNode(meta.id, meta.label, meta.kind))
+            }
+          }
+          if (nodes.length > 0) $insertNodes(nodes)
+        })
+        return true
+      },
+      COMMAND_PRIORITY_LOW,
+    )
+  }, [editor, pillsById])
+  return null
+}
+
 /**
  * Plugin: expose imperative methods (focus, blur, insertPill,
  * replaceRange, getCaret) to the host via the forwarded ref.
@@ -373,7 +416,6 @@ const editorTheme = {
 
 function onError(err: Error): void {
   // Surface to console so devtools catches it; don't blow up the app.
-  // eslint-disable-next-line no-console
   console.error('[RichChatTextarea]', err)
 }
 
@@ -404,7 +446,6 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
       }),
       // intentionally stable: passing a fresh config remounts the editor
       // and loses focus mid-typing. Editability is updated below.
-      // eslint-disable-next-line react-hooks/exhaustive-deps
       [],
     )
 
@@ -475,6 +516,7 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
         <OnChangePlugin onChange={handleChange} />
         <EnterKeyPlugin onEnter={onEnter} />
         <PasteFilesPlugin onPasteFiles={onPasteFiles} />
+        <PasteTextPlugin pillsById={pillsById} />
         <PillInsertPlugin />
         <ImperativeHandlePlugin
           ref={ref}

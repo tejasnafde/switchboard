@@ -109,6 +109,14 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'images')) {
       db.exec('ALTER TABLE messages ADD COLUMN images TEXT')
     }
+    // Migration: pill-aware display body for sent user messages — see
+    // `getDisplayBodyEnrichments` and `enrichMessagesWithDisplayBody`.
+    if (!cols.some((c) => c.name === 'display_body')) {
+      db.exec('ALTER TABLE messages ADD COLUMN display_body TEXT')
+    }
+    if (!cols.some((c) => c.name === 'pills_meta')) {
+      db.exec('ALTER TABLE messages ADD COLUMN pills_meta TEXT')
+    }
   } catch { /* ignore */ }
 
   // Migration: add `archived` column to conversations if missing
@@ -625,6 +633,8 @@ export function saveMessage(
   content: string,
   toolCalls?: string,
   images?: string,
+  displayBody?: string,
+  pillsMeta?: string,
 ): void {
   const now = Date.now()
   const db = getDb()
@@ -640,9 +650,14 @@ export function saveMessage(
   }
 
   db.prepare(
-    `INSERT OR REPLACE INTO messages (id, conversation_id, role, content, tool_calls, images, timestamp)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  ).run(id, conversationId, role, content, toolCalls ?? null, images ?? null, now)
+    `INSERT OR REPLACE INTO messages
+       (id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id, conversationId, role, content,
+    toolCalls ?? null, images ?? null, now,
+    displayBody ?? null, pillsMeta ?? null,
+  )
 
   db.prepare(
     'UPDATE conversations SET updated_at = ? WHERE id = ?'
@@ -657,12 +672,40 @@ export interface MessageRow {
   tool_calls: string | null
   images: string | null
   timestamp: number
+  display_body: string | null
+  pills_meta: string | null
 }
 
 export function getMessagesForConversation(conversationId: string): MessageRow[] {
   return getDb().prepare(
     'SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC'
   ).all(conversationId) as MessageRow[]
+}
+
+/** Pill enrichments for user messages, keyed by content. See
+ *  `enrichMessagesWithDisplayBody` for the content-match rationale. */
+export interface DisplayBodyEnrichment {
+  displayBody: string
+  pillsMeta: string
+}
+export function getDisplayBodyEnrichments(
+  conversationId: string,
+): Map<string, DisplayBodyEnrichment> {
+  const rows = getDb().prepare(
+    `SELECT content, display_body, pills_meta
+       FROM messages
+      WHERE conversation_id = ?
+        AND role = 'user'
+        AND display_body IS NOT NULL`
+  ).all(conversationId) as Array<{ content: string; display_body: string; pills_meta: string | null }>
+  const out = new Map<string, DisplayBodyEnrichment>()
+  for (const r of rows) {
+    out.set(r.content, {
+      displayBody: r.display_body,
+      pillsMeta: r.pills_meta ?? '{}',
+    })
+  }
+  return out
 }
 
 // ─── Settings CRUD ──────────────────────────────────────────────

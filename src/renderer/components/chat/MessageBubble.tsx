@@ -12,6 +12,7 @@ import { useDraftStore } from '../../stores/draft-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { enhanceFilePills } from '../../services/messagePills'
 import { formatFilePathRef, type FilePathRef } from '@shared/filePathRef'
+import { renderPillBody } from './renderPillBody'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -186,7 +187,11 @@ export const MessageBubble = memo(function MessageBubble({ message, onApproval, 
             whiteSpace: 'pre-wrap',
             overflowWrap: 'anywhere',
             wordBreak: 'break-word',
-          }}>{message.content}</div>
+          }}>
+            {message.displayBody && message.pillsMeta
+              ? renderPillBody(message.displayBody, message.pillsMeta)
+              : message.content}
+          </div>
         ) : (
           <div
             ref={markdownRef}
@@ -644,3 +649,4 @@ function ForwardMenu({ content }: { content: string }) {
     </div>
   )
 }
+

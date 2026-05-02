@@ -184,6 +184,15 @@ export interface ChatMessage {
    * Cursor-style.
    */
   turnDurationMs?: number
+  /**
+   * Pill-aware display body with `[[pill:<id>]]` tokens. `content` holds
+   * the expanded text the agent saw; `displayBody` is what the bubble
+   * renders so chips reappear after reload. Persisted in the messages
+   * table and merged back during JSONL load via content match.
+   */
+  displayBody?: string
+  /** Pill metadata keyed by token id. Persisted as JSON alongside `displayBody`. */
+  pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
 }
 
 export interface AgentMessagePayload {
@@ -251,6 +260,11 @@ export interface SaveMessageParams {
   content: string
   toolCalls?: string
   images?: string
+  /** Pill-tokenized body (`[[pill:<id>]]` form). Persisted alongside `content`
+   *  so reloaded user messages can re-render their chips. */
+  displayBody?: string
+  /** JSON-serialized pill metadata map keyed by token id. */
+  pillsMeta?: string
 }
 
 export interface ConversationRow {

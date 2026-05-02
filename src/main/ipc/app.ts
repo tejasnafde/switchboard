@@ -40,7 +40,9 @@ import {
   deleteWorkspace,
   reorderWorkspaces,
   setProjectWorkspace,
+  getDisplayBodyEnrichments,
 } from '../db/database'
+import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
 import { JsonlParser } from '../agent/jsonl-parser'
 import { readWorkspaceConfig, writeWorkspaceConfig, watchWorkspaceConfig } from '../workspace/workspace-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
@@ -266,8 +268,9 @@ export function registerAppHandlers(window: BrowserWindow): void {
         seen.add(m.id)
         return true
       })
+      const enriched = enrichMessagesWithDisplayBody(deduped, getDisplayBodyEnrichments(conversationId))
       log.info(`load-by-id: ${conversationId} → ${deduped.length} messages (${all.length - deduped.length} dupes removed) across ${sessionIds.length} fragment(s)`)
-      return { messages: deduped, meta }
+      return { messages: enriched, meta }
     }
 
     // Codex fallback — scan all sessions for this project, find matching id(s)
@@ -289,7 +292,8 @@ export function registerAppHandlers(window: BrowserWindow): void {
         seenCodex.add(m.id)
         return true
       })
-      return { messages: dedupedCodex, meta }
+      const enrichedCodex = enrichMessagesWithDisplayBody(dedupedCodex, getDisplayBodyEnrichments(conversationId))
+      return { messages: enrichedCodex, meta }
     } catch (err) {
       log.warn(`load-by-id (codex) failed for ${conversationId}: ${err}`)
       return { messages: [], meta }
@@ -298,7 +302,11 @@ export function registerAppHandlers(window: BrowserWindow): void {
 
   // Save a message to the database
   ipcMain.handle(AppChannels.SAVE_MESSAGE, (_event, params: SaveMessageParams) => {
-    saveMessage(params.id, params.conversationId, params.role, params.content, params.toolCalls, params.images)
+    saveMessage(
+      params.id, params.conversationId, params.role, params.content,
+      params.toolCalls, params.images,
+      params.displayBody, params.pillsMeta,
+    )
     return { ok: true }
   })
 

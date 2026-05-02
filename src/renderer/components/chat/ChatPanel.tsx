@@ -450,7 +450,15 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
 
   // ── Send handler ──────────────────────────────────────────────
   const handleSend = useCallback(
-    async (message: string, _mode?: string, images?: Array<{ file: File; previewUrl: string }>) => {
+    async (
+      message: string,
+      _mode?: string,
+      images?: Array<{ file: File; previewUrl: string }>,
+      extras?: {
+        displayBody?: string
+        pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
+      },
+    ) => {
       if (!sessionId) return
 
       // Convert attached images to data URLs so they survive session reloads
@@ -478,6 +486,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         content: message,
         images: messageImages,
         timestamp: Date.now(),
+        displayBody: extras?.displayBody,
+        pillsMeta: extras?.pillsMeta,
       }
       appendMessage(sessionId, userMsg)
       // Optimistic status so the "thinking" indicator shows immediately —
@@ -490,6 +500,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         role: 'user',
         content: message,
         images: messageImages ? JSON.stringify(messageImages) : undefined,
+        displayBody: extras?.displayBody,
+        pillsMeta: extras?.pillsMeta ? JSON.stringify(extras.pillsMeta) : undefined,
       }).catch(() => {})
 
       // Auto-generate title from first user message
