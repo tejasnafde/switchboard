@@ -1,6 +1,6 @@
 {
   "name": "switchboard",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "The unified workspace for developers who run agents, terminals, and chats.",
   "main": "out/main/index.js",
   "scripts": {
