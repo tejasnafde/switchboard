@@ -1,5 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useAgentStore } from '../../src/renderer/stores/agent-store'
+
+declare global {
+  interface Window {
+    api?: {
+      provider?: {
+        stopSession?: (id: string) => Promise<void>
+      }
+    }
+  }
+}
 
 describe('agent-store', () => {
   beforeEach(() => {
@@ -105,6 +115,23 @@ describe('agent-store', () => {
 
     const session = useAgentStore.getState().sessions[0]
     expect(session.messages).toHaveLength(0)
+  })
+
+  it('removeSession calls provider.stopSession to tear down the main-process adapter', () => {
+    // Tab close / archive must kill the adapter session in main, not just
+    // drop the renderer state — otherwise the Codex / OpenCode child
+    // process leaks until the whole app exits.
+    const stopSession = vi.fn(() => Promise.resolve())
+    ;(globalThis as unknown as { window: { api: { provider: { stopSession: typeof stopSession } } } }).window = {
+      api: { provider: { stopSession } },
+    }
+
+    const { addSession, removeSession } = useAgentStore.getState()
+    addSession({ id: 'leaky', type: 'claude-code', status: 'idle' })
+    removeSession('leaky')
+
+    expect(stopSession).toHaveBeenCalledWith('leaky')
+    expect(useAgentStore.getState().sessions).toHaveLength(0)
   })
 
   it('appendMessage is idempotent — duplicate IDs are silently dropped', () => {

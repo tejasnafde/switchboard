@@ -104,7 +104,17 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       activeSessionId: state.activeSessionId ?? session.id,
     })),
 
-  removeSession: (id) =>
+  removeSession: (id) => {
+    // Tear down the main-process adapter session before dropping the
+    // renderer state. Without this, archiving / closing a tab leaks the
+    // adapter process (Codex app-server, OpenCode ACP child, Claude SDK
+    // query loop) — they keep their cwd, file handles, and TCP sockets
+    // until the whole Electron app exits. Fire-and-forget: if the main
+    // process has already cleaned the session up (e.g. on shutdown) the
+    // IPC handler is a no-op.
+    window.api.provider?.stopSession?.(id).catch((err: unknown) => {
+      console.warn(`[agent-store] stopSession(${id}) failed:`, err)
+    })
     set((state) => {
       const remaining = state.sessions.filter((s) => s.id !== id)
       return {
@@ -114,7 +124,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
             ? remaining[0]?.id ?? null
             : state.activeSessionId,
       }
-    }),
+    })
+  },
 
   setActiveSession: (id) => set((state) => ({
     activeSessionId: id,
