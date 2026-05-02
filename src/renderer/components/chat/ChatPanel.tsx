@@ -83,7 +83,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // Propagate to the running provider session (opencode reads this per
     // turn; Claude/Codex no-op). Without this, the adapter keeps using
     // whatever model was passed at startSession forever.
-    ;(window.api.provider as any)?.setModel?.(sessionId, m).catch(() => {})
+    window.api.provider.setModel?.(sessionId, m).catch(() => {})
   }, [sessionId, storeSetModel])
 
   const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
@@ -349,8 +349,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : undefined,
       }).catch(() => {})
     })
-    const removeUpdate = (window.api.agent as any).onMessageUpdate?.((agentId: string, messageId: string, updates: any) => {
-      updateMessage(agentId, messageId, updates)
+    const removeUpdate = window.api.agent.onMessageUpdate?.((agentId, messageId, updates) => {
+      updateMessage(agentId, messageId, updates as Partial<ChatMessage>)
     }) ?? (() => {})
     const removeStatus = window.api.agent.onStatus((agentId, s) => {
       updateStatus(agentId, s as AgentStatus)
@@ -395,7 +395,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }, 50)
     }
   // handleSend is defined below; safe as long as sessionId/deps are right
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, storeSetRuntimeMode])
 
   // Flush a pending approval note once the agent is idle again
@@ -410,7 +409,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       handleSend(pending.text)
     }, 100)
     // handleSend isn't in deps since we don't want to re-fire — it's called once
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, sessionId])
 
   // ── Rename handler ────────────────────────────────────────────
@@ -508,11 +506,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             model: model || undefined,
             reasoningEffort,
           })
-        } catch (err: any) {
+        } catch (err) {
           appendMessage(sessionId, {
             id: `error_${Date.now()}`,
             role: 'system',
-            content: `Failed to start session: ${err.message}`,
+            content: `Failed to start session: ${err instanceof Error ? err.message : String(err)}`,
             timestamp: Date.now(),
           })
           providerStartedRef.current.delete(sessionId)

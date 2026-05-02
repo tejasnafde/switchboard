@@ -412,8 +412,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       if (opts.model && opts.model.length > 0) {
         try {
           await this.applyModel(opts.threadId, opts.model)
-        } catch (err: any) {
-          log.warn(`acp setModel failed at start: ${err?.message ?? err}`)
+        } catch (err) {
+          log.warn(`acp setModel failed at start: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
 
@@ -422,17 +422,17 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       if (acpMode === 'plan') {
         try {
           await connection.setSessionMode({ sessionId: newSession.sessionId, modeId: acpMode })
-        } catch (err: any) {
-          log.warn(`acp setSessionMode failed: ${err?.message ?? err}`)
+        } catch (err) {
+          log.warn(`acp setSessionMode failed: ${err instanceof Error ? err.message : String(err)}`)
         }
       }
 
       active.session.status = 'idle'
       onEvent({ type: 'status', threadId: opts.threadId, status: 'idle' })
-    } catch (err: any) {
-      log.error(`acp init/newSession failed: ${err?.message ?? err}`)
+    } catch (err) {
+      log.error(`acp init/newSession failed: ${err instanceof Error ? err.message : String(err)}`)
       active.session.status = 'error'
-      onEvent({ type: 'error', threadId: opts.threadId, message: `OpenCode ACP init failed: ${err?.message ?? err}` })
+      onEvent({ type: 'error', threadId: opts.threadId, message: `OpenCode ACP init failed: ${err instanceof Error ? err.message : String(err)}` })
       onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
       // Tear down the child so the user can retry cleanly
       try { child.kill('SIGTERM') } catch { /* ignore */ }
@@ -464,8 +464,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
           sessionId: active.sessionId,
           modeId: runtimeModeToAcp(runtimeMode),
         })
-      } catch (err: any) {
-        log.warn(`acp setSessionMode failed: ${err?.message ?? err}`)
+      } catch (err) {
+        log.warn(`acp setSessionMode failed: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
 
@@ -528,8 +528,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     try {
       await active.connection.cancel({ sessionId: active.sessionId })
       log.info(`acp cancel sent: ${threadId}`)
-    } catch (err: any) {
-      log.warn(`acp cancel failed: ${err?.message ?? err}`)
+    } catch (err) {
+      log.warn(`acp cancel failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -564,8 +564,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
           modeId: runtimeModeToAcp(mode),
         })
         log.info(`acp setSessionMode → ${mode} (${runtimeModeToAcp(mode)})`)
-      } catch (err: any) {
-        log.warn(`acp setSessionMode failed: ${err?.message ?? err}`)
+      } catch (err) {
+        log.warn(`acp setSessionMode failed: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
   }
@@ -642,8 +642,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         })
       }
       log.info(`acp setSessionModel → ${modelId}${meta?.variant ? ` (variant=${meta.variant})` : ''}`)
-    } catch (err: any) {
-      log.warn(`acp setSessionModel(${modelId}) failed: ${err?.message ?? err}`)
+    } catch (err) {
+      log.warn(`acp setSessionModel(${modelId}) failed: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
@@ -733,8 +733,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         try {
           const content = await fs.readFile(params.path, 'utf-8')
           return { content }
-        } catch (err: any) {
-          throw new RequestError(-32603, `readTextFile failed: ${err?.message ?? err}`)
+        } catch (err) {
+          throw new RequestError(-32603, `readTextFile failed: ${err instanceof Error ? err.message : String(err)}`)
         }
       },
 
@@ -742,8 +742,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         try {
           await fs.writeFile(params.path, params.content, 'utf-8')
           return {}
-        } catch (err: any) {
-          throw new RequestError(-32603, `writeTextFile failed: ${err?.message ?? err}`)
+        } catch (err) {
+          throw new RequestError(-32603, `writeTextFile failed: ${err instanceof Error ? err.message : String(err)}`)
         }
       },
     }

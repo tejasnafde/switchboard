@@ -148,7 +148,7 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
     this.closed = true
     while (this.waiting.length > 0) {
       const waiter = this.waiting.shift()!
-      waiter({ value: undefined as any, done: true })
+      waiter({ value: undefined as never, done: true })
     }
   }
 
@@ -157,12 +157,12 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
       next: (): Promise<IteratorResult<SDKUserMessage>> => {
         const next = this.buffer.shift()
         if (next) return Promise.resolve({ value: next, done: false })
-        if (this.closed) return Promise.resolve({ value: undefined as any, done: true })
+        if (this.closed) return Promise.resolve({ value: undefined as never, done: true })
         return new Promise((resolve) => { this.waiting.push(resolve) })
       },
       return: (): Promise<IteratorResult<SDKUserMessage>> => {
         this.closed = true
-        return Promise.resolve({ value: undefined as any, done: true })
+        return Promise.resolve({ value: undefined as never, done: true })
       },
     }
   }
@@ -555,15 +555,16 @@ export class ClaudeAdapter implements ProviderAdapter {
 
       active.session.status = 'idle'
       active.onEvent({ type: 'status', threadId, status: 'idle' })
-    } catch (err: any) {
-      log.error(`query failed: ${threadId}`, err?.message ?? err, err?.stack ?? '', err?.cause ?? '')
+    } catch (err) {
+      const e = err as { message?: string; stack?: string; cause?: unknown; name?: string }
+      log.error(`query failed: ${threadId}`, e?.message ?? err, e?.stack ?? '', e?.cause ?? '')
 
       // If resume failed, retry without resume (fresh session, same project)
-      if (active.session.sessionId && /exited with code/i.test(err?.message ?? '')) {
+      if (active.session.sessionId && /exited with code/i.test(e?.message ?? '')) {
         log.warn(`retrying without --resume for ${threadId}`)
         active.session.sessionId = undefined
-        const retryOptions = { ...queryOptions }
-        delete (retryOptions as any).resume
+        const retryOptions: Record<string, unknown> = { ...queryOptions }
+        delete retryOptions.resume
 
         // Need a fresh prompt queue since the old one was consumed
         active.prompt = new PromptQueue()
@@ -578,24 +579,25 @@ export class ClaudeAdapter implements ProviderAdapter {
         })
 
         try {
-          const q2 = sdk.query({ prompt: active.prompt, options: retryOptions })
+          const q2 = sdk.query({ prompt: active.prompt, options: retryOptions as typeof queryOptions })
           active.query = q2
           for await (const msg of q2) {
             this.handleSDKMessage(threadId, active, msg)
           }
           active.session.status = 'idle'
           active.onEvent({ type: 'status', threadId, status: 'idle' })
-        } catch (retryErr: any) {
-          log.error(`retry also failed: ${threadId}`, retryErr?.message ?? retryErr)
+        } catch (retryErr) {
+          const re = retryErr as { message?: string }
+          log.error(`retry also failed: ${threadId}`, re?.message ?? retryErr)
           active.session.status = 'error'
           active.onEvent({
             type: 'error',
             threadId,
-            message: retryErr?.message ?? 'Unknown error',
+            message: re?.message ?? 'Unknown error',
           })
           active.onEvent({ type: 'status', threadId, status: 'error' })
         }
-      } else if (err?.name === 'AbortError' || /abort/i.test(err?.message ?? '')) {
+      } else if (e?.name === 'AbortError' || /abort/i.test(e?.message ?? '')) {
         active.session.status = 'idle'
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       } else {
@@ -603,7 +605,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.onEvent({
           type: 'error',
           threadId,
-          message: err?.message ?? 'Unknown error',
+          message: e?.message ?? 'Unknown error',
         })
         active.onEvent({ type: 'status', threadId, status: 'error' })
       }
@@ -621,9 +623,10 @@ export class ClaudeAdapter implements ProviderAdapter {
     // both built-ins and any user-defined commands in `.claude/commands/*`.
     // If the query hasn't started yet, fall back to whatever we captured
     // from the system/init event (or empty if neither has happened yet).
-    if (active.query && typeof (active.query as any).supportedCommands === 'function') {
+    const queryWithCommands = active.query as (typeof active.query & { supportedCommands?: () => Promise<unknown> }) | null
+    if (queryWithCommands && typeof queryWithCommands.supportedCommands === 'function') {
       try {
-        const cmds = await (active.query as any).supportedCommands()
+        const cmds = await queryWithCommands.supportedCommands()
         const parsed = parseClaudeSlashCommands(cmds)
         if (parsed.length > 0) {
           active.skills = parsed

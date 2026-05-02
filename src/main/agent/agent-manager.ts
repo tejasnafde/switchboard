@@ -220,6 +220,7 @@ export class AgentManager {
     })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- legacy --print stream payload from Claude CLI; many shapes (system/assistant/user/result) narrowed via switch
   private handleStreamEvent(agentId: string, agent: ManagedAgent, raw: any): void {
     if (!raw || !raw.type) return
 

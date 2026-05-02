@@ -46,7 +46,7 @@ export function QuickOpenModal({ open, onClose }: QuickOpenModalProps): React.Re
     let cancelled = false
     void (async () => {
       try {
-        const api = (window as any).api
+        const api = window.api
         const res = await api?.files?.listAll(repoRoot)
         if (cancelled) return
         const list = res?.files ?? []

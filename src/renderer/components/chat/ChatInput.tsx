@@ -105,7 +105,7 @@ export function ChatInput({
   useEffect(() => {
     if (agentType !== 'opencode') return
     let cancelled = false
-    ;(window.api.provider as any)?.listOpencodeModels?.().then((ids: string[]) => {
+    ;window.api.provider.listOpencodeModels?.().then((ids: string[]) => {
       if (cancelled || !ids || ids.length === 0) return
       setOpencodeModels(ids.map((id) => ({
         id,
@@ -162,7 +162,7 @@ export function ChatInput({
   const fetchSkills = useCallback(() => {
     if (!sessionId) { setAgentSkills([]); return }
     if (agentType === 'opencode') { setAgentSkills([]); return }
-    ;(window.api.provider as any)?.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
+    ;window.api.provider.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
       if (Array.isArray(skills) && skills.length > 0) {
         setAgentSkills(skills)
       }
@@ -177,7 +177,7 @@ export function ChatInput({
     // the menu populates as soon as `system/init` lands.
     let attempts = 0
     const tryFetch = () => {
-      ;(window.api.provider as any)?.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
+      ;window.api.provider.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
         if (cancelled) return
         if (skills && skills.length > 0) {
           setAgentSkills(skills)
@@ -212,7 +212,6 @@ export function ChatInput({
   useEffect(() => {
     if (draft !== value) setValue(draft)
   // `value` intentionally excluded — see textarea-era comment.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, draft])
 
   // Map of pill id → metadata, used by the editor to render chips and by

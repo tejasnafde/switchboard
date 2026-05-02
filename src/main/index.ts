@@ -1,6 +1,6 @@
 // Prevent EPIPE crashes from killing the app
 process.on('uncaughtException', (err) => {
-  if ((err as any).code === 'EPIPE') return // ignore broken pipe
+  if ((err as NodeJS.ErrnoException).code === 'EPIPE') return // ignore broken pipe
   console.error('Uncaught:', err)
 })
 

@@ -156,7 +156,7 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
   if (kind === 'todo' && parsed?.todos) {
     return (
       <div style={{ padding: '8px 12px' }}>
-        {parsed.todos.map((t: any, i: number) => (
+        {(parsed.todos as Array<{ status?: string; content?: string; text?: string }>).map((t, i) => (
           <div key={i} style={{
             display: 'flex',
             alignItems: 'flex-start',

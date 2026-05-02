@@ -169,8 +169,8 @@ export function getUserConfiguredProviders(): Set<string> {
         log.info(`user-configured opencode providers: ${Array.from(result).join(', ') || '(none)'}`)
         break
       }
-    } catch (err: any) {
-      log.warn(`failed to read opencode config at ${p}: ${err?.message}`)
+    } catch (err) {
+      log.warn(`failed to read opencode config at ${p}: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
   cachedUserProviders = result

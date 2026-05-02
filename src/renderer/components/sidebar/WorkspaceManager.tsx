@@ -50,7 +50,7 @@ export function WorkspaceManager({ workspaces, onClose, onMutated }: WorkspaceMa
     // 6 token slots + clear. Cycle through them in a tiny prompt.
     const tokens = ['var(--workspace-color-1)', 'var(--workspace-color-2)', 'var(--workspace-color-3)',
                     'var(--workspace-color-4)', 'var(--workspace-color-5)', 'var(--workspace-color-6)', null]
-    const cur = tokens.indexOf(w.color as any)
+    const cur = tokens.indexOf((w.color ?? null) as string | null)
     const next = tokens[(cur + 1 + tokens.length) % tokens.length]
     await window.api.app.workspaces.recolor(w.id, next as string | null)
     onMutated()

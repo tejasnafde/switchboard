@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAgentStore } from '../stores/agent-store'
-import type { ChatMessage } from '@shared/types'
+import type { ChatMessage, AgentType } from '@shared/types'
 
 interface SearchResult {
   messageId: string
@@ -46,7 +46,7 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
     debounceRef.current = setTimeout(async () => {
       setSearching(true)
       try {
-        const res = await (window.api as any).app.searchMessages(q.trim())
+        const res = await window.api.app.searchMessages(q.trim())
         setResults(res ?? [])
       } catch {
         setResults([])
@@ -65,14 +65,14 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
     // into the DB/FTS index but never addSession()'d this run.
     if (!existing) {
       try {
-        const resp = await (window.api.app as any).loadSessionById(result.conversationId) as {
+        const resp = await window.api.app.loadSessionById(result.conversationId) as {
           messages: ChatMessage[]
           meta: { id: string; title: string; projectPath: string; agentType: string } | null
         }
         if (resp.meta) {
           addSession({
             id: resp.meta.id,
-            type: (resp.meta.agentType === 'codex' ? 'codex' : 'claude-code') as any,
+            type: (resp.meta.agentType === 'codex' ? 'codex' : 'claude-code') as AgentType,
             status: 'idle',
             projectPath: resp.meta.projectPath,
             resumeSessionId: resp.meta.id,

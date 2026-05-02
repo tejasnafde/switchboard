@@ -66,11 +66,11 @@ export function parseTemplateBody(raw: unknown): WorkspaceTemplate | null {
     const allTerminals: WorkspaceTerminal[] = []
     let globalIndex = 0
     for (const rowRaw of body.rows) {
-      if (typeof rowRaw !== 'object' || rowRaw === null || !Array.isArray((rowRaw as any).panes)) {
+      if (typeof rowRaw !== 'object' || rowRaw === null || !Array.isArray((rowRaw as { panes?: unknown }).panes)) {
         continue
       }
       const panes: WorkspaceTerminal[] = []
-      for (const paneRaw of (rowRaw as any).panes) {
+      for (const paneRaw of (rowRaw as { panes: unknown[] }).panes) {
         const t = parseTerminalEntry(paneRaw, globalIndex++)
         if (t) {
           panes.push(t)

@@ -108,7 +108,7 @@ export const MessageBubble = memo(function MessageBubble({ message, onApproval, 
       })
 
       // Async existence check — if the file doesn't resolve, revert to plain code.
-      const api = (window as any).api
+      const api = window.api
       if (api?.files?.resolve) {
         api.files.resolve(projectPath, ref.path).then((res: { exists: boolean }) => {
           if (!res?.exists) {

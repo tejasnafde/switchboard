@@ -119,8 +119,8 @@ interface ActiveSession {
 export function parseCodexSkills(input: unknown): ProviderSkill[] {
   const arr = Array.isArray(input)
     ? input
-    : (input && typeof input === 'object' && Array.isArray((input as any).skills))
-      ? (input as any).skills
+    : (input && typeof input === 'object' && Array.isArray((input as { skills?: unknown }).skills))
+      ? (input as { skills: unknown[] }).skills
       : []
   const out: ProviderSkill[] = []
   for (const entry of arr) {
@@ -276,9 +276,10 @@ export class CodexAdapter implements ProviderAdapter {
       this.sendNotification(active, 'initialized')
       active.session.status = 'idle'
       onEvent({ type: 'status', threadId: opts.threadId, status: 'idle' })
-    } catch (err: any) {
+    } catch (err) {
       active.session.status = 'error'
-      onEvent({ type: 'error', threadId: opts.threadId, message: `Init failed: ${err.message}` })
+      const message = err instanceof Error ? err.message : String(err)
+      onEvent({ type: 'error', threadId: opts.threadId, message: `Init failed: ${message}` })
     }
 
     log.info(`session started: ${opts.threadId}`)
@@ -329,7 +330,8 @@ export class CodexAdapter implements ProviderAdapter {
           sandbox,
           ...(active.session.model ? { model: active.session.model } : {}),
         })
-        active.threadId = (result as any)?.thread?.id ?? (result as any)?.threadId ?? null
+        const r = result as { thread?: { id?: string }; threadId?: string } | null | undefined
+        active.threadId = r?.thread?.id ?? r?.threadId ?? null
         if (!active.threadId) {
           throw new Error('Codex thread/start did not return a thread id')
         }
@@ -344,12 +346,12 @@ export class CodexAdapter implements ProviderAdapter {
         ...(active.session.model ? { model: active.session.model } : {}),
         ...(reasoningEffort ? { effort: reasoningEffort } : {}),
       })
-    } catch (err: any) {
+    } catch (err) {
       active.session.status = 'error'
       active.onEvent({
         type: 'error',
         threadId,
-        message: err.message,
+        message: err instanceof Error ? err.message : String(err),
       })
     }
   }
@@ -364,10 +366,11 @@ export class CodexAdapter implements ProviderAdapter {
       active.skills = parsed
       log.info(`captured ${parsed.length} codex skills`)
       return parsed
-    } catch (err: any) {
+    } catch (err) {
       // Older codex builds don't expose skills/list — cache empty so we
       // don't keep retrying every time the user opens the slash menu.
-      log.warn(`skills/list unavailable: ${err?.message ?? err}`)
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`skills/list unavailable: ${message}`)
       active.skills = []
       return []
     }
@@ -493,6 +496,7 @@ export class CodexAdapter implements ProviderAdapter {
     })
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw JSON-RPC payload from codex app-server stdio; structure varies by message kind (response/request/notification) and is narrowed below
   private handleMessage(threadId: string, active: ActiveSession, parsed: any): void {
     // JSON-RPC response (has id + result/error)
     if (parsed.id !== undefined && (parsed.result !== undefined || parsed.error !== undefined)) {
@@ -529,6 +533,7 @@ export class CodexAdapter implements ProviderAdapter {
     log.debug(`codex ignored message without id/method: ${truncateLogPayload(JSON.stringify(parsed))}`)
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw JSON-RPC server request from codex app-server; loosely typed third-party wire format
   private handleServerRequest(threadId: string, active: ActiveSession, request: any): void {
     const method = request.method as string
 
@@ -623,6 +628,7 @@ export class CodexAdapter implements ProviderAdapter {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw JSON-RPC notification from codex app-server; method-dependent payload shape
   private handleNotification(threadId: string, active: ActiveSession, notification: any): void {
     const method = notification.method as string
     log.debug(`handling codex notification ${method}: ${truncateLogPayload(JSON.stringify(notification.params ?? {}))}`)

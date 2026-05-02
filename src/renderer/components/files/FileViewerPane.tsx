@@ -80,7 +80,7 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
     setError(null)
     setContent('')
     setHtml('')
-    const api = (window as any).api
+    const api = window.api
     api?.files?.readFile(repoRoot, path)
       .then((res: { ok: boolean; error?: string; content: string; truncated: boolean }) => {
         if (cancelled) return

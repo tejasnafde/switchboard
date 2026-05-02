@@ -307,11 +307,12 @@ export async function hydrateSidebarCollapse(): Promise<void> {
         if (!v || typeof v !== 'object') return {}
         const out: Record<string, { path: string; lineRange: { start: number; end: number } | null }> = {}
         for (const [k, val] of Object.entries(v)) {
-          if (val && typeof val === 'object' && typeof (val as any).path === 'string') {
-            const lr = (val as any).lineRange
+          const obj = val as { path?: unknown; lineRange?: { start?: unknown; end?: unknown } | null } | null
+          if (obj && typeof obj === 'object' && typeof obj.path === 'string') {
+            const lr = obj.lineRange
             const lineRange = lr && typeof lr.start === 'number' && typeof lr.end === 'number'
               ? { start: lr.start, end: lr.end } : null
-            out[k] = { path: (val as any).path, lineRange }
+            out[k] = { path: obj.path, lineRange }
           }
         }
         return out

@@ -73,7 +73,7 @@ const DirNode = memo(function DirNode({ repoRoot, subPath, name, isGitignored, d
     if (entries !== null || loading) return
     setLoading(true)
     try {
-      const api = (window as any).api
+      const api = window.api
       const res = await api?.files?.listDir(repoRoot, subPath)
       if (res?.ok) setEntries(res.entries as DirEntry[])
       else setEntries([])

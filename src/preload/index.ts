@@ -143,7 +143,7 @@ const api = {
     saveWorkspaceConfig: (projectPath: string, yamlContent: string) =>
       ipcRenderer.invoke(AppChannels.SAVE_WORKSPACE_CONFIG, projectPath, yamlContent),
     onWorkspaceChanged: (callback: (projectPath: string) => void) => {
-      const wrapped = (_e: any, projectPath: string) => callback(projectPath)
+      const wrapped = (_e: Electron.IpcRendererEvent, projectPath: string) => callback(projectPath)
       ipcRenderer.on('app:workspace-changed', wrapped)
       return () => { ipcRenderer.removeListener('app:workspace-changed', wrapped) }
     },

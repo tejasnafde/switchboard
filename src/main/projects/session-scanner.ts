@@ -90,7 +90,7 @@ export async function scanClaudeCodeSessions(projectPath: string): Promise<Sessi
               const obj = JSON.parse(firstUserMsg)
               const content = obj.message?.content
               const text = typeof content === 'string' ? content
-                : Array.isArray(content) ? content.find((b: any) => b.type === 'text')?.text ?? ''
+                : Array.isArray(content) ? content.find((b: { type?: string; text?: string }) => b.type === 'text')?.text ?? ''
                 : ''
               if (text) title = generateTitle(text)
             }

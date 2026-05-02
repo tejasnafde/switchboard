@@ -48,8 +48,9 @@ export async function assertCwdReadable(cwd: string): Promise<void> {
   if (!isTccProtectedPath(cwd)) return
   try {
     await access(cwd, constants.R_OK)
-  } catch (err: any) {
-    if (err?.code === 'EPERM' || err?.code === 'EACCES') {
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code
+    if (code === 'EPERM' || code === 'EACCES') {
       throw new TccAccessError(cwd)
     }
     // ENOENT and friends fall through — adapter will report them.

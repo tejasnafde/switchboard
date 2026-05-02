@@ -68,7 +68,7 @@ function SortableProject({
   children,
 }: {
   id: string
-  children: (props: { isDragging: boolean; dragHandleProps: Record<string, any> }) => React.ReactNode
+  children: (props: { isDragging: boolean; dragHandleProps: Record<string, unknown> }) => React.ReactNode
 }) {
   const {
     attributes,
@@ -317,7 +317,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
       messages: messages ?? [],
       agentType: session.source === 'codex' ? 'codex' : 'claude-code',
     })
-    await (window.api.app as any).exportMarkdown({
+    await window.api.app.exportMarkdown({
       suggestedFilename: suggestedExportFilename(session.title ?? 'conversation'),
       content,
     })
@@ -328,7 +328,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     rootThreadId: string,
   ) => {
     try {
-      await (window.api.app as any).attachToThread(fragment.sessionId, rootThreadId)
+      await window.api.app.attachToThread(fragment.sessionId, rootThreadId)
       // Optimistic UI: remove the fragment from its project list in the sidebar
       setProjects((prev) =>
         prev.map((p) =>
@@ -351,7 +351,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           : { ...p, sessions: p.sessions.filter((s) => s.id !== session.id) }
       )
     )
-    ;(window.api.app as any).archiveConversation(session.id, projectPath, session.title).catch(() => {
+    ;window.api.app.archiveConversation(session.id, projectPath, session.title).catch(() => {
       // Rollback on error
       setProjects((prev) =>
         prev.map((p) =>
@@ -366,7 +366,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   const handleAssignWorkspace = useCallback(async (projectPath: string, workspaceId: string | null) => {
     setProjects((prev) => prev.map((p) => p.path === projectPath ? { ...p, workspaceId } : p))
     try {
-      await (window.api.app as any).assignProjectWorkspace(projectPath, workspaceId)
+      await window.api.app.assignProjectWorkspace(projectPath, workspaceId)
     } catch { /* optimistic — next refresh will correct */ }
   }, [])
 
@@ -423,7 +423,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   const renderProject = (
     project: Project,
     isDragging: boolean,
-    dragHandleProps: Record<string, any>,
+    dragHandleProps: Record<string, unknown>,
   ) => {
     const isCollapsed = isProjectCollapsed(project.path)
     return (
@@ -625,7 +625,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
                 <section
                   key={wsId}
                   className={`sidebar-workspace ${wsCollapsed ? 'collapsed' : ''} ${group.workspace ? '' : 'ungrouped'}`}
-                  style={{ ['--spine' as any]: spineColor }}
+                  style={{ ['--spine' as string]: spineColor } as React.CSSProperties}
                 >
                   <header
                     className="sidebar-workspace-header"

@@ -392,8 +392,8 @@ export function registerAppHandlers(window: BrowserWindow): void {
       recordThreadSession(fragmentId, rootThreadId)
       log.info(`attached ${fragmentId} → thread ${rootThreadId}`)
       return { ok: true }
-    } catch (err: any) {
-      return { ok: false, error: err?.message ?? 'unknown' }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : 'unknown' }
     }
   })
 
@@ -411,9 +411,10 @@ export function registerAppHandlers(window: BrowserWindow): void {
       await writeFile(result.filePath, params.content, 'utf-8')
       log.info(`exported markdown: ${result.filePath}`)
       return { ok: true, path: result.filePath }
-    } catch (err: any) {
-      log.error(`export failed: ${err?.message}`)
-      return { ok: false, error: err?.message ?? 'Unknown error' }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      log.error(`export failed: ${message}`)
+      return { ok: false, error: message }
     }
   })
 
@@ -425,6 +426,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
         window.setVibrancy('sidebar')
         window.setBackgroundColor('#00000000')
       } else {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Electron types reject null but it is the documented way to clear vibrancy
         window.setVibrancy(null as any)
         window.setBackgroundColor('#0d1117')
       }
