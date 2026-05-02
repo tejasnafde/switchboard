@@ -27,11 +27,9 @@ describe('layout-store rightPaneMode', () => {
     expect(useLayoutStore.getState().rightPaneMode).toBe('terminal')
   })
 
-  it('toggleRightPaneMode cycles terminal → files → kanban → terminal', () => {
+  it('toggleRightPaneMode flips terminal ↔ files (kanban moved to top-level)', () => {
     useLayoutStore.getState().toggleRightPaneMode()
     expect(useLayoutStore.getState().rightPaneMode).toBe('files')
-    useLayoutStore.getState().toggleRightPaneMode()
-    expect(useLayoutStore.getState().rightPaneMode).toBe('kanban')
     useLayoutStore.getState().toggleRightPaneMode()
     expect(useLayoutStore.getState().rightPaneMode).toBe('terminal')
   })

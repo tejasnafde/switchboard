@@ -8,7 +8,16 @@ const TERMINAL_MIN = 200
 const TERMINAL_MAX = 800
 const TERMINAL_DEFAULT = 400
 
-export type RightPaneMode = 'terminal' | 'files' | 'kanban'
+export type RightPaneMode = 'terminal' | 'files'
+
+/**
+ * Top-level app view. `'chats'` is the default — sidebar + chat pane +
+ * right column (terminal/files). `'kanban'` swaps the chat+right area
+ * for a workspace-scoped board; the sidebar stays mounted so workspace
+ * + project clicks drive the board's filter (and clicking a session
+ * exits back to chats). ⌘⇧K toggles. Persisted via settings DB.
+ */
+export type AppView = 'chats' | 'kanban'
 
 interface LayoutStore {
   sidebarWidth: number
@@ -24,6 +33,20 @@ interface LayoutStore {
   rightPaneMode: RightPaneMode
   setRightPaneMode: (mode: RightPaneMode) => void
   toggleRightPaneMode: () => void
+
+  /**
+   * Top-level app view ('chats' | 'kanban'). Toggle with ⌘⇧K.
+   * `kanbanWorkspaceFilter` scopes the board to one workspace id, or null
+   * for "All workspaces" / unassigned. `kanbanProjectFilter` further
+   * narrows to a single project path; null = every project in scope.
+   */
+  appView: AppView
+  setAppView: (v: AppView) => void
+  toggleAppView: () => void
+  kanbanWorkspaceFilter: string | null
+  kanbanProjectFilter: string | null
+  setKanbanWorkspaceFilter: (id: string | null) => void
+  setKanbanProjectFilter: (path: string | null) => void
 
   /** Active file path open in the viewer (repo-relative). */
   viewerFilePath: string | null
@@ -98,6 +121,9 @@ const COLLAPSE_WORKSPACES_KEY = 'sidebar.collapsed.workspaces'
 const RIGHT_PANE_MODE_KEY = 'layout.rightPaneMode'
 const VIEWER_STATE_BY_SESSION_KEY = 'layout.viewerStateBySession'
 const FILE_TREE_COLLAPSED_KEY = 'layout.fileTreeCollapsed'
+const APP_VIEW_KEY = 'layout.appView'
+const KANBAN_WS_FILTER_KEY = 'layout.kanbanWorkspaceFilter'
+const KANBAN_PROJECT_FILTER_KEY = 'layout.kanbanProjectFilter'
 
 function persistList(key: string, list: string[]): void {
   try {
@@ -132,11 +158,36 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ rightPaneMode: mode })
   },
   toggleRightPaneMode: () => {
-    // 3-mode cycle: terminal → files → kanban → terminal.
+    // 2-mode cycle: terminal ↔ files. (Kanban is now a top-level view —
+    // see appView/⌘⇧K — not a right-pane mode.)
     const cur = get().rightPaneMode
-    const next: RightPaneMode = cur === 'terminal' ? 'files' : cur === 'files' ? 'kanban' : 'terminal'
+    const next: RightPaneMode = cur === 'terminal' ? 'files' : 'terminal'
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, next) } catch { /* ignore */ }
     set({ rightPaneMode: next })
+  },
+
+  appView: 'chats',
+  setAppView: (v) => {
+    try { void window.api?.settings?.set(APP_VIEW_KEY, v) } catch { /* ignore */ }
+    set({ appView: v })
+  },
+  toggleAppView: () => {
+    const next: AppView = get().appView === 'chats' ? 'kanban' : 'chats'
+    try { void window.api?.settings?.set(APP_VIEW_KEY, next) } catch { /* ignore */ }
+    set({ appView: next })
+  },
+  kanbanWorkspaceFilter: null,
+  kanbanProjectFilter: null,
+  setKanbanWorkspaceFilter: (id) => {
+    try { void window.api?.settings?.set(KANBAN_WS_FILTER_KEY, id ?? '') } catch { /* ignore */ }
+    // Clearing workspace also clears project filter — a project belongs
+    // to one workspace, so a stale project filter under a new workspace
+    // would silently render zero cards.
+    set({ kanbanWorkspaceFilter: id, kanbanProjectFilter: null })
+  },
+  setKanbanProjectFilter: (path) => {
+    try { void window.api?.settings?.set(KANBAN_PROJECT_FILTER_KEY, path ?? '') } catch { /* ignore */ }
+    set({ kanbanProjectFilter: path })
   },
 
   viewerFilePath: null,
@@ -290,12 +341,15 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson, modeStr, viewerStateJson, treeCollapsedStr] = await Promise.all([
+    const [projJson, wsJson, modeStr, viewerStateJson, treeCollapsedStr, appViewStr, kanbanWsStr, kanbanProjStr] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
       window.api.settings.get(RIGHT_PANE_MODE_KEY),
       window.api.settings.get(VIEWER_STATE_BY_SESSION_KEY),
       window.api.settings.get(FILE_TREE_COLLAPSED_KEY),
+      window.api.settings.get(APP_VIEW_KEY),
+      window.api.settings.get(KANBAN_WS_FILTER_KEY),
+      window.api.settings.get(KANBAN_PROJECT_FILTER_KEY),
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
@@ -320,13 +374,20 @@ export async function hydrateSidebarCollapse(): Promise<void> {
         return out
       } catch { return {} }
     }
-    const mode: RightPaneMode = modeStr === 'files' ? 'files' : modeStr === 'kanban' ? 'kanban' : 'terminal'
+    // Migrate legacy 'kanban' right-pane setting from the per-session
+    // build — that mode is gone now; fall back to terminal so users
+    // upgrading don't see a blank pane.
+    const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
+    const appView: AppView = appViewStr === 'kanban' ? 'kanban' : 'chats'
     useLayoutStore.setState({
       sidebarCollapsedProjects: parse(projJson),
       sidebarCollapsedWorkspaces: parse(wsJson),
       rightPaneMode: mode,
       viewerStateBySession: parseViewerMap(viewerStateJson),
       fileTreeCollapsed: treeCollapsedStr === '1',
+      appView,
+      kanbanWorkspaceFilter: kanbanWsStr || null,
+      kanbanProjectFilter: kanbanProjStr || null,
     })
   } catch { /* silent */ }
 }
@@ -341,7 +402,7 @@ export async function hydrateRightPaneMode(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
     const v = await window.api.settings.get(RIGHT_PANE_MODE_KEY)
-    const mode: RightPaneMode = v === 'files' ? 'files' : v === 'kanban' ? 'kanban' : 'terminal'
+    const mode: RightPaneMode = v === 'files' ? 'files' : 'terminal'
     useLayoutStore.setState({ rightPaneMode: mode })
   } catch { /* silent */ }
 }

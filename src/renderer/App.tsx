@@ -9,7 +9,7 @@ import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatPanel } from './components/chat/ChatPanel'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { FilesPane } from './components/files/FilesPane'
-import { KanbanPane } from './components/kanban/KanbanPane'
+import { KanbanView } from './components/kanban/KanbanView'
 import { SettingsModal } from './components/SettingsModal'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
@@ -51,6 +51,7 @@ export function App() {
     closeRightPanel,
     rightPaneMode,
     toggleRightPaneMode,
+    appView,
   } = useLayoutStore()
 
   const { addSession, setActiveSession, setMessages } = useAgentStore()
@@ -269,6 +270,7 @@ export function App() {
   // "+ New Chat" — create a fresh session tied to a project
   const handleNewChat = useCallback(
     (projectPath: string) => {
+      useLayoutStore.getState().setAppView('chats')
       const id = `agent_${Date.now()}`
       const title = 'New conversation'
       addSession({
@@ -300,9 +302,12 @@ export function App() {
     [addSession, setActiveSession],
   )
 
-  // Click a session in sidebar — load its messages from disk
+  // Click a session in sidebar — load its messages from disk. If we're
+  // in kanban view, drop back to chats so the user actually sees the
+  // session they just clicked.
   const handleSessionSelect = useCallback(
     async (session: SessionSummary, projectPath: string) => {
+      useLayoutStore.getState().setAppView('chats')
       // Check if session already loaded in store
       const existing = useAgentStore.getState().sessions.find((s) => s.id === session.id)
       if (existing) {
@@ -384,17 +389,16 @@ export function App() {
           e.preventDefault()
           toggleTerminal()
         }
-        // ⌘+Shift+E — cycle right pane: terminal → files → kanban → terminal
+        // ⌘+Shift+E — toggle right pane: terminal ↔ files
         else if ((e.key === 'e' || e.key === 'E') && e.shiftKey) {
           e.preventDefault()
           toggleRightPaneMode()
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
         }
-        // ⌘+Shift+K — jump straight to kanban
+        // ⌘+Shift+K — toggle top-level app view (chats ↔ kanban board)
         else if ((e.key === 'k' || e.key === 'K') && e.shiftKey) {
           e.preventDefault()
-          useLayoutStore.getState().setRightPaneMode('kanban')
-          if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
+          useLayoutStore.getState().toggleAppView()
         }
         // ⌘+Shift+P — command palette
         else if ((e.key === 'p' || e.key === 'P') && e.shiftKey) {
@@ -634,8 +638,11 @@ export function App() {
         </span>
       </div>
 
-      {/* Body — flat flex row, all panels always mounted */}
-      <div style={{ flex: '1 1 0%', display: 'flex', minHeight: 0 }}>
+      {/* Body — flat flex row, all panels always mounted. `position:
+           relative` so the kanban-view overlay can absolute-fill the
+           non-sidebar area when appView === 'kanban' without unmounting
+           the chat/terminal stack underneath (preserves PTY + xterm). */}
+      <div style={{ flex: '1 1 0%', display: 'flex', minHeight: 0, position: 'relative' }}>
         {/* Sidebar */}
         <div
           ref={sidebarRef}
@@ -716,16 +723,28 @@ export function App() {
           >
             <FilesPane />
           </div>
+        </div>
+
+        {/* Kanban overlay — fills the non-sidebar area when appView is
+             'kanban'. Sibling of the chat/terminal so those stay mounted
+             underneath (PTYs and xterm DOM survive the toggle). The
+             sidebar is left clear so workspace + chat clicks still work
+             (clicking a chat exits kanban via the session picker
+             machinery in handleSessionSelect). */}
+        {appView === 'kanban' && (
           <div
             style={{
               position: 'absolute',
-              inset: 0,
-              display: rightPaneMode === 'kanban' ? 'flex' : 'none',
+              top: 0, bottom: 0, right: 0,
+              left: sidebarVisible ? sidebarWidth : 0,
+              background: 'var(--bg)',
+              zIndex: 5,
+              display: 'flex',
             }}
           >
-            <KanbanPane />
+            <KanbanView />
           </div>
-        </div>
+        )}
       </div>
 
       <StatusBar />
