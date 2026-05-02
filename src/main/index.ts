@@ -4,6 +4,17 @@ process.on('uncaughtException', (err) => {
   console.error('Uncaught:', err)
 })
 
+// Surface promise rejections that nobody awaited. Without this, an
+// adapter or IPC handler that throws inside a fire-and-forget Promise
+// vanishes silently — the bug shows up days later as "the UI just
+// stopped updating" with zero log trail. We log and keep the process
+// alive (Node's default may switch to crash-on-unhandled in future
+// majors; explicit handler keeps behaviour predictable).
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? `${reason.message}\n${reason.stack ?? ''}` : String(reason)
+  console.error('Unhandled rejection:', msg)
+})
+
 import { app, BrowserWindow, shell, nativeImage, ipcMain, Menu, protocol, net } from 'electron'
 import { join } from 'path'
 import { registerTerminalHandlers } from './ipc/terminal'

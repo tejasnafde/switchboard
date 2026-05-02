@@ -781,7 +781,9 @@ export class ClaudeAdapter implements ProviderAdapter {
                 usedTokens: ctx.totalTokens,
                 maxTokens: ctx.maxTokens,
               })
-            }).catch(() => {})
+            }).catch((err) => {
+              log.warn(`getContextUsage after compaction failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+            })
           }
         }
 
@@ -891,7 +893,9 @@ export class ClaudeAdapter implements ProviderAdapter {
               maxTokens: ctx.maxTokens,
             })
             log.info(`context: ${ctx.totalTokens}/${ctx.maxTokens} (${Math.round(ctx.percentage)}%) model=${ctx.model}`)
-          }).catch(() => {})
+          }).catch((err) => {
+            log.warn(`getContextUsage post-turn failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+          })
         }
 
         // Between turns — waiting for next user message

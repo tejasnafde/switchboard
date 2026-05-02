@@ -168,7 +168,9 @@ export class ProviderRegistry {
 
   async stopAll(): Promise<void> {
     for (const [threadId, adapter] of this.sessionAdapters) {
-      await adapter.stopSession(threadId).catch(() => {})
+      await adapter.stopSession(threadId).catch((err) => {
+        log.warn(`stopSession failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+      })
     }
     this.sessionAdapters.clear()
     this.sessionProviders.clear()
