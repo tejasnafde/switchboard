@@ -611,7 +611,10 @@ export function App() {
       >
         <span style={{ flex: 1 }} />
         <span style={{ fontWeight: 500, letterSpacing: '0.3px' }}>Switchboard</span>
-        <span style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', paddingRight: '12px' }}>
+        <span style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', paddingRight: '12px', alignItems: 'center', gap: '8px' }}>
+          {/* Chats ↔ Board view toggle. ⌘⇧K does the same thing — this
+              gives discoverability for users who don't know the shortcut. */}
+          <ViewToggle appView={appView} />
           <button
             onClick={() => setSettingsOpen(true)}
             style={{
@@ -638,11 +641,13 @@ export function App() {
         </span>
       </div>
 
-      {/* Body — flat flex row, all panels always mounted. `position:
-           relative` so the kanban-view overlay can absolute-fill the
-           non-sidebar area when appView === 'kanban' without unmounting
-           the chat/terminal stack underneath (preserves PTY + xterm). */}
-      <div style={{ flex: '1 1 0%', display: 'flex', minHeight: 0, position: 'relative' }}>
+      {/* Body — flat flex row, all panels always mounted. The chat +
+           terminal stack and the kanban view are siblings; we toggle
+           between them with `display: none` so xterm/PTY state and the
+           Shiki cache survive the swap (same pattern as the right-pane
+           terminal↔files toggle). Avoids the translucent-theme bleed-
+           through that an absolute overlay caused. */}
+      <div style={{ flex: '1 1 0%', display: 'flex', minHeight: 0 }}>
         {/* Sidebar */}
         <div
           ref={sidebarRef}
@@ -667,81 +672,83 @@ export function App() {
           visible={sidebarVisible}
         />
 
-        {/* Chat — fills remaining space. In dual mode, renders two
-            ChatPanels side-by-side with a draggable divider.
-            Ratio lives in refs during drag for perf; on release we commit
-            to the store so it persists on layout changes / remount. */}
-        {dualChat && rightSessionId ? (
-          <DualChatPanels rightSessionId={rightSessionId} />
-        ) : (
-          <div style={{ flex: '1 1 0%', display: 'flex', minWidth: 0, overflow: 'hidden' }}>
-            <ChatPanel />
-          </div>
-        )}
-
-        {/* Terminal divider */}
-        <ResizeHandle
-          direction="horizontal"
-          afterRef={terminalRef}
-          beforeRef={sidebarRef}
-          invert
-          min={200}
-          max={800}
-          onResizeEnd={handleTerminalResizeEnd}
-          visible={terminalVisible}
-        />
-
-        {/* Right pane: terminal OR files (toggle via ⌘⇧E). Both stay mounted —
-             hiding instead of unmounting preserves xterm/pty state and Shiki
-             cache between toggles, matching the terminal-registry pattern. */}
+        {/* Engineering view: chat + terminal stack. Hidden (not unmounted)
+            when the user switches to the board view — preserves PTY +
+            xterm + Shiki state across toggles. */}
         <div
-          ref={terminalRef}
           style={{
-            width: `${terminalWidth}px`,
-            flexShrink: 0,
+            flex: '1 1 0%',
+            display: appView === 'chats' ? 'flex' : 'none',
+            minWidth: 0,
             overflow: 'hidden',
-            display: 'flex',
-            borderLeft: terminalVisible ? '1px solid var(--border)' : 'none',
-            position: 'relative',
           }}
         >
+          {/* Chat — fills remaining space. In dual mode, renders two
+              ChatPanels side-by-side with a draggable divider.
+              Ratio lives in refs during drag for perf; on release we commit
+              to the store so it persists on layout changes / remount. */}
+          {dualChat && rightSessionId ? (
+            <DualChatPanels rightSessionId={rightSessionId} />
+          ) : (
+            <div style={{ flex: '1 1 0%', display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+              <ChatPanel />
+            </div>
+          )}
+
+          {/* Terminal divider */}
+          <ResizeHandle
+            direction="horizontal"
+            afterRef={terminalRef}
+            beforeRef={sidebarRef}
+            invert
+            min={200}
+            max={800}
+            onResizeEnd={handleTerminalResizeEnd}
+            visible={terminalVisible}
+          />
+
+          {/* Right pane: terminal OR files (toggle via ⌘⇧E). Both stay mounted —
+               hiding instead of unmounting preserves xterm/pty state and Shiki
+               cache between toggles, matching the terminal-registry pattern. */}
           <div
+            ref={terminalRef}
             style={{
-              position: 'absolute',
-              inset: 0,
-              display: rightPaneMode === 'terminal' ? 'flex' : 'none',
+              width: `${terminalWidth}px`,
+              flexShrink: 0,
+              overflow: 'hidden',
+              display: 'flex',
+              borderLeft: terminalVisible ? '1px solid var(--border)' : 'none',
+              position: 'relative',
             }}
           >
-            <TerminalStrip />
-          </div>
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              display: rightPaneMode === 'files' ? 'flex' : 'none',
-            }}
-          >
-            <FilesPane />
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: rightPaneMode === 'terminal' ? 'flex' : 'none',
+              }}
+            >
+              <TerminalStrip />
+            </div>
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                display: rightPaneMode === 'files' ? 'flex' : 'none',
+              }}
+            >
+              <FilesPane />
+            </div>
           </div>
         </div>
 
-        {/* Kanban overlay — fills the non-sidebar area when appView is
-             'kanban'. Sibling of the chat/terminal so those stay mounted
-             underneath (PTYs and xterm DOM survive the toggle). The
-             sidebar is left clear so workspace + chat clicks still work
-             (clicking a chat exits kanban via the session picker
-             machinery in handleSessionSelect). */}
+        {/* PM view: kanban board. Sibling of the engineering stack —
+            takes the full non-sidebar area when active. Mounted only
+            when shown so workspace/project filter dropdowns rehydrate
+            on each entry; cards live in kanban-store so re-mount is
+            cheap. */}
         {appView === 'kanban' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0, bottom: 0, right: 0,
-              left: sidebarVisible ? sidebarWidth : 0,
-              background: 'var(--bg)',
-              zIndex: 5,
-              display: 'flex',
-            }}
-          >
+          <div style={{ flex: '1 1 0%', display: 'flex', minWidth: 0, background: 'var(--bg)' }}>
             <KanbanView />
           </div>
         )}
@@ -808,6 +815,61 @@ export function App() {
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * Segmented "Chats / Board" toggle in the title bar. Mirrors ⌘⇧K so the
+ * mode swap is discoverable without the keyboard shortcut. Sits inside
+ * the drag region but opts out via WebkitAppRegion: 'no-drag' so clicks
+ * land on the buttons.
+ */
+function ViewToggle({ appView }: { appView: 'chats' | 'kanban' }): React.ReactElement {
+  const setAppView = useLayoutStore((s) => s.setAppView)
+  const baseBtn: React.CSSProperties = {
+    background: 'none',
+    border: 'none',
+    padding: '3px 10px',
+    fontSize: '11px',
+    fontWeight: 500,
+    cursor: 'pointer',
+    color: 'var(--text-muted)',
+    borderRadius: '4px',
+    WebkitAppRegion: 'no-drag',
+    transition: 'background 0.12s, color 0.12s',
+  }
+  const activeBtn: React.CSSProperties = {
+    ...baseBtn,
+    background: 'var(--bg-secondary)',
+    color: 'var(--text-primary)',
+  }
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        border: '1px solid var(--border)',
+        borderRadius: '6px',
+        padding: '2px',
+        gap: '2px',
+        WebkitAppRegion: 'no-drag',
+      }}
+      title="Toggle Chats ↔ Board (⌘⇧K)"
+    >
+      <button
+        type="button"
+        style={appView === 'chats' ? activeBtn : baseBtn}
+        onClick={() => setAppView('chats')}
+      >
+        Chats
+      </button>
+      <button
+        type="button"
+        style={appView === 'kanban' ? activeBtn : baseBtn}
+        onClick={() => setAppView('kanban')}
+      >
+        Board
+      </button>
+    </span>
   )
 }
 
