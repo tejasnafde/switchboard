@@ -60,6 +60,23 @@ const SWITCHBOARD_CLIENT_INFO = {
 const log = createLogger('provider:codex')
 const LOG_PAYLOAD_LIMIT = 4000
 
+/**
+ * Hard ceiling for the `initialize` JSON-RPC. If `codex app-server` is the
+ * wrong binary, hung on auth, or otherwise silent, we want the user to see
+ * an error in seconds — not when they happen to switch agents and the
+ * pending RPC gets rejected by stopSession (which historically presented as
+ * the cryptic "Init failed: Session stopped" hours after the fact).
+ */
+const INIT_TIMEOUT_MS = 30_000
+
+/**
+ * Window during which we collect stderr to attach to init failures. Anything
+ * codex prints during startup (auth prompts, "command not found", protocol
+ * mismatch warnings) is the most useful diagnostic and otherwise only ends
+ * up in the file logger.
+ */
+const INIT_STDERR_CAPTURE_LIMIT = 2000
+
 function truncateLogPayload(value: string): string {
   return value.length > LOG_PAYLOAD_LIMIT
     ? `${value.slice(0, LOG_PAYLOAD_LIMIT)}…<truncated ${value.length - LOG_PAYLOAD_LIMIT} chars>`
@@ -247,8 +264,17 @@ export class CodexAdapter implements ProviderAdapter {
       }
     })
 
+    // Capture early stderr so init failures can include codex's own
+    // complaints (e.g. "please run `codex login`") in the user-facing
+    // error message. Switched off once initialize() succeeds.
+    let initStderrBuf = ''
+    let captureInitStderr = true
     child.stderr?.on('data', (data: Buffer) => {
-      log.warn(`codex stderr: ${truncateLogPayload(data.toString())}`)
+      const chunk = data.toString()
+      log.warn(`codex stderr: ${truncateLogPayload(chunk)}`)
+      if (captureInitStderr && initStderrBuf.length < INIT_STDERR_CAPTURE_LIMIT) {
+        initStderrBuf = (initStderrBuf + chunk).slice(0, INIT_STDERR_CAPTURE_LIMIT)
+      }
     })
 
     child.on('close', (code) => {
@@ -265,25 +291,70 @@ export class CodexAdapter implements ProviderAdapter {
       onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
     })
 
-    // Send initialize RPC
+    // Send initialize RPC, bounded by INIT_TIMEOUT_MS. Without the bound, a
+    // hung codex (wrong binary, waiting on stdin auth, etc.) would leave
+    // this promise pending forever — the caller's `await startSession(...)`
+    // would never return, the user would see no error, and a later
+    // stopSession would finally reject the RPC with "Session stopped"
+    // surfacing as a misleading "Init failed" much later. See CHANGELOG.
     try {
-      await this.sendRpc(active, 'initialize', {
-        clientInfo: SWITCHBOARD_CLIENT_INFO,
-        capabilities: {
-          experimentalApi: true,
-        },
-      })
+      await this.withTimeout(
+        this.sendRpc(active, 'initialize', {
+          clientInfo: SWITCHBOARD_CLIENT_INFO,
+          capabilities: {
+            experimentalApi: true,
+          },
+        }),
+        INIT_TIMEOUT_MS,
+        'initialize',
+      )
+      captureInitStderr = false
       this.sendNotification(active, 'initialized')
       active.session.status = 'idle'
       onEvent({ type: 'status', threadId: opts.threadId, status: 'idle' })
     } catch (err) {
+      captureInitStderr = false
       active.session.status = 'error'
-      const message = err instanceof Error ? err.message : String(err)
-      onEvent({ type: 'error', threadId: opts.threadId, message: `Init failed: ${message}` })
+      const baseMessage = err instanceof Error ? err.message : String(err)
+      const stderrTrail = initStderrBuf.trim()
+      const message = stderrTrail
+        ? `Init failed: ${baseMessage}\n\nCodex stderr:\n${stderrTrail}`
+        : `Init failed: ${baseMessage}`
+      // Tear down the child + registry entry so the next sendTurn doesn't
+      // race on a half-initialized session.
+      if (active.child) {
+        try { active.child.kill('SIGTERM') } catch { /* already dead */ }
+        active.child = null
+      }
+      this.sessions.delete(opts.threadId)
+      onEvent({ type: 'error', threadId: opts.threadId, message })
+      onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
+      // Reject the caller's promise so ChatPanel.handleSend's catch fires
+      // and clears its providerStartedRef — otherwise the ref stays in
+      // the "started" set and subsequent sends silently no-op on the
+      // session-init path.
+      throw new Error(message)
     }
 
     log.info(`session started: ${opts.threadId}`)
     return session
+  }
+
+  /**
+   * Race a promise against a timer. On timeout, rejects with a descriptive
+   * error mentioning the operation name so the surfaced message is
+   * actionable ("initialize timed out after 30000ms").
+   */
+  private withTimeout<T>(p: Promise<T>, ms: number, opName: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`${opName} timed out after ${ms}ms`))
+      }, ms)
+      p.then(
+        (value) => { clearTimeout(timer); resolve(value) },
+        (err) => { clearTimeout(timer); reject(err) },
+      )
+    })
   }
 
   async sendTurn(

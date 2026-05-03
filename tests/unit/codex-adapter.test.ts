@@ -4,6 +4,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 const writes: string[] = []
 let emitFailedTurn = false
+let stallInitialize = false
+let initStderrChunks: string[] = []
 
 type MockChild = EventEmitter & {
   stdout: PassThrough
@@ -23,6 +25,14 @@ function makeChild(): MockChild {
       writes.push(chunk)
       const message = JSON.parse(chunk)
       if (message.method === 'initialize') {
+        if (stallInitialize) {
+          // Simulate a codex that never responds (wrong binary, stuck on
+          // auth, etc.). The adapter's withTimeout should fire instead.
+          for (const chunk of initStderrChunks) {
+            queueMicrotask(() => child.stderr.emit('data', Buffer.from(chunk)))
+          }
+          return
+        }
         queueMicrotask(() => {
           stdout.write(JSON.stringify({
             jsonrpc: '2.0',
@@ -127,6 +137,8 @@ describe('CodexAdapter', () => {
   beforeEach(() => {
     writes.length = 0
     emitFailedTurn = false
+    stallInitialize = false
+    initStderrChunks = []
     vi.clearAllMocks()
   })
 
@@ -227,6 +239,58 @@ describe('CodexAdapter', () => {
       text: 'Hello from Codex',
       streamKind: 'assistant',
     }))
+  })
+
+  it('rejects startSession when codex never responds to initialize, surfacing stderr in the error', async () => {
+    vi.useFakeTimers()
+    try {
+      stallInitialize = true
+      initStderrChunks = ['error: please run `codex login` first\n']
+
+      const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+      const adapter = new CodexAdapter()
+      const onEvent = vi.fn()
+
+      // Attach a catch handler synchronously so the rejection is never
+      // observed as unhandled — we still assert on the value below.
+      const startPromise = adapter.startSession({
+        threadId: 'thread-1',
+        provider: 'codex',
+        cwd: '/tmp/project',
+      }, onEvent)
+      const settled: { error: Error | null } = { error: null }
+      const tracked = startPromise.catch((err: Error) => { settled.error = err })
+
+      // Let the spawn + stderr microtasks flush, then jump past the
+      // 30s init timeout window.
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(30_000)
+      await tracked
+
+      expect(settled.error).toBeInstanceOf(Error)
+      expect(settled.error?.message).toMatch(/Init failed: initialize timed out/)
+      // The codex stderr trail should land in the user-visible error so
+      // the actual cause ("please run `codex login`") is surfaced.
+      expect(settled.error?.message).toMatch(/codex login/)
+
+      expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'error',
+        threadId: 'thread-1',
+        message: expect.stringContaining('codex login'),
+      }))
+      expect(onEvent).toHaveBeenCalledWith({
+        type: 'status',
+        threadId: 'thread-1',
+        status: 'error',
+      })
+
+      // Subsequent sendTurn must fail fast with "not found" — the
+      // half-init session should have been deleted from the registry,
+      // not left dangling for stopSession to reject later.
+      await expect(adapter.sendTurn('thread-1', 'hi')).rejects.toThrow(/not found/)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('surfaces failed codex turns as errors instead of idle completions', async () => {
