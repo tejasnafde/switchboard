@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mkdtemp, rm, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import {
   slugForCard,
@@ -55,14 +55,17 @@ describe('parseWorktreeList', () => {
       '',
     ].join('\n')
     const out = parseWorktreeList(porcelain, main)
+    // Paths come back through `resolve()`, so on Windows they get drive
+    // prefixes + backslashes. Compute expected via resolve() so the test
+    // works cross-platform.
     expect(out).toHaveLength(2)
     expect(out[0]).toMatchObject({
-      path: '/repo/.switchboard/worktrees/foo-12345678',
+      path: resolve('/repo/.switchboard/worktrees/foo-12345678'),
       branch: 'kanban/foo-12345678',
       prunable: false,
     })
     expect(out[1]).toMatchObject({
-      path: '/repo/.switchboard/worktrees/orphan-xx',
+      path: resolve('/repo/.switchboard/worktrees/orphan-xx'),
       branch: null,
       prunable: true,
     })
