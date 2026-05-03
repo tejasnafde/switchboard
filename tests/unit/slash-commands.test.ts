@@ -3,6 +3,7 @@ import {
   detectSlashTrigger,
   filterSlashCommands,
   parseLeadingSlashCommand,
+  parseSlashCommandWrapper,
   SLASH_COMMANDS,
 } from '../../src/renderer/components/chat/slashCommands'
 
@@ -134,6 +135,45 @@ describe('parseLeadingSlashCommand', () => {
   it('rejects names that start with a digit or dash', () => {
     expect(parseLeadingSlashCommand('/9plan')).toBeNull()
     expect(parseLeadingSlashCommand('/-plan')).toBeNull()
+  })
+})
+
+describe('parseSlashCommandWrapper', () => {
+  it('extracts name + args from the SDK XML blob', () => {
+    const blob = [
+      '<command-message>deslop</command-message>',
+      '<command-name>/deslop</command-name>',
+      '<command-args>then /review</command-args>',
+    ].join('\n')
+    expect(parseSlashCommandWrapper(blob)).toEqual({ name: 'deslop', rest: ' then /review' })
+  })
+
+  it('handles empty args', () => {
+    const blob = [
+      '<command-message>plan</command-message>',
+      '<command-name>/plan</command-name>',
+      '<command-args></command-args>',
+    ].join('\n')
+    expect(parseSlashCommandWrapper(blob)).toEqual({ name: 'plan', rest: '' })
+  })
+
+  it('handles missing args block (older SDK builds)', () => {
+    const blob = [
+      '<command-message>help</command-message>',
+      '<command-name>/help</command-name>',
+    ].join('\n')
+    expect(parseSlashCommandWrapper(blob)).toEqual({ name: 'help', rest: '' })
+  })
+
+  it('returns null for plain text', () => {
+    expect(parseSlashCommandWrapper('just a message')).toBeNull()
+    expect(parseSlashCommandWrapper('/plan inline')).toBeNull()
+    expect(parseSlashCommandWrapper('')).toBeNull()
+  })
+
+  it('returns null when command-name is malformed', () => {
+    const blob = '<command-message>x</command-message>\n<command-name></command-name>'
+    expect(parseSlashCommandWrapper(blob)).toBeNull()
   })
 })
 

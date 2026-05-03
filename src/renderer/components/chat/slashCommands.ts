@@ -207,6 +207,28 @@ export function parseLeadingSlashCommand(text: string): LeadingSlash | null {
 }
 
 /**
+ * Claude Code's SDK wraps a slash-command invocation into an XML-tagged
+ * blob when persisting to JSONL:
+ *
+ *   <command-message>deslop</command-message>
+ *   <command-name>/deslop</command-name>
+ *   <command-args>then /review</command-args>
+ *
+ * We never see this at compose time (the renderer ships a plain
+ * `/cmd args` string), but it's what comes back when a session is
+ * reloaded from disk. Extract the name + args so `MessageBubble` can
+ * render the same SkillChip + rest UI it does for a fresh send.
+ */
+export function parseSlashCommandWrapper(text: string): LeadingSlash | null {
+  if (!text || !text.startsWith('<command-message>')) return null
+  const nameMatch = /<command-name>\s*\/?([a-zA-Z][\w-]*)\s*<\/command-name>/.exec(text)
+  if (!nameMatch) return null
+  const argsMatch = /<command-args>([\s\S]*?)<\/command-args>/.exec(text)
+  const args = argsMatch ? argsMatch[1] : ''
+  return { name: nameMatch[1], rest: args ? ` ${args}` : '' }
+}
+
+/**
  * Filter commands by query. Case-insensitive prefix match on `name`;
  * falls back to substring match on description if nothing matches the name.
  */

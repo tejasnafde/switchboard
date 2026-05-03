@@ -323,13 +323,21 @@ function HydrationPlugin({
   // External-write sync. If `value` changed AND it doesn't match the
   // editor's current body, repopulate. Otherwise skip — typing-driven
   // changes already produced this `value`.
+  //
+  // Capture the caret BEFORE repopulate and restore it AFTER. Without
+  // this, picking a slash-command (which writes through `replaceRange`
+  // → `setValue` → React re-render → this effect → `$populateFromBody`)
+  // would land the caret at offset 0 every time, because Lexical's
+  // default selection after a fresh root population is the start.
   useEffect(() => {
     if (value === lastValueRef.current) return
     const current = serializeEditorToBody(editor)
     lastValueRef.current = value
     if (value === current) return
+    const priorCaret = caretOffsetFromSelection(editor)
     editor.update(() => {
       $populateFromBody(value, pillsById)
+      if (priorCaret !== null) $selectAtOffset(priorCaret)
     })
   }, [value, pillsById, editor])
 

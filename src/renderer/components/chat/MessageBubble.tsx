@@ -13,7 +13,7 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { enhanceFilePills } from '../../services/messagePills'
 import { formatFilePathRef, type FilePathRef } from '@shared/filePathRef'
 import { renderPillBody } from './renderPillBody'
-import { parseLeadingSlashCommand } from './slashCommands'
+import { parseLeadingSlashCommand, parseSlashCommandWrapper } from './slashCommands'
 import { SkillChip } from './SkillChip'
 
 interface MessageBubbleProps {
@@ -205,7 +205,11 @@ export const MessageBubble = memo(function MessageBubble({ message, knownSkillNa
               // Surface a leading `/cmd` as a chip — but only when the
               // command is in the session's known skill set, so typos
               // like `/halp` don't visually masquerade as a real skill.
-              const slash = parseLeadingSlashCommand(message.content)
+              // Also handles the SDK's `<command-message>...</command-args>`
+              // XML wrapper that shows up after a JSONL reload.
+              const slash =
+                parseSlashCommandWrapper(message.content) ??
+                parseLeadingSlashCommand(message.content)
               if (!slash) return message.content
               if (!knownSkillNames?.has(slash.name.toLowerCase())) return message.content
               return (
