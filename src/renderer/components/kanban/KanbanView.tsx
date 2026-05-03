@@ -39,10 +39,18 @@ import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
+import type { RuntimeMode } from '@shared/provider-events'
 import type { AgentStatus, Project, Workspace } from '@shared/types'
 import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
 import { launchCardChat } from './cardLaunch'
+
+const RUNTIME_MODE_BADGE: Record<RuntimeMode, string> = {
+  plan: 'plan',
+  sandbox: 'sandbox',
+  'accept-edits': 'accept',
+  'full-access': 'full',
+}
 
 const UNGROUPED = '__ungrouped__'
 
@@ -514,6 +522,9 @@ function CardTilePresentation({
         )}
         {showProjectChip && <span style={projectChipStyle}>{projectName}</span>}
         {card.worktreePath && <span title={card.worktreePath} style={badgeStyle}>⎇ worktree</span>}
+        <span style={badgeStyle} title="Initial runtime mode (change live mode from the chat panel)">
+          {RUNTIME_MODE_BADGE[card.runtimeMode]}
+        </span>
         {card.costCapUsd != null && (
           <span style={{ ...badgeStyle, color: overBudget ? 'var(--red, #d73a49)' : undefined }}>
             ${(card.costUsedUsd ?? 0).toFixed(2)}/${card.costCapUsd.toFixed(2)}

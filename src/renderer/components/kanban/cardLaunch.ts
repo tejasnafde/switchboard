@@ -5,6 +5,7 @@
  * "▶ + open" path, and the auto-kickoff on `withWorktree=true` create.
  */
 import type { KanbanCard } from '@shared/kanban'
+import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { useAgentStore } from '../../stores/agent-store'
 import { emitSessionCreated } from '../../services/session-events'
 import { generateTitle } from '@shared/auto-title'
@@ -150,12 +151,14 @@ export async function launchCardChat(
   // 6. Spin up the provider. cwd = worktree-or-parent. Failures here
   //    surface as a system message in the chat, not a thrown error,
   //    because the session is already registered and the user can retry.
+  //    Fallback covers pre-migration rows where the column is undefined.
+  const runtimeMode = card.runtimeMode ?? KANBAN_DEFAULT_RUNTIME_MODE
   try {
     await api.provider.startSession({
       threadId: sessionId,
       provider: 'claude',
       cwd,
-      runtimeMode: 'sandbox',
+      runtimeMode,
     })
   } catch (err) {
     log('startSession failed', { err: String(err) })
@@ -166,7 +169,7 @@ export async function launchCardChat(
   // 7. Auto-send the first turn — this is the whole point of "▶". The
   //    user already declared intent by clicking play; no draft step.
   api.provider
-    .sendTurn(sessionId, firstTurn, 'sandbox')
+    .sendTurn(sessionId, firstTurn, runtimeMode)
     .catch((err: unknown) => log('sendTurn failed', { err: String(err) }))
 
   log('launched', { sessionId, cardId: card.id })

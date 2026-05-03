@@ -23,6 +23,7 @@ function card(overrides: Partial<KanbanCard> = {}): KanbanCard {
     status: 'backlog',
     costCapUsd: null,
     costUsedUsd: null,
+    runtimeMode: 'accept-edits',
     conversationId: null,
     worktreePath: null,
     worktreeBranch: null,
@@ -120,6 +121,7 @@ function installApiMock(): MockApi {
         status: 'in_progress',
         costCapUsd: null,
         costUsedUsd: null,
+        runtimeMode: 'accept-edits',
         conversationId: null,
         worktreePath: null,
         worktreeBranch: null,
@@ -227,6 +229,19 @@ describe('launchCardChat', () => {
     await launchCardChat(c, { openChat: false })
 
     expect(api.app.unarchiveConversation).not.toHaveBeenCalled()
+  })
+
+  it("forwards the card's chosen runtime mode to startSession and sendTurn", async () => {
+    // Regression: kanban v1 hardcoded `sandbox` here, which silently
+    // ignored the create-modal's mode picker. Both calls must honour the
+    // card field so users see the mode they asked for.
+    const api = installApiMock()
+    const c = card({ id: 'card_rm', runtimeMode: 'plan' })
+
+    await launchCardChat(c, { openChat: false })
+
+    expect(api.provider.startSession.mock.calls[0][0].runtimeMode).toBe('plan')
+    expect(api.provider.sendTurn.mock.calls[0][2]).toBe('plan')
   })
 
   it('falls back to parent projectPath as cwd when no worktree is set', async () => {
