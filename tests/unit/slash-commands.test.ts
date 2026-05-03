@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   detectSlashTrigger,
   filterSlashCommands,
+  parseLeadingSlashCommand,
   SLASH_COMMANDS,
 } from '../../src/renderer/components/chat/slashCommands'
 
@@ -43,9 +44,20 @@ describe('detectSlashTrigger', () => {
     expect(detectSlashTrigger('/ plan', 2)).toBeNull()
   })
 
-  it('returns null when the slash is mid-line (after other chars)', () => {
-    // `hi /plan` — line-prefix is `hi /plan`, doesn't start with `/`.
-    expect(detectSlashTrigger('hi /plan', 8)).toBeNull()
+  it('fires when slash follows whitespace mid-line (so users discover skills mid-message)', () => {
+    // `hi /plan` — `/` is preceded by a space, no slashes between it and the
+    // caret, so the menu opens with query="plan" and range starting at the slash.
+    const t = detectSlashTrigger('hi /plan', 8)
+    expect(t).not.toBeNull()
+    expect(t!.query).toBe('plan')
+    expect(t!.rangeStart).toBe(3)
+    expect(t!.rangeEnd).toBe(8)
+  })
+
+  it('returns null when slash is glued to a preceding word (path-like)', () => {
+    // `src/foo` — the `/` at idx 3 is preceded by `c`, not whitespace, so
+    // the menu correctly stays closed.
+    expect(detectSlashTrigger('src/foo', 7)).toBeNull()
   })
 
   it('fires on second line when that line starts with `/`', () => {
@@ -73,7 +85,11 @@ describe('detectSlashTrigger', () => {
   })
 
   it('does NOT fire on paths embedded elsewhere in the text', () => {
+    // `edit /etc/hosts` — last `/` before cursor is at idx 9 (between etc
+    // and hosts), preceded by `c` not whitespace → no fire.
     expect(detectSlashTrigger('edit /etc/hosts', 15)).toBeNull()
+    // `~/Library/foo` — `/` at idx 1 preceded by `~`; `/` at idx 9 preceded
+    // by `y`. Neither qualifies.
     expect(detectSlashTrigger('~/Library/foo', 13)).toBeNull()
   })
 
@@ -81,6 +97,43 @@ describe('detectSlashTrigger', () => {
     // `/foo/bar` looks like a path, not a command. Our regex [^\s/]* forbids
     // subsequent slashes, so this correctly doesn't fire.
     expect(detectSlashTrigger('/foo/bar', 8)).toBeNull()
+  })
+})
+
+describe('parseLeadingSlashCommand', () => {
+  it('parses a bare leading slash command', () => {
+    const m = parseLeadingSlashCommand('/plan')
+    expect(m).not.toBeNull()
+    expect(m!.name).toBe('plan')
+    expect(m!.rest).toBe('')
+  })
+
+  it('parses leading slash command with args', () => {
+    const m = parseLeadingSlashCommand('/commit fix the bug')
+    expect(m).not.toBeNull()
+    expect(m!.name).toBe('commit')
+    expect(m!.rest).toBe(' fix the bug')
+  })
+
+  it('tolerates leading whitespace before the slash', () => {
+    const m = parseLeadingSlashCommand('  /plan')
+    expect(m).not.toBeNull()
+    expect(m!.name).toBe('plan')
+  })
+
+  it('returns null for path-like leading tokens', () => {
+    expect(parseLeadingSlashCommand('/etc/hosts')).toBeNull()
+    expect(parseLeadingSlashCommand('/foo/bar baz')).toBeNull()
+  })
+
+  it('returns null when message starts with regular text', () => {
+    expect(parseLeadingSlashCommand('hi there')).toBeNull()
+    expect(parseLeadingSlashCommand('see /plan later')).toBeNull()
+  })
+
+  it('rejects names that start with a digit or dash', () => {
+    expect(parseLeadingSlashCommand('/9plan')).toBeNull()
+    expect(parseLeadingSlashCommand('/-plan')).toBeNull()
   })
 })
 

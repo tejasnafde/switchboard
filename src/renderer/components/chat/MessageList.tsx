@@ -3,6 +3,7 @@ import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types
 import { MessageBubble } from './MessageBubble'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
+import { useSkillStore } from '../../stores/skill-store'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -80,6 +81,15 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
 
   const turns = useMemo(() => groupIntoTurns(messages), [messages])
 
+  // Skill-name set for the current session — passed to each bubble so
+  // leading-`/cmd` chips only render for commands that actually exist.
+  // Falls back to undefined when the session hasn't published yet, in
+  // which case MessageBubble suppresses chip rendering rather than
+  // showing false positives.
+  const knownSkillNames = useSkillStore(
+    (s) => (sessionId ? s.namesBySession[sessionId] : undefined),
+  )
+
   const virtualizer = useVirtualizer({
     count: turns.length,
     getScrollElement: () => containerRef.current,
@@ -119,7 +129,6 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
         }
       })
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId])
 
   // Auto-scroll-to-bottom on new messages (only if user hasn't scrolled up).
@@ -136,7 +145,6 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
     requestAnimationFrame(() => {
       virtualizer.scrollToIndex(turns.length - 1, { align: 'end', behavior: 'smooth' })
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length])
 
   // Honor "scroll to message" requests (from SearchModal). Finds the turn
@@ -202,7 +210,6 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
       })
     })
     clearScroll()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingScroll, sessionId, turns.length])
 
   if (turns.length === 0) {
@@ -293,6 +300,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
                 <MessageBubble
                   key={msg.id}
                   message={msg}
+                  knownSkillNames={knownSkillNames}
                   onApproval={onApproval}
                   onAnswerQuestion={onAnswerQuestion}
                   onPlanAction={onPlanAction}
@@ -348,7 +356,6 @@ function wrapSearchMatches(bubble: HTMLElement, query: string): HTMLElement | nu
   const lower = q.toLowerCase()
   let textNode: Text | null = null
   let idx = -1
-  // eslint-disable-next-line no-cond-assign
   while ((textNode = walker.nextNode() as Text | null)) {
     const value = textNode.nodeValue ?? ''
     idx = value.toLowerCase().indexOf(lower)

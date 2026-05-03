@@ -129,8 +129,16 @@ export const SLASH_COMMANDS: SlashCommand[] = [
 
 /**
  * Pure function: does the text at `cursor` match a slash-command trigger?
- * Triggers only when `/` is the first non-whitespace character of the
- * current line — mid-line slashes (as in paths like `src/foo`) do NOT fire.
+ *
+ * Fires when the most recent `/` before the cursor is preceded by either
+ * line-start or whitespace, AND there are no further `/` or whitespace
+ * characters between that slash and the cursor. This means:
+ *
+ *   - `/plan` at line start → fires
+ *   - `hi /plan` after a word → fires (so users discover skills mid-message)
+ *   - `src/foo` (no preceding ws) → does NOT fire
+ *   - `/etc/hosts` (nested slash) → does NOT fire
+ *   - `~/Library/foo` (path) → does NOT fire
  *
  * Returns:
  *   - `{ query, rangeStart, rangeEnd }` when triggered
@@ -147,19 +155,56 @@ export interface SlashTrigger {
 
 export function detectSlashTrigger(text: string, cursorInput: number): SlashTrigger | null {
   const cursor = Math.max(0, Math.min(cursorInput, text.length))
-  const lineStart = text.lastIndexOf('\n', Math.max(0, cursor - 1)) + 1
-  const linePrefix = text.slice(lineStart, cursor)
+  if (cursor === 0) return null
 
-  // Must be `/` followed by zero-or-more non-space chars.
-  // Mid-line paths (`src/foo`) fail because their line-prefix starts with "src".
-  const match = /^\/([^\s/]*)$/.exec(linePrefix)
-  if (!match) return null
+  // Walk backwards from the cursor, looking for the nearest `/` candidate.
+  // Bail if we hit whitespace before finding one (slash menu only tracks an
+  // unbroken token immediately before the caret).
+  let slashIdx = -1
+  for (let i = cursor - 1; i >= 0; i--) {
+    const ch = text[i]
+    if (ch === '/') { slashIdx = i; break }
+    if (/\s/.test(ch)) return null
+  }
+  if (slashIdx === -1) return null
+
+  // The `/` must be at line/text start, or preceded by whitespace —
+  // otherwise it's part of a path like `src/foo` or a URL.
+  if (slashIdx > 0) {
+    const prev = text[slashIdx - 1]
+    if (prev !== '\n' && !/\s/.test(prev)) return null
+  }
 
   return {
-    query: match[1] ?? '',
-    rangeStart: lineStart,
+    query: text.slice(slashIdx + 1, cursor),
+    rangeStart: slashIdx,
     rangeEnd: cursor,
   }
+}
+
+/**
+ * If `text` begins with a slash-command-shaped token (e.g. `/plan`,
+ * `/commit foo`), return its parts. Used by the input-box footer
+ * indicator and the message-bubble chip renderer to surface the
+ * detected skill without requiring the live command list.
+ *
+ * Pure regex — no membership check against the registry — so the
+ * indicator stays cheap and works for agent-defined skills the
+ * renderer hasn't fetched yet.
+ */
+export interface LeadingSlash {
+  /** Just the command name, no slash. */
+  name: string
+  /** Everything after the command name (may include leading whitespace or args). */
+  rest: string
+}
+
+const LEADING_SLASH_RE = /^\s*\/([a-zA-Z][\w-]*)(?=$|\s)/
+
+export function parseLeadingSlashCommand(text: string): LeadingSlash | null {
+  const m = text ? LEADING_SLASH_RE.exec(text) : null
+  if (!m) return null
+  return { name: m[1], rest: text.slice(m.index + m[0].length) }
 }
 
 /**

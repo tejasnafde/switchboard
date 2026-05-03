@@ -13,15 +13,26 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { enhanceFilePills } from '../../services/messagePills'
 import { formatFilePathRef, type FilePathRef } from '@shared/filePathRef'
 import { renderPillBody } from './renderPillBody'
+import { parseLeadingSlashCommand } from './slashCommands'
+import { SkillChip } from './SkillChip'
 
 interface MessageBubbleProps {
   message: ChatMessage
+  /**
+   * Lowercased set of slash-command names registered for this session
+   * (built-ins + agent-advertised skills). Used to gate the leading-`/cmd`
+   * chip so typos like `/halp` render as plain text instead of
+   * masquerading as recognized skills. Undefined while the session's
+   * skills haven't been published yet — chip rendering is suppressed
+   * rather than risk a false positive.
+   */
+  knownSkillNames?: Set<string>
   onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void
   onAnswerQuestion?: (requestId: string, answers: string[][]) => void
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, onApproval, onAnswerQuestion, onPlanAction }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction }: MessageBubbleProps) {
   const renderedContent = useMemo(() => {
     if (!message.content) return ''
     // Escape lone tildes used as "approximately" (e.g. ~34) so they don't
@@ -188,9 +199,22 @@ export const MessageBubble = memo(function MessageBubble({ message, onApproval, 
             overflowWrap: 'anywhere',
             wordBreak: 'break-word',
           }}>
-            {message.displayBody && message.pillsMeta
-              ? renderPillBody(message.displayBody, message.pillsMeta)
-              : message.content}
+            {message.displayBody && message.pillsMeta ? (
+              renderPillBody(message.displayBody, message.pillsMeta)
+            ) : (() => {
+              // Surface a leading `/cmd` as a chip — but only when the
+              // command is in the session's known skill set, so typos
+              // like `/halp` don't visually masquerade as a real skill.
+              const slash = parseLeadingSlashCommand(message.content)
+              if (!slash) return message.content
+              if (!knownSkillNames?.has(slash.name.toLowerCase())) return message.content
+              return (
+                <>
+                  <SkillChip name={slash.name} />
+                  {slash.rest}
+                </>
+              )
+            })()}
           </div>
         ) : (
           <div
