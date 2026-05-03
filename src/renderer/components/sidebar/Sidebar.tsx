@@ -426,25 +426,46 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     } catch { /* best-effort */ }
   }, [handleAssignWorkspace])
 
-  // Same-workspace drop → reorder + persist projectOrder.
-  // Cross-workspace drop → reassign workspaceId; reorder is skipped (the
-  // regroup picks up the new bucket on next refresh).
+  // Drives both same- and cross-workspace drops off the *rendered* flat
+  // order (what SortableContext.items sees), not the raw `projects` array
+  // — dnd-kit's drag indices are relative to that. Cross-workspace drops
+  // also flip the dragged item's workspaceId so it lands in the target
+  // bucket at the visual drop slot.
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event
     if (!over) return
-    const outcome = decideDragOutcome(projects, String(active.id), String(over.id))
+    const renderedOrder = groupProjectsByWorkspace(projects, workspaces)
+      .flatMap((g) => g.projects.map((p) => p.path))
+    const outcome = decideDragOutcome(
+      projects,
+      renderedOrder,
+      String(active.id),
+      String(over.id),
+    )
     if (outcome.type === 'noop') return
-    if (outcome.type === 'reassign') {
-      void handleAssignWorkspace(outcome.projectPath, outcome.targetWorkspaceId)
-      return
-    }
+
+    const newRenderedOrder = arrayMove(renderedOrder, outcome.oldIndex, outcome.newIndex)
+
     setProjects((prev) => {
-      const reordered = arrayMove(prev, outcome.oldIndex, outcome.newIndex)
+      const byPath = new Map(prev.map((p) => [p.path, p]))
+      const reordered = newRenderedOrder
+        .map((path) => byPath.get(path)!)
+        .map((p) =>
+          outcome.type === 'reassign' && p.path === outcome.projectPath
+            ? { ...p, workspaceId: outcome.targetWorkspaceId }
+            : p,
+        )
       const order = reordered.map((p) => p.path)
       window.api.settings.set('projectOrder', JSON.stringify(order)).catch(() => {})
       return reordered
     })
-  }, [projects, handleAssignWorkspace])
+
+    if (outcome.type === 'reassign') {
+      void window.api.app
+        .assignProjectWorkspace(outcome.projectPath, outcome.targetWorkspaceId)
+        .catch(() => { /* optimistic — next refresh corrects */ })
+    }
+  }, [projects, workspaces])
 
   // Compute the workspace-grouped tree, then apply the (debounced) filter.
   // The filter expansion sets are merged with the persisted collapse sets:
