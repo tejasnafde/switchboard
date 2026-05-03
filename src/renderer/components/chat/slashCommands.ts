@@ -229,6 +229,50 @@ export function parseSlashCommandWrapper(text: string): LeadingSlash | null {
 }
 
 /**
+ * Tokenize a string into alternating text + skill-mention segments.
+ * Used by MessageBubble to chipify every `/<known-skill>` reference in
+ * a sent message body, not just the leading one — so something like
+ * `/deslop then /review` round-trips as two chips with the connector
+ * text in between.
+ *
+ * A `/<name>` is chipified only when:
+ *   - it's at start-of-string OR preceded by whitespace (path-y slashes
+ *     like `src/foo` or `/etc/hosts` don't false-positive)
+ *   - the name (lowercased) is in `known`
+ *
+ * Pure: returns a flat list of segments; rendering is left to the caller.
+ */
+export type SlashSegment =
+  | { type: 'text'; value: string }
+  | { type: 'skill'; name: string }
+
+export function splitSkillMentions(text: string, known: Set<string>): SlashSegment[] {
+  if (!text) return []
+  const out: SlashSegment[] = []
+  // Match `/cmd` only when preceded by start-of-string or whitespace.
+  // The lookahead `(?=$|\s)` ensures we don't half-eat a longer token.
+  const re = /(^|\s)\/([a-zA-Z][\w-]*)(?=$|\s)/g
+  let cursor = 0
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    const [, lead, name] = m
+    if (!known.has(name.toLowerCase())) continue
+    // Push the leading whitespace + everything between the previous
+    // chip and this one as a text segment.
+    const textEnd = m.index + lead.length
+    if (textEnd > cursor) {
+      out.push({ type: 'text', value: text.slice(cursor, textEnd) })
+    }
+    out.push({ type: 'skill', name })
+    cursor = textEnd + 1 + name.length // +1 for the slash
+  }
+  if (cursor < text.length) {
+    out.push({ type: 'text', value: text.slice(cursor) })
+  }
+  return out
+}
+
+/**
  * Filter commands by query. Case-insensitive prefix match on `name`;
  * falls back to substring match on description if nothing matches the name.
  */

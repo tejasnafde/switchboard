@@ -13,7 +13,7 @@ import { useLayoutStore } from '../../stores/layout-store'
 import { enhanceFilePills } from '../../services/messagePills'
 import { formatFilePathRef, type FilePathRef } from '@shared/filePathRef'
 import { renderPillBody } from './renderPillBody'
-import { parseLeadingSlashCommand, parseSlashCommandWrapper } from './slashCommands'
+import { parseLeadingSlashCommand, parseSlashCommandWrapper, splitSkillMentions } from './slashCommands'
 import { SkillChip } from './SkillChip'
 
 interface MessageBubbleProps {
@@ -202,20 +202,36 @@ export const MessageBubble = memo(function MessageBubble({ message, knownSkillNa
             {message.displayBody && message.pillsMeta ? (
               renderPillBody(message.displayBody, message.pillsMeta)
             ) : (() => {
-              // Surface a leading `/cmd` as a chip — but only when the
-              // command is in the session's known skill set, so typos
-              // like `/halp` don't visually masquerade as a real skill.
-              // Also handles the SDK's `<command-message>...</command-args>`
-              // XML wrapper that shows up after a JSONL reload.
-              const slash =
-                parseSlashCommandWrapper(message.content) ??
-                parseLeadingSlashCommand(message.content)
-              if (!slash) return message.content
-              if (!knownSkillNames?.has(slash.name.toLowerCase())) return message.content
+              // Chipify every `/<known-skill>` mention (including ones
+              // nested in the args, like `/deslop then /review`) so the
+              // bubble round-trips a multi-skill prompt as multiple
+              // chips. Also unwrap the SDK's `<command-message>...
+              // </command-args>` XML blob that comes back from a JSONL
+              // reload before scanning.
+              if (!knownSkillNames || knownSkillNames.size === 0) return message.content
+              const wrapper = parseSlashCommandWrapper(message.content)
+              const body = wrapper
+                ? `/${wrapper.name}${wrapper.rest}`
+                : message.content
+              const segments = splitSkillMentions(body, knownSkillNames)
+              const hasChip = segments.some((s) => s.type === 'skill')
+              if (!hasChip) {
+                // Fallback: leading `/cmd` even if `splitSkillMentions`
+                // bailed (covers single-mention case + keeps the regex
+                // gating local to that helper).
+                const slash = parseLeadingSlashCommand(message.content)
+                if (slash && knownSkillNames.has(slash.name.toLowerCase())) {
+                  return (<><SkillChip name={slash.name} />{slash.rest}</>)
+                }
+                return message.content
+              }
               return (
                 <>
-                  <SkillChip name={slash.name} />
-                  {slash.rest}
+                  {segments.map((seg, i) =>
+                    seg.type === 'skill'
+                      ? <SkillChip key={i} name={seg.name} />
+                      : <span key={i}>{seg.value}</span>,
+                  )}
                 </>
               )
             })()}

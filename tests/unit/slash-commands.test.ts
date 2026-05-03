@@ -4,6 +4,7 @@ import {
   filterSlashCommands,
   parseLeadingSlashCommand,
   parseSlashCommandWrapper,
+  splitSkillMentions,
   SLASH_COMMANDS,
 } from '../../src/renderer/components/chat/slashCommands'
 
@@ -174,6 +175,51 @@ describe('parseSlashCommandWrapper', () => {
   it('returns null when command-name is malformed', () => {
     const blob = '<command-message>x</command-message>\n<command-name></command-name>'
     expect(parseSlashCommandWrapper(blob)).toBeNull()
+  })
+})
+
+describe('splitSkillMentions', () => {
+  const known = new Set(['deslop', 'review', 'plan'])
+
+  it('chipifies leading + nested skill mentions', () => {
+    expect(splitSkillMentions('/deslop then /review', known)).toEqual([
+      { type: 'skill', name: 'deslop' },
+      { type: 'text', value: ' then ' },
+      { type: 'skill', name: 'review' },
+    ])
+  })
+
+  it('returns a single text segment when no known skills are present', () => {
+    expect(splitSkillMentions('hi there', known)).toEqual([
+      { type: 'text', value: 'hi there' },
+    ])
+  })
+
+  it('does not chipify path-y slashes', () => {
+    expect(splitSkillMentions('see src/foo and /etc/hosts', known)).toEqual([
+      { type: 'text', value: 'see src/foo and /etc/hosts' },
+    ])
+  })
+
+  it('skips unknown commands but keeps known ones in the same string', () => {
+    expect(splitSkillMentions('/halp then /plan now', known)).toEqual([
+      { type: 'text', value: '/halp then ' },
+      { type: 'skill', name: 'plan' },
+      { type: 'text', value: ' now' },
+    ])
+  })
+
+  it('handles empty input', () => {
+    expect(splitSkillMentions('', known)).toEqual([])
+  })
+
+  it('preserves leading whitespace in the connector text', () => {
+    const out = splitSkillMentions('hello /plan world', known)
+    expect(out).toEqual([
+      { type: 'text', value: 'hello ' },
+      { type: 'skill', name: 'plan' },
+      { type: 'text', value: ' world' },
+    ])
   })
 })
 
