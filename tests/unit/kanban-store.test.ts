@@ -22,6 +22,7 @@ function fakeCard(over: Partial<KanbanCard> = {}): KanbanCard {
     status: 'in_progress',
     costCapUsd: null,
     costUsedUsd: null,
+    runtimeMode: 'accept-edits',
     conversationId: null,
     worktreePath: null,
     worktreeBranch: null,

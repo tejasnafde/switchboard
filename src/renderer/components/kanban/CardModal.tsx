@@ -15,7 +15,20 @@ import { useKanbanStore } from '../../stores/kanban-store'
 import { downscaleImage } from '../../services/imageDownscale'
 import { insertSnippetWithNewlineGuards } from '../../services/insertSnippet'
 import { launchCardChat } from './cardLaunch'
-import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
+import {
+  KANBAN_COLUMNS,
+  KANBAN_DEFAULT_RUNTIME_MODE,
+  type KanbanCard,
+  type KanbanStatus,
+} from '@shared/kanban'
+import type { RuntimeMode } from '@shared/provider-events'
+
+const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; hint: string }> = [
+  { value: 'plan', label: 'Plan', hint: 'Read-only — agent proposes but does not edit' },
+  { value: 'sandbox', label: 'Sandbox', hint: 'Edits require approval' },
+  { value: 'accept-edits', label: 'Accept edits', hint: 'Auto-approves edits (default)' },
+  { value: 'full-access', label: 'Full access', hint: 'Auto-approves edits and shell commands' },
+]
 
 interface ProjectOption {
   path: string
@@ -56,6 +69,12 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     card?.costCapUsd != null ? String(card.costCapUsd) : ''
   )
   const [withWorktree, setWithWorktree] = useState(false)
+  // Initial mode only — once the card has a session, the chat panel's
+  // runtime selector is the source of truth, so we render a read-only
+  // chip in `edit` mode instead of letting the field drift.
+  const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>(
+    card?.runtimeMode ?? KANBAN_DEFAULT_RUNTIME_MODE,
+  )
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Locally-tracked project selection. In `edit` mode the project never
@@ -122,7 +141,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [title, description, tagsInput, status, costCapInput, withWorktree])
+  }, [title, description, tagsInput, status, costCapInput, withWorktree, runtimeMode])
 
   const handleSubmit = async () => {
     if (!title.trim()) {
@@ -146,6 +165,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
           description,
           tags,
           costCapUsd,
+          runtimeMode,
           withWorktree,
         })
         // Opting into a worktree at create-time signals "I'm starting
@@ -285,6 +305,31 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
             </label>
           </div>
 
+          {/* Picked at create time only — see `runtimeMode` state comment. */}
+          <label style={labelStyle}>
+            Runtime mode
+            {mode === 'create' ? (
+              <>
+                <select
+                  value={runtimeMode}
+                  onChange={(e) => setRuntimeMode(e.target.value as RuntimeMode)}
+                  style={inputStyle}
+                >
+                  {RUNTIME_MODE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+                <span style={runtimeHintStyle}>
+                  {RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.hint}
+                </span>
+              </>
+            ) : (
+              <div style={projectChipStyle} title="Change the live mode from the chat panel's runtime selector">
+                {RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.label ?? runtimeMode}
+              </div>
+            )}
+          </label>
+
           {mode === 'create' && (
             <label style={{ ...labelStyle, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
               <input
@@ -376,6 +421,7 @@ const projectChipStyle: CSSProperties = {
   fontFamily: 'monospace', alignSelf: 'flex-start',
   border: '1px solid rgba(37,99,235,0.25)',
 }
+const runtimeHintStyle: CSSProperties = { fontSize: 10, opacity: 0.65, marginTop: 2 }
 const errStyle: CSSProperties = { color: 'var(--red, #d73a49)', fontSize: 12 }
 const footerStyle: CSSProperties = {
   display: 'flex', gap: 6, padding: 10, borderTop: '1px solid var(--border)',

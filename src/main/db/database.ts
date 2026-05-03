@@ -4,7 +4,9 @@ import { join } from 'path'
 import { mkdirSync } from 'fs'
 import { createMainLogger as createLogger } from '../logger'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } from '@shared/kanban'
+import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { applyKanbanArchiveSideEffect } from '@shared/kanbanArchive'
+import type { RuntimeMode } from '@shared/provider-events'
 
 const log = createLogger('db')
 
@@ -227,6 +229,7 @@ function migrate(db: Database.Database): void {
       status          TEXT NOT NULL DEFAULT 'backlog',
       cost_cap_usd    REAL,
       cost_used_usd   REAL,
+      runtime_mode    TEXT NOT NULL DEFAULT 'accept-edits',
       conversation_id TEXT,
       worktree_path   TEXT,
       worktree_branch TEXT,
@@ -238,6 +241,15 @@ function migrate(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_kanban_project_status
       ON kanban_cards(project_path, status, updated_at DESC);
   `)
+
+  // Migration: add `runtime_mode` to kanban_cards if missing. Existing
+  // rows backfill to `accept-edits` to match the new default.
+  try {
+    const cols = db.prepare("PRAGMA table_info(kanban_cards)").all() as Array<{ name: string }>
+    if (!cols.some((c) => c.name === 'runtime_mode')) {
+      db.exec("ALTER TABLE kanban_cards ADD COLUMN runtime_mode TEXT NOT NULL DEFAULT 'accept-edits'")
+    }
+  } catch { /* ignore */ }
 
   // Rebuild FTS index from existing messages
   try {
@@ -812,12 +824,21 @@ interface KanbanRow {
   status: string
   cost_cap_usd: number | null
   cost_used_usd: number | null
+  runtime_mode: string | null
   conversation_id: string | null
   worktree_path: string | null
   worktree_branch: string | null
   created_at: number
   updated_at: number
   completed_at: number | null
+}
+
+/** Coerce a stored runtime-mode string back into the typed union; legacy/unknown → default. */
+function normalizeRuntimeMode(raw: string | null | undefined): RuntimeMode {
+  if (raw === 'plan' || raw === 'sandbox' || raw === 'accept-edits' || raw === 'full-access') {
+    return raw
+  }
+  return KANBAN_DEFAULT_RUNTIME_MODE
 }
 
 function rowToCard(r: KanbanRow): KanbanCard {
@@ -832,6 +853,7 @@ function rowToCard(r: KanbanRow): KanbanCard {
     status: r.status as KanbanStatus,
     costCapUsd: r.cost_cap_usd,
     costUsedUsd: r.cost_used_usd,
+    runtimeMode: normalizeRuntimeMode(r.runtime_mode),
     conversationId: r.conversation_id,
     worktreePath: r.worktree_path,
     worktreeBranch: r.worktree_branch,
@@ -843,10 +865,11 @@ function rowToCard(r: KanbanRow): KanbanCard {
 
 export function createKanbanCard(id: string, input: KanbanCardCreate): KanbanCard {
   const tagsJson = JSON.stringify(input.tags ?? [])
+  const runtimeMode = input.runtimeMode ?? KANBAN_DEFAULT_RUNTIME_MODE
   getDb().prepare(`
-    INSERT INTO kanban_cards (id, project_path, title, description, tags, status, cost_cap_usd)
-    VALUES (?, ?, ?, ?, ?, 'backlog', ?)
-  `).run(id, input.projectPath, input.title, input.description ?? '', tagsJson, input.costCapUsd ?? null)
+    INSERT INTO kanban_cards (id, project_path, title, description, tags, status, cost_cap_usd, runtime_mode)
+    VALUES (?, ?, ?, ?, ?, 'backlog', ?, ?)
+  `).run(id, input.projectPath, input.title, input.description ?? '', tagsJson, input.costCapUsd ?? null, runtimeMode)
   return getKanbanCard(id)!
 }
 
