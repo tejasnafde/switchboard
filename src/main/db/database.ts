@@ -4,6 +4,7 @@ import { join } from 'path'
 import { mkdirSync } from 'fs'
 import { createMainLogger as createLogger } from '../logger'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } from '@shared/kanban'
+import { applyKanbanArchiveSideEffect } from '@shared/kanbanArchive'
 
 const log = createLogger('db')
 
@@ -868,17 +869,29 @@ export function updateKanbanCard(id: string, patch: KanbanCardUpdate): KanbanCar
   const completedAt = patch.status === 'done' && existing.status !== 'done'
     ? Date.now()
     : patch.status && patch.status !== 'done' ? null : existing.completedAt
-  getDb().prepare(`
-    UPDATE kanban_cards SET
-      title = ?, description = ?, tags = ?, status = ?,
-      cost_cap_usd = ?, cost_used_usd = ?, conversation_id = ?,
-      updated_at = ?, completed_at = ?
-    WHERE id = ?
-  `).run(
-    next.title, next.description, JSON.stringify(next.tags), next.status,
-    next.costCapUsd, next.costUsedUsd, next.conversationId,
-    Date.now(), completedAt, id,
-  )
+  // Card row + archive side effect run atomically so a Done transition
+  // can't leave the row updated while the conversation archive write
+  // fails (or vice versa).
+  getDb().transaction(() => {
+    getDb().prepare(`
+      UPDATE kanban_cards SET
+        title = ?, description = ?, tags = ?, status = ?,
+        cost_cap_usd = ?, cost_used_usd = ?, conversation_id = ?,
+        updated_at = ?, completed_at = ?
+      WHERE id = ?
+    `).run(
+      next.title, next.description, JSON.stringify(next.tags), next.status,
+      next.costCapUsd, next.costUsedUsd, next.conversationId,
+      Date.now(), completedAt, id,
+    )
+    // "Done" column doubles as an archive trigger: moving a linked card
+    // into Done archives its conversation; moving back out unarchives.
+    applyKanbanArchiveSideEffect(
+      { status: existing.status, conversationId: existing.conversationId },
+      { status: patch.status },
+      { archive: archiveConversation, unarchive: unarchiveConversation },
+    )
+  })()
   return getKanbanCard(id)
 }
 

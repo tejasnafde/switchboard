@@ -87,6 +87,7 @@ interface MockApi {
     createConversation: ReturnType<typeof vi.fn>
     saveMessage: ReturnType<typeof vi.fn>
     renameConversation: ReturnType<typeof vi.fn>
+    unarchiveConversation: ReturnType<typeof vi.fn>
   }
   provider: {
     startSession: ReturnType<typeof vi.fn>
@@ -103,6 +104,7 @@ function installApiMock(): MockApi {
       createConversation: vi.fn(async () => undefined),
       saveMessage: vi.fn(async () => undefined),
       renameConversation: vi.fn(async () => undefined),
+      unarchiveConversation: vi.fn(async () => undefined),
     },
     provider: {
       startSession: vi.fn(async () => ({ ok: true })),
@@ -191,6 +193,40 @@ describe('launchCardChat', () => {
     expect(result.sessionId).toBe('existing_1')
     expect(api.provider.startSession).not.toHaveBeenCalled()
     expect(api.provider.sendTurn).not.toHaveBeenCalled()
+  })
+
+  it('unarchives the linked conversation before reusing its session (resume-from-done)', async () => {
+    // When a card is in the Done column its conversation is archived;
+    // clicking play to resume the chat must unarchive first or the
+    // conversation will keep getting filtered out of project scans.
+    const api = installApiMock()
+    useAgentStore.setState({
+      sessions: [{
+        id: 'conv_done',
+        type: 'claude-code',
+        status: 'idle',
+        projectPath: '/repo',
+        title: 't',
+        messages: [],
+        unreadCount: 0,
+        runtimeMode: 'sandbox',
+      }],
+      activeSessionId: null,
+    })
+    const c = card({ conversationId: 'conv_done', status: 'done' })
+
+    await launchCardChat(c, { openChat: true })
+
+    expect(api.app.unarchiveConversation).toHaveBeenCalledWith('conv_done')
+  })
+
+  it('does not call unarchive when the card has no linked conversation', async () => {
+    const api = installApiMock()
+    const c = card({ conversationId: null })
+
+    await launchCardChat(c, { openChat: false })
+
+    expect(api.app.unarchiveConversation).not.toHaveBeenCalled()
   })
 
   it('falls back to parent projectPath as cwd when no worktree is set', async () => {
