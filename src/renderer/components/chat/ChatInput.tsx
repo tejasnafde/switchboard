@@ -15,12 +15,10 @@ import {
   detectSlashTrigger,
   filterSlashCommands,
   mergeWithAgentSkills,
-  parseLeadingSlashCommand,
   SLASH_COMMANDS,
   type SlashCommand,
   type SlashCommandContext,
 } from './slashCommands'
-import { SkillChip } from './SkillChip'
 import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chatInputBody'
 
@@ -215,18 +213,6 @@ export function ChatInput({
     if (!sessionId) return
     setSkillNames(sessionId, mergedCommands.map((c) => c.name))
   }, [sessionId, mergedCommands, setSkillNames])
-
-  // Detected skill from the current draft — shown as a chip in the footer
-  // so users get instant feedback that the slash they typed is going to
-  // be interpreted as a command. Matched against `mergedCommands` so we
-  // don't surface chips for arbitrary `/foo` typos that happen not to be
-  // skills the agent advertises.
-  const detectedSkill = useMemo(() => {
-    const m = parseLeadingSlashCommand(value)
-    if (!m) return null
-    const cmd = mergedCommands.find((c) => c.name.toLowerCase() === m.name.toLowerCase())
-    return cmd ? { name: cmd.name, description: cmd.description } : null
-  }, [value, mergedCommands])
 
   const slashRangeRef = useRef<{ start: number; end: number } | null>(null)
   const dragDepthRef = useRef(0)
@@ -767,16 +753,6 @@ export function ChatInput({
             <option value="full-access">Full Access (skip all prompts)</option>
             <option value="plan">Plan Only (no execution)</option>
           </select>
-        )}
-
-        {/* Detected slash-command indicator — confirms the leading `/cmd`
-            was recognized as a registered skill before the user hits Send. */}
-        {detectedSkill && (
-          <SkillChip
-            name={detectedSkill.name}
-            description={detectedSkill.description}
-            compact
-          />
         )}
 
         <span style={{ flex: 1 }} />

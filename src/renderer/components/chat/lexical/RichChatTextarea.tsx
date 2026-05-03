@@ -223,6 +223,49 @@ function caretOffsetFromSelection(editor: LexicalEditor): number | null {
 }
 
 /**
+ * Place the caret at a given plain-text offset, the inverse of
+ * `caretOffsetFromSelection`. Walks descendants in DOM order summing
+ * lengths; when a text node spans the offset, calls `select` on it with
+ * the local offset. Linebreaks count for 1, pill tokens for their full
+ * `[[pill:id]]` length. If the offset can't be reached inside a text
+ * node (offset == end of doc, or lands on a pill boundary), falls back
+ * to `root.selectEnd()`.
+ *
+ * Must be called inside `editor.update()`.
+ */
+function $selectAtOffset(offset: number): void {
+  const root = $getRoot()
+  let acc = 0
+  let placed = false
+  const visit = (node: LexicalNode): void => {
+    if (placed) return
+    if (node.getType() === 'linebreak') { acc += 1; return }
+    if ($isPillNode(node)) { acc += node.getTextContent().length; return }
+    if (node.getType() === 'text') {
+      const len = node.getTextContent().length
+      if (offset <= acc + len) {
+        const tn = node as LexicalNode & { select: (a: number, f: number) => void }
+        const local = Math.max(0, offset - acc)
+        tn.select(local, local)
+        placed = true
+        return
+      }
+      acc += len
+      return
+    }
+    const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[] }
+    if (typeof anyNode.getChildren === 'function') {
+      for (const child of anyNode.getChildren()) visit(child)
+    }
+  }
+  for (const child of root.getChildren()) {
+    visit(child)
+    if (placed) break
+  }
+  if (!placed) root.selectEnd()
+}
+
+/**
  * Plugin: registers `INSERT_PILL_COMMAND`. Inserts a PillNode at the
  * current selection, splitting any text node it lands inside.
  */
@@ -401,7 +444,14 @@ const ImperativeHandlePlugin = forwardRef<
         const cur = getValue()
         const next = cur.slice(0, start) + replacement + cur.slice(end)
         setValue(next)
-        editor.update(() => { $populateFromBody(next, pillsById) })
+        editor.update(() => {
+          $populateFromBody(next, pillsById)
+          // After repopulating the editor body, the selection defaults to
+          // the start of the doc — that's what was bouncing the user's
+          // caret to position 0 after picking a slash command. Snap the
+          // caret to immediately after the inserted text instead.
+          $selectAtOffset(start + replacement.length)
+        })
       },
       getCaret: () => caretOffsetFromSelection(editor),
     }),
