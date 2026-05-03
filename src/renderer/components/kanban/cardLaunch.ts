@@ -69,8 +69,13 @@ export async function launchCardChat(
     console.info(`[kanban:launch] ${msg}`, data ?? {})
   }
 
-  // 1. Reuse existing session if the card is already linked.
+  // 1. Reuse existing session if the card is already linked. Done-column
+  //    cards have their conversation archived; unarchive first so it
+  //    isn't filtered out of scans / sidebar after resume.
   if (card.conversationId) {
+    window.api.app
+      .unarchiveConversation(card.conversationId)
+      .catch((err: unknown) => log('unarchive failed', { err: String(err) }))
     const existing = useAgentStore
       .getState()
       .sessions.find((s) => s.id === card.conversationId)
