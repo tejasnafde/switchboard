@@ -184,13 +184,12 @@ export function detectSlashTrigger(text: string, cursorInput: number): SlashTrig
 
 /**
  * If `text` begins with a slash-command-shaped token (e.g. `/plan`,
- * `/commit foo`), return its parts. Used by the input-box footer
- * indicator and the message-bubble chip renderer to surface the
- * detected skill without requiring the live command list.
+ * `/commit foo`), return its parts. Used by `MessageBubble` to render
+ * a leading `/cmd` as a `SkillChip` once the caller has confirmed the
+ * name against the session's known-skill set.
  *
- * Pure regex — no membership check against the registry — so the
- * indicator stays cheap and works for agent-defined skills the
- * renderer hasn't fetched yet.
+ * Pure regex with no membership check — callers gate chip rendering on
+ * a registry lookup so typos like `/halp` don't masquerade as skills.
  */
 export interface LeadingSlash {
   /** Just the command name, no slash. */
