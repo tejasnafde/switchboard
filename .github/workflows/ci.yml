@@ -6,24 +6,52 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded runs on the same branch / PR — saves CI minutes when
+# someone pushes a fixup commit before the previous run finishes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    name: Test (${{ matrix.os }})
+    # Cross-platform matrix so Windows-only test breakage is caught at PR
+    # time rather than during the release pipeline (where a failure blocks
+    # artifact publish for everyone). macos-14 = Apple Silicon runner —
+    # required for the per-platform claude-agent-sdk binary.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # 22 to match release.yml — `@electron/rebuild@4` and `node-abi@4`
+          # both require >=22.12.0; staying on 20 here would let an
+          # engine-incompat warning slip into release.
+          node-version: '22'
           cache: 'npm'
 
-      - name: Install system deps for node-pty
+      # Linux-only: node-pty's native build needs build-essential + python3.
+      # macOS + Windows runners ship the toolchain pre-installed.
+      - name: Install system deps for node-pty (Linux)
+        if: matrix.os == 'ubuntu-latest'
         run: sudo apt-get update && sudo apt-get install -y build-essential python3
 
+      # Retry on transient flakes — the Electron CDN and the per-platform
+      # Claude SDK tarball occasionally 502 on the windows-latest runner.
       - name: Install dependencies
-        run: npm ci
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: npm ci
 
       - name: Typecheck
         run: npm run typecheck
