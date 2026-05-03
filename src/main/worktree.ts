@@ -136,9 +136,13 @@ export async function removeWorktree(
  */
 export function parseWorktreeList(porcelain: string, mainPath: string): WorktreeInfo[] {
   const out: WorktreeInfo[] = []
+  // Normalize the main path the same way we normalize each `worktree` line so
+  // the skip-main comparison works on Windows too (`resolve('/repo')` yields
+  // `D:\repo` there, which would otherwise never match a raw '/repo' input).
+  const mainResolved = resolve(mainPath)
   let cur: Partial<WorktreeInfo> & { _detached?: boolean; _prunable?: boolean } = {}
   const flush = () => {
-    if (cur.path && cur.head && cur.path !== mainPath) {
+    if (cur.path && cur.head && cur.path !== mainResolved) {
       out.push({
         path: cur.path,
         head: cur.head,
