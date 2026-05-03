@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse } from './stores/layout-store'
-import { useAgentStore } from './stores/agent-store'
+import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
 import { useTerminalLifecycle } from './hooks/useTerminalLifecycle'
@@ -156,6 +156,17 @@ export function App() {
   useEffect(() => {
     loadSavedTheme()
     void hydrateSidebarCollapse()
+    // Hydrate the default runtime mode so newly-created chats (sidebar new,
+    // kanban card click) seed with the user's last-chosen value instead of
+    // the hardcoded 'sandbox'.
+    void (async () => {
+      try {
+        const stored = await window.api?.settings?.get?.('chat.defaultRuntimeMode')
+        if (stored === 'plan' || stored === 'sandbox' || stored === 'accept-edits' || stored === 'full-access') {
+          setStoreDefaultRuntimeMode(stored as RuntimeMode)
+        }
+      } catch { /* settings unavailable in tests / first boot */ }
+    })()
   }, [loadSavedTheme])
 
   // Safety net: runs AFTER handle's own cleanup. Only reverts state that looks
@@ -335,6 +346,18 @@ export function App() {
         agentType: (session.source === 'codex' ? 'codex' : 'claude-code'),
         title: session.title,
       }).catch(() => {})
+
+      // Hydrate the persisted runtime mode (if the user previously picked
+      // one for this conversation). Without this, the chip shows the module
+      // default until the user re-toggles, which feels like "the value is
+      // hardcoded on chat load."
+      try {
+        const res = await window.api.app.getConversationRuntimeMode?.(session.id)
+        const persisted = res?.mode
+        if (persisted === 'plan' || persisted === 'sandbox' || persisted === 'accept-edits' || persisted === 'full-access') {
+          useAgentStore.getState().setRuntimeMode(session.id, persisted)
+        }
+      } catch { /* best-effort */ }
 
       // Load messages from JSONL file
       if (session.filePath) {

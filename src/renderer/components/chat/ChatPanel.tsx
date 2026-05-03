@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { useAgentStore, type RuntimeMode } from '../../stores/agent-store'
+import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
@@ -76,6 +76,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     storeSetRuntimeMode(sessionId, mode)
     // Propagate to active provider session if running
     ;window.api.provider?.setRuntimeMode?.(sessionId, mode).catch(() => {})
+    // Persist as the per-conversation source of truth so reopening this
+    // chat (sidebar, kanban card click, ⌘⇧F search jump) restores the
+    // selection instead of falling back to the hardcoded default.
+    window.api.app?.setConversationRuntimeMode?.(sessionId, mode).catch(() => {})
+    // Also remember as the user-level default so brand-new sessions seed
+    // with this mode instead of always reverting to 'sandbox'.
+    setStoreDefaultRuntimeMode(mode)
+    window.api.settings?.set?.('chat.defaultRuntimeMode', mode).catch(() => {})
   }, [sessionId, storeSetRuntimeMode])
 
   const handleModelChange = useCallback((m: string) => {

@@ -9,8 +9,12 @@ import {
   deriveCardLaunch,
   buildKanbanFirstTurn,
   launchCardChat,
+  resolveCardRuntimeMode,
 } from '../../src/renderer/components/kanban/cardLaunch'
-import { useAgentStore } from '../../src/renderer/stores/agent-store'
+import {
+  useAgentStore,
+  setStoreDefaultRuntimeMode,
+} from '../../src/renderer/stores/agent-store'
 import type { KanbanCard } from '../../src/shared/kanban'
 
 function card(overrides: Partial<KanbanCard> = {}): KanbanCard {
@@ -89,27 +93,33 @@ interface MockApi {
     saveMessage: ReturnType<typeof vi.fn>
     renameConversation: ReturnType<typeof vi.fn>
     unarchiveConversation: ReturnType<typeof vi.fn>
+    getConversationRuntimeMode: ReturnType<typeof vi.fn>
+    setConversationRuntimeMode: ReturnType<typeof vi.fn>
   }
   provider: {
     startSession: ReturnType<typeof vi.fn>
     sendTurn: ReturnType<typeof vi.fn>
+    setRuntimeMode: ReturnType<typeof vi.fn>
   }
   kanban: {
     update: ReturnType<typeof vi.fn>
   }
 }
 
-function installApiMock(): MockApi {
+function installApiMock(persistedMode: string | null = null): MockApi {
   const api: MockApi = {
     app: {
       createConversation: vi.fn(async () => undefined),
       saveMessage: vi.fn(async () => undefined),
       renameConversation: vi.fn(async () => undefined),
       unarchiveConversation: vi.fn(async () => undefined),
+      getConversationRuntimeMode: vi.fn(async () => ({ mode: persistedMode })),
+      setConversationRuntimeMode: vi.fn(async () => ({ ok: true })),
     },
     provider: {
       startSession: vi.fn(async () => ({ ok: true })),
       sendTurn: vi.fn(async () => undefined),
+      setRuntimeMode: vi.fn(async () => undefined),
     },
     kanban: {
       update: vi.fn(async (id: string, patch: Record<string, unknown>) => ({
@@ -136,9 +146,51 @@ function installApiMock(): MockApi {
   return api
 }
 
+describe('resolveCardRuntimeMode', () => {
+  beforeEach(() => {
+    useAgentStore.setState({ sessions: [], activeSessionId: null })
+    setStoreDefaultRuntimeMode('sandbox')
+  })
+
+  it('prefers persisted DB mode (reflects mid-conversation mode changes)', async () => {
+    installApiMock('full-access')
+    const mode = await resolveCardRuntimeMode('plan', 'conv_123')
+    expect(mode).toBe('full-access')
+  })
+
+  it('falls back to per-card mode when DB has nothing', async () => {
+    installApiMock(null)
+    setStoreDefaultRuntimeMode('sandbox')
+    const mode = await resolveCardRuntimeMode('plan', 'conv_123')
+    expect(mode).toBe('plan')
+  })
+
+  it('falls back to user default when no DB row and no per-card mode', async () => {
+    installApiMock(null)
+    setStoreDefaultRuntimeMode('accept-edits')
+    const mode = await resolveCardRuntimeMode(null, 'conv_123')
+    expect(mode).toBe('accept-edits')
+  })
+
+  it('uses user default when no conversation is linked and no per-card mode', async () => {
+    installApiMock('full-access') // present, but no convId so not queried
+    setStoreDefaultRuntimeMode('plan')
+    const mode = await resolveCardRuntimeMode(null, null)
+    expect(mode).toBe('plan')
+  })
+
+  it('rejects garbage values from the DB and falls back to the next tier', async () => {
+    installApiMock('not-a-mode')
+    setStoreDefaultRuntimeMode('full-access')
+    const mode = await resolveCardRuntimeMode(null, 'conv_123')
+    expect(mode).toBe('full-access')
+  })
+})
+
 describe('launchCardChat', () => {
   beforeEach(() => {
     useAgentStore.setState({ sessions: [], activeSessionId: null })
+    setStoreDefaultRuntimeMode('sandbox')
   })
 
   it('starts the provider with cwd = worktree, registers the session under the parent project, and auto-sends the first turn', async () => {
@@ -251,5 +303,50 @@ describe('launchCardChat', () => {
     await launchCardChat(c, { openChat: false })
 
     expect(api.provider.startSession.mock.calls[0][0].cwd).toBe('/repo')
+  })
+
+  it('persists the chosen runtime mode against the new conversation row', async () => {
+    // Regression: without this, reopening the card after app restart would
+    // show the module default instead of the mode the user picked at create.
+    const api = installApiMock(null)
+    const c = card({ id: 'card_full', title: 'a', runtimeMode: 'full-access' })
+
+    const result = await launchCardChat(c, { openChat: false })
+
+    expect(api.provider.startSession.mock.calls[0][0].runtimeMode).toBe('full-access')
+    expect(api.provider.sendTurn.mock.calls[0][2]).toBe('full-access')
+    const session = useAgentStore.getState().sessions.find((s) => s.id === result.sessionId)
+    expect(session?.runtimeMode).toBe('full-access')
+    expect(api.app.setConversationRuntimeMode).toHaveBeenCalledWith(result.sessionId, 'full-access')
+  })
+
+  it('hydrates a reused session whose in-memory mode is stale from the DB', async () => {
+    // Simulate the "open card after app restart" path: the session was
+    // added via a sidebar click with the module default ('sandbox'), but
+    // the user's actual saved mode for this conversation is 'full-access'.
+    const api = installApiMock('full-access')
+    useAgentStore.setState({
+      sessions: [{
+        id: 'existing_1',
+        type: 'claude-code',
+        status: 'idle',
+        projectPath: '/repo',
+        title: 't',
+        messages: [],
+        unreadCount: 0,
+        runtimeMode: 'sandbox',
+      }],
+      activeSessionId: null,
+    })
+    const c = card({ conversationId: 'existing_1' })
+
+    const result = await launchCardChat(c, { openChat: true })
+
+    expect(result.reused).toBe(true)
+    const session = useAgentStore.getState().sessions.find((s) => s.id === 'existing_1')
+    // Bug-fix assertion: the chip now reflects the DB source of truth.
+    expect(session?.runtimeMode).toBe('full-access')
+    // And the change is propagated to any running provider session.
+    expect(api.provider.setRuntimeMode).toHaveBeenCalledWith('existing_1', 'full-access')
   })
 })

@@ -128,6 +128,13 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'archived')) {
       db.exec('ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
     }
+    // Migration (2026-05-04): persist the per-conversation runtime mode
+    // (plan / sandbox / accept-edits / full-access) so reopening a chat —
+    // especially via a kanban card click — restores the user's actual
+    // selection instead of falling back to the hardcoded 'sandbox' default.
+    if (!cols.some((c) => c.name === 'runtime_mode')) {
+      db.exec('ALTER TABLE conversations ADD COLUMN runtime_mode TEXT')
+    }
   } catch { /* ignore */ }
 
   // Migration (v0.1.20): track which workspace template a session
@@ -555,6 +562,28 @@ export function listAllThreadSessions(): Array<{
   return getDb().prepare(
     'SELECT claude_session_id, thread_id, recorded_at FROM thread_sessions ORDER BY recorded_at DESC'
   ).all() as Array<{ claude_session_id: string; thread_id: string; recorded_at: number }>
+}
+
+/**
+ * Per-conversation runtime mode (plan/sandbox/accept-edits/full-access).
+ * Returns null if never set. Callers should fall back to a user default.
+ */
+export function getConversationRuntimeMode(id: string): string | null {
+  const row = getDb().prepare(
+    'SELECT runtime_mode FROM conversations WHERE id = ?'
+  ).get(id) as { runtime_mode: string | null } | undefined
+  return row?.runtime_mode ?? null
+}
+
+/**
+ * Persist the per-conversation runtime mode. Called when the user picks a
+ * mode in the chat header so reopening the conversation (incl. via a kanban
+ * card click) restores their selection instead of resetting to 'sandbox'.
+ */
+export function setConversationRuntimeMode(id: string, mode: string): void {
+  getDb().prepare(
+    'UPDATE conversations SET runtime_mode = ?, updated_at = ? WHERE id = ?'
+  ).run(mode, Date.now(), id)
 }
 
 export function archiveConversation(id: string): void {

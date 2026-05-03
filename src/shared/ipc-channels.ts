@@ -36,6 +36,8 @@ export const AppChannels = {
   ATTACH_TO_THREAD: 'app:attach-to-thread',
   DETACH_SESSION: 'app:detach-session',
   LIST_ANCESTRY: 'app:list-ancestry',
+  GET_CONVERSATION_RUNTIME_MODE: 'app:get-conversation-runtime-mode',
+  SET_CONVERSATION_RUNTIME_MODE: 'app:set-conversation-runtime-mode',
   CHECK_FOR_UPDATES: 'app:check-for-updates',
   RELAUNCH: 'app:relaunch',
   /** main → renderer push: status changes from electron-updater. */

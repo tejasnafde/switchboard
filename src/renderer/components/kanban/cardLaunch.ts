@@ -6,9 +6,48 @@
  */
 import type { KanbanCard } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
-import { useAgentStore } from '../../stores/agent-store'
+import { useAgentStore, getStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { emitSessionCreated } from '../../services/session-events'
 import { generateTitle } from '@shared/auto-title'
+
+const VALID_MODES: ReadonlySet<RuntimeMode> = new Set([
+  'plan', 'sandbox', 'accept-edits', 'full-access',
+])
+
+/**
+ * Resolve the runtime mode for a card-launched chat. Order of precedence:
+ *   1. Explicit per-card mode (`card.runtimeMode`) — the user's intent
+ *      from the create modal; only honored on NEW launches.
+ *   2. Per-conversation persisted mode (from `conversations.runtime_mode`)
+ *      — checked for reused launches; reflects any mid-conversation mode
+ *      changes the user made after the initial launch.
+ *   3. The user's last-chosen default this session
+ *      (`getStoreDefaultRuntimeMode()`), seeded from settings at boot.
+ *   4. `KANBAN_DEFAULT_RUNTIME_MODE` ('accept-edits') as the final
+ *      fallback — matches the kanban-create-modal default.
+ *
+ * `cardRuntimeMode` is the strongest signal, but we still consult the DB
+ * before it on the reuse path so a stored override (e.g. user toggled to
+ * full-access mid-turn) survives reopening through the play button.
+ *
+ * Exported so it's directly unit-testable.
+ */
+export async function resolveCardRuntimeMode(
+  cardRuntimeMode: RuntimeMode | null | undefined,
+  conversationId: string | null | undefined,
+): Promise<RuntimeMode> {
+  if (conversationId) {
+    try {
+      const res = await window.api?.app?.getConversationRuntimeMode?.(conversationId)
+      const persisted = res?.mode
+      if (persisted && VALID_MODES.has(persisted as RuntimeMode)) {
+        return persisted as RuntimeMode
+      }
+    } catch { /* fall through */ }
+  }
+  if (cardRuntimeMode && VALID_MODES.has(cardRuntimeMode)) return cardRuntimeMode
+  return getStoreDefaultRuntimeMode() ?? KANBAN_DEFAULT_RUNTIME_MODE
+}
 
 export interface CardLaunchInit {
   /** Parent project path — used for sidebar grouping (must match a
@@ -83,6 +122,20 @@ export async function launchCardChat(
     if (existing) {
       log('reuse existing session', { cardId: card.id, sessionId: existing.id })
       useAgentStore.getState().setActiveSession(existing.id)
+      // Fix up the in-memory mode from the DB. The session may have been
+      // added via a sidebar click on app boot (which seeded `runtimeMode`
+      // with the module default before we could fetch the persisted value).
+      // Without this, the chip would show e.g. 'sandbox' even though the
+      // user's last selection on this conversation was 'full-access'.
+      try {
+        const persisted = await resolveCardRuntimeMode(card.runtimeMode, existing.id)
+        if (persisted !== existing.runtimeMode) {
+          useAgentStore.getState().setRuntimeMode(existing.id, persisted)
+          window.api?.provider?.setRuntimeMode?.(existing.id, persisted).catch(() => {})
+        }
+      } catch (err) {
+        log('runtime-mode hydrate failed', { err: String(err) })
+      }
       return { sessionId: existing.id, reused: true }
     }
   }
@@ -90,6 +143,10 @@ export async function launchCardChat(
   const { projectPath, cwd, title } = deriveCardLaunch(card)
   const sessionId = `agent_${Date.now()}`
   const firstTurn = buildKanbanFirstTurn(card)
+  // Pull the real source of truth instead of hardcoding 'sandbox'. New cards
+  // (no linked conversation) inherit the user's last-chosen default; reused
+  // cards that lost their in-memory session pull from the DB row.
+  const runtimeMode = await resolveCardRuntimeMode(card.runtimeMode, card.conversationId)
   log('starting new session', {
     cardId: card.id,
     sessionId,
@@ -107,6 +164,7 @@ export async function launchCardChat(
     status: 'running',
     projectPath,
     title,
+    runtimeMode,
   })
   useAgentStore.getState().setActiveSession(sessionId)
 
@@ -151,8 +209,6 @@ export async function launchCardChat(
   // 6. Spin up the provider. cwd = worktree-or-parent. Failures here
   //    surface as a system message in the chat, not a thrown error,
   //    because the session is already registered and the user can retry.
-  //    Fallback covers pre-migration rows where the column is undefined.
-  const runtimeMode = card.runtimeMode ?? KANBAN_DEFAULT_RUNTIME_MODE
   try {
     await api.provider.startSession({
       threadId: sessionId,
@@ -160,6 +216,9 @@ export async function launchCardChat(
       cwd,
       runtimeMode,
     })
+    // Persist the chosen mode against the freshly-created conversation row
+    // so subsequent reopens (incl. via card click) restore it.
+    api.app.setConversationRuntimeMode?.(sessionId, runtimeMode).catch(() => {})
   } catch (err) {
     log('startSession failed', { err: String(err) })
     useAgentStore.getState().updateStatus(sessionId, 'error')

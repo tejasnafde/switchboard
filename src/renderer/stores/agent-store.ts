@@ -4,6 +4,23 @@ import type { ReasoningEffort } from '@shared/models'
 
 export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
 
+/**
+ * Module-level "last chosen" runtime mode used as the default seed when a
+ * new session is created and the caller doesn't pass an explicit mode. This
+ * is the user-visible "source of truth" for the default — it gets hydrated
+ * from settings DB at app boot and updated whenever the user picks a mode
+ * in any chat. Without this, every newly opened chat (sidebar new, kanban
+ * card click, search-modal jump) would silently revert to 'sandbox' even
+ * though the user just toggled to 'full-access' in the previous chat.
+ */
+let storeDefaultRuntimeMode: RuntimeMode = 'sandbox'
+export function getStoreDefaultRuntimeMode(): RuntimeMode {
+  return storeDefaultRuntimeMode
+}
+export function setStoreDefaultRuntimeMode(mode: RuntimeMode): void {
+  storeDefaultRuntimeMode = mode
+}
+
 interface AgentSession {
   id: string
   type: AgentType
@@ -98,7 +115,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           ...session,
           messages: [],
           unreadCount: 0,
-          runtimeMode: session.runtimeMode ?? 'sandbox',
+          runtimeMode: session.runtimeMode ?? storeDefaultRuntimeMode,
         },
       ],
       activeSessionId: state.activeSessionId ?? session.id,

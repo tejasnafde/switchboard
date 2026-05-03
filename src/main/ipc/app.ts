@@ -27,6 +27,8 @@ import {
   ensureConversation,
   isConversationArchived,
   getConversationById,
+  getConversationRuntimeMode,
+  setConversationRuntimeMode,
   getChildSessionIds,
   getSyntheticParentMap,
   listSessionIdsForThread,
@@ -307,6 +309,17 @@ export function registerAppHandlers(window: BrowserWindow): void {
       params.toolCalls, params.images,
       params.displayBody, params.pillsMeta,
     )
+    return { ok: true }
+  })
+
+  // Read/write the per-conversation runtime mode. The UI calls these so a
+  // kanban card click — or any sidebar reopen — restores the user's last
+  // selection instead of falling back to 'sandbox'.
+  ipcMain.handle(AppChannels.GET_CONVERSATION_RUNTIME_MODE, (_event, id: string) => {
+    return { mode: getConversationRuntimeMode(id) }
+  })
+  ipcMain.handle(AppChannels.SET_CONVERSATION_RUNTIME_MODE, (_event, id: string, mode: string) => {
+    setConversationRuntimeMode(id, mode)
     return { ok: true }
   })
 

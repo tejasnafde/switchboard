@@ -121,6 +121,10 @@ const api = {
       ipcRenderer.invoke(AppChannels.SAVE_MESSAGE, params),
     renameConversation: (id: string, title: string) =>
       ipcRenderer.invoke(AppChannels.RENAME_CONVERSATION, id, title),
+    getConversationRuntimeMode: (id: string): Promise<{ mode: RuntimeMode | null }> =>
+      ipcRenderer.invoke(AppChannels.GET_CONVERSATION_RUNTIME_MODE, id),
+    setConversationRuntimeMode: (id: string, mode: RuntimeMode): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(AppChannels.SET_CONVERSATION_RUNTIME_MODE, id, mode),
     getConversations: (projectPath: string) =>
       ipcRenderer.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
     setVibrancy: (enabled: boolean) =>
