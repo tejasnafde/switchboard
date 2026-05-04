@@ -22,6 +22,7 @@ import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerFilesHandlers } from './ipc/files'
 import { registerKanbanHandlers } from './ipc/kanban'
+import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
 import { getDb, closeDb, getSetting } from './db/database'
@@ -300,6 +301,7 @@ app.whenReady().then(() => {
   registerAppHandlers(mainWindow)
   registerFilesHandlers()
   registerKanbanHandlers()
+  registerProviderInstanceHandlers()
   // Auto-update — silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what
   // version to compare against. See `src/main/updater.ts`.

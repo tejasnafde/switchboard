@@ -359,6 +359,15 @@ export function App() {
         }
       } catch { /* best-effort */ }
 
+      // Restore the conversation's provider instance so reopening picks up
+      // the same credentials / OAuth dir as the last run.
+      try {
+        const res = await window.api.app.getConversationProviderInstanceId(session.id)
+        if (res?.instanceId) {
+          useAgentStore.getState().setInstanceId(session.id, res.instanceId)
+        }
+      } catch { /* best-effort */ }
+
       // Load messages from JSONL file
       if (session.filePath) {
         try {

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, KanbanChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, KanbanChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type {
   TerminalCreateOptions,
@@ -23,6 +23,20 @@ export interface StartSessionOpts {
   runtimeMode?: RuntimeMode
   resumeSessionId?: string
   reasoningEffort?: 'low' | 'medium' | 'high'
+  /** Provider instance id (named credential set). Falls back to default. */
+  instanceId?: string
+}
+
+export interface ProviderInstanceUpsertInput {
+  id?: string
+  agentType: 'claude-code' | 'codex' | 'opencode'
+  displayName: string
+  accentColor?: string | null
+  authMode?: 'env' | 'oauth_dir'
+  /** Plaintext env map. Encrypted in main process before persisting. */
+  env?: Record<string, string> | null
+  oauthDir?: string | null
+  enabled?: boolean
 }
 
 /**
@@ -125,6 +139,10 @@ const api = {
       ipcRenderer.invoke(AppChannels.GET_CONVERSATION_RUNTIME_MODE, id),
     setConversationRuntimeMode: (id: string, mode: RuntimeMode): Promise<{ ok: boolean }> =>
       ipcRenderer.invoke(AppChannels.SET_CONVERSATION_RUNTIME_MODE, id, mode),
+    getConversationProviderInstanceId: (id: string): Promise<{ instanceId: string | null }> =>
+      ipcRenderer.invoke(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, id),
+    setConversationProviderInstanceId: (id: string, instanceId: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, id, instanceId),
     getConversations: (projectPath: string) =>
       ipcRenderer.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
     setVibrancy: (enabled: boolean) =>
@@ -284,6 +302,18 @@ const api = {
     get: (key: string) => ipcRenderer.invoke('settings:get', key),
     set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
     remove: (key: string) => ipcRenderer.invoke('settings:remove', key),
+  },
+
+  // ─── Provider instances (named credential sets per agent kind) ───
+  providerInstances: {
+    list: (): Promise<import('@shared/types').ProviderInstance[]> =>
+      ipcRenderer.invoke(ProviderInstanceChannels.LIST),
+    upsert: (input: ProviderInstanceUpsertInput): Promise<import('@shared/types').ProviderInstance> =>
+      ipcRenderer.invoke(ProviderInstanceChannels.UPSERT, input),
+    delete: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke(ProviderInstanceChannels.DELETE, id),
+    test: (id: string): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke(ProviderInstanceChannels.TEST, id),
   },
 
   // ─── Provider (new agent bridge) ──────────────────────────────

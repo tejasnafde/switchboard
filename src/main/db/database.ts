@@ -7,6 +7,7 @@ import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } fro
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { applyKanbanArchiveSideEffect } from '@shared/kanbanArchive'
 import type { RuntimeMode } from '@shared/provider-events'
+import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
 
 const log = createLogger('db')
 
@@ -282,6 +283,47 @@ function migrate(db: Database.Database): void {
       db.exec("ALTER TABLE kanban_cards ADD COLUMN runtime_mode TEXT NOT NULL DEFAULT 'accept-edits'")
     }
   } catch { /* ignore */ }
+
+  // Provider instances: named credential sets scoped to an agent kind.
+  // See src/main/db/providerInstances.ts for the encryption contract.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS provider_instances (
+      id            TEXT PRIMARY KEY,
+      agent_type    TEXT NOT NULL,
+      display_name  TEXT NOT NULL,
+      accent_color  TEXT,
+      auth_mode     TEXT NOT NULL DEFAULT 'env',
+      env_encrypted BLOB,
+      oauth_dir     TEXT,
+      config_json   TEXT,
+      enabled       INTEGER NOT NULL DEFAULT 1,
+      created_at    INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      updated_at    INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    );
+    CREATE INDEX IF NOT EXISTS idx_provider_instances_agent
+      ON provider_instances(agent_type);
+  `)
+
+  // Seed one default instance per agent kind (idempotent via OR IGNORE).
+  const seed = db.prepare(
+    `INSERT OR IGNORE INTO provider_instances
+       (id, agent_type, display_name, auth_mode, enabled)
+     VALUES (?, ?, 'Default', 'env', 1)`
+  )
+  for (const kind of AGENT_TYPES) {
+    seed.run(defaultInstanceId(kind), kind)
+  }
+
+  // Backfill conversations.provider_instance_id from agent_type.
+  const convCols = db.prepare("PRAGMA table_info(conversations)").all() as Array<{ name: string }>
+  if (!convCols.some((c) => c.name === 'provider_instance_id')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN provider_instance_id TEXT')
+  }
+  db.exec(`
+    UPDATE conversations
+       SET provider_instance_id = agent_type || '-default'
+     WHERE provider_instance_id IS NULL
+  `)
 
   // Rebuild FTS index from existing messages
   try {
@@ -655,6 +697,25 @@ export function setConversationRuntimeMode(id: string, mode: string): void {
   getDb().prepare(
     'UPDATE conversations SET runtime_mode = ?, updated_at = ? WHERE id = ?'
   ).run(mode, Date.now(), id)
+}
+
+/**
+ * Per-conversation provider instance id. Returns null if the column was
+ * not yet populated (extremely old conversation, or one created before
+ * the multi-instance migration ran). Callers fall back to the
+ * `<agentType>-default` instance.
+ */
+export function getConversationProviderInstanceId(id: string): string | null {
+  const row = getDb().prepare(
+    'SELECT provider_instance_id FROM conversations WHERE id = ?'
+  ).get(id) as { provider_instance_id: string | null } | undefined
+  return row?.provider_instance_id ?? null
+}
+
+export function setConversationProviderInstanceId(id: string, instanceId: string): void {
+  getDb().prepare(
+    'UPDATE conversations SET provider_instance_id = ?, updated_at = ? WHERE id = ?'
+  ).run(instanceId, Date.now(), id)
 }
 
 export function archiveConversation(id: string): void {

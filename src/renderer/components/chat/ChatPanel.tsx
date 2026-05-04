@@ -9,7 +9,7 @@ import { generateTitle } from '@shared/auto-title'
 import { onSessionRename, emitSessionRename } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
 import { InPaneSearchBar } from '../InPaneSearchBar'
-import type { AgentType, AgentStatus, ChatMessage } from '@shared/types'
+import { defaultInstanceId, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
 
 interface ChatPanelProps {
   /**
@@ -41,6 +41,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     setModel: storeSetModel,
     setReasoningEffort: storeSetReasoningEffort,
     setAgentType: storeSetAgentType,
+    setInstanceId: storeSetInstanceId,
     clearMessages,
     removeSession,
   } = useAgentStore()
@@ -69,6 +70,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   const runtimeMode = activeSession?.runtimeMode ?? 'sandbox'
   const model = activeSession?.model
   const reasoningEffort = activeSession?.reasoningEffort
+  const instanceId = activeSession?.instanceId
 
   const handleRuntimeModeChange = useCallback((mode: RuntimeMode) => {
     if (!sessionId) return
@@ -113,24 +115,38 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
    * dropdown would stay disabled (canChangeAgent false) forever after the
    * first turn because the ref never clears.
    */
-  const handleAgentTypeChange = useCallback((t: AgentType) => {
+  const handleAgentTypeChange = useCallback(async (t: AgentType) => {
     setAgentType(t)
-    if (sessionId) {
-      // Write-through to the store so other consumers (StatusBar, sidebar
-      // session badges, command-palette filters) see the new agent type
-      // immediately. setAgentType also clears the stored `model` — a model
-      // id from one provider almost never round-trips to another (e.g.
-      // OpenCode's `nvidia-nim/z-ai/glm-5.1` is meaningless on Codex), and
-      // leaving the orphan id in place caused ModelPicker to fall into
-      // its "custom" branch on the new agent.
-      storeSetAgentType(sessionId, t)
-      // Best-effort: stop the old session. If it was never started this is
-      // a no-op in main (handler checks sessionAdapters).
-      window.api.provider?.stopSession?.(sessionId).catch(() => {})
-      providerStartedRef.current.delete(sessionId)
-      agentStartedRef.current.delete(sessionId)
-    }
+    if (!sessionId) return
+    // Write-through to the store so other consumers (StatusBar, sidebar
+    // session badges, command-palette filters) see the new agent type
+    // immediately. setAgentType also clears the stored `model` — a model
+    // id from one provider almost never round-trips to another (e.g.
+    // OpenCode's `nvidia-nim/z-ai/glm-5.1` is meaningless on Codex), and
+    // leaving the orphan id in place caused ModelPicker to fall into
+    // its "custom" branch on the new agent.
+    storeSetAgentType(sessionId, t)
+    // Reset persisted instance id to the new kind's default — the previous
+    // instance belongs to the old agent kind and `resolveProviderInstance`
+    // would reject it on kind mismatch.
+    window.api.app.setConversationProviderInstanceId(sessionId, defaultInstanceId(t)).catch(() => {})
+    providerStartedRef.current.delete(sessionId)
+    agentStartedRef.current.delete(sessionId)
+    await window.api.provider?.stopSession?.(sessionId).catch(() => {})
   }, [sessionId, storeSetAgentType])
+
+  // New instance → tear down the current session so the next send
+  // respawns with the new env / OAuth dir.
+  const handleInstanceChange = useCallback(async (nextInstanceId: string | undefined) => {
+    if (!sessionId) return
+    storeSetInstanceId(sessionId, nextInstanceId)
+    if (nextInstanceId) {
+      window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId).catch(() => {})
+    }
+    providerStartedRef.current.delete(sessionId)
+    agentStartedRef.current.delete(sessionId)
+    await window.api.provider?.stopSession?.(sessionId).catch(() => {})
+  }, [sessionId, storeSetInstanceId])
 
   // ── Provider event listener (new SDK bridge) ──────────────────
   useEffect(() => {
@@ -544,6 +560,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             resumeSessionId,
             model: model || undefined,
             reasoningEffort,
+            instanceId,
           })
         } catch (err) {
           appendMessage(sessionId, {
@@ -910,6 +927,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
         agentType={agentType}
         onAgentTypeChange={handleAgentTypeChange}
+        instanceId={instanceId}
+        onInstanceChange={handleInstanceChange}
         canChangeAgent={
           // Allow switching agent unless a turn is actively running. We
           // tear down the old provider session on switch so the next send

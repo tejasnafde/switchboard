@@ -29,6 +29,8 @@ import {
   getConversationById,
   getConversationRuntimeMode,
   setConversationRuntimeMode,
+  getConversationProviderInstanceId,
+  setConversationProviderInstanceId,
   getChildSessionIds,
   getSyntheticParentMap,
   listSessionIdsForThread,
@@ -321,6 +323,17 @@ export function registerAppHandlers(window: BrowserWindow): void {
   })
   ipcMain.handle(AppChannels.SET_CONVERSATION_RUNTIME_MODE, (_event, id: string, mode: string) => {
     setConversationRuntimeMode(id, mode)
+    return { ok: true }
+  })
+
+  // Per-conversation provider-instance id. Symmetric with runtime mode:
+  // sidebar reopen / kanban click should restore the user's chosen
+  // credential set instead of falling through to `<kind>-default`.
+  ipcMain.handle(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, (_event, id: string) => {
+    return { instanceId: getConversationProviderInstanceId(id) }
+  })
+  ipcMain.handle(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, (_event, id: string, instanceId: string) => {
+    setConversationProviderInstanceId(id, instanceId)
     return { ok: true }
   })
 

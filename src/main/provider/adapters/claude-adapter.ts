@@ -67,6 +67,23 @@ type CanUseTool = import('@anthropic-ai/claude-agent-sdk').CanUseTool
 type PermissionMode = import('@anthropic-ai/claude-agent-sdk').PermissionMode
 type PermissionResult = import('@anthropic-ai/claude-agent-sdk').PermissionResult
 
+/**
+ * Build the env passed to the Claude SDK query, applying the per-instance
+ * overlay and CLAUDE_CONFIG_DIR override. Exported for tests.
+ */
+export function buildClaudeQueryEnv(
+  base: Record<string, string>,
+  instanceEnv: Record<string, string>,
+  instanceOauthDir: string | null,
+): Record<string, string> {
+  const env = { ...base }
+  applyEnvOverlay(env, instanceEnv)
+  if (instanceOauthDir && instanceOauthDir.length > 0) {
+    env.CLAUDE_CONFIG_DIR = instanceOauthDir
+  }
+  return env
+}
+
 /** Build a clean env for the spawned claude process (Electron strips PATH) */
 function sdkEnv(): Record<string, string> {
   const raw = { ...process.env }
@@ -124,6 +141,7 @@ export {
   type PermissionDecision,
 } from '../policy'
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage } from '../policy'
+import { applyEnvOverlay } from '../env-overlay'
 import { shapeQuestionAnswers } from './question-answers'
 
 // ─── Prompt queue — push new SDKUserMessages into a running query ──
@@ -253,6 +271,10 @@ interface ActiveSession {
    * Claude-defined commands (`/commit`, `/explain`, user-defined `.claude/commands/*`).
    */
   skills: ProviderSkill[]
+  /** Per-instance env overlay resolved by the registry, merged on top of `sdkEnv()`. */
+  instanceEnv: Record<string, string>
+  /** Per-instance CLAUDE_CONFIG_DIR (set when auth_mode='oauth_dir'). */
+  instanceOauthDir: string | null
 }
 
 export class ClaudeAdapter implements ProviderAdapter {
@@ -291,6 +313,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       cwd: opts.cwd,
       sessionId: resumeId,
       createdAt: Date.now(),
+      instanceId: opts.instanceId,
     }
 
     const active: ActiveSession = {
@@ -305,6 +328,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       draining: false,
       skills: [],
       turnStartedAt: null,
+      instanceEnv: opts.resolvedEnv ?? {},
+      instanceOauthDir: opts.resolvedOauthDir ?? null,
     }
 
     this.sessions.set(opts.threadId, active)
@@ -515,7 +540,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
 
     const claudeBin = findClaudeBin()
-    const env = sdkEnv()
+    const env = buildClaudeQueryEnv(sdkEnv(), active.instanceEnv, active.instanceOauthDir)
 
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,

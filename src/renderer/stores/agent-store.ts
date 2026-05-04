@@ -39,6 +39,13 @@ interface AgentSession {
   /** Model identifier (provider-specific — e.g. 'claude-opus-4-5' or 'gpt-5') */
   model?: string
   /**
+   * Currently selected provider-instance id (named credential set). When
+   * undefined, the registry resolves to `<agentType>-default` at session
+   * start. Changing this requires a session restart — handled by the
+   * ChatPanel agent/instance change flow.
+   */
+  instanceId?: string
+  /**
    * Reasoning effort tier for agents that expose it as a separate selector
    * (currently Codex only). Maps to the `reasoningEffort` param on
    * turn/start. Claude doesn't surface this as a UI control.
@@ -109,6 +116,11 @@ interface AgentStore {
    * dropdown by a full provider round-trip.
    */
   setAgentType: (sessionId: string, type: AgentType) => void
+  /**
+   * Pick the provider instance for a session. Pair with a session
+   * restart for the new credentials to take effect.
+   */
+  setInstanceId: (sessionId: string, instanceId: string | undefined) => void
   requestScrollToMessage: (sessionId: string, messageId: string, query?: string) => void
   clearScrollToMessage: () => void
 }
@@ -299,8 +311,18 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         // never valid on another (e.g. nvidia-nim/* on Codex). Clearing
         // forces the next session to use the new provider's default
         // instead of carrying over an orphan id that the ModelPicker
-        // would render as "custom".
-        s.id === sessionId ? { ...s, type, model: undefined } : s
+        // would render as "custom". Same logic for `instanceId` —
+        // instances are scoped to a single agent kind; carrying one
+        // over after a switch would point at a stale row from the
+        // previous kind.
+        s.id === sessionId ? { ...s, type, model: undefined, instanceId: undefined } : s
+      ),
+    })),
+
+  setInstanceId: (sessionId, instanceId) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, instanceId } : s,
       ),
     })),
 

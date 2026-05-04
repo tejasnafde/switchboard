@@ -46,6 +46,17 @@ export interface TerminalInfo {
 
 export type AgentType = 'claude-code' | 'codex' | 'opencode'
 
+export const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'codex', 'opencode'] as const
+
+export function isAgentType(v: unknown): v is AgentType {
+  return AGENT_TYPES.includes(v as AgentType)
+}
+
+/** Canonical id for the seed-default instance of an agent kind. */
+export function defaultInstanceId(kind: AgentType): string {
+  return `${kind}-default`
+}
+
 /**
  * Human-readable label for an agent type. Use everywhere the UI needs to
  * display the agent's name — status bar, message-bubble author, notifications,
@@ -85,6 +96,26 @@ export interface ProviderSkill {
   description?: string
   argumentHint?: string
   source: 'claude-code' | 'codex' | 'opencode'
+}
+
+/**
+ * A named credential set for an agent kind. Multiple instances per kind
+ * are supported (e.g. `claude-work`, `claude-personal`). The renderer
+ * receives this redacted shape — secret values stay in main, never
+ * cross IPC. `envKeys` lists which env vars are configured so the
+ * Settings UI can show "ANTHROPIC_API_KEY ●●●" without leaking it.
+ */
+export interface ProviderInstance {
+  id: string
+  agentType: AgentType
+  displayName: string
+  accentColor: string | null
+  authMode: 'env' | 'oauth_dir'
+  envKeys: string[]
+  oauthDir: string | null
+  enabled: boolean
+  createdAt: number
+  updatedAt: number
 }
 
 export interface AgentStartOptions {

@@ -7,8 +7,9 @@ import {
   agentSupportsReasoningEffort,
   type ReasoningEffort,
 } from '@shared/models'
-import type { AgentType, ProviderSkill } from '@shared/types'
+import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
+import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSkillStore } from '../../stores/skill-store'
 import { SlashCommandMenu } from './SlashCommandMenu'
 import {
@@ -48,6 +49,9 @@ interface ChatInputProps {
   agentType: AgentType
   onAgentTypeChange: (type: AgentType) => void
   canChangeAgent: boolean
+  /** Selected provider-instance id. Falls back to default in main. */
+  instanceId?: string
+  onInstanceChange?: (instanceId: string | undefined) => void
   runtimeMode?: RuntimeMode
   onRuntimeModeChange?: (mode: RuntimeMode) => void
   contextUsage?: ContextWindowUsage
@@ -90,6 +94,8 @@ export function ChatInput({
   agentType,
   onAgentTypeChange,
   canChangeAgent,
+  instanceId,
+  onInstanceChange,
   runtimeMode,
   onRuntimeModeChange,
   contextUsage,
@@ -823,6 +829,18 @@ export function ChatInput({
           ))}
         </select>
 
+        {/* Provider-instance picker — named credential set per agent kind.
+            Hidden when only the default instance exists (single-account
+            users see no extra UI). */}
+        {onInstanceChange && (
+          <InstancePicker
+            agentType={agentType}
+            value={instanceId}
+            onChange={onInstanceChange}
+            disabled={!canChangeAgent}
+          />
+        )}
+
         {/* Model selector — dropdown of known models + Custom for any string */}
         {onModelChange && (
           <ModelPicker
@@ -1218,4 +1236,74 @@ function inferTierFromId(id: string): 'fast' | 'balanced' | 'max' {
   if (lower.includes('flash') || lower.includes('mini') || lower.includes('nano') || lower.includes('haiku')) return 'fast'
   if (lower.includes('pro') || lower.includes('opus') || lower.includes('max') || lower.includes('large') || lower.includes('ultra')) return 'max'
   return 'balanced'
+}
+
+/** Inline picker for provider instances; hidden when only the default exists. */
+function InstancePicker({
+  agentType,
+  value,
+  onChange,
+  disabled,
+}: {
+  agentType: AgentType
+  value: string | undefined
+  onChange: (instanceId: string | undefined) => void
+  disabled: boolean
+}) {
+  const instances = useProviderInstanceStore((s) => s.forAgent(agentType))
+  const loaded = useProviderInstanceStore((s) => s.loaded)
+  const refresh = useProviderInstanceStore((s) => s.refresh)
+
+  useEffect(() => {
+    if (!loaded) void refresh()
+  }, [loaded, refresh])
+
+  // Hide when the kind has 0 or 1 instances (the default seed). Adding
+  // a second instance reveals the picker automatically.
+  if (instances.length < 2) return null
+
+  // Resolve effective selection — fall back to <agentType>-default so
+  // the dropdown always shows the row that will actually be used.
+  const effective = value && instances.some((i) => i.id === value)
+    ? value
+    : defaultInstanceId(agentType)
+
+  const selected = instances.find((i) => i.id === effective)
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+      {selected?.accentColor && (
+        <span
+          aria-hidden
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            background: selected.accentColor,
+            flexShrink: 0,
+          }}
+        />
+      )}
+      <select
+        value={effective}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={disabled}
+        title="Provider instance (credential set)"
+        style={{
+          background: 'var(--bg-tertiary)',
+          color: 'var(--text-secondary)',
+          border: '1px solid var(--border)',
+          borderRadius: '4px',
+          padding: '3px 6px',
+          fontSize: '11px',
+          cursor: disabled ? 'default' : 'pointer',
+          outline: 'none',
+        }}
+      >
+        {instances.map((i) => (
+          <option key={i.id} value={i.id}>{i.displayName}</option>
+        ))}
+      </select>
+    </div>
+  )
 }

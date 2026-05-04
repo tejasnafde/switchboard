@@ -10,6 +10,8 @@ import { CodexAdapter } from './adapters/codex-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
+import { resolveProviderInstance } from '../db/providerInstances'
+import type { AgentType } from '@shared/types'
 import type {
   ProviderAdapter,
   ProviderKind,
@@ -90,14 +92,24 @@ export class ProviderRegistry {
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
 
-      log.info(`startSession ${opts.threadId} provider=${opts.provider} cwd=${opts.cwd} mode=${opts.runtimeMode ?? 'sandbox'}`)
+      log.info(`startSession ${opts.threadId} provider=${opts.provider} cwd=${opts.cwd} mode=${opts.runtimeMode ?? 'sandbox'} instance=${opts.instanceId ?? '(default)'}`)
       // Catch macOS TCC denials before the adapter spawns — otherwise the
       // SDK fails deep in the stack with cryptic EPERMs.
       await assertCwdReadable(opts.cwd)
 
+      const agentType: AgentType = opts.provider === 'claude' ? 'claude-code' : opts.provider
+      const instance = resolveProviderInstance(agentType, opts.instanceId)
+      const enrichedOpts: SessionStartOpts = {
+        ...opts,
+        instanceId: instance?.id ?? opts.instanceId,
+        resolvedEnv: instance?.env ?? {},
+        resolvedOauthDir: instance?.oauthDir ?? null,
+      }
+
       this.sessionAdapters.set(opts.threadId, adapter)
       this.sessionProviders.set(opts.threadId, opts.provider)
-      const session = await adapter.startSession(opts, (event) => this.publish(event))
+      const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))
+      if (instance) session.instanceId = instance.id
       return session
     })
 

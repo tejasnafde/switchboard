@@ -38,6 +38,8 @@ export const AppChannels = {
   LIST_ANCESTRY: 'app:list-ancestry',
   GET_CONVERSATION_RUNTIME_MODE: 'app:get-conversation-runtime-mode',
   SET_CONVERSATION_RUNTIME_MODE: 'app:set-conversation-runtime-mode',
+  GET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:get-conversation-provider-instance-id',
+  SET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:set-conversation-provider-instance-id',
   CHECK_FOR_UPDATES: 'app:check-for-updates',
   RELAUNCH: 'app:relaunch',
   /** main → renderer push: status changes from electron-updater. */
@@ -85,6 +87,15 @@ export const AgentChannels = {
   MESSAGE_UPDATE: 'agent:message-update',
   STATUS: 'agent:status',
   ERROR: 'agent:error',
+} as const
+
+export const ProviderInstanceChannels = {
+  LIST: 'provider-instances:list',
+  UPSERT: 'provider-instances:upsert',
+  DELETE: 'provider-instances:delete',
+  /** Probe the credentials with a no-op call (claude --version, codex
+   *  login check, opencode models). Returns `{ ok, message }`. */
+  TEST: 'provider-instances:test',
 } as const
 
 export const ProviderChannels = {

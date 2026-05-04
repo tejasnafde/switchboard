@@ -17,6 +17,7 @@ import {
   fireTestNotification,
   currentNotificationPermission,
 } from '../services/notifications'
+import { ProvidersTab } from './settings/ProvidersTab'
 
 interface SettingsModalProps {
   open: boolean
@@ -411,59 +412,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </div>
           )}
 
-          {activeTab === 'providers' && (
-            <div>
-              <SettingsSection title="Claude Code">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: 'var(--success)',
-                  }} />
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Available</span>
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Ensure the Claude Code CLI is installed and authenticated.
-                </div>
-              </SettingsSection>
-
-              <SettingsSection title="Codex (OpenAI)">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                  <span style={{
-                    width: '8px', height: '8px', borderRadius: '50%',
-                    background: 'var(--success)',
-                  }} />
-                  <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Available</span>
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                  Ensure the <code style={{ fontFamily: 'var(--font-mono)' }}>codex</code> CLI is installed — Switchboard spawns it via <code style={{ fontFamily: 'var(--font-mono)' }}>codex app-server</code>.
-                </div>
-              </SettingsSection>
-
-              <SettingsSection title="OpenCode — API Keys">
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: 1.6 }}>
-                  Keys are stored in Switchboard's settings DB and injected into OpenCode's spawn env
-                  on each turn. They override anything exported in your shell. Referenced from
-                  <code style={{ fontFamily: 'var(--font-mono)', margin: '0 3px' }}>~/.config/opencode/opencode.json</code>
-                  via <code style={{ fontFamily: 'var(--font-mono)' }}>{'{env:VAR_NAME}'}</code>.
-                </div>
-                <ApiKeyField envVar="NVIDIA_API_KEY" label="NVIDIA NIM" hint="Free tier at build.nvidia.com" />
-                <ApiKeyField envVar="GEMINI_API_KEY" label="Google Gemini" hint="aistudio.google.com/apikey" />
-                <ApiKeyField envVar="ANTHROPIC_API_KEY" label="Anthropic" hint="Used if you route Claude via OpenCode" />
-                <ApiKeyField envVar="OPENAI_API_KEY" label="OpenAI" hint="For gpt-4o / o1 via OpenCode" />
-                <ApiKeyField envVar="GROQ_API_KEY" label="Groq" hint="console.groq.com" />
-                <ApiKeyField envVar="OPENROUTER_API_KEY" label="OpenRouter" hint="openrouter.ai/keys" />
-              </SettingsSection>
-
-              <SettingsSection title="Runtime Modes">
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.7 }}>
-                  <div><b style={{ color: 'var(--text-secondary)' }}>Sandbox</b> — agent asks for every tool call.</div>
-                  <div><b style={{ color: 'var(--text-secondary)' }}>Accept Edits</b> — file edits auto-approved, shell/other still prompt.</div>
-                  <div><b style={{ color: 'var(--text-secondary)' }}>Full Access</b> — no prompts; use with care.</div>
-                  <div><b style={{ color: 'var(--text-secondary)' }}>Plan Only</b> — agent produces a plan without executing anything.</div>
-                </div>
-              </SettingsSection>
-            </div>
-          )}
+          {activeTab === 'providers' && <ProvidersTab />}
 
           {activeTab === 'workspaces' && (
             <div>
@@ -927,90 +876,6 @@ function NotificationToggle() {
         <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '4px' }}>
           {testResult}
         </div>
-      )}
-    </div>
-  )
-}
-
-/**
- * Persists an API key to the settings DB under `opencode.env.<ENV_VAR>`.
- * Masks the stored value in the input so users don't accidentally expose
- * it on screen; "Show" toggles plaintext for verification/editing.
- *
- * Saves debounced on blur + on explicit Save click. Load on mount.
- */
-function ApiKeyField({ envVar, label, hint }: { envVar: string; label: string; hint?: string }) {
-  const [value, setValue] = useState('')
-  const [reveal, setReveal] = useState(false)
-  const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle')
-  const storageKey = `opencode.env.${envVar}`
-
-  useEffect(() => {
-    window.api.settings.get(storageKey).then((v: string | null) => {
-      if (typeof v === 'string') setValue(v)
-    }).catch(() => {})
-  }, [storageKey])
-
-  const save = useCallback(async (next: string) => {
-    try {
-      if (next.length === 0) {
-        await window.api.settings.remove(storageKey)
-      } else {
-        await window.api.settings.set(storageKey, next)
-      }
-      setSaveState('saved')
-      setTimeout(() => setSaveState('idle'), 1200)
-    } catch { /* ignore */ }
-  }, [storageKey])
-
-  return (
-    <div style={{ marginBottom: '10px' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '3px' }}>
-        <span style={{ fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 500 }}>
-          {label} <code style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>{envVar}</code>
-        </span>
-        {saveState === 'saved' && (
-          <span style={{ fontSize: '10px', color: 'var(--success)' }}>saved</span>
-        )}
-      </div>
-      <div style={{ display: 'flex', gap: '6px' }}>
-        <input
-          type={reveal ? 'text' : 'password'}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          onBlur={() => save(value)}
-          placeholder={`${envVar}=...`}
-          autoComplete="off"
-          spellCheck={false}
-          style={{
-            flex: 1,
-            padding: '6px 8px',
-            fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            background: 'var(--bg-input, var(--bg-secondary))',
-            border: '1px solid var(--border)',
-            borderRadius: '4px',
-            color: 'var(--text)',
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => setReveal((r) => !r)}
-          style={{
-            padding: '4px 8px',
-            fontSize: '11px',
-            background: 'transparent',
-            border: '1px solid var(--border)',
-            borderRadius: '4px',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-          }}
-        >
-          {reveal ? 'Hide' : 'Show'}
-        </button>
-      </div>
-      {hint && (
-        <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '3px' }}>{hint}</div>
       )}
     </div>
   )

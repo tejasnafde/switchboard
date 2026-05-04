@@ -17,6 +17,7 @@ import type {
   ApprovalDecision,
 } from '../types'
 import { decidePermission, denialMessage } from '../policy'
+import { applyEnvOverlay } from '../env-overlay'
 import type { ProviderSkill } from '@shared/types'
 
 /**
@@ -225,6 +226,7 @@ export class CodexAdapter implements ProviderAdapter {
       cwd: opts.cwd,
       createdAt: Date.now(),
       reasoningEffort: opts.reasoningEffort,
+      instanceId: opts.instanceId,
     }
 
     const active: ActiveSession = {
@@ -242,11 +244,19 @@ export class CodexAdapter implements ProviderAdapter {
 
     this.sessions.set(opts.threadId, active)
 
+    // CODEX_HOME points at a per-instance dir when auth_mode='oauth_dir',
+    // letting each instance be `codex login`'d under a separate account.
+    const codexEnv: Record<string, string> = { ...(process.env as Record<string, string>) }
+    applyEnvOverlay(codexEnv, opts.resolvedEnv)
+    if (opts.resolvedOauthDir && opts.resolvedOauthDir.length > 0) {
+      codexEnv.CODEX_HOME = opts.resolvedOauthDir
+    }
+
     // Spawn codex app-server
     const child = spawn(cachedCodexPath, ['app-server'], {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env: codexEnv,
     })
 
     active.child = child

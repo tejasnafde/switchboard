@@ -53,6 +53,12 @@ export interface SessionStartOpts {
   resumeSessionId?: string
   /** Codex-only: reasoning effort tier (low/medium/high). */
   reasoningEffort?: 'low' | 'medium' | 'high'
+  /** provider_instances row id; falls back to `<agent-type>-default`. */
+  instanceId?: string
+  /** Resolved env overlay (registry-populated; do not set from renderer). */
+  resolvedEnv?: Record<string, string>
+  /** Per-instance config dir → CLAUDE_CONFIG_DIR (claude) or CODEX_HOME (codex). */
+  resolvedOauthDir?: string | null
 }
 
 export interface ProviderSession {
@@ -66,6 +72,8 @@ export interface ProviderSession {
   createdAt: number
   /** Codex-only: reasoning effort tier (low/medium/high). */
   reasoningEffort?: 'low' | 'medium' | 'high'
+  /** ID of the provider_instances row this session resolved to. */
+  instanceId?: string
 }
 
 // ─── Provider Adapter Interface ────────────────────────────────

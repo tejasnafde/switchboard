@@ -1,6 +1,8 @@
+import { useEffect } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
-import { agentLabel } from '@shared/types'
+import { useProviderInstanceStore } from '../stores/provider-instance-store'
+import { agentLabel, defaultInstanceId } from '@shared/types'
 
 /**
  * Bottom status bar.
@@ -27,6 +29,25 @@ export function StatusBar() {
 
   const projectName = session?.projectPath?.split('/').pop() ?? ''
   const label = agentLabel(session?.type)
+
+  // Provider instance (named credential set) for the active session.
+  // Falls back to "<kind>-default" — matches the resolver in main.
+  // Only show the label when there's >1 instance for this kind so the
+  // status bar stays uncluttered for single-account users.
+  const allInstances = useProviderInstanceStore((s) => s.instances)
+  const instancesLoaded = useProviderInstanceStore((s) => s.loaded)
+  const refreshInstances = useProviderInstanceStore((s) => s.refresh)
+  useEffect(() => {
+    if (!instancesLoaded) void refreshInstances()
+  }, [instancesLoaded, refreshInstances])
+  const sameKindInstances = session
+    ? allInstances.filter((i) => i.agentType === session.type && i.enabled)
+    : []
+  const resolvedInstance = session
+    ? (allInstances.find((i) => i.id === session.instanceId)
+        ?? allInstances.find((i) => i.id === defaultInstanceId(session.type)))
+    : undefined
+  const showInstance = sameKindInstances.length > 1 && resolvedInstance
   const status = session?.status ?? 'idle'
   const statusColor =
     status === 'running' || status === 'thinking' ? 'var(--accent)'
@@ -77,6 +98,23 @@ export function StatusBar() {
           <span>{label}</span>
           <span style={{ opacity: 0.6 }}>{status}</span>
         </span>
+      )}
+
+      {/* Instance label (only when user has multiple instances for this kind). */}
+      {showInstance && resolvedInstance && (
+        <>
+          <span style={{ opacity: 0.4 }}>·</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }} title={`Provider instance: ${resolvedInstance.displayName}`}>
+            <span style={{
+              display: 'inline-block',
+              width: '6px',
+              height: '6px',
+              borderRadius: '50%',
+              background: resolvedInstance.accentColor ?? 'var(--accent)',
+            }} />
+            <span style={{ color: 'var(--text-secondary)' }}>{resolvedInstance.displayName}</span>
+          </span>
+        </>
       )}
 
       <span style={{ flex: 1 }} />

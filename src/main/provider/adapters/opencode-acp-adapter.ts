@@ -316,6 +316,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       runtimeMode: opts.runtimeMode ?? 'sandbox',
       cwd: opts.cwd,
       createdAt: Date.now(),
+      instanceId: opts.instanceId,
     }
 
     const active: ActiveSession = {
@@ -337,7 +338,15 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     // OPENCODE_ENABLE_QUESTION_TOOL=1 enables the AskUserQuestion-style tool
     // for ACP clients (off by default since not all clients support
     // interactive question UIs). We do, so flip it on.
-    const env = buildOpencodeEnv({ OPENCODE_ENABLE_QUESTION_TOOL: '1' })
+    //
+    // Provider-instance env vars (NVIDIA_API_KEY, GEMINI_API_KEY, etc.)
+    // overlay on top of `buildOpencodeEnv`'s shell + settings-DB layers
+    // so per-instance keys win.
+    const overlay: Record<string, string> = { OPENCODE_ENABLE_QUESTION_TOOL: '1' }
+    for (const [k, v] of Object.entries(opts.resolvedEnv ?? {})) {
+      if (v.length > 0) overlay[k] = v
+    }
+    const env = buildOpencodeEnv(overlay)
 
     const child = spawn(binPath, ['acp', '--cwd', opts.cwd], {
       cwd: opts.cwd,
