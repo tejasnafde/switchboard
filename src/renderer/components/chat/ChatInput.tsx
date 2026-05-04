@@ -1250,13 +1250,25 @@ function InstancePicker({
   onChange: (instanceId: string | undefined) => void
   disabled: boolean
 }) {
-  const instances = useProviderInstanceStore((s) => s.forAgent(agentType))
+  const allInstances = useProviderInstanceStore((s) => s.instances)
   const loaded = useProviderInstanceStore((s) => s.loaded)
   const refresh = useProviderInstanceStore((s) => s.refresh)
 
   useEffect(() => {
     if (!loaded) void refresh()
   }, [loaded, refresh])
+
+  const instances = useMemo(() => {
+    const def = defaultInstanceId(agentType)
+    return allInstances
+      .filter((i) => i.agentType === agentType && i.enabled)
+      .sort((a, b) => {
+        const aDef = a.id === def ? 0 : 1
+        const bDef = b.id === def ? 0 : 1
+        if (aDef !== bDef) return aDef - bDef
+        return a.displayName.localeCompare(b.displayName)
+      })
+  }, [allInstances, agentType])
 
   // Hide when the kind has 0 or 1 instances (the default seed). Adding
   // a second instance reveals the picker automatically.
