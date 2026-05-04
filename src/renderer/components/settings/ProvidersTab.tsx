@@ -379,12 +379,12 @@ function ProviderInstanceDialog({
       }}
     >
       <div
+        className="sb-floating-surface"
         onClick={(e) => e.stopPropagation()}
         style={{
           width: '480px',
           maxHeight: '80vh',
           overflow: 'auto',
-          background: 'var(--bg-primary)',
           border: '1px solid var(--border)',
           borderRadius: 'var(--radius-lg)',
           padding: '18px 20px',
