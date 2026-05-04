@@ -202,7 +202,14 @@ const api = {
      * existing one. Returns either `{ ok: true, conversation, resumeHint,
      * messages, resumable }` or `{ ok: false, error }`.
      */
-    forkConversation: (args: { sourceConversationId: string; upToIndex: number; forkedAtMessageId?: string }): Promise<
+    forkConversation: (args: {
+      sourceConversationId: string
+      upToIndex: number
+      forkedAtMessageId?: string
+      /** #5: when true, also `git worktree add` a fresh branch and root the
+       *  forked conversation at the new checkout. */
+      withWorktree?: boolean
+    }): Promise<
       | {
           ok: true
           conversation: {
@@ -217,6 +224,8 @@ const api = {
           resumeHint: string | null
           messages: import('@shared/types').ChatMessage[]
           resumable: boolean
+          /** Set iff `withWorktree: true` and creation succeeded. */
+          worktree?: { path: string; branch: string }
         }
       | { ok: false; error: string }
     > => ipcRenderer.invoke(AppChannels.FORK_CONVERSATION, args),

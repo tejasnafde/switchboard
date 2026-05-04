@@ -148,6 +148,18 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'forked_at_message_id')) {
       db.exec('ALTER TABLE conversations ADD COLUMN forked_at_message_id TEXT')
     }
+    // Migration (#5 — fork-to-worktree): when the user opts a fork into
+    // its own git worktree, persist the worktree path + branch so the
+    // sidebar can render a friendly `<repo> · <branch>` label and any
+    // future cleanup flow can locate the on-disk checkout. Both are
+    // nullable; conversations forked without `withWorktree` (or any
+    // pre-#5 conversation) leave them null and behave exactly as before.
+    if (!cols.some((c) => c.name === 'worktree_path')) {
+      db.exec('ALTER TABLE conversations ADD COLUMN worktree_path TEXT')
+    }
+    if (!cols.some((c) => c.name === 'worktree_branch')) {
+      db.exec('ALTER TABLE conversations ADD COLUMN worktree_branch TEXT')
+    }
   } catch { /* ignore */ }
 
   // Migration (v0.1.20): track which workspace template a session
@@ -422,6 +434,12 @@ export interface ConversationRow {
   parent_conversation_id?: string | null
   /** ID of the source message the fork was anchored at. Null for non-forks. */
   forked_at_message_id?: string | null
+  /** Absolute path to the git worktree backing this conversation. Null if the
+   *  fork did not opt into a worktree (or this is not a fork at all). */
+  worktree_path?: string | null
+  /** Branch checked out in the fork's worktree (e.g. `fork/fix-redis-timeout`).
+   *  Null when `worktree_path` is null. */
+  worktree_branch?: string | null
 }
 
 /**
@@ -438,19 +456,25 @@ export function createForkedConversation(args: {
   parentConversationId: string
   forkedAtMessageId: string
   sessionId?: string | null
+  /** Set together with `worktreeBranch` when the fork was created with
+   *  `withWorktree: true`. Both null otherwise. */
+  worktreePath?: string | null
+  worktreeBranch?: string | null
 }): void {
   const now = Date.now()
   getDb().prepare(
     `INSERT INTO conversations (
        id, project_path, agent_type, session_id, title,
        created_at, updated_at,
-       parent_conversation_id, forked_at_message_id
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       parent_conversation_id, forked_at_message_id,
+       worktree_path, worktree_branch
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     args.id, args.projectPath, args.agentType,
     args.sessionId ?? null, args.title,
     now, now,
     args.parentConversationId, args.forkedAtMessageId,
+    args.worktreePath ?? null, args.worktreeBranch ?? null,
   )
 }
 

@@ -2,6 +2,28 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-05-04 — Sidebar archive button: anchor instead of overlap-with-time
+
+### Fixed
+- **Clicking the sidebar archive icon did nothing**, though right-click → "Archive" from the context menu worked. The icon was inserted into the row's flex flow with `margin-left: -18px` so it overlapped the adjacent `.sidebar-thread-time` element; on hover the time element collapsed via `width: 0` while the icon's margin snapped to 0. Because `.sidebar-thread-time` kept `overflow: visible` (so its text could keep painting during the opacity fade) the click target flickered across the layout transition and a click on the visible icon often landed on residual time-text rendering before the button's hit area resolved. Right-click bubbled to the row's `onContextMenu` regardless and was unaffected. Fix: anchor the archive button with `position: absolute; right: 8px` so it has a single, stable hit area; add `pointer-events: none` to `.sidebar-thread-time` on hover (it's just text — never a click target — and `none` while collapsed keeps it from intercepting clicks meant for the button); add `pointer-events: none` to the SVG so clicks on the icon's hollow centre don't fall through `pointer-events: visiblePainted`. `z-index: 1` on the button is belt-and-braces.
+
+---
+
+## 2026-05-04 — Fork to worktree
+
+### Added
+- **"Fork to worktree"** in the chat message right-click menu — same flow as "Fork from here", plus a `git worktree add -b fork/<slug> <repo>/.switchboard/worktrees/<slug> HEAD` runs first so the new conversation is rooted at an isolated working tree on its own branch. Slug derives from the picked message body via `makeBranchSlug` (lower-case, alnum-or-dash, capped at 40 chars, prefixed `fork/`). On a successful fork the chat surfaces a "Forked to fork/<slug>" toast, the sidebar title becomes `<parent> · fork/<slug>`, and the Claude SDK's resume / terminal panes / file pane all pick up the worktree as cwd via the existing `projectPath` plumbing (no extra wiring needed downstream).
+- **Collision handling**: branch / dir collisions retry with `-2`, `-3`, … suffixes (capped at 20 attempts) so two forks of the same message coexist; non-collision errors (unknown ref, shallow repo) bail immediately with the verbatim git stderr.
+- **DB**: nullable `worktree_path` + `worktree_branch` columns on `conversations`; persisted iff the fork opted into a worktree. Existing rows stay valid without a backfill.
+- **Test seam**: `forkConversation` accepts an optional `gitRunner` so the fork→worktree path can be unit-tested without shelling out to real git. 6 new tests in `tests/unit/worktree.test.ts` cover the happy path, collision retry, non-collision fail-fast, relative-path / empty-slug rejection. 12 tests in `tests/unit/branch-slug.test.ts` cover the slug rules (case, dash collapsing, mid-cut trim, empty fallback).
+- The Claude fork path now writes the truncated `<newId>.jsonl` to `~/.claude/projects/<encoded-effective-path>/` (the worktree's encoded dir for worktree forks; same as before for plain forks) — without this, a worktree-rooted fork would resume from the wrong project dir and lose context.
+
+### Notes
+- v1 derives the branch slug deterministically from the picked message body, not via an LLM summary call. The kickoff doc named `summarizeForBranchName` as a follow-up; deferred until we want the branch names to read more naturally (e.g. "fix-redis-timeout" vs. "fix-the-redis-timeout-i-was-seein"). The deterministic path has zero added latency and no API key dependency.
+- Cleanup ("Delete worktree" UI when a forked conversation is archived) deferred — `git worktree list` + `git worktree remove` still work from a terminal.
+
+---
+
 ## 2026-05-04 — Fork from here
 
 ### Added

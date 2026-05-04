@@ -1,4 +1,4 @@
-import { readFile, writeFile, readdir, stat } from 'fs/promises'
+import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
 import { join, dirname } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
@@ -15,6 +15,8 @@ import {
   truncateCodexJsonl,
   assembleClaudeFork,
 } from '../agent/jsonl-truncate'
+import { createForkWorktree, type GitRunner } from '../worktree'
+import { makeBranchSlug } from '@shared/branchSlug'
 import type { ChatMessage } from '@shared/types'
 
 const log = createLogger('fork')
@@ -38,6 +40,21 @@ export interface ForkInput {
    * lineage display — never used to drive truncation logic.
    */
   forkedAtMessageId?: string
+  /**
+   * When true, also `git worktree add` a fresh branch off the source
+   * repo's HEAD and point the new conversation's `projectPath` at it.
+   * The slug is derived from the picked message body via
+   * `makeBranchSlug`. Worktree creation runs *before* JSONL surgery —
+   * if it fails (no git, no commits, etc.), the fork bails entirely
+   * and no conversation row is written. See `#5` kickoff doc.
+   */
+  withWorktree?: boolean
+  /**
+   * Test seam: lets unit tests inject a stub `GitRunner` instead of
+   * shelling out to real git. Defaults to the production runner inside
+   * `worktree.ts`. Production callers leave this undefined.
+   */
+  gitRunner?: GitRunner
 }
 
 export interface ForkResult {
@@ -66,6 +83,13 @@ export interface ForkResult {
    * shows the messages but the agent has no real context).
    */
   resumable: boolean
+  /**
+   * Set iff the caller passed `withWorktree: true` and worktree creation
+   * succeeded. Both nil otherwise. The renderer surfaces these in a
+   * "Forked to <branch>" toast so the user can immediately see the new
+   * checkout location.
+   */
+  worktree?: { path: string; branch: string }
 }
 
 /**
@@ -92,35 +116,105 @@ export async function forkConversation(input: ForkInput): Promise<ForkResult> {
   const keptMessages = sourceMessages.slice(0, upToVisibleIndex)
   const title = makeForkTitle(source.title)
 
-  if (source.agent_type === 'claude-code') {
-    return await forkClaude(source, input, keptMessages, upToVisibleIndex, title)
+  // ── Worktree materialization (#5) ────────────────────────────────
+  // Done up-front so a git failure aborts the fork before any DB writes
+  // or JSONL surgery. The picked message body seeds the slug; on a
+  // successful return, `effectiveProjectPath` becomes the new worktree
+  // and the conversation row gets `worktree_path` / `worktree_branch`
+  // populated alongside `parent_conversation_id`.
+  let effectiveProjectPath = source.project_path
+  let worktreeMeta: { path: string; branch: string } | null = null
+  if (input.withWorktree) {
+    const summarySource = keptMessages[keptMessages.length - 1]?.content ?? title
+    const slug = makeBranchSlug(stripForSlug(summarySource))
+    log.info(`fork: creating worktree for ${source.id} with slug "${slug}"`)
+    const wt = await createForkWorktree(
+      { repoRoot: source.project_path, baseRef: 'HEAD', slug },
+      input.gitRunner,
+    )
+    effectiveProjectPath = wt.path
+    worktreeMeta = wt
   }
-  if (source.agent_type === 'codex') {
-    return await forkCodex(source, input, keptMessages, upToVisibleIndex, title)
+
+  // Encode the worktree branch into the conversation title so the
+  // sidebar (which just renders `title` verbatim) calls out the new
+  // branch without needing parallel knowledge of the worktree columns.
+  // Plain forks keep the existing `<source> · fork` shape.
+  const displayTitle = worktreeMeta
+    ? `${stripForkSuffix(source.title)} · ${worktreeMeta.branch}`
+    : title
+
+  const ctx: ForkContext = {
+    source,
+    input,
+    keptMessages,
+    upToVisibleIndex,
+    title: displayTitle,
+    effectiveProjectPath,
+    worktreeMeta,
   }
+
+  if (source.agent_type === 'claude-code') return await forkClaude(ctx)
+  if (source.agent_type === 'codex') return await forkCodex(ctx)
   // OpenCode (and any other / unknown agent) — degraded summary-only.
   // TODO(opencode-acp): wire this up once ACP exposes a `session/load` (or
   // equivalent) endpoint. Until then a fork gets the visible transcript
   // but the new agent process starts cold without that context.
-  return await forkSummaryOnly(source, input, keptMessages, title, source.agent_type)
+  return await forkSummaryOnly(ctx, source.agent_type)
+}
+
+/**
+ * Plumbing struct for the per-agent fork branches. Bundling these into a
+ * single arg keeps `forkClaude` / `forkCodex` / `forkSummaryOnly` from
+ * sprouting eight positional parameters once the worktree fields landed.
+ */
+interface ForkContext {
+  source: ReturnType<typeof getConversationById> & object
+  input: ForkInput
+  keptMessages: ChatMessage[]
+  upToVisibleIndex: number
+  title: string
+  /** The path the *new* conversation should be rooted at — equals
+   *  `source.project_path` for non-worktree forks and the new worktree
+   *  path when `withWorktree: true`. */
+  effectiveProjectPath: string
+  /** Set iff the worktree was successfully created. */
+  worktreeMeta: { path: string; branch: string } | null
+}
+
+/**
+ * Trim a message body down to a slug-friendly summary. Strips fenced
+ * code blocks (their contents wreck the slug) and inline code, then
+ * keeps the first sentence-ish chunk. The hard cap at 80 chars matches
+ * what `slugifyForBranch` would slice anyway, but trimming earlier
+ * means the slug reflects the topic of the message rather than
+ * arbitrary trailing punctuation.
+ */
+function stripForSlug(body: string): string {
+  return body
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`[^`]+`/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 80)
 }
 
 // ── Claude ────────────────────────────────────────────────────────
 
-async function forkClaude(
-  source: ReturnType<typeof getConversationById> & object,
-  input: ForkInput,
-  keptMessages: ChatMessage[],
-  upToVisibleIndex: number,
-  title: string,
-): Promise<ForkResult> {
-  const projectDir = join(homedir(), '.claude', 'projects', encodeClaudeProjectPath(source.project_path))
+async function forkClaude(ctx: ForkContext): Promise<ForkResult> {
+  const { source, input, keptMessages, upToVisibleIndex, title, effectiveProjectPath, worktreeMeta } = ctx
+  // Always read fragments from the SOURCE project's claude-projects dir
+  // (that's where the parent's transcript lives). We write the truncated
+  // fork JSONL to the dir keyed by `effectiveProjectPath` so a worktree-
+  // backed fork resumes correctly when the SDK cwd is the new worktree.
+  const sourceProjectDir = join(homedir(), '.claude', 'projects', encodeClaudeProjectPath(source.project_path))
+  const targetProjectDir = join(homedir(), '.claude', 'projects', encodeClaudeProjectPath(effectiveProjectPath))
   // The source thread can span multiple JSONL files (Claude SDK rotates
   // session_id during compaction). Read every fragment in chronological
   // order and let `assembleClaudeFork` walk the merged stream — the cut
   // can land anywhere, including past the first fragment, and earlier
   // fragments must come along verbatim or the resume context is broken.
-  const fragmentPaths = await listClaudeFragmentPaths(projectDir, source.id)
+  const fragmentPaths = await listClaudeFragmentPaths(sourceProjectDir, source.id)
   const fragments: string[] = []
   for (const p of fragmentPaths) {
     const raw = await readFile(p, 'utf-8').catch(() => null)
@@ -129,7 +223,7 @@ async function forkClaude(
 
   if (fragments.length === 0) {
     log.warn(`fork: no source jsonl for ${source.id}; degrading to summary-only`)
-    return await forkSummaryOnly(source, input, keptMessages, title, 'claude-code')
+    return await forkSummaryOnly(ctx, 'claude-code')
   }
 
   const newId = randomUUID()
@@ -137,28 +231,34 @@ async function forkClaude(
 
   if (!truncated.anchorUuid || truncated.keptVisibleCount === 0) {
     log.warn(`fork: claude truncate produced empty result for ${source.id}; degrading`)
-    return await forkSummaryOnly(source, input, keptMessages, title, 'claude-code')
+    return await forkSummaryOnly(ctx, 'claude-code')
   }
 
-  await writeFile(join(projectDir, `${newId}.jsonl`), truncated.newContent, 'utf-8')
+  // mkdir is a no-op when source == target (the most common case);
+  // necessary the first time a worktree-rooted fork is created since
+  // `~/.claude/projects/<encoded-worktree-path>/` won't exist yet.
+  await mkdir(targetProjectDir, { recursive: true })
+  await writeFile(join(targetProjectDir, `${newId}.jsonl`), truncated.newContent, 'utf-8')
 
   createForkedConversation({
     id: newId,
-    projectPath: source.project_path,
+    projectPath: effectiveProjectPath,
     agentType: 'claude-code',
     title,
     parentConversationId: source.id,
     forkedAtMessageId: input.forkedAtMessageId ?? `idx:${input.upToIndex}`,
     sessionId: newId,
+    worktreePath: worktreeMeta?.path ?? null,
+    worktreeBranch: worktreeMeta?.branch ?? null,
   })
   bulkSaveMessages(newId, keptMessages.map(toMessageRow))
 
-  log.info(`fork(claude): ${source.id} → ${newId} (${truncated.keptVisibleCount} msgs, anchor ${truncated.anchorUuid})`)
+  log.info(`fork(claude): ${source.id} → ${newId} (${truncated.keptVisibleCount} msgs, anchor ${truncated.anchorUuid})${worktreeMeta ? ` worktree=${worktreeMeta.branch}` : ''}`)
 
   return {
     conversation: {
       id: newId,
-      projectPath: source.project_path,
+      projectPath: effectiveProjectPath,
       agentType: 'claude-code',
       title,
       parentConversationId: source.id,
@@ -168,6 +268,7 @@ async function forkClaude(
     resumeHint: newId,
     messages: keptMessages,
     resumable: true,
+    worktree: worktreeMeta ?? undefined,
   }
 }
 
@@ -205,13 +306,8 @@ async function listClaudeFragmentPaths(projectDir: string, threadId: string): Pr
 
 // ── Codex ─────────────────────────────────────────────────────────
 
-async function forkCodex(
-  source: ReturnType<typeof getConversationById> & object,
-  input: ForkInput,
-  keptMessages: ChatMessage[],
-  upToVisibleIndex: number,
-  title: string,
-): Promise<ForkResult> {
+async function forkCodex(ctx: ForkContext): Promise<ForkResult> {
+  const { source, input, keptMessages, upToVisibleIndex, title, effectiveProjectPath, worktreeMeta } = ctx
   // Codex stores rollouts under `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`.
   // We can locate the source by scanning, but reusing a forked rollout for
   // genuine resume requires Codex app-server cooperation we haven't wired
@@ -239,18 +335,20 @@ async function forkCodex(
 
   createForkedConversation({
     id: newId,
-    projectPath: source.project_path,
+    projectPath: effectiveProjectPath,
     agentType: 'codex',
     title,
     parentConversationId: source.id,
     forkedAtMessageId: input.forkedAtMessageId ?? `idx:${input.upToIndex}`,
+    worktreePath: worktreeMeta?.path ?? null,
+    worktreeBranch: worktreeMeta?.branch ?? null,
   })
   bulkSaveMessages(newId, keptMessages.map(toMessageRow))
 
   return {
     conversation: {
       id: newId,
-      projectPath: source.project_path,
+      projectPath: effectiveProjectPath,
       agentType: 'codex',
       title,
       parentConversationId: source.id,
@@ -260,6 +358,7 @@ async function forkCodex(
     resumeHint: null,
     messages: keptMessages,
     resumable: false,
+    worktree: worktreeMeta ?? undefined,
   }
 }
 
@@ -290,31 +389,28 @@ async function walkForSuffix(dir: string, suffix: string, maxDepth: number): Pro
 
 // ── Summary-only fallback (OpenCode, missing source files) ────────
 
-async function forkSummaryOnly(
-  source: ReturnType<typeof getConversationById> & object,
-  input: ForkInput,
-  keptMessages: ChatMessage[],
-  title: string,
-  agentType: string,
-): Promise<ForkResult> {
+async function forkSummaryOnly(ctx: ForkContext, agentType: string): Promise<ForkResult> {
+  const { source, input, keptMessages, title, effectiveProjectPath, worktreeMeta } = ctx
   // No JSONL surgery — just clone the row and the message stream. The
   // new agent process will start cold; the renderer prepends a synthetic
   // system message in `forkAndOpenSession` so the user sees the warning.
   const newId = randomUUID()
   createForkedConversation({
     id: newId,
-    projectPath: source.project_path,
+    projectPath: effectiveProjectPath,
     agentType,
     title,
     parentConversationId: source.id,
     forkedAtMessageId: input.forkedAtMessageId ?? `idx:${input.upToIndex}`,
+    worktreePath: worktreeMeta?.path ?? null,
+    worktreeBranch: worktreeMeta?.branch ?? null,
   })
   bulkSaveMessages(newId, keptMessages.map(toMessageRow))
 
   return {
     conversation: {
       id: newId,
-      projectPath: source.project_path,
+      projectPath: effectiveProjectPath,
       agentType,
       title,
       parentConversationId: source.id,
@@ -324,6 +420,7 @@ async function forkSummaryOnly(
     resumeHint: null,
     messages: keptMessages,
     resumable: false,
+    worktree: worktreeMeta ?? undefined,
   }
 }
 
@@ -366,8 +463,18 @@ async function loadSourceMessages(
 }
 
 function makeForkTitle(sourceTitle: string): string {
-  const base = sourceTitle.replace(/ · fork$/, '').trim()
-  return `${base} · fork`
+  return `${stripForkSuffix(sourceTitle)} · fork`
+}
+
+/**
+ * Drop the trailing ` · fork` (or ` · <branch>`) suffix so we don't
+ * stack `parent · fork · fork/foo` titles when the user forks a fork.
+ * Matches both the plain `· fork` shape and the worktree-branch shape
+ * from #5; anything that looks like the trailing component starts with
+ * ` · ` is treated as a fork suffix and stripped.
+ */
+function stripForkSuffix(title: string): string {
+  return title.replace(/ · fork(\/[^·]*)?$/, '').trim()
 }
 
 function toMessageRow(m: ChatMessage): {

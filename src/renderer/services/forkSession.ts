@@ -15,15 +15,29 @@ export async function forkAndOpenSession(
   sourceConversationId: string,
   upToIndex: number,
   forkedAtMessageId?: string,
-): Promise<{ ok: boolean; error?: string; newSessionId?: string; resumable?: boolean }> {
+  /**
+   * When true, the main side also creates a fresh git worktree off the
+   * source repo's HEAD and roots the new conversation at it. The
+   * `worktree` field on the returned object echoes the new branch name
+   * so the caller can show a "Forked to fork/<slug>" toast.
+   */
+  withWorktree?: boolean,
+): Promise<{
+  ok: boolean
+  error?: string
+  newSessionId?: string
+  resumable?: boolean
+  worktree?: { path: string; branch: string }
+}> {
   const res = await window.api.app.forkConversation({
     sourceConversationId,
     upToIndex,
     forkedAtMessageId,
+    withWorktree,
   })
   if (!res.ok) return { ok: false, error: res.error }
 
-  const { conversation, resumeHint, messages, resumable } = res
+  const { conversation, resumeHint, messages, resumable, worktree } = res
   const store = useAgentStore.getState()
   // Carry over the source session's runtime mode + model so the fork
   // doesn't silently drop into 'sandbox'/default-model just because it
@@ -55,7 +69,10 @@ export async function forkAndOpenSession(
         {
           id: `system_fork_notice_${conversation.id}`,
           role: 'system' as const,
-          content: `Forked from "${conversation.title.replace(/ · fork$/, '')}" — earlier turns are shown for reference, but ${type === 'codex' ? 'Codex' : type === 'opencode' ? 'OpenCode' : 'this agent'} will start without that context.`,
+          // Strip both the plain `· fork` and the `· fork/<branch>` suffix
+          // (added by #5 for worktree-backed forks) so the synthetic notice
+          // names the *parent* conversation, not the fork itself.
+          content: `Forked from "${conversation.title.replace(/ · fork(\/[^·]*)?$/, '')}" — earlier turns are shown for reference, but ${type === 'codex' ? 'Codex' : type === 'opencode' ? 'OpenCode' : 'this agent'} will start without that context.`,
           timestamp: Date.now(),
         },
         ...messages,
@@ -68,5 +85,5 @@ export async function forkAndOpenSession(
   // kanban). Mirrors what `openSessionByClick` does in App.tsx.
   useLayoutStore.getState().setAppView('chats')
 
-  return { ok: true, newSessionId: conversation.id, resumable }
+  return { ok: true, newSessionId: conversation.id, resumable, worktree }
 }

@@ -15,6 +15,7 @@ import {
   parseWorktreeList,
   worktreeRootFor,
   createWorktree,
+  createForkWorktree,
   removeWorktree,
   findStaleWorktrees,
   WORKTREE_DIR_REL,
@@ -98,6 +99,76 @@ describe('createWorktree', () => {
 
   it('rejects relative repo paths', async () => {
     await expect(createWorktree('relative/path', 'card_x', 'X')).rejects.toThrow(/absolute/)
+  })
+})
+
+describe('createForkWorktree', () => {
+  let repoPath: string
+  beforeEach(async () => {
+    repoPath = await mkdtemp(join(tmpdir(), 'sb-fwt-'))
+  })
+  afterEach(async () => {
+    await rm(repoPath, { recursive: true, force: true })
+  })
+
+  it('issues `worktree add -b <slug> <path> <baseRef>` and returns the path/branch', async () => {
+    const runner = vi.fn(async () => ({ stdout: '', stderr: '' }))
+    const { path, branch } = await createForkWorktree(
+      { repoRoot: repoPath, baseRef: 'feature/old', slug: 'fork/fix-redis-timeout' },
+      runner,
+    )
+    expect(branch).toBe('fork/fix-redis-timeout')
+    // dir basename strips the `fork/` namespace so we don't end up with a
+    // literal `fork/` subdirectory under `.switchboard/worktrees/`.
+    expect(path).toBe(join(worktreeRootFor(repoPath), 'fix-redis-timeout'))
+    expect(runner).toHaveBeenCalledOnce()
+    const [args, cwd] = runner.mock.calls[0]
+    expect(args).toEqual(['worktree', 'add', '-b', branch, path, 'feature/old'])
+    expect(cwd).toBe(repoPath)
+  })
+
+  it('retries with `-2`, `-3`, … suffixes on collision, then succeeds', async () => {
+    let attempts = 0
+    const runner = vi.fn(async (args: string[]) => {
+      attempts++
+      // Branch we requested already exists for the first two attempts.
+      if (attempts <= 2 && args[0] === 'worktree' && args[1] === 'add') {
+        throw new Error("fatal: a branch named 'fork/foo' already exists")
+      }
+      return { stdout: '', stderr: '' }
+    })
+    const { branch, path } = await createForkWorktree(
+      { repoRoot: repoPath, baseRef: 'HEAD', slug: 'fork/foo' },
+      runner,
+    )
+    expect(branch).toBe('fork/foo-3')
+    expect(path).toBe(join(worktreeRootFor(repoPath), 'foo-3'))
+    expect(attempts).toBe(3)
+  })
+
+  it('does NOT retry on non-collision errors (e.g. unknown ref)', async () => {
+    const runner = vi.fn(async () => {
+      throw new Error("fatal: invalid reference: nonexistent-branch")
+    })
+    await expect(
+      createForkWorktree(
+        { repoRoot: repoPath, baseRef: 'nonexistent-branch', slug: 'fork/x' },
+        runner,
+      ),
+    ).rejects.toThrow(/invalid reference/)
+    expect(runner).toHaveBeenCalledOnce() // no retry
+  })
+
+  it('rejects relative repo paths', async () => {
+    await expect(
+      createForkWorktree({ repoRoot: 'relative', baseRef: 'HEAD', slug: 'fork/x' }),
+    ).rejects.toThrow(/absolute/)
+  })
+
+  it('rejects empty slug', async () => {
+    await expect(
+      createForkWorktree({ repoRoot: repoPath, baseRef: 'HEAD', slug: '' }),
+    ).rejects.toThrow(/slug/)
   })
 })
 

@@ -445,7 +445,13 @@ export function registerAppHandlers(window: BrowserWindow): void {
   // real context. See src/main/conversations/fork.ts.
   ipcMain.handle(AppChannels.FORK_CONVERSATION, async (
     _event,
-    args: { sourceConversationId: string; upToIndex: number; forkedAtMessageId?: string },
+    args: {
+      sourceConversationId: string
+      upToIndex: number
+      forkedAtMessageId?: string
+      // #5: opt the fork into a fresh git worktree branched off HEAD.
+      withWorktree?: boolean
+    },
   ) => {
     try {
       const result = await forkConversation(args)

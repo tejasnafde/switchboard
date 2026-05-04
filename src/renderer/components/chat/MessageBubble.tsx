@@ -58,8 +58,12 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // conversation lazily off `useAgentStore.getState()` at click time so
   // we don't subscribe the bubble to every store change.
   const [forkMenu, setForkMenu] = useState<{ x: number; y: number } | null>(null)
-  const [forkBusy, setForkBusy] = useState(false)
+  const [forkBusy, setForkBusy] = useState<false | 'plain' | 'worktree'>(false)
   const [forkError, setForkError] = useState<string | null>(null)
+  // After a successful "Fork to worktree" the new branch name flashes
+  // briefly at the bottom of the chat — tells the user where their files
+  // landed without forcing them to dig into the sidebar's secondary line.
+  const [forkToast, setForkToast] = useState<string | null>(null)
 
   // Inject copy buttons on each <pre> code block after markdown renders
   useEffect(() => {
@@ -164,7 +168,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     return null
   }
 
-  const handleForkRequest = async () => {
+  const handleForkRequest = async (withWorktree: boolean = false) => {
     const store = useAgentStore.getState()
     // Prefer the conversation this bubble belongs to (passed from
     // MessageList) over the global activeSessionId — in dual-chat the
@@ -192,12 +196,21 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       setForkError('Message not in current session')
       return
     }
-    setForkBusy(true)
+    setForkBusy(withWorktree ? 'worktree' : 'plain')
     setForkError(null)
     try {
-      const res = await forkAndOpenSession(sourceId, upToIndex, message.id)
-      if (!res.ok) setForkError(res.error ?? 'Fork failed')
-      else setForkMenu(null)
+      const res = await forkAndOpenSession(sourceId, upToIndex, message.id, withWorktree)
+      if (!res.ok) {
+        setForkError(res.error ?? 'Fork failed')
+      } else {
+        setForkMenu(null)
+        if (res.worktree) {
+          setForkToast(`Forked to ${res.worktree.branch}`)
+          // Self-dismiss after a beat — toast is informational, not
+          // actionable, so a 4s window is plenty for the eye to catch.
+          setTimeout(() => setForkToast(null), 4000)
+        }
+      }
     } catch (err) {
       setForkError(err instanceof Error ? err.message : 'Fork failed')
     } finally {
@@ -492,9 +505,33 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           y={forkMenu.y}
           busy={forkBusy}
           error={forkError}
-          onFork={handleForkRequest}
+          onFork={() => handleForkRequest(false)}
+          onForkWorktree={() => handleForkRequest(true)}
           onDismiss={() => setForkMenu(null)}
         />,
+        document.body,
+      )}
+      {forkToast && createPortal(
+        <div
+          role="status"
+          style={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 1400,
+            padding: '8px 14px',
+            background: 'var(--bg-secondary)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            boxShadow: '0 6px 24px rgba(0, 0, 0, 0.35)',
+            fontSize: '12.5px',
+            color: 'var(--text-primary)',
+            pointerEvents: 'none',
+          }}
+        >
+          {forkToast}
+        </div>,
         document.body,
       )}
 
@@ -766,13 +803,17 @@ function ForwardMenu({ content }: { content: string }) {
  * — Edit message, Retry from here, etc.).
  */
 function ForkContextMenu({
-  x, y, busy, error, onFork, onDismiss,
+  x, y, busy, error, onFork, onForkWorktree, onDismiss,
 }: {
   x: number
   y: number
-  busy: boolean
+  /** False when idle, otherwise which entry the user just clicked.
+   *  Lets us only spinner-out the affected row instead of greying both. */
+  busy: false | 'plain' | 'worktree'
   error: string | null
   onFork: () => void
+  /** #5: branch off HEAD into a fresh git worktree before opening the fork. */
+  onForkWorktree: () => void
   onDismiss: () => void
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -823,35 +864,38 @@ function ForkContextMenu({
         padding: '4px',
       }}
     >
-      <button
+      <ForkMenuItem
+        label={busy === 'plain' ? 'Forking…' : 'Fork from here'}
+        disabled={busy !== false}
         onClick={onFork}
-        disabled={busy}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          width: '100%',
-          padding: '6px 10px',
-          border: 'none',
-          background: 'transparent',
-          color: busy ? 'var(--text-muted)' : 'var(--text-primary)',
-          cursor: busy ? 'wait' : 'pointer',
-          fontSize: '12.5px',
-          textAlign: 'left',
-          borderRadius: '4px',
-        }}
-        onMouseEnter={(e) => { if (!busy) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
-        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-      >
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="6" cy="6" r="3" />
-          <circle cx="18" cy="6" r="3" />
-          <circle cx="12" cy="20" r="3" />
-          <path d="M6 9v3a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V9" />
-          <path d="M12 12v5" />
-        </svg>
-        {busy ? 'Forking…' : 'Fork from here'}
-      </button>
+        icon={
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="6" cy="6" r="3" />
+            <circle cx="18" cy="6" r="3" />
+            <circle cx="12" cy="20" r="3" />
+            <path d="M6 9v3a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V9" />
+            <path d="M12 12v5" />
+          </svg>
+        }
+      />
+      <ForkMenuItem
+        label={busy === 'worktree' ? 'Creating worktree…' : 'Fork to worktree'}
+        disabled={busy !== false}
+        onClick={onForkWorktree}
+        icon={
+          // A small "branch + box" combo evokes "git branch into its own
+          // working tree" without screaming for a third-party icon set.
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="6" cy="6" r="2.5" />
+            <circle cx="6" cy="18" r="2.5" />
+            <circle cx="18" cy="9" r="2.5" />
+            <path d="M6 8.5v7" />
+            <path d="M6 13a6 6 0 0 0 6-6" />
+            <rect x="14" y="13" width="8" height="8" rx="1" />
+          </svg>
+        }
+        sublabel="branches off HEAD"
+      />
       {error && (
         <div style={{
           padding: '6px 10px',
@@ -876,3 +920,48 @@ function ForkContextMenu({
   )
 }
 
+/**
+ * Single row inside the fork context menu. Pulled out as its own
+ * component so adding entries doesn't mean copy-pasting the hover /
+ * disabled / icon scaffolding for each.
+ */
+function ForkMenuItem({
+  label, sublabel, icon, disabled, onClick,
+}: {
+  label: string
+  sublabel?: string
+  icon: React.ReactNode
+  disabled: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        width: '100%',
+        padding: '6px 10px',
+        border: 'none',
+        background: 'transparent',
+        color: disabled ? 'var(--text-muted)' : 'var(--text-primary)',
+        cursor: disabled ? 'wait' : 'pointer',
+        fontSize: '12.5px',
+        textAlign: 'left',
+        borderRadius: '4px',
+      }}
+      onMouseEnter={(e) => { if (!disabled) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
+      onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+    >
+      {icon}
+      <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.3 }}>
+        <span>{label}</span>
+        {sublabel && (
+          <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{sublabel}</span>
+        )}
+      </span>
+    </button>
+  )
+}

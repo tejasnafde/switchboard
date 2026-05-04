@@ -90,6 +90,68 @@ export async function createWorktree(
 }
 
 /**
+ * Variant of `createWorktree` for the **fork-to-worktree** flow.
+ *
+ * Differences vs. the kanban path:
+ *   - Caller provides the slug (derived from a message summary by
+ *     `makeBranchSlug`) — no card id to mix in.
+ *   - Caller picks the base ref so we can branch off whatever the
+ *     parent conversation's `projectPath` was checked out to (which
+ *     may itself be a feature branch, not always `main`/`HEAD`).
+ *   - Branch / directory collisions resolve by suffix (`-2`, `-3`, …)
+ *     instead of bailing — two forks of the same message are a
+ *     legitimate user flow (try-this-then-try-that). Caps at
+ *     COLLISION_MAX so a permanently-broken state doesn't spin.
+ *
+ * `slug` arrives in already-prefixed form (e.g. `fork/fix-redis`) — we
+ * use it verbatim for the branch name and the basename of the worktree
+ * directory after stripping the leading namespace.
+ */
+const COLLISION_MAX = 20
+
+export async function createForkWorktree(
+  opts: { repoRoot: string; baseRef: string; slug: string },
+  runner: GitRunner = defaultRunner,
+): Promise<{ path: string; branch: string }> {
+  const { repoRoot, baseRef, slug } = opts
+  if (!isAbsolute(repoRoot)) throw new Error(`repoRoot must be absolute: ${repoRoot}`)
+  if (!slug) throw new Error('slug must be non-empty')
+
+  // Branch name is the slug verbatim (callers pass `fork/<name>`); the
+  // worktree dir uses the part after the last `/` so we don't end up with
+  // a literal `fork/` subdirectory tree on disk (git is fine with it but
+  // file managers and shells get confused).
+  const dirBase = slug.includes('/') ? slug.slice(slug.lastIndexOf('/') + 1) : slug
+  await mkdir(worktreeRootFor(repoRoot), { recursive: true })
+
+  let lastErr: unknown = null
+  for (let i = 1; i <= COLLISION_MAX; i++) {
+    const branch = i === 1 ? slug : `${slug}-${i}`
+    const dir = i === 1 ? dirBase : `${dirBase}-${i}`
+    const worktreePath = join(worktreeRootFor(repoRoot), dir)
+    log.info(`createForkWorktree: attempt ${i} → ${worktreePath} (branch ${branch}, base ${baseRef})`)
+    try {
+      await runner(['worktree', 'add', '-b', branch, worktreePath, baseRef], repoRoot)
+      return { path: worktreePath, branch }
+    } catch (err) {
+      lastErr = err
+      const msg = err instanceof Error ? err.message : String(err)
+      // Collision-shaped errors: branch exists, path exists, or path
+      // already registered as a worktree. Anything else (e.g. shallow
+      // repo, missing baseRef, no commits) is fatal — don't keep
+      // retrying on a config problem the user has to fix.
+      if (!/already exists|already used by|already checked out/i.test(msg)) {
+        throw err
+      }
+    }
+  }
+  throw new Error(
+    `createForkWorktree: exhausted ${COLLISION_MAX} suffix attempts for slug "${slug}". ` +
+      `Last error: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+  )
+}
+
+/**
  * Remove a worktree.  Defaults to a safe remove (refuses if dirty);
  * pass `force=true` from cleanup flows where the user has explicitly
  * acknowledged data loss.

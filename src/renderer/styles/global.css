@@ -606,7 +606,28 @@ html, body, #root {
   transition: opacity 0.12s;
 }
 
+/*
+ * Anchor the archive icon to the right edge of the row instead of
+ * inserting it into the flex flow. The previous approach used a
+ * `margin-left: -18px` trick that snapped to 0 on hover while the
+ * adjacent `.sidebar-thread-time` simultaneously collapsed (width:0
+ * with overflow:visible, so the time text painted *over* where the
+ * button would land). The result was a click target that flickered
+ * across hover transitions — visible to the eye, but the click event
+ * landed on residual time-text rendering ahead of the button. Right-
+ * click on the row still worked because the row's onContextMenu fires
+ * regardless of which child the pointer is over.
+ *
+ * Absolute positioning means the button has a single, stable hit area
+ * regardless of whether the time text is fading in or out; the time
+ * element is allowed to keep its natural layout and just fades to
+ * opacity:0 on hover so it visually clears the icon.
+ */
 .sidebar-thread-archive {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -617,27 +638,39 @@ html, body, #root {
   color: var(--text-muted);
   cursor: pointer;
   border-radius: 3px;
-  flex-shrink: 0;
   opacity: 0;
+  /* z-index keeps the button above the (possibly still-rendering) time
+   * text during the 120ms opacity fade — belt-and-braces alongside the
+   * absolute positioning. */
+  z-index: 1;
   transition: opacity 0.12s, background 0.12s, color 0.12s;
-  margin-left: -18px;
 }
 
 .sidebar-thread:hover .sidebar-thread-archive {
   opacity: 0.7;
-  margin-left: 0;
 }
 
 .sidebar-thread:hover .sidebar-thread-time {
   opacity: 0;
-  width: 0;
-  margin-right: -4px;
+  /* `pointer-events: none` so the fading-out time doesn't capture clicks
+   * intended for the archive button sitting absolutely on top of it. */
+  pointer-events: none;
 }
 
 .sidebar-thread-archive:hover {
   opacity: 1 !important;
   background: var(--bg-hover);
   color: var(--accent);
+}
+
+/*
+ * SVG inside the button is purely decorative; routing pointer events
+ * through to the parent <button> avoids the "click landed on the inside
+ * of an SVG outline" edge case where the icon's hollow center didn't
+ * count as painted-pixels for the default `pointer-events: visiblePainted`.
+ */
+.sidebar-thread-archive svg {
+  pointer-events: none;
 }
 
 /* ─── Rename ────────────────────────────────────────────────────── */
