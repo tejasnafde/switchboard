@@ -22,15 +22,19 @@ const CHIP_STYLE: CSSProperties = {
   display: 'inline-flex',
   alignItems: 'center',
   gap: '5px',
-  padding: '1px 8px',
-  margin: '0 4px 0 0',
+  padding: '0 8px',
+  margin: '0 2px',
   borderRadius: '12px',
   background: 'rgba(46, 160, 67, 0.10)',
   border: '1px solid rgba(46, 160, 67, 0.45)',
   fontFamily: 'var(--font-mono)',
   fontSize: '11px',
-  verticalAlign: 'baseline',
-  lineHeight: '1.4',
+  // `middle` aligns the chip's vertical center with the surrounding
+  // text's x-height midline. `baseline` looked floaty because the
+  // chip's content is centered inside the box (alignItems: center) so
+  // the box's baseline is the bottom of its content, not the text's.
+  verticalAlign: 'middle',
+  lineHeight: '18px',
   whiteSpace: 'nowrap',
   color: 'var(--text-primary)',
 }
