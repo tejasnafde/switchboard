@@ -58,6 +58,16 @@ interface AgentSession {
    */
   availableVariants?: string[]
   currentVariant?: string
+  /**
+   * Per-session context-window usage. Sourced from `turn.completed` and
+   * `context_window` runtime events. Lives on the session (not on the
+   * ChatPanel component) so switching sessions immediately shows the
+   * correct meter value instead of leaking the previously-active panel's
+   * reading until the next event fires. Both the active panel and the
+   * dual-chat right-hand panel read from this slot, scoped by their own
+   * session id.
+   */
+  tokenUsage?: { usedTokens: number; maxTokens: number | null }
 }
 
 interface AgentStore {
@@ -90,6 +100,7 @@ interface AgentStore {
   setCostUsd: (sessionId: string, costUsd: number) => void
   setVariants: (sessionId: string, available: string[], current: string) => void
   setCurrentVariant: (sessionId: string, variant: string) => void
+  setTokenUsage: (sessionId: string, usage: { usedTokens: number; maxTokens: number | null }) => void
   /**
    * Switch the agent backend (claude-code / codex / opencode) for a
    * session. Required so consumers like StatusBar — which read from the
@@ -271,6 +282,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.map((s) =>
         s.id === sessionId ? { ...s, currentVariant: variant } : s
+      ),
+    })),
+
+  setTokenUsage: (sessionId, usage) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, tokenUsage: usage } : s
       ),
     })),
 

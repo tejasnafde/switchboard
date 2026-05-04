@@ -2,8 +2,8 @@ import { useRef, useEffect, type RefObject } from 'react'
 
 interface ResizeHandleProps {
   direction: 'horizontal' | 'vertical'
-  /** Ref to the element BEFORE the handle (left/top) */
-  beforeRef: RefObject<HTMLDivElement | null>
+  /** Ref to the element BEFORE the handle (left/top) — optional for flex:1 panels */
+  beforeRef?: RefObject<HTMLDivElement | null>
   /** Ref to the element AFTER the handle (right/bottom) — optional for flex:1 panels */
   afterRef?: RefObject<HTMLDivElement | null>
   /** CSS property to manipulate */
@@ -61,7 +61,7 @@ export function ResizeHandle({
 
     const resetStyle = () => {
       const { beforeRef: b, afterRef: a } = cfgRef.current
-      if (b.current) b.current.style.pointerEvents = ''
+      if (b?.current) b.current.style.pointerEvents = ''
       if (a?.current) a.current.style.pointerEvents = ''
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
@@ -72,7 +72,7 @@ export function ResizeHandle({
       e.preventDefault()
       e.stopPropagation()
       const { beforeRef: b, afterRef: a, invert: inv, prop: p, isHorizontal: h } = cfgRef.current
-      const target = inv ? a?.current : b.current
+      const target = inv ? a?.current : b?.current
       if (!target) return
 
       try { handle.setPointerCapture(e.pointerId) } catch { /* ignore */ }
@@ -82,7 +82,7 @@ export function ResizeHandle({
       startPos = h ? e.clientX : e.clientY
       startSize = target.getBoundingClientRect()[p]
 
-      if (b.current) b.current.style.pointerEvents = 'none'
+      if (b?.current) b.current.style.pointerEvents = 'none'
       if (a?.current) a.current.style.pointerEvents = 'none'
       document.body.style.cursor = h ? 'col-resize' : 'row-resize'
       document.body.style.userSelect = 'none'
@@ -93,7 +93,7 @@ export function ResizeHandle({
       cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(() => {
         const { beforeRef: b, afterRef: a, invert: inv, prop: p, isHorizontal: h, min: mn, max: mx, onResizing: onR } = cfgRef.current
-        const target = inv ? a?.current : b.current
+        const target = inv ? a?.current : b?.current
         if (!target) return
         const currentPos = h ? e.clientX : e.clientY
         const delta = inv ? (startPos - currentPos) : (currentPos - startPos)
@@ -112,7 +112,7 @@ export function ResizeHandle({
       resetStyle()
 
       const { beforeRef: b, afterRef: a, invert: inv, prop: p, onResizeEnd: onE } = cfgRef.current
-      const target = inv ? a?.current : b.current
+      const target = inv ? a?.current : b?.current
       if (target && onE) {
         const finalSize = target.getBoundingClientRect()[p]
         onE(finalSize)

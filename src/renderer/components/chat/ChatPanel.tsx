@@ -24,7 +24,6 @@ interface ChatPanelProps {
 
 export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code')
-  const [contextUsage, setContextUsage] = useState<{ usedTokens: number; maxTokens: number | null }>({ usedTokens: 0, maxTokens: null })
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
@@ -235,7 +234,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
         case 'turn.completed': {
           if (event.usedTokens) {
-            setContextUsage({
+            useAgentStore.getState().setTokenUsage(tid, {
               usedTokens: event.usedTokens,
               maxTokens: event.maxTokens ?? null,
             })
@@ -275,7 +274,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
         case 'context_window': {
           // Real context usage from SDK — reflects compaction too
-          setContextUsage({
+          useAgentStore.getState().setTokenUsage(tid, {
             usedTokens: event.usedTokens,
             maxTokens: event.maxTokens ?? null,
           })
@@ -925,8 +924,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         onReasoningEffortChange={handleReasoningEffortChange}
         contextUsage={hasSession ? {
           // Rough approximation: ~4 chars per token. Real data arrives via turn.completed events.
-          usedTokens: contextUsage.usedTokens || Math.round(messages.reduce((acc, m) => acc + (m.content?.length ?? 0), 0) / 4),
-          maxTokens: contextUsage.maxTokens ?? 200000,
+          usedTokens: activeSession?.tokenUsage?.usedTokens
+            || Math.round(messages.reduce((acc, m) => acc + (m.content?.length ?? 0), 0) / 4),
+          maxTokens: activeSession?.tokenUsage?.maxTokens ?? 200000,
         } : undefined}
         isRunning={status === 'running' || status === 'thinking'}
         onInterrupt={() => {

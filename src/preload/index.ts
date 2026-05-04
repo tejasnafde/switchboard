@@ -196,6 +196,30 @@ const api = {
     },
     assignProjectWorkspace: (projectPath: string, workspaceId: string | null) =>
       ipcRenderer.invoke(AppChannels.ASSIGN_PROJECT_WORKSPACE, projectPath, workspaceId),
+
+    /**
+     * Spawn a new conversation cloned from the first N messages of an
+     * existing one. Returns either `{ ok: true, conversation, resumeHint,
+     * messages, resumable }` or `{ ok: false, error }`.
+     */
+    forkConversation: (args: { sourceConversationId: string; upToIndex: number; forkedAtMessageId?: string }): Promise<
+      | {
+          ok: true
+          conversation: {
+            id: string
+            projectPath: string
+            agentType: string
+            title: string
+            parentConversationId: string
+            forkedAtMessageId: string
+            createdAt: number
+          }
+          resumeHint: string | null
+          messages: import('@shared/types').ChatMessage[]
+          resumable: boolean
+        }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke(AppChannels.FORK_CONVERSATION, args),
   },
 
   // ─── Files (file-tree pane + viewer + chip resolver) ──────────

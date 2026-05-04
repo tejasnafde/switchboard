@@ -135,6 +135,19 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'runtime_mode')) {
       db.exec('ALTER TABLE conversations ADD COLUMN runtime_mode TEXT')
     }
+    // Migration (#4 — fork-from-message): record fork lineage so the
+    // sidebar (and future audit tools) can reconstruct parent → child.
+    // Both nullable so existing conversations stay valid without a
+    // backfill. `forked_at_message_id` references a message in the
+    // *parent* conversation's row set; we don't add a FK because the
+    // referenced row may live in a thread fragment whose canonical id
+    // changed (Claude SDK rotation), and a hard FK would block forks.
+    if (!cols.some((c) => c.name === 'parent_conversation_id')) {
+      db.exec('ALTER TABLE conversations ADD COLUMN parent_conversation_id TEXT')
+    }
+    if (!cols.some((c) => c.name === 'forked_at_message_id')) {
+      db.exec('ALTER TABLE conversations ADD COLUMN forked_at_message_id TEXT')
+    }
   } catch { /* ignore */ }
 
   // Migration (v0.1.20): track which workspace template a session
@@ -405,6 +418,40 @@ export interface ConversationRow {
   created_at: number
   updated_at: number
   archived: number
+  /** ID of the source conversation a fork was spun from. Null for native conversations. */
+  parent_conversation_id?: string | null
+  /** ID of the source message the fork was anchored at. Null for non-forks. */
+  forked_at_message_id?: string | null
+}
+
+/**
+ * Insert a conversation row that records its fork lineage. Mirrors
+ * `createConversation` but writes the parent + anchor columns added in
+ * the fork-from-message migration. Used by `forkConversation` in
+ * `src/main/conversations/fork.ts`.
+ */
+export function createForkedConversation(args: {
+  id: string
+  projectPath: string
+  agentType: string
+  title: string
+  parentConversationId: string
+  forkedAtMessageId: string
+  sessionId?: string | null
+}): void {
+  const now = Date.now()
+  getDb().prepare(
+    `INSERT INTO conversations (
+       id, project_path, agent_type, session_id, title,
+       created_at, updated_at,
+       parent_conversation_id, forked_at_message_id
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    args.id, args.projectPath, args.agentType,
+    args.sessionId ?? null, args.title,
+    now, now,
+    args.parentConversationId, args.forkedAtMessageId,
+  )
 }
 
 /** Look up a single conversation by id. Used by search navigation to

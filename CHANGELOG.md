@@ -2,6 +2,16 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-05-04 — Fork from here
+
+### Added
+- **Right-click any chat message → "Fork from here"** to spawn a new chat tab containing every message up to and including the one you clicked. The new conversation is wired to the agent's resume primitive: for Claude Code we truncate the source `~/.claude/projects/<encoded>/<uuid>.jsonl`, write a fresh `<new-uuid>.jsonl` next to it (with each line's `sessionId` rewritten to the new UUID), and pass the new id as `resumeSessionId` so the SDK picks up real context — not just visual continuity. Codex falls back to "best-effort" (writes a truncated rollout file as an audit record but starts the daemon cold; TODO to pipe through Codex's `session/start` JSON-RPC). OpenCode is summary-only with a TODO for ACP `session/load`.
+- **Lineage in DB**: new nullable `parent_conversation_id` + `forked_at_message_id` columns on `conversations`. Sidebar arrow/indent UI is deferred (out of scope for v1) but the data is there for future audit + bulk-fork flows.
+- **Pure JSONL truncation functions** in `src/main/agent/jsonl-truncate.ts` (`truncateClaudeJsonl` / `truncateCodexJsonl`) — visibility-aware, replicate JsonlParser's predicate so non-visible meta lines (Claude `summary`, Codex `session_meta` / developer prompts) ride along verbatim and the truncated file still loads cleanly. 7 unit tests covering anchor capture, sessionId rewrite, malformed-line skip, and over-/under-cap behavior.
+- IPC: `app:fork-conversation` handler in `src/main/ipc/app.ts`, orchestration in `src/main/conversations/fork.ts`, renderer service in `src/renderer/services/forkSession.ts`, popover UI in `MessageBubble.tsx`. Concurrency guard: refuses to fork while the source session has a turn in flight.
+
+---
+
 ## 2026-05-02 — Kanban promoted to top-level view
 
 ### Changed

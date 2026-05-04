@@ -46,6 +46,7 @@ import {
 } from '../db/database'
 import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
 import { JsonlParser } from '../agent/jsonl-parser'
+import { forkConversation } from '../conversations/fork'
 import { readWorkspaceConfig, writeWorkspaceConfig, watchWorkspaceConfig } from '../workspace/workspace-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
 
@@ -435,6 +436,24 @@ export function registerAppHandlers(window: BrowserWindow): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error'
       log.error(`export failed: ${message}`)
+      return { ok: false, error: message }
+    }
+  })
+
+  // Fork-from-message — clone a conversation up through the chosen
+  // message and wire the new conversation so the agent can resume with
+  // real context. See src/main/conversations/fork.ts.
+  ipcMain.handle(AppChannels.FORK_CONVERSATION, async (
+    _event,
+    args: { sourceConversationId: string; upToIndex: number; forkedAtMessageId?: string },
+  ) => {
+    try {
+      const result = await forkConversation(args)
+      log.info(`fork: ${args.sourceConversationId} → ${result.conversation.id} resumable=${result.resumable}`)
+      return { ok: true, ...result }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'unknown error'
+      log.error(`fork failed: ${message}`)
       return { ok: false, error: message }
     }
   })

@@ -134,6 +134,28 @@ describe('agent-store', () => {
     expect(useAgentStore.getState().sessions).toHaveLength(0)
   })
 
+  it('setTokenUsage stores per-session usage so switching sessions shows the right meter', () => {
+    // Regression: contextUsage used to live as ChatPanel-local useState, so
+    // hopping between sessions briefly showed the previous session's value
+    // until the next event fired. Per-session storage in the store fixes this.
+    const { addSession, setTokenUsage } = useAgentStore.getState()
+    addSession({ id: 'a', type: 'claude-code', status: 'idle' })
+    addSession({ id: 'b', type: 'codex', status: 'idle' })
+
+    setTokenUsage('a', { usedTokens: 12000, maxTokens: 200000 })
+    setTokenUsage('b', { usedTokens: 80000, maxTokens: 256000 })
+
+    const sessions = useAgentStore.getState().sessions
+    expect(sessions.find((s) => s.id === 'a')?.tokenUsage).toEqual({ usedTokens: 12000, maxTokens: 200000 })
+    expect(sessions.find((s) => s.id === 'b')?.tokenUsage).toEqual({ usedTokens: 80000, maxTokens: 256000 })
+
+    // Updating one session must not bleed into the other.
+    setTokenUsage('a', { usedTokens: 15000, maxTokens: 200000 })
+    const after = useAgentStore.getState().sessions
+    expect(after.find((s) => s.id === 'a')?.tokenUsage?.usedTokens).toBe(15000)
+    expect(after.find((s) => s.id === 'b')?.tokenUsage?.usedTokens).toBe(80000)
+  })
+
   it('appendMessage is idempotent — duplicate IDs are silently dropped', () => {
     // Regression: with two ChatPanel panes mounted, each registers its own
     // ipcRenderer event listener. Every provider event (tool.started, content,

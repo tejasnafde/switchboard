@@ -300,6 +300,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
                 <MessageBubble
                   key={msg.id}
                   message={msg}
+                  sessionId={sessionId ?? undefined}
                   knownSkillNames={knownSkillNames}
                   onApproval={onApproval}
                   onAnswerQuestion={onAnswerQuestion}

@@ -50,6 +50,7 @@ export const AppChannels = {
   WORKSPACE_DELETE: 'app:workspace-delete',
   WORKSPACE_REORDER: 'app:workspace-reorder',
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
+  FORK_CONVERSATION: 'app:fork-conversation',
 } as const
 
 export const KanbanChannels = {

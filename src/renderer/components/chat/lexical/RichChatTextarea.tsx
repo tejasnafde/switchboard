@@ -439,8 +439,8 @@ function PasteTextPlugin({
  */
 const ImperativeHandlePlugin = forwardRef<
   RichChatTextareaHandle,
-  { pillsById: RichChatTextareaProps['pillsById']; getValue: () => string; setValue: (v: string) => void }
->(function ImperativeHandlePlugin({ pillsById, getValue, setValue }, ref): null {
+  { pillsById: RichChatTextareaProps['pillsById']; getValue: () => string }
+>(function ImperativeHandlePlugin({ pillsById, getValue }, ref): null {
   const [editor] = useLexicalComposerContext()
   useImperativeHandle(
     ref,
@@ -451,19 +451,19 @@ const ImperativeHandlePlugin = forwardRef<
       replaceRange: (start, end, replacement) => {
         const cur = getValue()
         const next = cur.slice(0, start) + replacement + cur.slice(end)
-        setValue(next)
+        // Do NOT call `setValue(next)` alongside this update — that races
+        // HydrationPlugin into restoring a stale caret (= 0 for slash
+        // commands at the start of an empty input). OnChangePlugin will
+        // propagate the new body via onChange after commit; pinned by
+        // tests/unit/rich-chat-textarea-replace.test.ts.
         editor.update(() => {
           $populateFromBody(next, pillsById)
-          // After repopulating the editor body, the selection defaults to
-          // the start of the doc — that's what was bouncing the user's
-          // caret to position 0 after picking a slash command. Snap the
-          // caret to immediately after the inserted text instead.
           $selectAtOffset(start + replacement.length)
         })
       },
       getCaret: () => caretOffsetFromSelection(editor),
     }),
-    [editor, getValue, setValue, pillsById],
+    [editor, getValue, pillsById],
   )
   return null
 })
@@ -580,7 +580,6 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
           ref={ref}
           pillsById={pillsById}
           getValue={() => valueRef.current}
-          setValue={(v) => { valueRef.current = v; onChange(v) }}
         />
       </LexicalComposer>
     )

@@ -19,6 +19,8 @@ import {
   type SlashCommand,
   type SlashCommandContext,
 } from './slashCommands'
+import { detectAtTrigger, filterAtMatches } from './atMention'
+import { AtMentionMenu } from './AtMentionMenu'
 import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chatInputBody'
 
@@ -158,6 +160,17 @@ export function ChatInput({
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
   const [slashActiveIdx, setSlashActiveIdx] = useState(0)
   const [agentSkills, setAgentSkills] = useState<ProviderSkill[]>([])
+  // @-mention popover state. Parallel to the slash-popover; at most one
+  // is open at a time (different trigger chars on the same token).
+  const [atQuery, setAtQuery] = useState<string | null>(null)
+  const [atActiveIdx, setAtActiveIdx] = useState(0)
+  const [atFiles, setAtFiles] = useState<string[]>([])
+  const [atLoading, setAtLoading] = useState(false)
+  const atRangeRef = useRef<{ start: number; end: number } | null>(null)
+  // Per-instance file-list cache, mirroring QuickOpenModal's per-mount ref.
+  // Dies with ChatInput, so a closed-and-reopened chat picks up tree changes
+  // — and we never accumulate entries across visited projects.
+  const atFilesCacheRef = useRef<{ repoRoot: string; files: string[] } | null>(null)
 
   // Fetch the agent's slash commands/skills (Claude SDK init.commands,
   // Codex skills/list) so the slash menu can surface them alongside our
@@ -335,6 +348,65 @@ export function ChatInput({
     slashRangeRef.current = null
   }, [])
 
+  // ─── @-mention handling ─────────────────────────────────────
+  const dismissAt = useCallback(() => {
+    setAtQuery(null)
+    atRangeRef.current = null
+  }, [])
+
+  // Resolve the repo root for the active session — file listings are scoped
+  // to projectPath so the at-menu shows only files from the agent's cwd.
+  const sessionsForRepo = useAgentStore((s) => s.sessions)
+  const repoRoot = useMemo(
+    () => sessionsForRepo.find((s) => s.id === sessionId)?.projectPath ?? null,
+    [sessionsForRepo, sessionId],
+  )
+
+  // Lazy-load the file list the first time the user opens `@`. Cached on
+  // a per-mount ref so reopening this chat refreshes the listing.
+  const ensureAtFiles = useCallback(async () => {
+    if (!repoRoot) return
+    const cached = atFilesCacheRef.current
+    if (cached && cached.repoRoot === repoRoot) {
+      setAtFiles(cached.files)
+      return
+    }
+    setAtLoading(true)
+    try {
+      const res = await window.api?.files?.listAll?.(repoRoot)
+      const list = res?.files ?? []
+      atFilesCacheRef.current = { repoRoot, files: list }
+      setAtFiles(list)
+    } finally {
+      setAtLoading(false)
+    }
+  }, [repoRoot])
+
+  const runAtMention = useCallback((path: string) => {
+    const range = atRangeRef.current
+    if (!range || !sessionId) { dismissAt(); return }
+
+    // Strip the `@query` text — the chip carries the path now, and the
+    // serialized message body will expand `[[pill:id]]` into `@<path>` on
+    // Send (see DraftPill.content below).
+    richRef.current?.replaceRange(range.start, range.end, '')
+    dismissAt()
+
+    const fileName = path.split('/').pop() ?? path
+    const pillId = `at_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    useDraftStore.getState().addPill(sessionId, {
+      id: pillId,
+      kind: 'file',
+      label: fileName,
+      // Send-time content is just the `@<path>` marker — Claude SDK
+      // resolves it natively; Codex / OpenCode treat it as a relative
+      // path they can Read on demand.
+      content: `@${path}`,
+    })
+    window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId, pillId } }))
+    requestAnimationFrame(() => richRef.current?.focus())
+  }, [sessionId, dismissAt])
+
   // Editor → host change pipe. RichChatTextarea calls this with the
   // serialized plain-text-with-pill-tokens body whenever Lexical's editor
   // state mutates. We mirror it into local `value`, persist to the draft
@@ -362,7 +434,21 @@ export function ChatInput({
     } else if (slashQuery !== null) {
       dismissSlash()
     }
-  }, [sessionId, setDraft, caret, slashQuery, dismissSlash, agentSkills.length, fetchSkills])
+
+    // @-mention detection — independent of slash; the two triggers can't
+    // both fire on the same token.
+    const atTrigger = detectAtTrigger(next, cur)
+    if (atTrigger) {
+      setAtQuery(atTrigger.query)
+      setAtActiveIdx(0)
+      atRangeRef.current = { start: atTrigger.rangeStart, end: atTrigger.rangeEnd }
+      // Kick off file listing on first open. ensureAtFiles is a no-op if
+      // the cache is already warm.
+      void ensureAtFiles()
+    } else if (atQuery !== null) {
+      dismissAt()
+    }
+  }, [sessionId, setDraft, caret, slashQuery, dismissSlash, agentSkills.length, fetchSkills, atQuery, dismissAt, ensureAtFiles])
 
   const handleEditorCaret = useCallback((c: number | null) => {
     setCaret(c)
@@ -412,6 +498,40 @@ export function ChatInput({
   // RichChatTextarea's `onEnter` prop instead.
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
+      // @-mention branch takes precedence when open.
+      if (atQuery !== null) {
+        const matches = filterAtMatches(atQuery, atFiles)
+        // Empty match list: only Escape is meaningful. Letting Enter fall
+        // through means the user can still send the typed `@query` literally
+        // (matches the slash menu's behaviour at the same code path).
+        if (matches.length === 0 && e.key !== 'Escape') return
+        if (e.key === 'ArrowDown') {
+          e.preventDefault()
+          setAtActiveIdx((i) => i + 1)
+          return
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault()
+          setAtActiveIdx((i) => Math.max(0, i - 1))
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          dismissAt()
+          return
+        }
+        // Swallow Enter/Tab so they don't fire Send / move focus; commit
+        // the highlighted row instead.
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault()
+          e.stopPropagation()
+          const pick = matches[atActiveIdx] ?? matches[0]
+          if (pick) runAtMention(pick)
+          return
+        }
+        // Other keys fall through to the editor (typing extends the query).
+        return
+      }
       if (slashQuery === null) return
       const matches = filterSlashCommands(slashQuery, mergedCommands)
       if (matches.length === 0 && e.key !== 'Escape') return
@@ -436,7 +556,7 @@ export function ChatInput({
         dismissSlash()
       }
     },
-    [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands],
+    [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands, atQuery, atFiles, atActiveIdx, dismissAt, runAtMention],
   )
 
   const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -588,6 +708,18 @@ export function ChatInput({
             commands={mergedCommands}
           />
         )}
+        {/* @-mention popover — same anchor; never simultaneously open. */}
+        {atQuery !== null && (
+          <AtMentionMenu
+            query={atQuery}
+            files={atFiles}
+            loading={atLoading}
+            onSelect={runAtMention}
+            onDismiss={dismissAt}
+            activeIndex={atActiveIdx}
+            onActiveIndexChange={(i) => setAtActiveIdx(i)}
+          />
+        )}
         {/* IMPORTANT: this wrapper must NOT use display:flex — Lexical's
             ContentEditable warns that flex parents cause Chrome focusing
             bugs (caret hiding, click-outside selection drift). Use block
@@ -595,7 +727,7 @@ export function ChatInput({
         <div
           data-chat-input-textarea
           style={{ display: 'block', position: 'relative', flex: 1, minWidth: 0 }}
-          onBlur={() => { setTimeout(() => dismissSlash(), 120) }}
+          onBlur={() => { setTimeout(() => { dismissSlash(); dismissAt() }, 120) }}
         >
           <RichChatTextarea
             ref={richRef}

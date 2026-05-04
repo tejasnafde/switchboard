@@ -1,4 +1,4 @@
-import { memo, useMemo, useState, useRef, useEffect } from 'react'
+import { memo, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { marked } from 'marked'
 import { agentShortLabel, type ChatMessage } from '@shared/types'
@@ -15,9 +15,18 @@ import { formatFilePathRef, type FilePathRef } from '@shared/filePathRef'
 import { renderPillBody } from './renderPillBody'
 import { parseSlashCommandWrapper, splitSkillMentions } from './slashCommands'
 import { SkillChip } from './SkillChip'
+import { forkAndOpenSession } from '../../services/forkSession'
 
 interface MessageBubbleProps {
   message: ChatMessage
+  /**
+   * Conversation id this bubble belongs to. Required for fork-from-message
+   * — without it, dual-chat right-clicks on the right panel would silently
+   * fork the *left* panel's session (the global activeSessionId). When
+   * undefined we fall back to activeSessionId, which is fine for the
+   * single-pane case.
+   */
+  sessionId?: string
   /**
    * Lowercased set of slash-command names registered for this session
    * (built-ins + agent-advertised skills). Used to gate the leading-`/cmd`
@@ -32,7 +41,7 @@ interface MessageBubbleProps {
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction }: MessageBubbleProps) {
   const renderedContent = useMemo(() => {
     if (!message.content) return ''
     // Escape lone tildes used as "approximately" (e.g. ~34) so they don't
@@ -44,6 +53,13 @@ export const MessageBubble = memo(function MessageBubble({ message, knownSkillNa
   const [copied, setCopied] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const markdownRef = useRef<HTMLDivElement>(null)
+  // Right-click → Fork popover. Anchored at the click coordinates;
+  // dismisses on click-outside / Escape. We resolve the fork's source
+  // conversation lazily off `useAgentStore.getState()` at click time so
+  // we don't subscribe the bubble to every store change.
+  const [forkMenu, setForkMenu] = useState<{ x: number; y: number } | null>(null)
+  const [forkBusy, setForkBusy] = useState(false)
+  const [forkError, setForkError] = useState<string | null>(null)
 
   // Inject copy buttons on each <pre> code block after markdown renders
   useEffect(() => {
@@ -148,6 +164,47 @@ export const MessageBubble = memo(function MessageBubble({ message, knownSkillNa
     return null
   }
 
+  const handleForkRequest = async () => {
+    const store = useAgentStore.getState()
+    // Prefer the conversation this bubble belongs to (passed from
+    // MessageList) over the global activeSessionId — in dual-chat the
+    // active id tracks focus, not which panel was right-clicked.
+    const sourceId = sessionId ?? store.activeSessionId
+    const session = sourceId ? store.sessions.find((s) => s.id === sourceId) : null
+    if (!sourceId || !session) {
+      setForkError('No active session')
+      return
+    }
+    // Block forking mid-turn — Claude SDK can't safely truncate while it's
+    // actively appending to the JSONL, and the user's freshly-typed reply
+    // would race the fork's resume anchor.
+    if (session.status !== 'idle') {
+      setForkError('Cannot fork while a turn is in flight')
+      return
+    }
+    // Translate the clicked message id to a positional index in this
+    // session's currently-loaded message array. Position is the only
+    // contract that survives a JSONL re-parse on the main side, since
+    // JsonlParser regenerates ids on every call.
+    const messages = session.messages ?? []
+    const upToIndex = messages.findIndex((m) => m.id === message.id)
+    if (upToIndex < 0) {
+      setForkError('Message not in current session')
+      return
+    }
+    setForkBusy(true)
+    setForkError(null)
+    try {
+      const res = await forkAndOpenSession(sourceId, upToIndex, message.id)
+      if (!res.ok) setForkError(res.error ?? 'Fork failed')
+      else setForkMenu(null)
+    } catch (err) {
+      setForkError(err instanceof Error ? err.message : 'Fork failed')
+    } finally {
+      setForkBusy(false)
+    }
+  }
+
   const handleCopy = () => {
     const text = message.content || ''
     navigator.clipboard.writeText(text).then(() => {
@@ -161,6 +218,15 @@ export const MessageBubble = memo(function MessageBubble({ message, knownSkillNa
       className="message-bubble-row"
       data-message-id={message.id}
       data-context-source={message.role === 'assistant' ? 'chat-message' : undefined}
+      onContextMenu={(e) => {
+        // Skip the menu for system / error messages — they aren't fork
+        // anchors. Image-lightbox right-click is portal'd to body and
+        // doesn't bubble through this handler, so it stays unaffected.
+        if (isSystem) return
+        e.preventDefault()
+        setForkMenu({ x: e.clientX, y: e.clientY })
+        setForkError(null)
+      }}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -414,6 +480,22 @@ export const MessageBubble = memo(function MessageBubble({ message, knownSkillNa
             {copied ? 'Copied' : 'Copy'}
           </button>
         </div>
+      )}
+
+      {/* Right-click context menu — portal'd to body so it escapes the
+          virtualizer's transformed row. Mirrors SlashCommandMenu's
+          `sb-floating-surface` look so all our floating menus feel like
+          one family. */}
+      {forkMenu && createPortal(
+        <ForkContextMenu
+          x={forkMenu.x}
+          y={forkMenu.y}
+          busy={forkBusy}
+          error={forkError}
+          onFork={handleForkRequest}
+          onDismiss={() => setForkMenu(null)}
+        />,
+        document.body,
       )}
 
       {/* Image lightbox — portalled to document.body so it escapes any
@@ -672,6 +754,124 @@ function ForwardMenu({ content }: { content: string }) {
         </div>,
         document.body,
       )}
+    </div>
+  )
+}
+
+/**
+ * Fork-from-message right-click menu. Anchored at the click coordinates,
+ * dismisses on click-outside / Escape. The actual fork work runs in
+ * `forkAndOpenSession` via the parent's `onFork` callback so this stays
+ * a presentational component (easier to slot more actions in later
+ * — Edit message, Retry from here, etc.).
+ */
+function ForkContextMenu({
+  x, y, busy, error, onFork, onDismiss,
+}: {
+  x: number
+  y: number
+  busy: boolean
+  error: string | null
+  onFork: () => void
+  onDismiss: () => void
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  // Clamp the menu inside the viewport so a right-click near the edge
+  // doesn't push it off-screen. We render hidden on first paint, measure
+  // synchronously in useLayoutEffect, and reveal on the same frame — that
+  // way the user never sees the unclamped position flash before the
+  // post-measure correction lands.
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    const margin = 6
+    const nx = Math.min(x, window.innerWidth - rect.width - margin)
+    const ny = Math.min(y, window.innerHeight - rect.height - margin)
+    setPos({ x: Math.max(margin, nx), y: Math.max(margin, ny) })
+  }, [x, y])
+
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) onDismiss()
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onDismiss() }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [onDismiss])
+
+  return (
+    <div
+      ref={ref}
+      className="sb-floating-surface"
+      style={{
+        position: 'fixed',
+        top: pos?.y ?? y,
+        left: pos?.x ?? x,
+        visibility: pos ? 'visible' : 'hidden',
+        zIndex: 1300,
+        minWidth: '200px',
+        background: 'var(--bg-secondary)',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        boxShadow: '0 6px 24px rgba(0, 0, 0, 0.35)',
+        padding: '4px',
+      }}
+    >
+      <button
+        onClick={onFork}
+        disabled={busy}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          width: '100%',
+          padding: '6px 10px',
+          border: 'none',
+          background: 'transparent',
+          color: busy ? 'var(--text-muted)' : 'var(--text-primary)',
+          cursor: busy ? 'wait' : 'pointer',
+          fontSize: '12.5px',
+          textAlign: 'left',
+          borderRadius: '4px',
+        }}
+        onMouseEnter={(e) => { if (!busy) (e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)' }}
+        onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
+      >
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="6" cy="6" r="3" />
+          <circle cx="18" cy="6" r="3" />
+          <circle cx="12" cy="20" r="3" />
+          <path d="M6 9v3a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V9" />
+          <path d="M12 12v5" />
+        </svg>
+        {busy ? 'Forking…' : 'Fork from here'}
+      </button>
+      {error && (
+        <div style={{
+          padding: '6px 10px',
+          fontSize: '11px',
+          color: 'var(--danger, #f85149)',
+          borderTop: '1px solid var(--border)',
+          marginTop: '4px',
+        }}>
+          {error}
+        </div>
+      )}
+      <div style={{
+        padding: '4px 10px 2px',
+        fontSize: '10px',
+        color: 'var(--text-muted)',
+        borderTop: '1px solid var(--border)',
+        marginTop: '4px',
+      }}>
+        Esc to dismiss
+      </div>
     </div>
   )
 }

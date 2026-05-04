@@ -719,11 +719,13 @@ export function App() {
             </div>
           )}
 
-          {/* Terminal divider */}
+          {/* Terminal divider — `beforeRef` intentionally omitted; the chat
+              panel between sidebar and terminal is flex:1, no width to pin.
+              Wiring sidebarRef here causes the "can't resize either pane"
+              bug; pinned by tests/unit/resize-handle-wiring.test.ts. */}
           <ResizeHandle
             direction="horizontal"
             afterRef={terminalRef}
-            beforeRef={sidebarRef}
             invert
             min={200}
             max={800}
