@@ -106,7 +106,7 @@ function sdkEnv(): Record<string, string> {
 
 /** Find the claude binary — cached after first lookup */
 let cachedClaudeBin: string | undefined
-function findClaudeBin(): string | undefined {
+export function findClaudeBin(): string | undefined {
   if (cachedClaudeBin) return cachedClaudeBin
   const home = process.env.HOME || ''
   const candidates = [

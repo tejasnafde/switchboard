@@ -18,6 +18,7 @@ import {
   getProviderInstanceFull,
   type ProviderInstanceUpsertInput,
 } from '../db/providerInstances'
+import { findClaudeBin } from '../provider/adapters/claude-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { applyEnvOverlay } from '../provider/env-overlay'
 
@@ -71,8 +72,10 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
 
   try {
     if (instance.agentType === 'claude-code') {
-      const out = spawnSync('claude', ['--version'], { env, timeout: 5000, encoding: 'utf-8' })
-      if (out.error) return { ok: false, message: `claude not on PATH: ${out.error.message}` }
+      const bin = findClaudeBin()
+      if (!bin) return { ok: false, message: 'claude binary not found — install Claude Code and ensure it is on PATH' }
+      const out = spawnSync(bin, ['--version'], { env, timeout: 5000, encoding: 'utf-8' })
+      if (out.error) return { ok: false, message: `claude error: ${out.error.message}` }
       if (out.status !== 0) return { ok: false, message: out.stderr?.trim() || `exit ${out.status}` }
       return { ok: true, message: out.stdout.trim() || 'claude available' }
     }
