@@ -47,4 +47,26 @@ describe('App.tsx resize handle wiring', () => {
     // drag — both panes become un-resizable. Forbid that exact shape.
     expect(terminal!).not.toContain('sidebarRef')
   })
+
+  // ⌘B / ⌘J → toggle off → toggle on used to break both resize handles
+  // because the store imperatively mutated `el.style.width/visibility`
+  // while the JSX carried a constant width string. React's reconciler
+  // skipped the unchanged-string write on toggle-on and DOM drifted
+  // from state. Drive width AND visibility from JSX instead.
+  it('sidebar div: width + visibility are visibility-aware in JSX', () => {
+    expect(src).toMatch(/sidebarVisible \? `\$\{sidebarWidth\}px` : '0px'/)
+    expect(src).toMatch(/visibility: sidebarVisible \? 'visible' : 'hidden'/)
+  })
+
+  it('terminal div: width + visibility are visibility-aware in JSX', () => {
+    expect(src).toMatch(/terminalVisible \? `\$\{terminalWidth\}px` : '0px'/)
+    expect(src).toMatch(/visibility: terminalVisible \? 'visible' : 'hidden'/)
+  })
+
+  it('layout-store: toggleSidebar/toggleTerminal do NOT call applyPanelVisibility', () => {
+    const STORE = resolve(__dirname, '../../src/renderer/stores/layout-store.ts')
+    const storeSrc = readFileSync(STORE, 'utf8')
+    expect(storeSrc).not.toMatch(/^\s*function applyPanelVisibility\b/m)
+    expect(storeSrc).not.toMatch(/applyPanelVisibility\(/)
+  })
 })

@@ -131,16 +131,12 @@ function persistList(key: string, list: string[]): void {
   } catch { /* settings unavailable in tests / early boot */ }
 }
 
-function applyPanelVisibility(
-  el: HTMLDivElement | null,
-  visible: boolean,
-  width: number,
-): void {
-  if (!el) return
-  el.style.width = visible ? `${width}px` : '0px'
-  el.style.visibility = visible ? 'visible' : 'hidden'
-  el.style.overflow = visible ? 'visible' : 'hidden'
-}
+// Panel width + visibility are driven from JSX in App.tsx — do NOT
+// imperatively mutate `el.style.*` here on toggle. React's style
+// reconciler skips writes when the JSX string is unchanged, so a
+// hybrid imperative/JSX approach left DOM diverged from state after a
+// hide/show cycle and broke both ResizeHandle drag handles. Pinned by
+// tests/unit/resize-handle-wiring.test.ts.
 
 export const useLayoutStore = create<LayoutStore>((set, get) => ({
   sidebarWidth: SIDEBAR_DEFAULT,
@@ -274,17 +270,11 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   registerTerminalEl: (el) => set({ terminalEl: el }),
 
   toggleSidebar: () => {
-    const { sidebarVisible, sidebarWidth, sidebarEl } = get()
-    const next = !sidebarVisible
-    applyPanelVisibility(sidebarEl, next, sidebarWidth)
-    set({ sidebarVisible: next })
+    set({ sidebarVisible: !get().sidebarVisible })
   },
 
   toggleTerminal: () => {
-    const { terminalVisible, terminalWidth, terminalEl } = get()
-    const next = !terminalVisible
-    applyPanelVisibility(terminalEl, next, terminalWidth)
-    set({ terminalVisible: next })
+    set({ terminalVisible: !get().terminalVisible })
   },
 
   setSidebarWidth: (width) => {

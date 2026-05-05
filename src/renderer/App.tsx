@@ -680,11 +680,14 @@ export function App() {
            terminal↔files toggle). Avoids the translucent-theme bleed-
            through that an absolute overlay caused. */}
       <div style={{ flex: '1 1 0%', display: 'flex', minHeight: 0 }}>
-        {/* Sidebar */}
+        {/* Sidebar — width + visibility driven from JSX (not imperatively
+             mutated in the store) so React reconciles drag-time writes
+             back to state on the next commit. See layout-store.ts. */}
         <div
           ref={sidebarRef}
           style={{
-            width: `${sidebarWidth}px`,
+            width: sidebarVisible ? `${sidebarWidth}px` : '0px',
+            visibility: sidebarVisible ? 'visible' : 'hidden',
             flexShrink: 0,
             overflow: 'hidden',
             display: 'flex',
@@ -748,7 +751,8 @@ export function App() {
           <div
             ref={terminalRef}
             style={{
-              width: `${terminalWidth}px`,
+              width: terminalVisible ? `${terminalWidth}px` : '0px',
+              visibility: terminalVisible ? 'visible' : 'hidden',
               flexShrink: 0,
               overflow: 'hidden',
               display: 'flex',
