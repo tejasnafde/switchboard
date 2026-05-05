@@ -368,21 +368,18 @@ export function App() {
         }
       } catch { /* best-effort */ }
 
-      // Load messages from JSONL file
-      if (session.filePath) {
-        try {
-          const messages: ChatMessage[] = await window.api.app.loadSession(
-            session.filePath,
-            session.id,
-            session.source === 'codex' ? 'codex' : 'claude-code',
-          )
-          if (messages.length > 0) {
-            setMessages(session.id, messages)
-          }
-        } catch {
-          // Failed to load — session will show empty state
+      // Load messages via loadSessionById so the main process scans every
+      // known oauth_dir for this agent kind — sessions whose last turn ran
+      // under a non-default profile (e.g. after instance rotation) write
+      // JSONLs under that profile's dir, which the project scanner doesn't
+      // see (it only walks ~/.claude).
+      try {
+        const resp = await window.api.app.loadSessionById(session.id) as {
+          messages: ChatMessage[]
+          meta: { id: string; title: string; projectPath: string; agentType: string } | null
         }
-      }
+        if (resp?.messages?.length) setMessages(session.id, resp.messages)
+      } catch { /* failed load — session shows empty state */ }
     },
     [addSession, setActiveSession, setMessages],
   )

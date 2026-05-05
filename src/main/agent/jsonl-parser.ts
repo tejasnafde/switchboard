@@ -72,6 +72,16 @@ export class JsonlParser {
     }
     const type = event.type as string | undefined
 
+    // Prefer the JSONL line's own timestamp (Claude SDK writes ISO strings
+    // at the event root) so re-parses preserve chronological order. Without
+    // this every line gets stamped Date.now() at parse time and out-of-band
+    // markers (e.g. the rotation pill) end up clumped before all turns.
+    const rawTs = event.timestamp
+    const parsedTs = typeof rawTs === 'string' ? Date.parse(rawTs)
+      : typeof rawTs === 'number' ? rawTs
+      : NaN
+    const ts = Number.isFinite(parsedTs) ? parsedTs : Date.now()
+
     switch (type) {
       case 'assistant': {
         const content = extractContent(event.message)
@@ -83,7 +93,7 @@ export class JsonlParser {
           role: 'assistant',
           content,
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
-          timestamp: Date.now(),
+          timestamp: ts,
         }
       }
 
@@ -99,7 +109,7 @@ export class JsonlParser {
           role: 'user',
           content,
           images: images.length > 0 ? images : undefined,
-          timestamp: Date.now(),
+          timestamp: ts,
         }
       }
 
@@ -108,7 +118,7 @@ export class JsonlParser {
           id: generateId(),
           role: 'assistant',
           content: (event.result as string) ?? '',
-          timestamp: Date.now(),
+          timestamp: ts,
         }
       }
 

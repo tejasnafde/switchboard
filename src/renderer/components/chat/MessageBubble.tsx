@@ -16,6 +16,7 @@ import { renderPillBody } from './renderPillBody'
 import { parseSlashCommandWrapper, splitSkillMentions } from './slashCommands'
 import { SkillChip } from './SkillChip'
 import { forkAndOpenSession } from '../../services/forkSession'
+import { parseRotationMarker } from './rotationMarker'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -157,6 +158,37 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
   const isError = isSystem && /^Error:/i.test(message.content)
+  const rotation = isSystem ? parseRotationMarker(message.content) : null
+
+  // Compact, persistent indicator that the conversation's provider instance
+  // changed mid-flight. Renders inline with surrounding bubbles so the
+  // user can correlate which credential set produced the next turn.
+  if (rotation) {
+    return (
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        margin: '8px 0',
+        opacity: 0.78,
+      }}>
+        <div style={{
+          fontSize: 11,
+          color: 'var(--sb-text-secondary, #999)',
+          padding: '4px 10px',
+          borderRadius: 999,
+          border: '1px solid var(--sb-border, rgba(120,120,120,0.25))',
+          background: 'var(--sb-surface-2, rgba(120,120,120,0.08))',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 6,
+          fontFamily: '-apple-system, system-ui, sans-serif',
+        }}>
+          <span aria-hidden style={{ fontSize: 10 }}>⇄</span>
+          <span>Switched profile: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong></span>
+        </div>
+      </div>
+    )
+  }
 
   // Skip rendering if completely empty
   if (!message.content

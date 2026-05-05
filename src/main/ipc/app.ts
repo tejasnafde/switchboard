@@ -45,7 +45,10 @@ import {
   reorderWorkspaces,
   setProjectWorkspace,
   getDisplayBodyEnrichments,
+  getSystemMarkerMessages,
 } from '../db/database'
+import { listOauthDirsForAgent } from '../db/providerInstances'
+import { defaultClaudeDir } from '../provider/claude-session-migrate'
 import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
 import { JsonlParser } from '../agent/jsonl-parser'
 import { forkConversation } from '../conversations/fork'
@@ -251,16 +254,27 @@ export function registerAppHandlers(window: BrowserWindow): void {
 
     if (source === 'claude-code') {
       const encoded = encodeClaudeProjectPath(row.project_path)
+      // Scan every known Claude profile dir (every enabled oauth_dir + ~/.claude).
+      // Without this, switching instances mid-conversation hides turns that
+      // landed in the alternate profile after restart, because the SDK
+      // writes JSONLs under the active CLAUDE_CONFIG_DIR — not ~/.claude.
+      const candidateDirs = Array.from(new Set([
+        ...listOauthDirsForAgent('claude-code'),
+        defaultClaudeDir(),
+      ]))
       const all: ChatMessage[] = []
       for (const sid of sessionIds) {
-        const filePath = joinPath(homedir(), '.claude', 'projects', encoded, `${sid}.jsonl`)
-        try {
-          const raw = await readFile(filePath, 'utf-8')
-          const parser = new JsonlParser((msg) => all.push(msg), 'claude-code')
-          parser.feed(raw)
-          parser.flush()
-        } catch {
-          // Session_id might not have a jsonl (e.g. failed before first turn)
+        for (const dir of candidateDirs) {
+          const filePath = joinPath(dir, 'projects', encoded, `${sid}.jsonl`)
+          try {
+            const raw = await readFile(filePath, 'utf-8')
+            const parser = new JsonlParser((msg) => all.push(msg), 'claude-code')
+            parser.feed(raw)
+            parser.flush()
+          } catch {
+            // Session_id might not have a jsonl in this profile (rotation
+            // didn't migrate it, or session never ran here).
+          }
         }
       }
       // Merge in timestamp order so fragments interleave correctly.
@@ -274,8 +288,18 @@ export function registerAppHandlers(window: BrowserWindow): void {
         return true
       })
       const enriched = enrichMessagesWithDisplayBody(deduped, getDisplayBodyEnrichments(conversationId))
-      log.info(`load-by-id: ${conversationId} → ${deduped.length} messages (${all.length - deduped.length} dupes removed) across ${sessionIds.length} fragment(s)`)
-      return { messages: enriched, meta }
+      // Merge in any persisted system markers (currently provider-instance
+      // rotation markers) — these live in SQLite, not JSONL, and need to
+      // appear in chronological order alongside agent turns.
+      const markers = getSystemMarkerMessages(conversationId).map((m) => ({
+        id: m.id,
+        role: 'system' as const,
+        content: m.content,
+        timestamp: m.timestamp,
+      }))
+      const merged = [...enriched, ...markers].sort((a, b) => a.timestamp - b.timestamp)
+      log.info(`load-by-id: ${conversationId} → ${deduped.length} messages (${all.length - deduped.length} dupes removed) across ${sessionIds.length} fragment(s), +${markers.length} marker(s)`)
+      return { messages: merged, meta }
     }
 
     // Codex fallback — scan all sessions for this project, find matching id(s)
@@ -298,7 +322,14 @@ export function registerAppHandlers(window: BrowserWindow): void {
         return true
       })
       const enrichedCodex = enrichMessagesWithDisplayBody(dedupedCodex, getDisplayBodyEnrichments(conversationId))
-      return { messages: enrichedCodex, meta }
+      const markersCodex = getSystemMarkerMessages(conversationId).map((m) => ({
+        id: m.id,
+        role: 'system' as const,
+        content: m.content,
+        timestamp: m.timestamp,
+      }))
+      const mergedCodex = [...enrichedCodex, ...markersCodex].sort((a, b) => a.timestamp - b.timestamp)
+      return { messages: mergedCodex, meta }
     } catch (err) {
       log.warn(`load-by-id (codex) failed for ${conversationId}: ${err}`)
       return { messages: [], meta }
@@ -307,12 +338,17 @@ export function registerAppHandlers(window: BrowserWindow): void {
 
   // Save a message to the database
   ipcMain.handle(AppChannels.SAVE_MESSAGE, (_event, params: SaveMessageParams) => {
-    saveMessage(
+    const result = saveMessage(
       params.id, params.conversationId, params.role, params.content,
       params.toolCalls, params.images,
       params.displayBody, params.pillsMeta,
     )
-    return { ok: true }
+    // Trace in-band system markers (rotation pill etc.) — they're rare
+    // and worth a one-liner so persistence issues are diagnosable in-log.
+    if (params.role === 'system' && params.content.startsWith('[[sb:')) {
+      log.info(`saveMessage marker → ${result.ok ? 'ok' : `skipped(${result.reason})`} conv=${params.conversationId} content=${JSON.stringify(params.content)}`)
+    }
+    return result
   })
 
   // Read/write the per-conversation runtime mode. The UI calls these so a

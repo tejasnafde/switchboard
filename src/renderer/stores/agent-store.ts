@@ -314,14 +314,22 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         // would render as "custom". Same logic for `instanceId` —
         // instances are scoped to a single agent kind; carrying one
         // over after a switch would point at a stale row from the
-        // previous kind.
-        s.id === sessionId ? { ...s, type, model: undefined, instanceId: undefined } : s
+        // previous kind. `resumeSessionId` is also cleared because
+        // session-id namespaces differ across kinds (Claude UUID vs.
+        // Codex rollout id) — there's no migration path.
+        s.id === sessionId
+          ? { ...s, type, model: undefined, instanceId: undefined, resumeSessionId: undefined }
+          : s
       ),
     })),
 
   setInstanceId: (sessionId, instanceId) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
+        // Keep `resumeSessionId` — the Claude adapter migrates the session
+        // JSONL across profiles when `oauth_dir` differs, so resume by UUID
+        // still works. Clearing here would silently drop conversation
+        // history on every instance switch.
         s.id === sessionId ? { ...s, instanceId } : s,
       ),
     })),

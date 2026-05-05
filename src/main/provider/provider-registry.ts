@@ -10,7 +10,8 @@ import { CodexAdapter } from './adapters/codex-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
-import { resolveProviderInstance } from '../db/providerInstances'
+import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
+import { defaultClaudeDir } from './claude-session-migrate'
 import type { AgentType } from '@shared/types'
 import type {
   ProviderAdapter,
@@ -99,12 +100,23 @@ export class ProviderRegistry {
 
       const agentType: AgentType = opts.provider === 'claude' ? 'claude-code' : opts.provider
       const instance = resolveProviderInstance(agentType, opts.instanceId)
+      // Gather every known oauth_dir for this agent kind so the adapter
+      // can scan them on cold-start (lastOauthDir map empty after app
+      // restart) to find a resumeable JSONL across profiles. Always
+      // includes the default dir so env-mode sessions (no oauth_dir) are
+      // discoverable too.
+      const candidateOauthDirs = Array.from(new Set([
+        ...listOauthDirsForAgent(agentType),
+        defaultClaudeDir(),
+      ]))
       const enrichedOpts: SessionStartOpts = {
         ...opts,
         instanceId: instance?.id ?? opts.instanceId,
         resolvedEnv: instance?.env ?? {},
         resolvedOauthDir: instance?.oauthDir ?? null,
+        candidateOauthDirs,
       }
+      log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${instance?.oauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
 
       this.sessionAdapters.set(opts.threadId, adapter)
       this.sessionProviders.set(opts.threadId, opts.provider)

@@ -59,6 +59,13 @@ export interface SessionStartOpts {
   resolvedEnv?: Record<string, string>
   /** Per-instance config dir → CLAUDE_CONFIG_DIR (claude) or CODEX_HOME (codex). */
   resolvedOauthDir?: string | null
+  /**
+   * All known config dirs for this agent kind (every enabled instance's
+   * resolved oauth_dir, plus the default). Used by adapters to find a
+   * resumeable JSONL across profiles when in-memory rotation tracking is
+   * cold (e.g. after an app restart).
+   */
+  candidateOauthDirs?: string[]
 }
 
 export interface ProviderSession {

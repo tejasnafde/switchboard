@@ -713,6 +713,9 @@ export function getConversationProviderInstanceId(id: string): string | null {
 }
 
 export function setConversationProviderInstanceId(id: string, instanceId: string): void {
+  // Keep `session_id`. The claude-adapter migrates the JSONL across
+  // CLAUDE_CONFIG_DIR profiles when oauth_dir differs, so resume by UUID
+  // still works after a switch. Nulling here would drop history.
   getDb().prepare(
     'UPDATE conversations SET provider_instance_id = ?, updated_at = ? WHERE id = ?'
   ).run(instanceId, Date.now(), id)
@@ -809,7 +812,7 @@ export function saveMessage(
   images?: string,
   displayBody?: string,
   pillsMeta?: string,
-): void {
+): { ok: boolean; reason?: 'conversation-missing' } {
   const now = Date.now()
   const db = getDb()
 
@@ -820,7 +823,7 @@ export function saveMessage(
   const convExists = db.prepare('SELECT 1 FROM conversations WHERE id = ?').get(conversationId)
   if (!convExists) {
     log.warn(`saveMessage: conversation ${conversationId} not found, skipping`)
-    return
+    return { ok: false, reason: 'conversation-missing' }
   }
 
   db.prepare(
@@ -836,6 +839,7 @@ export function saveMessage(
   db.prepare(
     'UPDATE conversations SET updated_at = ? WHERE id = ?'
   ).run(now, conversationId)
+  return { ok: true }
 }
 
 export interface MessageRow {
@@ -880,6 +884,29 @@ export function getDisplayBodyEnrichments(
     })
   }
   return out
+}
+
+/**
+ * Return persisted system messages (currently used only for the in-band
+ * provider-instance-rotation marker) for a conversation. JSONL fragments
+ * don't carry these — they're written to SQLite by the renderer when the
+ * user switches instances mid-conversation, and merged back into the
+ * load-by-id output so the marker survives reload.
+ */
+export function getSystemMarkerMessages(conversationId: string): Array<{
+  id: string
+  role: string
+  content: string
+  timestamp: number
+}> {
+  return getDb().prepare(
+    `SELECT id, role, content, timestamp
+       FROM messages
+      WHERE conversation_id = ?
+        AND role = 'system'
+        AND content LIKE '[[sb:%'
+      ORDER BY timestamp ASC`
+  ).all(conversationId) as Array<{ id: string; role: string; content: string; timestamp: number }>
 }
 
 // ─── Settings CRUD ──────────────────────────────────────────────

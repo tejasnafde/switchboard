@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react'
 import type { AgentType, ProviderInstance } from '@shared/types'
 import { agentLabel, defaultInstanceId } from '@shared/types'
+import { providerInstanceInitials } from '@shared/providerInstanceInitials'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import type { ProviderInstanceUpsertInput } from '../../../preload'
 
@@ -18,16 +19,6 @@ const DEFAULT_ACCENT_PALETTE = [
   '#ff5ca8',
   '#ffd23d',
 ]
-
-function instanceInitials(name: string): string {
-  const cleaned = name.trim()
-  if (!cleaned) return '??'
-  const parts = cleaned.split(/[\s\-_]+/).filter(Boolean)
-  if (parts.length >= 2) {
-    return (parts[0][0] + parts[1][0]).toUpperCase()
-  }
-  return cleaned.slice(0, 2).toUpperCase()
-}
 
 function isDefault(inst: ProviderInstance): boolean {
   return inst.id === defaultInstanceId(inst.agentType)
@@ -170,7 +161,7 @@ function ProviderInstanceCard({
   const remove = useProviderInstanceStore((s) => s.remove)
   const test = useProviderInstanceStore((s) => s.test)
   const accent = instance.accentColor ?? 'var(--accent)'
-  const initials = instanceInitials(instance.displayName)
+  const initials = providerInstanceInitials(instance.displayName)
   const def = isDefault(instance)
   const [probe, setProbe] = useState<{ ok: boolean; message: string } | null>(null)
   const [probing, setProbing] = useState(false)

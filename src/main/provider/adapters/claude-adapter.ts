@@ -142,6 +142,12 @@ export {
 } from '../policy'
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage } from '../policy'
 import { applyEnvOverlay } from '../env-overlay'
+import {
+  migrateClaudeSession,
+  migrateClaudeSessionFromCandidates,
+  claudeSessionExistsIn,
+  defaultClaudeDir,
+} from '../claude-session-migrate'
 import { shapeQuestionAnswers } from './question-answers'
 
 // ─── Prompt queue — push new SDKUserMessages into a running query ──
@@ -280,6 +286,13 @@ interface ActiveSession {
 export class ClaudeAdapter implements ProviderAdapter {
   readonly provider = 'claude' as const
   private sessions = new Map<string, ActiveSession>()
+  /**
+   * Last-known CLAUDE_CONFIG_DIR per thread. Used by `startSession` to
+   * detect oauth_dir rotation and migrate the session JSONL across
+   * profiles before resume so context is preserved. `null` means the
+   * thread last ran under the default `~/.claude` (env mode).
+   */
+  private lastOauthDir = new Map<string, string | null>()
 
   async isAvailable(): Promise<boolean> {
     try {
@@ -299,10 +312,62 @@ export class ClaudeAdapter implements ProviderAdapter {
     // with "not a UUID and does not match any session title." Children
     // recorded in `thread_sessions` (Claude SDK-assigned UUIDs) are the
     // right resume target for any thread that's had at least one turn.
-    const resumeId = resolveClaudeResumeId(opts.threadId, opts.resumeSessionId)
+    let resumeId = resolveClaudeResumeId(opts.threadId, opts.resumeSessionId)
     if (opts.resumeSessionId && !resumeId) {
       log.info(`resume: no valid UUID for thread ${opts.threadId} (hint=${opts.resumeSessionId}) — starting fresh`)
     }
+
+    // Detect oauth_dir rotation. If the previous startSession ran under a
+    // different CLAUDE_CONFIG_DIR, the session JSONL lives in that profile,
+    // not the new one — the SDK's resume call would throw "No conversation
+    // found with session ID". Copy the JSONL across so resume succeeds and
+    // turn-by-turn context is preserved.
+    const newOauthDir = opts.resolvedOauthDir ?? null
+    const newDirResolved = newOauthDir ?? defaultClaudeDir()
+    const prevOauthDir = this.lastOauthDir.get(opts.threadId)
+    if (resumeId) {
+      let migrateResult: ReturnType<typeof migrateClaudeSession> | null = null
+      if (prevOauthDir !== undefined && prevOauthDir !== newOauthDir) {
+        // Hot path: in-memory tracker knows the previous dir (rotation
+        // within the same app session).
+        migrateResult = migrateClaudeSession({
+          sessionId: resumeId,
+          cwd: opts.cwd,
+          fromDir: prevOauthDir ?? defaultClaudeDir(),
+          toDir: newDirResolved,
+        })
+      } else if (prevOauthDir === undefined && !claudeSessionExistsIn(newDirResolved, resumeId, opts.cwd)) {
+        // Cold path: first startSession on this thread since boot, and
+        // the JSONL isn't where we'd expect. Scan every known oauth_dir
+        // (default + each enabled instance's dir) to discover where the
+        // session actually lives.
+        const candidates = opts.candidateOauthDirs ?? [defaultClaudeDir()]
+        migrateResult = migrateClaudeSessionFromCandidates({
+          sessionId: resumeId,
+          cwd: opts.cwd,
+          toDir: newDirResolved,
+          candidates,
+        })
+        if (migrateResult.ok && migrateResult.copied) {
+          log.info(`cold-start migrate: copied from ${migrateResult.from}`)
+        }
+      }
+      if (migrateResult && !migrateResult.ok) {
+        log.warn(`session migrate failed (${migrateResult.reason}) — starting fresh`)
+        onEvent({
+          type: 'content',
+          threadId: opts.threadId,
+          messageId: `sys_migrate_${Date.now()}`,
+          text:
+            migrateResult.reason === 'source-missing'
+              ? '(Couldn\'t migrate session history across profiles — original JSONL is gone. Starting fresh under the new instance.)'
+              : `(Couldn't migrate session history: ${migrateResult.detail}. Starting fresh.)`,
+          streamKind: 'reasoning',
+        })
+        resumeId = undefined
+      }
+    }
+    this.lastOauthDir.set(opts.threadId, newOauthDir)
 
     const session: ProviderSession = {
       threadId: opts.threadId,
@@ -565,7 +630,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       },
     }
 
-    log.info(`starting query: cwd=${active.session.cwd} model=${active.session.model ?? 'default'} mode=${permissionMode} claudeBin=${claudeBin ?? 'auto'} resume=${active.session.sessionId ?? 'none'} PATH=${env.PATH?.slice(0, 200)}`)
+    log.info(`starting query: cwd=${active.session.cwd} model=${active.session.model ?? 'default'} mode=${permissionMode} claudeBin=${claudeBin ?? 'auto'} resume=${active.session.sessionId ?? 'none'} CLAUDE_CONFIG_DIR=${env.CLAUDE_CONFIG_DIR ?? '(default ~/.claude)'} PATH=${env.PATH?.slice(0, 200)}`)
 
     active.session.status = 'running'
     active.onEvent({ type: 'status', threadId, status: 'running' })
@@ -745,6 +810,10 @@ export class ClaudeAdapter implements ProviderAdapter {
     active.pendingQuestions.clear()
 
     this.sessions.delete(threadId)
+    // Keep `lastOauthDir` so a subsequent startSession on the same thread
+    // (rotation triggers stopSession + startSession in sequence) still
+    // sees the prior profile and can migrate. Cleared on full app shutdown
+    // via process exit; per-thread leak is bounded by user thread count.
     log.info(`session stopped: ${threadId}`)
   }
 

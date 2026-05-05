@@ -16,9 +16,26 @@
  */
 
 import { safeStorage } from 'electron'
+import { homedir } from 'os'
+import { join } from 'path'
 import { getDb } from './database'
 import { createMainLogger as createLogger } from '../logger'
 import { isAgentType, defaultInstanceId, type AgentType } from '@shared/types'
+
+/**
+ * Expand a leading `~` (or `~/`) to the user's home dir. Users routinely
+ * type `~/.claude-foo` in the Settings → Providers oauth_dir field, but
+ * neither Node's fs nor a spawned child's CLAUDE_CONFIG_DIR / CODEX_HOME
+ * env vars do tilde expansion themselves — leaving the SDK to read from a
+ * literal `~/.claude-foo` directory under cwd, which is never where the
+ * user actually `claude login`'d.
+ */
+export function expandTilde(p: string | null): string | null {
+  if (!p) return p
+  if (p === '~') return homedir()
+  if (p.startsWith('~/')) return join(homedir(), p.slice(2))
+  return p
+}
 
 const log = createLogger('db:provider-instances')
 
@@ -124,7 +141,7 @@ function rowToFull(r: DbRow): ProviderInstanceRow {
     accentColor: r.accent_color,
     authMode: r.auth_mode === 'oauth_dir' ? 'oauth_dir' : 'env',
     env: decryptEnv(r.env_encrypted),
-    oauthDir: r.oauth_dir,
+    oauthDir: expandTilde(r.oauth_dir),
     configJson,
     enabled: r.enabled === 1,
     createdAt: r.created_at,
@@ -141,7 +158,7 @@ function rowToWire(r: DbRow): ProviderInstanceWire {
     accentColor: r.accent_color,
     authMode: r.auth_mode === 'oauth_dir' ? 'oauth_dir' : 'env',
     envKeys: Object.keys(env).sort(),
-    oauthDir: r.oauth_dir,
+    oauthDir: r.oauth_dir,  // wire keeps the literal so the user sees what they typed
     enabled: r.enabled === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -270,6 +287,22 @@ export function deleteProviderInstance(id: string): boolean {
  * null only if the agent kind has no instances at all (shouldn't happen
  * post-migration, but the caller handles it gracefully).
  */
+/**
+ * Return every enabled instance's resolved oauth_dir for the given agent
+ * kind. Used by adapters to discover where a session JSONL lives across
+ * profiles when the in-memory rotation tracker is cold (post-restart).
+ */
+export function listOauthDirsForAgent(agentType: AgentType): string[] {
+  const rows = getDb().prepare(
+    `SELECT oauth_dir FROM provider_instances
+      WHERE agent_type = ? AND enabled = 1 AND oauth_dir IS NOT NULL AND oauth_dir != ''`
+  ).all(agentType) as Array<{ oauth_dir: string | null }>
+  const dirs = rows
+    .map((r) => expandTilde(r.oauth_dir))
+    .filter((d): d is string => !!d)
+  return Array.from(new Set(dirs))
+}
+
 export function resolveProviderInstance(
   agentType: AgentType,
   instanceId: string | undefined | null,

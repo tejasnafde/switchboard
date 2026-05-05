@@ -7,9 +7,9 @@ import {
   agentSupportsReasoningEffort,
   type ReasoningEffort,
 } from '@shared/models'
-import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
+import { type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
-import { useProviderInstanceStore } from '../../stores/provider-instance-store'
+import { UnifiedProviderPicker } from './UnifiedProviderPicker'
 import { useSkillStore } from '../../stores/skill-store'
 import { SlashCommandMenu } from './SlashCommandMenu'
 import {
@@ -71,12 +71,6 @@ interface ChatInputProps {
   /** Show slash-command help overlay */
   onShowSlashHelp?: () => void
 }
-
-const AGENTS: { value: AgentType; label: string; available: boolean }[] = [
-  { value: 'claude-code', label: 'Claude Code', available: true },
-  { value: 'codex', label: 'Codex', available: true },
-  { value: 'opencode', label: 'OpenCode', available: true },
-]
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
 
@@ -806,47 +800,18 @@ export function ChatInput({
           fontSize: '11px',
         }}
       >
-        {/* Agent selector */}
-        <select
-          value={agentType}
-          onChange={(e) => onAgentTypeChange(e.target.value as AgentType)}
-          disabled={!canChangeAgent}
-          style={{
-            background: 'var(--bg-tertiary)',
-            color: 'var(--text-secondary)',
-            border: '1px solid var(--border)',
-            borderRadius: '4px',
-            padding: '3px 6px',
-            fontSize: '11px',
-            cursor: canChangeAgent ? 'pointer' : 'default',
-            outline: 'none',
-          }}
-        >
-          {AGENTS.map((a) => (
-            <option key={a.value} value={a.value} disabled={!a.available}>
-              {a.label}{!a.available ? ' (soon)' : ''}
-            </option>
-          ))}
-        </select>
-
-        {/* Provider-instance picker — named credential set per agent kind.
-            Hidden when only the default instance exists (single-account
-            users see no extra UI). */}
-        {onInstanceChange && (
-          <InstancePicker
+        {/* Unified provider/instance/model picker — single drop-up popover
+            consolidating what used to be three separate footer controls. */}
+        {onModelChange && onInstanceChange && (
+          <UnifiedProviderPicker
             agentType={agentType}
-            value={instanceId}
-            onChange={onInstanceChange}
-            disabled={!canChangeAgent}
-          />
-        )}
-
-        {/* Model selector — dropdown of known models + Custom for any string */}
-        {onModelChange && (
-          <ModelPicker
-            value={model ?? ''}
-            onChange={onModelChange}
-            models={models}
+            onAgentTypeChange={onAgentTypeChange}
+            canChangeAgent={canChangeAgent}
+            instanceId={instanceId}
+            onInstanceChange={onInstanceChange}
+            model={model ?? ''}
+            onModelChange={onModelChange}
+            dynamicModels={agentType === 'opencode' ? opencodeModels : null}
           />
         )}
 
@@ -984,119 +949,8 @@ export function ChatInput({
   )
 }
 
-// ─── Model picker with dropdown + custom input ─────────────────
-
-function ModelPicker({
-  value,
-  onChange,
-  models,
-}: {
-  value: string
-  onChange: (model: string) => void
-  models: Array<{ id: string; label: string }>
-}) {
-  const [showCustom, setShowCustom] = useState(false)
-  const [customValue, setCustomValue] = useState('')
-  const isKnown = !value || models.some((m) => m.id === value)
-
-  // Reset the custom-input branch whenever the model list changes (i.e.
-  // the user switched agents). Without this, picking "Custom..." on
-  // OpenCode and then flipping to Codex would leave the input box up
-  // even though the value was already cleared by setAgentType.
-  useEffect(() => {
-    setShowCustom(false)
-    setCustomValue('')
-  }, [models])
-
-  const selectStyle: React.CSSProperties = {
-    background: 'var(--bg-tertiary)',
-    color: 'var(--text-secondary)',
-    border: '1px solid var(--border)',
-    borderRadius: '4px',
-    padding: '3px 6px',
-    fontSize: '11px',
-    cursor: 'pointer',
-    outline: 'none',
-    maxWidth: '170px',
-  }
-
-  if (showCustom || (!isKnown && value)) {
-    return (
-      <div style={{ display: 'flex', gap: '3px', alignItems: 'center' }}>
-        <input
-          value={showCustom ? customValue : value}
-          onChange={(e) => {
-            setCustomValue(e.target.value)
-            onChange(e.target.value)
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') { setShowCustom(false); onChange('') }
-            if (e.key === 'Enter') { setShowCustom(false) }
-            e.stopPropagation() // don't trigger app shortcuts
-          }}
-          placeholder="model-id"
-          autoFocus
-          style={{
-            ...selectStyle,
-            width: '140px',
-            fontFamily: 'var(--font-mono)',
-          }}
-        />
-        <button
-          onClick={() => { setShowCustom(false); if (!customValue) onChange('') }}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            fontSize: '12px',
-            padding: '0 2px',
-          }}
-          title="Back to list"
-        >
-          x
-        </button>
-      </div>
-    )
-  }
-
-  // Group models by their provider prefix (e.g. "google/", "nvidia-nim/")
-  // so the OpenCode dropdown — which can return 100+ entries — is browsable.
-  // Models without a slash (Claude/Codex static lists) collapse into a
-  // single ungrouped section.
-  const grouped = groupModelsByProvider(models)
-
-  return (
-    <select
-      value={value}
-      onChange={(e) => {
-        if (e.target.value === '__custom__') {
-          setShowCustom(true)
-          setCustomValue('')
-        } else {
-          onChange(e.target.value)
-        }
-      }}
-      style={selectStyle}
-    >
-      <option value="">Default</option>
-      {grouped.ungrouped.map((m) => (
-        <option key={m.id} value={m.id}>{m.label}</option>
-      ))}
-      {grouped.groups.map(({ provider, models: groupModels }) => (
-        <optgroup key={provider} label={provider}>
-          {groupModels.map((m) => (
-            <option key={m.id} value={m.id}>{m.label}</option>
-          ))}
-        </optgroup>
-      ))}
-      <option value="__custom__">Custom...</option>
-    </select>
-  )
-}
-
 /**
- * Split a flat model list into provider-prefix groups (for `<optgroup>`).
+ * Split a flat model list into provider-prefix groups.
  * IDs without a `/` go into `ungrouped` (Claude/Codex static lists). Order
  * is stable: groups appear in the order their first member shows up in the
  * input array.
@@ -1238,84 +1092,3 @@ function inferTierFromId(id: string): 'fast' | 'balanced' | 'max' {
   return 'balanced'
 }
 
-/** Inline picker for provider instances; hidden when only the default exists. */
-function InstancePicker({
-  agentType,
-  value,
-  onChange,
-  disabled,
-}: {
-  agentType: AgentType
-  value: string | undefined
-  onChange: (instanceId: string | undefined) => void
-  disabled: boolean
-}) {
-  const allInstances = useProviderInstanceStore((s) => s.instances)
-  const loaded = useProviderInstanceStore((s) => s.loaded)
-  const refresh = useProviderInstanceStore((s) => s.refresh)
-
-  useEffect(() => {
-    if (!loaded) void refresh()
-  }, [loaded, refresh])
-
-  const instances = useMemo(() => {
-    const def = defaultInstanceId(agentType)
-    return allInstances
-      .filter((i) => i.agentType === agentType && i.enabled)
-      .sort((a, b) => {
-        const aDef = a.id === def ? 0 : 1
-        const bDef = b.id === def ? 0 : 1
-        if (aDef !== bDef) return aDef - bDef
-        return a.displayName.localeCompare(b.displayName)
-      })
-  }, [allInstances, agentType])
-
-  // Hide when the kind has 0 or 1 instances (the default seed). Adding
-  // a second instance reveals the picker automatically.
-  if (instances.length < 2) return null
-
-  // Resolve effective selection — fall back to <agentType>-default so
-  // the dropdown always shows the row that will actually be used.
-  const effective = value && instances.some((i) => i.id === value)
-    ? value
-    : defaultInstanceId(agentType)
-
-  const selected = instances.find((i) => i.id === effective)
-
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-      {selected?.accentColor && (
-        <span
-          aria-hidden
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            background: selected.accentColor,
-            flexShrink: 0,
-          }}
-        />
-      )}
-      <select
-        value={effective}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={disabled}
-        title="Provider instance (credential set)"
-        style={{
-          background: 'var(--bg-tertiary)',
-          color: 'var(--text-secondary)',
-          border: '1px solid var(--border)',
-          borderRadius: '4px',
-          padding: '3px 6px',
-          fontSize: '11px',
-          cursor: disabled ? 'default' : 'pointer',
-          outline: 'none',
-        }}
-      >
-        {instances.map((i) => (
-          <option key={i.id} value={i.id}>{i.displayName}</option>
-        ))}
-      </select>
-    </div>
-  )
-}

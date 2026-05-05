@@ -1,6 +1,8 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
+import { useProviderInstanceStore } from '../../stores/provider-instance-store'
+import { ROTATION_MARKER_PREFIX } from './rotationMarker'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { ContextWindowMeter } from './ContextWindowMeter'
@@ -136,17 +138,47 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   }, [sessionId, storeSetAgentType])
 
   // New instance → tear down the current session so the next send
-  // respawns with the new env / OAuth dir.
+  // respawns with the new env / OAuth dir. When the conversation already
+  // has messages, append a persisted system marker so the user can see
+  // (and audit on reload) which credential set produced each turn.
   const handleInstanceChange = useCallback(async (nextInstanceId: string | undefined) => {
     if (!sessionId) return
+    const prevInstanceId = instanceId
+    if (prevInstanceId === nextInstanceId) return
     storeSetInstanceId(sessionId, nextInstanceId)
     if (nextInstanceId) {
       window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId).catch(() => {})
     }
+    // Record a rotation marker in the chat stream — only when there's
+    // actually a prior conversation to attribute (skip on freshly-opened
+    // sessions where the picker is just being set up).
+    const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
+    if (hasPriorMessages && prevInstanceId !== nextInstanceId) {
+      const instances = useProviderInstanceStore.getState().instances
+      const fromName = instances.find((i) => i.id === prevInstanceId)?.displayName
+        ?? prevInstanceId
+        ?? 'previous instance'
+      const toName = instances.find((i) => i.id === nextInstanceId)?.displayName
+        ?? nextInstanceId
+        ?? 'default'
+      const marker: ChatMessage = {
+        id: `rotation_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        role: 'system',
+        content: `${ROTATION_MARKER_PREFIX} ${fromName} → ${toName}`,
+        timestamp: Date.now(),
+      }
+      appendMessage(sessionId, marker)
+      window.api.app.saveMessage({
+        id: marker.id,
+        conversationId: sessionId,
+        role: marker.role,
+        content: marker.content,
+      }).catch(() => {})
+    }
     providerStartedRef.current.delete(sessionId)
     agentStartedRef.current.delete(sessionId)
     await window.api.provider?.stopSession?.(sessionId).catch(() => {})
-  }, [sessionId, storeSetInstanceId])
+  }, [sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage])
 
   // ── Provider event listener (new SDK bridge) ──────────────────
   useEffect(() => {
@@ -583,7 +615,13 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         })
       })
     },
-    [sessionId, agentType, projectPath, runtimeMode, appendMessage, messages.length, resumeSessionId, setTitle],
+    // `instanceId`, `model`, `reasoningEffort` matter on the FIRST send
+    // after a session restart (e.g. instance chip switch resets
+    // providerStartedRef, so the next send re-spawns with new opts). Without
+    // these in the deps, the captured closure stays on the prior values and
+    // the new session boots under the old credentials — visible as "instance
+    // switch had no effect" in the registry log.
+    [sessionId, agentType, projectPath, runtimeMode, appendMessage, messages.length, resumeSessionId, setTitle, instanceId, model, reasoningEffort],
   )
 
   // ── In-pane search: compute matching message ids (substring on text) ──
