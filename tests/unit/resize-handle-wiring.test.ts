@@ -63,6 +63,21 @@ describe('App.tsx resize handle wiring', () => {
     expect(src).toMatch(/visibility: terminalVisible \? 'visible' : 'hidden'/)
   })
 
+  // Pins the actual root cause: the listener-attaching useEffect must
+  // re-run on visibility change. The component returns null when hidden
+  // WITHOUT unmounting (the parent still renders <ResizeHandle />), so
+  // empty-deps `[]` would leave listeners stuck on a detached node and
+  // the freshly-rendered div on re-show would have no listeners — both
+  // handles silently break after a toggle-off → toggle-on cycle.
+  it('ResizeHandle: listener effect depends on `visible` so it re-runs on toggle', () => {
+    const HANDLE = resolve(__dirname, '../../src/renderer/components/layout/ResizeHandle.tsx')
+    const handleSrc = readFileSync(HANDLE, 'utf8')
+    // The big effect ends with `}, [visible])`. Forbid the empty-deps shape
+    // anywhere in the file as an extra guardrail.
+    expect(handleSrc).toMatch(/}, \[visible\]\)/)
+    expect(handleSrc).not.toMatch(/}, \[\]\)/)
+  })
+
   it('layout-store: toggleSidebar/toggleTerminal do NOT call applyPanelVisibility', () => {
     const STORE = resolve(__dirname, '../../src/renderer/stores/layout-store.ts')
     const storeSrc = readFileSync(STORE, 'utf8')

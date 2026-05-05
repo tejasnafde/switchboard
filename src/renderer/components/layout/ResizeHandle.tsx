@@ -141,7 +141,12 @@ export function ResizeHandle({
         resetStyle()
       }
     }
-  }, [])
+    // `visible` is in deps because the component returns null when hidden,
+    // which detaches the inner div WITHOUT unmounting the component. On
+    // re-show a fresh div is created and `handleRef.current` points to it,
+    // but listeners attached during the first mount are stuck on the old
+    // (detached) node. Re-running on visibility change rebinds them.
+  }, [visible])
 
   if (!visible) return null
 
