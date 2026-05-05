@@ -5,7 +5,8 @@
  * via JSON-RPC 2.0 over newline-delimited JSON on stdio.
  */
 
-import { spawn, execSync, type ChildProcessWithoutNullStreams } from 'child_process'
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
+import { accessSync, constants } from 'fs'
 import { createInterface } from 'readline'
 import { createMainLogger as createLogger } from '../../logger'
 import type {
@@ -19,6 +20,7 @@ import type {
 import { decidePermission, denialMessage } from '../policy'
 import { applyEnvOverlay } from '../env-overlay'
 import type { ProviderSkill } from '@shared/types'
+import { listSessionIdsForThread } from '../../db/database'
 
 /**
  * Map our runtime modes to Codex app-server approval policies.
@@ -122,11 +124,95 @@ interface ActiveSession {
   pendingRpcs: Map<number, PendingRpc>
   pendingApprovals: Map<string, PendingApproval>
   assistantMessageText: Map<string, string>
+  toolOutputText: Map<string, string>
+  startedSyntheticTools: Set<string>
   threadId: string | null
   /** Cached `skills/list` response. Populated on first listSkills() call. */
   skills: ProviderSkill[] | null
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null
+}
+
+function stringifyMaybe(value: unknown): string | undefined {
+  if (value === undefined || value === null) return undefined
+  if (typeof value === 'string') return value
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return String(value)
+  }
+}
+
+function codexToolName(item: Record<string, unknown>): string | null {
+  const type = typeof item.type === 'string' ? item.type : ''
+  if (type === 'commandExecution') return 'Bash'
+  if (type === 'fileChange') return 'Edit'
+  if (type === 'mcpToolCall') {
+    const server = typeof item.server === 'string' ? item.server : 'MCP'
+    const tool = typeof item.tool === 'string' ? item.tool : 'tool'
+    return `${server}:${tool}`
+  }
+  if (type === 'dynamicToolCall') {
+    return typeof item.tool === 'string' ? item.tool : 'Tool'
+  }
+  if (type === 'collabAgentToolCall') {
+    return typeof item.tool === 'string' ? item.tool : 'Agent'
+  }
+  if (type === 'webSearch') return 'WebSearch'
+  if (type === 'imageView') return 'Read'
+  if (type === 'imageGeneration') return 'ImageGeneration'
+  return null
+}
+
+function codexToolInput(item: Record<string, unknown>): unknown {
+  const type = typeof item.type === 'string' ? item.type : ''
+  if (type === 'commandExecution') {
+    return {
+      command: typeof item.command === 'string' ? item.command : '',
+      ...(typeof item.cwd === 'string' ? { cwd: item.cwd } : {}),
+    }
+  }
+  if (type === 'fileChange') {
+    return { changes: item.changes ?? [] }
+  }
+  if (type === 'mcpToolCall' || type === 'dynamicToolCall') {
+    return {
+      ...(item.arguments !== undefined ? { arguments: item.arguments } : {}),
+      ...(typeof item.namespace === 'string' ? { namespace: item.namespace } : {}),
+      ...(typeof item.server === 'string' ? { server: item.server } : {}),
+      ...(typeof item.tool === 'string' ? { tool: item.tool } : {}),
+    }
+  }
+  if (type === 'collabAgentToolCall') {
+    return {
+      ...(typeof item.tool === 'string' ? { tool: item.tool } : {}),
+      ...(typeof item.prompt === 'string' ? { prompt: item.prompt } : {}),
+      ...(typeof item.model === 'string' ? { model: item.model } : {}),
+    }
+  }
+  if (type === 'webSearch') {
+    return { query: typeof item.query === 'string' ? item.query : '' }
+  }
+  if (type === 'imageView') {
+    return { file_path: typeof item.path === 'string' ? item.path : '' }
+  }
+  return item
+}
+
+function codexToolOutput(item: Record<string, unknown>): string | undefined {
+  const type = typeof item.type === 'string' ? item.type : ''
+  if (type === 'commandExecution') return stringifyMaybe(item.aggregatedOutput)
+  if (type === 'fileChange') return stringifyMaybe(item.changes)
+  if (type === 'mcpToolCall') return stringifyMaybe(item.result ?? item.error)
+  if (type === 'dynamicToolCall') return stringifyMaybe(item.contentItems)
+  if (type === 'collabAgentToolCall') return stringifyMaybe(item.agentsStates)
+  if (type === 'webSearch') return stringifyMaybe(item.action)
+  if (type === 'imageGeneration') return stringifyMaybe(item.savedPath ?? item.result)
+  return undefined
 }
 
 /**
@@ -169,27 +255,52 @@ export function parseCodexSkills(input: unknown): ProviderSkill[] {
 }
 
 export function findCodexPath(): string | null {
+  const env = buildCodexCliEnv()
   const home = process.env.HOME || ''
   const candidates = [
     '/opt/homebrew/bin/codex',
     '/usr/local/bin/codex',
+    `${home}/.local/bin/codex`,
     `${home}/.npm-global/bin/codex`,
   ]
 
   for (const p of candidates) {
     try {
-      execSync(`test -x "${p}"`, { timeout: 2000 })
+      accessSync(p, constants.X_OK)
       return p
     } catch { /* not found */ }
   }
 
-  try {
-    return execSync('which codex 2>/dev/null', {
-      encoding: 'utf-8', timeout: 5000,
-    }).trim().split('\n')[0] || null
-  } catch {
-    return null
+  const whichOut = spawnSync('which', ['codex'], {
+    env,
+    timeout: 5000,
+    encoding: 'utf-8',
+  })
+  if (whichOut.error || whichOut.status !== 0) return null
+  const resolved = whichOut.stdout.trim().split('\n')[0]
+  return resolved || null
+}
+
+/**
+ * Finder-launched Electron apps miss shell-profile PATH additions. Build a
+ * CLI-friendly env so codex can be discovered/spawned in packaged builds.
+ */
+export function buildCodexCliEnv(): Record<string, string> {
+  const raw = { ...process.env }
+  delete raw.ELECTRON_RUN_AS_NODE
+  const home = raw.HOME || ''
+  const extra = [
+    '/opt/homebrew/bin',
+    '/usr/local/bin',
+    `${home}/.local/bin`,
+    `${home}/.npm-global/bin`,
+  ].join(':')
+  raw.PATH = `${extra}:${raw.PATH || '/usr/bin:/bin'}`
+  const env: Record<string, string> = {}
+  for (const [k, v] of Object.entries(raw)) {
+    if (v !== undefined) env[k] = v
   }
+  return env
 }
 
 let cachedCodexPath: string | null | undefined
@@ -227,6 +338,8 @@ export class CodexAdapter implements ProviderAdapter {
       reasoningEffort: opts.reasoningEffort,
       instanceId: opts.instanceId,
     }
+    const resumeThreadId = this.resolveResumeThreadId(opts)
+    if (resumeThreadId) session.sessionId = resumeThreadId
 
     const active: ActiveSession = {
       session,
@@ -236,7 +349,9 @@ export class CodexAdapter implements ProviderAdapter {
       pendingRpcs: new Map(),
       pendingApprovals: new Map(),
       assistantMessageText: new Map(),
-      threadId: null,
+      toolOutputText: new Map(),
+      startedSyntheticTools: new Set(),
+      threadId: resumeThreadId,
       skills: null,
       turnStartedAt: null,
     }
@@ -245,7 +360,7 @@ export class CodexAdapter implements ProviderAdapter {
 
     // CODEX_HOME points at a per-instance dir when auth_mode='oauth_dir',
     // letting each instance be `codex login`'d under a separate account.
-    const codexEnv: Record<string, string> = { ...(process.env as Record<string, string>) }
+    const codexEnv = buildCodexCliEnv()
     applyEnvOverlay(codexEnv, opts.resolvedEnv)
     if (opts.resolvedOauthDir && opts.resolvedOauthDir.length > 0) {
       codexEnv.CODEX_HOME = opts.resolvedOauthDir
@@ -349,6 +464,17 @@ export class CodexAdapter implements ProviderAdapter {
     return session
   }
 
+  private resolveResumeThreadId(opts: SessionStartOpts): string | null {
+    if (opts.resumeSessionId && opts.resumeSessionId !== opts.threadId) {
+      return opts.resumeSessionId
+    }
+    try {
+      return listSessionIdsForThread(opts.threadId).find((id) => id !== opts.threadId) ?? null
+    } catch {
+      return null
+    }
+  }
+
   /**
    * Race a promise against a timer. On timeout, rejects with a descriptive
    * error mentioning the operation name so the surfaced message is
@@ -415,6 +541,8 @@ export class CodexAdapter implements ProviderAdapter {
         if (!active.threadId) {
           throw new Error('Codex thread/start did not return a thread id')
         }
+        active.session.sessionId = active.threadId
+        active.onEvent({ type: 'session', threadId, sessionId: active.threadId })
       }
 
       await this.sendRpc(active, 'turn/start', {
@@ -447,11 +575,17 @@ export class CodexAdapter implements ProviderAdapter {
       log.info(`captured ${parsed.length} codex skills`)
       return parsed
     } catch (err) {
-      // Older codex builds don't expose skills/list — cache empty so we
-      // don't keep retrying every time the user opens the slash menu.
       const message = err instanceof Error ? err.message : String(err)
-      log.warn(`skills/list unavailable: ${message}`)
-      active.skills = []
+      // Only cache [] when the method is genuinely unsupported. Transient
+      // startup/transport errors should keep retrying so skills can appear
+      // once the app-server settles.
+      const unsupported = /-32601|method not found|unknown method/i.test(message)
+      if (unsupported) {
+        log.warn(`skills/list unsupported by this codex build: ${message}`)
+        active.skills = []
+      } else {
+        log.warn(`skills/list failed (will retry): ${message}`)
+      }
       return []
     }
   }
@@ -574,6 +708,95 @@ export class CodexAdapter implements ProviderAdapter {
       method,
       ...(params !== undefined ? { params } : {}),
     })
+  }
+
+  private handleItemLifecycle(threadId: string, active: ActiveSession, notification: { method: string; params?: unknown }): void {
+    const params = asRecord(notification.params)
+    const item = asRecord(params?.item)
+    if (!item) return
+
+    const itemId = typeof item.id === 'string' ? item.id : (typeof params?.itemId === 'string' ? params.itemId : null)
+    if (!itemId) return
+
+    const itemType = typeof item.type === 'string' ? item.type : ''
+    if (itemType === 'agentMessage') {
+      const text = typeof item.text === 'string' ? item.text : ''
+      if (text) {
+        active.onEvent({
+          type: 'content',
+          threadId,
+          messageId: itemId,
+          text,
+          streamKind: 'assistant',
+        })
+      }
+      return
+    }
+
+    if (itemType === 'reasoning') {
+      const summary = Array.isArray(item.summary) ? item.summary.filter((s): s is string => typeof s === 'string') : []
+      const content = Array.isArray(item.content) ? item.content.filter((s): s is string => typeof s === 'string') : []
+      const text = [...summary, ...content].join('\n').trim()
+      if (text) {
+        active.onEvent({
+          type: 'content',
+          threadId,
+          messageId: itemId,
+          text,
+          streamKind: 'reasoning',
+        })
+      }
+      return
+    }
+
+    if (itemType === 'plan' && notification.method === 'item/completed') {
+      const text = typeof item.text === 'string' ? item.text.trim() : ''
+      if (text) {
+        active.onEvent({
+          type: 'plan.proposed',
+          threadId,
+          planId: itemId,
+          planMarkdown: text,
+        })
+      }
+      return
+    }
+
+    if (itemType === 'contextCompaction') {
+      active.onEvent({
+        type: 'content',
+        threadId,
+        messageId: itemId,
+        text: 'Context compacted.',
+        streamKind: 'reasoning',
+      })
+      return
+    }
+
+    const toolName = codexToolName(item)
+    if (!toolName) return
+
+    if (notification.method === 'item/started') {
+      active.onEvent({
+        type: 'tool.started',
+        threadId,
+        toolId: itemId,
+        toolName,
+        input: codexToolInput(item),
+      })
+      return
+    }
+
+    if (notification.method === 'item/completed') {
+      const output = codexToolOutput(item)
+      if (output !== undefined) active.toolOutputText.set(itemId, output)
+      active.onEvent({
+        type: 'tool.completed',
+        threadId,
+        toolId: itemId,
+        output,
+      })
+    }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw JSON-RPC payload from codex app-server stdio; structure varies by message kind (response/request/notification) and is narrowed below
@@ -769,6 +992,144 @@ export class CodexAdapter implements ProviderAdapter {
         })
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       }
+    } else if (method === 'turn/started') {
+      active.session.status = 'running'
+      if (active.turnStartedAt == null) active.turnStartedAt = Date.now()
+      active.onEvent({ type: 'status', threadId, status: 'running' })
+    } else if (method === 'thread/status/changed') {
+      const statusType = notification.params?.status?.type
+      if (statusType === 'active') {
+        active.session.status = 'running'
+        active.onEvent({ type: 'status', threadId, status: 'running' })
+      } else if (statusType === 'idle') {
+        active.session.status = 'idle'
+        active.onEvent({ type: 'status', threadId, status: 'idle' })
+      } else if (statusType === 'error') {
+        active.session.status = 'error'
+        active.onEvent({ type: 'status', threadId, status: 'error' })
+      }
+    } else if (method === 'thread/started') {
+      const codexThreadId = notification.params?.thread?.id
+      if (typeof codexThreadId === 'string' && codexThreadId && codexThreadId !== active.threadId) {
+        active.threadId = codexThreadId
+        active.session.sessionId = codexThreadId
+        active.onEvent({ type: 'session', threadId, sessionId: codexThreadId })
+      }
+    } else if (method === 'item/started' || method === 'item/completed') {
+      this.handleItemLifecycle(threadId, active, notification)
+    } else if (method === 'item/reasoning/summaryTextDelta' || method === 'item/reasoning/textDelta') {
+      const text = notification.params?.delta ?? notification.params?.text ?? ''
+      const messageId = notification.params?.itemId ?? `reason_${Date.now()}`
+      if (text) {
+        active.onEvent({
+          type: 'content',
+          threadId,
+          messageId,
+          text,
+          streamKind: 'reasoning',
+        })
+      }
+    } else if (method === 'item/plan/delta') {
+      const text = notification.params?.delta ?? ''
+      const messageId = notification.params?.itemId ?? `plan_${Date.now()}`
+      if (text) {
+        active.onEvent({
+          type: 'content',
+          threadId,
+          messageId,
+          text,
+          streamKind: 'plan',
+        })
+      }
+    } else if (method === 'item/commandExecution/outputDelta') {
+      const output = notification.params?.delta ?? ''
+      const toolId = notification.params?.itemId
+      if (typeof toolId === 'string' && output) {
+        const fullOutput = `${active.toolOutputText.get(toolId) ?? ''}${output}`
+        active.toolOutputText.set(toolId, fullOutput)
+        active.onEvent({
+          type: 'tool.completed',
+          threadId,
+          toolId,
+          output: fullOutput,
+        })
+      }
+    } else if (method === 'item/fileChange/outputDelta' || method === 'item/fileChange/patchUpdated') {
+      const toolId = notification.params?.itemId
+      const output = stringifyMaybe(notification.params?.delta ?? notification.params?.patch ?? notification.params?.changes)
+      if (typeof toolId === 'string' && output) {
+        const fullOutput = method.endsWith('outputDelta')
+          ? `${active.toolOutputText.get(toolId) ?? ''}${output}`
+          : output
+        active.toolOutputText.set(toolId, fullOutput)
+        active.onEvent({
+          type: 'tool.completed',
+          threadId,
+          toolId,
+          output: fullOutput,
+        })
+      }
+    } else if (method === 'turn/plan/updated') {
+      const params = asRecord(notification.params)
+      const plan = Array.isArray(params?.plan) ? params.plan : []
+      const markdown = plan
+        .map((step) => {
+          const obj = asRecord(step)
+          const text = typeof obj?.step === 'string' ? obj.step : ''
+          const status = typeof obj?.status === 'string' ? obj.status : 'pending'
+          return text ? `- [${status === 'completed' ? 'x' : ' '}] ${text}` : ''
+        })
+        .filter(Boolean)
+        .join('\n')
+      if (markdown) {
+        active.onEvent({
+          type: 'plan.proposed',
+          threadId,
+          planId: typeof params?.turnId === 'string' ? params.turnId : `plan_${Date.now()}`,
+          planMarkdown: markdown,
+        })
+      }
+    } else if (method === 'turn/diff/updated') {
+      const diff = typeof notification.params?.diff === 'string' ? notification.params.diff : ''
+      if (diff) {
+        const toolId = `diff_${notification.params?.turnId ?? Date.now()}`
+        if (!active.startedSyntheticTools.has(toolId)) {
+          active.startedSyntheticTools.add(toolId)
+          active.onEvent({
+            type: 'tool.started',
+            threadId,
+            toolId,
+            toolName: 'Edit',
+            input: { source: 'turn/diff/updated' },
+          })
+        }
+        active.onEvent({
+          type: 'tool.completed',
+          threadId,
+          toolId,
+          output: diff,
+        })
+      }
+    } else if (method === 'thread/tokenUsage/updated') {
+      const tokenUsage = notification.params?.tokenUsage
+      const totalTokens = tokenUsage?.last?.totalTokens ?? tokenUsage?.total?.totalTokens
+      const modelContextWindow = tokenUsage?.modelContextWindow
+      if (typeof totalTokens === 'number') {
+        active.onEvent({
+          type: 'context_window',
+          threadId,
+          usedTokens: totalTokens,
+          maxTokens: typeof modelContextWindow === 'number' ? modelContextWindow : null,
+        })
+      }
+    } else if (
+      method === 'account/rateLimits/updated'
+      || method === 'remoteControl/status/changed'
+      || method === 'mcpServer/startupStatus/updated'
+    ) {
+      // Telemetry-only notifications from newer codex builds.
+      // Keep them out of "unhandled" logs to reduce noise.
+      return
     } else {
       log.debug(`unhandled codex notification: ${method}`)
     }

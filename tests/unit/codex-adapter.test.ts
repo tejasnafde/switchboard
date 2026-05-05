@@ -86,6 +86,98 @@ function makeChild(): MockChild {
           }
           stdout.write(JSON.stringify({
             jsonrpc: '2.0',
+            method: 'turn/started',
+            params: {
+              threadId: 'codex-thread-1',
+              turn: { id: 'turn-1', status: 'inProgress' },
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'thread/status/changed',
+            params: {
+              threadId: 'codex-thread-1',
+              status: { type: 'active', activeFlags: [] },
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'thread/tokenUsage/updated',
+            params: {
+              threadId: 'codex-thread-1',
+              turnId: 'turn-1',
+              tokenUsage: {
+                last: { totalTokens: 128000, inputTokens: 120000, outputTokens: 8000 },
+                total: { totalTokens: 4200000, inputTokens: 4000000, outputTokens: 200000 },
+                modelContextWindow: 258400,
+              },
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'item/started',
+            params: {
+              threadId: 'codex-thread-1',
+              turnId: 'turn-1',
+              item: {
+                id: 'cmd-1',
+                type: 'commandExecution',
+                command: 'npm test',
+                commandActions: [],
+                cwd: '/tmp/project',
+                status: 'inProgress',
+              },
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'item/commandExecution/outputDelta',
+            params: {
+              threadId: 'codex-thread-1',
+              turnId: 'turn-1',
+              itemId: 'cmd-1',
+              delta: 'running ',
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'item/commandExecution/outputDelta',
+            params: {
+              threadId: 'codex-thread-1',
+              turnId: 'turn-1',
+              itemId: 'cmd-1',
+              delta: 'tests\n',
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'item/completed',
+            params: {
+              threadId: 'codex-thread-1',
+              turnId: 'turn-1',
+              item: {
+                id: 'cmd-1',
+                type: 'commandExecution',
+                command: 'npm test',
+                commandActions: [],
+                cwd: '/tmp/project',
+                status: 'completed',
+                exitCode: 0,
+                aggregatedOutput: 'all tests passed',
+              },
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'turn/diff/updated',
+            params: {
+              threadId: 'codex-thread-1',
+              turnId: 'turn-1',
+              diff: 'diff --git a/a.txt b/a.txt\n+hello\n',
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
             method: 'item/agentMessage/delta',
             params: {
               delta: 'Hello',
@@ -218,6 +310,144 @@ describe('CodexAdapter', () => {
     })
     expect(turnStart.params).not.toHaveProperty('message')
     expect(turnStart.params).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('uses a persisted codex thread id when resuming instead of starting a new thread', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      resumeSessionId: 'codex-thread-existing',
+    }, vi.fn())
+
+    await adapter.sendTurn('switchboard-thread-1', 'resume here')
+
+    const messages = writes.map((line) => JSON.parse(line))
+    expect(messages.some((message) => message.method === 'thread/start')).toBe(false)
+    expect(messages.find((message) => message.method === 'turn/start')).toMatchObject({
+      params: {
+        threadId: 'codex-thread-existing',
+        input: [{ type: 'text', text: 'resume here' }],
+      },
+    })
+  })
+
+  it('emits session and status events from codex thread and turn notifications', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    await adapter.sendTurn('switchboard-thread-1', 'hello codex')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'session',
+      threadId: 'switchboard-thread-1',
+      sessionId: 'codex-thread-1',
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'status',
+      threadId: 'switchboard-thread-1',
+      status: 'running',
+    })
+  })
+
+  it('uses Codex last token usage as current context instead of cumulative total processed tokens', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    await adapter.sendTurn('thread-1', 'hello codex')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'context_window',
+      threadId: 'thread-1',
+      usedTokens: 128000,
+      maxTokens: 258400,
+    })
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'context_window',
+      usedTokens: 4200000,
+    }))
+  })
+
+  it('maps Codex command lifecycle items to existing tool started and completed events', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    await adapter.sendTurn('thread-1', 'hello codex')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.started',
+      threadId: 'thread-1',
+      toolId: 'cmd-1',
+      toolName: 'Bash',
+      input: {
+        command: 'npm test',
+        cwd: '/tmp/project',
+      },
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.completed',
+      threadId: 'thread-1',
+      toolId: 'cmd-1',
+      output: 'running tests\n',
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.completed',
+      threadId: 'thread-1',
+      toolId: 'cmd-1',
+      output: 'all tests passed',
+    })
+  })
+
+  it('shows Codex turn diffs as Edit tool output', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    await adapter.sendTurn('thread-1', 'hello codex')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.started',
+      threadId: 'thread-1',
+      toolId: 'diff_turn-1',
+      toolName: 'Edit',
+      input: { source: 'turn/diff/updated' },
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.completed',
+      threadId: 'thread-1',
+      toolId: 'diff_turn-1',
+      output: 'diff --git a/a.txt b/a.txt\n+hello\n',
+    })
   })
 
   it('emits assistant content from codex agentMessage delta notifications', async () => {

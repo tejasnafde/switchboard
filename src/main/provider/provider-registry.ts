@@ -11,6 +11,7 @@ import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
+import { recordThreadSession, updateConversationSessionId } from '../db/database'
 import { defaultClaudeDir } from './claude-session-migrate'
 import type { AgentType } from '@shared/types'
 import type {
@@ -74,6 +75,14 @@ export class ProviderRegistry {
   }
 
   private publish(event: RuntimeEvent): void {
+    if (event.type === 'session') {
+      try {
+        updateConversationSessionId(event.threadId, event.sessionId)
+        recordThreadSession(event.sessionId, event.threadId)
+      } catch (err) {
+        log.warn(`failed to persist provider session mapping ${event.threadId} -> ${event.sessionId}: ${err}`)
+      }
+    }
     this.bus.publish(event)
   }
 

@@ -23,6 +23,7 @@ export const CLAUDE_MODELS: ModelOption[] = [
  * Codex app surfaces it next to the model dropdown, not as model variants.
  */
 export const CODEX_MODELS: ModelOption[] = [
+  { id: 'gpt-5.5', label: 'GPT-5.5', tier: 'max' },
   { id: 'gpt-5.4', label: 'GPT-5.4', tier: 'max' },
   { id: 'gpt-5.2-codex', label: 'GPT-5.2-Codex', tier: 'balanced' },
   { id: 'gpt-5.1-codex-max', label: 'GPT-5.1-Codex-Max', tier: 'max' },
