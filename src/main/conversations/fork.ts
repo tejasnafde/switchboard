@@ -473,6 +473,8 @@ async function loadSourceMessages(
     timestamp: row.timestamp,
     toolCalls: row.tool_calls ? tryParseJson(row.tool_calls) : undefined,
     images: row.images ? tryParseJson(row.images) : undefined,
+    displayBody: row.display_body ?? undefined,
+    pillsMeta: row.pills_meta ? tryParseJson(row.pills_meta) : undefined,
   }))
 }
 

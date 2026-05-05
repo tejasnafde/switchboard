@@ -94,3 +94,33 @@ describe('enrichMessagesWithDisplayBody', () => {
     expect(out[3].pillsMeta).toEqual({ abc: { label: 'a.ts', kind: 'file' } })
   })
 })
+
+describe('enrichMessagesWithDisplayBody (images)', () => {
+  it('merges persisted images onto a JSONL user message with matching content', () => {
+    const messages = [userMsg('jsonl-1', '<image>\n</image>')]
+    const out = enrichMessagesWithDisplayBody(messages, new Map([
+      ['<image>\n</image>', {
+        images: JSON.stringify([{ url: 'data:image/png;base64,abc', mimeType: 'image/png', name: 'shot.png' }]),
+      }],
+    ]))
+
+    expect(out[0].images).toEqual([
+      { url: 'data:image/png;base64,abc', mimeType: 'image/png', name: 'shot.png' },
+    ])
+  })
+
+  it('keeps existing display-body enrichment behavior while adding images', () => {
+    const messages = [userMsg('jsonl-1', 'expanded body')]
+    const out = enrichMessagesWithDisplayBody(messages, new Map([
+      ['expanded body', {
+        displayBody: 'see [[pill:abc]]',
+        pillsMeta: samplePillsMeta,
+        images: JSON.stringify([{ url: 'data:image/jpeg;base64,abc', mimeType: 'image/jpeg' }]),
+      }],
+    ]))
+
+    expect(out[0].displayBody).toBe('see [[pill:abc]]')
+    expect(out[0].pillsMeta).toEqual({ abc: { label: 'a.ts', kind: 'file' } })
+    expect(out[0].images).toEqual([{ url: 'data:image/jpeg;base64,abc', mimeType: 'image/jpeg' }])
+  })
+})

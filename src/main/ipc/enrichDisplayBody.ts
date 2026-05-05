@@ -8,6 +8,7 @@ import type { ChatMessage } from '@shared/types'
 import type { DisplayBodyEnrichment } from '../db/database'
 
 type PillsMetaParsed = NonNullable<ChatMessage['pillsMeta']>
+type ImagesParsed = NonNullable<ChatMessage['images']>
 
 export function enrichMessagesWithDisplayBody(
   messages: ChatMessage[],
@@ -18,12 +19,32 @@ export function enrichMessagesWithDisplayBody(
     if (m.role !== 'user') return m
     const hit = enrichments.get(m.content)
     if (!hit) return m
-    let parsed: PillsMetaParsed
-    try {
-      parsed = JSON.parse(hit.pillsMeta) as PillsMetaParsed
-    } catch {
-      return m
+
+    const updates: Partial<ChatMessage> = {}
+    if (hit.displayBody) {
+      let parsed: PillsMetaParsed | null = null
+      try {
+        parsed = JSON.parse(hit.pillsMeta ?? '{}') as PillsMetaParsed
+      } catch {
+        parsed = null
+      }
+      if (parsed) {
+        updates.displayBody = hit.displayBody
+        updates.pillsMeta = parsed
+      }
     }
-    return { ...m, displayBody: hit.displayBody, pillsMeta: parsed }
+
+    if (hit.images) {
+      try {
+        const parsedImages = JSON.parse(hit.images) as ImagesParsed
+        if (Array.isArray(parsedImages) && parsedImages.length > 0) {
+          updates.images = parsedImages
+        }
+      } catch {
+        // ignore corrupt image metadata
+      }
+    }
+
+    return Object.keys(updates).length > 0 ? { ...m, ...updates } : m
   })
 }

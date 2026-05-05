@@ -863,24 +863,25 @@ export function getMessagesForConversation(conversationId: string): MessageRow[]
 /** Pill enrichments for user messages, keyed by content. See
  *  `enrichMessagesWithDisplayBody` for the content-match rationale. */
 export interface DisplayBodyEnrichment {
-  displayBody: string
-  pillsMeta: string
+  displayBody?: string
+  pillsMeta?: string
+  images?: string
 }
 export function getDisplayBodyEnrichments(
   conversationId: string,
 ): Map<string, DisplayBodyEnrichment> {
   const rows = getDb().prepare(
-    `SELECT content, display_body, pills_meta
+    `SELECT content, display_body, pills_meta, images
        FROM messages
       WHERE conversation_id = ?
         AND role = 'user'
-        AND display_body IS NOT NULL`
-  ).all(conversationId) as Array<{ content: string; display_body: string; pills_meta: string | null }>
+        AND (display_body IS NOT NULL OR images IS NOT NULL)`
+  ).all(conversationId) as Array<{ content: string; display_body: string | null; pills_meta: string | null; images: string | null }>
   const out = new Map<string, DisplayBodyEnrichment>()
   for (const r of rows) {
     out.set(r.content, {
-      displayBody: r.display_body,
-      pillsMeta: r.pills_meta ?? '{}',
+      ...(r.display_body ? { displayBody: r.display_body, pillsMeta: r.pills_meta ?? '{}' } : {}),
+      ...(r.images ? { images: r.images } : {}),
     })
   }
   return out
