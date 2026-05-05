@@ -168,8 +168,7 @@ export function parseCodexSkills(input: unknown): ProviderSkill[] {
   })
 }
 
-/** Find codex binary */
-function findCodexPath(): string | null {
+export function findCodexPath(): string | null {
   const home = process.env.HOME || ''
   const candidates = [
     '/opt/homebrew/bin/codex',

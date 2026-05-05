@@ -19,6 +19,7 @@ import {
   type ProviderInstanceUpsertInput,
 } from '../db/providerInstances'
 import { findClaudeBin } from '../provider/adapters/claude-adapter'
+import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { applyEnvOverlay } from '../provider/env-overlay'
 
@@ -80,8 +81,10 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
       return { ok: true, message: out.stdout.trim() || 'claude available' }
     }
     if (instance.agentType === 'codex') {
-      const out = spawnSync('codex', ['login', 'status'], { env, timeout: 5000, encoding: 'utf-8' })
-      if (out.error) return { ok: false, message: `codex not on PATH: ${out.error.message}` }
+      const codexBin = findCodexPath()
+      if (!codexBin) return { ok: false, message: 'codex binary not found — install Codex and ensure it is on PATH' }
+      const out = spawnSync(codexBin, ['login', 'status'], { env, timeout: 5000, encoding: 'utf-8' })
+      if (out.error) return { ok: false, message: `codex error: ${out.error.message}` }
       // `codex login status` exits 0 when logged in; non-zero means not logged in.
       if (out.status !== 0) {
         const stderr = out.stderr?.trim() || out.stdout?.trim() || `exit ${out.status}`
