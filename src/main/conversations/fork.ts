@@ -8,6 +8,7 @@ import {
   createForkedConversation,
   bulkSaveMessages,
   listSessionIdsForThread,
+  getMessagesForConversation,
 } from '../db/database'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
 import { JsonlParser } from '../agent/jsonl-parser'
@@ -454,12 +455,25 @@ async function loadSourceMessages(
       parser.feed(raw); parser.flush()
     }
   }
-  // OpenCode has no on-disk transcript we can re-parse — caller will get
-  // an empty list and the fork will be empty too. Acceptable for v1.
+  if (all.length > 0) {
+    all.sort((a, b) => a.timestamp - b.timestamp)
+    const seen = new Set<string>()
+    return all.filter((m) => seen.has(m.id) ? false : (seen.add(m.id), true))
+  }
 
-  all.sort((a, b) => a.timestamp - b.timestamp)
-  const seen = new Set<string>()
-  return all.filter((m) => seen.has(m.id) ? false : (seen.add(m.id), true))
+  // Fallback: pull directly from the messages table. Every streamed message
+  // is persisted in real-time by `saveMessage`, so the DB is always
+  // authoritative — JSONL parse can miss when the rollout file is in a
+  // non-standard location (Codex `agent_*` ids), when we haven't wired up
+  // on-disk parsing (OpenCode), or when the thread hasn't compacted yet.
+  return getMessagesForConversation(source.id).map((row) => ({
+    id: row.id,
+    role: row.role as ChatMessage['role'],
+    content: row.content,
+    timestamp: row.timestamp,
+    toolCalls: row.tool_calls ? tryParseJson(row.tool_calls) : undefined,
+    images: row.images ? tryParseJson(row.images) : undefined,
+  }))
 }
 
 function makeForkTitle(sourceTitle: string): string {
@@ -475,6 +489,10 @@ function makeForkTitle(sourceTitle: string): string {
  */
 function stripForkSuffix(title: string): string {
   return title.replace(/ · fork(\/[^·]*)?$/, '').trim()
+}
+
+function tryParseJson<T>(s: string): T | undefined {
+  try { return JSON.parse(s) as T } catch { return undefined }
 }
 
 function toMessageRow(m: ChatMessage): {
