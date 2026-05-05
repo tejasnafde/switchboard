@@ -42,6 +42,7 @@ function makeChild(): MockChild {
 
 vi.mock('child_process', () => ({
   execSync: vi.fn(() => '/usr/local/bin/codex\n'),
+  spawnSync: vi.fn(() => ({ status: 0, stdout: '/usr/local/bin/codex\n', stderr: '', error: undefined })),
   spawn: vi.fn((_bin: string, args: string[], opts: { env?: Record<string, string>; cwd?: string }) => {
     spawnCalls.push({ args, opts })
     return makeChild()

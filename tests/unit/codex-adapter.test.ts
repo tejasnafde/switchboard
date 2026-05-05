@@ -216,6 +216,7 @@ vi.mock('child_process', () => ({
     if (command.startsWith('test -x')) return ''
     return '/usr/local/bin/codex\n'
   }),
+  spawnSync: vi.fn(() => ({ status: 0, stdout: '/usr/local/bin/codex\n', stderr: '', error: undefined })),
   spawn: vi.fn(() => makeChild()),
 }))
 
