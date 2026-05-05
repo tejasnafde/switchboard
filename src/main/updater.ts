@@ -114,9 +114,18 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   autoUpdater.on('update-downloaded', (info) =>
     send(window, { kind: 'downloaded', version: info?.version ?? 'unknown' }),
   )
-  autoUpdater.on('error', (err) =>
-    send(window, { kind: 'error', message: err.message ?? String(err) }),
-  )
+  autoUpdater.on('error', (err) => {
+    const msg = err.message ?? String(err)
+    // A 404 on latest-mac.yml / latest.yml just means no release artifact
+    // has been published for this tag yet (common while shipping dev builds
+    // via git tag only). Treat it as "up to date" so the UI stays quiet.
+    if (msg.includes('latest-mac.yml') || msg.includes('latest.yml')) {
+      log.info('no release artifact found — skipping update check')
+      send(window, { kind: 'up-to-date', version: app.getVersion() })
+      return
+    }
+    send(window, { kind: 'error', message: msg })
+  })
 
   // Kick off the initial check after a short delay so the renderer has
   // time to subscribe to status events. Otherwise the first
