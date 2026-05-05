@@ -84,8 +84,8 @@ export function buildClaudeQueryEnv(
   return env
 }
 
-/** Build a clean env for the spawned claude process (Electron strips PATH) */
-function sdkEnv(): Record<string, string> {
+/** Build a clean env for Claude CLI/SDK (Electron strips PATH) */
+export function buildClaudeCliEnv(): Record<string, string> {
   const raw = { ...process.env }
   delete raw.ELECTRON_RUN_AS_NODE
   const home = raw.HOME || ''
@@ -277,7 +277,7 @@ interface ActiveSession {
    * Claude-defined commands (`/commit`, `/explain`, user-defined `.claude/commands/*`).
    */
   skills: ProviderSkill[]
-  /** Per-instance env overlay resolved by the registry, merged on top of `sdkEnv()`. */
+  /** Per-instance env overlay resolved by the registry, merged on top of `buildClaudeCliEnv()`. */
   instanceEnv: Record<string, string>
   /** Per-instance CLAUDE_CONFIG_DIR (set when auth_mode='oauth_dir'). */
   instanceOauthDir: string | null
@@ -605,7 +605,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     }
 
     const claudeBin = findClaudeBin()
-    const env = buildClaudeQueryEnv(sdkEnv(), active.instanceEnv, active.instanceOauthDir)
+    const env = buildClaudeQueryEnv(buildClaudeCliEnv(), active.instanceEnv, active.instanceOauthDir)
 
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,

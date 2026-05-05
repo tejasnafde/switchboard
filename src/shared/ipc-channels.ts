@@ -96,6 +96,7 @@ export const ProviderInstanceChannels = {
   /** Probe the credentials with a no-op call (claude --version, codex
    *  login check, opencode models). Returns `{ ok, message }`. */
   TEST: 'provider-instances:test',
+  CREATE_OAUTH_DIR: 'provider-instances:create-oauth-dir',
 } as const
 
 export const ProviderChannels = {

@@ -6,6 +6,12 @@ import { useEffect, useState } from 'react'
 import type { AgentType, ProviderInstance } from '@shared/types'
 import { agentLabel, defaultInstanceId } from '@shared/types'
 import { providerInstanceInitials } from '@shared/providerInstanceInitials'
+import {
+  oauthCreateDirCommand,
+  oauthEnvName,
+  oauthLoginCommand,
+  suggestedOauthDir,
+} from '@shared/provider-auth-format'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import type { ProviderInstanceUpsertInput } from '../../../preload'
 
@@ -319,8 +325,36 @@ function ProviderInstanceDialog({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [oauthStatus, setOauthStatus] = useState<string | null>(null)
 
   const isDefaultRow = !!instance && isDefault(instance)
+  const supportsOauthDir = kind === 'claude-code' || kind === 'codex'
+  const suggestedDir = suggestedOauthDir(kind, displayName || instance?.displayName || 'work')
+  const effectiveOauthDir = oauthDir.trim() || suggestedDir
+  const loginCommand = oauthLoginCommand(kind, effectiveOauthDir)
+  const createCommand = oauthCreateDirCommand(effectiveOauthDir)
+  const oauthEnv = oauthEnvName(kind)
+
+  async function copyText(text: string, label: string) {
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      setOauthStatus(`${label} copied.`)
+    } catch {
+      setOauthStatus(`Copy failed. ${label}: ${text}`)
+    }
+  }
+
+  async function handleCreateOauthDir() {
+    setOauthStatus(null)
+    const result = await window.api.providerInstances.createOauthDir(effectiveOauthDir)
+    if (result.ok) {
+      if (!oauthDir.trim()) setOauthDir(effectiveOauthDir)
+      setOauthStatus(`Created ${result.path ?? effectiveOauthDir}.`)
+    } else {
+      setOauthStatus(result.error ?? 'Failed to create OAuth directory.')
+    }
+  }
 
   async function handleSave() {
     if (!displayName.trim()) {
@@ -416,7 +450,7 @@ function ProviderInstanceDialog({
           </div>
         </Field>
 
-        {kind === 'claude-code' && (
+        {supportsOauthDir && (
           <Field label="Auth mode">
             <div style={{ display: 'flex', gap: '8px' }}>
               <ModeButton active={authMode === 'env'} onClick={() => setAuthMode('env')}>
@@ -431,16 +465,61 @@ function ProviderInstanceDialog({
 
         {authMode === 'oauth_dir' ? (
           <Field
-            label="CLAUDE_CONFIG_DIR"
-            hint="Absolute path to a per-instance ~/.claude dir. Run `claude` once in that dir to log in."
+            label={oauthEnv ?? 'OAuth directory'}
+            hint={
+              kind === 'claude-code'
+                ? 'Create one directory per Claude account, run the login command in a terminal, then save and test.'
+                : 'Create one CODEX_HOME per Codex account, run the login command in a terminal, then save and test.'
+            }
           >
             <input
               type="text"
               value={oauthDir}
               onChange={(e) => setOauthDir(e.target.value)}
-              placeholder="/Users/you/.claude-work"
+              placeholder={suggestedDir}
               style={inputStyle}
             />
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+              <button
+                onClick={() => {
+                  setOauthDir(suggestedDir)
+                  setOauthStatus(`Using ${suggestedDir}.`)
+                }}
+                style={smallButtonStyle}
+              >
+                Use suggested dir
+              </button>
+              <button onClick={handleCreateOauthDir} style={smallButtonStyle}>
+                Create dir
+              </button>
+              <button onClick={() => void copyText(createCommand, 'Create command')} style={smallButtonStyle}>
+                Copy mkdir
+              </button>
+              <button onClick={() => void copyText(loginCommand, 'Login command')} style={smallButtonStyle}>
+                Copy login
+              </button>
+            </div>
+            <div
+              style={{
+                marginTop: '8px',
+                padding: '7px 8px',
+                border: '1px solid var(--border)',
+                borderRadius: '4px',
+                background: 'var(--bg-primary)',
+                color: 'var(--text-secondary)',
+                fontSize: '10px',
+                fontFamily: 'var(--font-mono)',
+                lineHeight: 1.5,
+                wordBreak: 'break-all',
+              }}
+            >
+              {loginCommand || 'Enter an OAuth directory to build the login command.'}
+            </div>
+            {oauthStatus && (
+              <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '5px', lineHeight: 1.5 }}>
+                {oauthStatus}
+              </div>
+            )}
           </Field>
         ) : (
           <Field
@@ -568,6 +647,16 @@ const inputStyle: React.CSSProperties = {
   color: 'var(--text-primary)',
   fontFamily: 'inherit',
   boxSizing: 'border-box',
+}
+
+const smallButtonStyle: React.CSSProperties = {
+  fontSize: '11px',
+  padding: '4px 8px',
+  border: '1px solid var(--border)',
+  borderRadius: '4px',
+  background: 'transparent',
+  color: 'var(--text-secondary)',
+  cursor: 'pointer',
 }
 
 function Field({

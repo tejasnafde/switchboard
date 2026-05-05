@@ -314,6 +314,8 @@ const api = {
       ipcRenderer.invoke(ProviderInstanceChannels.DELETE, id),
     test: (id: string): Promise<{ ok: boolean; message: string }> =>
       ipcRenderer.invoke(ProviderInstanceChannels.TEST, id),
+    createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
+      ipcRenderer.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
   },
 
   // ─── Provider (new agent bridge) ──────────────────────────────
