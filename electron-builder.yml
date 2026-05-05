@@ -66,10 +66,11 @@ mac:
   #          on auto-update. Without it, latest-mac.yml has no `url` for
   #          the updater to fetch and the renderer logs
   #          "Couldn't check: ZIP file not provided".
+  # dmg removed — dmg-builder@1.2.0 crashes on the macos-14 runner with
+  # Python 3.14's plistlib (InvalidFileException from hdiutil plist output).
+  # The zip is sufficient: it's what electron-updater downloads and users
+  # can drag Switchboard.app out of the zip for a fresh install.
   target:
-    - target: dmg
-      arch:
-        - arm64
     - target: zip
       arch:
         - arm64
@@ -93,20 +94,6 @@ mac:
     NSDocumentsFolderUsageDescription: Switchboard needs access to your Documents folder to open projects, run terminals, and let Claude Code / Codex read project files stored there.
     NSDownloadsFolderUsageDescription: Switchboard needs access to your Downloads folder to open projects, run terminals, and let Claude Code / Codex read project files stored there.
     NSRemovableVolumesUsageDescription: Switchboard needs access to removable volumes if you keep projects on an external drive.
-
-dmg:
-  title: Switchboard ${version}
-  # Minimal installer — Applications symlink + drag-to-install.
-  contents:
-    - x: 130
-      y: 220
-    - x: 410
-      y: 220
-      type: link
-      path: /Applications
-  window:
-    width: 560
-    height: 400
 
 # Windows builds. Unsigned for now — users get the SmartScreen
 # "More info → Run anyway" prompt on first install, dismissed once.

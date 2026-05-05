@@ -14,13 +14,18 @@ git push && git push --tags
 #    in parallel and publishes both to the same Release.
 
 # 3. Verify the Release page contains:
-#    - Switchboard-X.Y.Z-arm64.dmg
-#    - Switchboard-X.Y.Z-arm64.dmg.blockmap
+#    - Switchboard-X.Y.Z-arm64-mac.zip   ← macOS install + auto-update source
+#    - Switchboard-X.Y.Z-arm64-mac.zip.blockmap
 #    - latest-mac.yml          ← required for macOS auto-update
 #    - Switchboard Setup X.Y.Z.exe
 #    - Switchboard-X.Y.Z-win.zip
 #    - latest.yml              ← required for Windows auto-update
 ```
+
+Note: macOS ships as a `.zip` (not `.dmg`) — `dmg-builder` crashes on the
+`macos-14` CI runner (`hdiutil: create failed - Device not configured`).
+Users drag `Switchboard.app` from the zip to `/Applications` on first install.
+Auto-update uses the zip directly and works without the DMG.
 
 If any of those are missing, the auto-updater will silently fail to
 detect the new version. Re-run the failing matrix job.
