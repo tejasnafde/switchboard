@@ -10,6 +10,12 @@ import { SLASH_COMMANDS } from './slashCommands'
 import { generateTitle } from '@shared/auto-title'
 import { onSessionRename, emitSessionRename } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
+import { isAssistantStreamingEnabled } from '../../services/streamingPref'
+import {
+  bufferContent,
+  createStreamingBuffer,
+  drainTurn,
+} from '../../services/streamingBuffer'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
 
@@ -181,6 +187,18 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   }, [sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage])
 
   // ── Provider event listener (new SDK bridge) ──────────────────
+
+  // Streaming preference + per-panel buffer. Read once on mount; toggle
+  // changes take effect on the next session switch. When OFF, content
+  // events accumulate in the buffer and flush on turn.completed.
+  const streamingEnabledRef = useRef<boolean>(true)
+  const streamingBufferRef = useRef(createStreamingBuffer())
+  useEffect(() => {
+    isAssistantStreamingEnabled().then((v) => {
+      streamingEnabledRef.current = v
+    })
+  }, [])
+
   useEffect(() => {
     if (!window.api.provider?.onEvent) {
       return
@@ -192,6 +210,10 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
 
       switch (event.type) {
         case 'content': {
+          if (!streamingEnabledRef.current) {
+            bufferContent(streamingBufferRef.current, tid, event.messageId, event.text)
+            break
+          }
           const sessions = useAgentStore.getState().sessions
           const session = sessions.find((s) => s.id === tid)
           const existing = session?.messages.find((m) => m.id === event.messageId)
@@ -281,6 +303,25 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
         case 'turn.completed': {
+          // Flush buffered content if streaming was off this turn.
+          if (!streamingEnabledRef.current) {
+            const drained = drainTurn(streamingBufferRef.current, tid)
+            for (const entry of drained) {
+              const sessions = useAgentStore.getState().sessions
+              const session = sessions.find((s) => s.id === tid)
+              const existing = session?.messages.find((m) => m.id === entry.messageId)
+              if (existing) {
+                updateMessage(tid, entry.messageId, { content: entry.text })
+              } else {
+                appendMessage(tid, {
+                  id: entry.messageId,
+                  role: 'assistant',
+                  content: entry.text,
+                  timestamp: Date.now(),
+                })
+              }
+            }
+          }
           if (event.usedTokens) {
             useAgentStore.getState().setTokenUsage(tid, {
               usedTokens: event.usedTokens,
@@ -577,13 +618,13 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       if (!providerStartedRef.current.has(sessionId)) {
         providerStartedRef.current.add(sessionId)
         try {
-          // Kanban-launched sessions run inside a per-card git worktree.
-          // The session's `projectPath` is the parent project (so the
-          // sidebar groups correctly), but the agent process must run in
-          // the worktree dir to see isolated changes. The card itself
-          // owns the worktree path, so we look it up by conversationId.
+          // cwd priority: session's own worktreePath > linked kanban
+          // card's worktreePath > projectPath. `projectPath` is always
+          // the parent repo so the sidebar groups correctly; the
+          // worktree pointer is what routes the agent's actual cwd.
+          const sessionForCwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
           const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
-          const cwd = linkedCard?.worktreePath ?? projectPath ?? '.'
+          const cwd = sessionForCwd?.worktreePath ?? linkedCard?.worktreePath ?? projectPath ?? '.'
           await providerApi.startSession({
             threadId: sessionId,
             provider: providerKind,

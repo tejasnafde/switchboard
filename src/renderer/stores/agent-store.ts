@@ -28,6 +28,16 @@ interface AgentSession {
   messages: ChatMessage[]
   conversationId?: string
   projectPath?: string
+  /**
+   * Absolute path to the git worktree backing this session, if it was
+   * created with worktree mode. When present, this — not `projectPath` —
+   * is the cwd handed to the agent adapter at start. `projectPath`
+   * always points at the parent repo so the sidebar can still group
+   * by project.
+   */
+  worktreePath?: string | null
+  /** Branch name in `worktreePath` (e.g. `sb/thread-abc123`). */
+  worktreeBranch?: string | null
   /** Claude CLI session ID for --resume (from imported JSONL sessions) */
   resumeSessionId?: string
   /** Number of unread assistant messages (incremented when not active) */
@@ -121,6 +131,18 @@ interface AgentStore {
    * restart for the new credentials to take effect.
    */
   setInstanceId: (sessionId: string, instanceId: string | undefined) => void
+  /**
+   * Switch the worktree pointer mid-session. Called when the branch
+   * picker's `swap-cwd` action fires. Does NOT restart the running
+   * adapter — the change applies to the next session launch (e.g. on
+   * app restart) and to anything that reads `worktreePath` reactively
+   * (sidebar tags, future cwd badges).
+   */
+  setWorktree: (
+    sessionId: string,
+    worktreePath: string | null,
+    worktreeBranch: string | null,
+  ) => void
   requestScrollToMessage: (sessionId: string, messageId: string, query?: string) => void
   clearScrollToMessage: () => void
 }
@@ -331,6 +353,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         // still works. Clearing here would silently drop conversation
         // history on every instance switch.
         s.id === sessionId ? { ...s, instanceId } : s,
+      ),
+    })),
+
+  setWorktree: (sessionId, worktreePath, worktreeBranch) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, worktreePath, worktreeBranch } : s,
       ),
     })),
 

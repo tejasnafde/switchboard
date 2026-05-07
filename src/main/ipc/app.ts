@@ -13,6 +13,7 @@ import {
   setSetting,
   removeSetting,
   createConversation,
+  setConversationWorktree,
   updateConversationTitle,
   saveMessage,
   getConversationsForProject,
@@ -99,6 +100,14 @@ export function registerAppHandlers(window: BrowserWindow): void {
     const syntheticParents = getSyntheticParentMap()
     const dbConversations = getConversationsForProject(projectPath)
     const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
+    // Worktree pointers per conversation id — stamped onto the
+    // SessionSummary so the renderer can route the agent's cwd via
+    // `worktreePath ?? projectPath`.
+    const worktreeMap = new Map(
+      dbConversations
+        .filter((c) => c.worktree_path)
+        .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
+    )
     const filtered = sessions
       // Hide archived chats (global set — across project paths) and child
       // session_ids produced by Claude SDK rotation (tracked in thread_sessions).
@@ -106,15 +115,17 @@ export function registerAppHandlers(window: BrowserWindow): void {
       .map((s) => {
         // Direct title match (UUID is the canonical conversation id)
         const direct = titleMap.get(s.id)
-        if (direct) return { ...s, title: direct }
+        const wt = worktreeMap.get(s.id) ?? worktreeMap.get(syntheticParents.get(s.id) ?? '')
+        const withWorktree = wt ? { ...s, worktreePath: wt.path, worktreeBranch: wt.branch } : s
+        if (direct) return { ...withWorktree, title: direct }
         // Title inheritance: UUID has a synthetic `agent_<ts>` parent in
         // thread_sessions. Look up the parent's title from conversations.
         const parentId = syntheticParents.get(s.id)
         if (parentId) {
           const parentTitle = titleMap.get(parentId)
-          if (parentTitle) return { ...s, title: parentTitle }
+          if (parentTitle) return { ...withWorktree, title: parentTitle }
         }
-        return s
+        return withWorktree
       })
     log.info(`scan complete: ${filtered.length} visible (${sessions.length - filtered.length} archived/child)`)
     return filtered
@@ -138,17 +149,24 @@ export function registerAppHandlers(window: BrowserWindow): void {
       const sessions = await scanAllSessions(row.path)
       const dbConversations = getConversationsForProject(row.path)
       const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
+      const worktreeMap = new Map(
+        dbConversations
+          .filter((c) => c.worktree_path)
+          .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
+      )
       const filtered = sessions
         .filter((s) => !archivedSet.has(s.id) && !childSet.has(s.id))
         .map((s) => {
+          const wt = worktreeMap.get(s.id) ?? worktreeMap.get(syntheticParents.get(s.id) ?? '')
+          const withWorktree = wt ? { ...s, worktreePath: wt.path, worktreeBranch: wt.branch } : s
           const direct = titleMap.get(s.id)
-          if (direct) return { ...s, title: direct }
+          if (direct) return { ...withWorktree, title: direct }
           const parentId = syntheticParents.get(s.id)
           if (parentId) {
             const parentTitle = titleMap.get(parentId)
-            if (parentTitle) return { ...s, title: parentTitle }
+            if (parentTitle) return { ...withWorktree, title: parentTitle }
           }
-          return s
+          return withWorktree
         })
       projects.push({ path: row.path, name: row.name, sessions: filtered, workspaceId: row.workspace_id ?? null })
     }
@@ -182,9 +200,32 @@ export function registerAppHandlers(window: BrowserWindow): void {
   })
 
   // Create a new conversation in the database
+  ipcMain.handle(
+    AppChannels.SET_CONVERSATION_WORKTREE,
+    (
+      _event,
+      conversationId: string,
+      worktreePath: string | null,
+      worktreeBranch: string | null,
+    ) => {
+      setConversationWorktree(conversationId, worktreePath, worktreeBranch)
+      return { ok: true }
+    },
+  )
+
   ipcMain.handle(AppChannels.CREATE_CONVERSATION, (_event, params: CreateConversationParams) => {
-    createConversation(params.id, params.projectPath, params.agentType, params.title)
-    log.info(`conversation created: ${params.id} project=${params.projectPath}`)
+    createConversation(
+      params.id,
+      params.projectPath,
+      params.agentType,
+      params.title,
+      params.worktreePath ?? null,
+      params.worktreeBranch ?? null,
+    )
+    log.info(
+      `conversation created: ${params.id} project=${params.projectPath}` +
+        (params.worktreePath ? ` worktree=${params.worktreePath} (${params.worktreeBranch})` : ''),
+    )
     return { id: params.id }
   })
 

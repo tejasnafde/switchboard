@@ -21,6 +21,7 @@ import { serializeConversationToMarkdown, suggestedExportFilename } from '../../
 import { SidebarFilter } from './SidebarFilter'
 import { decideDragOutcome } from './dragLogic'
 import { WorkspaceManager } from './WorkspaceManager'
+import { ProjectFavicon } from './ProjectFavicon'
 import {
   groupProjectsByWorkspace,
   applySidebarFilter,
@@ -530,6 +531,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           <span className="sidebar-chevron">
             {isCollapsed ? '\u25B6' : '\u25BC'}
           </span>
+          <ProjectFavicon projectPath={project.path} />
           <span className="sidebar-project-name">
             {project.name}
           </span>

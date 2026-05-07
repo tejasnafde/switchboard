@@ -22,8 +22,9 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdir, access, rm } from 'node:fs/promises'
-import { join, isAbsolute, resolve } from 'node:path'
+import { dirname, join, isAbsolute, resolve } from 'node:path'
 import { createMainLogger } from './logger'
+import { resolveSessionWorktreePath } from './git/worktreePaths'
 import type { WorktreeInfo } from '@shared/kanban'
 
 const log = createMainLogger('worktree')
@@ -275,4 +276,52 @@ async function pathExists(p: string): Promise<boolean> {
  */
 export async function rmWorktreeDir(worktreePath: string): Promise<void> {
   await rm(worktreePath, { recursive: true, force: true })
+}
+
+/**
+ * Create a worktree for a new chat session at a deterministic path under
+ * `<userDataDir>/worktrees/...`. Stays outside the project tree to dodge
+ * the macOS TCC trap (CLAUDE.md gotcha).
+ *
+ * Branch naming: every session worktree gets an `sb/` prefix so the
+ * user can `git branch -D sb/*` to mass-clean. Slugs already prefixed
+ * are passed through unchanged.
+ *
+ * Distinct from `createWorktree` (kanban) and `createForkWorktree`
+ * (fork-from-message) because:
+ *   - Path lives outside the project tree, not under `.switchboard/`
+ *   - No collision-suffix retry — the deterministic path is the
+ *     contract; if it's already taken the caller has a stale state to
+ *     clean up explicitly.
+ */
+export interface CreateSessionWorktreeOpts {
+  projectPath: string
+  /** Human-meaningful branch slug — `sb/` prefix is added if missing. */
+  branchSlug: string
+  /** What to fork off. Defaults to `HEAD` (current branch tip). */
+  baseRef?: string
+  /** Where to root the worktree dir. Pass `app.getPath('userData')`. */
+  userDataDir: string
+}
+
+export async function createSessionWorktree(
+  opts: CreateSessionWorktreeOpts,
+  runner: GitRunner = defaultRunner,
+): Promise<{ path: string; branch: string }> {
+  if (!isAbsolute(opts.projectPath)) {
+    throw new Error(`projectPath must be absolute: ${opts.projectPath}`)
+  }
+  const branch = opts.branchSlug.startsWith('sb/') ? opts.branchSlug : `sb/${opts.branchSlug}`
+  const baseRef = opts.baseRef ?? 'HEAD'
+  const path = resolveSessionWorktreePath({
+    userDataDir: opts.userDataDir,
+    projectPath: opts.projectPath,
+    branch,
+  })
+  // Ensure the parent dir exists — `git worktree add` requires the
+  // *target* dir to be absent but the parent to be present.
+  await mkdir(dirname(path), { recursive: true })
+  log.info(`createSessionWorktree: ${path} (branch ${branch}, base ${baseRef})`)
+  await runner(['worktree', 'add', '-b', branch, path, baseRef], opts.projectPath)
+  return { path, branch }
 }

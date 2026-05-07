@@ -437,12 +437,38 @@ export function createConversation(
   projectPath: string,
   agentType: string,
   title?: string,
+  worktreePath?: string | null,
+  worktreeBranch?: string | null,
 ): void {
   const now = Date.now()
   getDb().prepare(
-    `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(id, projectPath, agentType, title ?? 'New conversation', now, now)
+    `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title, created_at, updated_at, worktree_path, worktree_branch)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    projectPath,
+    agentType,
+    title ?? 'New conversation',
+    now,
+    now,
+    worktreePath ?? null,
+    worktreeBranch ?? null,
+  )
+}
+
+/**
+ * Update the worktree pointer on an existing conversation. Used by the
+ * branch picker when the user picks a branch that already has a
+ * worktree on disk.
+ */
+export function setConversationWorktree(
+  id: string,
+  worktreePath: string | null,
+  worktreeBranch: string | null,
+): void {
+  getDb().prepare(
+    `UPDATE conversations SET worktree_path = ?, worktree_branch = ?, updated_at = ? WHERE id = ?`
+  ).run(worktreePath, worktreeBranch, Date.now(), id)
 }
 
 export function updateConversationSessionId(id: string, sessionId: string): void {

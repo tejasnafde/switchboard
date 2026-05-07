@@ -488,6 +488,21 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.sidebar-project-favicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.sidebar-project-favicon img {
+  display: block;
+  object-fit: contain;
+}
+
 .sidebar-project-name {
   flex: 1;
   overflow: hidden;

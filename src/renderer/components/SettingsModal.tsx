@@ -17,6 +17,15 @@ import {
   fireTestNotification,
   currentNotificationPermission,
 } from '../services/notifications'
+import {
+  getDefaultSessionEnvMode,
+  setDefaultSessionEnvMode,
+  type SessionEnvMode,
+} from '../services/sessionEnvMode'
+import {
+  isAssistantStreamingEnabled,
+  setAssistantStreamingEnabled,
+} from '../services/streamingPref'
 import { ProvidersTab } from './settings/ProvidersTab'
 
 interface SettingsModalProps {
@@ -380,6 +389,16 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                     </button>
                   ))}
                 </div>
+              </SettingsSection>
+
+              {/* Threads — default workspace mode for new sessions */}
+              <SettingsSection title="Threads">
+                <DefaultEnvModeToggle />
+              </SettingsSection>
+
+              {/* Responses — token-by-token streaming gate */}
+              <SettingsSection title="Responses">
+                <StreamAssistantToggle />
               </SettingsSection>
 
               {/* Keyboard shortcuts info */}
@@ -785,6 +804,101 @@ function ShortcutRow({ label, keys }: { label: string; keys: string }) {
         {keys}
       </kbd>
     </>
+  )
+}
+
+/**
+ * Default workspace mode for new threads. `local` keeps today's
+ * behaviour (run in the project root); `worktree` creates a fresh
+ * `git worktree` off HEAD per thread so two parallel agent sessions
+ * don't fight over the same checkout.
+ */
+function DefaultEnvModeToggle() {
+  const [mode, setMode] = useState<SessionEnvMode | null>(null)
+  useEffect(() => {
+    getDefaultSessionEnvMode().then(setMode)
+  }, [])
+  const onChange = async (next: SessionEnvMode) => {
+    setMode(next)
+    await setDefaultSessionEnvMode(next)
+  }
+  return (
+    <div>
+      <div style={{ fontSize: '12.5px', color: 'var(--text-primary)', marginBottom: '4px' }}>
+        Default workspace
+      </div>
+      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+        Pick how new threads start. <strong>Local</strong> runs the agent in the project root;
+        <strong> New worktree</strong> creates a fresh git worktree off HEAD so parallel threads
+        don't trample each other.
+      </div>
+      <select
+        value={mode ?? 'local'}
+        disabled={mode === null}
+        onChange={(e) => onChange(e.target.value as SessionEnvMode)}
+        style={{
+          background: 'var(--bg-tertiary)',
+          color: 'var(--text-primary)',
+          border: '1px solid var(--border)',
+          borderRadius: '4px',
+          padding: '4px 8px',
+          fontSize: '12px',
+          cursor: 'pointer',
+          outline: 'none',
+        }}
+      >
+        <option value="local">Local (project root)</option>
+        <option value="worktree">New worktree</option>
+      </select>
+    </div>
+  )
+}
+
+/**
+ * Toggle: stream assistant responses token-by-token (default ON) or
+ * buffer until the turn completes and render the final reply in one
+ * shot. The buffering policy lives in `streamingBuffer.ts`; the gate
+ * is in ChatPanel's content / turn.completed handlers. Takes effect on
+ * the next panel mount or session switch — flipping mid-turn doesn't
+ * retroactively buffer in-flight content.
+ */
+function StreamAssistantToggle() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  useEffect(() => {
+    isAssistantStreamingEnabled().then(setEnabled)
+  }, [])
+  const toggle = async () => {
+    const next = !enabled
+    setEnabled(next)
+    await setAssistantStreamingEnabled(next)
+  }
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '8px 0',
+        cursor: 'pointer',
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={enabled === true}
+        onChange={toggle}
+        disabled={enabled === null}
+        style={{ cursor: 'pointer' }}
+      />
+      <span>
+        <div style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>
+          Stream assistant messages
+        </div>
+        <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+          Show token-by-token output while a response is in progress. Off renders the final
+          reply in one shot when the turn completes.
+        </div>
+      </span>
+    </label>
   )
 }
 

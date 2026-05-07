@@ -22,6 +22,7 @@ import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureR
 import { appendTerminalSelectionToDraft, captureSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated } from './services/session-events'
+import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import type { SessionSummary, ChatMessage } from '@shared/types'
 
 /**
@@ -278,27 +279,54 @@ export function App() {
     return () => { remove() }
   }, [])
 
-  // "+ New Chat" — create a fresh session tied to a project
+  // "+ New Chat" — create a fresh session tied to a project. When the
+  // default workspace mode is "worktree", shell out to `git worktree
+  // add` first and stamp the result on `worktreePath`; `projectPath`
+  // stays the parent repo so the sidebar groups correctly. A failed
+  // worktree create falls back to local mode with a console warn.
   const handleNewChat = useCallback(
-    (projectPath: string) => {
+    async (projectPath: string) => {
       useLayoutStore.getState().setAppView('chats')
       const id = `agent_${Date.now()}`
       const title = 'New conversation'
+
+      let worktreePath: string | null = null
+      let worktreeBranch: string | null = null
+      const mode = await getDefaultSessionEnvMode()
+      if (mode === 'worktree') {
+        const branchSlug = `thread-${Date.now().toString(36)}`
+        const res = await window.api.git.createSessionWorktree({
+          projectPath,
+          branchSlug,
+        })
+        if (res.ok) {
+          worktreePath = res.path
+          worktreeBranch = res.branch
+        } else {
+          console.warn('[handleNewChat] worktree create failed:', res.error)
+        }
+      }
+
       addSession({
         id,
         type: 'claude-code',
         status: 'idle',
         projectPath,
+        worktreePath,
+        worktreeBranch,
         title,
       })
       setActiveSession(id)
 
-      // Persist to DB (best-effort)
+      // Persist to DB (best-effort). `projectPath` is the parent repo;
+      // `worktreePath` (if set) is the actual cwd the agent runs in.
       window.api.app.createConversation({
         id,
         projectPath,
         agentType: 'claude-code',
         title,
+        worktreePath,
+        worktreeBranch,
       }).catch(() => {})
 
       // Notify sidebar so it shows this new chat immediately
@@ -327,12 +355,16 @@ export function App() {
       }
 
       // Create session in store — pass session.id as resumeSessionId
-      // so Claude CLI can --resume the conversation
+      // so Claude CLI can --resume the conversation. Hydrate the
+      // worktree pointer so a session that was created in worktree
+      // mode resumes in its worktree, not the parent repo.
       addSession({
         id: session.id,
         type: (session.source === 'codex' ? 'codex' : 'claude-code'),
         status: 'idle',
         projectPath,
+        worktreePath: session.worktreePath ?? null,
+        worktreeBranch: session.worktreeBranch ?? null,
         resumeSessionId: session.id,
         title: session.title,
       })

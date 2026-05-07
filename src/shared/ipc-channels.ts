@@ -53,6 +53,12 @@ export const AppChannels = {
   WORKSPACE_REORDER: 'app:workspace-reorder',
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
   FORK_CONVERSATION: 'app:fork-conversation',
+  /**
+   * Update the worktree pointer on an existing conversation. Fired from
+   * the branch picker's swap-cwd action when the user picks a branch
+   * that already has a worktree on disk.
+   */
+  SET_CONVERSATION_WORKTREE: 'app:set-conversation-worktree',
 } as const
 
 export const KanbanChannels = {
@@ -77,6 +83,25 @@ export const FilesChannels = {
   READ_FILE: 'files:read-file',
   RESOLVE: 'files:resolve',
   LIST_ALL: 'files:list-all',
+} as const
+
+/**
+ * Per-thread branch picker. `LIST_REFS` returns local + remote branches
+ * annotated with which one is `current` and the absolute path of the
+ * worktree (if any) each branch is checked out in. `SWITCH_REF` runs
+ * `git checkout` after server-side ref-name validation.
+ */
+export const GitChannels = {
+  LIST_REFS: 'git:list-refs',
+  SWITCH_REF: 'git:switch-ref',
+  CURRENT_BRANCH: 'git:current-branch',
+  /**
+   * Create a deterministic-path worktree under userData/worktrees for a
+   * new chat session and return its absolute path + the branch we
+   * created. Caller stamps the result onto the session's `worktreePath`
+   * so START_SESSION uses it as cwd.
+   */
+  CREATE_SESSION_WORKTREE: 'git:create-session-worktree',
 } as const
 
 export const AgentChannels = {

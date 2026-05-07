@@ -21,11 +21,13 @@ import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerFilesHandlers } from './ipc/files'
+import { registerGitHandlers } from './ipc/git'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
-import { getDb, closeDb, getSetting } from './db/database'
+import { getDb, closeDb, getSetting, getProjects } from './db/database'
+import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
 
 const log = createMainLogger('tour')
@@ -47,6 +49,17 @@ protocol.registerSchemesAsPrivileged([
       secure: true,
       supportFetchAPI: true,
       stream: true, // needed for <video> seek/range requests
+    },
+  },
+  {
+    // Sidebar leading-icon protocol — serves the project's auto-detected
+    // favicon. Implementation in main/protocol/sb-favicon.ts; renderer
+    // uses it via <img src="sb-favicon://favicon?path=...">.
+    scheme: 'sb-favicon',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
     },
   },
 ])
@@ -243,6 +256,9 @@ app.whenReady().then(() => {
   // Initialize database
   getDb()
   registerTourProtocol()
+  // Pull the known-projects list at request time (not registration time)
+  // so newly added projects become servable without an app restart.
+  registerFaviconProtocol(() => getProjects().map((p) => p.path))
   if (process.platform === 'darwin') {
     const dockIcon = nativeImage.createFromPath(
       join(app.getAppPath(), 'resources/icons/switchboard-logo-512.png')
@@ -300,6 +316,7 @@ app.whenReady().then(() => {
   registerAgentHandlers(mainWindow)
   registerAppHandlers(mainWindow)
   registerFilesHandlers()
+  registerGitHandlers()
   registerKanbanHandlers()
   registerProviderInstanceHandlers()
   // Auto-update — silent check on launch when packaged. No-op in dev
@@ -318,6 +335,7 @@ app.whenReady().then(() => {
       registerAgentHandlers(mainWindow)
       registerAppHandlers(mainWindow)
       registerFilesHandlers()
+      registerGitHandlers()
       registerKanbanHandlers()
       registerAutoUpdater(mainWindow)
 

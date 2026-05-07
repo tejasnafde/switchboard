@@ -252,6 +252,13 @@ export interface SessionSummary {
   startedAt: number
   messageCount: number
   filePath: string
+  /**
+   * Set if this session was created in worktree mode or had a worktree
+   * assigned via the branch picker. The renderer passes this through to
+   * `addSession` so the agent's cwd routes via `worktreePath ?? projectPath`.
+   */
+  worktreePath?: string | null
+  worktreeBranch?: string | null
 }
 
 export interface Project {
@@ -282,6 +289,9 @@ export interface CreateConversationParams {
   projectPath: string
   agentType: AgentType
   title?: string
+  /** Set when the session was created in worktree mode. */
+  worktreePath?: string | null
+  worktreeBranch?: string | null
 }
 
 export interface SaveMessageParams {

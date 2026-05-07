@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, KanbanChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, KanbanChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type {
   TerminalCreateOptions,
@@ -121,6 +121,17 @@ const api = {
     getProjects: () => ipcRenderer.invoke(AppChannels.GET_PROJECTS),
     createConversation: (params: CreateConversationParams) =>
       ipcRenderer.invoke(AppChannels.CREATE_CONVERSATION, params),
+    setConversationWorktree: (
+      conversationId: string,
+      worktreePath: string | null,
+      worktreeBranch: string | null,
+    ): Promise<{ ok: true }> =>
+      ipcRenderer.invoke(
+        AppChannels.SET_CONVERSATION_WORKTREE,
+        conversationId,
+        worktreePath,
+        worktreeBranch,
+      ),
     loadSession: (filePath: string, conversationId?: string, source?: 'claude-code' | 'codex') =>
       ipcRenderer.invoke(AppChannels.LOAD_SESSION, filePath, conversationId, source),
     loadSessionById: (conversationId: string) =>
@@ -270,6 +281,41 @@ const api = {
       repoRoot: string,
     ): Promise<{ ok: boolean; error?: string; files: string[] }> =>
       ipcRenderer.invoke(FilesChannels.LIST_ALL, repoRoot),
+  },
+
+  // ─── Git (per-thread branch picker) ───────────────────────────
+  git: {
+    listRefs: (
+      cwd: string,
+    ): Promise<
+      | {
+          ok: true
+          refs: Array<{
+            name: string
+            sha: string
+            current: boolean
+            isRemote: boolean
+            worktreePath: string | null
+          }>
+        }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke(GitChannels.LIST_REFS, cwd),
+    switchRef: (
+      cwd: string,
+      refName: string,
+    ): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke(GitChannels.SWITCH_REF, cwd, refName),
+    currentBranch: (
+      cwd: string,
+    ): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> =>
+      ipcRenderer.invoke(GitChannels.CURRENT_BRANCH, cwd),
+    createSessionWorktree: (args: {
+      projectPath: string
+      branchSlug: string
+      baseRef?: string
+    }): Promise<
+      { ok: true; path: string; branch: string } | { ok: false; error: string }
+    > => ipcRenderer.invoke(GitChannels.CREATE_SESSION_WORKTREE, args),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────

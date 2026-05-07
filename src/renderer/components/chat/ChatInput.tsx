@@ -22,6 +22,7 @@ import {
 } from './slashCommands'
 import { detectAtTrigger, filterAtMatches } from './atMention'
 import { AtMentionMenu } from './AtMentionMenu'
+import { BranchPickerTrigger } from './BranchPicker'
 import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chatInputBody'
 
@@ -846,6 +847,23 @@ export function ChatInput({
             ))}
           </select>
         )}
+
+        {/* Per-thread branch picker. On `swap-cwd` (picked branch already
+            has a worktree elsewhere) we update the store + persist to the
+            conversations row; the running adapter keeps its old cwd until
+            session restart, then picks up the new pointer. */}
+        <BranchPickerTrigger
+          cwd={repoRoot}
+          onSwapWorktree={(newCwd, branch) => {
+            if (!sessionId) return
+            useAgentStore.getState().setWorktree(sessionId, newCwd, branch)
+            const conversationId = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.conversationId
+              ?? sessionId
+            window.api.app
+              .setConversationWorktree(conversationId, newCwd, branch)
+              .catch((err: unknown) => console.warn('[ChatInput] persist worktree failed:', err))
+          }}
+        />
 
         {/* Runtime mode selector (per-session) */}
         {runtimeMode && onRuntimeModeChange && (
