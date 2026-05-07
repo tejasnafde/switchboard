@@ -10,6 +10,7 @@ import { ChatPanel } from './components/chat/ChatPanel'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { FilesPane } from './components/files/FilesPane'
 import { KanbanView } from './components/kanban/KanbanView'
+import { BranchesScreen } from './components/branches/BranchesScreen'
 import { SettingsModal } from './components/SettingsModal'
 import { CommandPalette } from './components/CommandPalette'
 import { SearchModal } from './components/SearchModal'
@@ -791,6 +792,19 @@ export function App() {
         >
           <KanbanView />
         </div>
+        {/* Release-orchestration view: multi-worktree merge planner.
+            Mounted-and-hidden so the @xyflow/react instance and its
+            layout state survive ⌘⇧K cycles. */}
+        <div
+          style={{
+            flex: '1 1 0%',
+            display: appView === 'branches' ? 'flex' : 'none',
+            minWidth: 0,
+            flexDirection: 'column',
+          }}
+        >
+          <BranchesScreen />
+        </div>
       </div>
 
       <StatusBar />
@@ -894,7 +908,7 @@ function ViewToggle(): React.ReactElement {
         cursor: 'pointer',
         WebkitAppRegion: 'no-drag',
       }}
-      title="Toggle Chats ↔ Board (⌘⇧K)"
+      title="Cycle Chats → Board → Branches (⌘⇧K)"
     >
       <button
         type="button"
@@ -909,6 +923,13 @@ function ViewToggle(): React.ReactElement {
         onClick={() => setAppView('kanban')}
       >
         Board
+      </button>
+      <button
+        type="button"
+        style={appView === 'branches' ? activeBtn : baseBtn}
+        onClick={() => setAppView('branches')}
+      >
+        Branches
       </button>
     </span>
   )

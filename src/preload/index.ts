@@ -1,6 +1,13 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, KanbanChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, KanbanChannels, ProviderInstanceChannels, BranchesChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
+import type {
+  BranchesView,
+  BranchesEvent,
+  PlanWire,
+  DryRunReportWire,
+  SuggestedEdgeWire,
+} from '@shared/branches'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -296,6 +303,46 @@ const api = {
       opts?: { force?: boolean },
     ): Promise<void> =>
       ipcRenderer.invoke(KanbanChannels.REMOVE_STALE_WORKTREE, projectPath, worktreePath, opts),
+  },
+
+  // ─── Branches (multi-worktree merge orchestration) ────────────
+  branches: {
+    list: (repoPath: string): Promise<BranchesView> =>
+      ipcRenderer.invoke(BranchesChannels.LIST, repoPath),
+    addEdge: (args: { repoPath: string; parent: string; child: string }): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(BranchesChannels.ADD_EDGE, args),
+    removeEdge: (args: { repoPath: string; parent: string; child: string }): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(BranchesChannels.REMOVE_EDGE, args),
+    plan: (repoPath: string): Promise<{
+      plan: PlanWire
+      dryRun: DryRunReportWire[]
+      dirtyWorktrees: string[]
+    }> => ipcRenderer.invoke(BranchesChannels.PLAN, repoPath),
+    execute: (
+      repoPath: string,
+    ): Promise<{ ok: true } | { ok: false; error: string; dirty?: string[]; aborted?: boolean }> =>
+      ipcRenderer.invoke(BranchesChannels.EXECUTE, repoPath),
+    resume: (
+      repoPath: string,
+    ): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke(BranchesChannels.RESUME, repoPath),
+    abort: (repoPath: string): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(BranchesChannels.ABORT, repoPath),
+    resolveConflict: (args: { repoPath: string; decision: 'continue' | 'abort' }): Promise<{ ok: boolean }> =>
+      ipcRenderer.invoke(BranchesChannels.RESOLVE_CONFLICT, args),
+    suggestEdges: (repoPath: string): Promise<{ suggestedEdges: SuggestedEdgeWire[] }> =>
+      ipcRenderer.invoke(BranchesChannels.SUGGEST_EDGES, repoPath),
+    configureRepo: (args: {
+      repoPath: string
+      enableRerere?: boolean
+      installMergiraf?: boolean
+    }): Promise<{ rerereEnabled: boolean; mergirafReady: boolean }> =>
+      ipcRenderer.invoke(BranchesChannels.CONFIGURE_REPO, args),
+    onEvent: (cb: (event: BranchesEvent) => void): (() => void) => {
+      const listener = (_e: unknown, event: BranchesEvent): void => cb(event)
+      ipcRenderer.on(BranchesChannels.EVENT, listener)
+      return () => ipcRenderer.removeListener(BranchesChannels.EVENT, listener)
+    },
   },
 
   settings: {

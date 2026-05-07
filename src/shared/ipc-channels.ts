@@ -99,6 +99,32 @@ export const ProviderInstanceChannels = {
   CREATE_OAUTH_DIR: 'provider-instances:create-oauth-dir',
 } as const
 
+export const BranchesChannels = {
+  /** Hydrate the dependency graph: nodes (worktrees) + persisted edges
+   *  + suggested overlap edges + crash-recovery state for `repoPath`. */
+  LIST: 'branches:list',
+  /** Persist a user-confirmed dependency edge. Idempotent. */
+  ADD_EDGE: 'branches:add-edge',
+  REMOVE_EDGE: 'branches:remove-edge',
+  /** Compute toposort + dry-run conflict prediction for the current
+   *  graph. Does not mutate the worktrees. */
+  PLAN: 'branches:plan',
+  /** Run the merge plan. Long-running; renderer follows progress via
+   *  the `EVENT` push channel. */
+  EXECUTE: 'branches:execute',
+  /** Caller's response to a paused conflict — `'continue' | 'abort'`. */
+  RESOLVE_CONFLICT: 'branches:resolve-conflict',
+  /** Resume a previously paused/failed plan from `current_step`. */
+  RESUME: 'branches:resume',
+  ABORT: 'branches:abort',
+  /** Run pairwise overlap detection to refresh suggested edges. */
+  SUGGEST_EDGES: 'branches:suggest-edges',
+  /** First-launch toggles: enable rerere, install mergiraf driver. */
+  CONFIGURE_REPO: 'branches:configure-repo',
+  /** main → renderer push: progress + conflict + completion events. */
+  EVENT: 'branches:event',
+} as const
+
 export const ProviderChannels = {
   START_SESSION: 'provider:start-session',
   SEND_TURN: 'provider:send-turn',

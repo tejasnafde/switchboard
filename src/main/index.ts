@@ -22,6 +22,7 @@ import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerFilesHandlers } from './ipc/files'
 import { registerKanbanHandlers } from './ipc/kanban'
+import { registerBranchesHandlers } from './ipc/branches'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
@@ -301,6 +302,7 @@ app.whenReady().then(() => {
   registerAppHandlers(mainWindow)
   registerFilesHandlers()
   registerKanbanHandlers()
+  registerBranchesHandlers(mainWindow)
   registerProviderInstanceHandlers()
   // Auto-update — silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what
@@ -319,6 +321,7 @@ app.whenReady().then(() => {
       registerAppHandlers(mainWindow)
       registerFilesHandlers()
       registerKanbanHandlers()
+      registerBranchesHandlers(mainWindow)
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(mainWindow)

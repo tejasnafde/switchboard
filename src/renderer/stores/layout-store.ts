@@ -15,9 +15,18 @@ export type RightPaneMode = 'terminal' | 'files'
  * right column (terminal/files). `'kanban'` swaps the chat+right area
  * for a workspace-scoped board; the sidebar stays mounted so workspace
  * + project clicks drive the board's filter (and clicking a session
- * exits back to chats). ⌘⇧K toggles. Persisted via settings DB.
+ * exits back to chats). `'branches'` shows the multi-worktree merge
+ * orchestrator. ⌘⇧K cycles chats → kanban → branches → chats.
+ * Persisted via settings DB.
  */
-export type AppView = 'chats' | 'kanban'
+export type AppView = 'chats' | 'kanban' | 'branches'
+
+const NEXT_APP_VIEW: Record<AppView, AppView> = {
+  chats: 'kanban',
+  kanban: 'branches',
+  branches: 'chats',
+}
+const VALID_APP_VIEWS: ReadonlySet<AppView> = new Set(['chats', 'kanban', 'branches'])
 
 interface LayoutStore {
   sidebarWidth: number
@@ -168,7 +177,9 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ appView: v })
   },
   toggleAppView: () => {
-    const next: AppView = get().appView === 'chats' ? 'kanban' : 'chats'
+    // ⌘⇧K cycles forward; the segmented title-bar toggle uses
+    // `setAppView` to jump directly.
+    const next = NEXT_APP_VIEW[get().appView]
     try { void window.api?.settings?.set(APP_VIEW_KEY, next) } catch { /* ignore */ }
     set({ appView: next })
   },
@@ -368,7 +379,9 @@ export async function hydrateSidebarCollapse(): Promise<void> {
     // build — that mode is gone now; fall back to terminal so users
     // upgrading don't see a blank pane.
     const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
-    const appView: AppView = appViewStr === 'kanban' ? 'kanban' : 'chats'
+    const appView: AppView = VALID_APP_VIEWS.has(appViewStr as AppView)
+      ? (appViewStr as AppView)
+      : 'chats'
     useLayoutStore.setState({
       sidebarCollapsedProjects: parse(projJson),
       sidebarCollapsedWorkspaces: parse(wsJson),

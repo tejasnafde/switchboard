@@ -19,9 +19,11 @@ describe('layout-store appView', () => {
     expect(useLayoutStore.getState().appView).toBe('chats')
   })
 
-  it('toggleAppView flips chats ↔ kanban', () => {
+  it('toggleAppView cycles chats → kanban → branches → chats', () => {
     useLayoutStore.getState().toggleAppView()
     expect(useLayoutStore.getState().appView).toBe('kanban')
+    useLayoutStore.getState().toggleAppView()
+    expect(useLayoutStore.getState().appView).toBe('branches')
     useLayoutStore.getState().toggleAppView()
     expect(useLayoutStore.getState().appView).toBe('chats')
   })
@@ -29,6 +31,8 @@ describe('layout-store appView', () => {
   it('setAppView writes the value directly', () => {
     useLayoutStore.getState().setAppView('kanban')
     expect(useLayoutStore.getState().appView).toBe('kanban')
+    useLayoutStore.getState().setAppView('branches')
+    expect(useLayoutStore.getState().appView).toBe('branches')
   })
 
   it('changing the workspace filter clears the project filter (avoids stale narrowing)', () => {

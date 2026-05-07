@@ -35,10 +35,15 @@ const execFileP = promisify(execFile)
  */
 export type GitRunner = (args: string[], cwd: string) => Promise<{ stdout: string; stderr: string }>
 
-const defaultRunner: GitRunner = async (args, cwd) => {
-  const res = await execFileP('git', args, { cwd, timeout: 10_000, maxBuffer: 4 * 1024 * 1024 })
+/** The shared default runner. Branches-screen ops (rebase/merge-tree)
+ *  may need longer timeouts than the kanban path's 10s, so callers can
+ *  override; everything in this module uses these defaults. */
+export const defaultGitRunner: GitRunner = async (args, cwd) => {
+  const res = await execFileP('git', args, { cwd, timeout: 30_000, maxBuffer: 8 * 1024 * 1024 })
   return { stdout: res.stdout, stderr: res.stderr }
 }
+
+const defaultRunner = defaultGitRunner
 
 /**
  * Subdirectory under the project root where Switchboard parks per-card
@@ -275,4 +280,174 @@ async function pathExists(p: string): Promise<boolean> {
  */
 export async function rmWorktreeDir(worktreePath: string): Promise<void> {
   await rm(worktreePath, { recursive: true, force: true })
+}
+
+/* ────────────────────────────────────────────────────────────────────
+ * Branches-screen git helpers
+ *
+ * These extend the worktree primitives with the read/write operations
+ * the merge orchestrator needs:
+ *   - branch + dirty-tree probes (refuse to plan against dirty WTs)
+ *   - `git merge-tree --write-tree` for dry-run conflict prediction
+ *   - `git rebase` + `git rebase --abort` for execute / unwind
+ *   - rebase-in-progress detection for crash-recovery resume
+ * Every helper takes the same `GitRunner` injection seam used above.
+ * ──────────────────────────────────────────────────────────────────── */
+
+/** Returns the current branch name, or `null` for detached HEAD. */
+export async function currentBranchOf(
+  cwd: string,
+  runner: GitRunner = defaultRunner,
+): Promise<string | null> {
+  const { stdout } = await runner(['rev-parse', '--abbrev-ref', 'HEAD'], cwd)
+  const trimmed = stdout.trim()
+  return trimmed === 'HEAD' || trimmed === '' ? null : trimmed
+}
+
+/** Raw `git status --porcelain` output. Empty string ⇒ clean tree. */
+export async function statusPorcelain(
+  cwd: string,
+  runner: GitRunner = defaultRunner,
+): Promise<string> {
+  const { stdout } = await runner(['status', '--porcelain'], cwd)
+  return stdout
+}
+
+export interface MergeTreeResult {
+  /** Object-DB SHA of the merged tree (best-effort even on conflict). */
+  treeSha: string | null
+  /** Files that conflicted; empty for a clean merge. */
+  conflictFiles: string[]
+  conflicted: boolean
+}
+
+/**
+ * `git merge-tree --write-tree --name-only <base> <head>`. On conflict
+ * git exits non-zero but still writes the partial tree SHA — we parse
+ * stdout from the rejection and report which files conflicted.
+ *
+ * Requires git ≥2.38 (Oct 2022). Use `gitVersion` to gate.
+ */
+export async function mergeTreeWriteTree(
+  cwd: string,
+  base: string,
+  head: string,
+  runner: GitRunner = defaultRunner,
+): Promise<MergeTreeResult> {
+  const argv = ['merge-tree', '--write-tree', '--name-only', base, head]
+  try {
+    const { stdout } = await runner(argv, cwd)
+    const lines = stdout.split('\n').filter((l) => l.length > 0)
+    return { treeSha: lines[0] ?? null, conflictFiles: [], conflicted: false }
+  } catch (err) {
+    const stdout = (err as { stdout?: string }).stdout ?? ''
+    const code = (err as { code?: number }).code
+    // `git merge-tree --write-tree` exits 1 specifically on merge conflict.
+    // Anything else (unknown ref, not a repo, malformed args) bubbles up.
+    if (code !== 1 || stdout === '') throw err
+    const lines = stdout.split('\n').filter((l) => l.length > 0)
+    const [treeSha = null, ...conflictFiles] = lines
+    return { treeSha, conflictFiles, conflicted: true }
+  }
+}
+
+export interface GitVersion {
+  major: number
+  minor: number
+  patch: number
+  raw: string
+}
+
+/** Parse `git --version` into a semver tuple. Used to gate
+ *  `merge-tree --write-tree` (needs ≥2.38). Cached for the lifetime
+ *  of the main process when invoked through the default runner — git
+ *  doesn't upgrade itself. Tests inject their own runner and bypass
+ *  the cache so each `it` block gets a fresh probe. */
+let cachedGitVersion: GitVersion | null = null
+export async function gitVersion(
+  runner: GitRunner = defaultRunner,
+): Promise<GitVersion> {
+  if (runner === defaultRunner && cachedGitVersion) return cachedGitVersion
+  const { stdout } = await runner(['--version'], process.cwd())
+  const m = stdout.match(/git version (\d+)\.(\d+)\.(\d+)/)
+  if (!m) throw new Error(`unparseable git version output: ${stdout.trim()}`)
+  const result: GitVersion = {
+    major: Number(m[1]),
+    minor: Number(m[2]),
+    patch: Number(m[3]),
+    raw: stdout.trim(),
+  }
+  if (runner === defaultRunner) cachedGitVersion = result
+  return result
+}
+
+export interface RebaseResult {
+  status: 'clean' | 'conflict'
+  conflictFiles: string[]
+}
+
+/**
+ * Rebase `cwd` onto `newBase`. On conflict, git exits non-zero and
+ * leaves the worktree in REBASE_HEAD; we surface the unmerged file list
+ * so the UI can render `ConflictResolutionPanel`.
+ */
+export async function rebaseOnto(
+  cwd: string,
+  newBase: string,
+  runner: GitRunner = defaultRunner,
+): Promise<RebaseResult> {
+  try {
+    await runner(['rebase', newBase], cwd)
+    return { status: 'clean', conflictFiles: [] }
+  } catch {
+    // Don't trust the error type — query the worktree for the
+    // canonical unmerged-files list. Cheaper than parsing rebase output.
+    const { stdout } = await runner(
+      ['diff', '--name-only', '--diff-filter=U'],
+      cwd,
+    )
+    const conflictFiles = stdout.split('\n').filter((l) => l.length > 0)
+    return { status: 'conflict', conflictFiles }
+  }
+}
+
+/** Best-effort `git rebase --abort`. Swallows the "no rebase in
+ *  progress" error so this is safe to call defensively. */
+export async function rebaseAbort(
+  cwd: string,
+  runner: GitRunner = defaultRunner,
+): Promise<void> {
+  try {
+    await runner(['rebase', '--abort'], cwd)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    if (!/no rebase in progress/i.test(msg)) throw err
+  }
+}
+
+/**
+ * True iff this worktree currently has a rebase in progress (i.e. crashed
+ * mid-rebase). Detected by presence of `.git/rebase-merge/` or
+ * `.git/rebase-apply/` under the worktree's git dir.
+ *
+ * Takes a `fsAccess` injectable so tests can avoid touching the real FS.
+ */
+export async function isInsideRebase(
+  cwd: string,
+  runner: GitRunner = defaultRunner,
+  fsAccess: (path: string) => Promise<unknown> = access,
+): Promise<boolean> {
+  const { stdout } = await runner(['rev-parse', '--git-dir'], cwd)
+  const gitDir = stdout.trim()
+  const abs = isAbsolute(gitDir) ? gitDir : join(cwd, gitDir)
+  const candidates = [join(abs, 'rebase-merge'), join(abs, 'rebase-apply')]
+  for (const p of candidates) {
+    try {
+      await fsAccess(p)
+      return true
+    } catch {
+      // missing — try next
+    }
+  }
+  return false
 }

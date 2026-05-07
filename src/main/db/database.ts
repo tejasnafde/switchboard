@@ -8,6 +8,7 @@ import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { applyKanbanArchiveSideEffect } from '@shared/kanbanArchive'
 import type { RuntimeMode } from '@shared/provider-events'
 import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
+import type { BranchPlanStatus } from '@shared/branches'
 
 const log = createLogger('db')
 
@@ -283,6 +284,35 @@ function migrate(db: Database.Database): void {
       db.exec("ALTER TABLE kanban_cards ADD COLUMN runtime_mode TEXT NOT NULL DEFAULT 'accept-edits'")
     }
   } catch { /* ignore */ }
+
+  // ─── Branches screen (multi-worktree merge orchestration) ────────
+  // `worktree_dependencies` stores user-authored "B depends on A" edges
+  // between branches in a repo. Composite PK rejects duplicate edges
+  // (idempotent INSERT OR IGNORE on add).
+  //
+  // `branch_plan_state` persists an in-flight merge plan so a crash
+  // mid-rebase can be resumed on next launch. One row per repo (PK on
+  // repo_path); plan_json is the serialized Plan shape from
+  // src/main/branches/dependencyGraph.ts.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS worktree_dependencies (
+      repo_path     TEXT NOT NULL,
+      parent_branch TEXT NOT NULL,
+      child_branch  TEXT NOT NULL,
+      created_at    INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      PRIMARY KEY (repo_path, parent_branch, child_branch)
+    );
+    CREATE INDEX IF NOT EXISTS idx_worktree_deps_repo
+      ON worktree_dependencies(repo_path);
+
+    CREATE TABLE IF NOT EXISTS branch_plan_state (
+      repo_path    TEXT PRIMARY KEY,
+      plan_json    TEXT NOT NULL,
+      current_step INTEGER NOT NULL DEFAULT 0,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      updated_at   INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+    );
+  `)
 
   // Provider instances: named credential sets scoped to an agent kind.
   // See src/main/db/providerInstances.ts for the encryption contract.
@@ -1123,4 +1153,96 @@ export function listInUseWorktreePaths(projectPath: string): Set<string> {
     'SELECT worktree_path FROM kanban_cards WHERE project_path = ? AND worktree_path IS NOT NULL'
   ).all(projectPath) as Array<{ worktree_path: string }>
   return new Set(rows.map((r) => r.worktree_path))
+}
+
+// ─── Branches: dependency graph + plan state ─────────────────────
+
+export interface WorktreeDependencyRow {
+  repo_path: string
+  parent_branch: string
+  child_branch: string
+  created_at: number
+}
+
+/** Insert an edge (idempotent — no error on duplicate). */
+export function addWorktreeDependency(
+  repoPath: string,
+  parentBranch: string,
+  childBranch: string,
+): void {
+  getDb().prepare(
+    `INSERT OR IGNORE INTO worktree_dependencies
+       (repo_path, parent_branch, child_branch, created_at)
+     VALUES (?, ?, ?, ?)`
+  ).run(repoPath, parentBranch, childBranch, Date.now())
+}
+
+export function removeWorktreeDependency(
+  repoPath: string,
+  parentBranch: string,
+  childBranch: string,
+): void {
+  getDb().prepare(
+    `DELETE FROM worktree_dependencies
+     WHERE repo_path = ? AND parent_branch = ? AND child_branch = ?`
+  ).run(repoPath, parentBranch, childBranch)
+}
+
+export function listWorktreeDependencies(repoPath: string): WorktreeDependencyRow[] {
+  return getDb().prepare(
+    `SELECT repo_path, parent_branch, child_branch, created_at
+       FROM worktree_dependencies
+      WHERE repo_path = ?
+      ORDER BY created_at ASC`
+  ).all(repoPath) as WorktreeDependencyRow[]
+}
+
+/** Drop every edge whose parent or child is `branch` (used when a branch
+ *  is deleted post-merge, so stale edges don't pollute future plans). */
+export function dropEdgesReferencingBranch(repoPath: string, branch: string): void {
+  getDb().prepare(
+    `DELETE FROM worktree_dependencies
+     WHERE repo_path = ? AND (parent_branch = ? OR child_branch = ?)`
+  ).run(repoPath, branch, branch)
+}
+
+// Plan state — one row per repo. Status drives UI banners and the
+// resume / abort flow on next launch. Status union lives in
+// shared/branches.ts so the renderer + IPC types can use it too.
+
+export interface BranchPlanStateRow {
+  repo_path: string
+  plan_json: string
+  current_step: number
+  status: BranchPlanStatus
+  updated_at: number
+}
+
+export function saveBranchPlanState(args: {
+  repoPath: string
+  planJson: string
+  currentStep: number
+  status: BranchPlanStatus
+}): void {
+  getDb().prepare(
+    `INSERT INTO branch_plan_state (repo_path, plan_json, current_step, status, updated_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(repo_path) DO UPDATE SET
+       plan_json    = excluded.plan_json,
+       current_step = excluded.current_step,
+       status       = excluded.status,
+       updated_at   = excluded.updated_at`
+  ).run(args.repoPath, args.planJson, args.currentStep, args.status, Date.now())
+}
+
+export function loadBranchPlanState(repoPath: string): BranchPlanStateRow | null {
+  const row = getDb().prepare(
+    `SELECT repo_path, plan_json, current_step, status, updated_at
+       FROM branch_plan_state WHERE repo_path = ?`
+  ).get(repoPath) as BranchPlanStateRow | undefined
+  return row ?? null
+}
+
+export function clearBranchPlanState(repoPath: string): void {
+  getDb().prepare('DELETE FROM branch_plan_state WHERE repo_path = ?').run(repoPath)
 }

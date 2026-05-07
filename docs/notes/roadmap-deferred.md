@@ -5,7 +5,7 @@ queue. Captured here so they don't get lost when the next conversation
 boots fresh. Each section ends with a "what unblocks this" note so we
 know what would have to change to pull it into the active queue.
 
-Last refreshed: 2026-05-04.
+Last refreshed: 2026-05-06.
 
 ---
 
@@ -222,6 +222,45 @@ vibe-kanban (`/tmp/vibe-kanban/crates/executors/src/executors/cursor.rs`,
 `(base_model, reasoning) → full_model_id` mapping table — covers ~30
 cursor variants and is the kind of registry we'll want once instances
 multiply.
+
+---
+
+## 6. Branches screen — multi-worktree merge orchestration
+
+**Shape.** Switchboard already gives every kanban card / forked
+conversation its own git worktree (see `src/main/worktree.ts` and
+`session-kickoff-fork-to-worktree.md`). What's missing is the merge-
+back side: when the user has 4–5 worktrees in flight — some
+foundational changes, some features that build on those foundations —
+they need a way to land them on `main` in dependency order without
+hand-driving five rebases. The proposed design is a small in-process
+DAG (nodes = worktrees, edges = "B depends on A"), a topological-
+order rebase executor, `git rerere` enabled to memoize conflict
+resolutions, and `mergiraf` shelled out for AST-aware conflict
+handling. UI lives as a new top-level `AppView: 'branches'` alongside
+the existing `'chats'` and `'kanban'` (see `layout-store.ts:20`); the
+existing `⌘⇧K` view-toggle becomes a 3-way cycle, and the title-bar
+segmented control grows from 2 to 3 segments. v1 = manually-marked
+edges + dry-run preview + sequenced execution; v2 = auto-suggest
+edges via pairwise `git merge-tree`.
+
+**Why deferred.** No real user pain yet. This is a "build when someone
+hits the wall with 5 in-flight worktrees" feature, not speculative.
+Also depends on a `mergiraf` distribution story (bundle? require
+brew?) and a `react-flow` adoption decision for the DAG visualization.
+
+**What unblocks this.** A user actually drowning in parallel-worktree
+merge conflicts. Until then, the existing fork-to-worktree + kanban
+worktree flows produce the worktrees — landing them is manual.
+
+**Reference.** Full design in
+`docs/notes/branches-screen-merge-orchestration.md`. Conductor
+(<https://github.com/conductor-oss/conductor>) was evaluated as a
+prior-art candidate on 2026-05-06 and ruled out — wrong scale (JVM
+workflow server for billions of executions, Redis/Postgres/ES
+backends) and wrong shape (the hard problem is git-aware semantic
+merging, not workflow scheduling). Its `FORK_JOIN_DYNAMIC` operator
+is a useful mental model but its implementation is far too heavy.
 
 ---
 
