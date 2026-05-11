@@ -95,7 +95,7 @@ function createWindow(): BrowserWindow {
     icon: nativeImage.createFromPath(iconPath),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 12, y: 12 },
-    backgroundColor: isTranslucent ? '#00000000' : '#0d1117',
+    backgroundColor: isTranslucent ? '#00000000' : '#0a0a0a',
     vibrancy: isTranslucent ? 'sidebar' : undefined,
     visualEffectState: 'active',
     transparent: isTranslucent,
@@ -104,6 +104,29 @@ function createWindow(): BrowserWindow {
       sandbox: false,
     },
   })
+
+  // macOS fullscreen + translucent: transparent windows show a black void in
+  // fullscreen because macOS doesn't support window transparency in that mode.
+  // Fix: disable vibrancy on enter, restore it on leave. Renderer gets an
+  // `app:fullscreen-changed` push so it can add a CSS class that forces solid
+  // backgrounds while the vibrancy effect is unavailable.
+  if (process.platform === 'darwin') {
+    window.on('enter-full-screen', () => {
+      const theme = getSetting('theme')
+      if (theme !== 'translucent') return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      window.setVibrancy(null as any)
+      window.setBackgroundColor('#0a0a0a')
+      window.webContents.send('app:fullscreen-changed', true)
+    })
+    window.on('leave-full-screen', () => {
+      const theme = getSetting('theme')
+      if (theme !== 'translucent') return
+      window.setVibrancy('sidebar')
+      window.setBackgroundColor('#00000000')
+      window.webContents.send('app:fullscreen-changed', false)
+    })
+  }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url)

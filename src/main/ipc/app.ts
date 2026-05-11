@@ -620,7 +620,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Electron types reject null but it is the documented way to clear vibrancy
         window.setVibrancy(null as any)
-        window.setBackgroundColor('#0d1117')
+        window.setBackgroundColor('#0a0a0a')
       }
     }
   })

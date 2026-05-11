@@ -512,6 +512,13 @@ const api = {
     return () => ipcRenderer.removeListener('app:close-pane-or-window', handler)
   },
 
+  /** Fired when the window enters/leaves macOS fullscreen while in translucent mode. */
+  onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => {
+    const handler = (_: Electron.IpcRendererEvent, isFullscreen: boolean) => callback(isFullscreen)
+    ipcRenderer.on('app:fullscreen-changed', handler)
+    return () => ipcRenderer.removeListener('app:fullscreen-changed', handler)
+  },
+
   closeWindow: () => {
     ipcRenderer.send('app:close-window')
   },

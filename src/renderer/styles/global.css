@@ -4,20 +4,20 @@
 
 /* ─── Dark theme (default) ──────────────────────────────────────── */
 :root, .theme-dark {
-  --bg-primary: #0d1117;
-  --bg-secondary: #131820;
-  --bg-tertiary: #1c2128;
-  --bg-surface: #161b22;
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-tertiary: #1a1a1a;
+  --bg-surface: #141414;
   /* Used for floating surfaces (modals, popovers) — always fully opaque
      so content behind is never visible through them. */
-  --bg-elevated: #1b2028;
-  --bg-glass: rgba(13, 17, 23, 0.88);
-  --bg-hover: rgba(255, 255, 255, 0.04);
+  --bg-elevated: #1c1c1c;
+  --bg-glass: rgba(10, 10, 10, 0.88);
+  --bg-hover: rgba(255, 255, 255, 0.05);
   --bg-active: rgba(88, 166, 255, 0.10);
   --text-primary: #e2e8f0;
   --text-secondary: #8b949e;
   --text-muted: #484f58;
-  --border: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.07);
   --border-focus: rgba(88, 166, 255, 0.4);
   --accent: #58a6ff;
   --accent-hover: #79c0ff;
@@ -30,11 +30,11 @@
   --radius: 6px;
   --radius-lg: 10px;
   --titlebar-height: 38px;
-  --terminal-bg: #0d1117;
+  --terminal-bg: #0a0a0a;
   --terminal-fg: #e2e8f0;
   --terminal-cursor: #58a6ff;
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
   /* Sidebar workspace tag palette — saturated against the dark canvas. */
   --workspace-color-1: #f78166; /* ember */
   --workspace-color-2: #d2a8ff; /* lilac */
@@ -123,6 +123,31 @@ html.theme-translucent,
   background-color: transparent !important;
 }
 
+/* macOS fullscreen fallback: vibrancy doesn't work in fullscreen mode so
+   the main process disables it and sends app:fullscreen-changed. The renderer
+   sets data-fullscreen="true" on <html> so we can restore solid backgrounds
+   and avoid the black void that transparent windows show in fullscreen. */
+html[data-fullscreen="true"].theme-translucent,
+html[data-fullscreen="true"] .theme-translucent,
+html[data-fullscreen="true"] .theme-translucent body,
+html[data-fullscreen="true"] .theme-translucent #root {
+  background: #0a0a0a !important;
+  background-color: #0a0a0a !important;
+}
+html[data-fullscreen="true"] .theme-translucent .sidebar-root,
+html[data-fullscreen="true"] .theme-translucent .titlebar-drag {
+  background: #111111 !important;
+}
+html[data-fullscreen="true"] .theme-translucent {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #111111;
+  --bg-tertiary: #1a1a1a;
+  --bg-surface: #141414;
+  --bg-elevated: #1c1c1c;
+  --bg-glass: rgba(10, 10, 10, 0.95);
+  --terminal-bg: #0a0a0a;
+}
+
 /* Main panels: ChatPanel, Sidebar, TerminalStrip — fully transparent in translucent mode.
    Do NOT add new borders here — the surrounding layout (App.tsx) already
    renders panel borders via `--border` which applies in all themes. An
@@ -147,7 +172,7 @@ html.theme-translucent,
    window itself). The var(--bg-secondary) alpha was too low in both
    dark + translucent themes — content bled through. */
 .sb-floating-surface {
-  background: var(--bg-elevated, #1b2028) !important;
+  background: var(--bg-elevated, #1c1c1c) !important;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 
@@ -156,7 +181,7 @@ html.theme-translucent,
 .theme-translucent .settings-modal-content,
 .theme-translucent .palette-modal-content,
 .theme-translucent .sb-floating-surface {
-  background: rgba(24, 28, 38, 0.98) !important;
+  background: rgba(20, 20, 20, 0.98) !important;
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
@@ -913,12 +938,17 @@ html, body, #root {
   padding: 0;
 }
 
-/* Per-code-block copy button */
+/* Per-code-block copy button — markdown content and tool call blocks */
 .markdown-content pre {
   position: relative;
 }
 
-.markdown-content pre .code-copy-btn {
+.tool-code-block {
+  position: relative;
+}
+
+.markdown-content pre .code-copy-btn,
+.tool-code-block .code-copy-btn {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -934,17 +964,20 @@ html, body, #root {
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
 
-.markdown-content pre:hover .code-copy-btn {
+.markdown-content pre:hover .code-copy-btn,
+.tool-code-block:hover .code-copy-btn {
   opacity: 0.85;
 }
 
-.markdown-content pre .code-copy-btn:hover {
+.markdown-content pre .code-copy-btn:hover,
+.tool-code-block .code-copy-btn:hover {
   opacity: 1 !important;
   color: var(--text-primary);
   background: var(--bg-tertiary);
 }
 
-.markdown-content pre .code-copy-btn.copied {
+.markdown-content pre .code-copy-btn.copied,
+.tool-code-block .code-copy-btn.copied {
   opacity: 1 !important;
   color: var(--success);
   border-color: var(--success);

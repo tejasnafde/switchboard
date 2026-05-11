@@ -1171,41 +1171,6 @@ export function listInUseWorktreePaths(projectPath: string): Set<string> {
   return new Set(rows.map((r) => r.worktree_path))
 }
 
-// ─── Editor tabs CRUD ───────────────────────────────────────────
-
-export interface EditorTabRow {
-  path: string
-  cursor_line: number
-  cursor_col: number
-  scroll_top: number
-  is_active: number
-}
-
-export function loadEditorTabs(sessionId: string): EditorTabRow[] {
-  return getDb()
-    .prepare(
-      'SELECT path, cursor_line, cursor_col, scroll_top, is_active FROM editor_tabs WHERE session_id = ? ORDER BY idx ASC',
-    )
-    .all(sessionId) as EditorTabRow[]
-}
-
-export function saveEditorTabs(
-  sessionId: string,
-  tabs: ReadonlyArray<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
-): void {
-  const db = getDb()
-  const tx = db.transaction(() => {
-    db.prepare('DELETE FROM editor_tabs WHERE session_id = ?').run(sessionId)
-    const ins = db.prepare(
-      'INSERT INTO editor_tabs (session_id, idx, path, cursor_line, cursor_col, scroll_top, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    )
-    tabs.forEach((t, idx) => {
-      ins.run(sessionId, idx, t.path, t.cursorLine, t.cursorCol, t.scrollTop, t.isActive ? 1 : 0)
-    })
-  })
-  tx()
-}
-
 // ─── Bookmarks (save-for-later on messages) ─────────────────────
 
 export function ensureBookmarksTable(db: Database.Database): void {
@@ -1272,4 +1237,39 @@ export function listBookmarks(): BookmarkRow[] {
   return getDb()
     .prepare('SELECT * FROM bookmarks ORDER BY saved_at DESC')
     .all() as BookmarkRow[]
+}
+
+// ─── Editor tabs CRUD ───────────────────────────────────────────
+
+export interface EditorTabRow {
+  path: string
+  cursor_line: number
+  cursor_col: number
+  scroll_top: number
+  is_active: number
+}
+
+export function loadEditorTabs(sessionId: string): EditorTabRow[] {
+  return getDb()
+    .prepare(
+      'SELECT path, cursor_line, cursor_col, scroll_top, is_active FROM editor_tabs WHERE session_id = ? ORDER BY idx ASC',
+    )
+    .all(sessionId) as EditorTabRow[]
+}
+
+export function saveEditorTabs(
+  sessionId: string,
+  tabs: ReadonlyArray<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
+): void {
+  const db = getDb()
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM editor_tabs WHERE session_id = ?').run(sessionId)
+    const ins = db.prepare(
+      'INSERT INTO editor_tabs (session_id, idx, path, cursor_line, cursor_col, scroll_top, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    tabs.forEach((t, idx) => {
+      ins.run(sessionId, idx, t.path, t.cursorLine, t.cursorCol, t.scrollTop, t.isActive ? 1 : 0)
+    })
+  })
+  tx()
 }

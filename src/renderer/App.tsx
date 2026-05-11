@@ -225,6 +225,17 @@ export function App() {
     return () => document.removeEventListener('click', handleClick, true)
   }, [])
 
+  // macOS fullscreen + translucent: vibrancy is disabled while fullscreen
+  // (transparent windows go black). Main process sends this event so we can
+  // set a data attr that CSS uses to force solid backgrounds as a fallback.
+  useEffect(() => {
+    if (typeof window.api?.onFullscreenChanged !== 'function') return
+    const remove = window.api.onFullscreenChanged((isFullscreen: boolean) => {
+      document.documentElement.dataset.fullscreen = isFullscreen ? 'true' : 'false'
+    })
+    return () => { remove() }
+  }, [])
+
   // Listen for settings shortcut from native menu
   useEffect(() => {
     if (typeof window.api?.onOpenSettings !== 'function') return

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import type { ToolCall } from '@shared/types'
 
 interface ToolCallBlockProps {
@@ -213,6 +213,18 @@ function FileLabel({ path }: { path: string }) {
 }
 
 function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'code'; children: React.ReactNode }) {
+  const [copied, setCopied] = useState(false)
+  const preRef = useRef<HTMLPreElement>(null)
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const text = preRef.current?.textContent ?? ''
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch(() => {})
+  }
+
   const variantStyles: Record<string, React.CSSProperties> = {
     command: {
       background: 'rgba(16, 185, 129, 0.06)',
@@ -231,20 +243,29 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
     },
   }
   return (
-    <pre style={{
-      margin: 0,
-      padding: '6px 10px',
-      fontFamily: 'var(--font-mono)',
-      fontSize: '11px',
-      whiteSpace: 'pre-wrap',
-      wordBreak: 'break-word',
-      overflow: 'auto',
-      maxHeight: '240px',
-      borderRadius: '3px',
-      ...variantStyles[variant],
-    }}>
-      {children}
-    </pre>
+    <div style={{ position: 'relative' }} className="tool-code-block">
+      <pre ref={preRef} style={{
+        margin: 0,
+        padding: '6px 10px',
+        fontFamily: 'var(--font-mono)',
+        fontSize: '11px',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+        overflow: 'auto',
+        maxHeight: '240px',
+        borderRadius: '3px',
+        ...variantStyles[variant],
+      }}>
+        {children}
+      </pre>
+      <button
+        onClick={handleCopy}
+        className={`code-copy-btn${copied ? ' copied' : ''}`}
+        type="button"
+      >
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
   )
 }
 
