@@ -316,6 +316,13 @@ const api = {
     }): Promise<
       { ok: true; path: string; branch: string } | { ok: false; error: string }
     > => ipcRenderer.invoke(GitChannels.CREATE_SESSION_WORKTREE, args),
+    fileDiff: (
+      repoRoot: string,
+      subPath: string,
+    ): Promise<
+      | { ok: true; hunks: Array<{ kind: 'add' | 'mod' | 'del'; startLine: number; endLine: number }> }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke(GitChannels.FILE_DIFF, repoRoot, subPath),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────

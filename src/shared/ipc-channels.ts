@@ -95,6 +95,8 @@ export const GitChannels = {
   LIST_REFS: 'git:list-refs',
   SWITCH_REF: 'git:switch-ref',
   CURRENT_BRANCH: 'git:current-branch',
+  /** Editor gutter — hunks for a single file, computed against HEAD. */
+  FILE_DIFF: 'git:file-diff',
   /**
    * Create a deterministic-path worktree under userData/worktrees for a
    * new chat session and return its absolute path + the branch we

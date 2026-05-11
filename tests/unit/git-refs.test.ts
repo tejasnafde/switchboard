@@ -52,13 +52,14 @@ describe('parseWorktreeBranchMap', () => {
 })
 
 describe('parseForEachRef', () => {
-  // Format we ask git for: '%(refname)\x00%(objectname)\x00%(HEAD)'
-  // Three fields, NUL-delimited, one ref per line.
+  // Format we ask git for: '%(refname)\t%(objectname)\t%(HEAD)'
+  // Three fields, tab-delimited, one ref per line.
+  // (NUL was the original delimiter but Node.js execFile rejects null bytes in argv.)
   const sample = [
-    'refs/heads/main\x00abc123\x00*',
-    'refs/heads/feat/foo\x00def456\x00 ',
-    'refs/remotes/origin/main\x00abc123\x00 ',
-    'refs/remotes/origin/feature\x00ghi789\x00 ',
+    'refs/heads/main\tabc123\t*',
+    'refs/heads/feat/foo\tdef456\t ',
+    'refs/remotes/origin/main\tabc123\t ',
+    'refs/remotes/origin/feature\tghi789\t ',
   ].join('\n')
 
   it('classifies local vs. remote and surfaces the current branch', () => {
@@ -85,7 +86,7 @@ describe('parseForEachRef', () => {
   })
 
   it('ignores blank lines and malformed records', () => {
-    const noisy = '\n\nrefs/heads/main\x00abc\x00*\n\nbroken-line-no-nul\n'
+    const noisy = '\n\nrefs/heads/main\tabc\t*\n\nbroken-line-no-tab\n'
     const refs = parseForEachRef(noisy, new Map())
     expect(refs).toHaveLength(1)
     expect(refs[0].name).toBe('main')
@@ -139,7 +140,7 @@ describe('listRefs (stubbed runner)', () => {
       }
       // for-each-ref
       return {
-        stdout: 'refs/heads/main\x00abc\x00*\nrefs/heads/dev\x00def\x00 \n',
+        stdout: 'refs/heads/main\tabc\t*\nrefs/heads/dev\tdef\t \n',
         stderr: '',
       }
     }

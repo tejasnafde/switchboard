@@ -84,16 +84,20 @@ export function parseWorktreeBranchMap(porcelain: string): Map<string, string> {
 }
 
 /**
- * Parse `git for-each-ref --format='%(refname)\x00%(objectname)\x00%(HEAD)'`
+ * Parse `git for-each-ref --format='%(refname)\t%(objectname)\t%(HEAD)'`
  * into Ref[]. Branches under `refs/heads/` become local refs; anything
  * under `refs/remotes/` becomes a remote ref with the remote name kept
  * in the displayed `name` (so `origin/main` survives as-is).
+ *
+ * Tab is used as the field separator (not NUL) because Node.js execFile
+ * rejects argument strings that contain null bytes. Tab is equally safe:
+ * git ref names cannot contain whitespace (isValidRefName enforces this).
  */
 export function parseForEachRef(stdout: string, worktreeMap: Map<string, string>): Ref[] {
   const out: Ref[] = []
   for (const line of stdout.split('\n')) {
     if (!line) continue
-    const parts = line.split('\x00')
+    const parts = line.split('\t')
     if (parts.length < 3) continue
     const [refname, sha, headMarker] = parts
     let name: string
@@ -155,11 +159,12 @@ export async function listRefs(cwd: string, runner: GitRunner = defaultRunner): 
     log.warn(`worktree list failed: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  // NUL-delimited so branch names containing `=` or `|` survive intact.
+  // Tab-delimited — branch names can't contain whitespace so this is safe,
+  // and unlike NUL, tab survives Node.js execFile's argument validation.
   const { stdout } = await runner(
     [
       'for-each-ref',
-      '--format=%(refname)\x00%(objectname)\x00%(HEAD)',
+      '--format=%(refname)\t%(objectname)\t%(HEAD)',
       'refs/heads',
       'refs/remotes',
     ],
