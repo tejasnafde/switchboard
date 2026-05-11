@@ -76,6 +76,9 @@ export interface CappedRead {
   content: string
   truncated: boolean
   totalBytes: number
+  /** On-disk mtime at the moment of the read — passed through to the editor
+   *  so save-conflict detection uses the real file mtime, not Date.now(). */
+  mtimeMs: number
 }
 
 /**
@@ -118,6 +121,7 @@ export async function readFileCapped(absPath: string, capBytes: number): Promise
       content: buf.toString('utf8'),
       truncated: stat.size > capBytes,
       totalBytes: stat.size,
+      mtimeMs: stat.mtimeMs,
     }
   } finally {
     await handle.close()

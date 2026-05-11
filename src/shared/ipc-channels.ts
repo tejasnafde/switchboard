@@ -81,6 +81,8 @@ export const KanbanChannels = {
 export const FilesChannels = {
   LIST_DIR: 'files:list-dir',
   READ_FILE: 'files:read-file',
+  WRITE_FILE: 'files:write-file',
+  READ_BATCH: 'files:read-batch',
   RESOLVE: 'files:resolve',
   LIST_ALL: 'files:list-all',
 } as const

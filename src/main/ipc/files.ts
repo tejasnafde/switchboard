@@ -14,11 +14,13 @@ import { isAbsolute, join, normalize, relative, resolve } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { FilesChannels } from '@shared/ipc-channels'
 import { listDirAnnotated, readFileCapped, listAllFiles } from '../files/listing'
+import { writeFileSafe } from '../files/writing'
 import { createMainLogger as createLogger } from '../logger'
 
 const log = createLogger('ipc:files')
 
 const MAX_READ_BYTES = 2 * 1024 * 1024 // 2 MB hard cap for viewer
+const MAX_WRITE_BYTES = 8 * 1024 * 1024 // 8 MB cap on writes — caps a runaway buffer wiping the disk
 
 /**
  * Reject any subPath that escapes repoRoot via `..` or absolute paths.
@@ -71,6 +73,46 @@ export function registerFilesHandlers(): void {
       return { ok: false, error: (err as Error).message, files: [] }
     }
   })
+
+  ipcMain.handle(
+    FilesChannels.WRITE_FILE,
+    async (
+      _e,
+      repoRoot: string,
+      subPath: string,
+      content: string,
+      expectedMtimeMs?: number,
+    ) => {
+      try {
+        if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) {
+          return { ok: false, error: `File too large to write (cap ${MAX_WRITE_BYTES} bytes)` }
+        }
+        const abs = resolveWithinRepo(repoRoot, subPath)
+        const res = await writeFileSafe(abs, content, { expectedMtimeMs })
+        return res
+      } catch (err) {
+        log.warn('write-file failed', { repoRoot, subPath, err: (err as Error).message })
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    FilesChannels.READ_BATCH,
+    async (_e, repoRoot: string, subPaths: string[]) => {
+      const out: Array<{ path: string; content: string; mtimeMs: number; truncated: boolean }> = []
+      for (const sub of subPaths) {
+        try {
+          const abs = resolveWithinRepo(repoRoot, sub)
+          const r = await readFileCapped(abs, MAX_READ_BYTES)
+          out.push({ path: sub, content: r.content, mtimeMs: r.mtimeMs, truncated: r.truncated })
+        } catch (err) {
+          log.warn('read-batch: skipping unreadable entry', { sub, err: (err as Error).message })
+        }
+      }
+      return { ok: true, files: out }
+    },
+  )
 
   ipcMain.handle(FilesChannels.RESOLVE, async (_e, repoRoot: string, subPath: string) => {
     try {

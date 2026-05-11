@@ -270,7 +270,7 @@ const api = {
     readFile: (
       repoRoot: string,
       subPath: string,
-    ): Promise<{ ok: boolean; error?: string; content: string; truncated: boolean; totalBytes: number }> =>
+    ): Promise<{ ok: boolean; error?: string; content: string; truncated: boolean; totalBytes: number; mtimeMs: number }> =>
       ipcRenderer.invoke(FilesChannels.READ_FILE, repoRoot, subPath),
     resolve: (
       repoRoot: string,
@@ -281,6 +281,29 @@ const api = {
       repoRoot: string,
     ): Promise<{ ok: boolean; error?: string; files: string[] }> =>
       ipcRenderer.invoke(FilesChannels.LIST_ALL, repoRoot),
+    writeFile: (
+      repoRoot: string,
+      subPath: string,
+      content: string,
+      expectedMtimeMs?: number,
+    ): Promise<
+      | { ok: true; mtimeMs: number }
+      | { ok: false; error: string; conflict?: boolean }
+    > =>
+      ipcRenderer.invoke(
+        FilesChannels.WRITE_FILE,
+        repoRoot,
+        subPath,
+        content,
+        expectedMtimeMs,
+      ),
+    readBatch: (
+      repoRoot: string,
+      subPaths: string[],
+    ): Promise<{
+      ok: true
+      files: Array<{ path: string; content: string; mtimeMs: number; truncated: boolean }>
+    }> => ipcRenderer.invoke(FilesChannels.READ_BATCH, repoRoot, subPaths),
   },
 
   // ─── Git (per-thread branch picker) ───────────────────────────
