@@ -338,6 +338,24 @@ function migrate(db: Database.Database): void {
     }
   } catch { /* FTS rebuild failed — not critical */ }
 
+  // Editor tabs — per-session list of open files in the right-pane editor.
+  // Survives app restart so users come back to the same buffers they
+  // were editing. `is_active` is a 0/1 flag rather than a separate column
+  // because we want the active tab atomically writable along with the rest.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS editor_tabs (
+      session_id  TEXT NOT NULL,
+      idx         INTEGER NOT NULL,
+      path        TEXT NOT NULL,
+      cursor_line INTEGER NOT NULL DEFAULT 1,
+      cursor_col  INTEGER NOT NULL DEFAULT 0,
+      scroll_top  INTEGER NOT NULL DEFAULT 0,
+      is_active   INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (session_id, path)
+    );
+    CREATE INDEX IF NOT EXISTS idx_editor_tabs_session ON editor_tabs(session_id, idx);
+  `)
+
   log.info('database migrated')
 }
 
@@ -1149,4 +1167,39 @@ export function listInUseWorktreePaths(projectPath: string): Set<string> {
     'SELECT worktree_path FROM kanban_cards WHERE project_path = ? AND worktree_path IS NOT NULL'
   ).all(projectPath) as Array<{ worktree_path: string }>
   return new Set(rows.map((r) => r.worktree_path))
+}
+
+// ─── Editor tabs CRUD ───────────────────────────────────────────
+
+export interface EditorTabRow {
+  path: string
+  cursor_line: number
+  cursor_col: number
+  scroll_top: number
+  is_active: number
+}
+
+export function loadEditorTabs(sessionId: string): EditorTabRow[] {
+  return getDb()
+    .prepare(
+      'SELECT path, cursor_line, cursor_col, scroll_top, is_active FROM editor_tabs WHERE session_id = ? ORDER BY idx ASC',
+    )
+    .all(sessionId) as EditorTabRow[]
+}
+
+export function saveEditorTabs(
+  sessionId: string,
+  tabs: ReadonlyArray<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
+): void {
+  const db = getDb()
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM editor_tabs WHERE session_id = ?').run(sessionId)
+    const ins = db.prepare(
+      'INSERT INTO editor_tabs (session_id, idx, path, cursor_line, cursor_col, scroll_top, is_active) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    )
+    tabs.forEach((t, idx) => {
+      ins.run(sessionId, idx, t.path, t.cursorLine, t.cursorCol, t.scrollTop, t.isActive ? 1 : 0)
+    })
+  })
+  tx()
 }

@@ -14,6 +14,8 @@ import {
   removeSetting,
   createConversation,
   setConversationWorktree,
+  loadEditorTabs,
+  saveEditorTabs,
   updateConversationTitle,
   saveMessage,
   getConversationsForProject,
@@ -209,6 +211,40 @@ export function registerAppHandlers(window: BrowserWindow): void {
   })
 
   // Create a new conversation in the database
+  ipcMain.handle(AppChannels.EDITOR_TABS_LOAD, (_e, sessionId: string) => {
+    try {
+      const rows = loadEditorTabs(sessionId)
+      return {
+        ok: true,
+        tabs: rows.map((r) => ({
+          path: r.path,
+          cursorLine: r.cursor_line,
+          cursorCol: r.cursor_col,
+          scrollTop: r.scroll_top,
+          isActive: !!r.is_active,
+        })),
+      }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message, tabs: [] }
+    }
+  })
+
+  ipcMain.handle(
+    AppChannels.EDITOR_TABS_SAVE,
+    (
+      _e,
+      sessionId: string,
+      tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
+    ) => {
+      try {
+        saveEditorTabs(sessionId, tabs)
+        return { ok: true }
+      } catch (err) {
+        return { ok: false, error: (err as Error).message }
+      }
+    },
+  )
+
   ipcMain.handle(
     AppChannels.SET_CONVERSATION_WORKTREE,
     (

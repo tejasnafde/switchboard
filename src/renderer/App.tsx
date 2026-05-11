@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse } from './stores/layout-store'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
+import { useEditorStore } from './stores/editor-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
 import { useTerminalLifecycle } from './hooks/useTerminalLifecycle'
@@ -24,6 +25,9 @@ import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated } from './services/session-events'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import type { SessionSummary, ChatMessage } from '@shared/types'
+import { createRendererLogger } from './logger'
+
+const log = createRendererLogger('app')
 
 /**
  * Root layout — flat flex row, no nesting.
@@ -303,7 +307,7 @@ export function App() {
           worktreePath = res.path
           worktreeBranch = res.branch
         } else {
-          console.warn('[handleNewChat] worktree create failed:', res.error)
+          log.warn('worktree create failed:', res.error)
         }
       }
 
@@ -441,7 +445,41 @@ export function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
+    // ⌘-/⌘⇧- (macOS) or Alt+←/→ (Win/Linux) — VS Code-style editor back/forward
+    const isMac =(typeof navigator !== 'undefined' && /Mac|iPad|iPhone/.test(navigator.platform)) || process.platform === 'darwin'
+    const handleNavKeys = (e: KeyboardEvent): boolean => {
+      if (useLayoutStore.getState().rightPaneMode !== 'files') return false
+      const inFilesPane = !!(document.activeElement as HTMLElement | null)?.closest('[data-context-source="file-viewer"], [data-files-pane]')
+      if (!inFilesPane) return false
+      const sessionId = useAgentStore.getState().activeSessionId
+      if (!sessionId) return false
+      const isBack = isMac
+        ? e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key === '-'
+        : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.key === 'ArrowLeft'
+      const isForward = isMac
+        ? e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && (e.key === '-' || e.key === '_')
+        : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.key === 'ArrowRight'
+      if (isBack) {
+        const target = useEditorStore.getState().navBack(sessionId)
+        if (target) {
+          e.preventDefault()
+          useLayoutStore.getState().openInViewer(target.path, { start: target.line, end: target.line })
+        }
+        return true
+      }
+      if (isForward) {
+        const target = useEditorStore.getState().navForward(sessionId)
+        if (target) {
+          e.preventDefault()
+          useLayoutStore.getState().openInViewer(target.path, { start: target.line, end: target.line })
+        }
+        return true
+      }
+      return false
+    }
+
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (handleNavKeys(e)) return
       if (e.metaKey || e.ctrlKey) {
         if (e.key === 'b' || e.key === 'B') {
           e.preventDefault()
@@ -499,7 +537,7 @@ export function App() {
             if (sid) agentState.setActiveSession(sid)
           }
           if (!sid) {
-            console.warn('[Switchboard] ⌘T pressed but no session available. Open or create a chat first.')
+            log.warn('⌘T: no session available — open or create a chat first')
             return
           }
           const st = useTerminalStore.getState()
@@ -543,7 +581,11 @@ export function App() {
           if (s && (s.status === 'running' || s.status === 'thinking')) {
             const active = document.activeElement
             const inXterm = active instanceof HTMLElement && active.classList.contains('xterm-helper-textarea')
-            const inText = !inXterm && active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
+            const inText = !inXterm && active instanceof HTMLElement && (
+              active.tagName === 'INPUT' ||
+              active.tagName === 'TEXTAREA' ||
+              active.contentEditable === 'true'
+            )
             if (!inText && sid) {
               e.preventDefault()
               window.api.provider?.interrupt?.(sid).catch(() => {})
@@ -560,7 +602,7 @@ export function App() {
           // terminal-only flow when nothing is wired up.
           const appended = captureSelection()
           if (!appended) {
-            console.info('[Switchboard] ⌘L: no selection found. Select text in a terminal, file viewer, or chat message first.')
+            log.info('⌘L: no selection — select text in a terminal, file viewer, or chat message first')
           } else {
             // Focus the chat input so user can immediately type their question.
             // (ChatInput's textarea doesn't have a stable ref at the App level,

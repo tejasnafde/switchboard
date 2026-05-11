@@ -53,6 +53,9 @@ export const AppChannels = {
   WORKSPACE_REORDER: 'app:workspace-reorder',
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
   FORK_CONVERSATION: 'app:fork-conversation',
+  // Editor tabs persistence — open files survive app restart per session.
+  EDITOR_TABS_LOAD: 'app:editor-tabs-load',
+  EDITOR_TABS_SAVE: 'app:editor-tabs-save',
   /**
    * Update the worktree pointer on an existing conversation. Fired from
    * the branch picker's swap-cwd action when the user picks a branch

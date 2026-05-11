@@ -208,6 +208,22 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
       viewerStateBySession: map,
     })
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
+    // Push onto the editor's per-session nav history so Ctrl+- / Alt+Left
+    // can step back. We import lazily to avoid a circular dep at startup.
+    if (activeId) {
+      try {
+        // Late require avoids a top-of-file import cycle (editor-store
+        // pulls historyStack which is otherwise renderer-only).
+        const { useEditorStore } = require('./editor-store') as typeof import('./editor-store')
+        useEditorStore.getState().pushNav(activeId, {
+          path,
+          line: lineRange?.start ?? 1,
+          ch: 0,
+        })
+      } catch {
+        /* test env or boot order */
+      }
+    }
   },
   hydrateViewerForSession: (sessionId) => {
     if (!sessionId) {

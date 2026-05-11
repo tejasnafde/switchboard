@@ -132,6 +132,18 @@ const api = {
         worktreePath,
         worktreeBranch,
       ),
+    editorTabsLoad: (
+      sessionId: string,
+    ): Promise<{
+      ok: boolean
+      error?: string
+      tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>
+    }> => ipcRenderer.invoke(AppChannels.EDITOR_TABS_LOAD, sessionId),
+    editorTabsSave: (
+      sessionId: string,
+      tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
+    ): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke(AppChannels.EDITOR_TABS_SAVE, sessionId, tabs),
     loadSession: (filePath: string, conversationId?: string, source?: 'claude-code' | 'codex') =>
       ipcRenderer.invoke(AppChannels.LOAD_SESSION, filePath, conversationId, source),
     loadSessionById: (conversationId: string) =>
