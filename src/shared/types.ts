@@ -245,6 +245,18 @@ export interface AgentErrorPayload {
 
 export type SessionSource = 'claude-code' | 'codex' | 'cursor' | 'switchboard'
 
+export interface Bookmark {
+  id: string
+  sessionId: string
+  projectPath: string
+  sessionTitle: string
+  agentType: string
+  messageRole: 'user' | 'assistant'
+  contentExcerpt: string
+  messageTimestamp: number
+  savedAt: number
+}
+
 export interface SessionSummary {
   id: string
   source: SessionSource

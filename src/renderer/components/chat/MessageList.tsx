@@ -155,9 +155,14 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
   useEffect(() => {
     if (!pendingScroll) return
     if (pendingScroll.sessionId !== sessionId) return
-    const turnIdx = turns.findIndex((group) =>
-      group.some((m) => m.id === pendingScroll.messageId),
-    )
+    // Identify the target message either by id (search results) or by
+    // timestamp (bookmarks — they don't store ids).
+    const matches = (m: { id: string; timestamp: number }): boolean => {
+      if (pendingScroll.messageId) return m.id === pendingScroll.messageId
+      if (pendingScroll.messageTimestamp != null) return m.timestamp === pendingScroll.messageTimestamp
+      return false
+    }
+    const turnIdx = turns.findIndex((group) => group.some(matches))
     if (turnIdx === -1) {
       // Message hasn't loaded into the session yet — may still be mid-load.
       // Leave the pending request; the next render after setMessages will
@@ -172,7 +177,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
     // frame uses the now-correct measurements so the row is actually
     // centered (not just "somewhere in the viewport").
     const query = pendingScroll.query
-    const targetMessageId = pendingScroll.messageId
+    const targetMessageId = turns[turnIdx].find(matches)?.id ?? pendingScroll.messageId ?? ''
     requestAnimationFrame(() => {
       virtualizer.scrollToIndex(turnIdx, { align: 'center' })
       requestAnimationFrame(() => {

@@ -1,7 +1,7 @@
 import { ipcMain, dialog, app, type BrowserWindow } from 'electron'
 import { basename } from 'path'
 import { readFile, writeFile } from 'fs/promises'
-import { AppChannels } from '@shared/ipc-channels'
+import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
 import { homedir } from 'os'
@@ -16,6 +16,9 @@ import {
   setConversationWorktree,
   loadEditorTabs,
   saveEditorTabs,
+  saveBookmark,
+  removeBookmark,
+  listBookmarks,
   updateConversationTitle,
   saveMessage,
   getConversationsForProject,
@@ -71,6 +74,9 @@ function claudeCandidateDirs(): string[] {
 export function registerAppHandlers(window: BrowserWindow): void {
   // Remove previous handlers to allow re-registration (macOS activate)
   for (const ch of Object.values(AppChannels)) {
+    ipcMain.removeHandler(ch)
+  }
+  for (const ch of Object.values(BookmarkChannels)) {
     ipcMain.removeHandler(ch)
   }
   ipcMain.removeHandler('settings:get')
@@ -598,6 +604,11 @@ export function registerAppHandlers(window: BrowserWindow): void {
       return { ok: false, error: message }
     }
   })
+
+  // ─── Bookmarks ───────────────────────────────────────────────────
+  ipcMain.handle(BookmarkChannels.SAVE, (_event, params) => saveBookmark(params))
+  ipcMain.handle(BookmarkChannels.REMOVE, (_event, id: string) => removeBookmark(id))
+  ipcMain.handle(BookmarkChannels.LIST, () => listBookmarks())
 
   // Vibrancy toggle for translucent theme
   ipcMain.handle(AppChannels.SET_VIBRANCY, (_event, enabled: boolean) => {

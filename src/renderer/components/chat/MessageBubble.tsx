@@ -17,6 +17,7 @@ import { parseSlashCommandWrapper, splitSkillMentions } from './slashCommands'
 import { SkillChip } from './SkillChip'
 import { forkAndOpenSession } from '../../services/forkSession'
 import { parseRotationMarker } from './rotationMarker'
+import { useBookmarkStore } from '../../stores/bookmark-store'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -52,6 +53,8 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   }, [message.content])
 
   const [copied, setCopied] = useState(false)
+  const isBookmarked = useBookmarkStore((s) => s.isBookmarked(sessionId ?? '', message.timestamp))
+  const bookmarkId = useBookmarkStore((s) => s.idFor(sessionId ?? '', message.timestamp))
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const markdownRef = useRef<HTMLDivElement>(null)
   // Right-click → Fork popover. Anchored at the click coordinates;
@@ -256,6 +259,24 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }).catch(() => {})
+  }
+
+  const handleBookmark = () => {
+    const store = useBookmarkStore.getState()
+    if (isBookmarked && bookmarkId) {
+      void store.remove(bookmarkId)
+    } else if (sessionId && message.content) {
+      const agentSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+      void store.save({
+        sessionId,
+        projectPath: agentSession?.projectPath ?? '',
+        sessionTitle: agentSession?.title ?? 'Untitled',
+        agentType: agentSession?.type ?? 'claude-code',
+        messageRole: message.role as 'user' | 'assistant',
+        content: message.content,
+        messageTimestamp: message.timestamp,
+      })
+    }
   }
 
   return (
@@ -500,6 +521,30 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           }}
         >
           <ForwardMenu content={message.content} />
+          <button
+            onClick={handleBookmark}
+            title={isBookmarked ? 'Remove from saved' : 'Save for later'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              padding: '3px 6px',
+              borderRadius: '3px',
+              border: `1px solid ${isBookmarked ? 'var(--accent)' : 'var(--border)'}`,
+              background: isBookmarked ? 'var(--accent-subtle, rgba(88,166,255,0.1))' : 'var(--bg-tertiary)',
+              color: isBookmarked ? 'var(--accent)' : 'var(--text-muted)',
+              cursor: 'pointer',
+              fontSize: '10px',
+              fontFamily: 'var(--font-mono)',
+              lineHeight: 1,
+              transition: 'color 0.12s, border-color 0.12s, background 0.12s',
+            }}
+          >
+            <svg width="10" height="10" viewBox="0 0 24 24" fill={isBookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+            </svg>
+            {isBookmarked ? 'Saved' : 'Save'}
+          </button>
           <button
             onClick={handleCopy}
             title="Copy message"

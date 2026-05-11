@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import type { AgentStatus, AgentType, ChatMessage } from '@shared/types'
 import type { ReasoningEffort } from '@shared/models'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('store:agent')
 
 export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
 
@@ -92,12 +95,17 @@ interface AgentStore {
   activeSessionId: string | null
   /**
    * Pending "scroll to this message" request — set by SearchModal when the
-   * user clicks a result. MessageList picks it up via its subscription and
-   * tells the virtualizer to scroll to the right row, then clears.
-   * Using a counter stamped into the object ensures the same messageId
-   * re-clicked also re-fires the scroll (React can see the state change).
+   * user clicks a result, or by the Saved-bookmarks list. MessageList picks
+   * it up via its subscription and tells the virtualizer to scroll to the
+   * right row, then clears.
+   *
+   * Either `messageId` or `messageTimestamp` identifies the target. Bookmarks
+   * store only the timestamp (no message id at save time), so timestamp is
+   * the fallback match key. `stamp` is a re-click rerun counter.
    */
-  pendingScrollToMessage: { sessionId: string; messageId: string; stamp: number; query?: string } | null
+  pendingScrollToMessage:
+    | { sessionId: string; messageId?: string; messageTimestamp?: number; stamp: number; query?: string }
+    | null
 
   addSession: (session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode'> & { runtimeMode?: RuntimeMode }) => void
   removeSession: (id: string) => void
@@ -144,6 +152,9 @@ interface AgentStore {
     worktreeBranch: string | null,
   ) => void
   requestScrollToMessage: (sessionId: string, messageId: string, query?: string) => void
+  /** Bookmarks know only the timestamp at save time, so the click path uses
+   *  this variant — MessageList resolves it to the message id on its end. */
+  requestScrollToTimestamp: (sessionId: string, messageTimestamp: number) => void
   clearScrollToMessage: () => void
 }
 
@@ -175,7 +186,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     // process has already cleaned the session up (e.g. on shutdown) the
     // IPC handler is a no-op.
     window.api.provider?.stopSession?.(id).catch((err: unknown) => {
-      console.warn(`[agent-store] stopSession(${id}) failed:`, err)
+      log.warn(`stopSession(${id}) failed:`, err)
     })
     set((state) => {
       const remaining = state.sessions.filter((s) => s.id !== id)
@@ -365,6 +376,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
 
   requestScrollToMessage: (sessionId, messageId, query) =>
     set({ pendingScrollToMessage: { sessionId, messageId, stamp: Date.now(), ...(query ? { query } : {}) } }),
+
+  requestScrollToTimestamp: (sessionId, messageTimestamp) =>
+    set({ pendingScrollToMessage: { sessionId, messageTimestamp, stamp: Date.now() } }),
 
   clearScrollToMessage: () => set({ pendingScrollToMessage: null }),
 }))

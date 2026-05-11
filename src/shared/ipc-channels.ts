@@ -126,6 +126,12 @@ export const LspChannels = {
   DOCUMENT_SYMBOLS: 'lsp:document-symbols',
 } as const
 
+export const BookmarkChannels = {
+  SAVE: 'bookmark:save',
+  REMOVE: 'bookmark:remove',
+  LIST: 'bookmark:list',
+} as const
+
 export const AgentChannels = {
   START: 'agent:start',
   SEND: 'agent:send',

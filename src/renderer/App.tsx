@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse } from './stores/layout-store'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
 import { useEditorStore } from './stores/editor-store'
+import { useBookmarkStore } from './stores/bookmark-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
 import { useTerminalLifecycle } from './hooks/useTerminalLifecycle'
@@ -156,6 +157,9 @@ export function App() {
     const t = setTimeout(() => setTemplateToast(null), 4000)
     return () => clearTimeout(t)
   }, [templateToast])
+
+  // Load bookmarks on mount
+  useEffect(() => { void useBookmarkStore.getState().load() }, [])
 
   // Load saved theme on mount
   useEffect(() => {

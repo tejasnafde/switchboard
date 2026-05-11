@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type {
   TerminalCreateOptions,
@@ -485,6 +485,16 @@ const api = {
       ipcRenderer.on(ProviderChannels.EVENT, handler)
       return () => { ipcRenderer.removeListener(ProviderChannels.EVENT, handler) }
     },
+  },
+
+  // ─── Bookmarks ─────────────────────────────────────────────────
+  bookmarks: {
+    save: (params: {
+      id: string; sessionId: string; projectPath: string; sessionTitle: string
+      agentType: string; messageRole: string; contentExcerpt: string; messageTimestamp: number
+    }) => ipcRenderer.invoke(BookmarkChannels.SAVE, params),
+    remove: (id: string) => ipcRenderer.invoke(BookmarkChannels.REMOVE, id),
+    list: (): Promise<import('@shared/types').Bookmark[]> => ipcRenderer.invoke(BookmarkChannels.LIST),
   },
 
   // Menu events from main process
