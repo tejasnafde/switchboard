@@ -58,6 +58,14 @@ import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage 
 
 const log = createLogger('ipc:app')
 
+/** All Claude config roots: every enabled oauth_dir + the default ~/.claude. */
+function claudeCandidateDirs(): string[] {
+  return Array.from(new Set([
+    ...listOauthDirsForAgent('claude-code'),
+    defaultClaudeDir(),
+  ]))
+}
+
 export function registerAppHandlers(window: BrowserWindow): void {
   // Remove previous handlers to allow re-registration (macOS activate)
   for (const ch of Object.values(AppChannels)) {
@@ -82,8 +90,8 @@ export function registerAppHandlers(window: BrowserWindow): void {
     // Persist to SQLite
     addProject(folderPath, name)
 
-    // Scan for existing sessions (filter archived globally)
-    const rawSessions = await scanAllSessions(folderPath)
+    // Scan for existing sessions across all Claude auth profiles (filter archived globally)
+    const rawSessions = await scanAllSessions(folderPath, claudeCandidateDirs())
     const archivedSet = getArchivedConversationIds()
     const sessions = rawSessions.filter((s) => !archivedSet.has(s.id))
     log.info(`found ${sessions.length} sessions for ${folderPath} (${rawSessions.length - sessions.length} archived)`)
@@ -94,7 +102,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
 
   ipcMain.handle(AppChannels.SCAN_SESSIONS, async (_event, projectPath: string) => {
     log.info(`scan-sessions: ${projectPath}`)
-    const sessions = await scanAllSessions(projectPath)
+    const sessions = await scanAllSessions(projectPath, claudeCandidateDirs())
     const archivedSet = getArchivedConversationIds()
     const childSet = getChildSessionIds()
     const syntheticParents = getSyntheticParentMap()
@@ -145,8 +153,9 @@ export function registerAppHandlers(window: BrowserWindow): void {
     const childSet = getChildSessionIds()
     const syntheticParents = getSyntheticParentMap()
     const projects: Project[] = []
+    const candidateDirs = claudeCandidateDirs()
     for (const row of rows) {
-      const sessions = await scanAllSessions(row.path)
+      const sessions = await scanAllSessions(row.path, candidateDirs)
       const dbConversations = getConversationsForProject(row.path)
       const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
       const worktreeMap = new Map(

@@ -28,14 +28,34 @@ export function isClaudeDirForProject(dir: string, projectPath: string): boolean
 /**
  * Scan for Claude Code sessions associated with a project path.
  *
- * Claude Code stores sessions in ~/.claude/projects/{encoded-path}/
- * where {encoded-path} is the absolute project path with / replaced by -
- * and prefixed with a dash.
+ * Claude Code stores sessions in <claudeBase>/projects/{encoded-path}/
+ * where {encoded-path} is the absolute project path with / and _ replaced by -
+ *
+ * `claudeBaseDirs` should be the full list of known Claude config roots
+ * (e.g. ~/.claude plus every oauth_dir from provider_instances). Defaults to
+ * ~/.claude only, which is correct for single-auth setups.
  */
-export async function scanClaudeCodeSessions(projectPath: string): Promise<SessionSummary[]> {
-  const claudeDir = join(homedir(), '.claude', 'projects')
+export async function scanClaudeCodeSessions(
+  projectPath: string,
+  claudeBaseDirs: string[] = [join(homedir(), '.claude')],
+): Promise<SessionSummary[]> {
   const sessions: SessionSummary[] = []
+  const seenIds = new Set<string>()
 
+  for (const base of claudeBaseDirs) {
+    const claudeDir = join(base, 'projects')
+    await scanClaudeProjectsDir(claudeDir, projectPath, sessions, seenIds)
+  }
+
+  return sessions.sort((a, b) => b.startedAt - a.startedAt)
+}
+
+async function scanClaudeProjectsDir(
+  claudeDir: string,
+  projectPath: string,
+  sessions: SessionSummary[],
+  seenIds: Set<string>,
+): Promise<void> {
   try {
     const dirs = await readdir(claudeDir)
 
@@ -58,8 +78,11 @@ export async function scanClaudeCodeSessions(projectPath: string): Promise<Sessi
 
         if (Array.isArray(index)) {
           for (const entry of index) {
+            const id: string = entry.id ?? entry.sessionId ?? basename(entry.path ?? '')
+            if (seenIds.has(id)) continue
+            seenIds.add(id)
             sessions.push({
-              id: entry.id ?? entry.sessionId ?? basename(entry.path ?? ''),
+              id,
               source: 'claude-code',
               title: entry.title ?? entry.summary ?? `Session ${sessions.length + 1}`,
               startedAt: entry.startedAt ?? entry.timestamp ?? Date.now(),
@@ -73,6 +96,9 @@ export async function scanClaudeCodeSessions(projectPath: string): Promise<Sessi
         const files = await readdir(projectDir).catch(() => [])
         for (const file of files) {
           if (!file.endsWith('.jsonl')) continue
+          const id = file.replace('.jsonl', '')
+          if (seenIds.has(id)) continue
+          seenIds.add(id)
           const filePath = join(projectDir, file)
           const fileStat = await stat(filePath).catch(() => null)
 
@@ -97,7 +123,7 @@ export async function scanClaudeCodeSessions(projectPath: string): Promise<Sessi
           } catch { /* title extraction failed — use default */ }
 
           sessions.push({
-            id: file.replace('.jsonl', ''),
+            id,
             source: 'claude-code',
             title,
             startedAt: fileStat?.mtimeMs ?? Date.now(),
@@ -108,10 +134,8 @@ export async function scanClaudeCodeSessions(projectPath: string): Promise<Sessi
       }
     }
   } catch {
-    // ~/.claude/projects doesn't exist — that's fine
+    // projects dir doesn't exist for this base — skip
   }
-
-  return sessions.sort((a, b) => b.startedAt - a.startedAt)
 }
 
 /**
@@ -166,10 +190,18 @@ async function scanCodexDir(
 
 /**
  * Scan all sources for a project.
+ *
+ * `claudeBaseDirs` — every Claude config root to look inside (e.g. ~/.claude
+ * plus every oauth_dir from provider_instances). Callers in app.ts build this
+ * list from `listOauthDirsForAgent` + `defaultClaudeDir()` so multi-auth
+ * sessions show up in the sidebar regardless of which profile wrote them.
  */
-export async function scanAllSessions(projectPath: string): Promise<SessionSummary[]> {
+export async function scanAllSessions(
+  projectPath: string,
+  claudeBaseDirs?: string[],
+): Promise<SessionSummary[]> {
   const [claude, codex] = await Promise.all([
-    scanClaudeCodeSessions(projectPath),
+    scanClaudeCodeSessions(projectPath, claudeBaseDirs),
     scanCodexSessions(projectPath),
   ])
   return [...claude, ...codex].sort((a, b) => b.startedAt - a.startedAt)
