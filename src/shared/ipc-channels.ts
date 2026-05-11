@@ -108,6 +108,21 @@ export const GitChannels = {
   CREATE_SESSION_WORKTREE: 'git:create-session-worktree',
 } as const
 
+/**
+ * LSP bridge — main-process spawns typescript-language-server / pyright
+ * per workspace; renderer sends document lifecycle + queries via these
+ * channels and gets typed results / diagnostics back.
+ */
+export const LspChannels = {
+  OPEN: 'lsp:open',
+  CHANGE: 'lsp:change',
+  CLOSE: 'lsp:close',
+  DEFINITION: 'lsp:definition',
+  REFERENCES: 'lsp:references',
+  HOVER: 'lsp:hover',
+  DOCUMENT_SYMBOLS: 'lsp:document-symbols',
+} as const
+
 export const AgentChannels = {
   START: 'agent:start',
   SEND: 'agent:send',

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, KanbanChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type {
   TerminalCreateOptions,
@@ -346,6 +346,35 @@ const api = {
       | { ok: true; hunks: Array<{ kind: 'add' | 'mod' | 'del'; startLine: number; endLine: number }> }
       | { ok: false; error: string }
     > => ipcRenderer.invoke(GitChannels.FILE_DIFF, repoRoot, subPath),
+  },
+
+  lsp: {
+    open: (args: { workspaceRoot: string; absPath: string; text: string; version: number; languageId: string }) =>
+      ipcRenderer.invoke(LspChannels.OPEN, args),
+    change: (args: { workspaceRoot: string; absPath: string; text: string; version: number }) =>
+      ipcRenderer.invoke(LspChannels.CHANGE, args),
+    close: (args: { workspaceRoot: string; absPath: string }) =>
+      ipcRenderer.invoke(LspChannels.CLOSE, args),
+    definition: (args: {
+      workspaceRoot: string
+      absPath: string
+      position: { line: number; character: number }
+    }): Promise<
+      | { ok: true; supported: boolean; locations: Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }> }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke(LspChannels.DEFINITION, args),
+    references: (args: {
+      workspaceRoot: string
+      absPath: string
+      position: { line: number; character: number }
+    }) => ipcRenderer.invoke(LspChannels.REFERENCES, args),
+    hover: (args: {
+      workspaceRoot: string
+      absPath: string
+      position: { line: number; character: number }
+    }) => ipcRenderer.invoke(LspChannels.HOVER, args),
+    documentSymbols: (args: { workspaceRoot: string; absPath: string }) =>
+      ipcRenderer.invoke(LspChannels.DOCUMENT_SYMBOLS, args),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────

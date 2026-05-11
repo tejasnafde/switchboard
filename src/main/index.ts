@@ -22,6 +22,7 @@ import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerFilesHandlers } from './ipc/files'
 import { registerGitHandlers } from './ipc/git'
+import { registerLspHandlers } from './ipc/lsp'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { registerAutoUpdater, quitAndInstall } from './updater'
@@ -317,6 +318,7 @@ app.whenReady().then(() => {
   registerAppHandlers(mainWindow)
   registerFilesHandlers()
   registerGitHandlers()
+  registerLspHandlers()
   registerKanbanHandlers()
   registerProviderInstanceHandlers()
   // Auto-update — silent check on launch when packaged. No-op in dev
