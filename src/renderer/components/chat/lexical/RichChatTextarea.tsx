@@ -65,6 +65,9 @@ import {
 import { $createPillNode, $isPillNode, PillNode } from './PillNode'
 import { parseBodyToSegments } from '../../../services/chatInputBody'
 import type { DraftPill } from '../../../stores/draft-store'
+import { createRendererLogger } from '../../../logger'
+
+const log = createRendererLogger('chat:lexical')
 
 /** Imperative handle the host can grab to focus / insert pills. */
 export interface RichChatTextareaHandle {
@@ -473,8 +476,7 @@ const editorTheme = {
 }
 
 function onError(err: Error): void {
-  // Surface to console so devtools catches it; don't blow up the app.
-  console.error('[RichChatTextarea]', err)
+  log.error('Lexical editor error:', err)
 }
 
 export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTextareaProps>(

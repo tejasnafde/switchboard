@@ -1,4 +1,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect, type DragEvent } from 'react'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('chat:input')
 import { ContextWindowMeter, type ContextWindowUsage } from './ContextWindowMeter'
 import { useDraftStore } from '../../stores/draft-store'
 import {
@@ -861,7 +864,7 @@ export function ChatInput({
               ?? sessionId
             window.api.app
               .setConversationWorktree(conversationId, newCwd, branch)
-              .catch((err: unknown) => console.warn('[ChatInput] persist worktree failed:', err))
+              .catch((err: unknown) => log.warn('persist worktree failed:', err))
           }}
         />
 

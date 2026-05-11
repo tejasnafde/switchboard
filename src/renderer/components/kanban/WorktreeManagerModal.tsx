@@ -13,6 +13,9 @@
 
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import type { WorktreeInfo } from '@shared/kanban'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('kanban:worktree-manager')
 
 interface Props {
   projectPath: string
@@ -85,7 +88,7 @@ export function WorktreeManagerModal({ projectPath, onClose }: Props): React.Rea
         try {
           await api.removeStaleWorktree(projectPath, wt.path, { force: true })
         } catch (err) {
-          console.warn('[worktree-manager] failed to remove', wt.path, err)
+          log.warn('failed to remove', wt.path, err)
         }
       }
       await refresh()

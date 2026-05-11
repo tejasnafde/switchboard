@@ -246,3 +246,38 @@ src/
 │   └── models.ts                      # Model catalog per agent
 └── tests/unit/                        # ~400 tests
 ```
+
+## Logging conventions
+
+Every module that can produce observable side-effects **must** use the scoped logger, not bare `console.*`. This keeps logs filterable, readable in both DevTools and the on-disk log file, and noise-free.
+
+### Main process — `src/main/logger.ts`
+
+```ts
+import { createMainLogger } from '../logger'
+const log = createMainLogger('domain:subsystem')   // e.g. 'ipc:files', 'lsp-manager'
+log.debug('spawnArgs', args)
+log.info('session started', { id })
+log.warn('retry', err)
+log.error('unrecoverable', err)
+```
+
+Writes to both the terminal (dev) and `~/Library/Application Support/switchboard/logs/switchboard-<date>-<pid>.log` (always). Log files rotate at 7 days.
+
+### Renderer process — `src/renderer/logger.ts`
+
+```ts
+import { createRendererLogger } from '../../logger'   // adjust relative path
+const log = createRendererLogger('domain:subsystem')  // e.g. 'store:agent', 'editor:host'
+log.info('buffer opened', { path })
+log.warn('save conflict detected', err)
+```
+
+Outputs to DevTools console with `[SB:scope]` prefix matching the main-process convention.
+
+### Rules
+
+- **Module-level constant**: `const log = createXxxLogger('scope')` — never inside functions.
+- **Scope format**: `'domain:subsystem'` — e.g. `'ipc:files'`, `'store:agent'`, `'lsp-client'`, `'editor:host'`.
+- **No silent swallowing**: every `catch` block that doesn't re-throw must `log.warn` or `log.error`. `catch { /* ignore */ }` is a bug.
+- **No AI slop patterns**: don't log "successfully did X" on the happy path unless it's a slow/async operation worth tracking. Log state changes, errors, retries, and lifecycle events.
