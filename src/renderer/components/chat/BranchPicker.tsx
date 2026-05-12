@@ -35,19 +35,25 @@ interface TriggerProps {
 export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged }: TriggerProps) {
   const [open, setOpen] = useState(false)
   const [current, setCurrent] = useState<string | null>(null)
+  const [isGitRepo, setIsGitRepo] = useState(true)
 
   const refresh = useCallback(async () => {
     if (!cwd) return
     const res = await window.api.git.currentBranch(cwd)
-    if (res.ok) setCurrent(res.branch)
-    else setCurrent(null)
+    if (res.ok) {
+      setCurrent(res.branch)
+      setIsGitRepo(true)
+    } else {
+      setCurrent(null)
+      setIsGitRepo(!/not a git repository/i.test(res.error))
+    }
   }, [cwd])
 
   useEffect(() => {
     refresh()
   }, [refresh])
 
-  if (!cwd) return null
+  if (!cwd || !isGitRepo) return null
 
   return (
     <div style={{ position: 'relative', display: 'inline-block' }}>
@@ -207,7 +213,11 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
       />
       <div style={{ maxHeight: 280, overflowY: 'auto' }}>
         {loading && <div style={emptyRowStyle}>Loading…</div>}
-        {!loading && error && <div style={{ ...emptyRowStyle, color: 'var(--accent-red, #f88)' }}>{error}</div>}
+        {!loading && error && (
+          <div style={{ ...emptyRowStyle, color: /not a git repository/i.test(error) ? undefined : 'var(--accent-red, #f88)' }}>
+            {/not a git repository/i.test(error) ? 'Not a git repository.' : error}
+          </div>
+        )}
         {!loading && !error && filtered.length === 0 && (
           <div style={emptyRowStyle}>No branches match "{query}"</div>
         )}
