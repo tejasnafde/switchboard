@@ -66,9 +66,6 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
           return
         }
         setTruncated(!!res.truncated)
-        // openBuffer is idempotent: returns existing id if already open.
-        // It also sets activeBySession[activeId] = id, which updates our
-        // store-derived `bufferId` above.
         useEditorStore.getState().openBuffer({
           sessionId: activeId,
           path,

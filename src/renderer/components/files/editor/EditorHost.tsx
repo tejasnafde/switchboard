@@ -123,10 +123,8 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
     const buf = useEditorStore.getState().buffers[bufferId]
     if (!buf) return
     if (mountedBufferRef.current === bufferId) return
-    // Replace doc + selection via a transaction rather than setState so the
-    // view's extension configuration (editable, keymaps, theme compartments,
-    // gutter, etc.) is preserved. view.setState(buf.state) would wipe all
-    // extensions because buffers are created with an empty extension list.
+    // Dispatch instead of setState — preserves the view's extension
+    // configuration (buffers are created with extensions: []).
     const newDoc = buf.state.doc.toString()
     const anchor = Math.min(buf.state.selection.main.anchor, newDoc.length)
     view.dispatch(
