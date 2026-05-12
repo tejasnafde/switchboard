@@ -47,8 +47,12 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
   // Derive from the store so TabStrip-initiated closes + focuses are
   // reflected here without a separate local state.
   const bufferId = useEditorStore((s) => (activeId ? (s.activeBySession[activeId] ?? null) : null))
+  // Follows tab switches; layout-store `path` only updates on tree/pill opens.
+  const activeBufPath = useEditorStore((s) => (bufferId ? (s.buffers[bufferId]?.path ?? null) : null))
+  const displayPath = activeBufPath ?? path
 
   const isMarkdown = useMemo(() => path?.toLowerCase().endsWith('.md') ?? false, [path])
+  const isActiveMarkdown = useMemo(() => displayPath?.toLowerCase().endsWith('.md') ?? false, [displayPath])
 
   // Load the file + open or reuse a Buffer in the editor-store.
   useEffect(() => {
@@ -137,7 +141,7 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
     )
   }
 
-  const showPreview = isMarkdown && mdMode === 'preview'
+  const showPreview = isActiveMarkdown && mdMode === 'preview'
 
   return (
     <div
@@ -182,9 +186,9 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
           </button>
         )}
         <span style={{ opacity: 0.7, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {path}
+          {displayPath}
         </span>
-        {isMarkdown && (
+        {isActiveMarkdown && (
           <button
             type="button"
             onClick={handleToggleMdMode}

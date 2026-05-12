@@ -747,7 +747,10 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         !!active.closest('.xterm') ||
         !!active.closest('[data-terminal-pane="true"]')
       )
-      if (inTerminal) return
+      // If focus is inside the CM6 file editor, let it handle ⌘F natively
+      // via its own searchKeymap binding — bail so we don't steal it.
+      const inFileViewer = !!active && !!active.closest('[data-context-source="file-viewer"]')
+      if (inTerminal || inFileViewer) return
       if (!inThisPanel) {
         if (inAnyChatPanel) return
         // Focus is somewhere neutral (body, sidebar, etc). Only the

@@ -89,13 +89,14 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       if (!id) return null
       return useEditorStore.getState().buffers[id]?.path ?? null
     }
+    const getRepoRootForJump = (): string | null => repoRootRef.current
     const view = new EditorView({
       parent: containerRef.current,
       state: EditorState.create({
         doc: '',
         extensions: [
           saveKeymap,
-          cmdClickJump(getPathForJump),
+          cmdClickJump(getPathForJump, getRepoRootForJump),
           ...buildExtensions({ themeName: themeName as 'dark' | 'light' | 'translucent' }),
         ],
       }),

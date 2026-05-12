@@ -35,7 +35,10 @@ function wordAt(view: EditorView, pos: number): { word: string; start: number; e
   return { word, start: line.from + start, end: line.from + end }
 }
 
-export function cmdClickJump(getPath: () => string | null) {
+export function cmdClickJump(
+  getPath: () => string | null,
+  getRepoRoot: () => string | null,
+) {
   return ViewPlugin.define((view) => {
     const onMouseDown = (e: MouseEvent) => {
       const isMod = e.metaKey || e.ctrlKey
@@ -44,21 +47,32 @@ export function cmdClickJump(getPath: () => string | null) {
       if (pos == null) return
       const w = wordAt(view, pos)
       if (!w) return
-      const path = getPath()
-      if (!path) return
+      const relPath = getPath()
+      if (!relPath) return
       e.preventDefault()
+      const repoRoot = getRepoRoot()
+      // Build the absolute path the same way EditorHost does for lspOpenDoc.
+      const absPath =
+        repoRoot && !relPath.startsWith('/')
+          ? `${repoRoot}/${relPath}`.replace(/\/+/g, '/')
+          : relPath
       const line0 = view.state.doc.lineAt(pos).number - 1
       const ch = pos - view.state.doc.line(line0 + 1).from
       void resolveDefinition({
-        path,
+        path: absPath,
         symbol: w.word,
         position: { line: line0, character: ch },
         sources: { lsp: lspDefinitionSource, treeSitter: defaultTreeSitterSource },
       }).then((defs) => {
         if (defs.length === 0) return
         const target = defs[0]
+        // LSP results are absolute; relativize so openInViewer gets a repo-relative path.
+        let navPath = target.path
+        if (repoRoot && navPath.startsWith(repoRoot + '/')) {
+          navPath = navPath.slice(repoRoot.length + 1)
+        }
         const sessionId = useAgentStore.getState().activeSessionId
-        navigateTo(sessionId, { path: target.path, line: target.line, ch: target.ch })
+        navigateTo(sessionId, { path: navPath, line: target.line, ch: target.ch })
       })
     }
     view.dom.addEventListener('mousedown', onMouseDown, true)
