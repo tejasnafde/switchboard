@@ -123,7 +123,19 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
     const buf = useEditorStore.getState().buffers[bufferId]
     if (!buf) return
     if (mountedBufferRef.current === bufferId) return
-    view.setState(buf.state)
+    // Replace doc + selection via a transaction rather than setState so the
+    // view's extension configuration (editable, keymaps, theme compartments,
+    // gutter, etc.) is preserved. view.setState(buf.state) would wipe all
+    // extensions because buffers are created with an empty extension list.
+    const newDoc = buf.state.doc.toString()
+    const anchor = Math.min(buf.state.selection.main.anchor, newDoc.length)
+    view.dispatch(
+      view.state.update({
+        changes: { from: 0, to: view.state.doc.length, insert: newDoc },
+        selection: { anchor },
+        scrollIntoView: true,
+      }),
+    )
     mountedBufferRef.current = bufferId
 
     // Lazily attach the right language pack (after the swap so the

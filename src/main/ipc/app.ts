@@ -608,7 +608,19 @@ export function registerAppHandlers(window: BrowserWindow): void {
   // ─── Bookmarks ───────────────────────────────────────────────────
   ipcMain.handle(BookmarkChannels.SAVE, (_event, params) => saveBookmark(params))
   ipcMain.handle(BookmarkChannels.REMOVE, (_event, id: string) => removeBookmark(id))
-  ipcMain.handle(BookmarkChannels.LIST, () => listBookmarks())
+  ipcMain.handle(BookmarkChannels.LIST, () =>
+    listBookmarks().map((r) => ({
+      id: r.id,
+      sessionId: r.session_id,
+      projectPath: r.project_path,
+      sessionTitle: r.session_title,
+      agentType: r.agent_type,
+      messageRole: r.message_role as 'user' | 'assistant',
+      contentExcerpt: r.content_excerpt,
+      messageTimestamp: r.message_timestamp,
+      savedAt: r.saved_at,
+    })),
+  )
 
   // Vibrancy toggle for translucent theme
   ipcMain.handle(AppChannels.SET_VIBRANCY, (_event, enabled: boolean) => {

@@ -43,14 +43,16 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
   const [mdMode, setMdMode] = useState<'preview' | 'raw'>('preview')
   const [error, setError] = useState<string | null>(null)
   const [truncated, setTruncated] = useState(false)
-  const [bufferId, setBufferId] = useState<string | null>(null)
+
+  // Derive from the store so TabStrip-initiated closes + focuses are
+  // reflected here without a separate local state.
+  const bufferId = useEditorStore((s) => (activeId ? (s.activeBySession[activeId] ?? null) : null))
 
   const isMarkdown = useMemo(() => path?.toLowerCase().endsWith('.md') ?? false, [path])
 
   // Load the file + open or reuse a Buffer in the editor-store.
   useEffect(() => {
     if (!repoRoot || !path || !activeId) {
-      setBufferId(null)
       return
     }
     let cancelled = false
@@ -61,17 +63,18 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
         if (cancelled) return
         if (!res.ok) {
           setError(res.error ?? 'Failed to read file')
-          setBufferId(null)
           return
         }
         setTruncated(!!res.truncated)
-        const id = useEditorStore.getState().openBuffer({
+        // openBuffer is idempotent: returns existing id if already open.
+        // It also sets activeBySession[activeId] = id, which updates our
+        // store-derived `bufferId` above.
+        useEditorStore.getState().openBuffer({
           sessionId: activeId,
           path,
           content: res.content,
           mtimeMs: res.mtimeMs,
         })
-        setBufferId(id)
         if (isMarkdown) {
           try {
             setMdPreview(marked.parse(res.content, { async: false }) as string)
@@ -223,9 +226,26 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
       ) : (
         <div style={{ flex: '1 1 0', minHeight: 0, minWidth: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <TabStrip sessionId={activeId ?? null} />
-          <div style={{ flex: '1 1 0', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
-            <EditorHost bufferId={bufferId} repoRoot={repoRoot} />
-          </div>
+          {bufferId === null ? (
+            <div
+              style={{
+                flex: '1 1 0',
+                minHeight: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                fontSize: 12,
+                color: 'var(--text-muted)',
+                opacity: 0.6,
+              }}
+            >
+              Click a file in the tree to open it.
+            </div>
+          ) : (
+            <div style={{ flex: '1 1 0', minHeight: 0, minWidth: 0, overflow: 'hidden' }}>
+              <EditorHost bufferId={bufferId} repoRoot={repoRoot} />
+            </div>
+          )}
         </div>
       )}
     </div>
