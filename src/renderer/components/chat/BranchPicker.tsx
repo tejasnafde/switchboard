@@ -143,6 +143,7 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
   }, [onClose])
 
   const filtered = rankAndFilterRefs(refs, query)
+  const notGitRepo = !!error && /not a git repository/i.test(error)
 
   // Reset highlight when filter changes
   useEffect(() => {
@@ -214,8 +215,8 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
       <div style={{ maxHeight: 280, overflowY: 'auto' }}>
         {loading && <div style={emptyRowStyle}>Loading…</div>}
         {!loading && error && (
-          <div style={{ ...emptyRowStyle, color: /not a git repository/i.test(error) ? undefined : 'var(--accent-red, #f88)' }}>
-            {/not a git repository/i.test(error) ? 'Not a git repository.' : error}
+          <div style={{ ...emptyRowStyle, color: notGitRepo ? undefined : 'var(--accent-red, #f88)' }}>
+            {notGitRepo ? 'Not a git repository.' : error}
           </div>
         )}
         {!loading && !error && filtered.length === 0 && (
