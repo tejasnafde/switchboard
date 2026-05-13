@@ -44,32 +44,38 @@ function key(workspaceRoot: string, language: LspLanguage): string {
  *   1. Project's local node_modules (dev)
  *   2. App resources path (packaged build with extraResources)
  *   3. PATH (user-installed global)
+ *
+ * When running the bundled .mjs/.js entrypoint via `process.execPath`, we
+ * MUST set `ELECTRON_RUN_AS_NODE=1` — otherwise the spawn launches a
+ * second Switchboard.app, which the single-instance lock then kills
+ * (user-visible as a Dock-icon flash on every file open).
  */
-function locateTsServer(): { command: string; args: string[] } | null {
+type Locator = { command: string; args: string[]; env?: Record<string, string> }
+
+function locateTsServer(): Locator {
   const candidates = [
     join(app.getAppPath(), 'node_modules', 'typescript-language-server', 'lib', 'cli.mjs'),
     join(process.resourcesPath, 'node_modules', 'typescript-language-server', 'lib', 'cli.mjs'),
   ]
   for (const c of candidates) {
-    if (existsSync(c)) return { command: process.execPath, args: [c, '--stdio'] }
+    if (existsSync(c)) return { command: process.execPath, args: [c, '--stdio'], env: { ELECTRON_RUN_AS_NODE: '1' } }
   }
   return { command: 'typescript-language-server', args: ['--stdio'] }
 }
 
-function locatePyright(): { command: string; args: string[] } | null {
+function locatePyright(): Locator {
   const candidates = [
     join(app.getAppPath(), 'node_modules', 'pyright', 'langserver.index.js'),
     join(process.resourcesPath, 'node_modules', 'pyright', 'langserver.index.js'),
   ]
   for (const c of candidates) {
-    if (existsSync(c)) return { command: process.execPath, args: [c, '--stdio'] }
+    if (existsSync(c)) return { command: process.execPath, args: [c, '--stdio'], env: { ELECTRON_RUN_AS_NODE: '1' } }
   }
   return { command: 'pyright-langserver', args: ['--stdio'] }
 }
 
 async function spawnServer(language: LspLanguage, workspaceRoot: string): Promise<LspClient> {
   const locator = language === 'typescript' ? locateTsServer() : locatePyright()
-  if (!locator) throw new Error(`No locator for LSP language: ${language}`)
   const client = new LspClient()
   client.onNotification((method, params) => {
     if (method === 'textDocument/publishDiagnostics') {
@@ -82,6 +88,7 @@ async function spawnServer(language: LspLanguage, workspaceRoot: string): Promis
   await client.start({
     command: locator.command,
     args: locator.args,
+    env: locator.env,
     cwd: workspaceRoot,
     rootUri: pathToFileURL(workspaceRoot).toString(),
   })

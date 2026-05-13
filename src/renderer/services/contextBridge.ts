@@ -182,23 +182,24 @@ function getDomSelectionText(): string {
 }
 
 /**
- * Determine which line range a viewer selection covers. The viewer
- * highlight markup uses `<span class="line">` per Shiki's default — we
- * count line-spans in the start container's ancestry to derive the
- * 1-based line numbers. Best-effort; falls back to start=end=1 if the
- * structure doesn't match.
+ * Determine which line range a viewer selection covers. CM6 wraps each
+ * doc line in `<div class="cm-line">`; we count those in the start
+ * container's ancestry to derive 1-based line numbers. Older Shiki HTML
+ * used `.line` / `[data-line]` — still matched for back-compat. Best
+ * effort; falls back to start=end=1 if the structure doesn't match.
  */
 function viewerSelectionLineRange(viewerRoot: Element): { start: number; end: number } {
   const sel = window.getSelection?.()
   if (!sel || sel.rangeCount === 0) return { start: 1, end: 1 }
   const range = sel.getRangeAt(0)
-  const lines = Array.from(viewerRoot.querySelectorAll('.line, [data-line]'))
+  const lines = Array.from(viewerRoot.querySelectorAll('.cm-line, .line, [data-line]'))
   if (lines.length === 0) return { start: 1, end: 1 }
+  const isLineEl = (n: unknown): n is Element =>
+    n instanceof Element &&
+    (n.classList.contains('cm-line') || n.classList.contains('line') || n.hasAttribute('data-line'))
   const findLineIndex = (node: Node): number => {
     let cur: Node | null = node
-    while (cur && !(cur instanceof Element && (cur.classList.contains('line') || cur.hasAttribute('data-line')))) {
-      cur = cur.parentNode
-    }
+    while (cur && !isLineEl(cur)) cur = cur.parentNode
     if (!cur) return 0
     const idx = lines.indexOf(cur as Element)
     return idx >= 0 ? idx + 1 : 1
@@ -231,7 +232,9 @@ export function captureSelection(): boolean {
 
   if (source === 'file-viewer') {
     const root = anchorEl?.closest('[data-context-source="file-viewer"]') as HTMLElement | null
-    const path = root?.getAttribute('data-file-path') ?? ''
+    // `data-file-path` lives on FileViewerPane's outer wrapper, not on
+    // EditorHost's container — walk up independently to find it.
+    const path = anchorEl?.closest('[data-file-path]')?.getAttribute('data-file-path') ?? ''
     const text = getDomSelectionText()
     if (!path || !text.trim()) return appendTerminalSelectionToDraft()
     const { start, end } = root ? viewerSelectionLineRange(root) : { start: 1, end: 1 }

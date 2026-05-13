@@ -32,6 +32,8 @@ export interface ClientStartArgs {
   command: string
   args: string[]
   cwd: string
+  /** Extra env vars merged on top of process.env. */
+  env?: Record<string, string>
   /** Initialization options passed in `initialize.initializationOptions`. */
   initOptions?: Record<string, unknown>
   /** Workspace root in URI form (`file:///abs/path`). */
@@ -55,7 +57,7 @@ export class LspClient {
   async start(args: ClientStartArgs): Promise<void> {
     const child = spawn(args.command, args.args, {
       cwd: args.cwd,
-      env: process.env,
+      env: { ...process.env, ...(args.env ?? {}) },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.child = child as ChildProcessWithoutNullStreams
