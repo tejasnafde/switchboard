@@ -589,14 +589,14 @@ export function App() {
             setSessionPickerOpen(true)
           }
         }
-        // ⌘+Backspace — interrupt the current agent turn
+        // ⌘+Backspace — interrupt the current agent turn. xterm's helper
+        // textarea counts as text input so ⌘+Delete keeps its line-kill behavior.
         else if (e.key === 'Backspace' && !e.shiftKey && !e.altKey) {
           const sid = useAgentStore.getState().activeSessionId
           const s = useAgentStore.getState().sessions.find((x) => x.id === sid)
           if (s && (s.status === 'running' || s.status === 'thinking')) {
             const active = document.activeElement
-            const inXterm = active instanceof HTMLElement && active.classList.contains('xterm-helper-textarea')
-            const inText = !inXterm && active instanceof HTMLElement && (
+            const inText = active instanceof HTMLElement && (
               active.tagName === 'INPUT' ||
               active.tagName === 'TEXTAREA' ||
               active.contentEditable === 'true'
