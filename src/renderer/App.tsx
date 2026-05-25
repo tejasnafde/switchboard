@@ -26,6 +26,7 @@ import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated } from './services/session-events'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import type { SessionSummary, ChatMessage } from '@shared/types'
+import { shouldEvictMessages, needsMessageReload } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 
 const log = createRendererLogger('app')
@@ -60,7 +61,7 @@ export function App() {
     appView,
   } = useLayoutStore()
 
-  const { addSession, setActiveSession, setMessages } = useAgentStore()
+  const { addSession, setActiveSession, setMessages, clearMessages } = useAgentStore()
   const { loadSavedTheme } = useThemeStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -366,14 +367,33 @@ export function App() {
   const handleSessionSelect = useCallback(
     async (session: SessionSummary, projectPath: string) => {
       useLayoutStore.getState().setAppView('chats')
-      // Check if session already loaded in store
-      const existing = useAgentStore.getState().sessions.find((s) => s.id === session.id)
+
+      // Evict messages from the current idle session before switching.
+      // Running sessions keep their messages so in-flight streaming isn't lost.
+      const storeState = useAgentStore.getState()
+      const current = storeState.sessions.find((s) => s.id === storeState.activeSessionId)
+      if (current && shouldEvictMessages(current)) {
+        clearMessages(current.id)
+      }
+
+      // Check if session already in store (previously opened this run).
+      const existing = storeState.sessions.find((s) => s.id === session.id)
       if (existing) {
         setActiveSession(session.id)
+        // Messages may have been evicted — reload from disk if so.
+        if (needsMessageReload(existing)) {
+          try {
+            const resp = await window.api.app.loadSessionById(session.id) as {
+              messages: ChatMessage[]
+              meta: { id: string; title: string; projectPath: string; agentType: string } | null
+            }
+            if (resp?.messages?.length) setMessages(session.id, resp.messages)
+          } catch { /* failed reload — session shows empty state */ }
+        }
         return
       }
 
-      // Create session in store — pass session.id as resumeSessionId
+      // First open: create session in store — pass session.id as resumeSessionId
       // so Claude CLI can --resume the conversation. Hydrate the
       // worktree pointer so a session that was created in worktree
       // mode resumes in its worktree, not the parent repo.
@@ -432,7 +452,7 @@ export function App() {
         if (resp?.messages?.length) setMessages(session.id, resp.messages)
       } catch { /* failed load — session shows empty state */ }
     },
-    [addSession, setActiveSession, setMessages],
+    [addSession, setActiveSession, setMessages, clearMessages],
   )
 
   useEffect(() => {
