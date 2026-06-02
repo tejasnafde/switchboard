@@ -11,6 +11,7 @@
 
 import { ipcMain } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { resolve } from 'node:path'
 import { KanbanChannels } from '@shared/ipc-channels'
 import { createMainLogger } from '../logger'
 import {
@@ -125,20 +126,28 @@ export function registerKanbanHandlers(): void {
   })
 
   /**
-   * Stale worktree removal — operates on a path, not a card id. Refuses to
-   * touch anything outside the project's managed `.switchboard/worktrees/`
-   * root so a malformed renderer call can't `rm -rf` arbitrary directories.
-   * Falls through to `rmWorktreeDir` if `git worktree remove` fails to
-   * clean up (e.g. the directory is already gone but git's metadata isn't,
-   * or the worktree is corrupt and force-remove still refuses).
+   * Stale worktree removal — operates on a path, not a card id. Guards against
+   * arbitrary-path removal by requiring the target to appear in `git worktree list`
+   * for this repo; falls back to a `.switchboard/worktrees/` prefix check for dirs
+   * git has already pruned but are still on disk. Falls through to `rmWorktreeDir`
+   * if `git worktree remove` fails (e.g. the directory is already gone but git's
+   * metadata isn't, or the worktree is corrupt).
    */
   ipcMain.handle(
     KanbanChannels.REMOVE_STALE_WORKTREE,
     async (_e, projectPath: string, worktreePath: string, opts?: { force?: boolean }) => {
-      const root = worktreeRootFor(projectPath)
-      if (!worktreePath.startsWith(root)) {
-        throw new Error(`Refusing to remove worktree outside ${root}: ${worktreePath}`)
+      const resolvedTarget = resolve(worktreePath)
+      const knownWorktrees = await listWorktrees(projectPath)
+      const isRegistered = knownWorktrees.some((wt) => wt.path === resolvedTarget)
+
+      if (!isRegistered) {
+        // Fallback for dirs git has already pruned from its registry.
+        const root = worktreeRootFor(projectPath)
+        if (!resolvedTarget.startsWith(root)) {
+          throw new Error(`Refusing to remove worktree not registered with this repo: ${worktreePath}`)
+        }
       }
+
       try {
         await removeWorktree(projectPath, worktreePath, { force: opts?.force })
       } catch (err) {
