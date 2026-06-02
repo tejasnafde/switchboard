@@ -1,9 +1,10 @@
 # Provider Adapter Architecture
 
-Switchboard abstracts agent backends behind `ProviderAdapter`. Today there
-are two implementations — Claude Code (via the Anthropic Agent SDK) and
-Codex (via `codex app-server` JSON-RPC). The renderer never sees
-provider-specific types: both adapters emit normalized `RuntimeEvent`s.
+Switchboard abstracts agent backends behind `ProviderAdapter`. There are
+three implementations — Claude Code (via the Anthropic Agent SDK), Codex
+(via `codex app-server` JSON-RPC), and OpenCode (via `opencode acp` over
+the Agent Client Protocol). The renderer never sees provider-specific
+types: every adapter emits normalized `RuntimeEvent`s.
 
 ## Wire format (what flows between main ↔ renderer)
 
@@ -37,21 +38,27 @@ renderer as `ipcRenderer.send(ProviderChannels.EVENT, event)`.
 ## ProviderAdapter interface
 
 ```ts
+type ProviderKind = 'claude' | 'codex' | 'opencode'
+
 interface ProviderAdapter {
-  readonly provider: 'claude' | 'codex'
+  readonly provider: ProviderKind
   startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession>
   sendTurn(threadId, message, runtimeMode?, images?): Promise<void>
   interruptTurn(threadId): Promise<void>
   respondToRequest(threadId, requestId, decision): Promise<void>
   stopSession(threadId): Promise<void>
   setRuntimeMode(threadId, mode): Promise<void>
-  answerQuestion?(threadId, requestId, answers): Promise<void>
   isAvailable(): Promise<boolean>
+  // optional
+  setModel?(threadId, model): Promise<void>
+  answerQuestion?(threadId, requestId, answers): Promise<void>
+  listSkills?(threadId): Promise<ProviderSkill[]>
 }
 ```
 
-`answerQuestion` is optional because only Claude currently supports
-AskUserQuestion. Codex will add it in Phase B.
+`answerQuestion` / `setModel` / `listSkills` are optional capabilities.
+Claude and Codex both implement `answerQuestion` (AskUserQuestion);
+OpenCode does not yet.
 
 ## Claude Adapter (`src/main/provider/adapters/claude-adapter.ts`)
 
@@ -127,27 +134,29 @@ Spawns `codex app-server` per session and communicates via JSON-RPC 2.0
 over stdio. T3 Code is the reference implementation
 (`/tmp/t3code/apps/server/src/codexAppServerManager.ts`).
 
-### What's implemented today
+### What's implemented today (Phase B complete)
 
 - `startSession` / `sendTurn` / `interruptTurn` / `respondToRequest` /
   `setRuntimeMode` / `stopSession`
 - Approval notifications from Codex are stored in `pendingApprovals`
   and emitted as `request.opened`
+- **Images**: `sendTurn` encodes images into JSON-RPC content blocks
+- **Plan mode enforcement**: uses the shared `decidePermission`; plan mode
+  maps to a `read-only` sandbox and non-read tools are rejected
+  client-side
+- **AskUserQuestion**: Codex `item/userInput/request` / `askUserQuestion`
+  surface as `question.asked` events (multi-select supported);
+  `answerQuestion` responds back — QuestionCard works across providers
+- **Plan proposals**: `item/plan/delta` / `turn/plan/updated`
+  notifications surface as `plan.proposed`
 
-### What's missing (Phase B)
+### OpenCode Adapter (`opencode-acp-adapter.ts`)
 
-- **Images**: `sendTurn` ignores the `images` param
-- **Plan mode enforcement**: uses `decidePermission` like Claude, but the
-  Codex side doesn't have an equivalent of `canUseTool` interception —
-  needs to set Codex's approval policy appropriately (`untrusted` for
-  plan, `on-request` for sandbox, `never` for full-access) and reject
-  non-read tools client-side when mode is plan
-- **AskUserQuestion equivalent**: Codex sends `item/userInput/request`
-  RPCs for interactive questions — need to wire these to the same
-  `question.asked` event so QuestionCard works across providers
-- **ExitPlanMode equivalent**: TBD whether Codex exposes this
-- **Context window metrics**: Codex may emit usage in `event_msg`
-  responses; needs exploration
+The only OpenCode adapter (the legacy `opencode run --format json`
+shell-out was retired 2026-05-02). Speaks the Agent Client Protocol over
+a long-lived `opencode acp` child. Shares env-probing via
+`adapters/opencode/env.ts`. No `answerQuestion` / skill registry yet
+(falls back to Switchboard built-ins for slash commands).
 
 ## Session loading from disk (`JsonlParser`)
 
@@ -165,10 +174,27 @@ Images in historical Claude sessions are reconstructed from `image`
 content blocks back into `MessageImage[]` with data URLs — otherwise
 attached images would vanish on reload.
 
-## Reusing the policy across adapters
+## Shared policy across adapters
 
-`decidePermission`, `PLAN_READ_ONLY_TOOLS`, and `CUSTOM_UI_TOOLS` are
-exported from `claude-adapter.ts`. Phase B will lift them into a shared
-`src/main/provider/policy.ts` module so Codex can use them without
-importing from another adapter. Tests in `claude-adapter-plan-mode.test.ts`
-and `provider-adapter-tool-filter.test.ts` lock down the policy semantics.
+`decidePermission`, `denialMessage`, `PLAN_READ_ONLY_TOOLS`, and
+`CUSTOM_UI_TOOLS` now live in the shared `src/main/provider/policy.ts`
+module (lifted out of `claude-adapter.ts`). All three adapters import
+from it, so plan-mode semantics are identical across providers. The
+read-only and custom-UI sets include both the Claude tool names and the
+Codex equivalents (`read_file`/`list_files`/`search_files`/`fetch`,
+`ask_user_question`/`exit_plan_mode`). Tests in
+`provider-policy.test.ts`, `claude-adapter-plan-mode.test.ts`, and
+`provider-adapter-tool-filter.test.ts` lock down the semantics.
+
+## Multi-instance credentials
+
+`provider_instances` (settings DB) holds named credential sets per agent
+type — `(id, agent_type, display_name, accent_color, auth_mode,
+env_encrypted, oauth_dir, config_json, enabled, …)`. `auth_mode` is
+`'env'` (safeStorage-encrypted env overlay) or `'oauth_dir'` (per-instance
+`CLAUDE_CONFIG_DIR` / `CODEX_HOME`). `provider-registry` resolves the
+instance at `startSession` (requested → default → any enabled), applies
+the env overlay (`env-overlay.ts`), and migrates Claude session JSONL
+across `oauth_dir` rotation (`claude-session-migrate.ts`). IPC lives in
+`ipc/providerInstances.ts`; UI in `UnifiedProviderPicker` +
+Settings → Providers.

@@ -83,6 +83,17 @@ https://github.com/user-attachments/assets/aa42e86a-e986-46e2-9e58-5efd2547a048
 - **Quick prompt (⌘K)** — global launcher; route a prompt to any chat
   without leaving the keyboard.
 - **Full-text search (⌘⇧F)** — across every message in every project.
+- **Code editor (⌘⇧E)** — CodeMirror with multi-tab, syntax highlighting, a
+  git diff gutter, and ⌘-click jump-to-definition (TypeScript + Python LSP).
+  ⌘P fuzzy-opens any file in the repo.
+- **Kanban board (⌘⇧K)** — a workspace-scoped board where each card launches
+  an agent in its own git worktree, so parallel work stays isolated.
+- **Conversation forking** — right-click any message to branch the chat from
+  that point (Claude resumes real context); optionally fork into a worktree.
+- **Multi-account providers** — store named credential sets per agent
+  (e.g. work / personal) and switch between them from the model picker.
+- **Rich chat input** — inline file/terminal/chat pill chips and `@`-mention
+  file autocomplete.
 - **Session archive + auto-title** — chats title themselves from the first
   meaningful turn; old sessions move to Archived without losing history.
 - **Auto-update** — `electron-updater` polls GitHub Releases on launch and

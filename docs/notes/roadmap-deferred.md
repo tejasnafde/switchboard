@@ -170,7 +170,14 @@ ships first. Adapter changes to accept an `instanceId` at
 
 ---
 
-## 5. Multi-instance provider picker (t3code-style)
+## 5. Multi-instance provider picker (t3code-style) — ✅ SHIPPED
+
+> **Update (2026-06-01):** This shipped. `provider_instances` table +
+> `ipc/providerInstances.ts` + `UnifiedProviderPicker` + Settings →
+> Providers tab are all live (env or `oauth_dir` auth, safeStorage-encrypted
+> env, per-instance accent color, session migration across credential
+> rotation). The auto-rotation-on-rate-limit follow-up described below is
+> still deferred. Original shape kept below for history.
 
 **Shape.** Today, each agent type (Claude Code / Codex / OpenCode) is
 configured by a single set of env vars / OAuth tokens / API keys.

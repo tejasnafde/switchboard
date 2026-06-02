@@ -183,7 +183,7 @@ npm run build
   │    │    ├─ tsc --noEmit -p tsconfig.main.json
   │    │    └─ tsc --noEmit -p tsconfig.renderer.json
   │    └─ npm test
-  │         └─ vitest run → ~190 tests across 18 files
+  │         └─ vitest run → ~790 tests across 86 files
   └─ electron-vite build
        ├─ main bundle → out/main/index.js
        ├─ preload bundle → out/preload/index.js

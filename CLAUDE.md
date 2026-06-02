@@ -1,23 +1,27 @@
 # Switchboard
 
-Electron workspace that multiplexes terminals and agent chats (Claude Code + Codex) into one surface per project.
+Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex + OpenCode), a kanban board, and a code editor into one surface per project.
 
 ## Stack
 
 - **Shell**: Electron 33 + React 19 + TypeScript 5.7
 - **Build**: electron-vite + Vite 6
 - **Terminal**: `@xterm/xterm` 6 + `node-pty` (native, rebuild after install)
-- **Agents**:
+- **Editor**: CodeMirror 6 (`@codemirror/*`) — multi-tab, syntax highlight, git gutter, ⌘-click jump-to-def
+- **Chat input**: Lexical (`@lexical/react`) rich textarea with inline pill chips + `@`-mention file autocomplete
+- **Agents** (3, all behind the `ProviderAdapter` interface):
   - Claude Code via `@anthropic-ai/claude-agent-sdk` (streaming-input mode, AsyncIterable prompt queue, `canUseTool` callback)
   - Codex via `codex app-server` over stdio JSON-RPC 2.0
-- **State**: Zustand (`agent-store`, `terminal-store`, `layout-store`, `theme-store`, `draft-store`)
-- **DB**: `better-sqlite3` at `~/Library/Application Support/switchboard/data/switchboard.db` (FTS5 enabled)
+  - OpenCode via `opencode acp` over the Agent Client Protocol (`@agentclientprotocol/sdk`), long-lived stdio child
+- **LSP**: `typescript-language-server` + `pyright` spawned per (workspace, language) for jump-to-def / references / hover / symbols
+- **State**: Zustand — `agent-store`, `terminal-store`, `layout-store`, `theme-store`, `draft-store`, `editor-store`, `kanban-store`, `provider-instance-store`, `skill-store`, `bookmark-store`
+- **DB**: `better-sqlite3` at `~/Library/Application Support/switchboard/data/switchboard.db` (FTS5 enabled; path = `app.getPath('userData')/data/switchboard.db`)
 - **Logger**: file-based in `~/Library/Application Support/switchboard/logs/` with 7-day retention
 
 ## Commands
 
 - `npm run dev` — launches Electron (auto-unsets `ELECTRON_RUN_AS_NODE`)
-- `npm test` — vitest (~400 tests)
+- `npm test` — vitest (~790 tests across 86 files)
 - `npm run test:watch` — vitest in watch mode
 - `npm run typecheck` — main + renderer tsc
 - `npm run build` — **gated build**: `prebuild` runs typecheck + test before the actual build fires; `postbuild` runs `scripts/smoke-test.mjs`
@@ -55,24 +59,33 @@ Electron workspace that multiplexes terminals and agent chats (Claude Code + Cod
 ### Provider bridge (`src/main/provider/`)
 
 - `types.ts` re-exports from `src/shared/provider-events.ts` so renderer can type the IPC boundary
-- `ProviderAdapter` interface: `startSession`, `sendTurn(threadId, message, runtimeMode, images?)`, `interruptTurn`, `respondToRequest`, `answerQuestion?`, `setRuntimeMode`, `isAvailable`
-- `decidePermission(mode, toolName)` pure policy function — exported + unit-tested
-- `PLAN_READ_ONLY_TOOLS` set — Read/Glob/Grep/NotebookRead/WebFetch/WebSearch/TodoWrite allowed in plan mode, everything else denied
-- `CUSTOM_UI_TOOLS` — AskUserQuestion + ExitPlanMode skip `tool.started` emission so the custom cards render instead of raw JSON
+- `ProviderKind = 'claude' | 'codex' | 'opencode'`
+- `ProviderAdapter` interface — required: `startSession(opts, onEvent)`, `sendTurn(threadId, message, runtimeMode?, images?)`, `interruptTurn`, `respondToRequest`, `stopSession`, `setRuntimeMode`, `isAvailable`. Optional: `setModel?`, `answerQuestion?`, `listSkills?`
+- **`policy.ts` is the shared policy module** (2026-04/05 — was previously inlined in claude-adapter). All three adapters import from it:
+  - `decidePermission(mode, toolName) → 'allow' | 'deny' | 'prompt'` — pure, unit-tested
+  - `denialMessage(mode, toolName)` — human-readable denial reason
+  - `PLAN_READ_ONLY_TOOLS` — Read/Glob/Grep/NotebookRead/WebFetch/WebSearch/TodoWrite (+ Codex equivalents `read_file`/`list_files`/`search_files`/`fetch`) allowed in plan mode, everything else denied
+  - `CUSTOM_UI_TOOLS` — AskUserQuestion + ExitPlanMode (+ Codex `ask_user_question`/`exit_plan_mode`) skip `tool.started` emission so the custom cards render instead of raw JSON
+- `event-bus.ts` — `RuntimeEventBus` (EventEmitter) decouples adapter event emission from the renderer, so N subscribers (renderer, future telemetry) can listen instead of 1:1 `webContents` coupling
+- `env-overlay.ts` — merges a provider-instance env overlay into the spawn env (skips empty strings so partial configs don't blank defaults)
+- `claude-session-migrate.ts` — copies Claude SDK session JSONL across `oauth_dir` when rotating provider instances mid-flight, so resume survives a credential switch
 
 ### Runtime events (wire format)
 
 Defined in `src/shared/provider-events.ts`. Discriminated union:
 
-- `content` · streaming assistant/reasoning/plan text
+- `content` · streaming text, `streamKind: 'assistant' | 'reasoning' | 'plan'`
 - `tool.started` · tool call begun (skipped for custom-UI tools)
 - `tool.completed` · tool finished
 - `tool.denied` · **2026-04-20**: `canUseTool` hard-denied (e.g. Plan mode blocked Write) — UI renders denial pill
-- `request.opened` / `request.closed` · approval prompt flow
-- `turn.completed` · turn ended, with token usage
+- `request.opened` / `request.closed` · approval prompt flow (`requestType: 'command' | 'file' | 'tool'`)
+- `turn.completed` · turn ended, with `costUsd? / usedTokens? / maxTokens? / numTurns? / durationMs?`
+- `status` · session status change · `session` · sessionId recorded
 - `context_window` · live token count (polled after each turn)
+- `model.variants` · available model variants + current selection
 - `plan.proposed` · ExitPlanMode intercept → PlanCard
 - `question.asked` / `question.answered` · AskUserQuestion intercept → QuestionCard
+- `error` · adapter-level error surfaced to chat
 
 ### Image pipeline (2026-04-20)
 
@@ -112,6 +125,63 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - Translucent uses macOS vibrancy (`setVibrancy('sidebar')`) + transparent BG
 - Theme picker in Settings modal (`⌘,`)
 
+### Provider instances (multi-account credentials)
+
+- `provider_instances` table: `(id, agent_type, display_name, accent_color, auth_mode, env_encrypted BLOB, oauth_dir, config_json, enabled, created_at, updated_at)`. Multiple named instances per agent type (e.g. `codex-work` / `codex-personal`).
+- `auth_mode`: `'env'` (safeStorage-encrypted env vars in `env_encrypted`) or `'oauth_dir'` (per-instance config dir set as `CLAUDE_CONFIG_DIR` / `CODEX_HOME`).
+- IPC (`ProviderInstanceChannels`): `LIST` (secrets stripped), `UPSERT` (plaintext env in, encrypted at rest), `DELETE` (refuses last-of-kind), `TEST` (probes creds via `claude auth status` / `codex login status` / `opencode models`), `CREATE_OAUTH_DIR`.
+- Registry resolves the instance at `startSession` (`resolveProviderInstance(agentType, instanceId)`), falling back requested → default → any enabled; applies the env overlay + oauth_dir at spawn.
+- UI: `UnifiedProviderPicker` (drop-up: agent tabs → instance rail → model search) in the chat composer; `ProvidersTab` in Settings. Renderer cache in `provider-instance-store`.
+
+### Code editor (CodeMirror) + file IPC
+
+- **Right pane has two modes** (⌘⇧E toggles): the terminal strip, or the Files pane (tree + editor). Both stay mounted (positioned overlay) so xterm/pty and editor state survive toggling.
+- `EditorHost.tsx` — one persistent `EditorView`; per-buffer `EditorState` (cursor/scroll/undo) lives in `editor-store`, swapped on tab change. Theme + language in Compartments. Tabs survive restart (`editor_tabs` DB table).
+- **Editing is fully supported** (the old "read-only viewer" is gone): ⌘S saves via `files:write-file` — atomic temp-then-rename, EOL preserved, mtime conflict detection (returns `{ok:false, conflict:true}` if disk changed), 8 MB write cap.
+- Extensions: line numbers, bracket match, fold, history, in-editor search, autocomplete, `cmdClickJump` (⌘/Ctrl-click → LSP definition, tree-sitter fallback), `gitGutter` (add/mod/del bars from `git:file-diff`, refreshed on save). Languages lazy-loaded per file type; plaintext fallback.
+- **Nav history** (`navigation/historyStack.ts`): per-session back/forward stack (50-cap, coalesces moves within 10 lines). macOS `Ctrl+-` / `Ctrl+⇧-`; Win/Linux `Alt+←` / `Alt+→`.
+- **Quick Open** (⌘P): `QuickOpenModal` lists every repo file (10k cap, skips `.git`/`node_modules`, includes gitignored) with fzf-style `fuzzyScore` (consecutive-run + basename bonuses).
+- File IPC (`FilesChannels`): `list-dir` (gitignore-annotated, not filtered), `read-file` (2 MB cap, `truncated` flag), `write-file`, `read-batch`, `resolve` (existence), `list-all` (recursive 10k cap). `resolveWithinRepo` rejects `..`-escapes. Minimal gitignore matcher in `files/gitignore.ts` (no nested/`**` — annotation only).
+- A read-only Shiki path (`shikiHighlighter.ts` singleton) still exists for the lightweight viewer / inline previews.
+
+### LSP integration (`src/main/lsp/`)
+
+- `manager.ts` — per-(workspace, language) registry; lazy-spawns servers, caches diagnostics by URI, re-spawns on crash. `client.ts` — generic JSON-RPC client with `initialize`/`initialized` handshake. `framing.ts` — Content-Length stream parser (byte-counted for UTF-8 safety).
+- Servers: `typescript-language-server` (ts/tsx/js/jsx/mjs/cjs), `pyright` (py). Binary resolution: project `node_modules` → app resources → PATH.
+- IPC (`LspChannels`): `open` / `change` (300ms-debounced in renderer) / `close` / `definition` / `references` / `hover` / `document-symbols`. Unsupported languages return `{ok:true, supported:false}` so the editor downgrades gracefully (tree-sitter fallback for jump-to-def).
+
+### Git tooling + worktrees
+
+- `ipc/git.ts` (`GitChannels`): `list-refs` (locals + remotes, annotated with current/sha/worktreePath), `switch-ref` (validated, rejects `-`/`..`/control chars), `current-branch`, `file-diff` (parses `git diff HEAD` into add/del/mod gutter hunks — `git/diffHunks.ts`), `create-session-worktree`.
+- `worktree.ts` manages three creation flows: **kanban card** (`<repo>/.switchboard/worktrees/<slug>-<id>`, branch `kanban/<slug>-<id>`), **fork-from-message** (`<repo>/.switchboard/worktrees/<base>`, branch `fork/<name>`, collision-retry `-2`…`-20`), **session** (`$userData/worktrees/<repoSlug>-<hash>/<branchSlug>`, branch `sb/<slug>`). Plus `removeWorktree`, `listWorktrees`, `findStaleWorktrees`.
+- Worktrees live under `.switchboard/worktrees/` deliberately — avoids re-tripping the macOS TCC trap on `~/Desktop`-rooted repos and centralizes cleanup.
+
+### Conversation forking (`conversations/fork.ts`)
+
+- IPC `app:fork-conversation`, input `{ sourceConversationId, upToIndex, forkedAtMessageId?, withWorktree? }`. Position-based (`upToIndex`), not id-based, because `JsonlParser` regenerates ids on every reload.
+- **Claude** is truly resumable: `assembleClaudeFork` (in `agent/jsonl-truncate.ts`) walks all chronological JSONL fragments, truncates, rewrites `sessionId` to a new UUID, writes `<newId>.jsonl` into the encoded project dir; the new id is passed as `resumeSessionId`. **Codex / OpenCode are degraded** (Codex writes a truncated rollout as an audit record; OpenCode is summary-only) — both start cold with a synthetic system notice prepended.
+- DB lineage: `conversations.parent_conversation_id` + `forked_at_message_id`; worktree forks also set `worktree_path` / `worktree_branch` and the title becomes `<parent> · fork/<slug>`. `thread_sessions` table flattens Claude's compaction-rotated session chains so ancestry walks are O(1).
+
+### Kanban board (⌘⇧K top-level view)
+
+- Top-level view (not a right-pane mode) swapping the chat area for a workspace-scoped board; sidebar stays mounted. `layout-store.appView: 'chats' | 'kanban'`.
+- `kanban_cards` table: `(id, project_path, title, description, tags JSON, status, cost_cap_usd, cost_used_usd, runtime_mode, conversation_id, worktree_path, worktree_branch, created_at, updated_at, completed_at)`. Statuses: `backlog | in_progress | in_review | done`.
+- IPC (`KanbanChannels`): `list / create / update / delete / create-worktree / remove-worktree / list-worktrees / list-stale-worktrees / remove-stale-worktree`. Moving a card to `done` auto-archives its linked conversation (`applyKanbanArchiveSideEffect`); moving back unarchives.
+- `cardLaunch.ts` `launchCardChat`: reuses the linked conversation if live, else spins up a new session rooted at `worktree_path ?? project_path`, links card→conversation, seeds + auto-sends the first turn (title + description). `WorktreeManagerModal` is the manual cleanup UI (lists worktrees, flags `inUse`, batch-removes stale).
+
+### Lexical chat input (pill chips + @-mentions)
+
+- `RichChatTextarea.tsx` — Lexical `PlainTextPlugin` editor that serializes to a plain string with `[[pill:id]]` tokens (draft store stays string-shaped). Replaced the plain `<textarea>`.
+- **Pill chips** (`PillNode` decorator + shared `PillChipVisual`): three kinds — `file` (blue), `terminal` (amber), `chat-message` (purple). Inserted by ⌘L context bridge; `×` removes (fires `sb-pill-remove` to prune metadata). Round-trip through `[[pill:id]]` on paste/reload. `renderPillBody` rebuilds chips in sent bubbles.
+- **@-mentions**: `@` at a word boundary opens `AtMentionMenu`; `detectAtTrigger` + `filterAtMatches` reuse the same `fuzzyScore` as ⌘P; Enter inserts a file ref.
+- `rotationMarker.ts` — when the user swaps provider instance mid-chat, a `[[sb:instance-rotated]] <from> → <to>` system marker renders as a compact pill.
+- `BranchPicker` (`main ▾` chip) switches the session's git ref via `git:switch-ref` (policy in `branchPickerPolicy.ts`: current first, then locals, then remotes; substring filter).
+
+### Project favicons (`sb-favicon://` protocol)
+
+- `faviconResolver.ts` probes static icon paths (root → public/ → app/ → src/ → assets/ → .idea/, each `.svg`/`.ico`/`.png`), cached by `(projectPath, parent mtime)`. Fallback `faviconHtmlScan.ts` scans `index.html` / framework root files for `<link rel="icon">` (skips data:/http: hrefs, containment-checked).
+- Served via the `sb-favicon://favicon?path=<encoded>` custom protocol (`protocol/sb-favicon.ts`) — path must match a known DB project. `ProjectFavicon.tsx` renders it in the sidebar, falling back to a folder glyph on error.
+
 ## What's currently working
 
 - Claude Code SDK integration end-to-end: streaming text, tool calls, context window metrics, interrupt
@@ -130,7 +200,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - Pre-commit hook + CI (GitHub Actions: typecheck + test + build)
 - **Slash command menu in chat input** with agent-skill exposure (2026-04-26): Claude SDK `init.commands` + Codex `skills/list` surfaced alongside Switchboard's 9 built-ins. Source-grouped sections in the menu; agent-source selections insert `/<name> ` for the user to fill in args. OpenCode has no skill registry — falls back to built-ins only.
 - **`⌘L` multi-source context bridge** (2026-04-29): single keybinding routes by the focused element's `data-context-source` attribute (`terminal | file-viewer | chat-message`). Terminal selection → fenced code block w/ pane label header (50k char cap). File-viewer selection → `@<path>:<start>-<end>` pill + fenced block. Chat-message selection → `> from <agent>: "..."` quoted block. All three append to the active session's draft via `useDraftStore.appendDraft`. Pure formatters (`formatTerminalContext`, `formatFileViewerContext`, `formatChatMessageContext`) are unit-tested.
-- **Per-turn duration badge** (2026-04-29): adapters stamp `turnStartedAt` on `sendTurn` and emit `durationMs` on `turn.completed`. MessageBubble renders "Worked for X.Xs" under the assistant message via `fmtDuration` from `src/shared/format.ts`. Wired across all 4 adapters (claude, codex, opencode, opencode-acp).
+- **Per-turn duration badge** (2026-04-29): adapters stamp `turnStartedAt` on `sendTurn` and emit `durationMs` on `turn.completed`. MessageBubble renders "Worked for X.Xs" under the assistant message via `fmtDuration` from `src/shared/format.ts`. Wired across all 3 active adapters (claude, codex, opencode-acp).
 - **Right-pane "Files" mode** (2026-04-29, ⌘⇧E to toggle): the right column flips between the existing terminal strip and a file tree + viewer. `layout-store.rightPaneMode` (persisted under `layout.rightPaneMode`). Both panes stay mounted (positioned overlay) so toggling preserves xterm/pty state and Shiki highlighter cache.
 - **File tree pane** with VS Code-style gitignore annotation: `files:list-dir` IPC enumerates a directory and tags each entry with `isGitignored`. Renderer applies `data-gitignored="true"` for 50% opacity but keeps entries clickable. Parsed `.gitignore` cached in main by `(absPath, mtimeMs)` so hot tree expansions don't re-parse. Path-traversal-safe (`resolveWithinRepo` rejects `..`-escapes).
 - **File viewer pane** with Shiki highlighting: `files:read-file` IPC enforces a 2 MB hard cap (returns `truncated:true` flag). Highlighter is a module-level singleton (`src/renderer/services/shikiHighlighter.ts`) with concurrent-init coalescing — one WASM cold-start per session, regardless of viewer mount count. Theme-aware (github-dark / github-light follows `theme-store`). Auto-scrolls to line range from `viewerLineRange` when set.
@@ -145,6 +215,14 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - **`⌘F` in-pane search** for terminals (xterm SearchAddon with decoration overlays — requires `allowProposedApi: true`) and individual chat panes (DOM TreeWalker wraps first match in `<mark.sb-search-mark>`); shared `InPaneSearchBar` component, document-level keydown listeners scoped to focused pane via `[data-terminal-pane]` / `[data-chat-panel]` attrs
 - **Feature Tour modal** (`FeatureTourModal.tsx` + `featureRegistry.ts` in `src/renderer/components/onboarding/`) — auto-opens on first launch and after `TOUR_VERSION` bumps; replayable from Settings → Tour. MP4 clips streamed via `sb-tour://<id>.mp4` custom protocol (resolves to `videos/dist/`, served via `net.fetch('file://...')` for byte-range support). 10 clips currently rendered in `videos/dist/`.
 - **Agent-aware UI labels**: `agentLabel()` / `agentShortLabel()` helpers in `shared/types.ts` so StatusBar / MessageBubble / etc. all reflect Claude Code / Codex / OpenCode correctly
+- **Multi-instance provider picker** (shipped): named credentials per agent type (env or oauth_dir), `UnifiedProviderPicker` + Settings → Providers, env overlay + session migration at spawn — see Provider instances section above
+- **CodeMirror code editor** with save, ⌘-click jump-to-def, git gutter, multi-tab, ⌘P Quick Open — see Code editor section
+- **LSP** (ts-language-server + pyright) for definition / references / hover / symbols
+- **Kanban board** (⌘⇧K) with worktree-backed cards — see Kanban section
+- **Conversation forking** ("Fork from here" / "Fork to worktree") — see Conversation forking section
+- **Lexical chat input** with pill chips + `@`-mention file autocomplete — see Lexical chat input section
+- **Project favicons** in the sidebar via `sb-favicon://`
+- **Bookmarks** (`bookmark-store` + `bookmarks` DB table) — bookmark messages/sessions
 - Single-instance lock
 - Native app menu (`⌘,` for settings, standard Edit/View/Window)
 - File-based logger at `~/Library/Application Support/switchboard/logs/`
@@ -152,9 +230,11 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 ## What's NOT working yet
 
-- **electron-builder packaging + auto-update** — Phase 9 complete; unsigned macOS arm64/x64 `.dmg`/`.zip` and Windows `.exe`/`.zip` builds shippable via `npm run dist:*`. `electron-updater` wired via `main/updater.ts` (auto-check + manual). Awaiting Apple Developer cert for code-signing only.
+- **Code-signing** — unsigned macOS arm64/x64 `.dmg`/`.zip` and Windows `.exe`/`.zip` builds ship via `npm run dist:*`; `electron-updater` is wired (`main/updater.ts`, auto + manual). Awaiting Apple Developer cert.
 - **workspace.yaml hot-reload** + `on_start` wait/then orchestration — partial; runtime hydration works
 - **Cursor import** (read `state.vscdb`) — not started
+- **Codex / OpenCode fork resume** — fork creates the new conversation but only Claude resumes real context; Codex/OpenCode start cold (audit record / summary only)
+- **Provider hot-swap context preservation** — swapping agent mid-chat keeps the visible stream but the new adapter starts with zero context (see `docs/notes/roadmap-deferred.md` #4)
 
 ## Skill exposure (shipped 2026-04-26)
 
@@ -167,16 +247,22 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
 
-## Test suite (~400 tests)
+## Test suite (~790 tests across 86 files)
 
 Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
 - `message-list.test.ts` — `groupIntoTurns` keeper-list (regression for empty-content attachment drops)
 - `slash-commands.test.ts` — slash trigger + registry
 - `session-scanner.test.ts` — exact-match matching (parent/child bleed)
-- `claude-adapter-plan-mode.test.ts` — plan mode permission policy
+- `claude-adapter-plan-mode.test.ts` / `provider-policy.test.ts` — plan mode permission policy
 - `provider-adapter-tool-filter.test.ts` — `CUSTOM_UI_TOOLS` set membership
-- `jsonl-parser.test.ts` — Claude + Codex schemas + historical images
+- `jsonl-parser.test.ts` / `jsonl-truncate.test.ts` — Claude + Codex schemas, historical images, fork truncation
+- `provider-instances-db.test.ts` / `*-instance-env.test.ts` — multi-instance credentials + env overlay
+- `worktree.test.ts` / `create-session-worktree.test.ts` / `worktree-paths.test.ts` — worktree flows + collision retry
+- `diff-hunks.test.ts` / `lsp-framing.test.ts` / `definition-provider.test.ts` — editor: gutter, LSP framing, jump-to-def
+- `at-mention.test.ts` / `render-pill-body.test.ts` / `draft-pills.test.ts` — Lexical pills + @-mentions
+- `kanban-store.test.ts` / `card-launch.test.ts` / `kanban-archive-side-effect.test.ts` — kanban
+- `favicon-resolver.test.ts` / `favicon-html-scan.test.ts` / `favicon-protocol.test.ts` — favicons
 
 ## File structure (condensed)
 
@@ -186,65 +272,65 @@ src/
 │   ├── index.ts                       # Electron main
 │   ├── agent/
 │   │   ├── agent-manager.ts           # Legacy --print agent (deprecated)
-│   │   └── jsonl-parser.ts            # Source-aware (claude-code | codex) + image extraction
-│   ├── db/database.ts                 # SQLite schema, archive, FTS, settings
+│   │   ├── jsonl-parser.ts            # Source-aware (claude-code | codex) + image extraction
+│   │   └── jsonl-truncate.ts          # Pure fork truncation (assembleClaudeFork, truncate*Jsonl)
+│   ├── conversations/fork.ts          # Fork-from-message orchestration (per-provider resume)
+│   ├── db/
+│   │   ├── database.ts                # SQLite schema, archive, FTS, settings, kanban, fork lineage
+│   │   └── providerInstances.ts       # provider_instances CRUD (safeStorage-encrypted env)
+│   ├── files/                         # listing (gitignore-annotated) · writing (atomic+conflict) · gitignore matcher
+│   ├── git/                           # diffHunks (gutter) · refs · worktreePaths
+│   ├── lsp/                           # manager (per-ws/lang) · client (JSON-RPC) · framing (Content-Length)
+│   ├── worktree.ts                    # kanban / fork / session worktree creation + cleanup
 │   ├── ipc/
-│   │   ├── terminal.ts                # PTY IPC
-│   │   ├── agent.ts                   # Legacy agent IPC (deprecated)
-│   │   └── app.ts                     # Projects, sessions, archive, workspace-config
+│   │   ├── terminal.ts · agent.ts(dep) · app.ts   # PTY · legacy · projects/sessions/archive/fork
+│   │   ├── files.ts · git.ts · lsp.ts · kanban.ts # editor + git + LSP + kanban IPC
+│   │   ├── providerInstances.ts       # instance LIST/UPSERT/DELETE/TEST/CREATE_OAUTH_DIR
+│   │   └── enrichDisplayBody.ts       # pill/display-body enrichment for stored messages
 │   ├── projects/
-│   │   └── session-scanner.ts         # exact-match Claude + Codex scanners (exports encodeClaudeProjectPath)
+│   │   ├── session-scanner.ts         # exact-match Claude + Codex scanners (encodeClaudeProjectPath)
+│   │   ├── faviconResolver.ts         # static icon probe (cached by path+mtime)
+│   │   └── faviconHtmlScan.ts         # <link rel=icon> fallback scan
+│   ├── protocol/sb-favicon.ts         # sb-favicon:// custom protocol handler
 │   ├── provider/
-│   │   ├── provider-registry.ts       # IPC handlers, event forwarding
+│   │   ├── provider-registry.ts       # IPC handlers, instance resolution, event forwarding
+│   │   ├── policy.ts                  # decidePermission/denialMessage/PLAN_READ_ONLY_TOOLS/CUSTOM_UI_TOOLS
+│   │   ├── event-bus.ts               # RuntimeEventBus (decoupled fan-out)
+│   │   ├── env-overlay.ts             # instance env merge · claude-session-migrate.ts # oauth_dir rotation
 │   │   ├── types.ts                   # ProviderAdapter + re-exports from shared/provider-events
 │   │   └── adapters/
-│   │       ├── claude-adapter.ts      # SDK integration, canUseTool, plan-mode policy, image blocks
-│   │       ├── codex-adapter.ts       # JSON-RPC over stdio (Phase B done)
-│   │       ├── opencode-acp-adapter.ts # OpenCode adapter (ACP / JSON-RPC over stdio)
+│   │       ├── claude-adapter.ts      # SDK integration, canUseTool, image blocks
+│   │       ├── codex-adapter.ts       # JSON-RPC over stdio (images + plan + AskUserQuestion done)
+│   │       ├── opencode-acp-adapter.ts # OpenCode (ACP / JSON-RPC over stdio) — only OpenCode adapter
 │   │       ├── opencode/env.ts        # Shared env-probe helper
-│   │       └── question-answers.ts    # Pure helper: shape AskUserQuestion answers for SDK wire format
-│   ├── terminal/pty-manager.ts        # PTY lifecycle
-│   └── logger.ts                      # File logger
+│   │       └── question-answers.ts    # Shape AskUserQuestion answers for SDK wire format
+│   ├── terminal/pty-manager.ts · path-access.ts · updater.ts · logger.ts
+│   └── workspace/workspace-store.ts   # workspace.yaml hydration
 ├── preload/index.ts                   # Typed window.api (SwitchboardAPI), strongly-typed provider.onEvent
 ├── renderer/
-│   ├── App.tsx                        # Flat flex-row layout, keybindings, command palette hotkey
+│   ├── App.tsx                        # Flat flex-row layout, all keybindings, view switching
 │   ├── components/
-│   │   ├── CommandPalette.tsx         # ⌘⇧P
-│   │   ├── SettingsModal.tsx
+│   │   ├── CommandPalette.tsx (⌘⇧P) · QuickPromptModal.tsx (⌘K) · SearchModal.tsx (⌘⇧F)
+│   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · SessionPickerModal.tsx
 │   │   ├── chat/
-│   │   │   ├── ChatPanel.tsx          # Event dispatch, send handler, slash help overlay
-│   │   │   ├── ChatInput.tsx          # Textarea + slash trigger + image picker + mode/model selectors
-│   │   │   ├── MessageList.tsx        # Turn grouping (groupIntoTurns exported for tests)
-│   │   │   ├── MessageBubble.tsx      # Markdown + tool calls + approval + plan + question + denial pill
-│   │   │   ├── ApprovalCard.tsx       # Collapsible JSON detail
-│   │   │   ├── PlanCard.tsx           # ExitPlanMode UI
-│   │   │   ├── QuestionCard.tsx       # AskUserQuestion UI (T3-style)
-│   │   │   ├── SlashCommandMenu.tsx   # Inline / popover
-│   │   │   └── slashCommands.ts       # Trigger detector + registry
-│   │   ├── sidebar/Sidebar.tsx        # Projects + sessions + dnd + archive button
-│   │   ├── files/                     # FileTreePane, FileViewerPane, FilesPane, FileChip, shikiHighlighter
-│   │   ├── onboarding/                # FeatureTourModal + featureRegistry
-│   │   └── terminal/
-│   │       ├── TerminalStrip.tsx      # Rows of windows with resize handles
-│   │       ├── TerminalWindow.tsx     # Window (tabs)
-│   │       └── TerminalPane.tsx       # Single pane
-│   ├── hooks/useTerminalLifecycle.ts  # Layout hydration from workspace.yaml or defaults
-│   ├── services/
-│   │   ├── terminal-registry.ts       # xterm instance registry outside React
-│   │   └── session-events.ts          # Cross-component event bus
-│   └── stores/
-│       ├── agent-store.ts             # Sessions + messages (multi-session-aware)
-│       ├── terminal-store.ts          # Rows/Windows/Panes
-│       ├── layout-store.ts            # Sidebar/terminal widths + visibility
-│       ├── theme-store.ts             # Active theme
-│       └── draft-store.ts             # Per-session unsent drafts (localStorage)
+│   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
+│   │   │   ├── ApprovalCard · PlanCard · QuestionCard · SlashCommandMenu · slashCommands.ts
+│   │   │   ├── UnifiedProviderPicker.tsx # agent tabs → instance rail → model search
+│   │   │   ├── BranchPicker.tsx + branchPickerPolicy.ts · SkillChip · FileChip
+│   │   │   ├── AtMentionMenu.tsx + atMention.ts · renderPillBody.tsx · rotationMarker.ts
+│   │   │   └── lexical/               # RichChatTextarea · PillNode · PillChipVisual
+│   │   ├── files/                     # FileTreePane · FilesPane · QuickOpenModal (⌘P) + fuzzyScore
+│   │   │   └── editor/                # EditorHost · TabStrip · extensions(cmdClickJump,gitGutter,language) · navigation
+│   │   ├── kanban/                    # KanbanView (⌘⇧K) · CardModal · WorktreeManagerModal · cardLaunch.ts
+│   │   ├── sidebar/                   # Sidebar · ProjectFavicon · WorkspaceManager · dragLogic
+│   │   ├── onboarding/               # FeatureTourModal + featureRegistry
+│   │   └── terminal/                  # TerminalStrip · TerminalWindow · TerminalPane · TerminalHeader · TemplatePicker
+│   ├── hooks/                         # useTerminalLifecycle · useAgent · useTerminal
+│   ├── services/                      # terminal-registry · session-events · shikiHighlighter · lspClient · notifications
+│   └── stores/                        # agent · terminal · layout · theme · draft · editor · kanban · provider-instance · skill · bookmark
 ├── shared/
-│   ├── ipc-channels.ts                # Channel name constants
-│   ├── provider-events.ts             # RuntimeEvent union (wire format)
-│   ├── types.ts                       # ChatMessage, Session, Project, MessageImage, denial?
-│   ├── auto-title.ts                  # generateTitle from first message
-│   └── models.ts                      # Model catalog per agent
-└── tests/unit/                        # ~400 tests
+│   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · filePathRef.ts
+└── tests/unit/                        # ~790 tests across 86 files
 ```
 
 ## Logging conventions
