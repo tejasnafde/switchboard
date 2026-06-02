@@ -28,6 +28,9 @@ import { useAgentStore } from '../../stores/agent-store'
 import { useEditorStore } from '../../stores/editor-store'
 import { EditorHost } from './editor/EditorHost'
 import { TabStrip } from './editor/TabStrip'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('files:viewer-pane')
 
 export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement | null {
   const path = useLayoutStore((s) => s.viewerFilePath)
@@ -79,7 +82,8 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
         if (isMarkdown) {
           try {
             setMdPreview(marked.parse(res.content, { async: false }) as string)
-          } catch {
+          } catch (err) {
+            log.warn('markdown preview parse failed', { path, err })
             setMdPreview('')
           }
         }

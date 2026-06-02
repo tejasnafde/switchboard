@@ -17,7 +17,9 @@ import { resolveDefinition, defaultTreeSitterSource } from '../../../../services
 import { lspDefinitionSource } from '../../../../services/lspSource'
 import { useAgentStore } from '../../../../stores/agent-store'
 import { navigateTo } from '../navigation/navigate'
+import { createRendererLogger } from '../../../../logger'
 
+const log = createRendererLogger('editor:cmd-click-jump')
 const WORD_RE = /[A-Za-z_$][A-Za-z0-9_$]*/
 
 function wordAt(view: EditorView, pos: number): { word: string; start: number; end: number } | null {
@@ -58,22 +60,26 @@ export function cmdClickJump(
           : relPath
       const line0 = view.state.doc.lineAt(pos).number - 1
       const ch = pos - view.state.doc.line(line0 + 1).from
+      // Capture the active session *now*, before the async resolve — otherwise
+      // a session switch mid-resolution would navigate the wrong session.
+      const sessionId = useAgentStore.getState().activeSessionId
       void resolveDefinition({
         path: absPath,
         symbol: w.word,
         position: { line: line0, character: ch },
         sources: { lsp: lspDefinitionSource, treeSitter: defaultTreeSitterSource },
-      }).then((defs) => {
-        if (defs.length === 0) return
-        const target = defs[0]
-        // LSP results are absolute; relativize so openInViewer gets a repo-relative path.
-        let navPath = target.path
-        if (repoRoot && navPath.startsWith(repoRoot + '/')) {
-          navPath = navPath.slice(repoRoot.length + 1)
-        }
-        const sessionId = useAgentStore.getState().activeSessionId
-        navigateTo(sessionId, { path: navPath, line: target.line, ch: target.ch })
       })
+        .then((defs) => {
+          if (defs.length === 0) return
+          const target = defs[0]
+          // LSP results are absolute; relativize so openInViewer gets a repo-relative path.
+          let navPath = target.path
+          if (repoRoot && navPath.startsWith(repoRoot + '/')) {
+            navPath = navPath.slice(repoRoot.length + 1)
+          }
+          navigateTo(sessionId, { path: navPath, line: target.line, ch: target.ch })
+        })
+        .catch((err) => log.warn('jump-to-definition failed', { symbol: w.word, err }))
     }
     view.dom.addEventListener('mousedown', onMouseDown, true)
     return {

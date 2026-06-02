@@ -10,6 +10,7 @@ import { CodexAdapter } from './adapters/codex-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
+import { CheckpointTracker } from './checkpoint-tracker'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
 import { recordThreadSession, updateConversationSessionId } from '../db/database'
 import { defaultClaudeDir } from './claude-session-migrate'
@@ -36,6 +37,15 @@ export class ProviderRegistry {
    */
   private sessionAdapters = new Map<string, ProviderAdapter>()
   private sessionProviders = new Map<string, ProviderKind>()
+  /** Working-tree root per session, captured at startSession for checkpointing. */
+  private sessionCwd = new Map<string, string>()
+
+  /**
+   * Derives per-file diff cards from git checkpoints around each turn —
+   * provider-agnostic, so Claude / Codex / OpenCode all surface edits the
+   * same way in chat.
+   */
+  private checkpoints = new CheckpointTracker()
 
   /**
    * Event bus that decouples adapter event emission from the consumer.
@@ -84,6 +94,22 @@ export class ProviderRegistry {
       }
     }
     this.bus.publish(event)
+
+    // A turn just ended — diff the start-of-turn checkpoint against the
+    // working tree and stream one file.edited event per changed file. Fire
+    // and forget; the cards land right after the turn.completed marker.
+    if (event.type === 'turn.completed') {
+      void this.emitFileEdits(event.threadId)
+    }
+  }
+
+  private async emitFileEdits(threadId: string): Promise<void> {
+    try {
+      const events = await this.checkpoints.finishTurn(threadId)
+      for (const ev of events) this.bus.publish(ev)
+    } catch (err) {
+      log.warn(`emitFileEdits failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   registerIpcHandlers(): void {
@@ -131,6 +157,7 @@ export class ProviderRegistry {
       this.sessionProviders.set(opts.threadId, opts.provider)
       const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))
       if (instance) session.instanceId = instance.id
+      this.sessionCwd.set(opts.threadId, session.cwd)
       return session
     })
 
@@ -141,6 +168,10 @@ export class ProviderRegistry {
         throw new Error(`No session: ${threadId}`)
       }
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${images?.length ?? 0}`)
+      // Snapshot the working tree BEFORE the agent edits, so the post-turn
+      // diff isolates exactly this turn's changes. No-op for non-git dirs.
+      const cwd = this.sessionCwd.get(threadId)
+      if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
       await adapter.sendTurn(threadId, message, runtimeMode, images)
     })
 
@@ -199,6 +230,8 @@ export class ProviderRegistry {
       await adapter.stopSession(threadId)
       this.sessionAdapters.delete(threadId)
       this.sessionProviders.delete(threadId)
+      this.sessionCwd.delete(threadId)
+      this.checkpoints.clear(threadId)
     })
 
     log.info('IPC handlers registered')
@@ -212,6 +245,7 @@ export class ProviderRegistry {
     }
     this.sessionAdapters.clear()
     this.sessionProviders.clear()
+    this.sessionCwd.clear()
     if (this.rendererUnsub) {
       this.rendererUnsub()
       this.rendererUnsub = null

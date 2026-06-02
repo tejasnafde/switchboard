@@ -20,6 +20,9 @@
 import { memo, useCallback, useEffect, useState } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { useLayoutStore } from '../../stores/layout-store'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('files:tree-pane')
 
 interface DirEntry {
   name: string
@@ -68,6 +71,7 @@ const DirNode = memo(function DirNode({ repoRoot, subPath, name, isGitignored, d
   const [open, setOpen] = useState(!!defaultOpen)
   const [entries, setEntries] = useState<DirEntry[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     if (entries !== null || loading) return
@@ -75,9 +79,17 @@ const DirNode = memo(function DirNode({ repoRoot, subPath, name, isGitignored, d
     try {
       const api = window.api
       const res = await api?.files?.listDir(repoRoot, subPath)
-      if (res?.ok) setEntries(res.entries as DirEntry[])
-      else setEntries([])
-    } catch {
+      if (res?.ok) {
+        setEntries(res.entries as DirEntry[])
+      } else {
+        const msg = res?.error ?? 'unknown error'
+        log.warn('listDir returned not-ok', { repoRoot, subPath, error: msg })
+        setError(msg)
+        setEntries([])
+      }
+    } catch (err) {
+      log.warn('listDir threw', { repoRoot, subPath, err })
+      setError(err instanceof Error ? err.message : String(err))
       setEntries([])
     } finally {
       setLoading(false)
@@ -85,8 +97,8 @@ const DirNode = memo(function DirNode({ repoRoot, subPath, name, isGitignored, d
   }, [repoRoot, subPath, entries, loading])
 
   useEffect(() => {
-    if (open) void load()
-  }, [open, load])
+    if (open) void load().catch((err) => log.warn('load() rejected', { subPath, err }))
+  }, [open, load, subPath])
 
   return (
     <li
@@ -119,6 +131,14 @@ const DirNode = memo(function DirNode({ repoRoot, subPath, name, isGitignored, d
           {loading && entries === null && (
             <li style={{ padding: '2px 8px', paddingLeft: 8 + (depth + 1) * 12, fontSize: 12, opacity: 0.5 }}>
               loading…
+            </li>
+          )}
+          {error && (
+            <li
+              style={{ padding: '2px 8px', paddingLeft: 8 + (depth + 1) * 12, fontSize: 12, color: 'var(--error, #f85149)' }}
+              title={error}
+            >
+              ⚠ couldn't read folder
             </li>
           )}
           {entries?.map((e) =>

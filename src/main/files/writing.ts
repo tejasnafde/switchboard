@@ -85,3 +85,20 @@ export async function writeFileSafe(
   const newStat = await fs.stat(absPath)
   return { ok: true, mtimeMs: newStat.mtimeMs }
 }
+
+export type DeleteResult = { ok: true } | { ok: false; error: string }
+
+/**
+ * Delete a file. Used to truly revert an agent-*added* file from a diff card
+ * (writing empty content would leave a stray empty file). A missing file is
+ * treated as success — the desired end state (absent) already holds.
+ */
+export async function deleteFileSafe(absPath: string): Promise<DeleteResult> {
+  try {
+    await fs.unlink(absPath)
+    return { ok: true }
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { ok: true }
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}

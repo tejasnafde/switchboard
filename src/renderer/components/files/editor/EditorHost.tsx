@@ -63,19 +63,26 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
             const id = mountedBufferRef.current
             const root = repoRootRef.current
             if (!id || !root) return false
-            const buf = useEditorStore.getState().buffers[id]
+            const store = useEditorStore.getState()
+            const buf = store.buffers[id]
             if (!buf) return false
-            void useEditorStore.getState().save(id, root, buf.path).then((res) => {
-              if (!res.ok) {
-                log.warn('save failed', res.error, res.conflict ? '(conflict)' : '')
-                return
-              }
-              // Refresh gutter after a successful save.
-              void window.api.git.fileDiff(root, buf.path).then((diff) => {
-                if (mountedBufferRef.current !== id) return
-                if (diff.ok) view.dispatch({ effects: setHunksEffect.of(diff.hunks) })
+            void store
+              .save(id, root, buf.path)
+              .then((res) => {
+                if (!res.ok) {
+                  log.warn('save failed', res.error, res.conflict ? '(conflict)' : '')
+                  return
+                }
+                // Refresh gutter after a successful save.
+                void window.api.git
+                  .fileDiff(root, buf.path)
+                  .then((diff) => {
+                    if (mountedBufferRef.current !== id) return
+                    if (diff.ok) view.dispatch({ effects: setHunksEffect.of(diff.hunks) })
+                  })
+                  .catch((err) => log.warn('post-save gutter refresh failed', err))
               })
-            })
+              .catch((err) => log.error('save threw', err))
             return true
           },
         },
@@ -112,6 +119,9 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
     return () => {
       view.destroy()
       viewRef.current = null
+      // Clear the marker so a recreated view (StrictMode remount, md
+      // preview/raw toggle) re-runs the swap below instead of rendering blank.
+      mountedBufferRef.current = null
     }
   }, [])
   // Note: themeName intentionally NOT in deps — view persists; theme
@@ -128,6 +138,10 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
     // configuration (buffers are created with extensions: []).
     const newDoc = buf.state.doc.toString()
     const anchor = Math.min(buf.state.selection.main.anchor, newDoc.length)
+    // Set the marker BEFORE dispatching: the dispatch override round-trips
+    // view.state into mountedBufferRef's buffer, so a stale marker here would
+    // write the new file's content over the previous buffer.
+    mountedBufferRef.current = bufferId
     view.dispatch(
       view.state.update({
         changes: { from: 0, to: view.state.doc.length, insert: newDoc },
@@ -135,7 +149,6 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
         scrollIntoView: true,
       }),
     )
-    mountedBufferRef.current = bufferId
 
     // Lazily attach the right language pack (after the swap so the
     // user sees content immediately even on first-load of a lang).
@@ -153,14 +166,16 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
           if (mountedBufferRef.current !== bufferId) return
           if (res.ok) view.dispatch({ effects: setHunksEffect.of(res.hunks) })
         })
-        .catch(() => {})
+        .catch((err) => log.warn('git gutter diff failed', { path: buf.path, err }))
     }
 
     // didOpen against the LSP. We pass the absolute path; LSP servers
     // fail silently for unsupported languages (Rust/Go etc.).
     if (repoRoot) {
       const abs = `${repoRoot}/${buf.path}`.replace(/\/+/g, '/')
-      void lspOpenDoc(repoRoot, abs, buf.state.doc.toString()).catch(() => {})
+      void lspOpenDoc(repoRoot, abs, buf.state.doc.toString()).catch((err) =>
+        log.warn('lsp didOpen failed', { path: buf.path, err }),
+      )
     }
   }, [bufferId, repoRoot])
 
@@ -174,7 +189,9 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       const buf = useEditorStore.getState().buffers[bufferId]
       if (!buf) return
       const abs = `${repoRoot}/${buf.path}`.replace(/\/+/g, '/')
-      void lspChangeDoc(repoRoot, abs, buf.state.doc.toString()).catch(() => {})
+      void lspChangeDoc(repoRoot, abs, buf.state.doc.toString()).catch((err) =>
+        log.warn('lsp didChange failed', { path: buf.path, err }),
+      )
     }, 300)
     return () => clearTimeout(timeout)
   }, [bufferId, repoRoot, bufState])

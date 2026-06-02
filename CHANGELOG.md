@@ -2,6 +2,24 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-06-02 — In-chat diff review (Cursor-style accept/reject) + editor/file-tree fixes
+
+### Added
+- **Per-file diff cards in chat, with per-hunk accept/reject** — when an agent edits files during a turn, each changed file renders as its own inline card showing the unified diff with **Keep all / Reject all**, per-hunk **Revert**, and **Apply**. Works identically across **all three providers** (Claude Code, Codex, OpenCode) because the diff is derived from **git checkpoints**, not provider-specific tool payloads: a temp-index snapshot (`git add -A` → `write-tree`, never touching the user's index/HEAD) is taken before each turn and diffed against the working tree after `turn.completed`. Provider-agnostic, deterministic, modeled on the open-source `t3code` approach. New modules: `src/main/git/checkpoint.ts`, `src/main/provider/checkpoint-tracker.ts`, `src/renderer/components/chat/FileDiffCard.tsx` + `fileDiffResolve.ts`; new `file.edited` runtime event.
+- Diff rendering + accept/reject math is powered by **`@pierre/diffs`** (Apache-2.0). Reject reverts a hunk to its baseline; partial accept writes the resolved subset back via the existing atomic `files:write-file`. **Rejecting an agent-*added* file deletes it** (new `files:delete-file` IPC) rather than leaving an empty file — matching Cursor's revert semantics.
+- 30 new unit tests (checkpoint primitives incl. a real-git integration test, the turn tracker, the resolve/row helpers, the message keeper-list, and `deleteFileSafe`).
+
+### Fixed
+- **File viewer loaded the first-opened file blank**, then re-selecting its tab did nothing and showed a phantom unsaved dot. Two compounding `EditorHost` lifecycle bugs: the view-recreate cleanup didn't reset the mounted-buffer marker (so a remount skipped loading the buffer into the fresh empty view), and the buffer-swap set that marker *after* dispatching — so the view's round-trip wrote the new file's content back over the *previous* buffer, corrupting it and flagging it dirty. Marker is now cleared on teardown and set before the swap dispatch.
+- **CodeMirror search panel (⌘F) was unstyled** under the translucent/light/dark themes — raw browser buttons, checkboxes, and an orange focus ring. Now themed via CSS variables, laid out with flex (stable two-row layout that doesn't reflow awkwardly on pane resize, pinned close button, checkbox-label spacing), and Escape reliably closes it.
+- **gitignore annotation** mishandled patterns containing a mid-slash (`foo/bar` matched at any depth instead of anchoring to root).
+- **Silent error swallowing** removed across `EditorHost`, `FileTreePane` (now shows a "couldn't read folder" state), `FileViewerPane`, `cmdClickJump`, and the LSP frame parser — each now logs via the scoped logger per the repo's logging rules. Also fixed a ⌘-click jump-to-definition race that could navigate the wrong session.
+
+### Notes
+- Diff cards are **session-ephemeral** (v1): they live in the live session and aren't restored on reload; disk already reflects the user's decisions. Files ignored by `.gitignore` (including a file ignored by a same-turn `.gitignore` edit) don't produce a card — intentional, to avoid cards for build output / `node_modules`.
+
+---
+
 ## 2026-05-04 — Sidebar archive button: anchor instead of overlap-with-time
 
 ### Fixed

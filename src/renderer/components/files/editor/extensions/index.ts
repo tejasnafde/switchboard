@@ -35,14 +35,14 @@ import {
   indentOnInput,
   syntaxHighlighting,
 } from '@codemirror/language'
-import { search, searchKeymap } from '@codemirror/search'
+import { search, searchKeymap, closeSearchPanel } from '@codemirror/search'
 import {
   autocompletion,
   closeBrackets,
   closeBracketsKeymap,
   completionKeymap,
 } from '@codemirror/autocomplete'
-import { Compartment, type Extension } from '@codemirror/state'
+import { Compartment, Prec, type Extension } from '@codemirror/state'
 import { themeFor } from '../theme/highlightStyle'
 import { gitGutter } from './gitGutter'
 import { loadLanguageExtension, languageIdForPath } from './language'
@@ -77,6 +77,10 @@ export function buildExtensions(args: BuildExtensionsArgs): Extension[] {
     crosshairCursor(),
     highlightActiveLine(),
     search({ top: true }),
+    // Guarantee Escape closes the search panel even if focus or another
+    // Escape consumer interferes. closeSearchPanel is a no-op (returns false)
+    // when no panel is open, so this never swallows Escape otherwise.
+    Prec.high(keymap.of([{ key: 'Escape', run: closeSearchPanel }])),
     keymap.of([
       ...closeBracketsKeymap,
       ...defaultKeymap,

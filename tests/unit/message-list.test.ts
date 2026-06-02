@@ -116,6 +116,28 @@ describe('groupIntoTurns', () => {
     expect(groups[1][0].plan?.id).toBe('plan_1')
   })
 
+  it('keeps assistant messages with a fileDiff attachment (FileDiffCard)', () => {
+    const messages: ChatMessage[] = [
+      msg({ role: 'user', content: 'edit it' }),
+      msg({
+        role: 'assistant',
+        content: '',
+        fileDiff: {
+          fileEditId: '1:src/a.ts',
+          repoRoot: '/repo',
+          relPath: 'src/a.ts',
+          changeKind: 'modify',
+          oldContent: 'old\n',
+          newContent: 'new\n',
+          status: 'pending',
+        },
+      }),
+    ]
+    const groups = groupIntoTurns(messages)
+    expect(groups).toHaveLength(2)
+    expect(groups[1][0].fileDiff?.relPath).toBe('src/a.ts')
+  })
+
   it('keeps system messages that only have a denial (plan-mode block pill)', () => {
     const messages: ChatMessage[] = [
       msg({ role: 'user', content: 'write a file' }),

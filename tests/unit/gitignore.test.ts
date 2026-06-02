@@ -73,4 +73,12 @@ describe('isIgnored', () => {
     const rules = parseGitignore('***\n[\n')
     expect(() => isIgnored('foo', false, rules)).not.toThrow()
   })
+
+  it('treats a pattern containing a slash as anchored to root', () => {
+    // Per gitignore semantics, a slash in the middle of a pattern anchors it
+    // to the repo root — `foo/bar` matches `foo/bar` but NOT `a/foo/bar`.
+    const rules = parseGitignore('foo/bar\n')
+    expect(isIgnored('foo/bar', true, rules)).toBe(true)
+    expect(isIgnored('a/foo/bar', true, rules)).toBe(false)
+  })
 })

@@ -30,6 +30,7 @@ export type {
   RuntimePlanProposedEvent,
   RuntimeQuestionAskedEvent,
   RuntimeQuestionAnsweredEvent,
+  RuntimeFileEditedEvent,
   Question,
   QuestionOption,
 } from '@shared/provider-events'

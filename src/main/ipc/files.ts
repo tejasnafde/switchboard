@@ -14,7 +14,7 @@ import { isAbsolute, join, normalize, relative, resolve } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { FilesChannels } from '@shared/ipc-channels'
 import { listDirAnnotated, readFileCapped, listAllFiles } from '../files/listing'
-import { writeFileSafe } from '../files/writing'
+import { writeFileSafe, deleteFileSafe } from '../files/writing'
 import { createMainLogger as createLogger } from '../logger'
 
 const log = createLogger('ipc:files')
@@ -96,6 +96,16 @@ export function registerFilesHandlers(): void {
       }
     },
   )
+
+  ipcMain.handle(FilesChannels.DELETE_FILE, async (_e, repoRoot: string, subPath: string) => {
+    try {
+      const abs = resolveWithinRepo(repoRoot, subPath)
+      return await deleteFileSafe(abs)
+    } catch (err) {
+      log.warn('delete-file failed', { repoRoot, subPath, err: (err as Error).message })
+      return { ok: false, error: (err as Error).message }
+    }
+  })
 
   ipcMain.handle(
     FilesChannels.READ_BATCH,

@@ -15,6 +15,10 @@
  * frame's "length in chars" differs from "length in bytes". We always
  * count bytes via Buffer.length / Buffer.byteLength.
  */
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('lsp:framing')
+
 export class LspFramer {
   private buf: Buffer = Buffer.alloc(0)
 
@@ -30,6 +34,7 @@ export class LspFramer {
       if (!m) {
         // Malformed — drop everything up through the header terminator
         // and try to recover on subsequent chunks.
+        log.warn('frame header missing Content-Length; dropping headers', { headers })
         this.buf = this.buf.subarray(headerEnd + 4)
         continue
       }
@@ -39,8 +44,9 @@ export class LspFramer {
       const body = this.buf.subarray(bodyStart, bodyStart + bodyLen).toString('utf8')
       try {
         out.push(JSON.parse(body))
-      } catch {
-        // Drop malformed JSON silently; remaining buffer still drains.
+      } catch (err) {
+        // Drop malformed JSON; remaining buffer still drains.
+        log.warn('failed to parse JSON-RPC body', { bodyLen, err })
       }
       this.buf = this.buf.subarray(bodyStart + bodyLen)
     }

@@ -85,6 +85,7 @@ export const FilesChannels = {
   LIST_DIR: 'files:list-dir',
   READ_FILE: 'files:read-file',
   WRITE_FILE: 'files:write-file',
+  DELETE_FILE: 'files:delete-file',
   READ_BATCH: 'files:read-batch',
   RESOLVE: 'files:resolve',
   LIST_ALL: 'files:list-all',

@@ -67,12 +67,11 @@ export function parseGitignore(content: string): GitignoreRule[] {
     let regex: RegExp
     try {
       const src = patternToRegexSource(pattern)
-      // Anchored: must match from root. Unanchored bare name (no slash):
-      // match any path segment. Unanchored with slash: match anywhere.
-      if (anchored) {
+      // Anchored (leading slash): match from root. Bare name (no slash):
+      // match any path segment. A slash mid-pattern (e.g. `foo/bar`) is also
+      // root-relative per gitignore semantics — not matched at arbitrary depth.
+      if (anchored || pattern.includes('/')) {
         regex = new RegExp('^' + src + '$')
-      } else if (!pattern.includes('/')) {
-        regex = new RegExp('(^|/)' + src + '$')
       } else {
         regex = new RegExp('(^|/)' + src + '$')
       }

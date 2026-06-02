@@ -41,6 +41,7 @@ export type RuntimeEvent =
   | RuntimePlanProposedEvent
   | RuntimeQuestionAskedEvent
   | RuntimeQuestionAnsweredEvent
+  | RuntimeFileEditedEvent
 
 export interface RuntimeContentEvent {
   type: 'content'
@@ -188,4 +189,28 @@ export interface RuntimeQuestionAnsweredEvent {
   threadId: string
   requestId: string
   answers: string[][]
+}
+
+/**
+ * Emitted once per file changed during a turn, derived from a git checkpoint
+ * diff (start-of-turn snapshot vs end-of-turn working tree). Provider-agnostic
+ * — git is the source of truth, so this fires identically for Claude / Codex /
+ * OpenCode regardless of how each surfaces its edits. Drives the Cursor-style
+ * in-chat diff card with per-hunk accept/reject.
+ */
+export interface RuntimeFileEditedEvent {
+  type: 'file.edited'
+  threadId: string
+  /** Turn identity (the adapter's turnStartedAt timestamp, stringified). */
+  turnId: string
+  /** Stable id for coalescing re-edits of the same file within a turn. */
+  fileEditId: string
+  /** Absolute repo root the edit is relative to — renderer needs it for write-back. */
+  repoRoot: string
+  relPath: string
+  changeKind: 'add' | 'modify' | 'delete'
+  /** File content at the start-of-turn checkpoint. Empty for an added file. */
+  oldContent: string
+  /** File content at end of turn. Empty for a deleted file. */
+  newContent: string
 }

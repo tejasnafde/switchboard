@@ -7,6 +7,7 @@ import { ToolCallBlock } from './ToolCallBlock'
 import { ApprovalCard } from './ApprovalCard'
 import { PlanCard } from './PlanCard'
 import { QuestionCard } from './QuestionCard'
+import { FileDiffCard, type FileDiffResolveStatus } from './FileDiffCard'
 import { useAgentStore } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { useLayoutStore } from '../../stores/layout-store'
@@ -41,9 +42,11 @@ interface MessageBubbleProps {
   onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void
   onAnswerQuestion?: (requestId: string, answers: string[][]) => void
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
+  /** Resolve a file-diff card: write the chosen content back + persist status. */
+  onFileDiffResolve?: (messageId: string, status: FileDiffResolveStatus, contentToWrite: string | null) => void
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageBubbleProps) {
   const renderedContent = useMemo(() => {
     if (!message.content) return ''
     // Escape lone tildes used as "approximately" (e.g. ~34) so they don't
@@ -199,7 +202,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     && !message.approval
     && !message.images?.length
     && !message.plan
-    && !message.question) {
+    && !message.question
+    && !message.fileDiff
+    && !message.denial) {
     return null
   }
 
@@ -305,6 +310,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         className="message-bubble"
         style={{
           maxWidth: isUser ? '80%' : '100%',
+          // Diff cards read better spanning the full chat column rather than
+          // shrinking to content in the flex-start column.
+          width: message.fileDiff ? '100%' : undefined,
           padding: message.content ? '10px 14px' : '0',
           borderRadius: 'var(--radius)',
           background: isUser
@@ -417,6 +425,14 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           <QuestionCard
             question={message.question}
             onAnswer={(answers) => onAnswerQuestion?.(message.question!.requestId, answers)}
+          />
+        )}
+
+        {/* Per-file diff card with accept/reject (Cursor-style) */}
+        {message.fileDiff && (
+          <FileDiffCard
+            fileDiff={message.fileDiff}
+            onResolve={(status, content) => onFileDiffResolve?.(message.id, status, content)}
           />
         )}
 

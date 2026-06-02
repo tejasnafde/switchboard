@@ -12,6 +12,11 @@ interface MessageListProps {
   onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void
   onAnswerQuestion?: (requestId: string, answers: string[][]) => void
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
+  onFileDiffResolve?: (
+    messageId: string,
+    status: 'accepted' | 'rejected' | 'partial',
+    contentToWrite: string | null,
+  ) => void
 }
 
 /**
@@ -30,15 +35,16 @@ export function groupIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
 
   for (const msg of messages) {
     // Skip truly empty messages — but keep ones with any kind of attachment
-    // (toolCalls / approval / question / plan / images / denial). Missing any
-    // of these would hide the corresponding custom UI (QuestionCard,
-    // PlanCard, DenialPill, etc).
+    // (toolCalls / approval / question / plan / fileDiff / images / denial).
+    // Missing any of these would hide the corresponding custom UI
+    // (QuestionCard, PlanCard, FileDiffCard, DenialPill, etc).
     if (
       !msg.content &&
       !msg.toolCalls?.length &&
       !msg.approval &&
       !msg.question &&
       !msg.plan &&
+      !msg.fileDiff &&
       !msg.images?.length &&
       !msg.denial
     ) continue
@@ -74,7 +80,7 @@ export function roleLabel(role: ChatMessage['role'], agentType: AgentType = 'cla
  * matches the pre-virtualized layout exactly; tests for `groupIntoTurns`
  * still pass since the grouping is the same.
  */
-export function MessageList({ messages, sessionId, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction }: MessageListProps) {
+export function MessageList({ messages, sessionId, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isScrollLockedRef = useRef(false)
   const prevSessionIdRef = useRef<string | null | undefined>(sessionId)
@@ -310,6 +316,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
                   onApproval={onApproval}
                   onAnswerQuestion={onAnswerQuestion}
                   onPlanAction={onPlanAction}
+                  onFileDiffResolve={onFileDiffResolve}
                 />
               ))}
 

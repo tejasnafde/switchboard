@@ -11,6 +11,9 @@ import { generateTitle } from '@shared/auto-title'
 import { onSessionRename, emitSessionRename } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
 import { isAssistantStreamingEnabled } from '../../services/streamingPref'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('chat:panel')
 import {
   bufferContent,
   createStreamingBuffer,
@@ -427,6 +430,29 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           }
           break
         }
+        case 'file.edited': {
+          // One diff card per file changed during the turn (git-checkpoint
+          // derived). Coalesce re-edits of the same file within a turn by id.
+          const id = `filediff_${event.fileEditId}`
+          const sessions = useAgentStore.getState().sessions
+          const session = sessions.find((s) => s.id === tid)
+          const existing = session?.messages.find((m) => m.id === id)
+          const fileDiff = {
+            fileEditId: event.fileEditId,
+            repoRoot: event.repoRoot,
+            relPath: event.relPath,
+            changeKind: event.changeKind,
+            oldContent: event.oldContent,
+            newContent: event.newContent,
+            status: 'pending' as const,
+          }
+          if (existing) {
+            updateMessage(tid, id, { fileDiff })
+          } else {
+            appendMessage(tid, { id, role: 'assistant', content: '', timestamp: Date.now(), fileDiff })
+          }
+          break
+        }
         case 'error': {
           appendMessage(tid, {
             id: `error_${Date.now()}`,
@@ -488,6 +514,43 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     if (!sessionId) return
     ;window.api.provider?.answerQuestion?.(sessionId, requestId, answers).catch(() => {})
   }, [sessionId])
+
+  const handleFileDiffResolve = useCallback(
+    (messageId: string, status: 'accepted' | 'rejected' | 'partial', contentToWrite: string | null) => {
+      if (!sessionId) return
+      const sess = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+      const fd = sess?.messages.find((m) => m.id === messageId)?.fileDiff
+      if (!fd) return
+      const persist = () => updateMessage(sessionId, messageId, { fileDiff: { ...fd, status } })
+      // 'accepted' = keep the agent's changes; disk already holds them.
+      if (contentToWrite === null) {
+        persist()
+        return
+      }
+      // Rejecting an agent-*added* file means it shouldn't exist — delete it
+      // rather than leaving a stray empty file (matches Cursor's revert).
+      const writeBack =
+        fd.changeKind === 'add' && status === 'rejected'
+          ? window.api.files.deleteFile(fd.repoRoot, fd.relPath)
+          : window.api.files.writeFile(fd.repoRoot, fd.relPath, contentToWrite)
+      void writeBack
+        .then((res) => {
+          if (!res.ok) {
+            // Don't persist the status — leave the card actionable so the user
+            // can retry rather than silently believing the revert landed.
+            log.warn('file-diff write-back failed', {
+              relPath: fd.relPath,
+              conflict: 'conflict' in res ? res.conflict : undefined,
+              error: res.error,
+            })
+            return
+          }
+          persist()
+        })
+        .catch((err) => log.warn('file-diff write-back threw', { relPath: fd.relPath, err }))
+    },
+    [sessionId, updateMessage],
+  )
 
   const handlePlanAction = useCallback((_planId: string, action: 'implement' | 'iterate') => {
     if (!sessionId) return
@@ -971,6 +1034,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         onApproval={handleApproval}
         onAnswerQuestion={handleAnswerQuestion}
         onPlanAction={handlePlanAction}
+        onFileDiffResolve={handleFileDiffResolve}
       />
 
       {/* Thinking indicator */}

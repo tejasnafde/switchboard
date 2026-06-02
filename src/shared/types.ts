@@ -180,6 +180,32 @@ export interface QuestionAttachment {
   answers?: string[][]
 }
 
+/**
+ * A per-file diff card derived from a git checkpoint around a turn. Rendered
+ * inline in the chat (one card per edited file) with Cursor-style per-hunk
+ * accept/reject. The agent has already written `newContent` to disk; the card
+ * lets the user keep or revert all-or-part of it.
+ */
+export interface FileDiffAttachment {
+  /** `${turnId}:${relPath}` — stable id used to coalesce re-edits in a turn. */
+  fileEditId: string
+  /** Absolute repo root for write-back via files:write-file. */
+  repoRoot: string
+  relPath: string
+  changeKind: 'add' | 'modify' | 'delete'
+  /** Content at the start-of-turn checkpoint (baseline). Empty for an add. */
+  oldContent: string
+  /** Content the agent wrote (current disk). Empty for a delete. */
+  newContent: string
+  /**
+   * pending  — awaiting user decision
+   * accepted — kept as-is (disk already holds newContent)
+   * rejected — reverted to oldContent on disk
+   * partial  — user kept a subset of hunks; disk holds the resolved content
+   */
+  status: 'pending' | 'accepted' | 'rejected' | 'partial'
+}
+
 export interface ChatMessage {
   id: string
   role: MessageRole
@@ -198,6 +224,8 @@ export interface ChatMessage {
   plan?: PlanAttachment
   /** AskUserQuestion request */
   question?: QuestionAttachment
+  /** Per-file diff card (git-checkpoint derived) with accept/reject controls */
+  fileDiff?: FileDiffAttachment
   /**
    * Set when canUseTool hard-denied a tool (e.g. Plan mode blocking Write).
    * Renders as a small pill in the chat stream so the user sees the policy

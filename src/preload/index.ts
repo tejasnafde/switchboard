@@ -309,6 +309,11 @@ const api = {
         content,
         expectedMtimeMs,
       ),
+    deleteFile: (
+      repoRoot: string,
+      subPath: string,
+    ): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke(FilesChannels.DELETE_FILE, repoRoot, subPath),
     readBatch: (
       repoRoot: string,
       subPaths: string[],

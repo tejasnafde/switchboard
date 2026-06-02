@@ -64,6 +64,51 @@ const chromeTheme = EditorView.theme({
     backgroundColor: 'var(--bg-tertiary)',
     color: 'var(--text-primary)',
     border: '1px solid var(--border)',
+    borderRadius: '4px',
+  },
+  // Theme + lay out the search panel's native controls (otherwise unthemed
+  // browser defaults). Flex with a forced break at the panel's bare `<br>`
+  // gives a stable two-row layout that doesn't reflow awkwardly on resize.
+  '.cm-panel.cm-search': {
+    display: 'flex',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: '6px 8px',
+    padding: '6px 10px',
+  },
+  '.cm-panel.cm-search br': { flexBasis: '100%', height: '0', margin: '0' },
+  '.cm-panel.cm-search label': {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    color: 'var(--text-secondary)',
+    fontSize: '12px',
+  },
+  '.cm-panel.cm-search input[type=checkbox]': { margin: '0' },
+  // Pin the close (×) button to the far right of the first row so it stays put
+  // regardless of width.
+  '.cm-panel.cm-search [name=close]': {
+    marginLeft: 'auto',
+    color: 'var(--text-secondary)',
+    fontSize: '16px',
+  },
+  '.cm-panels .cm-button': {
+    backgroundColor: 'var(--bg-tertiary)',
+    color: 'var(--text-primary)',
+    border: '1px solid var(--border)',
+    borderRadius: '4px',
+    backgroundImage: 'none',
+    cursor: 'pointer',
+  },
+  '.cm-panels .cm-button:hover': {
+    backgroundColor: 'var(--bg-hover, var(--bg-secondary))',
+    borderColor: 'var(--accent)',
+  },
+  '.cm-panels input[type=checkbox]': { accentColor: 'var(--accent)', cursor: 'pointer' },
+  '.cm-panels .cm-textfield:focus, .cm-panels .cm-button:focus-visible': {
+    outline: '1px solid var(--accent)',
+    outlineOffset: '0',
+    borderColor: 'var(--accent)',
   },
   '.cm-tooltip': {
     backgroundColor: 'var(--bg-secondary)',

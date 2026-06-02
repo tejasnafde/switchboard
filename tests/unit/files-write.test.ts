@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { writeFileSafe } from '../../src/main/files/writing'
+import { writeFileSafe, deleteFileSafe } from '../../src/main/files/writing'
 
 let tmp: string
 
@@ -22,6 +22,21 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
+})
+
+describe('deleteFileSafe', () => {
+  it('deletes an existing file', async () => {
+    const abs = join(tmp, 'gone.txt')
+    writeFileSync(abs, 'bye')
+    const res = await deleteFileSafe(abs)
+    expect(res.ok).toBe(true)
+    expect(() => statSync(abs)).toThrow()
+  })
+
+  it('is a no-op (ok) when the file is already absent', async () => {
+    const res = await deleteFileSafe(join(tmp, 'never.txt'))
+    expect(res.ok).toBe(true)
+  })
 })
 
 describe('writeFileSafe — basic write', () => {
