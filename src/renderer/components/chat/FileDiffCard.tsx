@@ -52,6 +52,10 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
   const [reverted, setReverted] = useState<Record<number, boolean>>({})
   const resolved = status !== 'pending'
 
+  // Resolved cards start collapsed — decision is made, they're just history.
+  // Pending cards start expanded so the user sees what needs reviewing.
+  const [collapsed, setCollapsed] = useState(resolved)
+
   const hunkCount = metadata?.hunks.length ?? 0
 
   function computeResolved(reverts: Record<number, boolean>): { content: string; status: FileDiffResolveStatus } {
@@ -94,24 +98,43 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
         fontSize: 12,
       }}
     >
-      {/* Header */}
+      {/* Header — full row is clickable to toggle */}
       <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setCollapsed((c) => !c)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setCollapsed((c) => !c) }}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: 8,
           padding: '6px 10px',
-          borderBottom: '1px solid var(--border)',
+          borderBottom: collapsed ? '1px solid transparent' : '1px solid var(--border)',
           background: 'var(--bg-tertiary)',
+          cursor: 'pointer',
+          userSelect: 'none',
+          transition: 'border-bottom-color 180ms ease',
         }}
       >
+        <span style={{
+          color: 'var(--text-muted)',
+          fontSize: 10,
+          width: 14,
+          flexShrink: 0,
+          display: 'inline-flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'transform 180ms cubic-bezier(0.4,0,0.2,1), color 180ms ease',
+          transform: collapsed ? 'rotate(0deg)' : 'rotate(90deg)',
+        }}>›</span>
         <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{relPath}</span>
         <span style={{ opacity: 0.6 }}>{KIND_LABEL[changeKind]}</span>
         <span style={{ flex: 1 }} />
         {resolved ? (
           <StatusBadge status={status} />
         ) : (
-          <div style={{ display: 'flex', gap: 6 }}>
+          // stopPropagation so clicking a button doesn't also toggle collapse
+          <div style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
             <button style={btnStyle} onClick={keepAll}>
               Keep all
             </button>
@@ -127,22 +150,31 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
         )}
       </div>
 
-      {/* Hunks — bounded height with scroll so a large diff stays usable */}
-      {metadata == null ? (
-        <div style={{ padding: 10, opacity: 0.6 }}>Unable to render diff for this file.</div>
-      ) : (
-        <div style={{ maxHeight: 460, overflowY: 'auto' }}>
-          {metadata.hunks.map((_, hunkIndex) => (
-            <HunkBlock
-              key={hunkIndex}
-              rows={hunkRows(metadata, hunkIndex)}
-              reverted={!!reverted[hunkIndex]}
-              disabled={resolved}
-              onToggle={() => toggleHunk(hunkIndex)}
-            />
-          ))}
+      {/* Collapsible body — grid trick animates height without knowing it */}
+      <div style={{
+        display: 'grid',
+        gridTemplateRows: collapsed ? '0fr' : '1fr',
+        transition: 'grid-template-rows 200ms cubic-bezier(0.4,0,0.2,1)',
+      }}>
+        <div style={{ overflow: 'hidden' }}>
+          {/* Hunks — bounded height with scroll so a large diff stays usable */}
+          {metadata == null ? (
+            <div style={{ padding: 10, opacity: 0.6 }}>Unable to render diff for this file.</div>
+          ) : (
+            <div style={{ maxHeight: 460, overflowY: 'auto' }}>
+              {metadata.hunks.map((_, hunkIndex) => (
+                <HunkBlock
+                  key={hunkIndex}
+                  rows={hunkRows(metadata, hunkIndex)}
+                  reverted={!!reverted[hunkIndex]}
+                  disabled={resolved}
+                  onToggle={() => toggleHunk(hunkIndex)}
+                />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }
