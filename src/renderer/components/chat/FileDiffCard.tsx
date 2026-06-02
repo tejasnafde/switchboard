@@ -79,6 +79,7 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
     const { content, status: s } = computeResolved(reverts)
     // Accepted = disk already holds newContent → no write needed (null).
     onResolve?.(s, s === 'accepted' ? null : content)
+    setCollapsed(true)
   }
 
   const keepAll = () => apply({})
