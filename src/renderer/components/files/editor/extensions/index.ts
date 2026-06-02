@@ -45,6 +45,7 @@ import {
 import { Compartment, Prec, type Extension } from '@codemirror/state'
 import { themeFor } from '../theme/highlightStyle'
 import { gitGutter } from './gitGutter'
+import { rainbowIndent } from './rainbowIndent'
 import { loadLanguageExtension, languageIdForPath } from './language'
 
 export interface BuildExtensionsArgs {
@@ -94,6 +95,7 @@ export function buildExtensions(args: BuildExtensionsArgs): Extension[] {
     themeCompartment.of(themeFor(args.themeName)),
     readOnlyCompartment.of(EditorView.editable.of(!args.readOnly)),
     gitGutter(),
+    rainbowIndent(),
   ]
 }
 
