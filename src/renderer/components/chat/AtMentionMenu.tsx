@@ -31,10 +31,6 @@ export function AtMentionMenu({
 }: AtMentionMenuProps) {
   const matches = useMemo(() => filterAtMatches(query, files), [files, query])
 
-  useEffect(() => {
-    onActiveIndexChange(0)
-  }, [query, matches.length, onActiveIndexChange])
-
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   useEffect(() => {
     const el = itemRefs.current[activeIndex]

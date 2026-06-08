@@ -443,8 +443,12 @@ export function ChatInput({
     // both fire on the same token.
     const atTrigger = detectAtTrigger(next, cur)
     if (atTrigger) {
-      setAtQuery(atTrigger.query)
-      setAtActiveIdx(0)
+      // Only reset when query text changes — arrow key caret moves leave
+      // query identical and must not overwrite handleEditorKeyDown's bump.
+      if (atTrigger.query !== atQuery) {
+        setAtQuery(atTrigger.query)
+        setAtActiveIdx(0)
+      }
       atRangeRef.current = { start: atTrigger.rangeStart, end: atTrigger.rangeEnd }
       // Kick off file listing on first open. ensureAtFiles is a no-op if
       // the cache is already warm.
