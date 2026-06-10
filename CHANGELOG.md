@@ -2,6 +2,17 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-06-10 — Fix leaked `claude` subprocesses on session stop
+
+### Fixed
+- **Claude sessions leaked a live `claude` CLI subprocess every time they were stopped.** Each `sdk.query()` spawns a child `claude` process; `stopSession` closed the prompt queue and aborted the `AbortController` but never called `query.close()`, so the SDK kept its spawned child alive. Closing a tab, archiving a chat, or rotating a provider instance abandoned the subprocess instead of reaping it — they accumulated as children of the Switchboard app (observed: ~15 orphaned `claude` processes parented to one multi-day app session). `stopSession` now calls `active.query.close()` (the SDK's documented "terminate the underlying process … including the CLI subprocess") inside a try/catch with `log.warn`, before clearing session state. `stopAll` (app quit) inherits the fix since it loops `stopSession`.
+- **Downstream symptom:** the abandoned subprocesses could each grab `~/.claude/.update.lock` during a background version check and then never release it, wedging `claude update` behind a stale lock.
+- **In practice the leak fired on archive.** Switchboard has no "close tab" flow — `stopSession` runs on archive, auth/agent rotation, and app quit. Archiving a conversation reaped its UI state but left the subprocess alive, so archived chats accumulated live processes.
+- **Guarded the `startDraining` retry path:** force-closing the subprocess surfaces as "process exited with code N", which matched the resume-failed retry branch and could respawn a fresh query (with an unclosed prompt queue) *after* the session was stopped — re-leaking a process. The catch now bails when the session is no longer the active one for its thread.
+- 6 new unit tests (`claude-adapter-stop-session.test.ts`): asserts `query.close()` is called, abort + prompt-queue close still happen, the session is removed from the registry, `close()` throwing is tolerated, and `query === null` / unknown-thread are safe no-ops.
+
+---
+
 ## 2026-06-02 — In-chat diff review (Cursor-style accept/reject) + editor/file-tree fixes
 
 ### Added

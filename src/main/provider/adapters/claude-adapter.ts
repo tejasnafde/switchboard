@@ -646,6 +646,11 @@ export class ClaudeAdapter implements ProviderAdapter {
       active.session.status = 'idle'
       active.onEvent({ type: 'status', threadId, status: 'idle' })
     } catch (err) {
+      // Session was torn down (stop/archive/rotate) — the subprocess exit is
+      // expected. Bail before the retry branch, which would otherwise read
+      // "exited with code" and respawn a fresh query, re-leaking a process.
+      if (this.sessions.get(threadId) !== active) return
+
       const e = err as { message?: string; stack?: string; cause?: unknown; name?: string }
       log.error(`query failed: ${threadId}`, e?.message ?? err, e?.stack ?? '', e?.cause ?? '')
 
@@ -790,6 +795,17 @@ export class ClaudeAdapter implements ProviderAdapter {
   async stopSession(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
+
+    // Reap the spawned `claude` CLI subprocess — closing the queue + aborting
+    // doesn't kill it, so each stopped session would leak an OS process.
+    if (active.query) {
+      try {
+        active.query.close()
+      } catch (err) {
+        log.warn(`query.close() failed for ${threadId}`, err)
+      }
+      active.query = null
+    }
 
     // Close the prompt queue so the SDK generator finishes naturally
     active.prompt.close()
