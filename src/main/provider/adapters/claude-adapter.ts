@@ -997,6 +997,27 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.onEvent({ type: 'status', threadId, status: 'idle' })
         break
       }
+
+      case 'rate_limit_event': {
+        type RateLimitMsg = SDKMessage & {
+          rate_limit_info?: { status?: string; rateLimitType?: string; resetsAt?: number }
+        }
+        const rl = (msg as RateLimitMsg).rate_limit_info
+        if (rl?.status === 'rejected') {
+          const windowPart = rl.rateLimitType ? ` (${rl.rateLimitType.replace(/_/g, '-')} window)` : ''
+          const resetPart = rl.resetsAt
+            ? ` Resets ${new Date(rl.resetsAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
+            : ''
+          active.onEvent({
+            type: 'error',
+            threadId,
+            message: `Claude Code credit limit reached${windowPart}.${resetPart} As of June 15, claude -p and Agent SDK usage draws from a separate monthly credit bucket. Check anthropic.com/billing to top up or wait for the window to reset.`,
+          })
+          active.onEvent({ type: 'status', threadId, status: 'error' })
+          log.warn(`rate_limit rejected for ${threadId}`, { rateLimitType: rl.rateLimitType, resetsAt: rl.resetsAt })
+        }
+        break
+      }
     }
   }
 }
