@@ -55,7 +55,7 @@ import type {
   RuntimeMode,
   ApprovalDecision,
 } from '../types'
-import type { ProviderSkill } from '@shared/types'
+import type { ProviderSkill, SessionSummary } from '@shared/types'
 import { decidePermission, denialMessage } from '../policy'
 import { findOpencodePath, buildOpencodeEnv } from './opencode/env'
 

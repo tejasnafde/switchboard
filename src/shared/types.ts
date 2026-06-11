@@ -271,7 +271,7 @@ export interface AgentErrorPayload {
 
 // ─── Projects & Sessions ─────────────────────────────────────────
 
-export type SessionSource = 'claude-code' | 'codex' | 'cursor' | 'switchboard'
+export type SessionSource = 'claude-code' | 'codex' | 'cursor' | 'switchboard' | 'opencode'
 
 export interface Bookmark {
   id: string
