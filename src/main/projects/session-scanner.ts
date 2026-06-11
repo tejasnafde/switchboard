@@ -3,6 +3,9 @@ import { join, basename } from 'path'
 import { homedir } from 'os'
 import { generateTitle } from '@shared/auto-title'
 import type { SessionSummary, SessionSource } from '@shared/types'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('projects:scanner')
 
 /**
  * Claude Code encodes paths by replacing / and _ with -
@@ -215,11 +218,11 @@ export async function scanOpenCodeSessions(projectPath: string): Promise<Session
           filePath: '', // No single file for the whole session
         })
       } catch (err) {
-        // Ignore malformed summary files
+        log.warn(`skipping malformed OpenCode summary ${file}: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
   } catch (err) {
-    // ~/.opencode/sessions doesn't exist or isn't readable
+    log.warn(`failed to scan OpenCode sessions for ${projectPath}: ${err instanceof Error ? err.message : String(err)}`)
   }
 
   return sessions.sort((a, b) => b.startedAt - a.startedAt)
