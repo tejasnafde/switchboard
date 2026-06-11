@@ -55,3 +55,4 @@ test-results/
 playwright-report/
 coverage/
 .vitest-cache/
+mockups/
