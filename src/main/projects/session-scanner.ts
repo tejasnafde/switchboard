@@ -189,6 +189,43 @@ async function scanCodexDir(
 }
 
 /**
+ * Scan for OpenCode sessions associated with a project path.
+ * OpenCode sessions are stored as summary files in
+ * ~/.opencode/sessions/{encoded-path}/{sessionId}.json
+ */
+export async function scanOpenCodeSessions(projectPath: string): Promise<SessionSummary[]> {
+  const sessions: SessionSummary[] = []
+  try {
+    const opencodeDir = join(homedir(), '.opencode', 'sessions')
+    const projectSessionsDir = join(opencodeDir, encodeClaudeProjectPath(projectPath))
+    const files = await readdir(projectSessionsDir).catch(() => [])
+
+    for (const file of files) {
+      if (!file.endsWith('.json')) continue
+      try {
+        const filePath = join(projectSessionsDir, file)
+        const content = await readFile(filePath, 'utf-8')
+        const summary = JSON.parse(content)
+        sessions.push({
+          id: summary.id,
+          source: 'opencode',
+          title: summary.title,
+          startedAt: summary.startedAt,
+          messageCount: 0, // Summary file doesn't have this
+          filePath: '', // No single file for the whole session
+        })
+      } catch (err) {
+        // Ignore malformed summary files
+      }
+    }
+  } catch (err) {
+    // ~/.opencode/sessions doesn't exist or isn't readable
+  }
+
+  return sessions.sort((a, b) => b.startedAt - a.startedAt)
+}
+
+/**
  * Scan all sources for a project.
  *
  * `claudeBaseDirs` — every Claude config root to look inside (e.g. ~/.claude
@@ -200,9 +237,10 @@ export async function scanAllSessions(
   projectPath: string,
   claudeBaseDirs?: string[],
 ): Promise<SessionSummary[]> {
-  const [claude, codex] = await Promise.all([
+  const [claude, codex, opencode] = await Promise.all([
     scanClaudeCodeSessions(projectPath, claudeBaseDirs),
     scanCodexSessions(projectPath),
+    scanOpenCodeSessions(projectPath),
   ])
-  return [...claude, ...codex].sort((a, b) => b.startedAt - a.startedAt)
+  return [...claude, ...codex, ...opencode].sort((a, b) => b.startedAt - a.startedAt)
 }

@@ -43,6 +43,10 @@ import {
   type AvailableCommand,
 } from '@agentclientprotocol/sdk'
 import { createMainLogger as createLogger } from '../../logger'
+import { join } from 'path'
+import { homedir } from 'os'
+import { generateTitle } from '../../../shared/auto-title'
+import { encodeClaudeProjectPath } from '../../projects/session-scanner'
 import type {
   ProviderAdapter,
   ProviderSession,
@@ -103,6 +107,10 @@ interface ActiveSession {
   inFlightPrompt: Promise<void> | null
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
+  /** Accumulates chunk deltas by messageId for text and reasoning blocks. */
+  assistantMessageText: Map<string, string>
+  /** The first user message of the turn, used to generate a title. */
+  firstUserMessage?: string
 }
 
 /**
@@ -114,6 +122,7 @@ interface ActiveSession {
 export function mapSessionUpdate(
   threadId: string,
   notification: SessionNotification,
+  assistantMessageText: Map<string, string>,
 ): RuntimeEvent[] {
   const update = notification.update
   const events: RuntimeEvent[] = []
@@ -121,15 +130,24 @@ export function mapSessionUpdate(
   switch (update.sessionUpdate) {
     case 'agent_message_chunk':
     case 'agent_thought_chunk': {
-      const text = textFromContent(update.content)
-      if (!text) break
+      const delta = textFromContent(update.content)
+      if (!delta) break
       const messageId = update.messageId
         ?? `acp_msg_${update.sessionUpdate}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      
+      const fullText = update.messageId
+        ? `${assistantMessageText.get(messageId) ?? ''}${delta}`
+        : delta
+      
+      if (update.messageId) {
+        assistantMessageText.set(messageId, fullText)
+      }
+
       events.push({
         type: 'content',
         threadId,
         messageId,
-        text,
+        text: fullText,
         streamKind: update.sessionUpdate === 'agent_thought_chunk' ? 'reasoning' : 'assistant',
       })
       break
@@ -330,6 +348,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       availableModels: [],
       inFlightPrompt: null,
       turnStartedAt: null,
+      assistantMessageText: new Map(),
     }
     this.sessions.set(opts.threadId, active)
 
@@ -465,6 +484,29 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       log.warn(`sendTurn called while turn in progress for ${threadId} — ignoring`)
       return
     }
+
+    // Persist a summary on the first turn so the scanner can find this session.
+    if (!active.firstUserMessage && active.sessionId) {
+      active.firstUserMessage = message
+      try {
+        const opencodeDir = join(homedir(), '.opencode', 'sessions')
+        const projectSessionsDir = join(opencodeDir, encodeClaudeProjectPath(active.session.cwd))
+        await fs.mkdir(projectSessionsDir, { recursive: true })
+        const summaryPath = join(projectSessionsDir, `${active.sessionId}.json`)
+        const summary: Pick<SessionSummary, 'id' | 'source' | 'title' | 'startedAt'> & { projectPath: string } = {
+          id: active.sessionId,
+          source: 'opencode',
+          title: generateTitle(message),
+          startedAt: active.session.createdAt,
+          projectPath: active.session.cwd,
+        }
+        await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2))
+        log.info(`persisted opencode session summary to ${summaryPath}`)
+      } catch (err) {
+        log.warn(`Failed to persist OpenCode session summary: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
 
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
@@ -681,7 +723,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
           }
         }
 
-        const events = mapSessionUpdate(threadId, params)
+        const events = mapSessionUpdate(threadId, params, active.assistantMessageText)
         for (const ev of events) active.onEvent(ev)
       },
 

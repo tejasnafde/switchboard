@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FileDiffCard — Collapsible Mockup</title>
+<style>
+  :root {
+    --bg:           #0d1117;
+    --bg-secondary: #161b22;
+    --bg-tertiary:  #1c2128;
+    --bg-primary:   #13161c;
+    --border:       rgba(255,255,255,0.08);
+    --text-primary: #e6edf3;
+    --text-secondary: #8b949e;
+    --text-muted:   #484f58;
+    --accent:       #3b82f6;
+    --success:      #2ea043;
+    --error:        #f85149;
+    --diff-add-bg:  rgba(46,160,67,0.12);
+    --diff-del-bg:  rgba(248,81,73,0.12);
+    --font-mono:    'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    max-width: 860px;
+  }
+
+  /* ── label above each demo ── */
+  .demo-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+
+  /* ══════════════════════════════════════
+     FileDiffCard
+  ══════════════════════════════════════ */
+  .diff-card {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    font-size: 12px;
+  }
+
+  /* ── Header ── */
+  .diff-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    /* keep border-bottom even when body collapses */
+    transition: border-bottom-color 180ms ease;
+  }
+
+  .diff-card.collapsed .diff-header {
+    border-bottom-color: transparent;
+  }
+
+  .diff-header:hover {
+    background: color-mix(in srgb, var(--bg-tertiary), white 3%);
+  }
+
+  /* chevron */
+  .chevron {
+    color: var(--text-muted);
+    font-size: 10px;
+    /* use a unicode chevron that rotates cleanly */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    flex-shrink: 0;
+    transition: transform 180ms cubic-bezier(0.4, 0, 0.2, 1),
+                color 180ms ease;
+    /* › points right when collapsed */
+    transform: rotate(0deg);
+  }
+
+  .diff-card:not(.collapsed) .chevron {
+    transform: rotate(90deg);
+    color: var(--text-secondary);
+  }
+
+  .diff-filepath {
+    font-family: var(--font-mono);
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+
+  .diff-kind {
+    opacity: 0.55;
+    flex-shrink: 0;
+    font-weight: 400;
+  }
+
+  .spacer { flex: 1; }
+
+  /* action buttons */
+  .btn {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: border-color 120ms, background 120ms, color 120ms;
+  }
+
+  .btn:hover {
+    background: var(--bg-primary);
+    border-color: rgba(255,255,255,0.16);
+  }
+
+  .btn-accent {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  .btn-accent:hover {
+    background: rgba(59,130,246,0.1);
+  }
+
+  .btn-group {
+    display: flex;
+    gap: 6px;
+    /* stop header click from propagating through buttons */
+    /* (handled in JS) */
+  }
+
+  /* status badges */
+  .status-badge {
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .status-badge.accepted { color: var(--success); }
+  .status-badge.rejected { color: var(--error); }
+  .status-badge.partial  { color: var(--accent); }
+
+  /* ── Collapsible body ── */
+  .diff-body-wrap {
+    /* CSS grid trick: animates height without knowing it */
+    display: grid;
+    grid-template-rows: 1fr;
+    transition: grid-template-rows 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .diff-card.collapsed .diff-body-wrap {
+    grid-template-rows: 0fr;
+  }
+
+  .diff-body-inner {
+    overflow: hidden;
+  }
+
+  /* hunk scroller */
+  .diff-hunks {
+    max-height: 460px;
+    overflow-y: auto;
+  }
+
+  /* ── HunkBlock ── */
+  .hunk {
+    border-top: 1px solid var(--border);
+  }
+
+  .hunk:first-child {
+    border-top: none;
+  }
+
+  .hunk-header {
+    display: flex;
+    justify-content: flex-end;
+    padding: 2px 8px;
+    background: var(--bg-primary);
+    border-top: 1px solid var(--border);
+  }
+
+  .hunk.reverted {
+    opacity: 0.4;
+  }
+
+  .mini-btn {
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-family: var(--font-mono);
+    cursor: pointer;
+    transition: border-color 120ms, color 120ms;
+  }
+
+  .mini-btn:hover {
+    color: var(--text-primary);
+    border-color: rgba(255,255,255,0.2);
+  }
+
+  pre.diff-lines {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .diff-line {
+    display: flex;
+  }
+
+  .diff-line.add { background: var(--diff-add-bg); }
+  .diff-line.del { background: var(--diff-del-bg); }
+
+  .diff-gutter {
+    width: 18px;
+    text-align: center;
+    opacity: 0.6;
+    user-select: none;
+    flex-shrink: 0;
+    padding: 0 2px;
+  }
+
+  .diff-text {
+    padding: 0 8px;
+    flex: 1;
+  }
+
+  /* ── empty state ── */
+  .diff-error {
+    padding: 10px;
+    opacity: 0.6;
+  }
+
+  /* ── hint strip ── */
+  .hint-strip {
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    border-top: 1px solid var(--border);
+    padding: 28px 0 8px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- ───────────────────────────────────────────
+  DEMO 1 — pending card, expanded (default)
+──────────────────────────────────────────── -->
+<div>
+  <div class="demo-label">pending — expanded (default)</div>
+  <div class="diff-card" id="card-pending">
+    <div class="diff-header" onclick="toggleCard('card-pending')">
+      <span class="chevron">›</span>
+      <span class="diff-filepath">scripts/load-test/seed-synthetic-users.ts</span>
+      <span class="diff-kind">modified</span>
+      <span class="spacer"></span>
+      <div class="btn-group" onclick="event.stopPropagation()">
+        <button class="btn">Keep all</button>
+        <button class="btn">Reject all</button>
+      </div>
+    </div>
+    <div class="diff-body-wrap">
+      <div class="diff-body-inner">
+        <div class="diff-hunks">
+
+          <!-- hunk 1 -->
+          <div class="hunk">
+            <div class="hunk-header">
+              <button class="mini-btn">Revert hunk</button>
+            </div>
+            <pre class="diff-lines">
+<div class="diff-line"><span class="diff-gutter"> </span><span class="diff-text">import { db } from '../db'</span></div>
+<div class="diff-line"><span class="diff-gutter"> </span><span class="diff-text">import { faker } from '@faker-js/faker'</span></div>
+<div class="diff-line del"><span class="diff-gutter">−</span><span class="diff-text">const BATCH = 50</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">const BATCH = 500</span></div>
+<div class="diff-line"><span class="diff-gutter"> </span><span class="diff-text"></span></div>
+<div class="diff-line"><span class="diff-gutter"> </span><span class="diff-text">export async function seedUsers(count: number) {</span></div></pre>
+          </div>
+
+          <!-- hunk 2 -->
+          <div class="hunk">
+            <div class="hunk-header">
+              <button class="mini-btn">Revert hunk</button>
+            </div>
+            <pre class="diff-lines">
+<div class="diff-line"><span class="diff-gutter"> </span><span class="diff-text">  const rows = []</span></div>
+<div class="diff-line"><span class="diff-gutter"> </span><span class="diff-text">  for (let i = 0; i &lt; count; i++) {</span></div>
+<div class="diff-line del"><span class="diff-gutter">−</span><span class="diff-text">    rows.push({ name: faker.person.fullName() })</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">    rows.push({</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">      name: faker.person.fullName(),</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">      email: faker.internet.email(),</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">      createdAt: faker.date.past(),</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">    })</span></div>
+<div class="diff-line"><span class="diff-gutter"> </span><span class="diff-text">  }</span></div></pre>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ───────────────────────────────────────────
+  DEMO 2 — resolved / accepted, collapsed (default)
+──────────────────────────────────────────── -->
+<div>
+  <div class="demo-label">resolved (accepted) — collapsed by default</div>
+  <div class="diff-card collapsed" id="card-accepted">
+    <div class="diff-header" onclick="toggleCard('card-accepted')">
+      <span class="chevron">›</span>
+      <span class="diff-filepath">scripts/load-test/seed-synthetic-users.ts</span>
+      <span class="diff-kind">modified</span>
+      <span class="spacer"></span>
+      <span class="status-badge accepted">✓ kept</span>
+    </div>
+    <div class="diff-body-wrap">
+      <div class="diff-body-inner">
+        <div class="diff-hunks">
+          <div class="hunk">
+            <div class="hunk-header"></div>
+            <pre class="diff-lines">
+<div class="diff-line del"><span class="diff-gutter">−</span><span class="diff-text">const BATCH = 50</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">const BATCH = 500</span></div></pre>
+          </div>
+          <div class="hunk">
+            <div class="hunk-header"></div>
+            <pre class="diff-lines">
+<div class="diff-line del"><span class="diff-gutter">−</span><span class="diff-text">    rows.push({ name: faker.person.fullName() })</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">    rows.push({ name: faker.person.fullName(), email: faker.internet.email() })</span></div></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ───────────────────────────────────────────
+  DEMO 3 — resolved / rejected, collapsed
+──────────────────────────────────────────── -->
+<div>
+  <div class="demo-label">resolved (rejected) — collapsed by default</div>
+  <div class="diff-card collapsed" id="card-rejected">
+    <div class="diff-header" onclick="toggleCard('card-rejected')">
+      <span class="chevron">›</span>
+      <span class="diff-filepath">src/renderer/components/chat/ChatPanel.tsx</span>
+      <span class="diff-kind">modified</span>
+      <span class="spacer"></span>
+      <span class="status-badge rejected">↩ reverted</span>
+    </div>
+    <div class="diff-body-wrap">
+      <div class="diff-body-inner">
+        <div class="diff-hunks">
+          <div class="hunk">
+            <div class="hunk-header"></div>
+            <pre class="diff-lines">
+<div class="diff-line del"><span class="diff-gutter">−</span><span class="diff-text">  const [open, setOpen] = useState(false)</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">  const [open, setOpen] = useState(true)</span></div></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ───────────────────────────────────────────
+  DEMO 4 — partial, collapsed
+──────────────────────────────────────────── -->
+<div>
+  <div class="demo-label">resolved (partial) — collapsed by default</div>
+  <div class="diff-card collapsed" id="card-partial">
+    <div class="diff-header" onclick="toggleCard('card-partial')">
+      <span class="chevron">›</span>
+      <span class="diff-filepath">src/main/db/database.ts</span>
+      <span class="diff-kind">modified</span>
+      <span class="spacer"></span>
+      <span class="status-badge partial">◐ partial</span>
+    </div>
+    <div class="diff-body-wrap">
+      <div class="diff-body-inner">
+        <div class="diff-hunks">
+          <div class="hunk">
+            <div class="hunk-header"></div>
+            <pre class="diff-lines">
+<div class="diff-line del"><span class="diff-gutter">−</span><span class="diff-text">const MAX_ROWS = 1000</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">const MAX_ROWS = 5000</span></div></pre>
+          </div>
+          <div class="hunk reverted">
+            <div class="hunk-header"></div>
+            <pre class="diff-lines">
+<div class="diff-line del"><span class="diff-gutter">−</span><span class="diff-text">  db.pragma('journal_mode = WAL')</span></div>
+<div class="diff-line add"><span class="diff-gutter">+</span><span class="diff-text">  db.pragma('journal_mode = DELETE')</span></div></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="hint-strip">click any header to toggle · resolved cards start collapsed · pending cards start expanded</div>
+
+<script>
+  function toggleCard(id) {
+    document.getElementById(id).classList.toggle('collapsed')
+  }
+</script>
+</body>
+</html>

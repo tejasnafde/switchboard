@@ -17,14 +17,18 @@ const tid = 't1'
 
 describe('mapSessionUpdate', () => {
   it('maps agent_message_chunk → content (assistant)', () => {
-    const events = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: {
-        sessionUpdate: 'agent_message_chunk',
-        messageId: 'm1',
-        content: { type: 'text', text: 'hello' },
-      },
-    } as any)
+    const events = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'm1',
+          content: { type: 'text', text: 'hello' },
+        },
+      } as any,
+      new Map(),
+    )
     expect(events).toHaveLength(1)
     expect(events[0]).toMatchObject({
       type: 'content',
@@ -36,40 +40,52 @@ describe('mapSessionUpdate', () => {
   })
 
   it('maps agent_thought_chunk → content (reasoning)', () => {
-    const events = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: {
-        sessionUpdate: 'agent_thought_chunk',
-        messageId: 'm2',
-        content: { type: 'text', text: 'thinking…' },
-      },
-    } as any)
+    const events = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'agent_thought_chunk',
+          messageId: 'm2',
+          content: { type: 'text', text: 'thinking…' },
+        },
+      } as any,
+      new Map(),
+    )
     expect(events[0]).toMatchObject({ streamKind: 'reasoning', text: 'thinking…' })
   })
 
   it('skips empty content chunks', () => {
-    const events = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: {
-        sessionUpdate: 'agent_message_chunk',
-        messageId: 'm3',
-        content: { type: 'text', text: '' },
-      },
-    } as any)
+    const events = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: 'm3',
+          content: { type: 'text', text: '' },
+        },
+      } as any,
+      new Map(),
+    )
     expect(events).toHaveLength(0)
   })
 
   it('maps tool_call → tool.started', () => {
-    const events = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: {
-        sessionUpdate: 'tool_call',
-        toolCallId: 't_001',
-        title: 'Read',
-        kind: 'read',
-        rawInput: { path: '/x.txt' },
-      },
-    } as any)
+    const events = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 't_001',
+          title: 'Read',
+          kind: 'read',
+          rawInput: { path: '/x.txt' },
+        },
+      } as any,
+      new Map(),
+    )
     expect(events[0]).toMatchObject({
       type: 'tool.started',
       toolId: 't_001',
@@ -79,34 +95,46 @@ describe('mapSessionUpdate', () => {
   })
 
   it('emits tool.completed only on terminal status', () => {
-    const inProg = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: { sessionUpdate: 'tool_call_update', toolCallId: 't_001', status: 'in_progress' },
-    } as any)
+    const inProg = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: { sessionUpdate: 'tool_call_update', toolCallId: 't_001', status: 'in_progress' },
+      } as any,
+      new Map(),
+    )
     expect(inProg).toHaveLength(0)
 
-    const done = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: {
-        sessionUpdate: 'tool_call_update',
-        toolCallId: 't_001',
-        status: 'completed',
-        rawOutput: 'ok',
-      },
-    } as any)
+    const done = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 't_001',
+          status: 'completed',
+          rawOutput: 'ok',
+        },
+      } as any,
+      new Map(),
+    )
     expect(done[0]).toMatchObject({ type: 'tool.completed', toolId: 't_001', output: 'ok' })
   })
 
   it('maps usage_update with cost → context_window with costUsd', () => {
-    const events = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: {
-        sessionUpdate: 'usage_update',
-        used: 1234,
-        size: 200000,
-        cost: { amount: 0.0123, currency: 'USD' },
-      },
-    } as any)
+    const events = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'usage_update',
+          used: 1234,
+          size: 200000,
+          cost: { amount: 0.0123, currency: 'USD' },
+        },
+      } as any,
+      new Map(),
+    )
     expect(events[0]).toMatchObject({
       type: 'context_window',
       usedTokens: 1234,
@@ -116,26 +144,34 @@ describe('mapSessionUpdate', () => {
   })
 
   it('maps plan → plan.proposed with checkbox markdown', () => {
-    const events = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: {
-        sessionUpdate: 'plan',
-        entries: [
-          { content: 'first', status: 'completed' },
-          { content: 'second', status: 'pending' },
-        ],
-      },
-    } as any)
+    const events = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'plan',
+          entries: [
+            { content: 'first', status: 'completed' },
+            { content: 'second', status: 'pending' },
+          ],
+        },
+      } as any,
+      new Map(),
+    )
     expect(events[0]).toMatchObject({ type: 'plan.proposed' })
     expect((events[0] as any).planMarkdown).toContain('- [x] first')
     expect((events[0] as any).planMarkdown).toContain('- [ ] second')
   })
 
   it('quietly consumes available_commands_update (cached, not forwarded)', () => {
-    const events = mapSessionUpdate(tid, {
-      sessionId: 's1',
-      update: { sessionUpdate: 'available_commands_update', availableCommands: [] },
-    } as any)
+    const events = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: { sessionUpdate: 'available_commands_update', availableCommands: [] },
+      } as any,
+      new Map(),
+    )
     expect(events).toHaveLength(0)
   })
 })
