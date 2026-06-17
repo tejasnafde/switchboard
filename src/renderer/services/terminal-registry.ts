@@ -132,6 +132,14 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
   terminal.onData((data) => window.api.terminal.write(id, data))
   terminal.onResize(({ cols, rows }) => window.api.terminal.resize({ id, cols, rows }))
 
+  // Warp-style copy-on-select: copy on mouseup, not mid-drag.
+  const copyOnSelect = () => {
+    const sel = terminal.getSelection()
+    if (sel.trim()) void navigator.clipboard.writeText(sel)
+  }
+  document.addEventListener('mouseup', copyOnSelect)
+  cleanupFns.push(() => document.removeEventListener('mouseup', copyOnSelect))
+
   // Send data directly to PTY (bypass xterm processing)
   const sendToPty = (data: string) => window.api.terminal.write(id, data)
 
