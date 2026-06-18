@@ -93,7 +93,7 @@ function getXtermTheme(): Record<string, string> {
   }
 }
 
-export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: string, waitFor?: string): TerminalInstance {
+export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: string, waitFor?: string, env?: Record<string, string>): TerminalInstance {
   const existing = registry.get(id)
   if (existing) return existing
 
@@ -203,7 +203,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
   registry.set(id, instance)
 
   // Create PTY in main process
-  window.api.terminal.create({ id, cols: 80, rows: 24, cwd, initialCommand, waitFor })
+  window.api.terminal.create({ id, cols: 80, rows: 24, cwd, initialCommand, waitFor, env })
 
   return instance
 }

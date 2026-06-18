@@ -9,6 +9,7 @@ import { useTerminalLifecycle } from './hooks/useTerminalLifecycle'
 import { ResizeHandle } from './components/layout/ResizeHandle'
 import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatPanel } from './components/chat/ChatPanel'
+import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
 import { FilesPane } from './components/files/FilesPane'
 import { KanbanView } from './components/kanban/KanbanView'
@@ -393,6 +394,13 @@ export function App() {
         return
       }
 
+      // Terminal sessions have no JSONL — PTY is gone after restart, just activate.
+      if (session.agentType === 'terminal') {
+        addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title })
+        setActiveSession(session.id)
+        return
+      }
+
       // First open: create session in store — pass session.id as resumeSessionId
       // so Claude CLI can --resume the conversation. Hydrate the
       // worktree pointer so a session that was created in worktree
@@ -462,6 +470,7 @@ export function App() {
 
   // Sync terminal store's activeSession with agent store
   const activeAgentSessionId = useAgentStore((s) => s.activeSessionId)
+  const activeSession = useAgentStore((s) => s.getActiveSession())
   const termSetActiveSession = useTerminalStore((s) => s.setActiveSession)
 
   useEffect(() => {
@@ -829,7 +838,9 @@ export function App() {
               ChatPanels side-by-side with a draggable divider.
               Ratio lives in refs during drag for perf; on release we commit
               to the store so it persists on layout changes / remount. */}
-          {dualChat && rightSessionId ? (
+          {activeSession?.type === 'terminal' && activeSession.terminalPaneId ? (
+            <TerminalSessionPane paneId={activeSession.terminalPaneId} />
+          ) : dualChat && rightSessionId ? (
             <DualChatPanels rightSessionId={rightSessionId} />
           ) : (
             <div style={{ flex: '1 1 0%', display: 'flex', minWidth: 0, overflow: 'hidden' }}>

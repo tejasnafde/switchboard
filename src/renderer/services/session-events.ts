@@ -27,6 +27,7 @@ export interface NewSession {
   title: string
   startedAt: number
   source: 'switchboard' | 'claude-code' | 'codex'
+  agentType?: string
 }
 
 type CreatedListener = (session: NewSession) => void

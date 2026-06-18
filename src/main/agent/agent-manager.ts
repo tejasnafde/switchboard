@@ -16,7 +16,7 @@ export type AgentErrorCallback = (agentId: string, error: string) => void
 
 interface ManagedAgent {
   id: string
-  type: 'claude-code' | 'codex' | 'opencode'
+  type: 'claude-code' | 'codex' | 'opencode' | 'terminal'
   cwd: string
   sessionId?: string
   process: ChildProcess | null

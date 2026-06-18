@@ -37,6 +37,9 @@ import {
 } from '@shared/types'
 import { providerInstanceInitials } from '@shared/providerInstanceInitials'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
+import { useAgentStore } from '../../stores/agent-store'
+import { getOrCreateTerminal } from '../../services/terminal-registry'
+import { emitSessionCreated } from '../../services/session-events'
 
 interface UnifiedProviderPickerProps {
   agentType: AgentType
@@ -54,12 +57,14 @@ const AGENTS: Array<{ value: AgentType; label: string }> = [
   { value: 'claude-code', label: 'Claude Code' },
   { value: 'codex', label: 'Codex' },
   { value: 'opencode', label: 'OpenCode' },
+  { value: 'terminal', label: 'Terminal' },
 ]
 
 const AGENT_SHORT: Record<AgentType, string> = {
   'claude-code': 'Claude',
   'codex': 'Codex',
   'opencode': 'OpenCode',
+  'terminal': 'Terminal',
 }
 
 export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
@@ -78,6 +83,10 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
+
+  // Terminal tab state
+  const [termCommand, setTermCommand] = useState('claude')
+  const [termInstanceId, setTermInstanceId] = useState<string | undefined>(undefined)
 
   const allInstances = useProviderInstanceStore((s) => s.instances)
   const loaded = useProviderInstanceStore((s) => s.loaded)
@@ -252,6 +261,29 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             setOpen(false)
           }}
           onClose={() => setOpen(false)}
+          allInstances={allInstances}
+          termCommand={termCommand}
+          setTermCommand={setTermCommand}
+          termInstanceId={termInstanceId}
+          setTermInstanceId={setTermInstanceId}
+          onTermStart={() => {
+            const projectPath = useAgentStore.getState().getActiveSession()?.projectPath ?? '.'
+            const paneId = `term_${Date.now()}`
+            const sessionId = `agent_${Date.now()}`
+            const inst = allInstances.find((i) => i.id === termInstanceId)
+            const env: Record<string, string> = {}
+            if (inst?.oauthDir) env['CLAUDE_CONFIG_DIR'] = inst.oauthDir
+            getOrCreateTerminal(paneId, projectPath, termCommand, undefined, env)
+            useAgentStore.getState().addSession({
+              id: sessionId, type: 'terminal', status: 'idle',
+              projectPath, terminalPaneId: paneId,
+              title: termCommand, instanceId: termInstanceId,
+            })
+            useAgentStore.getState().setActiveSession(sessionId)
+            window.api.app.createConversation({ id: sessionId, projectPath, agentType: 'terminal', title: termCommand }).catch(() => {})
+            emitSessionCreated({ id: sessionId, projectPath, title: termCommand, startedAt: Date.now(), source: 'switchboard', agentType: 'terminal' })
+            setOpen(false)
+          }}
         />,
         document.body,
       )}
@@ -271,6 +303,13 @@ interface PopoverProps {
   models: ModelOption[]
   onModelChange: (m: string) => void
   onClose: () => void
+  // Terminal tab props
+  allInstances: ProviderInstance[]
+  termCommand: string
+  setTermCommand: (c: string) => void
+  termInstanceId: string | undefined
+  setTermInstanceId: (id: string | undefined) => void
+  onTermStart: () => void
 }
 
 const UnifiedPickerPopover = (() => {
@@ -280,6 +319,7 @@ const UnifiedPickerPopover = (() => {
       anchorRect, agentType, canChangeAgent, onAgentTypeChange,
       instances, effectiveInstanceId, onInstanceChange,
       model, models, onModelChange,
+      allInstances, termCommand, setTermCommand, termInstanceId, setTermInstanceId, onTermStart,
     } = props
     const [query, setQuery] = useState('')
     const [showCustom, setShowCustom] = useState(false)
@@ -407,8 +447,20 @@ const UnifiedPickerPopover = (() => {
           })}
         </div>
 
+        {/* Terminal tab body */}
+        {agentType === 'terminal' && (
+          <TerminalTabBody
+            allInstances={allInstances}
+            termCommand={termCommand}
+            setTermCommand={setTermCommand}
+            termInstanceId={termInstanceId}
+            setTermInstanceId={setTermInstanceId}
+            onStart={onTermStart}
+          />
+        )}
+
         {/* Body — split rail (when 2+ instances) + model list */}
-        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        <div style={{ display: agentType === 'terminal' ? 'none' : 'flex', flex: 1, minHeight: 0 }}>
           {showRail && (
             <div
               role="radiogroup"
@@ -574,6 +626,148 @@ const UnifiedPickerPopover = (() => {
     )
   }
 })()
+
+function TerminalTabBody({
+  allInstances,
+  termCommand,
+  setTermCommand,
+  termInstanceId,
+  setTermInstanceId,
+  onStart,
+}: {
+  allInstances: ProviderInstance[]
+  termCommand: string
+  setTermCommand: (c: string) => void
+  termInstanceId: string | undefined
+  setTermInstanceId: (id: string | undefined) => void
+  onStart: () => void
+}) {
+  // claude-code instances carry CLAUDE_CONFIG_DIR via oauthDir.
+  const claudeInstances = allInstances.filter((i) => i.agentType === 'claude-code' && i.enabled)
+  const isCustom = termCommand !== 'claude' && termCommand !== 'codex'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      {/* CLI selector */}
+      <div style={{ padding: '8px 8px 6px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.7px', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+          CLI Binary
+        </div>
+        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+          {(['claude', 'codex'] as const).map((cmd) => (
+            <button
+              key={cmd}
+              type="button"
+              onClick={() => setTermCommand(cmd)}
+              style={{
+                padding: '4px 12px',
+                borderRadius: '5px',
+                border: `1px solid ${termCommand === cmd ? 'var(--warning)' : 'var(--border)'}`,
+                background: termCommand === cmd ? 'rgba(210,153,34,0.1)' : 'var(--bg-tertiary)',
+                color: termCommand === cmd ? 'var(--warning)' : 'var(--text-secondary)',
+                fontSize: '11px',
+                fontFamily: 'var(--font-mono)',
+                cursor: 'pointer',
+                outline: 'none',
+                transition: 'background 120ms, border-color 120ms',
+              }}
+            >{cmd}</button>
+          ))}
+          <input
+            value={isCustom ? termCommand : ''}
+            onChange={(e) => setTermCommand(e.target.value || 'claude')}
+            placeholder="custom path…"
+            onKeyDown={(e) => e.stopPropagation()}
+            style={{
+              flex: 1,
+              background: 'var(--bg-tertiary)',
+              border: `1px solid ${isCustom ? 'var(--border-focus)' : 'var(--border)'}`,
+              borderRadius: '5px',
+              padding: '4px 8px',
+              fontSize: '11px',
+              fontFamily: 'var(--font-mono)',
+              color: 'var(--text-primary)',
+              outline: 'none',
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Account — only shown for claude binary */}
+      {termCommand === 'claude' && claudeInstances.length > 0 && (
+        <div style={{ padding: '8px 8px 6px', borderBottom: '1px solid var(--border)', overflowY: 'auto', maxHeight: 140 }}>
+          <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.7px', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
+            Account
+          </div>
+          {claudeInstances.map((inst) => {
+            const active = (termInstanceId ?? claudeInstances[0]?.id) === inst.id
+            return (
+              <button
+                key={inst.id}
+                type="button"
+                onClick={() => setTermInstanceId(inst.id)}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '8px',
+                  width: '100%', padding: '6px 8px',
+                  borderRadius: '5px',
+                  border: `1px solid ${active ? 'var(--border-focus)' : 'transparent'}`,
+                  background: active ? 'var(--bg-active)' : 'transparent',
+                  color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  fontSize: '12px', cursor: 'pointer', textAlign: 'left', outline: 'none',
+                  transition: 'background 120ms, border-color 120ms',
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: active ? 'var(--accent)' : 'var(--text-muted)', flexShrink: 0 }} />
+                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inst.displayName}</span>
+                {inst.id.endsWith('-default') && (
+                  <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>default</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Billing note */}
+      <div style={{ padding: '8px', borderBottom: '1px solid var(--border)' }}>
+        <div style={{
+          padding: '7px 10px',
+          background: 'rgba(63,185,80,0.05)',
+          border: '1px solid rgba(63,185,80,0.15)',
+          borderRadius: 'var(--radius)',
+          fontSize: '11px',
+          color: 'var(--text-secondary)',
+          lineHeight: 1.5,
+          display: 'flex', gap: '7px',
+        }}>
+          <span style={{ color: 'var(--success)', flexShrink: 0 }}>●</span>
+          Runs <code style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--success)', background: 'rgba(63,185,80,0.1)', padding: '0 4px', borderRadius: '3px' }}>{termCommand}</code> directly — billed from your subscription, not API credits.
+        </div>
+      </div>
+
+      {/* Start button */}
+      <div style={{ padding: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          type="button"
+          onClick={onStart}
+          style={{
+            padding: '6px 14px',
+            borderRadius: 'var(--radius)',
+            border: 'none',
+            background: 'var(--warning)',
+            color: '#000',
+            fontWeight: 600,
+            fontSize: '12px',
+            cursor: 'pointer',
+            transition: 'opacity 120ms',
+          }}
+        >
+          Start Terminal Session
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function InstanceRailItem({
   instance,

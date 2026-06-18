@@ -64,6 +64,9 @@ interface AgentSession {
    * turn/start. Claude doesn't surface this as a UI control.
    */
   reasoningEffort?: ReasoningEffort
+  /** PTY pane id in terminal-registry. Only set for type='terminal' sessions. */
+  terminalPaneId?: string
+
   /**
    * Cumulative session cost in USD reported by the agent. ACP-backed
    * adapters populate this from `usage_update.cost.amount`; other adapters

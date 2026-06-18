@@ -44,9 +44,9 @@ export interface TerminalInfo {
 
 // ─── Agent ───────────────────────────────────────────────────────────
 
-export type AgentType = 'claude-code' | 'codex' | 'opencode'
+export type AgentType = 'claude-code' | 'codex' | 'opencode' | 'terminal'
 
-export const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'codex', 'opencode'] as const
+export const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'codex', 'opencode', 'terminal'] as const
 
 export function isAgentType(v: unknown): v is AgentType {
   return AGENT_TYPES.includes(v as AgentType)
@@ -65,6 +65,7 @@ export function defaultInstanceId(kind: AgentType): string {
 export function agentLabel(type: AgentType | undefined): string {
   if (type === 'codex') return 'Codex'
   if (type === 'opencode') return 'OpenCode'
+  if (type === 'terminal') return 'Terminal'
   return 'Claude Code'
 }
 
@@ -72,6 +73,7 @@ export function agentLabel(type: AgentType | undefined): string {
 export function agentShortLabel(type: AgentType | undefined): string {
   if (type === 'codex') return 'Codex'
   if (type === 'opencode') return 'OpenCode'
+  if (type === 'terminal') return 'Terminal'
   return 'Claude'
 }
 
@@ -299,6 +301,8 @@ export interface SessionSummary {
    */
   worktreePath?: string | null
   worktreeBranch?: string | null
+  /** Populated from DB — lets the renderer skip JSONL load for terminal sessions. */
+  agentType?: string | null
 }
 
 export interface Project {

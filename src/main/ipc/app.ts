@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'fs/promises'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
+import { synthesizeTerminalSessions, stampAgentTypes } from './terminal-sessions'
 import { homedir } from 'os'
 import { join as joinPath } from 'path'
 import {
@@ -116,6 +117,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
     const syntheticParents = getSyntheticParentMap()
     const dbConversations = getConversationsForProject(projectPath)
     const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
+    const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
     // Worktree pointers per conversation id — stamped onto the
     // SessionSummary so the renderer can route the agent's cwd via
     // `worktreePath ?? projectPath`.
@@ -124,6 +126,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
         .filter((c) => c.worktree_path)
         .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
     )
+    const scannedIds = new Set(sessions.map((s) => s.id))
     const filtered = sessions
       // Hide archived chats (global set — across project paths) and child
       // session_ids produced by Claude SDK rotation (tracked in thread_sessions).
@@ -133,18 +136,22 @@ export function registerAppHandlers(window: BrowserWindow): void {
         const direct = titleMap.get(s.id)
         const wt = worktreeMap.get(s.id) ?? worktreeMap.get(syntheticParents.get(s.id) ?? '')
         const withWorktree = wt ? { ...s, worktreePath: wt.path, worktreeBranch: wt.branch } : s
-        if (direct) return { ...withWorktree, title: direct }
+        const withAgentType = stampAgentTypes([withWorktree], agentTypeMap)[0]
+        if (direct) return { ...withAgentType, title: direct }
         // Title inheritance: UUID has a synthetic `agent_<ts>` parent in
         // thread_sessions. Look up the parent's title from conversations.
         const parentId = syntheticParents.get(s.id)
         if (parentId) {
           const parentTitle = titleMap.get(parentId)
-          if (parentTitle) return { ...withWorktree, title: parentTitle }
+          if (parentTitle) return { ...withAgentType, title: parentTitle }
         }
-        return withWorktree
+        return withAgentType
       })
-    log.info(`scan complete: ${filtered.length} visible (${sessions.length - filtered.length} archived/child)`)
-    return filtered
+
+    const terminalSessions = synthesizeTerminalSessions(dbConversations, archivedSet, scannedIds)
+    const result = [...filtered, ...terminalSessions]
+    log.info(`scan complete: ${result.length} visible (${sessions.length - filtered.length} archived/child, ${terminalSessions.length} terminal)`)
+    return result
   })
 
   // Settings
@@ -166,26 +173,30 @@ export function registerAppHandlers(window: BrowserWindow): void {
       const sessions = await scanAllSessions(row.path, candidateDirs)
       const dbConversations = getConversationsForProject(row.path)
       const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
+      const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
       const worktreeMap = new Map(
         dbConversations
           .filter((c) => c.worktree_path)
           .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
       )
+      const scannedIds = new Set(sessions.map((s) => s.id))
       const filtered = sessions
         .filter((s) => !archivedSet.has(s.id) && !childSet.has(s.id))
         .map((s) => {
           const wt = worktreeMap.get(s.id) ?? worktreeMap.get(syntheticParents.get(s.id) ?? '')
           const withWorktree = wt ? { ...s, worktreePath: wt.path, worktreeBranch: wt.branch } : s
+          const withAgentType = stampAgentTypes([withWorktree], agentTypeMap)[0]
           const direct = titleMap.get(s.id)
-          if (direct) return { ...withWorktree, title: direct }
+          if (direct) return { ...withAgentType, title: direct }
           const parentId = syntheticParents.get(s.id)
           if (parentId) {
             const parentTitle = titleMap.get(parentId)
-            if (parentTitle) return { ...withWorktree, title: parentTitle }
+            if (parentTitle) return { ...withAgentType, title: parentTitle }
           }
-          return withWorktree
+          return withAgentType
         })
-      projects.push({ path: row.path, name: row.name, sessions: filtered, workspaceId: row.workspace_id ?? null })
+      const terminalSessions = synthesizeTerminalSessions(dbConversations, archivedSet, scannedIds)
+      projects.push({ path: row.path, name: row.name, sessions: [...filtered, ...terminalSessions], workspaceId: row.workspace_id ?? null })
     }
     return projects
   })

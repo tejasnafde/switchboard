@@ -15,7 +15,7 @@ import {
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import type { ProviderInstanceUpsertInput } from '../../../preload'
 
-const AGENT_KINDS: AgentType[] = ['claude-code', 'codex', 'opencode']
+const AGENT_KINDS: Array<'claude-code' | 'codex' | 'opencode'> = ['claude-code', 'codex', 'opencode']
 
 const DEFAULT_ACCENT_PALETTE = [
   '#ff8a3d',
@@ -37,7 +37,7 @@ export function ProvidersTab() {
   const clearError = useProviderInstanceStore((s) => s.clearError)
   const forAgent = useProviderInstanceStore((s) => s.forAgent)
   const [editing, setEditing] = useState<ProviderInstance | null>(null)
-  const [adding, setAdding] = useState<AgentType | null>(null)
+  const [adding, setAdding] = useState<'claude-code' | 'codex' | 'opencode' | null>(null)
 
   useEffect(() => {
     if (!loaded) refresh()
@@ -301,7 +301,7 @@ function ProviderInstanceDialog({
   onClose,
 }: {
   instance?: ProviderInstance
-  agentType?: AgentType
+  agentType?: 'claude-code' | 'codex' | 'opencode'
   onClose: () => void
 }) {
   const upsert = useProviderInstanceStore((s) => s.upsert)
@@ -373,7 +373,7 @@ function ProviderInstanceDialog({
       }
       const input: ProviderInstanceUpsertInput = {
         id: instance?.id,
-        agentType: kind,
+        agentType: kind as 'claude-code' | 'codex' | 'opencode',
         displayName: displayName.trim(),
         accentColor,
         authMode,
