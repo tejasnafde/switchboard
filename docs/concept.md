@@ -29,7 +29,7 @@ The result: you `⌘-Tab` between 3-4 apps constantly. Your agent can't see your
 | Terminal multiplexing | ✅ Split panes, vertical tabs | ❌ No terminals | ✅ Tabs + splits | ✅ |
 | Agent chat UI | ❌ Raw TUI only | ✅ Web GUI for Codex/Claude | ❌ | ✅ |
 | Multiple concurrent agents | ✅ Via panes | ❌ Single thread | ❌ | ✅ |
-| Import existing conversations | ❌ | ❌ | ❌ | ✅ Claude + Codex + Cursor |
+| Import existing conversations | ❌ | ❌ | ❌ | ✅ Claude + Codex (Cursor import not yet started) |
 | Terminal → Agent context | ❌ Copy-paste | ❌ | ❌ | ✅ Select text, ⌘+L |
 | Declarative project layouts | ❌ (via `.vscode/terminals.json` hack) | ❌ | ✅ YAML launch configs | ✅ YAML, lives in repo |
 | Per-project workspace persistence | ❌ | Partial (thread per project) | ❌ (session restore) | ✅ |

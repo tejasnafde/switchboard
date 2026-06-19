@@ -6,7 +6,7 @@
 
 ---
 
-## Current status (2026-04-26)
+## Current status (2026-06-19)
 
 The phase checkboxes below are the original day-1 spec and are kept as a
 historical reference rather than a live progress tracker. Here's what's
@@ -16,14 +16,14 @@ actually shipped:
 |---|---|---|
 | 0 — Skeleton | ✅ Done | Electron + React + Vite, hot reload, CI (typecheck+test+build) |
 | 1 — Terminal Engine | ✅ Done | Row/Window/Pane model (tmux-style), splits, keyboard nav, resize |
-| 2 — Agent Bridge | ✅ Done | Claude SDK streaming-input; Codex app-server JSON-RPC |
-| 3 — Context Bridge | ✅ Done | `⌘+L` (terminal selection → chat draft) + `⌘+K` (quick prompt) shipped |
+| 2 — Agent Bridge | ✅ Done | Claude SDK + Codex app-server JSON-RPC + OpenCode ACP adapter (legacy retired 2026-05-02) |
+| 3 — Context Bridge | ✅ Done | `⌘L` multi-source dispatch (terminal / file-viewer / chat-message) + `⌘K` quick prompt |
 | 4 — Conversation History | 🟨 Partial | Claude + Codex importers working; Cursor import not started |
 | 5 — workspace.yaml | 🟨 Partial | Parser + launch-time hydration works; hot-reload + `on_start` wait/then not done |
-| 6 — Multi-Agent | ✅ Done | Both adapters at parity (image/plan/approval); side-by-side dual chat panels (`⌘\|`) shipped |
+| 6 — Multi-Agent | ✅ Done | All three adapters at parity; side-by-side dual chat panels (`⌘|`) shipped |
 | 7 — Polish & UX | ✅ Done | Theme system, design system, command palette, keyboard-first nav, project switcher, status bar, system notifications, feature tour, ⌘F in-pane search all done. (Vim-nav for terminals still open.) |
 | 8 — Persistence | 🟨 Partial | Workspace state + conversation persistence + FTS search done. Reconnect to running PTYs not done. |
-| 9 — Distribution | 🟨 In progress | electron-builder + auto-update in flight. Code-signing deferred (no Apple Developer account — ad-hoc unsigned dmg for now). `switchboard` CLI deferred indefinitely. |
+| 9 — Distribution | 🟨 In progress | electron-builder + auto-update shipped. Code-signing deferred (no Apple Developer account). `switchboard` CLI deferred indefinitely. |
 | 10 — Advanced | 🟥 Not started | Plugin system, team features, auto-summarize, virtual scrolling |
 
 ### Recent feature additions beyond the original plan
@@ -33,12 +33,21 @@ actually shipped:
 - **ExitPlanMode → PlanCard** (markdown plan with Implement/Iterate buttons)
 - **Image pipeline** end-to-end (paste/drag/drop → SDK image blocks → persists on reload)
 - **Archive conversations** with global ID filter
-- **Slash command menu** (`/plan`, `/sandbox`, `/edits`, `/full`, `/clear`, `/archive`, `/image`, `/stop`, `/help`)
+- **Slash command menu** (`/plan`, `/sandbox`, `/edits`, `/full`, `/clear`, `/archive`, `/image`, `/stop`, `/help`) + agent-skill exposure (Claude SDK commands + Codex skills surfaced inline)
 - **Plan-mode denial pill** in chat stream when a tool is blocked
 - **Gated `npm run build`** (typecheck + test required before build)
-- **~190 unit tests** across stores, adapters, parsers, UI grouping
+- **OpenCode ACP adapter** — speaks Agent Client Protocol over long-lived `opencode acp` child; legacy `opencode run --format json` shell-out retired 2026-05-02
+- **Kanban board** (⌘⇧K) — workspace-scoped board; cards launch agents in git worktrees; drag-and-drop column moves; live session state (pulse/badge); auto-promote to `needs_input` on `AskUserQuestion`
+- **Conversation forking** — "Fork from here" right-click on any message; Claude resumes real context via JSONL truncation; optionally fork into a git worktree
+- **CodeMirror code editor** (⌘⇧E) — multi-tab, syntax highlight, git diff gutter, ⌘-click jump-to-def (TypeScript + Python LSP), ⌘P Quick Open, save with mtime conflict detection
+- **LSP integration** — `typescript-language-server` + `pyright` for definition / references / hover / symbols
+- **Lexical chat input** — rich textarea with inline file/terminal/chat pill chips, `@`-mention file autocomplete
+- **Multi-instance provider credentials** — named credential sets per agent type (env or oauth_dir), switching from model picker
+- **In-chat diff review** (2026-06-02) — Cursor-style per-hunk accept/reject cards after each turn; git checkpoint diffing; provider-agnostic
+- **Project favicons** in sidebar via `sb-favicon://` custom protocol
+- **~790 unit tests** across 86 files
 
-Current focus: Phase 9 (electron-builder packaging + signing + auto-update + `switchboard` CLI) and the long tail — Cursor import, workspace.yaml hot-reload, `as any` cleanup. Phases A–C from the 2026-04-20 batch plan all shipped (denial pill, slash menu, side-by-side chat, status bar, notifications, export-as-markdown, in-pane search, feature tour).
+Current focus: code-signing (blocked on Apple Developer account), Cursor import, workspace.yaml hot-reload.
 
 ---
 

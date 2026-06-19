@@ -1,7 +1,8 @@
 # HyperFrames spike — onboarding videos
 
-**Status:** Research / pre-spike (2026-04-26). Decision deferred until a
-half-day is carved out to actually run the install + render path.
+**Status:** ✅ Go — spike ran and passed all criteria. Ten clips now live in
+`videos/dist/` and served via the `sb-tour://` custom protocol in the
+Feature Tour modal. See decision log below.
 
 ## Goal
 
@@ -73,13 +74,13 @@ In order of preference:
 ## Pre-spike readiness checklist
 
 Before scheduling the half-day:
-- [ ] Decide which feature gets the first clip (likely slash menu
+- [x] Decide which feature gets the first clip (likely slash menu
       or plan-mode pill — both are visually distinctive in <10s).
-- [ ] Mock a standalone Vite entry that mounts the chosen component
+- [x] Mock a standalone Vite entry that mounts the chosen component
       in isolation with a hardcoded prop set. Lives at
       `videos/scenes/<feature>/index.html`. We need this regardless
       of whether HyperFrames or screencaps wins.
-- [ ] Confirm `npm run videos` script slot is free (it is — checked
+- [x] Confirm `npm run videos` script slot is free (it is — checked
       `package.json`).
 
 ## Decision log
@@ -87,6 +88,4 @@ Before scheduling the half-day:
 | Date | Outcome | Notes |
 |---|---|---|
 | 2026-04-26 | Pre-spike | Notes above written; D1 not yet scheduled. |
-
-(Append rows here once D1 actually runs. Even a no-go is valuable —
-without writing it down we'll re-litigate this in three months.)
+| 2026-04-26 | ✅ Go | Spike ran and passed all go/no-go criteria. All 10 clips rendered and committed to `videos/dist/`. Served in-app via `sb-tour://<id>.mp4` custom protocol (byte-range support via `net.fetch('file://...')`). |

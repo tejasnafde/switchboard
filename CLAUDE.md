@@ -85,6 +85,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - `model.variants` · available model variants + current selection
 - `plan.proposed` · ExitPlanMode intercept → PlanCard
 - `question.asked` / `question.answered` · AskUserQuestion intercept → QuestionCard
+- `file.edited` · **2026-06-02**: one event per changed file per turn, sourced from a git checkpoint diff (provider-agnostic) — drives the Cursor-style in-chat diff card with per-hunk accept/reject
 - `error` · adapter-level error surfaced to chat
 
 ### Image pipeline (2026-04-20)
@@ -186,8 +187,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 - Claude Code SDK integration end-to-end: streaming text, tool calls, context window metrics, interrupt
 - Codex app-server integration: basic chat + plan-mode + AskUserQuestion + image support (Phase B done)
-- **OpenCode adapter** (2026-04-26): `opencode run --format json` with NVIDIA NIM / Gemini / built-in free tier, dynamic model list via `opencode models`, shell-env probing for API keys, settings-DB key injection, placeholder + heartbeat + 3-min timeout (free-tier-aware error message) for cold-boot UX. Also wires up OpenCode's `debug skill` endpoint to provide dynamically discovered agent skills!
-- **OpenCode ACP adapter** (2026-04-28): the only OpenCode adapter. Speaks the Agent Client Protocol over a long-lived `opencode acp` child. Legacy `opencode run --format json` shell-out adapter was retired 2026-05-02 — see CHANGELOG. Helper: `adapters/opencode/env.ts` for shared env-probing.
+- **OpenCode ACP adapter** (2026-04-28, only OpenCode adapter — legacy `opencode run --format json` shell-out retired 2026-05-02): speaks the Agent Client Protocol over a long-lived `opencode acp` child. Dynamic model list, shell-env probing for API keys, settings-DB key injection, placeholder + heartbeat + 3-min timeout (free-tier-aware error message) for cold-boot UX. Skill discovery via `available_commands_update` ACP push events. Helper: `adapters/opencode/env.ts` for shared env-probing.
 - Plan mode with hard-deny + read-only allow-list
 - AskUserQuestion → QuestionCard (numbered shortcuts, auto-advance)
 - ExitPlanMode → PlanCard (markdown + Implement/Iterate)
@@ -198,7 +198,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - Runtime mode selector (Plan/Sandbox/Accept-Edits/Full-Access) per-session, live-updates mid-turn
 - Tmux-style terminal windows + tabs + splits with proper cwd
 - Pre-commit hook + CI (GitHub Actions: typecheck + test + build)
-- **Slash command menu in chat input** with agent-skill exposure (2026-04-26): Claude SDK `init.commands` + Codex `skills/list` surfaced alongside Switchboard's 9 built-ins. Source-grouped sections in the menu; agent-source selections insert `/<name> ` for the user to fill in args. OpenCode has no skill registry — falls back to built-ins only.
+- **Slash command menu in chat input** with agent-skill exposure (2026-04-26): Claude SDK `init.commands` + Codex `skills/list` + OpenCode `available_commands_update` surfaced alongside Switchboard's 9 built-ins. Source-grouped sections in the menu; agent-source selections insert `/<name> ` for the user to fill in args.
 - **`⌘L` multi-source context bridge** (2026-04-29): single keybinding routes by the focused element's `data-context-source` attribute (`terminal | file-viewer | chat-message`). Terminal selection → fenced code block w/ pane label header (50k char cap). File-viewer selection → `@<path>:<start>-<end>` pill + fenced block. Chat-message selection → `> from <agent>: "..."` quoted block. All three append to the active session's draft via `useDraftStore.appendDraft`. Pure formatters (`formatTerminalContext`, `formatFileViewerContext`, `formatChatMessageContext`) are unit-tested.
 - **Per-turn duration badge** (2026-04-29): adapters stamp `turnStartedAt` on `sendTurn` and emit `durationMs` on `turn.completed`. MessageBubble renders "Worked for X.Xs" under the assistant message via `fmtDuration` from `src/shared/format.ts`. Wired across all 3 active adapters (claude, codex, opencode-acp).
 - **Right-pane "Files" mode** (2026-04-29, ⌘⇧E to toggle): the right column flips between the existing terminal strip and a file tree + viewer. `layout-store.rightPaneMode` (persisted under `layout.rightPaneMode`). Both panes stay mounted (positioned overlay) so toggling preserves xterm/pty state and Shiki highlighter cache.
@@ -223,6 +223,8 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - **Lexical chat input** with pill chips + `@`-mention file autocomplete — see Lexical chat input section
 - **Project favicons** in the sidebar via `sb-favicon://`
 - **Bookmarks** (`bookmark-store` + `bookmarks` DB table) — bookmark messages/sessions
+- **In-chat diff review** (2026-06-02): after each turn, changed files surface as Cursor-style diff cards in chat with per-hunk accept/reject. Git checkpoint at turn start (`src/main/git/checkpoint.ts` + `checkpoint-tracker.ts`); `fileDiffResolve.ts` applies/reverts hunks; `file.edited` events are provider-agnostic (git is the source of truth). `FileDiffCard.tsx` renders the cards.
+- **Rate-limit event handling** (2026-06-10): Claude SDK `rate_limit_event` surfaced as a chat status message with window type + reset time; subprocess leak on `stopSession` fixed (6 new tests in `claude-adapter-stop-session.test.ts`)
 - Single-instance lock
 - Native app menu (`⌘,` for settings, standard Edit/View/Window)
 - File-based logger at `~/Library/Application Support/switchboard/logs/`
@@ -241,7 +243,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 `ProviderAdapter.listSkills?(threadId)` is the seam:
 - **Claude adapter** captures `system/init.{slash_commands|commands}` and prefers live `query.supportedCommands()`. Cached on the active session.
 - **Codex adapter** sends JSON-RPC `skills/list`, caches result. Older builds get a graceful empty cache (logged, not retried).
-- **OpenCode** queries `opencode debug skill` to discover skills.
+- **OpenCode** receives skills via `available_commands_update` ACP push events; the adapter caches the list and `listSkills()` returns it directly. (The earlier `opencode debug skill` shell-out was replaced when the ACP adapter was finalised.)
 - IPC: `ProviderChannels.LIST_SKILLS` → `provider:list-skills` (preload `window.api.provider.listSkills(threadId)`).
 - UI: `ChatInput` fetches on session start with retry-while-empty (handles late `system/init`); `mergeWithAgentSkills` keeps built-ins first, name-collisions resolve in favor of built-ins so `/clear` always means "clear chat" not whatever a skill named `clear` does. `SlashCommandMenu` renders source-grouped sections + argument-hint suffix. Agent-source selections insert `/<name> ` into the textarea (no special wire path) — the SDK / CLI parses leading slash from the prompt itself.
 
@@ -279,7 +281,7 @@ src/
 │   │   ├── database.ts                # SQLite schema, archive, FTS, settings, kanban, fork lineage
 │   │   └── providerInstances.ts       # provider_instances CRUD (safeStorage-encrypted env)
 │   ├── files/                         # listing (gitignore-annotated) · writing (atomic+conflict) · gitignore matcher
-│   ├── git/                           # diffHunks (gutter) · refs · worktreePaths
+│   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review)
 │   ├── lsp/                           # manager (per-ws/lang) · client (JSON-RPC) · framing (Content-Length)
 │   ├── worktree.ts                    # kanban / fork / session worktree creation + cleanup
 │   ├── ipc/
@@ -314,7 +316,7 @@ src/
 │   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · SessionPickerModal.tsx
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
-│   │   │   ├── ApprovalCard · PlanCard · QuestionCard · SlashCommandMenu · slashCommands.ts
+│   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slashCommands.ts
 │   │   │   ├── UnifiedProviderPicker.tsx # agent tabs → instance rail → model search
 │   │   │   ├── BranchPicker.tsx + branchPickerPolicy.ts · SkillChip · FileChip
 │   │   │   ├── AtMentionMenu.tsx + atMention.ts · renderPillBody.tsx · rotationMarker.ts

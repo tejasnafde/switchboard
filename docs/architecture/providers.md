@@ -21,15 +21,25 @@ type RuntimeEvent =
   | { type: 'tool.denied', threadId, toolName, reason, mode }   // 2026-04-20
   | { type: 'request.opened', threadId, requestId, requestType, toolName, detail }
   | { type: 'request.closed', threadId, requestId, decision }
-  | { type: 'turn.completed', threadId, costUsd?, usedTokens?, maxTokens? }
+  | { type: 'turn.completed', threadId, costUsd?, usedTokens?, maxTokens?, numTurns?, durationMs? }
   | { type: 'status', threadId, status }
   | { type: 'session', threadId, sessionId }
-  | { type: 'context_window', threadId, usedTokens, maxTokens }
+  | { type: 'context_window', threadId, usedTokens, maxTokens, costUsd? }
+  | { type: 'model.variants', threadId, modelId, availableVariants, currentVariant }
   | { type: 'plan.proposed', threadId, planId, planMarkdown }
   | { type: 'question.asked', threadId, requestId, questions }
   | { type: 'question.answered', threadId, requestId, answers }
+  | { type: 'file.edited', threadId, turnId, fileEditId, repoRoot, relPath, changeKind, oldContent, newContent, hunks }  // 2026-06-02
   | { type: 'error', threadId, message }
 ```
+
+`durationMs` on `turn.completed` is what powers the "Worked for X.Xs" badge
+in `MessageBubble`. `numTurns` is the cumulative agent turn count from the
+SDK. `file.edited` is emitted once per changed file per turn (sourced from a
+git checkpoint diff — provider-agnostic); drives the Cursor-style in-chat
+diff card with per-hunk accept/reject. `model.variants` carries available
+thinking-budget tiers (`low`/`medium`/`high`/`max`) for models that support
+them (emitted by the OpenCode ACP adapter from `_meta.opencode.availableVariants`).
 
 Wire events are emitted by the adapter via the `onEvent` callback it was
 given in `startSession(...)`. `ProviderRegistry` forwards them to the
@@ -155,8 +165,14 @@ over stdio. T3 Code is the reference implementation
 The only OpenCode adapter (the legacy `opencode run --format json`
 shell-out was retired 2026-05-02). Speaks the Agent Client Protocol over
 a long-lived `opencode acp` child. Shares env-probing via
-`adapters/opencode/env.ts`. No `answerQuestion` / skill registry yet
-(falls back to Switchboard built-ins for slash commands).
+`adapters/opencode/env.ts`.
+
+- **Skill discovery**: implements `listSkills` — the adapter caches the
+  skill list kept fresh by `available_commands_update` ACP push events
+  (replaced the earlier `opencode debug skill` shell-out). Slash command
+  menu shows OpenCode skills alongside Switchboard built-ins.
+- **No `answerQuestion`**: OpenCode does not yet support
+  `AskUserQuestion`-style blocking prompts.
 
 ## Session loading from disk (`JsonlParser`)
 

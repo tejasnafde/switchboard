@@ -79,20 +79,20 @@ Example: "Fix Redis timeout in worker pool" → `fork/fix-redis-timeout-in-worke
 
 Worth unit-testing — input/output table is straightforward.
 
-### 2. Cheap-model summary
+### 2. Branch name from message body
 
-Function `summarizeForBranchName(messageBody: string,
-projectPath: string): Promise<string>`. Uses the same Claude SDK
-single-turn pattern as `generateTitle`. Prompt:
+> **Shipped implementation note:** `summarizeForBranchName` via LLM was
+> **deferred**. What shipped (2026-05-04) is a purely deterministic slug
+> derived from the first ~40 chars of the picked message body — the same
+> `makeBranchSlug` helper described in step 1. An LLM-powered rename pass
+> was explicitly cut to keep the fork operation synchronous and offline-safe.
+> The `generateTitle` pattern in `src/shared/auto-title.ts` remains the
+> reference if someone wants to add LLM naming later.
 
-> Summarize the following message in 4-8 words suitable for a git
-> branch name. No punctuation, no leading verbs.
-
-If the SDK call fails, fall back to a deterministic slug from the
-first 40 chars. **Do not block the fork on this** — generate the
-branch name optimistically, kick off the rename in the background if
-the LLM call returns something better. Worktrees can be renamed via
-`git branch -m <new>` without touching the working tree.
+Original plan for reference: use a single-turn Claude SDK query with
+`maxTurns=1` and the prompt "Summarize the following message in 4-8 words
+suitable for a git branch name. No punctuation, no leading verbs." Fall back
+to deterministic slug on failure; kick off rename in background.
 
 ### 3. Worktree storage
 
@@ -211,8 +211,8 @@ after creation: "Forked to fork/<slug>".
 ## Definition of done
 
 - `makeBranchSlug` ships with tests.
-- `summarizeForBranchName` works end-to-end against Claude Code SDK
-  with a deterministic fallback.
+- Branch slug is deterministically derived from the picked message body
+  (LLM naming deferred — see step 2 note above).
 - `createForkWorktree` works with collision handling.
 - `conversations.fork` accepts `withWorktree: true`.
 - "Fork to worktree" entry in the message context menu.

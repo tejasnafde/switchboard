@@ -10,21 +10,23 @@ Companion mockups (open in a browser):
 
 ## P0 — ship-blockers for "PM view that reflects reality"
 
-### 1. No drag-and-drop between columns
+### 1. No drag-and-drop between columns ✅ Shipped 2026-05-02
 `kanban-store.move(id, status)` exists but **no UI consumer**. Today the only way to move a card across columns is open the edit modal → status dropdown → Save. For a tool whose entire point is column-state, this is the biggest gap.
 
 - **Why it matters**: kanban without drag-and-drop is just a four-up filter.
 - **Effort**: small. We already use `@dnd-kit` for sidebar project reorder. Wrap `Column` body in `<SortableContext>`, `<Droppable>` per status, `useSortable` per tile, on drop call `move(card.id, newStatus)`. Re-fetch is unnecessary because `update()` already patches the store.
 - **Bonus**: same scaffolding gives us **manual reorder within a column** (gap #6).
+- **Resolution**: shipped same day — `@dnd-kit/core` drag-and-drop column moves landed in the 2026-05-02 batch.
 
-### 2. AskUserQuestion does not auto-promote a card to `needs_input`
+### 2. AskUserQuestion does not auto-promote a card to `needs_input` ✅ Shipped 2026-05-02
 The `needs_input` column exists and has a special tile glow (`data-needs-input`), but nothing in the runtime flips a card's status to it. Today `needs_input` is a manual label.
 
 - The seam: when an adapter emits `question.asked` for a session whose `conversationId` matches a kanban card, the main process should `kanbanStore.update(cardId, { status: 'needs_input' })`. On `question.answered`, demote back to `in_progress`.
 - Lookup: index `kanban_cards` by `conversation_id` in main; cheap.
 - **Why it matters**: this is the killer feature of running agents on a board — "which agents need me right now" answered at a glance.
+- **Resolution**: shipped same day — `question.asked` / `question.answered` events now auto-promote / demote card status.
 
-### 3. Tile doesn't reflect live session state
+### 3. Tile doesn't reflect live session state ✅ Shipped 2026-05-02
 A card with a linked conversation just shows a static `● session` dot. No indication of:
 - Is the agent running a turn right now?
 - Did it complete a turn since I last looked? (unread)
@@ -34,6 +36,7 @@ A card with a linked conversation just shows a static `● session` dot. No indi
 
 - **Effort**: small. `useAgentStore((s) => s.sessions.find((x) => x.id === card.conversationId)?.status)` per tile.
 - **Why it matters**: you can't run agents in the background and trust the board if the board lies about what's happening.
+- **Resolution**: shipped same day — agent-store subscription, green pulse animation, and unread badge landed in the 2026-05-02 batch.
 
 ---
 

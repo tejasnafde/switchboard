@@ -90,6 +90,9 @@ https://github.com/user-attachments/assets/aa42e86a-e986-46e2-9e58-5efd2547a048
   an agent in its own git worktree, so parallel work stays isolated.
 - **Conversation forking** — right-click any message to branch the chat from
   that point (Claude resumes real context); optionally fork into a worktree.
+- **In-chat diff review** — after each agent turn, changed files surface as
+  Cursor-style diff cards with per-hunk accept/reject buttons directly in
+  chat.
 - **Multi-account providers** — store named credential sets per agent
   (e.g. work / personal) and switch between them from the model picker.
 - **Rich chat input** — inline file/terminal/chat pill chips and `@`-mention
@@ -107,12 +110,13 @@ Grab the latest build from the [Releases page](https://github.com/tejasnafde/swi
 
 ### macOS (Apple Silicon)
 
-Download `Switchboard-X.Y.Z-arm64.dmg`. The build is **unsigned** — we
-don't have an Apple Developer cert — so Gatekeeper will refuse the first
-launch with "developer cannot be verified."
+Download `Switchboard-X.Y.Z-arm64-mac.zip` (not a `.dmg` — see
+[`docs/releasing.md`](docs/releasing.md) for why). The build is
+**unsigned** — we don't have an Apple Developer cert — so Gatekeeper will
+refuse the first launch with "developer cannot be verified."
 
 ```bash
-# After dragging Switchboard.app to /Applications:
+# Unzip, drag Switchboard.app to /Applications, then:
 xattr -d com.apple.quarantine /Applications/Switchboard.app
 ```
 

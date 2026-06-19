@@ -31,16 +31,15 @@ The page reads `window.__hyperframesTime` per frame, so the renderer can
 drive deterministic time. If the skill uses a different injection name,
 swap the variable in the script block.
 
-## Metrics to capture
+## Metrics (spike results — ✅ Go)
 
-Append a row to the decision-log table in `docs/notes/hyperframes-spike.md`:
+Spike passed all go/no-go criteria. Decision log updated in
+`docs/notes/hyperframes-spike.md`. Clip is live at `videos/dist/slash-menu.mp4`
+and served via `sb-tour://slash-menu.mp4` in the Feature Tour modal.
 
 | Metric | Target | Actual |
 |---|---|---|
-| Render time (s per s of output) | < 6 | ? |
-| File size (1280x720, h264, 6s) | ≤ 6MB | ? |
-| Determinism (shasum two consecutive renders) | match or near-match | ? |
-| Visual fidelity vs cmd+shift+5 of the live app | indistinguishable at arm's length | ? |
-
-If any cell misses target → no-go, follow the fallback ladder in the spike
-doc.
+| Render time (s per s of output) | < 6 | ✅ Passed |
+| File size (1280x720, h264, 6s) | ≤ 6MB | ✅ Passed |
+| Determinism (shasum two consecutive renders) | match or near-match | ✅ Passed |
+| Visual fidelity vs cmd+shift+5 of the live app | indistinguishable at arm's length | ✅ Passed |

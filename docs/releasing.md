@@ -48,7 +48,7 @@ the renderer talks to a small main-process module
 
 The updater is **a no-op in `npm run dev`** — `app.isPackaged` is
 false, so there's no version baseline to compare against. Test against
-a real `.dmg` / `.exe`.
+a real `.zip` / `.exe`.
 
 ---
 
@@ -119,7 +119,7 @@ crashes at SDK init.
 
 ## macOS Gatekeeper / unsigned-build caveats
 
-We don't have an Apple Developer certificate, so `.dmg` files are
+We don't have an Apple Developer certificate, so app bundles are
 unsigned. Users will see one of two prompts:
 
 - **First install**: "Switchboard can't be opened because the

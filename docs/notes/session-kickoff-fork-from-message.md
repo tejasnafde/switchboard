@@ -30,8 +30,8 @@ to also work across all three adapters (Claude / Codex / OpenCode).
 ## Repo orientation (Switchboard)
 
 Electron 33 + React 19 + TypeScript 5.7. Read `CLAUDE.md` at the repo
-root for full stack notes. Test runner is vitest (~520 tests). Always
-run `npm run typecheck && npm test` before declaring done.
+root for full stack notes. Test runner is vitest (~790 tests across 86
+files). Always run `npm run typecheck && npm test` before declaring done.
 
 Key files for this work:
 
@@ -99,20 +99,26 @@ Main-side handler in `src/main/ipc/app.ts`. Signature:
 ```ts
 fork(args: {
   sourceConversationId: string
-  upToMessageId: string
+  upToIndex: number          // position in the in-memory parsed messages array
+  forkedAtMessageId?: string // stored for lineage display only; not used for truncation
 }): Promise<{ conversation: Conversation; resumeHint: string | null }>
 ```
+
+> **Implementation note (shipped):** The IPC uses `upToIndex: number`
+> (position-based), not `upToMessageId: string`. Message ids are regenerated
+> by `JsonlParser` on every reload, so id-based lookup never reliably matched.
+> Position-based truncation against the in-memory parsed array is what
+> actually shipped — see `src/main/conversations/fork.ts`.
 
 Logic:
 
 1. Look up the source conversation; resolve its `agent_type`.
 2. Generate a new conversation row with a fresh id, `parent_conversation_id`
-   = source, `forked_at_message_id` = upToMessageId, copy `project_path`,
-   `agent_type`, `title` (suffix " · fork"), `created_at = now`.
-3. Copy rows from `messages` where `conversation_id = source` AND
-   `position <= upToMessage.position` (or whatever ordering you have)
-   into the new conversation — assign new message ids but preserve
-   role/content/tool_calls/timestamp.
+   = source, `forked_at_message_id` = forkedAtMessageId (optional, for
+   display), copy `project_path`, `agent_type`, `title` (suffix " · fork"),
+   `created_at = now`.
+3. Truncate using the in-memory messages array at `upToIndex` (not DB rows —
+   `JsonlParser` is the source of truth for parsed message content).
 4. **Adapter-specific resume prep**:
    - **Claude**: read the source JSONL (path derives from
      `encodeClaudeProjectPath(project_path)` + the source's stored
@@ -135,7 +141,7 @@ Logic:
   the click coordinates with two entries (more later): "Fork from here"
   and "Cancel".
 - On select, call `window.api.conversations.fork({ sourceConversationId,
-  upToMessageId: message.id })`.
+  upToIndex: messageIndex, forkedAtMessageId: message.id })`.
 - On success: `addSession(...)` to agent-store with the fork's id +
   messages + `resumeSessionId = resumeHint ?? undefined`. Then
   `setActiveSession(newId)`.
