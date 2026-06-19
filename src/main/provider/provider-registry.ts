@@ -153,10 +153,10 @@ export class ProviderRegistry {
       }
       log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${instance?.oauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
 
-      this.sessionAdapters.set(opts.threadId, adapter)
-      this.sessionProviders.set(opts.threadId, opts.provider)
       const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))
       if (instance) session.instanceId = instance.id
+      this.sessionAdapters.set(opts.threadId, adapter)
+      this.sessionProviders.set(opts.threadId, opts.provider)
       this.sessionCwd.set(opts.threadId, session.cwd)
       return session
     })

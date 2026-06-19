@@ -31,6 +31,10 @@ import { serializeBodyWithPills } from '../../services/chatInputBody'
 
 type RuntimeMode = 'plan' | 'sandbox' | 'full-access' | 'accept-edits'
 
+export function shouldFetchProviderSkills(agentType: AgentType): boolean {
+  return agentType !== 'terminal'
+}
+
 interface ImageAttachment {
   id: string
   file: File
@@ -177,17 +181,17 @@ export function ChatInput({
   const atFilesCacheRef = useRef<{ repoRoot: string; files: string[] } | null>(null)
 
   // Fetch the agent's slash commands/skills (Claude SDK init.commands,
-  // Codex skills/list) so the slash menu can surface them alongside our
-  // Switchboard built-ins. OpenCode has no skill registry — we just skip
-  // the call (preload returns []). Re-run when sessionId or agentType
-  // changes so a session swap doesn't show stale skills.
+  // Codex skills/list, OpenCode ACP available_commands_update) so the
+  // slash menu can surface them alongside our Switchboard built-ins.
+  // Re-run when sessionId or agentType changes so a session swap doesn't
+  // show stale skills.
   // Stable fetcher — also called from the slash-trigger path below so the
   // menu refreshes the moment the user opens `/`, not just on session
   // mount. Without this, `system/init` (Claude SDK) hadn't fired yet at
   // mount time and skills would stay empty until the user reloaded.
   const fetchSkills = useCallback(() => {
     if (!sessionId) { setAgentSkills([]); return }
-    if (agentType === 'opencode') { setAgentSkills([]); return }
+    if (!shouldFetchProviderSkills(agentType)) { setAgentSkills([]); return }
     ;window.api.provider.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
       if (Array.isArray(skills) && skills.length > 0) {
         setAgentSkills(skills)
@@ -197,7 +201,7 @@ export function ChatInput({
 
   useEffect(() => {
     if (!sessionId) { setAgentSkills([]); return }
-    if (agentType === 'opencode') { setAgentSkills([]); return }
+    if (!shouldFetchProviderSkills(agentType)) { setAgentSkills([]); return }
     let cancelled = false
     // The agent may not have initialized yet; retry a couple of times so
     // the menu populates as soon as `system/init` lands.
@@ -1116,4 +1120,3 @@ function inferTierFromId(id: string): 'fast' | 'balanced' | 'max' {
   if (lower.includes('pro') || lower.includes('opus') || lower.includes('max') || lower.includes('large') || lower.includes('ultra')) return 'max'
   return 'balanced'
 }
-

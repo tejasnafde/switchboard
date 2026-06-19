@@ -261,6 +261,8 @@ interface ActiveSession {
   pendingApprovals: Map<string, PendingApproval>
   pendingQuestions: Map<string, PendingQuestion>
   currentMessageId: string | null
+  currentReasoningMessageId: string | null
+  partialMessageText: Map<string, string>
   /** Whether the SDK is already draining the query iterator (only set once) */
   draining: boolean
   /**
@@ -390,6 +392,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       pendingApprovals: new Map(),
       pendingQuestions: new Map(),
       currentMessageId: null,
+      currentReasoningMessageId: null,
+      partialMessageText: new Map(),
       draining: false,
       skills: [],
       turnStartedAt: null,
@@ -707,6 +711,8 @@ export class ClaudeAdapter implements ProviderAdapter {
     } finally {
       active.query = null
       active.currentMessageId = null
+      active.currentReasoningMessageId = null
+      active.partialMessageText.clear()
       active.draining = false
     }
   }
@@ -912,29 +918,82 @@ export class ClaudeAdapter implements ProviderAdapter {
         break
       }
 
+      case 'stream_event': {
+        // SDKPartialAssistantMessage (includePartialMessages:true)
+        type StreamMsg = SDKMessage & {
+          event?: {
+            type?: string
+            delta?: { type?: string; text?: string; thinking?: string }
+          }
+        }
+        const streamMsg = msg as StreamMsg
+        const ev = streamMsg.event
+        if (!ev) break
+
+        if (ev.type === 'content_block_delta') {
+          const delta = ev.delta
+          if (delta?.type === 'text_delta' && delta.text) {
+            if (!active.currentMessageId) {
+              active.currentMessageId = `msg_${threadId.slice(-6)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+            }
+            const msgId = active.currentMessageId
+            const fullText = (active.partialMessageText.get(msgId) ?? '') + delta.text
+            active.partialMessageText.set(msgId, fullText)
+            active.onEvent({ type: 'content', threadId, messageId: msgId, text: fullText, streamKind: 'assistant' })
+          } else if (delta?.type === 'thinking_delta' && delta.thinking) {
+            if (!active.currentReasoningMessageId) {
+              active.currentReasoningMessageId = `think_${threadId.slice(-6)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+            }
+            const reasonId = active.currentReasoningMessageId
+            const fullText = (active.partialMessageText.get(reasonId) ?? '') + delta.thinking
+            active.partialMessageText.set(reasonId, fullText)
+            active.onEvent({ type: 'content', threadId, messageId: reasonId, text: fullText, streamKind: 'reasoning' })
+          }
+        } else if (ev.type === 'content_block_stop') {
+          active.currentReasoningMessageId = null
+        }
+        break
+      }
+
       case 'assistant': {
         type ContentBlock = { type: string; text?: string; id?: string; name?: string; input?: unknown; thinking?: string }
         const content = (msg as SDKMessage & { message?: { content?: ContentBlock[] } }).message?.content
         if (!content || !Array.isArray(content)) break
 
-        const textParts: string[] = []
-        for (const block of content) {
-          if (block.type === 'text' && block.text) {
-            textParts.push(block.text)
+        // Skip text/thinking if already streamed via stream_event deltas.
+        const wasStreaming = active.partialMessageText.size > 0
+
+        if (!wasStreaming) {
+          const textParts: string[] = []
+          for (const block of content) {
+            if (block.type === 'text' && block.text) {
+              textParts.push(block.text)
+            }
           }
-        }
 
-        if (textParts.length > 0) {
-          const msgId = active.currentMessageId ?? `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-          active.currentMessageId = msgId
+          if (textParts.length > 0) {
+            const msgId = active.currentMessageId ?? `msg_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+            active.currentMessageId = msgId
+            active.onEvent({
+              type: 'content',
+              threadId,
+              messageId: msgId,
+              text: textParts.join('\n'),
+              streamKind: 'assistant',
+            })
+          }
 
-          active.onEvent({
-            type: 'content',
-            threadId,
-            messageId: msgId,
-            text: textParts.join('\n'),
-            streamKind: 'assistant',
-          })
+          for (const block of content) {
+            if (block.type === 'thinking' && block.thinking) {
+              active.onEvent({
+                type: 'content',
+                threadId,
+                messageId: `think_${Date.now()}`,
+                text: block.thinking,
+                streamKind: 'reasoning',
+              })
+            }
+          }
         }
 
         for (const block of content) {
@@ -955,18 +1014,6 @@ export class ClaudeAdapter implements ProviderAdapter {
           }
         }
 
-        for (const block of content) {
-          if (block.type === 'thinking' && block.thinking) {
-            active.onEvent({
-              type: 'content',
-              threadId,
-              messageId: `think_${Date.now()}`,
-              text: block.thinking,
-              streamKind: 'reasoning',
-            })
-          }
-        }
-
         active.session.status = 'running'
         active.onEvent({ type: 'status', threadId, status: 'running' })
         break
@@ -976,6 +1023,8 @@ export class ClaudeAdapter implements ProviderAdapter {
         type ResultMsg = SDKMessage & { total_cost_usd?: number; num_turns?: number; usage?: { input_tokens?: number }; session_id?: string }
         const result = msg as ResultMsg
         active.currentMessageId = null
+        active.currentReasoningMessageId = null
+        active.partialMessageText.clear()
 
         const durationMs =
           active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined

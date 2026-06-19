@@ -198,6 +198,26 @@ function makeChild(): MockChild {
           }) + '\n')
           stdout.write(JSON.stringify({
             jsonrpc: '2.0',
+            method: 'item/reasoning/textDelta',
+            params: {
+              delta: 'Thinking ',
+              itemId: 'reason-1',
+              threadId: 'codex-thread-1',
+              turnId: 'turn-1',
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'item/reasoning/textDelta',
+            params: {
+              delta: 'with Codex',
+              itemId: 'reason-1',
+              threadId: 'codex-thread-1',
+              turnId: 'turn-1',
+            },
+          }) + '\n')
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
             id: message.id,
             result: {
               turn: { id: 'turn-1', status: 'running' },
@@ -469,6 +489,28 @@ describe('CodexAdapter', () => {
       threadId: 'thread-1',
       text: 'Hello from Codex',
       streamKind: 'assistant',
+    }))
+  })
+
+  it('accumulates reasoning deltas (not just final text) per itemId', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    await adapter.sendTurn('thread-1', 'think')
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'content',
+      threadId: 'thread-1',
+      messageId: 'reason-1',
+      text: 'Thinking with Codex',
+      streamKind: 'reasoning',
     }))
   })
 

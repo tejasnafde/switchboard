@@ -1,12 +1,3 @@
-/**
- * Buffering policy for the "Stream assistant messages" toggle (FU2).
- * When streaming is OFF, the renderer collects per-message latest-text
- * snapshots and only flushes them on turn.completed. When ON, the
- * buffer is bypassed (every content event is dispatched immediately).
- *
- * The component just calls `bufferContent(buffer, tid, msgId, text)`
- * and `drainTurn(buffer, tid)` — those are pure and tested here.
- */
 import { describe, expect, it } from 'vitest'
 import {
   createStreamingBuffer,
@@ -51,7 +42,7 @@ describe('streamingBuffer', () => {
     expect(drainTurn(buf, 't1')).toEqual([{ messageId: 'm2', text: 'turn 2' }])
   })
 
-  it('drainTurn for one thread does not affect another thread (sessions are isolated)', () => {
+  it('drainTurn for one thread does not affect another', () => {
     const buf = createStreamingBuffer()
     bufferContent(buf, 't1', 'm1', 'thread 1')
     bufferContent(buf, 't2', 'm1', 'thread 2')
@@ -59,7 +50,7 @@ describe('streamingBuffer', () => {
     expect(drainTurn(buf, 't2')).toEqual([{ messageId: 'm1', text: 'thread 2' }])
   })
 
-  it('exports the buffer type so callers can hold it in a ref', () => {
+  it('StreamingBuffer type is exported', () => {
     const buf: StreamingBuffer = createStreamingBuffer()
     bufferContent(buf, 't1', 'm1', 'x')
     expect(drainTurn(buf, 't1').length).toBe(1)

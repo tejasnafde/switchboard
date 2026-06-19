@@ -46,6 +46,15 @@ interface MessageBubbleProps {
   onFileDiffResolve?: (messageId: string, status: FileDiffResolveStatus, contentToWrite: string | null) => void
 }
 
+export function resolveBubbleProjectPath(
+  sessions: Array<{ id: string; projectPath?: string }>,
+  sessionId: string | null | undefined,
+  activeSessionId: string | null,
+): string | undefined {
+  const preferredId = sessionId ?? activeSessionId
+  return sessions.find((s) => s.id === preferredId)?.projectPath
+}
+
 export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageBubbleProps) {
   const renderedContent = useMemo(() => {
     if (!message.content) return ''
@@ -111,8 +120,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     const root = markdownRef.current
     if (!root) return
     const store = useAgentStore.getState()
-    const session = store.sessions.find((s) => s.id === store.activeSessionId)
-    const projectPath = session?.projectPath
+    const projectPath = resolveBubbleProjectPath(store.sessions, sessionId, store.activeSessionId)
     if (!projectPath) return
 
     enhanceFilePills(root, (ref: FilePathRef, originalText: string) => {

@@ -39,6 +39,40 @@ describe('mapSessionUpdate', () => {
     })
   })
 
+  it('accumulates assistant chunks even when ACP omits messageId', () => {
+    const textByMessageId = new Map<string, string>()
+    const first = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'hello ' },
+        },
+      } as any,
+      textByMessageId,
+    )
+    const second = mapSessionUpdate(
+      tid,
+      {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'from opencode' },
+        },
+      } as any,
+      textByMessageId,
+    )
+
+    expect(second[0]).toMatchObject({
+      type: 'content',
+      threadId: tid,
+      messageId: (first[0] as any).messageId,
+      text: 'hello from opencode',
+      streamKind: 'assistant',
+    })
+  })
+
   it('maps agent_thought_chunk → content (reasoning)', () => {
     const events = mapSessionUpdate(
       tid,

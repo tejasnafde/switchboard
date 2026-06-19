@@ -132,16 +132,19 @@ export function mapSessionUpdate(
     case 'agent_thought_chunk': {
       const delta = textFromContent(update.content)
       if (!delta) break
-      const messageId = update.messageId
-        ?? `acp_msg_${update.sessionUpdate}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
-      
-      const fullText = update.messageId
-        ? `${assistantMessageText.get(messageId) ?? ''}${delta}`
-        : delta
-      
-      if (update.messageId) {
-        assistantMessageText.set(messageId, fullText)
+      const fallbackIdKey = `__fallback_id:${update.sessionUpdate}`
+      let messageId = update.messageId
+      if (!messageId) {
+        messageId = assistantMessageText.get(fallbackIdKey)
+        if (!messageId) {
+          messageId = `acp_msg_${update.sessionUpdate}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+          assistantMessageText.set(fallbackIdKey, messageId)
+        }
       }
+      
+      const fullText = `${assistantMessageText.get(messageId) ?? ''}${delta}`
+      
+      assistantMessageText.set(messageId, fullText)
 
       events.push({
         type: 'content',
@@ -460,10 +463,15 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     } catch (err) {
       log.error(`acp init/newSession failed: ${err instanceof Error ? err.message : String(err)}`)
       active.session.status = 'error'
-      onEvent({ type: 'error', threadId: opts.threadId, message: `OpenCode ACP init failed: ${err instanceof Error ? err.message : String(err)}` })
+      const message = `OpenCode ACP init failed: ${err instanceof Error ? err.message : String(err)}`
+      onEvent({ type: 'error', threadId: opts.threadId, message })
       onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
       // Tear down the child so the user can retry cleanly
       try { child.kill('SIGTERM') } catch { /* ignore */ }
+      active.child = null
+      active.connection = null
+      this.sessions.delete(opts.threadId)
+      throw new Error(message)
     }
 
     return session
@@ -522,6 +530,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
 
     active.session.status = 'running'
     active.turnStartedAt = Date.now()
+    active.assistantMessageText.clear()
     active.onEvent({ type: 'status', threadId, status: 'running' })
 
     const prompt: ContentBlock[] = []

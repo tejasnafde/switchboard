@@ -936,7 +936,35 @@ export class CodexAdapter implements ProviderAdapter {
     const method = notification.method as string
     log.debug(`handling codex notification ${method}: ${truncateLogPayload(JSON.stringify(notification.params ?? {}))}`)
 
-    if (method === 'item/agentMessage/delta' || method.includes('delta')) {
+    if (method === 'item/reasoning/summaryTextDelta' || method === 'item/reasoning/textDelta') {
+      const text = notification.params?.delta ?? notification.params?.text ?? ''
+      const messageId = notification.params?.itemId ?? `reason_${Date.now()}`
+      if (text) {
+        const fullText = `${active.assistantMessageText.get(messageId) ?? ''}${text}`
+        active.assistantMessageText.set(messageId, fullText)
+        active.onEvent({
+          type: 'content',
+          threadId,
+          messageId,
+          text: fullText,
+          streamKind: 'reasoning',
+        })
+      }
+    } else if (method === 'item/plan/delta') {
+      const text = notification.params?.delta ?? ''
+      const messageId = notification.params?.itemId ?? `plan_${Date.now()}`
+      if (text) {
+        const fullText = `${active.assistantMessageText.get(messageId) ?? ''}${text}`
+        active.assistantMessageText.set(messageId, fullText)
+        active.onEvent({
+          type: 'content',
+          threadId,
+          messageId,
+          text: fullText,
+          streamKind: 'plan',
+        })
+      }
+    } else if (method === 'item/agentMessage/delta' || method.includes('delta')) {
       const text = notification.params?.delta
         || notification.params?.text
         || notification.params?.content
@@ -1017,30 +1045,6 @@ export class CodexAdapter implements ProviderAdapter {
       }
     } else if (method === 'item/started' || method === 'item/completed') {
       this.handleItemLifecycle(threadId, active, notification)
-    } else if (method === 'item/reasoning/summaryTextDelta' || method === 'item/reasoning/textDelta') {
-      const text = notification.params?.delta ?? notification.params?.text ?? ''
-      const messageId = notification.params?.itemId ?? `reason_${Date.now()}`
-      if (text) {
-        active.onEvent({
-          type: 'content',
-          threadId,
-          messageId,
-          text,
-          streamKind: 'reasoning',
-        })
-      }
-    } else if (method === 'item/plan/delta') {
-      const text = notification.params?.delta ?? ''
-      const messageId = notification.params?.itemId ?? `plan_${Date.now()}`
-      if (text) {
-        active.onEvent({
-          type: 'content',
-          threadId,
-          messageId,
-          text,
-          streamKind: 'plan',
-        })
-      }
     } else if (method === 'item/commandExecution/outputDelta') {
       const output = notification.params?.delta ?? ''
       const toolId = notification.params?.itemId
