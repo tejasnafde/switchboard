@@ -30,6 +30,7 @@ import {
 } from './extensions'
 import { setHunksEffect } from './extensions/gitGutter'
 import { cmdClickJump } from './extensions/cmdClickJump'
+import { editorActionsKeymap } from './extensions/editorActions'
 import { themeFor } from './theme/highlightStyle'
 import { lspChangeDoc, lspOpenDoc } from '../../../services/lspClient'
 
@@ -135,6 +136,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
     const fullExtensions: Extension[] = [
       saveKeymap,
       cmdClickJump(getPathForJump, getRepoRootForJump),
+      editorActionsKeymap(getPathForJump, getRepoRootForJump),
       ...buildExtensions({ themeName: themeName as 'dark' | 'light' | 'translucent' }),
     ]
     extensionsRef.current = fullExtensions
@@ -231,6 +233,9 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       selection: { anchor: pos },
       effects: EditorView.scrollIntoView(pos, { y: 'center' }),
     })
+    // Keep focus in the editor after a jump so editor-scoped keys (back-nav
+    // Ctrl±, F12) keep working without an extra click.
+    view.focus()
   }, [lineRange, bufferId])
 
   // Debounced didChange: 300ms after the last edit, send the latest

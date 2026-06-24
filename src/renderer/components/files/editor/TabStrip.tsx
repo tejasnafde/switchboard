@@ -10,8 +10,7 @@
  */
 import { useCallback } from 'react'
 import { useEditorStore } from '../../../stores/editor-store'
-import { useAgentStore } from '../../../stores/agent-store'
-import { lspCloseDoc } from '../../../services/lspClient'
+import { closeEditorTab } from './editorTabClose'
 
 interface Props {
   sessionId: string | null
@@ -32,29 +31,13 @@ export function TabStrip({ sessionId }: Props): React.ReactElement | null {
   const buffers = useEditorStore((s) => s.buffers)
 
   const focus = useEditorStore((s) => s.focusBuffer)
-  const close = useEditorStore((s) => s.closeBuffer)
 
   const onClose = useCallback(
     (id: string, e: React.MouseEvent) => {
       e.stopPropagation()
-      const buf = buffers[id]
-      if (!buf) return
-      if (buf.dirty) {
-        const ok = window.confirm(`Discard unsaved changes to ${basename(buf.path)}?`)
-        if (!ok) return
-        close(id, { force: true })
-      } else {
-        close(id)
-      }
-      // Tell the LSP the document closed so the server drops it.
-      const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
-      const repoRoot = session?.worktreePath ?? session?.projectPath
-      if (repoRoot) {
-        const abs = `${repoRoot}/${buf.path}`.replace(/\/+/g, '/')
-        void lspCloseDoc(repoRoot, abs)
-      }
+      if (sessionId) closeEditorTab(sessionId, id)
     },
-    [buffers, close, sessionId],
+    [sessionId],
   )
 
   if (!sessionId || tabs.length === 0) return null

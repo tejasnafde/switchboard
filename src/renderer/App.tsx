@@ -2,6 +2,8 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse } from './stores/layout-store'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
 import { useEditorStore } from './stores/editor-store'
+import { classifyCloseFocus, type ClosestEl } from './closeFocus'
+import { closeEditorTab } from './components/files/editor/editorTabClose'
 import { useBookmarkStore } from './stores/bookmark-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
@@ -253,24 +255,24 @@ export function App() {
   useEffect(() => {
     if (typeof window.api?.onClosePaneOrWindow !== 'function') return
     const remove = window.api.onClosePaneOrWindow((opts: { shift?: boolean }) => {
-      // If focus is inside a chat panel and dual-chat mode is on, ⌘W
-      // closes that specific panel. This takes priority over terminal
-      // close so the shortcut feels natural when the chat has focus.
-      const active = document.activeElement
-      const focusedPanel = active instanceof HTMLElement
-        ? active.closest('[data-chat-panel]') as HTMLElement | null
-        : null
+      // Route ⌘W by what's focused so it never closes a terminal (killing an
+      // SSH'd-in pty) while the user is in the editor or a chat panel.
+      const focus = classifyCloseFocus(document.activeElement as unknown as ClosestEl | null)
       const layoutState = useLayoutStore.getState()
-      if (focusedPanel && layoutState.dualChat) {
-        const which = focusedPanel.getAttribute('data-chat-panel')
-        if (which === 'right') {
-          layoutState.closeRightPanel()
-          return
-        }
-        if (which === 'left') {
-          layoutState.closeLeftPanel(useAgentStore.getState().setActiveSession)
-          return
-        }
+
+      // Files/editor pane → close the active editor tab, and stop here.
+      if (focus === 'editor') {
+        const esid = useAgentStore.getState().activeSessionId
+        const bufId = esid ? useEditorStore.getState().activeBySession[esid] : null
+        if (esid && bufId) closeEditorTab(esid, bufId)
+        return
+      }
+
+      // Chat panel in dual mode → close that panel.
+      if (layoutState.dualChat && (focus === 'chat-left' || focus === 'chat-right')) {
+        if (focus === 'chat-right') layoutState.closeRightPanel()
+        else layoutState.closeLeftPanel(useAgentStore.getState().setActiveSession)
+        return
       }
 
       const sid = useAgentStore.getState().activeSessionId
