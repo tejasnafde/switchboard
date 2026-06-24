@@ -29,6 +29,8 @@ export interface DefinitionSources {
   }) => Promise<ResolvedDefinition[]>
   /** Tree-sitter symbol-index lookup, synchronous. */
   treeSitter: (args: { symbol: string }) => ResolvedDefinition[]
+  /** Repo-wide `git grep` for a declaration. Async fallback for any language. */
+  grep?: (args: { symbol: string }) => Promise<ResolvedDefinition[]>
 }
 
 export interface ResolveArgs {
@@ -49,6 +51,15 @@ export async function resolveDefinition(args: ResolveArgs): Promise<ResolvedDefi
         position: args.position,
       })
       if (results.length > 0) return results
+    } catch {
+      /* fall through to grep / tree-sitter */
+    }
+  }
+  // git grep fallback — works for every language when LSP can't resolve.
+  if (args.sources.grep) {
+    try {
+      const hits = await args.sources.grep({ symbol: args.symbol })
+      if (hits.length > 0) return hits
     } catch {
       /* fall through to tree-sitter */
     }

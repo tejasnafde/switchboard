@@ -293,6 +293,11 @@ const api = {
       repoRoot: string,
     ): Promise<{ ok: boolean; error?: string; files: string[] }> =>
       ipcRenderer.invoke(FilesChannels.LIST_ALL, repoRoot),
+    grepSymbol: (
+      repoRoot: string,
+      symbol: string,
+    ): Promise<{ ok: boolean; hits: Array<{ relPath: string; line: number; ch: number }> }> =>
+      ipcRenderer.invoke(FilesChannels.GREP_SYMBOL, repoRoot, symbol),
     writeFile: (
       repoRoot: string,
       subPath: string,
