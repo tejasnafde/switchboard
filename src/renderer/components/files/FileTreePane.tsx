@@ -172,7 +172,8 @@ export function FileTreePane(): React.ReactElement | null {
   const sessions = useAgentStore((s) => s.sessions)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
   const session = sessions.find((s) => s.id === activeSessionId)
-  const repoRoot = session?.projectPath
+  // Worktree-aware, matching the viewer/editor.
+  const repoRoot = session?.worktreePath ?? session?.projectPath
   if (!repoRoot) {
     return (
       <div style={{ padding: 12, fontSize: 12, opacity: 0.6 }}>

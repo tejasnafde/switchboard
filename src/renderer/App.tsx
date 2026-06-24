@@ -507,7 +507,7 @@ export function App() {
         const target = useEditorStore.getState().navBack(sessionId)
         if (target) {
           e.preventDefault()
-          useLayoutStore.getState().openInViewer(target.path, { start: target.line, end: target.line })
+          useLayoutStore.getState().openInViewer(target.path, { start: target.line, end: target.line }, { recordHistory: false })
         }
         return true
       }
@@ -515,7 +515,7 @@ export function App() {
         const target = useEditorStore.getState().navForward(sessionId)
         if (target) {
           e.preventDefault()
-          useLayoutStore.getState().openInViewer(target.path, { start: target.line, end: target.line })
+          useLayoutStore.getState().openInViewer(target.path, { start: target.line, end: target.line }, { recordHistory: false })
         }
         return true
       }

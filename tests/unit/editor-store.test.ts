@@ -108,6 +108,57 @@ describe('useEditorStore — markDirty / closeBuffer', () => {
   })
 })
 
+describe('useEditorStore — save force + reload (E3 conflict flow)', () => {
+  let lastWrite: { expectedMtimeMs: number | undefined } | null = null
+  beforeEach(() => {
+    lastWrite = null
+    ;(globalThis as unknown as { window: unknown }).window = {
+      api: {
+        files: {
+          writeFile: async (
+            _root: string,
+            _sub: string,
+            _content: string,
+            expectedMtimeMs?: number,
+          ) => {
+            lastWrite = { expectedMtimeMs }
+            return { ok: true as const, mtimeMs: 5000 }
+          },
+        },
+      },
+    }
+  })
+
+  it('passes the buffer mtime as the conflict guard on a normal save', async () => {
+    const id = useEditorStore.getState().openBuffer({
+      sessionId: 's1', path: 'a.ts', content: 'x', mtimeMs: 1234,
+    })
+    await useEditorStore.getState().save(id, '/repo', 'a.ts')
+    expect(lastWrite?.expectedMtimeMs).toBe(1234)
+  })
+
+  it('drops the conflict guard when force=true (overwrite-on-conflict)', async () => {
+    const id = useEditorStore.getState().openBuffer({
+      sessionId: 's1', path: 'a.ts', content: 'x', mtimeMs: 1234,
+    })
+    await useEditorStore.getState().save(id, '/repo', 'a.ts', { force: true })
+    expect(lastWrite?.expectedMtimeMs).toBeUndefined()
+  })
+
+  it('reloadBuffer replaces content + mtime and clears dirty', () => {
+    const id = useEditorStore.getState().openBuffer({
+      sessionId: 's1', path: 'a.ts', content: 'old', mtimeMs: 1,
+    })
+    useEditorStore.getState().markDirty(id, true)
+    useEditorStore.getState().reloadBuffer(id, 'fresh from disk', 9000)
+    const buf = useEditorStore.getState().buffers[id]
+    expect(buf.savedDoc).toBe('fresh from disk')
+    expect(buf.state.doc.toString()).toBe('fresh from disk')
+    expect(buf.mtimeMs).toBe(9000)
+    expect(buf.dirty).toBe(false)
+  })
+})
+
 describe('useEditorStore — focusBuffer', () => {
   it('sets activeBySession to the focused buffer id', () => {
     const a = useEditorStore.getState().openBuffer({

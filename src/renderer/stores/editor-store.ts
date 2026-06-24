@@ -84,6 +84,8 @@ interface EditorStore {
   setState: (id: string, state: EditorState) => void
   /** Mark a buffer as saved (clear dirty, update mtime + savedDoc). */
   markSaved: (id: string, savedDoc: string, mtimeMs: number) => void
+  /** Replace a buffer's content from disk (reload half of the conflict flow). */
+  reloadBuffer: (id: string, content: string, mtimeMs: number) => void
   /**
    * Persist a buffer to disk. Returns the result so the caller can show
    * an inline error / conflict toast. The store knows the repoRoot via
@@ -94,6 +96,7 @@ interface EditorStore {
     id: string,
     repoRoot: string,
     subPath: string,
+    opts?: { force?: boolean },
   ) => Promise<{ ok: true } | { ok: false; error: string; conflict?: boolean }>
 }
 
@@ -242,11 +245,24 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     return !!stack && canForward(stack)
   },
 
-  save: async (id, repoRoot, subPath) => {
+  reloadBuffer: (id, content, mtimeMs) => {
+    set((s) => {
+      const buf = s.buffers[id]
+      if (!buf) return s
+      const state = EditorState.create({ doc: content, extensions: [] })
+      return {
+        buffers: { ...s.buffers, [id]: { ...buf, state, savedDoc: content, mtimeMs, dirty: false } },
+      }
+    })
+  },
+
+  save: async (id, repoRoot, subPath, opts) => {
     const buf = get().buffers[id]
     if (!buf) return { ok: false, error: 'Buffer not found' }
     const content = buf.state.doc.toString()
-    const res = await window.api.files.writeFile(repoRoot, subPath, content, buf.mtimeMs)
+    // force=true drops the mtime conflict guard (overwrite-on-conflict).
+    const expectedMtime = opts?.force ? undefined : buf.mtimeMs
+    const res = await window.api.files.writeFile(repoRoot, subPath, content, expectedMtime)
     if (res.ok) {
       get().markSaved(id, content, res.mtimeMs)
       return { ok: true }

@@ -20,7 +20,9 @@ interface QuickOpenModalProps {
 export function QuickOpenModal({ open, onClose }: QuickOpenModalProps): React.ReactElement | null {
   const sessions = useAgentStore((s) => s.sessions)
   const activeId = useAgentStore((s) => s.activeSessionId)
-  const repoRoot = sessions.find((s) => s.id === activeId)?.projectPath ?? null
+  const activeSession = sessions.find((s) => s.id === activeId)
+  // Worktree-aware, matching the viewer/editor.
+  const repoRoot = activeSession?.worktreePath ?? activeSession?.projectPath ?? null
   const openInViewer = useLayoutStore((s) => s.openInViewer)
 
   const [files, setFiles] = useState<string[]>([])

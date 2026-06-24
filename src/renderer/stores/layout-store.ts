@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { useAgentStore } from './agent-store'
+import { useEditorStore } from './editor-store'
 
 const SIDEBAR_MIN = 140
 const SIDEBAR_MAX = 500
@@ -52,7 +53,11 @@ interface LayoutStore {
   viewerFilePath: string | null
   /** Optional line range to scroll/highlight in the viewer. */
   viewerLineRange: { start: number; end: number } | null
-  openInViewer: (path: string, lineRange?: { start: number; end: number } | null) => void
+  openInViewer: (
+    path: string,
+    lineRange?: { start: number; end: number } | null,
+    opts?: { recordHistory?: boolean },
+  ) => void
 
   /**
    * Per-session memory of "what was last open in the viewer". Switching
@@ -189,7 +194,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   viewerFilePath: null,
   viewerLineRange: null,
   viewerStateBySession: {},
-  openInViewer: (path, lineRange = null) => {
+  openInViewer: (path, lineRange = null, opts = {}) => {
     // Tag this onto the active session so toggling away and back lands
     // the user on the same file. Reading agent-store from inside a
     // layout-store action is the simplest way to avoid prop-drilling
@@ -208,21 +213,14 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
       viewerStateBySession: map,
     })
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
-    // Push onto the editor's per-session nav history so Ctrl+- / Alt+Left
-    // can step back. We import lazily to avoid a circular dep at startup.
-    if (activeId) {
-      try {
-        // Late require avoids a top-of-file import cycle (editor-store
-        // pulls historyStack which is otherwise renderer-only).
-        const { useEditorStore } = require('./editor-store') as typeof import('./editor-store')
-        useEditorStore.getState().pushNav(activeId, {
-          path,
-          line: lineRange?.start ?? 1,
-          ch: 0,
-        })
-      } catch {
-        /* test env or boot order */
-      }
+    // Single seat for nav history; back/forward replays pass recordHistory:false
+    // so they don't truncate the forward stack.
+    if (activeId && opts.recordHistory !== false) {
+      useEditorStore.getState().pushNav(activeId, {
+        path,
+        line: lineRange?.start ?? 1,
+        ch: 0,
+      })
     }
   },
   hydrateViewerForSession: (sessionId) => {
