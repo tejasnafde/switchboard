@@ -16,6 +16,7 @@
  */
 import { promises as fs } from 'node:fs'
 import { join, relative } from 'node:path'
+import { StringDecoder } from 'node:string_decoder'
 import { parseGitignore, isIgnored, type GitignoreRule } from './gitignore'
 
 export interface DirEntry {
@@ -117,8 +118,11 @@ export async function readFileCapped(absPath: string, capBytes: number): Promise
     const size = Math.min(stat.size, capBytes)
     const buf = Buffer.alloc(size)
     await handle.read(buf, 0, size, 0)
+    // write() (no .end()) drops a multibyte codepoint split by the cap instead
+    // of emitting U+FFFD.
+    const content = new StringDecoder('utf8').write(buf)
     return {
-      content: buf.toString('utf8'),
+      content,
       truncated: stat.size > capBytes,
       totalBytes: stat.size,
       mtimeMs: stat.mtimeMs,

@@ -28,7 +28,16 @@ function patternToRegexSource(pattern: string): string {
   let src = ''
   for (let i = 0; i < pattern.length; i++) {
     const ch = pattern[i]
-    if (ch === '*') src += '[^/]*'
+    if (ch === '*' && pattern[i + 1] === '*') {
+      // `**` crosses segments; `**/foo` matches `foo` at any depth.
+      i++
+      if (pattern[i + 1] === '/') {
+        i++
+        src += '(?:.*/)?'
+      } else {
+        src += '.*'
+      }
+    } else if (ch === '*') src += '[^/]*'
     else if (ch === '?') src += '[^/]'
     else if ('.+^$(){}|[]\\'.includes(ch)) src += '\\' + ch
     else src += ch
@@ -70,10 +79,11 @@ export function parseGitignore(content: string): GitignoreRule[] {
       // Anchored (leading slash): match from root. Bare name (no slash):
       // match any path segment. A slash mid-pattern (e.g. `foo/bar`) is also
       // root-relative per gitignore semantics — not matched at arbitrary depth.
+      // Case-insensitive to mirror git core.ignorecase on macOS/Windows.
       if (anchored || pattern.includes('/')) {
-        regex = new RegExp('^' + src + '$')
+        regex = new RegExp('^' + src + '$', 'i')
       } else {
-        regex = new RegExp('(^|/)' + src + '$')
+        regex = new RegExp('(^|/)' + src + '$', 'i')
       }
     } catch {
       // Malformed pattern — install a never-matches sentinel so callers

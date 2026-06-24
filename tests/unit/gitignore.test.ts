@@ -74,6 +74,26 @@ describe('isIgnored', () => {
     expect(() => isIgnored('foo', false, rules)).not.toThrow()
   })
 
+  it('supports ** matching across directory segments (E7)', () => {
+    const leading = parseGitignore('**/.DS_Store\n')
+    expect(isIgnored('.DS_Store', false, leading)).toBe(true)
+    expect(isIgnored('a/.DS_Store', false, leading)).toBe(true)
+    expect(isIgnored('a/b/.DS_Store', false, leading)).toBe(true)
+    expect(isIgnored('a/keep.txt', false, leading)).toBe(false)
+
+    const trailing = parseGitignore('dist/**\n')
+    expect(isIgnored('dist/bundle.js', false, trailing)).toBe(true)
+    expect(isIgnored('dist/sub/bundle.js', false, trailing)).toBe(true)
+    expect(isIgnored('dist', true, trailing)).toBe(false) // dir itself, no children
+    expect(isIgnored('other/bundle.js', false, trailing)).toBe(false)
+  })
+
+  it('matches case-insensitively to mirror git core.ignorecase on macOS/Windows (E8)', () => {
+    const rules = parseGitignore('node_modules\n*.LOG\n')
+    expect(isIgnored('Node_Modules', true, rules)).toBe(true)
+    expect(isIgnored('error.log', false, rules)).toBe(true)
+  })
+
   it('treats a pattern containing a slash as anchored to root', () => {
     // Per gitignore semantics, a slash in the middle of a pattern anchors it
     // to the repo root — `foo/bar` matches `foo/bar` but NOT `a/foo/bar`.
