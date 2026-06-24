@@ -10,7 +10,6 @@
  * those are normal CM6 transactions.
  */
 import { useLayoutStore } from '../../../../stores/layout-store'
-import { useEditorStore } from '../../../../stores/editor-store'
 
 export interface NavTarget {
   path: string
@@ -18,18 +17,10 @@ export interface NavTarget {
   ch?: number
 }
 
-export function navigateTo(sessionId: string | null, target: NavTarget): void {
-  // Open in the right pane / viewer; layout-store also flips rightPaneMode
-  // to 'files' if it isn't already.
+export function navigateTo(_sessionId: string | null, target: NavTarget): void {
+  // openInViewer flips to 'files' and records the nav-history entry itself.
   useLayoutStore.getState().openInViewer(
     target.path,
     target.line ? { start: target.line, end: target.line } : null,
   )
-  if (sessionId) {
-    useEditorStore.getState().pushNav(sessionId, {
-      path: target.path,
-      line: target.line ?? 1,
-      ch: target.ch ?? 0,
-    })
-  }
 }

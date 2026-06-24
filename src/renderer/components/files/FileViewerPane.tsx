@@ -12,10 +12,8 @@
  * HTML, so preview is a separate code path. Switching to 'raw' shows the
  * editor again.
  *
- * Line-range scroll (from `viewerLineRange`): dispatched into the active
- * EditorView via a small effect after open. The editor owns scroll +
- * selection so this is a one-shot — subsequent navigation updates the
- * cursor / selection directly via `navigation/navigate.ts` (Phase 3).
+ * Line-range scroll lives in `EditorHost` (it owns the live EditorView and
+ * observes `viewerLineRange` directly); this pane only resolves the path.
  *
  * Selection capture: `data-context-source="file-viewer"` propagates from
  * `<EditorHost>`'s container so ⌘L / contextBridge still routes from
@@ -23,6 +21,7 @@
  */
 import { memo, useCallback, useEffect, useMemo, useState } from 'react'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { useEditorStore } from '../../stores/editor-store'
@@ -34,7 +33,6 @@ const log = createRendererLogger('files:viewer-pane')
 
 export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement | null {
   const path = useLayoutStore((s) => s.viewerFilePath)
-  const lineRange = useLayoutStore((s) => s.viewerLineRange)
   const treeCollapsed = useLayoutStore((s) => s.fileTreeCollapsed)
   const toggleTreeCollapsed = useLayoutStore((s) => s.toggleFileTreeCollapsed)
   const sessions = useAgentStore((s) => s.sessions)
@@ -81,7 +79,9 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
         })
         if (isMarkdown) {
           try {
-            setMdPreview(marked.parse(res.content, { async: false }) as string)
+            // Sanitize — a hostile README must not run scripts via innerHTML.
+            const html = marked.parse(res.content, { async: false }) as string
+            setMdPreview(DOMPurify.sanitize(html))
           } catch (err) {
             log.warn('markdown preview parse failed', { path, err })
             setMdPreview('')
@@ -95,24 +95,6 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
       cancelled = true
     }
   }, [repoRoot, path, activeId, isMarkdown])
-
-  // One-shot scroll to the requested line range after the buffer is mounted.
-  // Editor owns scroll afterwards — this is just the entry-point hook.
-  useEffect(() => {
-    if (!bufferId || !lineRange) return
-    // Defer to next tick so EditorHost's setState has landed.
-    const t = setTimeout(() => {
-      const buf = useEditorStore.getState().buffers[bufferId]
-      if (!buf) return
-      const line = Math.max(1, Math.min(lineRange.start, buf.state.doc.lines))
-      const pos = buf.state.doc.line(line).from
-      // Scroll via dispatching a transaction targeting the buffer's state.
-      // EditorHost picks this up via setState seeing a new state object.
-      const tr = buf.state.update({ selection: { anchor: pos } })
-      useEditorStore.getState().setState(bufferId, tr.state)
-    }, 0)
-    return () => clearTimeout(t)
-  }, [bufferId, lineRange])
 
   const handleToggleMdMode = useCallback(() => {
     setMdMode((m) => (m === 'preview' ? 'raw' : 'preview'))

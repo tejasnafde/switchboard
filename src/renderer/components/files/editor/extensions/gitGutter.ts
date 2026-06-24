@@ -74,6 +74,9 @@ export function gitGutter() {
         return null
       },
       initialSpacer: () => ADD_MARK,
+      // Repaint when the hunks field changes (e.g. after save), not just on edit.
+      lineMarkerChange: (update) =>
+        update.transactions.some((tr) => tr.effects.some((e) => e.is(setHunksEffect))),
     }),
     gutterTheme,
   ]

@@ -15,12 +15,13 @@
  */
 import { useEffect, useRef } from 'react'
 import { EditorView, keymap } from '@codemirror/view'
-import { EditorState, Prec } from '@codemirror/state'
+import { EditorState, Prec, type Extension } from '@codemirror/state'
 import { createRendererLogger } from '../../../logger'
 import { useEditorStore } from '../../../stores/editor-store'
 
 const log = createRendererLogger('editor:host')
 import { useThemeStore } from '../../../stores/theme-store'
+import { useLayoutStore } from '../../../stores/layout-store'
 import {
   buildExtensions,
   languageCompartment,
@@ -42,6 +43,10 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   const mountedBufferRef = useRef<string | null>(null)
+  // Full extension set, captured once so per-buffer setState swaps keep them.
+  const extensionsRef = useRef<Extension[] | null>(null)
+  // Buffers already rebuilt with the full extensions (openBuffer seeds []).
+  const initializedRef = useRef<Set<string>>(new Set())
   const themeName = useThemeStore((s) => s.theme)
 
   // Stash the latest repoRoot in a ref so the save keymap (closed over
@@ -66,23 +71,53 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
             const store = useEditorStore.getState()
             const buf = store.buffers[id]
             if (!buf) return false
-            void store
-              .save(id, root, buf.path)
-              .then((res) => {
-                if (!res.ok) {
-                  log.warn('save failed', res.error, res.conflict ? '(conflict)' : '')
-                  return
-                }
-                // Refresh gutter after a successful save.
-                void window.api.git
-                  .fileDiff(root, buf.path)
-                  .then((diff) => {
-                    if (mountedBufferRef.current !== id) return
-                    if (diff.ok) view.dispatch({ effects: setHunksEffect.of(diff.hunks) })
-                  })
-                  .catch((err) => log.warn('post-save gutter refresh failed', err))
-              })
-              .catch((err) => log.error('save threw', err))
+            const refreshGutter = (): void => {
+              void window.api.git
+                .fileDiff(root, buf.path)
+                .then((diff) => {
+                  if (mountedBufferRef.current !== id) return
+                  if (diff.ok) view.dispatch({ effects: setHunksEffect.of(diff.hunks) })
+                })
+                .catch((err) => log.warn('post-save gutter refresh failed', err))
+            }
+            void (async () => {
+              const res = await store.save(id, root, buf.path)
+              if (res.ok) {
+                refreshGutter()
+                return
+              }
+              if (!res.conflict) {
+                log.warn('save failed', res.error)
+                return
+              }
+              // Changed on disk since open — let the user choose, don't drop it.
+              const overwrite = window.confirm(
+                `"${buf.path}" changed on disk since you opened it.\n\n` +
+                  `OK = overwrite the disk version with your edits\n` +
+                  `Cancel = reload from disk (discard your edits)`,
+              )
+              if (overwrite) {
+                const forced = await store.save(id, root, buf.path, { force: true })
+                if (forced.ok) refreshGutter()
+                else log.warn('forced save failed', forced.error)
+                return
+              }
+              // Reload from disk and re-sync the live view.
+              const r = await window.api.files.readFile(root, buf.path)
+              if (!r.ok) {
+                log.warn('reload after conflict failed', r.error)
+                return
+              }
+              store.reloadBuffer(id, r.content, r.mtimeMs)
+              if (mountedBufferRef.current === id) {
+                view.setState(
+                  EditorState.create({ doc: r.content, extensions: extensionsRef.current ?? [] }),
+                )
+                initializedRef.current.add(id)
+                useEditorStore.getState().setState(id, view.state)
+                refreshGutter()
+              }
+            })().catch((err) => log.error('save threw', err))
             return true
           },
         },
@@ -97,15 +132,17 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       return useEditorStore.getState().buffers[id]?.path ?? null
     }
     const getRepoRootForJump = (): string | null => repoRootRef.current
+    const fullExtensions: Extension[] = [
+      saveKeymap,
+      cmdClickJump(getPathForJump, getRepoRootForJump),
+      ...buildExtensions({ themeName: themeName as 'dark' | 'light' | 'translucent' }),
+    ]
+    extensionsRef.current = fullExtensions
     const view = new EditorView({
       parent: containerRef.current,
       state: EditorState.create({
         doc: '',
-        extensions: [
-          saveKeymap,
-          cmdClickJump(getPathForJump, getRepoRootForJump),
-          ...buildExtensions({ themeName: themeName as 'dark' | 'light' | 'translucent' }),
-        ],
+        extensions: fullExtensions,
       }),
       dispatch: (tr) => {
         view.update([tr])
@@ -122,6 +159,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       // Clear the marker so a recreated view (StrictMode remount, md
       // preview/raw toggle) re-runs the swap below instead of rendering blank.
       mountedBufferRef.current = null
+      initializedRef.current.clear()
     }
   }, [])
   // Note: themeName intentionally NOT in deps — view persists; theme
@@ -134,21 +172,23 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
     const buf = useEditorStore.getState().buffers[bufferId]
     if (!buf) return
     if (mountedBufferRef.current === bufferId) return
-    // Dispatch instead of setState — preserves the view's extension
-    // configuration (buffers are created with extensions: []).
-    const newDoc = buf.state.doc.toString()
-    const anchor = Math.min(buf.state.selection.main.anchor, newDoc.length)
-    // Set the marker BEFORE dispatching: the dispatch override round-trips
-    // view.state into mountedBufferRef's buffer, so a stale marker here would
-    // write the new file's content over the previous buffer.
+    // Swap whole EditorStates (not a doc-replacing transaction) so each buffer
+    // keeps its own undo history.
     mountedBufferRef.current = bufferId
-    view.dispatch(
-      view.state.update({
-        changes: { from: 0, to: view.state.doc.length, insert: newDoc },
+    let target = buf.state
+    if (!initializedRef.current.has(bufferId) && extensionsRef.current) {
+      // openBuffer seeds extensions:[]; rebuild once with the real set.
+      const anchor = Math.min(buf.state.selection.main.anchor, buf.state.doc.length)
+      target = EditorState.create({
+        doc: buf.state.doc,
         selection: { anchor },
-        scrollIntoView: true,
-      }),
-    )
+        extensions: extensionsRef.current,
+      })
+      initializedRef.current.add(bufferId)
+    }
+    view.setState(target)
+    // setState bypasses the dispatch override — round-trip to the store.
+    useEditorStore.getState().setState(bufferId, view.state)
 
     // Lazily attach the right language pack (after the swap so the
     // user sees content immediately even on first-load of a lang).
@@ -178,6 +218,20 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       )
     }
   }, [bufferId, repoRoot])
+
+  // Move the cursor + scroll the live view to the requested line range.
+  const lineRange = useLayoutStore((s) => s.viewerLineRange)
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !lineRange) return
+    const doc = view.state.doc
+    const line = Math.max(1, Math.min(lineRange.start, doc.lines))
+    const pos = doc.line(line).from
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+    })
+  }, [lineRange, bufferId])
 
   // Debounced didChange: 300ms after the last edit, send the latest
   // doc to the LSP. We subscribe to the buffer's `state` slot at the
