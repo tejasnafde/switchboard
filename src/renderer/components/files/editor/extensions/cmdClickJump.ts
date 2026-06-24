@@ -58,6 +58,55 @@ const clickableTheme = EditorView.theme({
   '.cm-cmd-clickable': { textDecoration: 'underline', cursor: 'pointer' },
 })
 
+/**
+ * Resolve + navigate to the definition of the symbol at doc offset `pos`.
+ * Shared by ⌘-click (pos = click) and F12 (pos = cursor).
+ */
+export function runDefinitionJump(
+  view: EditorView,
+  pos: number,
+  getPath: () => string | null,
+  getRepoRoot: () => string | null,
+): void {
+  const w = wordAt(view, pos)
+  if (!w) return
+  const relPath = getPath()
+  if (!relPath) return
+  const repoRoot = getRepoRoot()
+  const absPath =
+    repoRoot && !relPath.startsWith('/')
+      ? `${repoRoot}/${relPath}`.replace(/\/+/g, '/')
+      : relPath
+  const line0 = view.state.doc.lineAt(pos).number - 1
+  const ch = pos - view.state.doc.line(line0 + 1).from
+  const sessionId = useAgentStore.getState().activeSessionId
+  void resolveDefinition({
+    path: absPath,
+    symbol: w.word,
+    position: { line: line0, character: ch },
+    sources: { lsp: lspDefinitionSource, treeSitter: defaultTreeSitterSource, grep: grepDefinitionSource },
+  })
+    .then((defs) => {
+      if (defs.length === 0) return
+      const target = defs[0]
+      let navPath = target.path
+      if (repoRoot && navPath.startsWith(repoRoot + '/')) {
+        navPath = navPath.slice(repoRoot.length + 1)
+      }
+      navigateTo(sessionId, { path: navPath, line: target.line, ch: target.ch })
+    })
+    .catch((err) => log.warn('jump-to-definition failed', { symbol: w.word, err }))
+}
+
+/** F12 — jump to definition of the symbol under the cursor. */
+export function jumpToDefinitionAtCursor(
+  view: EditorView,
+  getPath: () => string | null,
+  getRepoRoot: () => string | null,
+): void {
+  runDefinitionJump(view, view.state.selection.main.head, getPath, getRepoRoot)
+}
+
 export function cmdClickJump(
   getPath: () => string | null,
   getRepoRoot: () => string | null,
@@ -100,38 +149,10 @@ export function cmdClickJump(
       if (!isMod || e.button !== 0) return
       const pos = view.posAtCoords({ x: e.clientX, y: e.clientY })
       if (pos == null) return
-      const w = wordAt(view, pos)
-      if (!w) return
-      const relPath = getPath()
-      if (!relPath) return
+      if (!wordAt(view, pos) || !getPath()) return
       e.preventDefault()
       apply(null)
-      const repoRoot = getRepoRoot()
-      const absPath =
-        repoRoot && !relPath.startsWith('/')
-          ? `${repoRoot}/${relPath}`.replace(/\/+/g, '/')
-          : relPath
-      const line0 = view.state.doc.lineAt(pos).number - 1
-      const ch = pos - view.state.doc.line(line0 + 1).from
-      // Capture the active session before the async resolve so a session
-      // switch mid-resolution doesn't navigate the wrong one.
-      const sessionId = useAgentStore.getState().activeSessionId
-      void resolveDefinition({
-        path: absPath,
-        symbol: w.word,
-        position: { line: line0, character: ch },
-        sources: { lsp: lspDefinitionSource, treeSitter: defaultTreeSitterSource, grep: grepDefinitionSource },
-      })
-        .then((defs) => {
-          if (defs.length === 0) return
-          const target = defs[0]
-          let navPath = target.path
-          if (repoRoot && navPath.startsWith(repoRoot + '/')) {
-            navPath = navPath.slice(repoRoot.length + 1)
-          }
-          navigateTo(sessionId, { path: navPath, line: target.line, ch: target.ch })
-        })
-        .catch((err) => log.warn('jump-to-definition failed', { symbol: w.word, err }))
+      runDefinitionJump(view, pos, getPath, getRepoRoot)
     }
 
     view.dom.addEventListener('mousedown', onMouseDown, true)
