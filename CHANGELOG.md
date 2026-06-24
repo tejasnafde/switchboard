@@ -2,6 +2,35 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-06-24 — File-editor bug sweep, jump-to-definition UX, SSH plan
+
+### Fixed
+- **Symlink path-traversal in the files IPC** — `resolveWithinRepo` was lexical only; a symlink inside the repo could read/write/delete outside it. Now resolves the realpath of the nearest existing ancestor and re-checks containment.
+- **UTF-8 read boundary** — `readFileCapped` sliced mid-codepoint at the 2 MB cap, emitting `U+FFFD`. Uses `StringDecoder` to drop the partial trailing codepoint instead.
+- **gitignore annotation** — added `**` cross-segment matching and case-insensitive matching (mirrors `core.ignorecase` on macOS/Windows).
+- **EOL preservation on save** — majority-vote CRLF/LF detection (a leading bare `\n` no longer flips a CRLF file to LF); lone `\r` normalized.
+- **Tab-switch lost undo history** — editor now swaps whole `EditorState`s (`setState`) instead of replacing the doc, so undo no longer bleeds across buffers.
+- **Jump-to-line was dead** — cmd-click / file-pill / ⌘P-line navigation wrote to the store but never moved the editor; `EditorHost` now dispatches the scroll into the live view (fixes cmd-click go-to-definition visibly doing nothing, including cross-file jumps).
+- **Git gutter stayed stale after save** — added `lineMarkerChange` so the bars repaint on the post-save hunks refresh.
+- **Save-conflict silently dropped** — ⌘S on a file changed on disk now prompts overwrite / reload instead of swallowing the write.
+- **Nav history** — `openInViewer` is the single push point (no more double-push from `navigateTo`); back/forward replays pass `recordHistory:false` so the forward stack isn't truncated.
+- **LSP crash recovery + didClose** — the client nulls its dead child and the manager evicts the entry on exit so the next call respawns; `textDocument/didClose` is now sent on tab close (was never sent — leaked docs / stale results).
+- **Worktree-mode file browsing** — file tree + quick-open now use `worktreePath ?? projectPath` like the viewer (kanban-card / fork-to-worktree sessions browsed the parent repo before).
+- **Monotonic diff turn id** — `CheckpointTracker` used `Date.now()`, so two turns in the same millisecond collided and dropped diff cards; switched to a counter.
+- **Markdown-preview XSS** — README preview is sanitized with DOMPurify before `dangerouslySetInnerHTML`.
+
+### Added / improved
+- **⌘/Ctrl-hover underline** on the symbol under the cursor (VS Code-style affordance for cmd-click).
+- **`git grep` go-to-definition fallback** — when LSP can't resolve (cold server or non-LSP language), grep the repo for the declaration. The previously-advertised tree-sitter fallback was a never-populated stub. New `files:grep-symbol` IPC.
+- **Quick-open ranking** — `fuzzyScore` leading-gap penalty so basename-prefix matches outrank buried ones.
+- **`$/cancelRequest`** — superseded same-method LSP requests are cancelled so the server stops computing discarded results.
+- **SSH "Connect to Remote" implementation plan** (`docs/notes/ssh-remote-plan.md`).
+
+### Tests
+- +24 unit tests across 4 new files (file edge-cases, nav history, fuzzy score, git-grep) plus diff/checkpoint/editor/definition-provider additions. Suite: ~790 → 887.
+
+---
+
 ## 2026-06-10 — Fix leaked `claude` subprocesses on session stop
 
 ### Fixed
