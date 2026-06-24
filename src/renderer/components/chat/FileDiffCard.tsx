@@ -234,6 +234,10 @@ function HunkBlock({
             key={i}
             style={{
               display: 'flex',
+              // Grow to the longest line so the +/- background extends across
+              // the full horizontal scroll, not just the visible width.
+              width: 'max-content',
+              minWidth: '100%',
               background:
                 row.kind === 'add'
                   ? 'var(--diff-add-bg, rgba(46,160,67,0.15))'
