@@ -128,4 +128,32 @@ index abc..def 100644
       { kind: 'add', startLine: 3, endLine: 3 },
     ])
   })
+
+  // D12: whole-file / leading deletions must anchor the del marker on a real
+  // line of the new file (>= 1), never line 0 or a non-existent line.
+  it('anchors a whole-file deletion on line 1', () => {
+    const diff = `diff --git a/f b/f
+--- a/f
++++ b/f
+@@ -1,3 +0,0 @@
+-a
+-b
+-c
+`
+    const hunks = parseUnifiedDiff(diff)
+    expect(hunks).toEqual([{ kind: 'del', startLine: 1, endLine: 1 }])
+  })
+
+  it('anchors a leading-lines deletion on a real surviving line', () => {
+    const diff = `diff --git a/f b/f
+--- a/f
++++ b/f
+@@ -1,2 +0,0 @@
+-x
+-y
+`
+    const hunks = parseUnifiedDiff(diff)
+    expect(hunks[0].kind).toBe('del')
+    expect(hunks[0].startLine).toBeGreaterThanOrEqual(1)
+  })
 })
