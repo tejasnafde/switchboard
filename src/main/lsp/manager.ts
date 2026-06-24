@@ -84,6 +84,10 @@ async function spawnServer(language: LspLanguage, workspaceRoot: string): Promis
       if (entry) entry.diagnosticsByUri.set(p.uri, p.diagnostics)
     }
   })
+  // On crash, evict the entry so the next call respawns instead of using a dead client.
+  client.onExit(() => {
+    servers.delete(key(workspaceRoot, language))
+  })
   log.info(`spawning ${language} LSP for ${workspaceRoot}`)
   await client.start({
     command: locator.command,

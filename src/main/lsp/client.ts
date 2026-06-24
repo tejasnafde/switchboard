@@ -48,10 +48,16 @@ export class LspClient {
   private nextId = 1
   private pending = new Map<number, PendingRequest>()
   private notifHandler: NotificationHandler = () => {}
+  private exitHandler: () => void = () => {}
   private disposed = false
 
   onNotification(handler: NotificationHandler): void {
     this.notifHandler = handler
+  }
+
+  /** Fired when the server process exits/crashes (not on explicit dispose). */
+  onExit(handler: () => void): void {
+    this.exitHandler = handler
   }
 
   async start(args: ClientStartArgs): Promise<void> {
@@ -71,11 +77,13 @@ export class LspClient {
     })
     child.on('exit', (code, signal) => {
       log.info(`server exited code=${code} signal=${signal}`)
-      // Reject all pending requests with a server-died error
+      // Mark dead so request()/notify() short-circuit instead of writing to closed stdin.
+      this.child = null
       for (const [id, p] of this.pending) {
         p.reject(new Error(`LSP server exited (${p.method})`))
         this.pending.delete(id)
       }
+      if (!this.disposed) this.exitHandler()
     })
 
     await this.request('initialize', {
