@@ -24,7 +24,6 @@ export interface CheckpointTrackerDeps {
   createCheckpoint: typeof realCreateCheckpoint
   diffCheckpoint: typeof realDiffCheckpoint
   isGitRepo: typeof realIsGitRepo
-  now: () => number
 }
 
 interface PendingCheckpoint {
@@ -36,13 +35,14 @@ interface PendingCheckpoint {
 export class CheckpointTracker {
   private pending = new Map<string, PendingCheckpoint>()
   private deps: CheckpointTrackerDeps
+  // Counter (not the clock) so same-millisecond turns can't collide on turnId.
+  private seq = 0
 
   constructor(deps: Partial<CheckpointTrackerDeps> = {}) {
     this.deps = {
       createCheckpoint: realCreateCheckpoint,
       diffCheckpoint: realDiffCheckpoint,
       isGitRepo: realIsGitRepo,
-      now: () => Date.now(),
       ...deps,
     }
   }
@@ -63,7 +63,7 @@ export class CheckpointTracker {
         this.pending.delete(threadId)
         return
       }
-      this.pending.set(threadId, { turnId: String(this.deps.now()), tree: res.tree, repoRoot })
+      this.pending.set(threadId, { turnId: String(++this.seq), tree: res.tree, repoRoot })
     } catch (err) {
       log.warn('beginTurn failed', { threadId, err })
       this.pending.delete(threadId)

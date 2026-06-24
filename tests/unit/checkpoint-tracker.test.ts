@@ -11,7 +11,6 @@ function fakeDeps(over: {
   isGit?: boolean
   files?: CheckpointFileDiff[]
   createOk?: boolean
-  now?: number
 }) {
   return {
     isGitRepo: async () => over.isGit ?? true,
@@ -20,7 +19,6 @@ function fakeDeps(over: {
         ? ({ ok: false as const, error: 'boom' })
         : ({ ok: true as const, tree: 'START' }),
     diffCheckpoint: async () => ({ ok: true as const, files: over.files ?? [] }),
-    now: () => over.now ?? 1000,
   }
 }
 
@@ -30,7 +28,7 @@ describe('CheckpointTracker', () => {
       { relPath: 'a.ts', changeKind: 'modify', oldContent: 'old\n', newContent: 'new\n' },
       { relPath: 'b.ts', changeKind: 'add', oldContent: '', newContent: 'added\n' },
     ]
-    const t = new CheckpointTracker(fakeDeps({ files, now: 42 }))
+    const t = new CheckpointTracker(fakeDeps({ files }))
     await t.beginTurn('thread-1', '/repo')
     const events = await t.finishTurn('thread-1')
 
@@ -38,8 +36,8 @@ describe('CheckpointTracker', () => {
       {
         type: 'file.edited',
         threadId: 'thread-1',
-        turnId: '42',
-        fileEditId: '42:a.ts',
+        turnId: '1',
+        fileEditId: '1:a.ts',
         repoRoot: '/repo',
         relPath: 'a.ts',
         changeKind: 'modify',
@@ -49,8 +47,8 @@ describe('CheckpointTracker', () => {
       {
         type: 'file.edited',
         threadId: 'thread-1',
-        turnId: '42',
-        fileEditId: '42:b.ts',
+        turnId: '1',
+        fileEditId: '1:b.ts',
         repoRoot: '/repo',
         relPath: 'b.ts',
         changeKind: 'add',
@@ -58,6 +56,20 @@ describe('CheckpointTracker', () => {
         newContent: 'added\n',
       },
     ])
+  })
+
+  it('produces a unique turn id per turn even within the same millisecond (D11)', async () => {
+    const files: CheckpointFileDiff[] = [
+      { relPath: 'a.ts', changeKind: 'modify', oldContent: 'o', newContent: 'n' },
+    ]
+    // now() is pinned to a constant — two back-to-back turns would collide if
+    // the turn id were derived from the clock.
+    const t = new CheckpointTracker(fakeDeps({ files }))
+    await t.beginTurn('thread-1', '/repo')
+    const first = await t.finishTurn('thread-1')
+    await t.beginTurn('thread-1', '/repo')
+    const second = await t.finishTurn('thread-1')
+    expect(first[0].fileEditId).not.toBe(second[0].fileEditId)
   })
 
   it('returns no events when finishTurn is called without a prior beginTurn', async () => {
