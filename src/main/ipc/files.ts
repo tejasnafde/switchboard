@@ -10,7 +10,7 @@
  * spinning up Electron.
  */
 import { ipcMain } from 'electron'
-import { isAbsolute, join, normalize, relative, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, normalize, relative, resolve } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { FilesChannels } from '@shared/ipc-channels'
 import { listDirAnnotated, readFileCapped, listAllFiles } from '../files/listing'
@@ -22,16 +22,40 @@ const log = createLogger('ipc:files')
 const MAX_READ_BYTES = 2 * 1024 * 1024 // 2 MB hard cap for viewer
 const MAX_WRITE_BYTES = 8 * 1024 * 1024 // 8 MB cap on writes — caps a runaway buffer wiping the disk
 
+/** Realpath the nearest existing ancestor (leaf may not exist for a new-file
+ *  write) and re-append the tail, so symlinks are resolved for the check below. */
+async function realpathOrAncestor(p: string): Promise<string> {
+  let dir = p
+  const tail: string[] = []
+  for (;;) {
+    try {
+      const real = await fs.realpath(dir)
+      return tail.length ? resolve(real, ...tail.reverse()) : real
+    } catch {
+      const parent = dirname(dir)
+      if (parent === dir) return p
+      tail.push(basename(dir))
+      dir = parent
+    }
+  }
+}
+
 /**
- * Reject any subPath that escapes repoRoot via `..` or absolute paths.
- * Returns the normalized absolute path on success, throws on traversal.
+ * Reject a subPath escaping repoRoot via `..`, an absolute path, or a symlink
+ * pointing outside the repo (lexical checks alone miss the symlink case).
  */
-function resolveWithinRepo(repoRoot: string, subPath: string): string {
+export async function resolveWithinRepo(repoRoot: string, subPath: string): Promise<string> {
   const root = resolve(repoRoot)
   const candidate = isAbsolute(subPath) ? normalize(subPath) : resolve(root, subPath)
   const rel = relative(root, candidate)
   if (rel.startsWith('..') || isAbsolute(rel)) {
     throw new Error(`Path escapes repo root: ${subPath}`)
+  }
+  const realRoot = await realpathOrAncestor(root)
+  const realCandidate = await realpathOrAncestor(candidate)
+  const realRel = relative(realRoot, realCandidate)
+  if (realRel.startsWith('..') || isAbsolute(realRel)) {
+    throw new Error(`Path escapes repo root via symlink: ${subPath}`)
   }
   return candidate
 }
@@ -43,7 +67,7 @@ export function registerFilesHandlers(): void {
 
   ipcMain.handle(FilesChannels.LIST_DIR, async (_e, repoRoot: string, subPath = '') => {
     try {
-      const abs = resolveWithinRepo(repoRoot, subPath)
+      const abs = await resolveWithinRepo(repoRoot, subPath)
       const entries = await listDirAnnotated(abs, repoRoot)
       return { ok: true, entries }
     } catch (err) {
@@ -54,7 +78,7 @@ export function registerFilesHandlers(): void {
 
   ipcMain.handle(FilesChannels.READ_FILE, async (_e, repoRoot: string, subPath: string) => {
     try {
-      const abs = resolveWithinRepo(repoRoot, subPath)
+      const abs = await resolveWithinRepo(repoRoot, subPath)
       const out = await readFileCapped(abs, MAX_READ_BYTES)
       return { ok: true, ...out }
     } catch (err) {
@@ -87,7 +111,7 @@ export function registerFilesHandlers(): void {
         if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) {
           return { ok: false, error: `File too large to write (cap ${MAX_WRITE_BYTES} bytes)` }
         }
-        const abs = resolveWithinRepo(repoRoot, subPath)
+        const abs = await resolveWithinRepo(repoRoot, subPath)
         const res = await writeFileSafe(abs, content, { expectedMtimeMs })
         return res
       } catch (err) {
@@ -99,7 +123,7 @@ export function registerFilesHandlers(): void {
 
   ipcMain.handle(FilesChannels.DELETE_FILE, async (_e, repoRoot: string, subPath: string) => {
     try {
-      const abs = resolveWithinRepo(repoRoot, subPath)
+      const abs = await resolveWithinRepo(repoRoot, subPath)
       return await deleteFileSafe(abs)
     } catch (err) {
       log.warn('delete-file failed', { repoRoot, subPath, err: (err as Error).message })
@@ -113,7 +137,7 @@ export function registerFilesHandlers(): void {
       const out: Array<{ path: string; content: string; mtimeMs: number; truncated: boolean }> = []
       for (const sub of subPaths) {
         try {
-          const abs = resolveWithinRepo(repoRoot, sub)
+          const abs = await resolveWithinRepo(repoRoot, sub)
           const r = await readFileCapped(abs, MAX_READ_BYTES)
           out.push({ path: sub, content: r.content, mtimeMs: r.mtimeMs, truncated: r.truncated })
         } catch (err) {
@@ -126,7 +150,7 @@ export function registerFilesHandlers(): void {
 
   ipcMain.handle(FilesChannels.RESOLVE, async (_e, repoRoot: string, subPath: string) => {
     try {
-      const abs = resolveWithinRepo(repoRoot, subPath)
+      const abs = await resolveWithinRepo(repoRoot, subPath)
       await fs.access(abs)
       return { ok: true, exists: true, absPath: abs }
     } catch {

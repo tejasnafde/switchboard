@@ -32,11 +32,11 @@ export type WriteResult =
 
 async function detectEol(absPath: string): Promise<'\r\n' | '\n'> {
   try {
-    const buf = await fs.readFile(absPath)
-    // Look for the first '\n'. If preceded by '\r', file is CRLF.
-    const idx = buf.indexOf(0x0a)
-    if (idx > 0 && buf[idx - 1] === 0x0d) return '\r\n'
-    return '\n'
+    const text = await fs.readFile(absPath, 'latin1')
+    // Majority vote so a leading bare '\n' doesn't flip a CRLF file to LF.
+    const crlf = (text.match(/\r\n/g) ?? []).length
+    const lf = (text.match(/(^|[^\r])\n/g) ?? []).length
+    return crlf > lf ? '\r\n' : '\n'
   } catch {
     return '\n'
   }
@@ -44,9 +44,8 @@ async function detectEol(absPath: string): Promise<'\r\n' | '\n'> {
 
 function applyEol(content: string, eol: '\r\n' | '\n'): string {
   if (eol === '\n') return content
-  // Caller hands us LF-normalized content; convert lone \n → \r\n,
-  // leave existing \r\n alone (defensive).
-  return content.replace(/\r?\n/g, '\r\n')
+  // Normalize any line ending to CRLF (a stray lone '\r' must not survive).
+  return content.replace(/\r\n|\r|\n/g, '\r\n')
 }
 
 export async function writeFileSafe(
