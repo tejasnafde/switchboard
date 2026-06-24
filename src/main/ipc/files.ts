@@ -12,9 +12,14 @@
 import { ipcMain } from 'electron'
 import { basename, dirname, isAbsolute, normalize, relative, resolve } from 'node:path'
 import { promises as fs } from 'node:fs'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { FilesChannels } from '@shared/ipc-channels'
+
+const execFileP = promisify(execFile)
 import { listDirAnnotated, readFileCapped, listAllFiles } from '../files/listing'
 import { writeFileSafe, deleteFileSafe } from '../files/writing'
+import { SYMBOL_RE, declarationPattern, parseGitGrep } from '../files/grep'
 import { createMainLogger as createLogger } from '../logger'
 
 const log = createLogger('ipc:files')
@@ -155,6 +160,23 @@ export function registerFilesHandlers(): void {
       return { ok: true, exists: true, absPath: abs }
     } catch {
       return { ok: true, exists: false }
+    }
+  })
+
+  ipcMain.handle(FilesChannels.GREP_SYMBOL, async (_e, repoRoot: string, symbol: string) => {
+    if (!SYMBOL_RE.test(symbol)) return { ok: true, hits: [] }
+    try {
+      const { stdout } = await execFileP(
+        'git',
+        ['grep', '-nE', '--no-color', declarationPattern(symbol)],
+        { cwd: resolve(repoRoot), maxBuffer: 4 * 1024 * 1024 },
+      )
+      return { ok: true, hits: parseGitGrep(stdout, symbol) }
+    } catch (err) {
+      // git grep exits 1 when nothing matches — that's empty, not an error.
+      if ((err as { code?: number }).code === 1) return { ok: true, hits: [] }
+      log.warn('grep-symbol failed', { repoRoot, symbol, err: (err as Error).message })
+      return { ok: true, hits: [] }
     }
   })
 }

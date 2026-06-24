@@ -91,4 +91,50 @@ describe('resolveDefinition — routing', () => {
     })
     expect(out).toEqual([sampleLoc])
   })
+
+  it('tries grep when LSP is empty, before tree-sitter', async () => {
+    const grepHit: ResolvedDefinition = { path: 'b.ts', line: 9, ch: 6 }
+    const sources = makeSources({
+      lsp: vi.fn().mockResolvedValue([]),
+      grep: vi.fn().mockResolvedValue([grepHit]),
+      treeSitter: vi.fn().mockReturnValue([sampleLoc]),
+    })
+    const out = await resolveDefinition({
+      path: '/r/a.ts',
+      symbol: 'foo',
+      position: { line: 0, character: 5 },
+      sources,
+    })
+    expect(out).toEqual([grepHit])
+    expect(sources.grep).toHaveBeenCalledOnce()
+    expect(sources.treeSitter).not.toHaveBeenCalled()
+  })
+
+  it('uses grep for a non-LSP language (LSP skipped)', async () => {
+    const grepHit: ResolvedDefinition = { path: 'main.go', line: 3, ch: 5 }
+    const sources = makeSources({ grep: vi.fn().mockResolvedValue([grepHit]) })
+    const out = await resolveDefinition({
+      path: '/r/main.go',
+      symbol: 'Foo',
+      position: { line: 0, character: 0 },
+      sources,
+    })
+    expect(out).toEqual([grepHit])
+    expect(sources.lsp).not.toHaveBeenCalled()
+  })
+
+  it('falls through to tree-sitter when grep is also empty', async () => {
+    const sources = makeSources({
+      grep: vi.fn().mockResolvedValue([]),
+      treeSitter: vi.fn().mockReturnValue([sampleLoc]),
+    })
+    const out = await resolveDefinition({
+      path: '/r/a.ts',
+      symbol: 'foo',
+      position: { line: 0, character: 5 },
+      sources,
+    })
+    expect(out).toEqual([sampleLoc])
+    expect(sources.treeSitter).toHaveBeenCalled()
+  })
 })

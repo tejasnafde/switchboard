@@ -89,6 +89,7 @@ export const FilesChannels = {
   READ_BATCH: 'files:read-batch',
   RESOLVE: 'files:resolve',
   LIST_ALL: 'files:list-all',
+  GREP_SYMBOL: 'files:grep-symbol',
 } as const
 
 /**
