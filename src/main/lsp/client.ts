@@ -47,6 +47,8 @@ export class LspClient {
   private framer = new LspFramer()
   private nextId = 1
   private pending = new Map<number, PendingRequest>()
+  // Latest in-flight request id per method, so a newer request supersedes it.
+  private inFlightByMethod = new Map<string, number>()
   private notifHandler: NotificationHandler = () => {}
   private exitHandler: () => void = () => {}
   private disposed = false
@@ -83,6 +85,7 @@ export class LspClient {
         p.reject(new Error(`LSP server exited (${p.method})`))
         this.pending.delete(id)
       }
+      this.inFlightByMethod.clear()
       if (!this.disposed) this.exitHandler()
     })
 
@@ -107,7 +110,12 @@ export class LspClient {
 
   request<T = unknown>(method: string, params: unknown): Promise<T> {
     if (!this.child || this.disposed) return Promise.reject(new Error('LSP client not started'))
+    // Supersede an in-flight request of the same method — $/cancelRequest tells
+    // the server to stop so it doesn't compute a result nobody will read.
+    const prev = this.inFlightByMethod.get(method)
+    if (prev !== undefined) this.cancel(prev)
     const id = this.nextId++
+    this.inFlightByMethod.set(method, id)
     const payload = { jsonrpc: '2.0', id, method, params }
     return new Promise<T>((resolve, reject) => {
       this.pending.set(id, {
@@ -117,6 +125,16 @@ export class LspClient {
       })
       this.send(payload)
     })
+  }
+
+  /** Cancel an in-flight request: notify the server and reject locally. */
+  private cancel(id: number): void {
+    const p = this.pending.get(id)
+    if (!p) return
+    this.pending.delete(id)
+    if (this.inFlightByMethod.get(p.method) === id) this.inFlightByMethod.delete(p.method)
+    this.notify('$/cancelRequest', { id })
+    p.reject(new Error('superseded'))
   }
 
   notify(method: string, params: unknown): void {
@@ -137,6 +155,7 @@ export class LspClient {
       const p = this.pending.get(m.id)
       if (!p) return
       this.pending.delete(m.id)
+      if (this.inFlightByMethod.get(p.method) === m.id) this.inFlightByMethod.delete(p.method)
       if (m.error) p.reject(m.error)
       else p.resolve(m.result)
       return
