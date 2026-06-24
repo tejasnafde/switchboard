@@ -2,6 +2,23 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-06-24 — Focus-scoped keybindings + editor shortcuts
+
+### Fixed
+- **`⌘W` no longer kills a terminal (or its SSH session) from the editor.** It was a single global handler that always closed a terminal pane. It's now routed by focus: editor → close the active editor tab and stop; chat panel (dual) → close that panel; else terminal tab → app window.
+- **Back/forward navigation (`Ctrl±`) was flaky** — the focus guard failed after a jump. The editor now takes focus after navigating, so editor-scoped keys keep working without an extra click.
+- **Diff-card color cutoff** — the +/- row background now spans the full horizontal scroll (`width:max-content; min-width:100%`) instead of clipping at the visible width.
+
+### Added
+- **`F12`** → go to definition at the cursor (reuses the LSP → `git grep` resolver).
+- **`Ctrl+G`** → go to line (VS Code's macOS binding; `⌘G` stays find-next).
+- **`docs/keybindings.md`** — full reference. Documents that comment-toggle `⌘/`, move/copy line `⌥↑↓`/`⇧⌥↑↓`, and multi-cursor `⌘D` already ship via CodeMirror's bundled keymaps.
+
+### Internal
+- Shortcuts are now **scoped by focus** (editor / terminal / global) — editor-concept keys live in the CM6 keymap, only app-concept keys touch the global layer. Shared `closeEditorTab()`; pure, unit-tested `classifyCloseFocus()`. Suite: 887 → 892.
+
+---
+
 ## 2026-06-24 — File-editor bug sweep, jump-to-definition UX, SSH plan
 
 ### Fixed
