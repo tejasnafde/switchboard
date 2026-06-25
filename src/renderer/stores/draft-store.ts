@@ -146,13 +146,3 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
     }),
 }))
 
-/**
- * Serialize a list of pills back into a single string suitable for
- * prepending to the user's typed message before hitting the wire. Pure
- * function (input fully determines output) so the wire format stays
- * locked down under refactor.
- */
-export function serializePillsForSend(pills: DraftPill[]): string {
-  if (!pills.length) return ''
-  return pills.map((p) => p.content.replace(/\s+$/g, '')).join('\n\n') + '\n\n'
-}

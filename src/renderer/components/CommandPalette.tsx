@@ -44,7 +44,6 @@ function buildCommands(opts: {
   onOpenSessionPicker?: () => void
   onOpenQuickPrompt?: () => void
   onContextBridge?: () => void
-  onNewChat?: (projectPath: string) => void
 }): Cmd[] {
   const { onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker } = opts
 

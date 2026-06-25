@@ -35,7 +35,6 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
   const activeSelections = selections[qIdx] ?? []
   const activeOther = otherTexts[qIdx] ?? ''
   const activeOtherOpen = otherOpen[qIdx] ?? false
-  const isResponding = false // reserved for future async state
 
   const submitAll = (all: string[][]) => {
     if (answered) return
@@ -63,7 +62,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
   }
 
   const toggleOption = (label: string) => {
-    if (answered || isResponding) return
+    if (answered) return
     const q = activeQ
     const currentForQ = selections[qIdx] ?? []
     let nextForQ: string[]
@@ -93,7 +92,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
 
   // Keyboard shortcut handler — number keys 1-9
   useEffect(() => {
-    if (answered || isResponding || !activeQ) return
+    if (answered || !activeQ) return
     const handler = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target
@@ -109,7 +108,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qIdx, selections, answered, isResponding, activeQ?.id])
+  }, [qIdx, selections, answered, activeQ?.id])
 
   // Cleanup auto-advance timer on unmount
   useEffect(() => {
@@ -209,7 +208,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
             <button
               key={`${activeQ.id}:${opt.label}`}
               type="button"
-              disabled={answered || isResponding}
+              disabled={answered}
               onClick={() => toggleOption(opt.label)}
               style={{
                 display: 'flex',

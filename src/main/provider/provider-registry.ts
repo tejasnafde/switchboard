@@ -31,12 +31,10 @@ export class ProviderRegistry {
   private opencodeAcp: OpencodeAcpAdapter
   private window: BrowserWindow
   /**
-   * Per-session resolved adapter. Stored separately from the provider-kind
-   * map so existing sessions stay pinned to the adapter instance they
-   * started on, even if we ever swap adapters at runtime in the future.
+   * Per-session resolved adapter, so existing sessions stay pinned to the
+   * adapter instance they started on even if we swap adapters at runtime.
    */
   private sessionAdapters = new Map<string, ProviderAdapter>()
-  private sessionProviders = new Map<string, ProviderKind>()
   /** Working-tree root per session, captured at startSession for checkpointing. */
   private sessionCwd = new Map<string, string>()
 
@@ -156,7 +154,6 @@ export class ProviderRegistry {
       const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))
       if (instance) session.instanceId = instance.id
       this.sessionAdapters.set(opts.threadId, adapter)
-      this.sessionProviders.set(opts.threadId, opts.provider)
       this.sessionCwd.set(opts.threadId, session.cwd)
       return session
     })
@@ -229,7 +226,6 @@ export class ProviderRegistry {
       if (!adapter) return
       await adapter.stopSession(threadId)
       this.sessionAdapters.delete(threadId)
-      this.sessionProviders.delete(threadId)
       this.sessionCwd.delete(threadId)
       this.checkpoints.clear(threadId)
     })
@@ -244,7 +240,6 @@ export class ProviderRegistry {
       })
     }
     this.sessionAdapters.clear()
-    this.sessionProviders.clear()
     this.sessionCwd.clear()
     if (this.rendererUnsub) {
       this.rendererUnsub()
