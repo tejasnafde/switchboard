@@ -16,6 +16,7 @@ Three contexts:
 | Keys | Action |
 |---|---|
 | `⌘-click` / `F12` | Go to definition (LSP → `git grep` fallback) |
+| `⇧F12` | Go to references — inline peek (1 result auto-jumps; ↑↓·⏎·esc) |
 | `⌘`-hover | Underline the symbol under the cursor (clickable affordance) |
 | `⌘S` | Save (atomic; prompts on external-edit conflict) |
 | `⌘/` | Toggle line comment |
