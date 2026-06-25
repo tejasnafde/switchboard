@@ -20,7 +20,7 @@ import { createRendererLogger } from '../../../../logger'
 const log = createRendererLogger('editor:cmd-click-jump')
 const WORD_RE = /[A-Za-z_$][A-Za-z0-9_$]*/
 
-function wordAt(view: EditorView, pos: number): { word: string; start: number; end: number } | null {
+export function wordAt(view: EditorView, pos: number): { word: string; start: number; end: number } | null {
   const line = view.state.doc.lineAt(pos)
   const text = line.text
   const offset = pos - line.from

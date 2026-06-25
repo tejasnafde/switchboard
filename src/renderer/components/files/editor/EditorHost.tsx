@@ -31,6 +31,7 @@ import {
 import { setHunksEffect } from './extensions/gitGutter'
 import { cmdClickJump } from './extensions/cmdClickJump'
 import { editorActionsKeymap } from './extensions/editorActions'
+import { referencesPeek } from './extensions/referencesPeek'
 import { themeFor } from './theme/highlightStyle'
 import { lspChangeDoc, lspOpenDoc } from '../../../services/lspClient'
 
@@ -137,6 +138,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       saveKeymap,
       cmdClickJump(getPathForJump, getRepoRootForJump),
       editorActionsKeymap(getPathForJump, getRepoRootForJump),
+      referencesPeek(),
       ...buildExtensions({ themeName: themeName as 'dark' | 'light' | 'translucent' }),
     ]
     extensionsRef.current = fullExtensions
