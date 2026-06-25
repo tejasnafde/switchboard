@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAgentStore } from '../stores/agent-store'
+import { renderSnippetHtml } from './searchSnippet'
 import type { ChatMessage, AgentType } from '@shared/types'
 
 interface SearchResult {
@@ -222,12 +223,7 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
                 WebkitLineClamp: 2,
                 WebkitBoxOrient: 'vertical',
               }}
-                dangerouslySetInnerHTML={{
-                  __html: r.snippet
-                    .replace(/\*\*/g, '<mark style="background: var(--accent-subtle); color: var(--accent); border-radius: 2px; padding: 0 2px;">')
-                    .replace(/<mark[^>]*>/g, (m) => m)
-                    // Close marks — snippet uses ** delimiters
-                }}
+                dangerouslySetInnerHTML={{ __html: renderSnippetHtml(r.snippet) }}
               />
             </button>
           ))}
