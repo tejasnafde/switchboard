@@ -11,6 +11,7 @@ import { keymap } from '@codemirror/view'
 import { Prec, type Extension } from '@codemirror/state'
 import { gotoLine } from '@codemirror/search'
 import { jumpToDefinitionAtCursor } from './cmdClickJump'
+import { runReferences } from './referencesPeek'
 
 export function editorActionsKeymap(
   getPath: () => string | null,
@@ -22,6 +23,13 @@ export function editorActionsKeymap(
         key: 'F12',
         run: (view) => {
           jumpToDefinitionAtCursor(view, getPath, getRepoRoot)
+          return true
+        },
+      },
+      {
+        key: 'Shift-F12',
+        run: (view) => {
+          runReferences(view, getPath, getRepoRoot)
           return true
         },
       },
