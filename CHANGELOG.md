@@ -2,6 +2,14 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-06-24 — Go to References + search-snippet fix
+
+### Added
+- **Go to References (`⇧F12`)** — finds all call sites of the symbol under the cursor via the LSP references IPC. 0 → no-op; 1 → auto-jump; 2+ → an inline, VS Code-style block-widget peek under the cursor line (`path:line` + one-line preview; `↑↓` select, `Enter`/click open, `Esc` close).
+
+### Fixed
+- **Search result snippets never closed their `<mark>` tags** — the highlighter turned every `**` delimiter into an opening tag and the follow-up replace was a no-op, so the accent styling bled to the end of each snippet. Now emits balanced `<mark>…</mark>` and HTML-escapes the snippet (it's rendered via `dangerouslySetInnerHTML`).
+
 ## 2026-06-24 — Focus-scoped keybindings + editor shortcuts
 
 ### Fixed
