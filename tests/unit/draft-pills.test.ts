@@ -7,13 +7,11 @@
  *
  * Behaviors locked down:
  *   1. addPill / removePill / clearPills mutate per-session state
- *   2. serializePillsForSend renders each pill back into wire format,
- *      preserving order and separating with blank lines
- *   3. consumePillsForSend (used by handleSend) pops + serializes in one
+ *   2. consumePillsForSend (used by handleSend) pops + serializes in one
  *      atomic step so we don't double-send
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { useDraftStore, serializePillsForSend, type DraftPill } from '../../src/renderer/stores/draft-store'
+import { useDraftStore, type DraftPill } from '../../src/renderer/stores/draft-store'
 
 const pill = (over: Partial<DraftPill> = {}): DraftPill => ({
   id: over.id ?? Math.random().toString(36),
@@ -92,22 +90,5 @@ describe('draft text persistence (regression lock)', () => {
     useDraftStore.getState().clearDraft('s2')
     useDraftStore.getState().appendDraft('s2', 'hello')
     expect(useDraftStore.getState().getDraft('s2')).toBe('hello')
-  })
-})
-
-describe('serializePillsForSend', () => {
-  it('returns empty string when there are no pills', () => {
-    expect(serializePillsForSend([])).toBe('')
-  })
-
-  it('joins pill contents with blank lines, preserving order', () => {
-    const out = serializePillsForSend([
-      pill({ id: 'a', content: 'PILL_A' }),
-      pill({ id: 'b', content: 'PILL_B' }),
-    ])
-    // Should end with a trailing newline so user-typed text starts on a new line.
-    expect(out.startsWith('PILL_A')).toBe(true)
-    expect(out).toContain('PILL_B')
-    expect(out.indexOf('PILL_A')).toBeLessThan(out.indexOf('PILL_B'))
   })
 })

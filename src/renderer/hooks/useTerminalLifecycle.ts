@@ -310,7 +310,7 @@ export function clearTemplatePin(sessionId: string): void {
  * created via this snapshot start panes in a plain shell at the
  * recorded cwd; any startup commands need to be added by hand.
  */
-export function snapshotCurrentAsTemplate(sessionId: string, projectPath: string): WorkspaceTemplate {
+function snapshotCurrentAsTemplate(sessionId: string, projectPath: string): WorkspaceTemplate {
   const layout = useTerminalStore.getState().getLayout(sessionId)
   const projectPrefix = projectPath.endsWith('/') ? projectPath : `${projectPath}/`
 

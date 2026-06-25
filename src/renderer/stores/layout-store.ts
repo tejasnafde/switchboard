@@ -395,18 +395,3 @@ export async function hydrateSidebarCollapse(): Promise<void> {
     })
   } catch { /* silent */ }
 }
-
-/**
- * Standalone hydration for the right-pane mode setting. Split out so tests
- * (and any caller that only needs this slice) don't have to stub the whole
- * collapse-state surface. Defaults to `'terminal'` on missing/unrecognized
- * values so users upgrading from a previous build keep their existing UI.
- */
-export async function hydrateRightPaneMode(): Promise<void> {
-  if (typeof window === 'undefined' || !window.api?.settings) return
-  try {
-    const v = await window.api.settings.get(RIGHT_PANE_MODE_KEY)
-    const mode: RightPaneMode = v === 'files' ? 'files' : 'terminal'
-    useLayoutStore.setState({ rightPaneMode: mode })
-  } catch { /* silent */ }
-}
