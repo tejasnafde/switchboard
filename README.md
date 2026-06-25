@@ -14,9 +14,9 @@ three browser windows.
 
 ## Feature tour
 
-The same six clips that play inside the app's first-run tour. Captions are
-pulled from `src/renderer/components/onboarding/featureRegistry.ts` so the
-README and the in-app tour stay in lockstep.
+The eleven clips from the app's first-run tour, in order. Clips marked
+*(coming soon)* are rendered in `videos/dist/` but not yet embedded here —
+see the maintainer note below.
 
 > **Embedding note for maintainers:** GitHub only autoplays MP4s that were
 > uploaded via the web editor (drag-and-drop into a markdown field — GitHub
@@ -32,37 +32,70 @@ the sidebar to get started — everything else flows from there.
 
 https://github.com/user-attachments/assets/08a8056c-6497-4ffc-9dec-95664c8006ee
 
-### 2. Slash commands & agent skills
+### 2. Two modes: Chats & Board
+Toggle the whole app between engineering view (chats + terminals + files)
+and a workspace-scoped kanban board with ⌘⇧K. Cards double as chats — hit ▶
+to start a conversation rooted in the card's own git worktree.
+
+<!-- maintainer: drag videos/dist/kanban-view.mp4 here in the GitHub web editor --> *(coming soon)*
+
+### 3. Slash commands & agent skills
 Type `/` in any chat to switch runtime mode, archive, clear, or invoke an
 agent-defined skill. Claude SDK commands and Codex skills appear inline
 alongside Switchboard built-ins.
 
 https://github.com/user-attachments/assets/74c46508-ca77-4ac6-b3f7-25a195336407
 
-### 3. Plan mode & runtime modes
+### 4. Plan mode & runtime modes
 Plan mode locks the agent to read-only tools. Sandbox prompts before writes.
 Accept-edits and Full-access skip the prompts. Block events render as a red
 denial pill in chat.
 
 https://github.com/user-attachments/assets/173b404f-0e12-489f-ae4f-484abf3bb22f
 
-### 4. Multi-pane terminals & chat
+### 5. Multi-pane terminals & chat
 Split any pane horizontally or vertically — terminals and chats live in the
 same tmux-style tree. Drag the handle to resize, ⌘W closes the focused pane.
 
 https://github.com/user-attachments/assets/2cc1312e-4f2a-4b29-b232-b5797f650dff
 
-### 5. Session resume & full-text search
+### 6. File viewer & context bridge
+⌘⇧E flips the right pane to a file tree + viewer with syntax highlighting.
+⌘P fuzzy-finds any file; ⌘L pipes a terminal or file selection straight into
+the chat draft.
+
+<!-- maintainer: drag videos/dist/file-viewer-context.mp4 here in the GitHub web editor --> *(coming soon)*
+
+### 7. Named terminal templates
+Save a terminal layout as a named template, star a favorite, and apply it to
+any new chat. Templates live in `workspace.yaml`.
+
+<!-- maintainer: drag videos/dist/terminal-templates.mp4 here in the GitHub web editor --> *(coming soon)*
+
+### 8. Workspace config
+Drop a `.switchboard/workspace.yaml` into a project to declare terminals and
+startup commands, so a workspace boots the same way every time.
+
+<!-- maintainer: drag videos/dist/workspace-config.mp4 here in the GitHub web editor --> *(coming soon)*
+
+### 9. Switch agents per chat
+Pick Claude Code, Codex, or OpenCode for any chat from the agent dropdown —
+the status bar and model picker update to match. Switching starts a fresh
+context with the new agent.
+
+https://github.com/user-attachments/assets/aa42e86a-e986-46e2-9e58-5efd2547a048
+
+### 10. Session resume & full-text search
 Past sessions live in the sidebar — click to resume any thread. ⌘⇧F searches
 every message across every project; click a result to jump straight to it.
 
 https://github.com/user-attachments/assets/86c50159-f723-40d6-9315-0836ac48f302
 
-### 6. Switch agents on the fly
-Use the agent dropdown in any chat to swap between Claude Code, Codex, and
-OpenCode mid-session. The status bar and model picker update in lockstep.
+### 11. Sidebar workspaces
+Group projects under named, color-tagged workspaces — Work, Personal, side
+quests. Filter the tree by chat title; collapse state persists across launches.
 
-https://github.com/user-attachments/assets/aa42e86a-e986-46e2-9e58-5efd2547a048
+<!-- maintainer: drag videos/dist/workspaces.mp4 here in the GitHub web editor --> *(coming soon)*
 
 ---
 
@@ -178,5 +211,4 @@ happen on tag push via the Actions matrix — see
 
 ## License
 
-TBD. Until a license file lands, treat this repo as source-available for
-inspection only — no redistribution, no commercial use.
+[MIT](LICENSE) © Tejas Nafde

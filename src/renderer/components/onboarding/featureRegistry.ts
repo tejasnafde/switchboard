@@ -88,15 +88,15 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   },
   {
     id: 'workspace-config',
-    title: 'Workspace orchestration',
+    title: 'Workspace config',
     description:
-      'Drop a .switchboard/workspace.yaml into any project to declare terminals, define startup commands, and orchestrate wait-then launch chains. Live edits hot-reload the layout instantly.',
+      'Drop a .switchboard/workspace.yaml into any project to declare terminals and startup commands, so a workspace boots the same way every time.',
   },
   {
     id: 'switch-agent',
-    title: 'Switch agents on the fly',
+    title: 'Switch agents per chat',
     description:
-      'Use the agent dropdown in any chat to swap between Claude Code, Codex, and OpenCode mid-session. The status bar and model picker update in lockstep.',
+      'Pick Claude Code, Codex, or OpenCode for any chat from the agent dropdown — the status bar and model picker update to match. Switching starts a fresh context with the new agent.',
   },
   {
     id: 'resume-search',
