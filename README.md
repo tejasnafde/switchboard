@@ -72,15 +72,16 @@ any new chat. Templates live in `workspace.yaml`.
 
 <!-- maintainer: drag videos/dist/terminal-templates.mp4 here in the GitHub web editor --> *(coming soon)*
 
-### 8. Workspace orchestration
+### 8. Workspace config
 Drop a `.switchboard/workspace.yaml` into a project to declare terminals and
 startup commands, so a workspace boots the same way every time.
 
 <!-- maintainer: drag videos/dist/workspace-config.mp4 here in the GitHub web editor --> *(coming soon)*
 
-### 9. Switch agents on the fly
-Use the agent dropdown in any chat to swap between Claude Code, Codex, and
-OpenCode mid-session. The status bar and model picker update to match.
+### 9. Switch agents per chat
+Pick Claude Code, Codex, or OpenCode for any chat from the agent dropdown —
+the status bar and model picker update to match. Switching starts a fresh
+context with the new agent.
 
 https://github.com/user-attachments/assets/aa42e86a-e986-46e2-9e58-5efd2547a048
 
