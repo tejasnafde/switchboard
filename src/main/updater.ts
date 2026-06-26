@@ -27,6 +27,7 @@ import { autoUpdater } from 'electron-updater'
 import { AppChannels } from '@shared/ipc-channels'
 import type { UpdateStatus } from '@shared/update-status'
 import { createMainLogger } from './logger'
+import { friendlyUpdateError } from './updater-error'
 
 const log = createMainLogger('updater')
 
@@ -75,7 +76,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`checkForUpdates failed: ${message}`)
-      send(window, { kind: 'error', message })
+      send(window, { kind: 'error', message: friendlyUpdateError(message) })
       return lastStatus
     }
   })
@@ -124,7 +125,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       send(window, { kind: 'up-to-date', version: app.getVersion() })
       return
     }
-    send(window, { kind: 'error', message: msg })
+    send(window, { kind: 'error', message: friendlyUpdateError(msg) })
   })
 
   // Kick off the initial check after a short delay so the renderer has
