@@ -2,6 +2,13 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-06-26 — Editor focus sweep
+
+### Fixed
+- **`⌘W` could kill a terminal (and its SSH session) from ambiguous focus.** Modals focus their input on open but never restore focus on close, so focus fell to `<body>` and `⌘W` closed a terminal. `⌘W` now closes a terminal only when one is genuinely focused; ambiguous focus is a no-op.
+- **Opening a file (`⌘P` / file tree / chat pill) now focuses the editor**, so `⌘W` closes the editor tab and `F12` works without an extra click.
+- **Back-nav after Go to Definition/References returns to the exact spot you invoked it** (records the source location before jumping, VS Code-style) instead of a stale history entry.
+
 ## 2026-06-25 — Docs + dead-code cleanup
 
 ### Changed

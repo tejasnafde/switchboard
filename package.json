@@ -1,6 +1,6 @@
 {
   "name": "switchboard",
-  "version": "0.4.15",
+  "version": "0.4.16",
   "description": "The unified workspace for developers who run agents, terminals, and chats.",
   "license": "MIT",
   "author": "Tejas Nafde",
