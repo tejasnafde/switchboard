@@ -2,6 +2,12 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-06-25 — Docs + dead-code cleanup
+
+### Changed
+- Added an MIT `LICENSE`; aligned README tour copy with the softened in-app tour captions (PR #9).
+- Removed verified dead code (ponytail audit): the unused Shiki highlighter path and the turn-duration stamping module, with their tests.
+
 ## 2026-06-24 — Go to References + search-snippet fix
 
 ### Added
