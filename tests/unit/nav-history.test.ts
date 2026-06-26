@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { useLayoutStore } from '../../src/renderer/stores/layout-store'
 import { useEditorStore } from '../../src/renderer/stores/editor-store'
 import { useAgentStore } from '../../src/renderer/stores/agent-store'
-import { navigateTo } from '../../src/renderer/components/files/editor/navigation/navigate'
+import { navigateTo, recordLocation } from '../../src/renderer/components/files/editor/navigation/navigate'
 
 beforeEach(() => {
   useEditorStore.setState({ navBySession: {} })
@@ -45,5 +45,15 @@ describe('openInViewer history (D6/D7)', () => {
     // Forward must still be available and land on b.ts.
     expect(useEditorStore.getState().canNavForward('s1')).toBe(true)
     expect(useEditorStore.getState().navForward('s1')?.path).toBe('b.ts')
+  })
+
+  it('recordLocation makes back return to the exact invocation spot (Bug B)', () => {
+    // Opened a.ts (recorded at line 1), then scrolled/clicked to line 40 and
+    // jumped to a definition in b.ts. Back must return to a.ts:40 — not the
+    // stale a.ts:1 entry, and not some earlier file.
+    useLayoutStore.getState().openInViewer('a.ts', { start: 1, end: 1 })
+    recordLocation('s1', 'a.ts', 40)
+    useLayoutStore.getState().openInViewer('b.ts', { start: 5, end: 5 })
+    expect(useEditorStore.getState().navBack('s1')).toEqual({ path: 'a.ts', line: 40, ch: 0 })
   })
 })

@@ -275,29 +275,35 @@ export function App() {
         return
       }
 
-      const sid = useAgentStore.getState().activeSessionId
-      if (sid) {
-        const layout = useTerminalStore.getState().getLayout(sid)
-        const wid = layout.activeWindowId
-        const win = wid ? layout.windows[wid] : null
-        if (win) {
-          if (opts.shift) {
-            // ⌘⇧W — close the whole window and its tabs
-            for (const pid of win.paneIds) destroyTerminal(pid)
-            useTerminalStore.getState().removeWindow(sid, wid!)
-          } else {
-            // ⌘W — close just the active tab (window closes itself if last tab)
-            const activePaneId = win.activePaneId
-            if (activePaneId) {
-              destroyTerminal(activePaneId)
-              useTerminalStore.getState().removePane(sid, activePaneId)
+      // Terminal: ONLY when a terminal is actually focused. Ambiguous focus
+      // (<body> after a modal closes, an empty click) must never reach this —
+      // that's how ⌘W was killing SSH'd-in ptys from the editor.
+      if (focus === 'terminal') {
+        const sid = useAgentStore.getState().activeSessionId
+        if (sid) {
+          const layout = useTerminalStore.getState().getLayout(sid)
+          const wid = layout.activeWindowId
+          const win = wid ? layout.windows[wid] : null
+          if (win) {
+            if (opts.shift) {
+              // ⌘⇧W — close the whole window and its tabs
+              for (const pid of win.paneIds) destroyTerminal(pid)
+              useTerminalStore.getState().removeWindow(sid, wid!)
+            } else {
+              // ⌘W — close just the active tab (window closes itself if last tab)
+              const activePaneId = win.activePaneId
+              if (activePaneId) {
+                destroyTerminal(activePaneId)
+                useTerminalStore.getState().removePane(sid, activePaneId)
+              }
             }
+            return
           }
-          return
         }
+        // Terminal focused but no pane to close — close the app window.
+        window.api.closeWindow?.()
       }
-      // No active window — close the app window
-      window.api.closeWindow?.()
+      // 'other' / ambiguous focus → do nothing (no destructive close).
     })
     return () => { remove() }
   }, [])

@@ -28,6 +28,10 @@ describe('classifyCloseFocus', () => {
     expect(classifyCloseFocus(fakeEl({ '[data-context-source="file-viewer"]': {} }))).toBe('editor')
   })
 
+  it('classifies a focused terminal pane', () => {
+    expect(classifyCloseFocus(fakeEl({ '[data-terminal-pane]': {} }))).toBe('terminal')
+  })
+
   it('classifies chat panels by side', () => {
     expect(classifyCloseFocus(fakeEl({ '[data-chat-panel]': { side: 'left' } }))).toBe('chat-left')
     expect(classifyCloseFocus(fakeEl({ '[data-chat-panel]': { side: 'right' } }))).toBe('chat-right')

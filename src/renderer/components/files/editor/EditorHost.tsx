@@ -193,6 +193,10 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
     view.setState(target)
     // setState bypasses the dispatch override — round-trip to the store.
     useEditorStore.getState().setState(bufferId, view.state)
+    // Focus the editor whenever a file is opened/switched (⌘P, tree, pill,
+    // jump) so focus-routed keys (⌘W close-tab, F12) land on the editor
+    // instead of leaking to <body> → a terminal.
+    view.focus()
 
     // Lazily attach the right language pack (after the swap so the
     // user sees content immediately even on first-load of a lang).
