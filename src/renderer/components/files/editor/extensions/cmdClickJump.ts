@@ -14,7 +14,7 @@ import { resolveDefinition, defaultTreeSitterSource } from '../../../../services
 import { lspDefinitionSource } from '../../../../services/lspSource'
 import { grepDefinitionSource } from '../../../../services/grepSource'
 import { useAgentStore } from '../../../../stores/agent-store'
-import { navigateTo } from '../navigation/navigate'
+import { navigateTo, recordLocation } from '../navigation/navigate'
 import { createRendererLogger } from '../../../../logger'
 
 const log = createRendererLogger('editor:cmd-click-jump')
@@ -93,6 +93,8 @@ export function runDefinitionJump(
       if (repoRoot && navPath.startsWith(repoRoot + '/')) {
         navPath = navPath.slice(repoRoot.length + 1)
       }
+      // Record where we jumped FROM so back returns here, not a stale entry.
+      recordLocation(sessionId, relPath, line0 + 1)
       navigateTo(sessionId, { path: navPath, line: target.line, ch: target.ch })
     })
     .catch((err) => log.warn('jump-to-definition failed', { symbol: w.word, err }))

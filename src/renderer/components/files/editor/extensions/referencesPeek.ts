@@ -6,7 +6,7 @@
  */
 import { EditorView, Decoration, WidgetType, keymap, type DecorationSet } from '@codemirror/view'
 import { StateField, StateEffect, Prec, type Extension } from '@codemirror/state'
-import { navigateTo } from '../navigation/navigate'
+import { navigateTo, recordLocation } from '../navigation/navigate'
 import { useAgentStore } from '../../../../stores/agent-store'
 import { resolveReferences, type ResolvedReference } from '../../../../services/referencesSource'
 import { wordAt } from './cmdClickJump'
@@ -158,15 +158,14 @@ export function runReferences(
   const pos = view.state.selection.main.head
   const lineObj = view.state.doc.lineAt(pos)
   const symbol = wordAt(view, pos)?.word ?? ''
+  const sessionId = useAgentStore.getState().activeSessionId
   void resolveReferences(absPath, { line: lineObj.number - 1, character: pos - lineObj.from }).then((refs) => {
     const action = referenceAction(refs.length)
     if (action === 'none') return
+    // Record where we invoked from so back returns here after picking a ref.
+    recordLocation(sessionId, relPath, lineObj.number)
     if (action === 'jump') {
-      navigateTo(useAgentStore.getState().activeSessionId, {
-        path: refs[0].path,
-        line: refs[0].line,
-        ch: refs[0].ch,
-      })
+      navigateTo(sessionId, { path: refs[0].path, line: refs[0].line, ch: refs[0].ch })
       return
     }
     view.dispatch({ effects: openPeek.of({ line: lineObj.number, refs, symbol }) })
