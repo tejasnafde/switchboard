@@ -255,8 +255,7 @@ export function App() {
   useEffect(() => {
     if (typeof window.api?.onClosePaneOrWindow !== 'function') return
     const remove = window.api.onClosePaneOrWindow((opts: { shift?: boolean }) => {
-      // Route ⌘W by what's focused so it never closes a terminal (killing an
-      // SSH'd-in pty) while the user is in the editor or a chat panel.
+      // Route ⌘W by focus context.
       const focus = classifyCloseFocus(document.activeElement as unknown as ClosestEl | null)
       const layoutState = useLayoutStore.getState()
 
@@ -275,9 +274,8 @@ export function App() {
         return
       }
 
-      // Terminal: ONLY when a terminal is actually focused. Ambiguous focus
-      // (<body> after a modal closes, an empty click) must never reach this —
-      // that's how ⌘W was killing SSH'd-in ptys from the editor.
+      // Only close a terminal when one is actually focused — never from
+      // ambiguous focus (that's how ⌘W was killing SSH'd-in ptys).
       if (focus === 'terminal') {
         const sid = useAgentStore.getState().activeSessionId
         if (sid) {

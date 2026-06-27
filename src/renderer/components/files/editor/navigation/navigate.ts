@@ -26,12 +26,7 @@ export function navigateTo(_sessionId: string | null, target: NavTarget): void {
   )
 }
 
-/**
- * Record the *current* location on the nav stack before a jump (go-to-
- * definition / references), so back returns to exactly where the user invoked
- * it — not whatever stale entry happened to precede the destination. Mirrors
- * VS Code. Coalescing in the history stack collapses a redundant push.
- */
+/** Record the current location before a jump so back returns to it (VS Code-style). */
 export function recordLocation(sessionId: string | null, path: string, line: number): void {
   if (sessionId) useEditorStore.getState().pushNav(sessionId, { path, line, ch: 0 })
 }
