@@ -342,7 +342,7 @@ app.whenReady().then(() => {
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)
-  registerAppHandlers(mainWindow)
+  registerAppHandlers(backendHost, mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
   registerLspHandlers(backendHost)
@@ -363,7 +363,7 @@ app.whenReady().then(() => {
       const reactivatedHost = new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
       registerAgentHandlers(reactivatedHost)
-      registerAppHandlers(mainWindow)
+      registerAppHandlers(reactivatedHost, mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
       registerKanbanHandlers(reactivatedHost)

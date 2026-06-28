@@ -1,4 +1,5 @@
 import { ipcMain, dialog, app, type BrowserWindow } from 'electron'
+import type { BackendHost } from '../backend/host'
 import { basename } from 'path'
 import { readFile, writeFile } from 'fs/promises'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
@@ -72,18 +73,15 @@ function claudeCandidateDirs(): string[] {
   ]))
 }
 
-export function registerAppHandlers(window: BrowserWindow): void {
-  // Remove previous handlers to allow re-registration (macOS activate)
-  for (const ch of Object.values(AppChannels)) {
-    ipcMain.removeHandler(ch)
-  }
-  for (const ch of Object.values(BookmarkChannels)) {
-    ipcMain.removeHandler(ch)
-  }
-  ipcMain.removeHandler('settings:get')
-  ipcMain.removeHandler('settings:set')
-  ipcMain.removeHandler('settings:remove')
+export function registerAppHandlers(host: BackendHost, window: BrowserWindow): void {
+  // host.handle self-cleans; only the desktop-only ipcMain handlers below need
+  // explicit removal to re-register on macOS activate.
+  ipcMain.removeHandler(AppChannels.OPEN_FOLDER)
+  ipcMain.removeHandler(AppChannels.EXPORT_MARKDOWN)
+  ipcMain.removeHandler(AppChannels.RELAUNCH)
+  ipcMain.removeHandler(AppChannels.SET_VIBRANCY)
 
+  // Desktop-only (native dialog) — stays on ipcMain; can't run on a remote backend.
   ipcMain.handle(AppChannels.OPEN_FOLDER, async () => {
     log.info('open-folder dialog')
     const result = await dialog.showOpenDialog({
@@ -109,7 +107,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
     return project
   })
 
-  ipcMain.handle(AppChannels.SCAN_SESSIONS, async (_event, projectPath: string) => {
+  host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {
     log.info(`scan-sessions: ${projectPath}`)
     const sessions = await scanAllSessions(projectPath, claudeCandidateDirs())
     const archivedSet = getArchivedConversationIds()
@@ -155,12 +153,12 @@ export function registerAppHandlers(window: BrowserWindow): void {
   })
 
   // Settings
-  ipcMain.handle('settings:get', (_event, key: string) => getSetting(key))
-  ipcMain.handle('settings:set', (_event, key: string, value: string) => setSetting(key, value))
-  ipcMain.handle('settings:remove', (_event, key: string) => removeSetting(key))
+  host.handle('settings:get', (key: string) => getSetting(key))
+  host.handle('settings:set', (key: string, value: string) => setSetting(key, value))
+  host.handle('settings:remove', (key: string) => removeSetting(key))
 
   // Load persisted projects on renderer request
-  ipcMain.handle(AppChannels.GET_PROJECTS, async () => {
+  host.handle(AppChannels.GET_PROJECTS, async () => {
     const rows = getProjects()
     // Global exclusion sets — archived + session_ids that are children of
     // another thread (fragmented by Claude SDK session-id rotation).
@@ -202,33 +200,33 @@ export function registerAppHandlers(window: BrowserWindow): void {
   })
 
   // ─── Workspaces (sidebar grouping) ─────────────────────────────
-  ipcMain.handle(AppChannels.WORKSPACE_LIST, () => {
+  host.handle(AppChannels.WORKSPACE_LIST, () => {
     return listWorkspaces().map((w) => ({
       id: w.id, name: w.name, color: w.color, sortOrder: w.sort_order, createdAt: w.created_at,
     }))
   })
-  ipcMain.handle(AppChannels.WORKSPACE_CREATE, (_e, input: { name: string; color?: string | null }) => {
+  host.handle(AppChannels.WORKSPACE_CREATE, (input: { name: string; color?: string | null }) => {
     const w = createWorkspace(input)
     return { id: w.id, name: w.name, color: w.color, sortOrder: w.sort_order, createdAt: w.created_at }
   })
-  ipcMain.handle(AppChannels.WORKSPACE_RENAME, (_e, id: string, name: string) => {
+  host.handle(AppChannels.WORKSPACE_RENAME, (id: string, name: string) => {
     renameWorkspace(id, name); return { ok: true }
   })
-  ipcMain.handle(AppChannels.WORKSPACE_RECOLOR, (_e, id: string, color: string | null) => {
+  host.handle(AppChannels.WORKSPACE_RECOLOR, (id: string, color: string | null) => {
     recolorWorkspace(id, color); return { ok: true }
   })
-  ipcMain.handle(AppChannels.WORKSPACE_DELETE, (_e, id: string) => {
+  host.handle(AppChannels.WORKSPACE_DELETE, (id: string) => {
     deleteWorkspace(id); return { ok: true }
   })
-  ipcMain.handle(AppChannels.WORKSPACE_REORDER, (_e, ids: string[]) => {
+  host.handle(AppChannels.WORKSPACE_REORDER, (ids: string[]) => {
     reorderWorkspaces(ids); return { ok: true }
   })
-  ipcMain.handle(AppChannels.ASSIGN_PROJECT_WORKSPACE, (_e, projectPath: string, workspaceId: string | null) => {
+  host.handle(AppChannels.ASSIGN_PROJECT_WORKSPACE, (projectPath: string, workspaceId: string | null) => {
     setProjectWorkspace(projectPath, workspaceId); return { ok: true }
   })
 
   // Create a new conversation in the database
-  ipcMain.handle(AppChannels.EDITOR_TABS_LOAD, (_e, sessionId: string) => {
+  host.handle(AppChannels.EDITOR_TABS_LOAD, (sessionId: string) => {
     try {
       const rows = loadEditorTabs(sessionId)
       return {
@@ -246,11 +244,9 @@ export function registerAppHandlers(window: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle(
+  host.handle(
     AppChannels.EDITOR_TABS_SAVE,
-    (
-      _e,
-      sessionId: string,
+    (sessionId: string,
       tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
     ) => {
       try {
@@ -262,11 +258,9 @@ export function registerAppHandlers(window: BrowserWindow): void {
     },
   )
 
-  ipcMain.handle(
+  host.handle(
     AppChannels.SET_CONVERSATION_WORKTREE,
-    (
-      _event,
-      conversationId: string,
+    (conversationId: string,
       worktreePath: string | null,
       worktreeBranch: string | null,
     ) => {
@@ -275,7 +269,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
     },
   )
 
-  ipcMain.handle(AppChannels.CREATE_CONVERSATION, (_event, params: CreateConversationParams) => {
+  host.handle(AppChannels.CREATE_CONVERSATION, (params: CreateConversationParams) => {
     createConversation(
       params.id,
       params.projectPath,
@@ -295,9 +289,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
   // `source` selects the parser variant: 'claude-code' (default) or 'codex'.
   // Without this param, Codex sessions loaded as empty because their event
   // schema doesn't match Claude's.
-  ipcMain.handle(AppChannels.LOAD_SESSION, async (
-    _event,
-    filePath: string,
+  host.handle(AppChannels.LOAD_SESSION, async (filePath: string,
     conversationId?: string,
     source?: 'claude-code' | 'codex',
   ) => {
@@ -340,9 +332,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
   // during compaction/restart), concatenate messages from ALL fragments
   // in chronological order. One click in the sidebar → one coherent
   // conversation, regardless of how many .jsonl files it actually spans.
-  ipcMain.handle(AppChannels.LOAD_SESSION_BY_ID, async (
-    _event,
-    conversationId: string,
+  host.handle(AppChannels.LOAD_SESSION_BY_ID, async (conversationId: string,
   ): Promise<{
     messages: ChatMessage[]
     meta: { id: string; title: string; projectPath: string; agentType: string } | null
@@ -440,7 +430,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
   })
 
   // Save a message to the database
-  ipcMain.handle(AppChannels.SAVE_MESSAGE, (_event, params: SaveMessageParams) => {
+  host.handle(AppChannels.SAVE_MESSAGE, (params: SaveMessageParams) => {
     const result = saveMessage(
       params.id, params.conversationId, params.role, params.content,
       params.toolCalls, params.images,
@@ -457,10 +447,10 @@ export function registerAppHandlers(window: BrowserWindow): void {
   // Read/write the per-conversation runtime mode. The UI calls these so a
   // kanban card click — or any sidebar reopen — restores the user's last
   // selection instead of falling back to 'sandbox'.
-  ipcMain.handle(AppChannels.GET_CONVERSATION_RUNTIME_MODE, (_event, id: string) => {
+  host.handle(AppChannels.GET_CONVERSATION_RUNTIME_MODE, (id: string) => {
     return { mode: getConversationRuntimeMode(id) }
   })
-  ipcMain.handle(AppChannels.SET_CONVERSATION_RUNTIME_MODE, (_event, id: string, mode: string) => {
+  host.handle(AppChannels.SET_CONVERSATION_RUNTIME_MODE, (id: string, mode: string) => {
     setConversationRuntimeMode(id, mode)
     return { ok: true }
   })
@@ -468,54 +458,54 @@ export function registerAppHandlers(window: BrowserWindow): void {
   // Per-conversation provider-instance id. Symmetric with runtime mode:
   // sidebar reopen / kanban click should restore the user's chosen
   // credential set instead of falling through to `<kind>-default`.
-  ipcMain.handle(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, (_event, id: string) => {
+  host.handle(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, (id: string) => {
     return { instanceId: getConversationProviderInstanceId(id) }
   })
-  ipcMain.handle(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, (_event, id: string, instanceId: string) => {
+  host.handle(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, (id: string, instanceId: string) => {
     setConversationProviderInstanceId(id, instanceId)
     return { ok: true }
   })
 
   // Rename a conversation
-  ipcMain.handle(AppChannels.RENAME_CONVERSATION, (_event, id: string, title: string) => {
+  host.handle(AppChannels.RENAME_CONVERSATION, (id: string, title: string) => {
     updateConversationTitle(id, title)
     log.info(`conversation renamed: ${id} → ${title}`)
     return { ok: true }
   })
 
   // Get conversations for a project
-  ipcMain.handle(AppChannels.GET_CONVERSATIONS, (_event, projectPath: string) => {
+  host.handle(AppChannels.GET_CONVERSATIONS, (projectPath: string) => {
     watchWorkspaceConfig(projectPath) // Start watching as soon as project is loaded
     return getConversationsForProject(projectPath)
   })
 
   // Session layout persistence
-  ipcMain.handle(AppChannels.SAVE_SESSION_LAYOUT, (_event, sessionId: string, layoutJson: string, templateName?: string | null) => {
+  host.handle(AppChannels.SAVE_SESSION_LAYOUT, (sessionId: string, layoutJson: string, templateName?: string | null) => {
     saveSessionLayout(sessionId, layoutJson, templateName ?? null)
     return { ok: true }
   })
 
-  ipcMain.handle(AppChannels.GET_SESSION_LAYOUT, (_event, sessionId: string) => {
+  host.handle(AppChannels.GET_SESSION_LAYOUT, (sessionId: string) => {
     return getSessionLayout(sessionId)
   })
 
   // Workspace config (per-project, stored in app support)
-  ipcMain.handle(AppChannels.GET_WORKSPACE_CONFIG, (_event, projectPath: string) => {
+  host.handle(AppChannels.GET_WORKSPACE_CONFIG, (projectPath: string) => {
     return readWorkspaceConfig(projectPath)
   })
 
-  ipcMain.handle(AppChannels.SAVE_WORKSPACE_CONFIG, (_event, projectPath: string, yamlContent: string) => {
+  host.handle(AppChannels.SAVE_WORKSPACE_CONFIG, (projectPath: string, yamlContent: string) => {
     writeWorkspaceConfig(projectPath, yamlContent)
     return { ok: true }
   })
 
   // Search across conversations (FTS5)
-  ipcMain.handle(AppChannels.SEARCH_MESSAGES, (_event, query: string) => {
+  host.handle(AppChannels.SEARCH_MESSAGES, (query: string) => {
     return searchMessages(query)
   })
 
   // Archive / unarchive conversations
-  ipcMain.handle(AppChannels.ARCHIVE_CONVERSATION, (_event, id: string, projectPath?: string, title?: string) => {
+  host.handle(AppChannels.ARCHIVE_CONVERSATION, (id: string, projectPath?: string, title?: string) => {
     // Ensure row exists (for scanned-but-not-yet-persisted sessions)
     if (projectPath) {
       ensureConversation(id, projectPath, 'claude-code', title ?? 'Session')
@@ -524,15 +514,16 @@ export function registerAppHandlers(window: BrowserWindow): void {
     return { ok: true, archived: isConversationArchived(id) }
   })
 
-  ipcMain.handle(AppChannels.UNARCHIVE_CONVERSATION, (_event, id: string) => {
+  host.handle(AppChannels.UNARCHIVE_CONVERSATION, (id: string) => {
     unarchiveConversation(id)
     return { ok: true }
   })
 
-  ipcMain.handle(AppChannels.GET_ARCHIVED_CONVERSATIONS, () => {
+  host.handle(AppChannels.GET_ARCHIVED_CONVERSATIONS, () => {
     return getArchivedConversations()
   })
 
+  // Desktop-only (app lifecycle) — stays on ipcMain.
   ipcMain.handle(AppChannels.RELAUNCH, () => {
     log.info('relaunching app...')
     app.relaunch()
@@ -543,22 +534,20 @@ export function registerAppHandlers(window: BrowserWindow): void {
   // Remove a row from thread_sessions — un-hides a session from the
   // sidebar. Used when an automatic ancestry record was wrong, or when
   // the user wants to unmerge.
-  ipcMain.handle(AppChannels.DETACH_SESSION, (_event, claudeSessionId: string) => {
+  host.handle(AppChannels.DETACH_SESSION, (claudeSessionId: string) => {
     const ok = detachSession(claudeSessionId)
     log.info(`detach: ${claudeSessionId} ${ok ? 'removed' : 'no-op (no row found)'}`)
     return { ok }
   })
 
   // Debug: dump all ancestry rows so a user can inspect via devtools.
-  ipcMain.handle(AppChannels.LIST_ANCESTRY, () => listAllThreadSessions())
+  host.handle(AppChannels.LIST_ANCESTRY, () => listAllThreadSessions())
 
   // Manually attach a conversation row as a child of another thread —
   // lets users stitch pre-ancestry fragments together. After this runs,
   // `fragmentId` disappears from the sidebar and its messages load under
   // `rootThreadId`.
-  ipcMain.handle(AppChannels.ATTACH_TO_THREAD, (
-    _event,
-    fragmentId: string,
+  host.handle(AppChannels.ATTACH_TO_THREAD, (fragmentId: string,
     rootThreadId: string,
   ) => {
     if (fragmentId === rootThreadId) return { ok: false, error: 'cannot attach to self' }
@@ -571,10 +560,8 @@ export function registerAppHandlers(window: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle(AppChannels.EXPORT_MARKDOWN, async (
-    _event,
-    params: { suggestedFilename: string; content: string },
-  ) => {
+  // Desktop-only (native save dialog + BrowserWindow) — stays on ipcMain.
+  ipcMain.handle(AppChannels.EXPORT_MARKDOWN, async (_event, params: { suggestedFilename: string; content: string }) => {
     const result = await dialog.showSaveDialog(window, {
       title: 'Export Conversation',
       defaultPath: params.suggestedFilename,
@@ -595,9 +582,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
   // Fork-from-message — clone a conversation up through the chosen
   // message and wire the new conversation so the agent can resume with
   // real context. See src/main/conversations/fork.ts.
-  ipcMain.handle(AppChannels.FORK_CONVERSATION, async (
-    _event,
-    args: {
+  host.handle(AppChannels.FORK_CONVERSATION, async (args: {
       sourceConversationId: string
       upToIndex: number
       forkedAtMessageId?: string
@@ -617,9 +602,9 @@ export function registerAppHandlers(window: BrowserWindow): void {
   })
 
   // ─── Bookmarks ───────────────────────────────────────────────────
-  ipcMain.handle(BookmarkChannels.SAVE, (_event, params) => saveBookmark(params))
-  ipcMain.handle(BookmarkChannels.REMOVE, (_event, id: string) => removeBookmark(id))
-  ipcMain.handle(BookmarkChannels.LIST, () =>
+  host.handle(BookmarkChannels.SAVE, (params: Parameters<typeof saveBookmark>[0]) => saveBookmark(params))
+  host.handle(BookmarkChannels.REMOVE, (id: string) => removeBookmark(id))
+  host.handle(BookmarkChannels.LIST, () =>
     listBookmarks().map((r) => ({
       id: r.id,
       sessionId: r.session_id,
@@ -634,6 +619,7 @@ export function registerAppHandlers(window: BrowserWindow): void {
   )
 
   // Vibrancy toggle for translucent theme
+  // Desktop-only (window vibrancy) — stays on ipcMain; needs the BrowserWindow.
   ipcMain.handle(AppChannels.SET_VIBRANCY, (_event, enabled: boolean) => {
     if (window.isDestroyed()) return
     if (process.platform === 'darwin') {
