@@ -354,7 +354,7 @@ app.whenReady().then(() => {
   registerAutoUpdater(mainWindow)
 
   // Provider registry — new agent bridge (SDK-based)
-  providerRegistry = new ProviderRegistry(mainWindow)
+  providerRegistry = new ProviderRegistry(backendHost)
   providerRegistry.registerIpcHandlers()
 
   app.on('activate', () => {
@@ -369,7 +369,7 @@ app.whenReady().then(() => {
       registerKanbanHandlers(reactivatedHost)
       registerAutoUpdater(mainWindow)
 
-      providerRegistry = new ProviderRegistry(mainWindow)
+      providerRegistry = new ProviderRegistry(reactivatedHost)
       providerRegistry.registerIpcHandlers()
     }
   })
