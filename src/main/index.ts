@@ -21,6 +21,7 @@ import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerFilesHandlers } from './ipc/files'
+import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
 import { registerLspHandlers } from './ipc/lsp'
 import { registerKanbanHandlers } from './ipc/kanban'
@@ -336,10 +337,15 @@ app.whenReady().then(() => {
 
   mainWindow = createWindow()
 
+  // Backend handlers increasingly register against a BackendHost (the seam that
+  // will later let them run in a standalone/remote server). Migrating group by
+  // group; the rest still take the window directly.
+  const backendHost = new ElectronIpcHost(mainWindow)
+
   registerTerminalHandlers(mainWindow)
   registerAgentHandlers(mainWindow)
   registerAppHandlers(mainWindow)
-  registerFilesHandlers()
+  registerFilesHandlers(backendHost)
   registerGitHandlers()
   registerLspHandlers()
   registerKanbanHandlers()
@@ -359,7 +365,7 @@ app.whenReady().then(() => {
       registerTerminalHandlers(mainWindow)
       registerAgentHandlers(mainWindow)
       registerAppHandlers(mainWindow)
-      registerFilesHandlers()
+      registerFilesHandlers(new ElectronIpcHost(mainWindow))
       registerGitHandlers()
       registerKanbanHandlers()
       registerAutoUpdater(mainWindow)
