@@ -1,0 +1,82 @@
+#!/usr/bin/env node
+/**
+ * End-to-end check for the BackendHost refactor (Phase 1).
+ *
+ * Boots the *built* app under Playwright/Electron with an isolated
+ * `--user-data-dir` (so the single-instance lock never collides with a
+ * released build the user is running), then calls every migrated
+ * window.api.* channel from the renderer. This exercises the real path —
+ * preload Transport → IPC → ElectronIpcHost → registerXHandlers handler —
+ * which unit tests can't, and is the thing that breaks if the seam is wrong.
+ *
+ * Run: npm run build && node e2e/backend-host.e2e.mjs
+ * Requires a display (macOS desktop, or xvfb on Linux).
+ */
+import { _electron as electron } from 'playwright'
+import { mkdtempSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { resolve, join } from 'node:path'
+
+const repoRoot = process.cwd()
+if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
+  console.error('✗ out/main/index.js missing — run `npm run build` first')
+  process.exit(1)
+}
+
+const userDataDir = mkdtempSync(join(tmpdir(), 'sb-e2e-'))
+let failures = 0
+const check = (cond, msg) => {
+  console.log(`${cond ? '✓' : '✗'} ${msg}`)
+  if (!cond) failures++
+}
+
+const app = await electron.launch({
+  args: ['.', `--user-data-dir=${userDataDir}`],
+  cwd: repoRoot,
+  env: { ...process.env, ELECTRON_RUN_AS_NODE: '', ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
+})
+
+try {
+  const win = await app.firstWindow()
+  await win.waitForLoadState('domcontentloaded')
+  await win.waitForFunction(() => !!window.api?.files?.listAll, null, { timeout: 20_000 })
+  check(true, 'app booted with BackendHost wiring (window loaded, window.api present)')
+
+  // Call every migrated channel from the renderer, against the repo itself.
+  const r = await win.evaluate(async (repo) => {
+    const api = window.api
+    return {
+      listDir: await api.files.listDir(repo, ''),
+      listAll: await api.files.listAll(repo),
+      resolve: await api.files.resolve(repo, 'package.json'),
+      grep: await api.files.grepSymbol(repo, 'registerFilesHandlers'),
+      branch: await api.git.currentBranch(repo),
+      lsp: await api.lsp.definition({ workspaceRoot: repo, absPath: `${repo}/README.md`, position: { line: 0, character: 0 } }),
+      kanban: await api.kanban.list(repo),
+      providers: await api.providerInstances.list(),
+    }
+  }, repoRoot)
+
+  // files
+  check(r.listDir?.ok && Array.isArray(r.listDir.entries) && r.listDir.entries.length > 0, 'files:list-dir returns entries')
+  check(r.listAll?.ok && r.listAll.files.includes('package.json'), 'files:list-all includes package.json')
+  check(r.resolve?.ok && r.resolve.exists === true, 'files:resolve finds package.json')
+  check(r.grep?.ok && r.grep.hits.some((h) => h.relPath.includes('ipc/files.ts')), 'files:grep-symbol locates registerFilesHandlers')
+  // git
+  check(r.branch?.ok && typeof r.branch.branch === 'string', 'git:current-branch returns a branch')
+  // lsp (README.md is not LSP-backed → supported:false, no server spawn)
+  check(r.lsp?.ok && r.lsp.supported === false, 'lsp:definition routes + reports unsupported for .md')
+  // kanban + provider-instances
+  check(Array.isArray(r.kanban), 'kanban:list returns an array')
+  check(Array.isArray(r.providers), 'provider-instances:list returns an array')
+
+  await win.screenshot({ path: join(tmpdir(), 'sb-e2e-shot.png') }).catch(() => {})
+} catch (err) {
+  console.error('✗ harness error:', err?.message ?? err)
+  failures++
+} finally {
+  await app.close().catch(() => {})
+}
+
+console.log(failures === 0 ? '\nE2E PASSED' : `\nE2E FAILED (${failures} check(s))`)
+process.exit(failures === 0 ? 0 : 1)
