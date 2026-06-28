@@ -93,6 +93,15 @@ try {
   )
   check(typeof termOut === 'string' && termOut.includes('SBE2E_OK'), 'terminal create→write→onOutput streams (host.emit/on)')
 
+  // provider-registry — proves the provider channels route through the migrated
+  // host.handle seam. (A live instance-switch assertion needs real provider auth
+  // / a mock adapter and lands with the WS-boundary phase.)
+  const prov = await win.evaluate(async () => ({
+    claude: await window.api.provider.isAvailable('claude'),
+    codex: await window.api.provider.isAvailable('codex'),
+  }))
+  check(typeof prov.claude === 'boolean' && typeof prov.codex === 'boolean', 'provider:is-available round-trips through the host seam')
+
   await win.screenshot({ path: join(tmpdir(), 'sb-e2e-shot.png') }).catch(() => {})
 } catch (err) {
   console.error('✗ harness error:', err?.message ?? err)

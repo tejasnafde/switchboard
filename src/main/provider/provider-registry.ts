@@ -2,7 +2,7 @@
  * Provider registry — manages adapter instances and routes operations.
  */
 
-import { ipcMain, type BrowserWindow } from 'electron'
+import type { BackendHost } from '../backend/host'
 import { ProviderChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { ClaudeAdapter } from './adapters/claude-adapter'
@@ -29,7 +29,7 @@ const log = createLogger('provider:registry')
 export class ProviderRegistry {
   private adapters: Map<ProviderKind, ProviderAdapter>
   private opencodeAcp: OpencodeAcpAdapter
-  private window: BrowserWindow
+  private host: BackendHost
   /**
    * Per-session resolved adapter, so existing sessions stay pinned to the
    * adapter instance they started on even if we swap adapters at runtime.
@@ -54,8 +54,8 @@ export class ProviderRegistry {
   /** Unsubscribe fn for the renderer bridge subscription. */
   private rendererUnsub: (() => void) | null = null
 
-  constructor(window: BrowserWindow) {
-    this.window = window
+  constructor(host: BackendHost) {
+    this.host = host
     this.opencodeAcp = new OpencodeAcpAdapter()
     this.adapters = new Map<ProviderKind, ProviderAdapter>([
       ['claude', new ClaudeAdapter()],
@@ -71,15 +71,12 @@ export class ProviderRegistry {
   }
 
   /**
-   * Renderer bridge subscriber. Forwards every event to the current
-   * window's webContents iff the window still exists. If the window has
-   * been destroyed we silently drop — other subscribers (kanban
-   * recorder, etc.) still receive it because they're independent.
+   * Renderer bridge subscriber: forward every event to the client via the
+   * host (which no-ops if the window is gone). Other bus subscribers (kanban
+   * recorder, etc.) receive it independently.
    */
   private forwardToRenderer(event: RuntimeEvent): void {
-    if (!this.window.isDestroyed()) {
-      this.window.webContents.send(ProviderChannels.EVENT, event)
-    }
+    this.host.emit(ProviderChannels.EVENT, event)
   }
 
   private publish(event: RuntimeEvent): void {
@@ -111,18 +108,13 @@ export class ProviderRegistry {
   }
 
   registerIpcHandlers(): void {
-    // Clean up previous handlers
-    for (const ch of Object.values(ProviderChannels)) {
-      try { ipcMain.removeHandler(ch) } catch { /* ignore */ }
-    }
-
-    ipcMain.handle(ProviderChannels.IS_AVAILABLE, async (_event, provider: ProviderKind) => {
+    this.host.handle(ProviderChannels.IS_AVAILABLE, async (provider: ProviderKind) => {
       const adapter = this.getAdapter(provider)
       if (!adapter) return false
       return adapter.isAvailable()
     })
 
-    ipcMain.handle(ProviderChannels.START_SESSION, async (_event, opts: SessionStartOpts) => {
+    this.host.handle(ProviderChannels.START_SESSION, async (opts: SessionStartOpts) => {
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
 
@@ -158,7 +150,7 @@ export class ProviderRegistry {
       return session
     })
 
-    ipcMain.handle(ProviderChannels.SEND_TURN, async (_event, threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) => {
+    this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
         log.warn(`sendTurn ${threadId} — no adapter (session not started?)`)
@@ -172,37 +164,37 @@ export class ProviderRegistry {
       await adapter.sendTurn(threadId, message, runtimeMode, images)
     })
 
-    ipcMain.handle(ProviderChannels.INTERRUPT, async (_event, threadId: string) => {
+    this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       await adapter.interruptTurn(threadId)
     })
 
-    ipcMain.handle(ProviderChannels.SET_RUNTIME_MODE, async (_event, threadId: string, mode: RuntimeMode) => {
+    this.host.handle(ProviderChannels.SET_RUNTIME_MODE, async (threadId: string, mode: RuntimeMode) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       await adapter.setRuntimeMode(threadId, mode)
     })
 
-    ipcMain.handle(ProviderChannels.SET_MODEL, async (_event, threadId: string, model: string) => {
+    this.host.handle(ProviderChannels.SET_MODEL, async (threadId: string, model: string) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       if (adapter.setModel) await adapter.setModel(threadId, model)
     })
 
-    ipcMain.handle(ProviderChannels.ANSWER_QUESTION, async (_event, threadId: string, requestId: string, answers: string[][]) => {
+    this.host.handle(ProviderChannels.ANSWER_QUESTION, async (threadId: string, requestId: string, answers: string[][]) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       if (adapter.answerQuestion) await adapter.answerQuestion(threadId, requestId, answers)
     })
 
-    ipcMain.handle(ProviderChannels.RESPOND_TO_REQUEST, async (_event, threadId: string, requestId: string, decision: ApprovalDecision) => {
+    this.host.handle(ProviderChannels.RESPOND_TO_REQUEST, async (threadId: string, requestId: string, decision: ApprovalDecision) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       await adapter.respondToRequest(threadId, requestId, decision)
     })
 
-    ipcMain.handle(ProviderChannels.LIST_SKILLS, async (_event, threadId: string) => {
+    this.host.handle(ProviderChannels.LIST_SKILLS, async (threadId: string) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter?.listSkills) return []
       try {
@@ -213,7 +205,7 @@ export class ProviderRegistry {
       }
     })
 
-    ipcMain.handle(ProviderChannels.OPENCODE_LIST_MODELS, async () => {
+    this.host.handle(ProviderChannels.OPENCODE_LIST_MODELS, async () => {
       try {
         return await this.opencodeAcp.listAvailableModels()
       } catch {
@@ -221,7 +213,7 @@ export class ProviderRegistry {
       }
     })
 
-    ipcMain.handle(ProviderChannels.STOP_SESSION, async (_event, threadId: string) => {
+    this.host.handle(ProviderChannels.STOP_SESSION, async (threadId: string) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       await adapter.stopSession(threadId)
