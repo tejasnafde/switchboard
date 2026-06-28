@@ -77,6 +77,7 @@ export function registerAppHandlers(host: BackendHost, window: BrowserWindow): v
   // host.handle self-cleans; only the desktop-only ipcMain handlers below need
   // explicit removal to re-register on macOS activate.
   ipcMain.removeHandler(AppChannels.OPEN_FOLDER)
+  ipcMain.removeHandler(AppChannels.EXPORT_MARKDOWN)
   ipcMain.removeHandler(AppChannels.RELAUNCH)
   ipcMain.removeHandler(AppChannels.SET_VIBRANCY)
 
@@ -559,8 +560,8 @@ export function registerAppHandlers(host: BackendHost, window: BrowserWindow): v
     }
   })
 
-  host.handle(AppChannels.EXPORT_MARKDOWN, async (params: { suggestedFilename: string; content: string },
-  ) => {
+  // Desktop-only (native save dialog + BrowserWindow) — stays on ipcMain.
+  ipcMain.handle(AppChannels.EXPORT_MARKDOWN, async (_event, params: { suggestedFilename: string; content: string }) => {
     const result = await dialog.showSaveDialog(window, {
       title: 'Export Conversation',
       defaultPath: params.suggestedFilename,
