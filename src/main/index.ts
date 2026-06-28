@@ -21,6 +21,7 @@ import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerFilesHandlers } from './ipc/files'
+import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
 import { registerLspHandlers } from './ipc/lsp'
 import { registerKanbanHandlers } from './ipc/kanban'
@@ -336,14 +337,17 @@ app.whenReady().then(() => {
 
   mainWindow = createWindow()
 
+  // Handlers migrating to the BackendHost seam (remote-ready); rest take the window.
+  const backendHost = new ElectronIpcHost(mainWindow)
+
   registerTerminalHandlers(mainWindow)
   registerAgentHandlers(mainWindow)
   registerAppHandlers(mainWindow)
-  registerFilesHandlers()
-  registerGitHandlers()
-  registerLspHandlers()
-  registerKanbanHandlers()
-  registerProviderInstanceHandlers()
+  registerFilesHandlers(backendHost)
+  registerGitHandlers(backendHost)
+  registerLspHandlers(backendHost)
+  registerKanbanHandlers(backendHost)
+  registerProviderInstanceHandlers(backendHost)
   // Auto-update — silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what
   // version to compare against. See `src/main/updater.ts`.
@@ -359,9 +363,10 @@ app.whenReady().then(() => {
       registerTerminalHandlers(mainWindow)
       registerAgentHandlers(mainWindow)
       registerAppHandlers(mainWindow)
-      registerFilesHandlers()
-      registerGitHandlers()
-      registerKanbanHandlers()
+      const reactivatedHost = new ElectronIpcHost(mainWindow)
+      registerFilesHandlers(reactivatedHost)
+      registerGitHandlers(reactivatedHost)
+      registerKanbanHandlers(reactivatedHost)
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(mainWindow)

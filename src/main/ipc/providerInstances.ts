@@ -7,7 +7,7 @@
  * (the wire shape only includes `envKeys`, not values).
  */
 
-import { ipcMain } from 'electron'
+import type { BackendHost } from '../backend/host'
 import { spawnSync } from 'child_process'
 import { mkdirSync } from 'fs'
 import { homedir } from 'os'
@@ -28,8 +28,8 @@ import { applyEnvOverlay } from '../provider/env-overlay'
 
 const log = createLogger('ipc:provider-instances')
 
-export function registerProviderInstanceHandlers(): void {
-  ipcMain.handle(ProviderInstanceChannels.LIST, () => {
+export function registerProviderInstanceHandlers(host: BackendHost): void {
+  host.handle(ProviderInstanceChannels.LIST, () => {
     try {
       return listProviderInstances()
     } catch (err) {
@@ -38,21 +38,21 @@ export function registerProviderInstanceHandlers(): void {
     }
   })
 
-  ipcMain.handle(ProviderInstanceChannels.UPSERT, (_event, input: ProviderInstanceUpsertInput) => {
+  host.handle(ProviderInstanceChannels.UPSERT, (input: ProviderInstanceUpsertInput) => {
     log.info(`upsert ${input.id ?? '(new)'} agent=${input.agentType} name="${input.displayName}"`)
     return upsertProviderInstance(input)
   })
 
-  ipcMain.handle(ProviderInstanceChannels.DELETE, (_event, id: string) => {
+  host.handle(ProviderInstanceChannels.DELETE, (id: string) => {
     log.info(`delete ${id}`)
     return deleteProviderInstance(id)
   })
 
-  ipcMain.handle(ProviderInstanceChannels.TEST, async (_event, id: string) => {
+  host.handle(ProviderInstanceChannels.TEST, async (id: string) => {
     return testInstance(id)
   })
 
-  ipcMain.handle(ProviderInstanceChannels.CREATE_OAUTH_DIR, (_event, dir: string) => {
+  host.handle(ProviderInstanceChannels.CREATE_OAUTH_DIR, (dir: string) => {
     return createOauthDir(dir)
   })
 

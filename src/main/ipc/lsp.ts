@@ -9,7 +9,7 @@
  * document lifecycle (didOpen on tab-open, debounced didChange, didClose
  * on tab-close).
  */
-import { ipcMain } from 'electron'
+import type { BackendHost } from '../backend/host'
 import { pathToFileURL } from 'node:url'
 import { LspChannels } from '@shared/ipc-channels'
 import {
@@ -52,12 +52,8 @@ function resolveLang(absPath: string): LspLanguage | null {
   return languageForPath(absPath)
 }
 
-export function registerLspHandlers(): void {
-  for (const ch of Object.values(LspChannels)) {
-    ipcMain.removeHandler(ch)
-  }
-
-  ipcMain.handle(LspChannels.OPEN, async (_e, args: OpenArgs) => {
+export function registerLspHandlers(host: BackendHost): void {
+  host.handle(LspChannels.OPEN, async (args: OpenArgs) => {
     const lang = resolveLang(args.absPath)
     if (!lang) return { ok: true, supported: false }
     try {
@@ -76,7 +72,7 @@ export function registerLspHandlers(): void {
     }
   })
 
-  ipcMain.handle(LspChannels.CHANGE, async (_e, args: ChangeArgs) => {
+  host.handle(LspChannels.CHANGE, async (args: ChangeArgs) => {
     const lang = resolveLang(args.absPath)
     if (!lang) return { ok: true, supported: false }
     try {
@@ -93,7 +89,7 @@ export function registerLspHandlers(): void {
     }
   })
 
-  ipcMain.handle(LspChannels.CLOSE, async (_e, args: CloseArgs) => {
+  host.handle(LspChannels.CLOSE, async (args: CloseArgs) => {
     const lang = resolveLang(args.absPath)
     if (!lang) return { ok: true, supported: false }
     try {
@@ -106,7 +102,7 @@ export function registerLspHandlers(): void {
     }
   })
 
-  ipcMain.handle(LspChannels.DEFINITION, async (_e, args: QueryArgs) => {
+  host.handle(LspChannels.DEFINITION, async (args: QueryArgs) => {
     const lang = resolveLang(args.absPath)
     if (!lang) return { ok: true, supported: false, locations: [] }
     try {
@@ -124,7 +120,7 @@ export function registerLspHandlers(): void {
     }
   })
 
-  ipcMain.handle(LspChannels.REFERENCES, async (_e, args: QueryArgs) => {
+  host.handle(LspChannels.REFERENCES, async (args: QueryArgs) => {
     const lang = resolveLang(args.absPath)
     if (!lang) return { ok: true, supported: false, locations: [] }
     try {
@@ -140,7 +136,7 @@ export function registerLspHandlers(): void {
     }
   })
 
-  ipcMain.handle(LspChannels.HOVER, async (_e, args: QueryArgs) => {
+  host.handle(LspChannels.HOVER, async (args: QueryArgs) => {
     const lang = resolveLang(args.absPath)
     if (!lang) return { ok: true, supported: false, hover: null }
     try {
@@ -154,7 +150,7 @@ export function registerLspHandlers(): void {
     }
   })
 
-  ipcMain.handle(LspChannels.DOCUMENT_SYMBOLS, async (_e, args: { workspaceRoot: string; absPath: string }) => {
+  host.handle(LspChannels.DOCUMENT_SYMBOLS, async (args: { workspaceRoot: string; absPath: string }) => {
     const lang = resolveLang(args.absPath)
     if (!lang) return { ok: true, supported: false, symbols: [] }
     try {

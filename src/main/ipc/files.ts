@@ -9,7 +9,7 @@
  * Pure logic lives in `../files/listing.ts` so it's unit-tested without
  * spinning up Electron.
  */
-import { ipcMain } from 'electron'
+import type { BackendHost } from '../backend/host'
 import { basename, dirname, isAbsolute, normalize, relative, resolve } from 'node:path'
 import { promises as fs } from 'node:fs'
 import { execFile } from 'node:child_process'
@@ -65,12 +65,8 @@ export async function resolveWithinRepo(repoRoot: string, subPath: string): Prom
   return candidate
 }
 
-export function registerFilesHandlers(): void {
-  for (const ch of Object.values(FilesChannels)) {
-    ipcMain.removeHandler(ch)
-  }
-
-  ipcMain.handle(FilesChannels.LIST_DIR, async (_e, repoRoot: string, subPath = '') => {
+export function registerFilesHandlers(host: BackendHost): void {
+  host.handle(FilesChannels.LIST_DIR, async (repoRoot: string, subPath: string = '') => {
     try {
       const abs = await resolveWithinRepo(repoRoot, subPath)
       const entries = await listDirAnnotated(abs, repoRoot)
@@ -81,7 +77,7 @@ export function registerFilesHandlers(): void {
     }
   })
 
-  ipcMain.handle(FilesChannels.READ_FILE, async (_e, repoRoot: string, subPath: string) => {
+  host.handle(FilesChannels.READ_FILE, async (repoRoot: string, subPath: string) => {
     try {
       const abs = await resolveWithinRepo(repoRoot, subPath)
       const out = await readFileCapped(abs, MAX_READ_BYTES)
@@ -92,7 +88,7 @@ export function registerFilesHandlers(): void {
     }
   })
 
-  ipcMain.handle(FilesChannels.LIST_ALL, async (_e, repoRoot: string) => {
+  host.handle(FilesChannels.LIST_ALL, async (repoRoot: string) => {
     try {
       const root = resolve(repoRoot)
       const files = await listAllFiles(root)
@@ -103,15 +99,9 @@ export function registerFilesHandlers(): void {
     }
   })
 
-  ipcMain.handle(
+  host.handle(
     FilesChannels.WRITE_FILE,
-    async (
-      _e,
-      repoRoot: string,
-      subPath: string,
-      content: string,
-      expectedMtimeMs?: number,
-    ) => {
+    async (repoRoot: string, subPath: string, content: string, expectedMtimeMs?: number) => {
       try {
         if (Buffer.byteLength(content, 'utf8') > MAX_WRITE_BYTES) {
           return { ok: false, error: `File too large to write (cap ${MAX_WRITE_BYTES} bytes)` }
@@ -126,7 +116,7 @@ export function registerFilesHandlers(): void {
     },
   )
 
-  ipcMain.handle(FilesChannels.DELETE_FILE, async (_e, repoRoot: string, subPath: string) => {
+  host.handle(FilesChannels.DELETE_FILE, async (repoRoot: string, subPath: string) => {
     try {
       const abs = await resolveWithinRepo(repoRoot, subPath)
       return await deleteFileSafe(abs)
@@ -136,24 +126,21 @@ export function registerFilesHandlers(): void {
     }
   })
 
-  ipcMain.handle(
-    FilesChannels.READ_BATCH,
-    async (_e, repoRoot: string, subPaths: string[]) => {
-      const out: Array<{ path: string; content: string; mtimeMs: number; truncated: boolean }> = []
-      for (const sub of subPaths) {
-        try {
-          const abs = await resolveWithinRepo(repoRoot, sub)
-          const r = await readFileCapped(abs, MAX_READ_BYTES)
-          out.push({ path: sub, content: r.content, mtimeMs: r.mtimeMs, truncated: r.truncated })
-        } catch (err) {
-          log.warn('read-batch: skipping unreadable entry', { sub, err: (err as Error).message })
-        }
+  host.handle(FilesChannels.READ_BATCH, async (repoRoot: string, subPaths: string[]) => {
+    const out: Array<{ path: string; content: string; mtimeMs: number; truncated: boolean }> = []
+    for (const sub of subPaths) {
+      try {
+        const abs = await resolveWithinRepo(repoRoot, sub)
+        const r = await readFileCapped(abs, MAX_READ_BYTES)
+        out.push({ path: sub, content: r.content, mtimeMs: r.mtimeMs, truncated: r.truncated })
+      } catch (err) {
+        log.warn('read-batch: skipping unreadable entry', { sub, err: (err as Error).message })
       }
-      return { ok: true, files: out }
-    },
-  )
+    }
+    return { ok: true, files: out }
+  })
 
-  ipcMain.handle(FilesChannels.RESOLVE, async (_e, repoRoot: string, subPath: string) => {
+  host.handle(FilesChannels.RESOLVE, async (repoRoot: string, subPath: string) => {
     try {
       const abs = await resolveWithinRepo(repoRoot, subPath)
       await fs.access(abs)
@@ -163,7 +150,7 @@ export function registerFilesHandlers(): void {
     }
   })
 
-  ipcMain.handle(FilesChannels.GREP_SYMBOL, async (_e, repoRoot: string, symbol: string) => {
+  host.handle(FilesChannels.GREP_SYMBOL, async (repoRoot: string, symbol: string) => {
     if (!SYMBOL_RE.test(symbol)) return { ok: true, hits: [] }
     try {
       const { stdout } = await execFileP(

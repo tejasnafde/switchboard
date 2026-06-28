@@ -20,6 +20,7 @@
     "prepare": "node scripts/install-hooks.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "node e2e/backend-host.e2e.mjs",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "rebuild": "npx --yes @electron/rebuild -f -w node-pty",

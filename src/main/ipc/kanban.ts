@@ -9,7 +9,7 @@
  * exists) surface separately from the row insert.
  */
 
-import { ipcMain } from 'electron'
+import type { BackendHost } from '../backend/host'
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
 import { KanbanChannels } from '@shared/ipc-channels'
@@ -35,16 +35,12 @@ import type { KanbanCardCreate, KanbanCardUpdate } from '@shared/kanban'
 
 const log = createMainLogger('kanban')
 
-export function registerKanbanHandlers(): void {
-  for (const ch of Object.values(KanbanChannels)) {
-    try { ipcMain.removeHandler(ch) } catch { /* not registered yet */ }
-  }
-
-  ipcMain.handle(KanbanChannels.LIST, async (_e, projectPath: string) => {
+export function registerKanbanHandlers(host: BackendHost): void {
+  host.handle(KanbanChannels.LIST, async (projectPath: string) => {
     return listKanbanCards(projectPath)
   })
 
-  ipcMain.handle(KanbanChannels.CREATE, async (_e, input: KanbanCardCreate) => {
+  host.handle(KanbanChannels.CREATE, async (input: KanbanCardCreate) => {
     const id = `card_${randomUUID()}`
     const card = createKanbanCard(id, input)
     log.info(`created card ${id} (${input.title}) in ${input.projectPath}`)
@@ -65,7 +61,7 @@ export function registerKanbanHandlers(): void {
     return card
   })
 
-  ipcMain.handle(KanbanChannels.UPDATE, async (_e, id: string, patch: KanbanCardUpdate) => {
+  host.handle(KanbanChannels.UPDATE, async (id: string, patch: KanbanCardUpdate) => {
     // Log conversation-link transitions specifically — they're the
     // signal that a card is being launched, and the only way to trace
     // launches end-to-end across the renderer/main boundary.
@@ -78,7 +74,7 @@ export function registerKanbanHandlers(): void {
     return updateKanbanCard(id, patch)
   })
 
-  ipcMain.handle(KanbanChannels.DELETE, async (_e, id: string, opts?: { removeWorktree?: boolean; force?: boolean }) => {
+  host.handle(KanbanChannels.DELETE, async (id: string, opts?: { removeWorktree?: boolean; force?: boolean }) => {
     const card = getKanbanCard(id)
     if (!card) return
     if (opts?.removeWorktree && card.worktreePath) {
@@ -96,7 +92,7 @@ export function registerKanbanHandlers(): void {
     log.info(`deleted card ${id}`)
   })
 
-  ipcMain.handle(KanbanChannels.CREATE_WORKTREE, async (_e, id: string) => {
+  host.handle(KanbanChannels.CREATE_WORKTREE, async (id: string) => {
     const card = getKanbanCard(id)
     if (!card) throw new Error(`Unknown card: ${id}`)
     if (card.worktreePath) return card // idempotent
@@ -104,7 +100,7 @@ export function registerKanbanHandlers(): void {
     return setKanbanWorktree(id, path, branch)
   })
 
-  ipcMain.handle(KanbanChannels.REMOVE_WORKTREE, async (_e, id: string, opts?: { force?: boolean }) => {
+  host.handle(KanbanChannels.REMOVE_WORKTREE, async (id: string, opts?: { force?: boolean }) => {
     const card = getKanbanCard(id)
     if (!card?.worktreePath) return card
     await removeWorktree(card.projectPath, card.worktreePath, {
@@ -114,13 +110,13 @@ export function registerKanbanHandlers(): void {
     return setKanbanWorktree(id, null, null)
   })
 
-  ipcMain.handle(KanbanChannels.LIST_WORKTREES, async (_e, projectPath: string) => {
+  host.handle(KanbanChannels.LIST_WORKTREES, async (projectPath: string) => {
     const inUse = listInUseWorktreePaths(projectPath)
     const all = await listWorktrees(projectPath)
     return all.map((wt) => ({ ...wt, inUse: inUse.has(wt.path) }))
   })
 
-  ipcMain.handle(KanbanChannels.LIST_STALE_WORKTREES, async (_e, projectPath: string) => {
+  host.handle(KanbanChannels.LIST_STALE_WORKTREES, async (projectPath: string) => {
     const inUse = listInUseWorktreePaths(projectPath)
     return findStaleWorktrees(projectPath, inUse)
   })
@@ -133,9 +129,9 @@ export function registerKanbanHandlers(): void {
    * if `git worktree remove` fails (e.g. the directory is already gone but git's
    * metadata isn't, or the worktree is corrupt).
    */
-  ipcMain.handle(
+  host.handle(
     KanbanChannels.REMOVE_STALE_WORKTREE,
-    async (_e, projectPath: string, worktreePath: string, opts?: { force?: boolean }) => {
+    async (projectPath: string, worktreePath: string, opts?: { force?: boolean }) => {
       const resolvedTarget = resolve(worktreePath)
       const knownWorktrees = await listWorktrees(projectPath)
       const isRegistered = knownWorktrees.some((wt) => wt.path === resolvedTarget)
