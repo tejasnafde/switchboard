@@ -1,4 +1,4 @@
-import { ipcMain, type BrowserWindow } from 'electron'
+import type { BackendHost } from '../backend/host'
 import { TerminalChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import type { TerminalCreateOptions, TerminalResizePayload, TerminalDataPayload } from '@shared/types'
@@ -8,30 +8,17 @@ const log = createLogger('ipc:terminal')
 
 let ptyManager: PtyManager | null = null
 
-export function registerTerminalHandlers(window: BrowserWindow): void {
-  // Clean up previous handlers + instance (e.g. on macOS activate)
+export function registerTerminalHandlers(host: BackendHost): void {
+  // Clean up the previous instance (e.g. on macOS activate); the host
+  // re-registers handlers idempotently.
   ptyManager?.killAll()
-  ipcMain.removeHandler(TerminalChannels.CREATE)
-  ipcMain.removeAllListeners(TerminalChannels.DATA)
-  ipcMain.removeAllListeners(TerminalChannels.RESIZE)
-  ipcMain.removeAllListeners(TerminalChannels.KILL)
 
   ptyManager = new PtyManager(
-    // onData → forward PTY output to renderer
-    (id, data) => {
-      if (!window.isDestroyed()) {
-        window.webContents.send(TerminalChannels.OUTPUT, id, data)
-      }
-    },
-    // onExit → notify renderer
-    (id, exitCode) => {
-      if (!window.isDestroyed()) {
-        window.webContents.send(TerminalChannels.EXIT, id, exitCode)
-      }
-    }
+    (id, data) => host.emit(TerminalChannels.OUTPUT, id, data),
+    (id, exitCode) => host.emit(TerminalChannels.EXIT, id, exitCode),
   )
 
-  ipcMain.handle(TerminalChannels.CREATE, async (_event, opts: TerminalCreateOptions) => {
+  host.handle(TerminalChannels.CREATE, async (opts: TerminalCreateOptions) => {
     log.info('create', opts.id, { cwd: opts.cwd, cols: opts.cols, rows: opts.rows })
     try {
       await ptyManager!.create(opts)
@@ -43,15 +30,15 @@ export function registerTerminalHandlers(window: BrowserWindow): void {
     }
   })
 
-  ipcMain.on(TerminalChannels.DATA, (_event, payload: TerminalDataPayload) => {
+  host.on(TerminalChannels.DATA, (payload: TerminalDataPayload) => {
     ptyManager!.write(payload.id, payload.data)
   })
 
-  ipcMain.on(TerminalChannels.RESIZE, (_event, payload: TerminalResizePayload) => {
+  host.on(TerminalChannels.RESIZE, (payload: TerminalResizePayload) => {
     ptyManager!.resize(payload.id, payload.cols, payload.rows)
   })
 
-  ipcMain.on(TerminalChannels.KILL, (_event, id: string) => {
+  host.on(TerminalChannels.KILL, (id: string) => {
     ptyManager!.kill(id)
   })
 }

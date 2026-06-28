@@ -340,8 +340,8 @@ app.whenReady().then(() => {
   // Handlers migrating to the BackendHost seam (remote-ready); rest take the window.
   const backendHost = new ElectronIpcHost(mainWindow)
 
-  registerTerminalHandlers(mainWindow)
-  registerAgentHandlers(mainWindow)
+  registerTerminalHandlers(backendHost)
+  registerAgentHandlers(backendHost)
   registerAppHandlers(mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
@@ -360,10 +360,10 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow()
-      registerTerminalHandlers(mainWindow)
-      registerAgentHandlers(mainWindow)
-      registerAppHandlers(mainWindow)
       const reactivatedHost = new ElectronIpcHost(mainWindow)
+      registerTerminalHandlers(reactivatedHost)
+      registerAgentHandlers(reactivatedHost)
+      registerAppHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
       registerKanbanHandlers(reactivatedHost)

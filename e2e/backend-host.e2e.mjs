@@ -70,6 +70,29 @@ try {
   check(Array.isArray(r.kanban), 'kanban:list returns an array')
   check(Array.isArray(r.providers), 'provider-instances:list returns an array')
 
+  // terminal — exercises host.emit + host.on (the streaming path) end to end:
+  // create a pty, write a command, assert its output streams back.
+  const termOut = await win.evaluate(
+    (repo) =>
+      new Promise((res) => {
+        const id = 'e2e-term-1'
+        let buf = ''
+        const off = window.api.terminal.onOutput((tid, data) => {
+          if (tid === id) buf += data
+        })
+        window.api.terminal.create({ id, cwd: repo, cols: 80, rows: 24 }).then(() => {
+          setTimeout(() => window.api.terminal.write(id, 'echo SBE2E_OK\n'), 400)
+          setTimeout(() => {
+            off()
+            window.api.terminal.kill(id)
+            res(buf)
+          }, 2000)
+        })
+      }),
+    repoRoot,
+  )
+  check(typeof termOut === 'string' && termOut.includes('SBE2E_OK'), 'terminal create→write→onOutput streams (host.emit/on)')
+
   await win.screenshot({ path: join(tmpdir(), 'sb-e2e-shot.png') }).catch(() => {})
 } catch (err) {
   console.error('✗ harness error:', err?.message ?? err)
