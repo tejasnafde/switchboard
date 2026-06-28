@@ -1,4 +1,5 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge } from 'electron'
+import { IpcTransport, type Transport } from './transport'
 import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type {
@@ -41,92 +42,72 @@ export interface ProviderInstanceUpsertInput {
 
 /**
  * Expose a typed API to the renderer via contextBridge.
- * The renderer calls window.api.* — never touches ipcRenderer directly.
+ * The renderer calls window.api.* — never touches ipcRenderer directly; every
+ * method goes through `transport`, the swappable renderer↔backend seam.
  */
+const transport: Transport = new IpcTransport()
+
 const api = {
   // ─── Terminal ────────────────────────────────────────────────────
   terminal: {
     create: (opts: TerminalCreateOptions) =>
-      ipcRenderer.invoke(TerminalChannels.CREATE, opts),
+      transport.invoke(TerminalChannels.CREATE, opts),
 
     write: (id: string, data: string) =>
-      ipcRenderer.send(TerminalChannels.DATA, { id, data }),
+      transport.send(TerminalChannels.DATA, { id, data }),
 
     resize: (payload: TerminalResizePayload) =>
-      ipcRenderer.send(TerminalChannels.RESIZE, payload),
+      transport.send(TerminalChannels.RESIZE, payload),
 
     kill: (id: string) =>
-      ipcRenderer.send(TerminalChannels.KILL, id),
+      transport.send(TerminalChannels.KILL, id),
 
-    onOutput: (callback: (id: string, data: string) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, id: string, data: string) =>
-        callback(id, data)
-      ipcRenderer.on(TerminalChannels.OUTPUT, handler)
-      return () => ipcRenderer.removeListener(TerminalChannels.OUTPUT, handler)
-    },
+    onOutput: (callback: (id: string, data: string) => void) =>
+      transport.on<[string, string]>(TerminalChannels.OUTPUT, (id, data) => callback(id, data)),
 
-    onExit: (callback: (id: string, exitCode: number) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, id: string, exitCode: number) =>
-        callback(id, exitCode)
-      ipcRenderer.on(TerminalChannels.EXIT, handler)
-      return () => ipcRenderer.removeListener(TerminalChannels.EXIT, handler)
-    },
+    onExit: (callback: (id: string, exitCode: number) => void) =>
+      transport.on<[string, number]>(TerminalChannels.EXIT, (id, exitCode) => callback(id, exitCode)),
   },
 
   // ─── Agent ─────────────────────────────────────────────────────
   agent: {
     start: (opts: AgentStartOptions) =>
-      ipcRenderer.invoke(AgentChannels.START, opts),
+      transport.invoke(AgentChannels.START, opts),
 
     send: (payload: AgentSendPayload) =>
-      ipcRenderer.invoke(AgentChannels.SEND, payload),
+      transport.invoke(AgentChannels.SEND, payload),
 
     kill: (id: string) =>
-      ipcRenderer.send(AgentChannels.KILL, id),
+      transport.send(AgentChannels.KILL, id),
 
-    onMessage: (callback: (agentId: string, message: unknown) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, agentId: string, message: unknown) =>
-        callback(agentId, message)
-      ipcRenderer.on(AgentChannels.MESSAGE, handler)
-      return () => ipcRenderer.removeListener(AgentChannels.MESSAGE, handler)
-    },
+    onMessage: (callback: (agentId: string, message: unknown) => void) =>
+      transport.on<[string, unknown]>(AgentChannels.MESSAGE, (agentId, message) => callback(agentId, message)),
 
-    onMessageUpdate: (callback: (agentId: string, messageId: string, updates: unknown) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, agentId: string, messageId: string, updates: unknown) =>
-        callback(agentId, messageId, updates)
-      ipcRenderer.on(AgentChannels.MESSAGE_UPDATE, handler)
-      return () => ipcRenderer.removeListener(AgentChannels.MESSAGE_UPDATE, handler)
-    },
+    onMessageUpdate: (callback: (agentId: string, messageId: string, updates: unknown) => void) =>
+      transport.on<[string, string, unknown]>(AgentChannels.MESSAGE_UPDATE, (agentId, messageId, updates) =>
+        callback(agentId, messageId, updates)),
 
-    onStatus: (callback: (agentId: string, status: string) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, agentId: string, status: string) =>
-        callback(agentId, status)
-      ipcRenderer.on(AgentChannels.STATUS, handler)
-      return () => ipcRenderer.removeListener(AgentChannels.STATUS, handler)
-    },
+    onStatus: (callback: (agentId: string, status: string) => void) =>
+      transport.on<[string, string]>(AgentChannels.STATUS, (agentId, status) => callback(agentId, status)),
 
-    onError: (callback: (agentId: string, error: string) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, agentId: string, error: string) =>
-        callback(agentId, error)
-      ipcRenderer.on(AgentChannels.ERROR, handler)
-      return () => ipcRenderer.removeListener(AgentChannels.ERROR, handler)
-    },
+    onError: (callback: (agentId: string, error: string) => void) =>
+      transport.on<[string, string]>(AgentChannels.ERROR, (agentId, error) => callback(agentId, error)),
   },
 
   // ─── App ──────────────────────────────────────────────────────
   app: {
-    openFolder: () => ipcRenderer.invoke(AppChannels.OPEN_FOLDER),
+    openFolder: () => transport.invoke(AppChannels.OPEN_FOLDER),
     scanSessions: (projectPath: string) =>
-      ipcRenderer.invoke(AppChannels.SCAN_SESSIONS, projectPath),
-    getProjects: () => ipcRenderer.invoke(AppChannels.GET_PROJECTS),
+      transport.invoke(AppChannels.SCAN_SESSIONS, projectPath),
+    getProjects: () => transport.invoke(AppChannels.GET_PROJECTS),
     createConversation: (params: CreateConversationParams) =>
-      ipcRenderer.invoke(AppChannels.CREATE_CONVERSATION, params),
+      transport.invoke(AppChannels.CREATE_CONVERSATION, params),
     setConversationWorktree: (
       conversationId: string,
       worktreePath: string | null,
       worktreeBranch: string | null,
     ): Promise<{ ok: true }> =>
-      ipcRenderer.invoke(
+      transport.invoke(
         AppChannels.SET_CONVERSATION_WORKTREE,
         conversationId,
         worktreePath,
@@ -138,105 +119,99 @@ const api = {
       ok: boolean
       error?: string
       tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>
-    }> => ipcRenderer.invoke(AppChannels.EDITOR_TABS_LOAD, sessionId),
+    }> => transport.invoke(AppChannels.EDITOR_TABS_LOAD, sessionId),
     editorTabsSave: (
       sessionId: string,
       tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
     ): Promise<{ ok: boolean; error?: string }> =>
-      ipcRenderer.invoke(AppChannels.EDITOR_TABS_SAVE, sessionId, tabs),
+      transport.invoke(AppChannels.EDITOR_TABS_SAVE, sessionId, tabs),
     loadSession: (filePath: string, conversationId?: string, source?: 'claude-code' | 'codex') =>
-      ipcRenderer.invoke(AppChannels.LOAD_SESSION, filePath, conversationId, source),
+      transport.invoke(AppChannels.LOAD_SESSION, filePath, conversationId, source),
     loadSessionById: (conversationId: string) =>
-      ipcRenderer.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId),
+      transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId),
     attachToThread: (fragmentId: string, rootThreadId: string) =>
-      ipcRenderer.invoke(AppChannels.ATTACH_TO_THREAD, fragmentId, rootThreadId),
+      transport.invoke(AppChannels.ATTACH_TO_THREAD, fragmentId, rootThreadId),
     detachSession: (claudeSessionId: string) =>
-      ipcRenderer.invoke(AppChannels.DETACH_SESSION, claudeSessionId),
-    listAncestry: () => ipcRenderer.invoke(AppChannels.LIST_ANCESTRY),
-    relaunch: () => ipcRenderer.invoke(AppChannels.RELAUNCH),
+      transport.invoke(AppChannels.DETACH_SESSION, claudeSessionId),
+    listAncestry: () => transport.invoke(AppChannels.LIST_ANCESTRY),
+    relaunch: () => transport.invoke(AppChannels.RELAUNCH),
     saveMessage: (params: SaveMessageParams) =>
-      ipcRenderer.invoke(AppChannels.SAVE_MESSAGE, params),
+      transport.invoke(AppChannels.SAVE_MESSAGE, params),
     renameConversation: (id: string, title: string) =>
-      ipcRenderer.invoke(AppChannels.RENAME_CONVERSATION, id, title),
+      transport.invoke(AppChannels.RENAME_CONVERSATION, id, title),
     getConversationRuntimeMode: (id: string): Promise<{ mode: RuntimeMode | null }> =>
-      ipcRenderer.invoke(AppChannels.GET_CONVERSATION_RUNTIME_MODE, id),
+      transport.invoke(AppChannels.GET_CONVERSATION_RUNTIME_MODE, id),
     setConversationRuntimeMode: (id: string, mode: RuntimeMode): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(AppChannels.SET_CONVERSATION_RUNTIME_MODE, id, mode),
+      transport.invoke(AppChannels.SET_CONVERSATION_RUNTIME_MODE, id, mode),
     getConversationProviderInstanceId: (id: string): Promise<{ instanceId: string | null }> =>
-      ipcRenderer.invoke(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, id),
+      transport.invoke(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, id),
     setConversationProviderInstanceId: (id: string, instanceId: string): Promise<{ ok: boolean }> =>
-      ipcRenderer.invoke(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, id, instanceId),
+      transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, id, instanceId),
     getConversations: (projectPath: string) =>
-      ipcRenderer.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
+      transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
     setVibrancy: (enabled: boolean) =>
-      ipcRenderer.invoke(AppChannels.SET_VIBRANCY, enabled),
+      transport.invoke(AppChannels.SET_VIBRANCY, enabled),
     saveSessionLayout: (sessionId: string, layoutJson: string, templateName?: string | null) =>
-      ipcRenderer.invoke(AppChannels.SAVE_SESSION_LAYOUT, sessionId, layoutJson, templateName ?? null),
+      transport.invoke(AppChannels.SAVE_SESSION_LAYOUT, sessionId, layoutJson, templateName ?? null),
     getSessionLayout: (sessionId: string) =>
-      ipcRenderer.invoke(AppChannels.GET_SESSION_LAYOUT, sessionId) as Promise<{ layoutJson: string; templateName: string | null } | null>,
+      transport.invoke(AppChannels.GET_SESSION_LAYOUT, sessionId) as Promise<{ layoutJson: string; templateName: string | null } | null>,
     searchMessages: (query: string) =>
-      ipcRenderer.invoke(AppChannels.SEARCH_MESSAGES, query),
+      transport.invoke(AppChannels.SEARCH_MESSAGES, query),
     archiveConversation: (id: string, projectPath?: string, title?: string) =>
-      ipcRenderer.invoke(AppChannels.ARCHIVE_CONVERSATION, id, projectPath, title),
+      transport.invoke(AppChannels.ARCHIVE_CONVERSATION, id, projectPath, title),
     unarchiveConversation: (id: string) =>
-      ipcRenderer.invoke(AppChannels.UNARCHIVE_CONVERSATION, id),
+      transport.invoke(AppChannels.UNARCHIVE_CONVERSATION, id),
     getArchivedConversations: () =>
-      ipcRenderer.invoke(AppChannels.GET_ARCHIVED_CONVERSATIONS),
+      transport.invoke(AppChannels.GET_ARCHIVED_CONVERSATIONS),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>
-      ipcRenderer.invoke(AppChannels.EXPORT_MARKDOWN, params),
+      transport.invoke(AppChannels.EXPORT_MARKDOWN, params),
     getWorkspaceConfig: (projectPath: string) =>
-      ipcRenderer.invoke(AppChannels.GET_WORKSPACE_CONFIG, projectPath),
+      transport.invoke(AppChannels.GET_WORKSPACE_CONFIG, projectPath),
     saveWorkspaceConfig: (projectPath: string, yamlContent: string) =>
-      ipcRenderer.invoke(AppChannels.SAVE_WORKSPACE_CONFIG, projectPath, yamlContent),
-    onWorkspaceChanged: (callback: (projectPath: string) => void) => {
-      const wrapped = (_e: Electron.IpcRendererEvent, projectPath: string) => callback(projectPath)
-      ipcRenderer.on('app:workspace-changed', wrapped)
-      return () => { ipcRenderer.removeListener('app:workspace-changed', wrapped) }
-    },
+      transport.invoke(AppChannels.SAVE_WORKSPACE_CONFIG, projectPath, yamlContent),
+    onWorkspaceChanged: (callback: (projectPath: string) => void) =>
+      transport.on<[string]>('app:workspace-changed', (projectPath) => callback(projectPath)),
     /**
      * Manual "check for updates" trigger. Returns the most recent
      * status the main process saw (or `unsupported` in dev). Live
      * progress flows through `onUpdateStatus` below.
      */
     checkForUpdates: () =>
-      ipcRenderer.invoke(AppChannels.CHECK_FOR_UPDATES),
+      transport.invoke(AppChannels.CHECK_FOR_UPDATES),
     /**
      * Subscribe to update lifecycle events from the main-process
      * autoUpdater (checking → available → downloading → downloaded |
      * up-to-date | error). The Settings UI uses this to render a
      * status line that reflects what the updater is doing.
      */
-    onUpdateStatus: (callback: (status: import('@shared/update-status').UpdateStatus) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, status: import('@shared/update-status').UpdateStatus) =>
-        callback(status)
-      ipcRenderer.on(AppChannels.UPDATE_STATUS, handler)
-      return () => ipcRenderer.removeListener(AppChannels.UPDATE_STATUS, handler)
-    },
+    onUpdateStatus: (callback: (status: import('@shared/update-status').UpdateStatus) => void) =>
+      transport.on<[import('@shared/update-status').UpdateStatus]>(AppChannels.UPDATE_STATUS, (status) =>
+        callback(status)),
     /**
      * Quit the app and relaunch into the downloaded update. Only valid
      * after `onUpdateStatus` reports `{ kind: 'downloaded' }`.
      */
     quitAndInstall: () => {
-      ipcRenderer.send('app:quit-and-install')
+      transport.send('app:quit-and-install')
     },
 
     // ─── Workspaces (sidebar grouping above projects) ──────────
     workspaces: {
       list: (): Promise<import('@shared/types').Workspace[]> =>
-        ipcRenderer.invoke(AppChannels.WORKSPACE_LIST),
+        transport.invoke(AppChannels.WORKSPACE_LIST),
       create: (input: { name: string; color?: string | null }): Promise<import('@shared/types').Workspace> =>
-        ipcRenderer.invoke(AppChannels.WORKSPACE_CREATE, input),
+        transport.invoke(AppChannels.WORKSPACE_CREATE, input),
       rename: (id: string, name: string) =>
-        ipcRenderer.invoke(AppChannels.WORKSPACE_RENAME, id, name),
+        transport.invoke(AppChannels.WORKSPACE_RENAME, id, name),
       recolor: (id: string, color: string | null) =>
-        ipcRenderer.invoke(AppChannels.WORKSPACE_RECOLOR, id, color),
+        transport.invoke(AppChannels.WORKSPACE_RECOLOR, id, color),
       delete: (id: string) =>
-        ipcRenderer.invoke(AppChannels.WORKSPACE_DELETE, id),
+        transport.invoke(AppChannels.WORKSPACE_DELETE, id),
       reorder: (ids: string[]) =>
-        ipcRenderer.invoke(AppChannels.WORKSPACE_REORDER, ids),
+        transport.invoke(AppChannels.WORKSPACE_REORDER, ids),
     },
     assignProjectWorkspace: (projectPath: string, workspaceId: string | null) =>
-      ipcRenderer.invoke(AppChannels.ASSIGN_PROJECT_WORKSPACE, projectPath, workspaceId),
+      transport.invoke(AppChannels.ASSIGN_PROJECT_WORKSPACE, projectPath, workspaceId),
 
     /**
      * Spawn a new conversation cloned from the first N messages of an
@@ -269,7 +244,7 @@ const api = {
           worktree?: { path: string; branch: string }
         }
       | { ok: false; error: string }
-    > => ipcRenderer.invoke(AppChannels.FORK_CONVERSATION, args),
+    > => transport.invoke(AppChannels.FORK_CONVERSATION, args),
   },
 
   // ─── Files (file-tree pane + viewer + chip resolver) ──────────
@@ -278,26 +253,26 @@ const api = {
       repoRoot: string,
       subPath?: string,
     ): Promise<{ ok: boolean; error?: string; entries: Array<{ name: string; isDir: boolean; isGitignored: boolean }> }> =>
-      ipcRenderer.invoke(FilesChannels.LIST_DIR, repoRoot, subPath ?? ''),
+      transport.invoke(FilesChannels.LIST_DIR, repoRoot, subPath ?? ''),
     readFile: (
       repoRoot: string,
       subPath: string,
     ): Promise<{ ok: boolean; error?: string; content: string; truncated: boolean; totalBytes: number; mtimeMs: number }> =>
-      ipcRenderer.invoke(FilesChannels.READ_FILE, repoRoot, subPath),
+      transport.invoke(FilesChannels.READ_FILE, repoRoot, subPath),
     resolve: (
       repoRoot: string,
       subPath: string,
     ): Promise<{ ok: boolean; exists: boolean; absPath?: string }> =>
-      ipcRenderer.invoke(FilesChannels.RESOLVE, repoRoot, subPath),
+      transport.invoke(FilesChannels.RESOLVE, repoRoot, subPath),
     listAll: (
       repoRoot: string,
     ): Promise<{ ok: boolean; error?: string; files: string[] }> =>
-      ipcRenderer.invoke(FilesChannels.LIST_ALL, repoRoot),
+      transport.invoke(FilesChannels.LIST_ALL, repoRoot),
     grepSymbol: (
       repoRoot: string,
       symbol: string,
     ): Promise<{ ok: boolean; hits: Array<{ relPath: string; line: number; ch: number }> }> =>
-      ipcRenderer.invoke(FilesChannels.GREP_SYMBOL, repoRoot, symbol),
+      transport.invoke(FilesChannels.GREP_SYMBOL, repoRoot, symbol),
     writeFile: (
       repoRoot: string,
       subPath: string,
@@ -307,7 +282,7 @@ const api = {
       | { ok: true; mtimeMs: number }
       | { ok: false; error: string; conflict?: boolean }
     > =>
-      ipcRenderer.invoke(
+      transport.invoke(
         FilesChannels.WRITE_FILE,
         repoRoot,
         subPath,
@@ -318,14 +293,14 @@ const api = {
       repoRoot: string,
       subPath: string,
     ): Promise<{ ok: true } | { ok: false; error: string }> =>
-      ipcRenderer.invoke(FilesChannels.DELETE_FILE, repoRoot, subPath),
+      transport.invoke(FilesChannels.DELETE_FILE, repoRoot, subPath),
     readBatch: (
       repoRoot: string,
       subPaths: string[],
     ): Promise<{
       ok: true
       files: Array<{ path: string; content: string; mtimeMs: number; truncated: boolean }>
-    }> => ipcRenderer.invoke(FilesChannels.READ_BATCH, repoRoot, subPaths),
+    }> => transport.invoke(FilesChannels.READ_BATCH, repoRoot, subPaths),
   },
 
   // ─── Git (per-thread branch picker) ───────────────────────────
@@ -344,39 +319,39 @@ const api = {
           }>
         }
       | { ok: false; error: string }
-    > => ipcRenderer.invoke(GitChannels.LIST_REFS, cwd),
+    > => transport.invoke(GitChannels.LIST_REFS, cwd),
     switchRef: (
       cwd: string,
       refName: string,
     ): Promise<{ ok: true } | { ok: false; error: string }> =>
-      ipcRenderer.invoke(GitChannels.SWITCH_REF, cwd, refName),
+      transport.invoke(GitChannels.SWITCH_REF, cwd, refName),
     currentBranch: (
       cwd: string,
     ): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> =>
-      ipcRenderer.invoke(GitChannels.CURRENT_BRANCH, cwd),
+      transport.invoke(GitChannels.CURRENT_BRANCH, cwd),
     createSessionWorktree: (args: {
       projectPath: string
       branchSlug: string
       baseRef?: string
     }): Promise<
       { ok: true; path: string; branch: string } | { ok: false; error: string }
-    > => ipcRenderer.invoke(GitChannels.CREATE_SESSION_WORKTREE, args),
+    > => transport.invoke(GitChannels.CREATE_SESSION_WORKTREE, args),
     fileDiff: (
       repoRoot: string,
       subPath: string,
     ): Promise<
       | { ok: true; hunks: Array<{ kind: 'add' | 'mod' | 'del'; startLine: number; endLine: number }> }
       | { ok: false; error: string }
-    > => ipcRenderer.invoke(GitChannels.FILE_DIFF, repoRoot, subPath),
+    > => transport.invoke(GitChannels.FILE_DIFF, repoRoot, subPath),
   },
 
   lsp: {
     open: (args: { workspaceRoot: string; absPath: string; text: string; version: number; languageId: string }) =>
-      ipcRenderer.invoke(LspChannels.OPEN, args),
+      transport.invoke(LspChannels.OPEN, args),
     change: (args: { workspaceRoot: string; absPath: string; text: string; version: number }) =>
-      ipcRenderer.invoke(LspChannels.CHANGE, args),
+      transport.invoke(LspChannels.CHANGE, args),
     close: (args: { workspaceRoot: string; absPath: string }) =>
-      ipcRenderer.invoke(LspChannels.CLOSE, args),
+      transport.invoke(LspChannels.CLOSE, args),
     definition: (args: {
       workspaceRoot: string
       absPath: string
@@ -384,65 +359,65 @@ const api = {
     }): Promise<
       | { ok: true; supported: boolean; locations: Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }> }
       | { ok: false; error: string }
-    > => ipcRenderer.invoke(LspChannels.DEFINITION, args),
+    > => transport.invoke(LspChannels.DEFINITION, args),
     references: (args: {
       workspaceRoot: string
       absPath: string
       position: { line: number; character: number }
-    }) => ipcRenderer.invoke(LspChannels.REFERENCES, args),
+    }) => transport.invoke(LspChannels.REFERENCES, args),
     hover: (args: {
       workspaceRoot: string
       absPath: string
       position: { line: number; character: number }
-    }) => ipcRenderer.invoke(LspChannels.HOVER, args),
+    }) => transport.invoke(LspChannels.HOVER, args),
     documentSymbols: (args: { workspaceRoot: string; absPath: string }) =>
-      ipcRenderer.invoke(LspChannels.DOCUMENT_SYMBOLS, args),
+      transport.invoke(LspChannels.DOCUMENT_SYMBOLS, args),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────
   kanban: {
     list: (projectPath: string): Promise<KanbanCard[]> =>
-      ipcRenderer.invoke(KanbanChannels.LIST, projectPath),
+      transport.invoke(KanbanChannels.LIST, projectPath),
     create: (input: KanbanCardCreate): Promise<KanbanCard> =>
-      ipcRenderer.invoke(KanbanChannels.CREATE, input),
+      transport.invoke(KanbanChannels.CREATE, input),
     update: (id: string, patch: KanbanCardUpdate): Promise<KanbanCard | null> =>
-      ipcRenderer.invoke(KanbanChannels.UPDATE, id, patch),
+      transport.invoke(KanbanChannels.UPDATE, id, patch),
     delete: (id: string, opts?: { removeWorktree?: boolean; force?: boolean }): Promise<void> =>
-      ipcRenderer.invoke(KanbanChannels.DELETE, id, opts),
+      transport.invoke(KanbanChannels.DELETE, id, opts),
     createWorktree: (id: string): Promise<KanbanCard | null> =>
-      ipcRenderer.invoke(KanbanChannels.CREATE_WORKTREE, id),
+      transport.invoke(KanbanChannels.CREATE_WORKTREE, id),
     removeWorktree: (id: string, opts?: { force?: boolean }): Promise<KanbanCard | null> =>
-      ipcRenderer.invoke(KanbanChannels.REMOVE_WORKTREE, id, opts),
+      transport.invoke(KanbanChannels.REMOVE_WORKTREE, id, opts),
     listWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>
-      ipcRenderer.invoke(KanbanChannels.LIST_WORKTREES, projectPath),
+      transport.invoke(KanbanChannels.LIST_WORKTREES, projectPath),
     listStaleWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>
-      ipcRenderer.invoke(KanbanChannels.LIST_STALE_WORKTREES, projectPath),
+      transport.invoke(KanbanChannels.LIST_STALE_WORKTREES, projectPath),
     removeStaleWorktree: (
       projectPath: string,
       worktreePath: string,
       opts?: { force?: boolean },
     ): Promise<void> =>
-      ipcRenderer.invoke(KanbanChannels.REMOVE_STALE_WORKTREE, projectPath, worktreePath, opts),
+      transport.invoke(KanbanChannels.REMOVE_STALE_WORKTREE, projectPath, worktreePath, opts),
   },
 
   settings: {
-    get: (key: string) => ipcRenderer.invoke('settings:get', key),
-    set: (key: string, value: string) => ipcRenderer.invoke('settings:set', key, value),
-    remove: (key: string) => ipcRenderer.invoke('settings:remove', key),
+    get: (key: string) => transport.invoke('settings:get', key),
+    set: (key: string, value: string) => transport.invoke('settings:set', key, value),
+    remove: (key: string) => transport.invoke('settings:remove', key),
   },
 
   // ─── Provider instances (named credential sets per agent kind) ───
   providerInstances: {
     list: (): Promise<import('@shared/types').ProviderInstance[]> =>
-      ipcRenderer.invoke(ProviderInstanceChannels.LIST),
+      transport.invoke(ProviderInstanceChannels.LIST),
     upsert: (input: ProviderInstanceUpsertInput): Promise<import('@shared/types').ProviderInstance> =>
-      ipcRenderer.invoke(ProviderInstanceChannels.UPSERT, input),
+      transport.invoke(ProviderInstanceChannels.UPSERT, input),
     delete: (id: string): Promise<boolean> =>
-      ipcRenderer.invoke(ProviderInstanceChannels.DELETE, id),
+      transport.invoke(ProviderInstanceChannels.DELETE, id),
     test: (id: string): Promise<{ ok: boolean; message: string }> =>
-      ipcRenderer.invoke(ProviderInstanceChannels.TEST, id),
+      transport.invoke(ProviderInstanceChannels.TEST, id),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
-      ipcRenderer.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
+      transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
   },
 
   // ─── Provider (new agent bridge) ──────────────────────────────
@@ -451,23 +426,23 @@ const api = {
   // ProviderAdapter interface.
   provider: {
     startSession: (opts: StartSessionOpts) =>
-      ipcRenderer.invoke(ProviderChannels.START_SESSION, opts),
+      transport.invoke(ProviderChannels.START_SESSION, opts),
 
     sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) =>
-      ipcRenderer.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images),
+      transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images),
 
     interrupt: (threadId: string) =>
-      ipcRenderer.invoke(ProviderChannels.INTERRUPT, threadId),
+      transport.invoke(ProviderChannels.INTERRUPT, threadId),
 
     setRuntimeMode: (threadId: string, mode: RuntimeMode) =>
-      ipcRenderer.invoke(ProviderChannels.SET_RUNTIME_MODE, threadId, mode),
+      transport.invoke(ProviderChannels.SET_RUNTIME_MODE, threadId, mode),
 
     setModel: (threadId: string, model: string) =>
-      ipcRenderer.invoke(ProviderChannels.SET_MODEL, threadId, model),
+      transport.invoke(ProviderChannels.SET_MODEL, threadId, model),
 
     /** Dynamically fetch `opencode models` output. Returns provider/model IDs. */
     listOpencodeModels: (): Promise<string[]> =>
-      ipcRenderer.invoke(ProviderChannels.OPENCODE_LIST_MODELS),
+      transport.invoke(ProviderChannels.OPENCODE_LIST_MODELS),
 
     /**
      * Fetch the agent-defined slash commands/skills for a session
@@ -476,25 +451,22 @@ const api = {
      * session has fully initialized.
      */
     listSkills: (threadId: string): Promise<import('@shared/types').ProviderSkill[]> =>
-      ipcRenderer.invoke(ProviderChannels.LIST_SKILLS, threadId),
+      transport.invoke(ProviderChannels.LIST_SKILLS, threadId),
 
     answerQuestion: (threadId: string, requestId: string, answers: string[][]) =>
-      ipcRenderer.invoke(ProviderChannels.ANSWER_QUESTION, threadId, requestId, answers),
+      transport.invoke(ProviderChannels.ANSWER_QUESTION, threadId, requestId, answers),
 
     respondToRequest: (threadId: string, requestId: string, decision: ApprovalDecision) =>
-      ipcRenderer.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision),
+      transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision),
 
     stopSession: (threadId: string) =>
-      ipcRenderer.invoke(ProviderChannels.STOP_SESSION, threadId),
+      transport.invoke(ProviderChannels.STOP_SESSION, threadId),
 
     isAvailable: (provider: 'claude' | 'codex') =>
-      ipcRenderer.invoke(ProviderChannels.IS_AVAILABLE, provider),
+      transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
 
-    onEvent: (callback: (event: RuntimeEvent) => void): (() => void) => {
-      const handler = (_: Electron.IpcRendererEvent, event: RuntimeEvent) => callback(event)
-      ipcRenderer.on(ProviderChannels.EVENT, handler)
-      return () => { ipcRenderer.removeListener(ProviderChannels.EVENT, handler) }
-    },
+    onEvent: (callback: (event: RuntimeEvent) => void): (() => void) =>
+      transport.on<[RuntimeEvent]>(ProviderChannels.EVENT, (event) => callback(event)),
   },
 
   // ─── Bookmarks ─────────────────────────────────────────────────
@@ -502,35 +474,26 @@ const api = {
     save: (params: {
       id: string; sessionId: string; projectPath: string; sessionTitle: string
       agentType: string; messageRole: string; contentExcerpt: string; messageTimestamp: number
-    }) => ipcRenderer.invoke(BookmarkChannels.SAVE, params),
-    remove: (id: string) => ipcRenderer.invoke(BookmarkChannels.REMOVE, id),
-    list: (): Promise<import('@shared/types').Bookmark[]> => ipcRenderer.invoke(BookmarkChannels.LIST),
+    }) => transport.invoke(BookmarkChannels.SAVE, params),
+    remove: (id: string) => transport.invoke(BookmarkChannels.REMOVE, id),
+    list: (): Promise<import('@shared/types').Bookmark[]> => transport.invoke(BookmarkChannels.LIST),
   },
 
   // Menu events from main process
-  onOpenSettings: (callback: () => void) => {
-    const handler = () => callback()
-    ipcRenderer.on('app:open-settings', handler)
-    return () => ipcRenderer.removeListener('app:open-settings', handler)
-  },
+  onOpenSettings: (callback: () => void) =>
+    transport.on('app:open-settings', () => callback()),
 
-  getLogPaths: () => ipcRenderer.invoke('app:get-log-paths'),
+  getLogPaths: () => transport.invoke('app:get-log-paths'),
 
-  onClosePaneOrWindow: (callback: (opts: { shift?: boolean }) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, opts: { shift?: boolean }) => callback(opts ?? {})
-    ipcRenderer.on('app:close-pane-or-window', handler)
-    return () => ipcRenderer.removeListener('app:close-pane-or-window', handler)
-  },
+  onClosePaneOrWindow: (callback: (opts: { shift?: boolean }) => void) =>
+    transport.on<[{ shift?: boolean }]>('app:close-pane-or-window', (opts) => callback(opts ?? {})),
 
   /** Fired when the window enters/leaves macOS fullscreen while in translucent mode. */
-  onFullscreenChanged: (callback: (isFullscreen: boolean) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, isFullscreen: boolean) => callback(isFullscreen)
-    ipcRenderer.on('app:fullscreen-changed', handler)
-    return () => ipcRenderer.removeListener('app:fullscreen-changed', handler)
-  },
+  onFullscreenChanged: (callback: (isFullscreen: boolean) => void) =>
+    transport.on<[boolean]>('app:fullscreen-changed', (isFullscreen) => callback(isFullscreen)),
 
   closeWindow: () => {
-    ipcRenderer.send('app:close-window')
+    transport.send('app:close-window')
   },
 }
 
