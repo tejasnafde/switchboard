@@ -1,8 +1,6 @@
 /**
- * The BackendHost seam lets handler modules register without `ipcMain`, so they
- * can be served either in-process or by a future remote server. These tests pin
- * the files-handler channel contract (so a WsHost can be validated against the
- * same set) and prove a handler runs through a non-Electron host.
+ * Pins the files-handler channel contract via a FakeHost (so a future WsHost
+ * can be validated against the same set) and proves handlers run without Electron.
  */
 import { describe, it, expect } from 'vitest'
 import { registerFilesHandlers } from '../../src/main/ipc/files'

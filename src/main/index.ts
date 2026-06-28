@@ -337,19 +337,17 @@ app.whenReady().then(() => {
 
   mainWindow = createWindow()
 
-  // Backend handlers increasingly register against a BackendHost (the seam that
-  // will later let them run in a standalone/remote server). Migrating group by
-  // group; the rest still take the window directly.
+  // Handlers migrating to the BackendHost seam (remote-ready); rest take the window.
   const backendHost = new ElectronIpcHost(mainWindow)
 
   registerTerminalHandlers(mainWindow)
   registerAgentHandlers(mainWindow)
   registerAppHandlers(mainWindow)
   registerFilesHandlers(backendHost)
-  registerGitHandlers()
-  registerLspHandlers()
-  registerKanbanHandlers()
-  registerProviderInstanceHandlers()
+  registerGitHandlers(backendHost)
+  registerLspHandlers(backendHost)
+  registerKanbanHandlers(backendHost)
+  registerProviderInstanceHandlers(backendHost)
   // Auto-update — silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what
   // version to compare against. See `src/main/updater.ts`.
@@ -365,9 +363,10 @@ app.whenReady().then(() => {
       registerTerminalHandlers(mainWindow)
       registerAgentHandlers(mainWindow)
       registerAppHandlers(mainWindow)
-      registerFilesHandlers(new ElectronIpcHost(mainWindow))
-      registerGitHandlers()
-      registerKanbanHandlers()
+      const reactivatedHost = new ElectronIpcHost(mainWindow)
+      registerFilesHandlers(reactivatedHost)
+      registerGitHandlers(reactivatedHost)
+      registerKanbanHandlers(reactivatedHost)
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(mainWindow)

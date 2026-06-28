@@ -10,7 +10,8 @@
  * shape so the renderer never has to wrap calls in try/catch — same
  * convention as the FilesChannels handlers.
  */
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
+import type { BackendHost } from '../backend/host'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { GitChannels } from '@shared/ipc-channels'
@@ -23,14 +24,10 @@ const execFileP = promisify(execFile)
 
 const log = createMainLogger('ipc:git')
 
-export function registerGitHandlers(): void {
-  for (const ch of Object.values(GitChannels)) {
-    ipcMain.removeHandler(ch)
-  }
-
-  ipcMain.handle(
+export function registerGitHandlers(host: BackendHost): void {
+  host.handle(
     GitChannels.LIST_REFS,
-    async (_e, cwd: string): Promise<{ ok: true; refs: Ref[] } | { ok: false; error: string }> => {
+    async (cwd: string): Promise<{ ok: true; refs: Ref[] } | { ok: false; error: string }> => {
       try {
         const refs = await listRefs(cwd)
         return { ok: true, refs }
@@ -42,9 +39,9 @@ export function registerGitHandlers(): void {
     },
   )
 
-  ipcMain.handle(
+  host.handle(
     GitChannels.SWITCH_REF,
-    async (_e, cwd: string, refName: string): Promise<{ ok: true } | { ok: false; error: string }> => {
+    async (cwd: string, refName: string): Promise<{ ok: true } | { ok: false; error: string }> => {
       try {
         await switchRef(cwd, refName)
         return { ok: true }
@@ -56,9 +53,9 @@ export function registerGitHandlers(): void {
     },
   )
 
-  ipcMain.handle(
+  host.handle(
     GitChannels.CURRENT_BRANCH,
-    async (_e, cwd: string): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> => {
+    async (cwd: string): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> => {
       try {
         const branch = await getCurrentBranch(cwd)
         return { ok: true, branch }
@@ -70,11 +67,9 @@ export function registerGitHandlers(): void {
     },
   )
 
-  ipcMain.handle(
+  host.handle(
     GitChannels.FILE_DIFF,
-    async (
-      _e,
-      repoRoot: string,
+    async (repoRoot: string,
       subPath: string,
     ): Promise<{ ok: true; hunks: DiffHunk[] } | { ok: false; error: string }> => {
       try {
@@ -96,11 +91,9 @@ export function registerGitHandlers(): void {
     },
   )
 
-  ipcMain.handle(
+  host.handle(
     GitChannels.CREATE_SESSION_WORKTREE,
-    async (
-      _e,
-      args: { projectPath: string; branchSlug: string; baseRef?: string },
+    async (args: { projectPath: string; branchSlug: string; baseRef?: string },
     ): Promise<{ ok: true; path: string; branch: string } | { ok: false; error: string }> => {
       try {
         const out = await createSessionWorktree({

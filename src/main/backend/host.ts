@@ -1,17 +1,8 @@
 /**
- * BackendHost decouples the backend (IPC handlers, PTYs, providers, DB) from
- * *where* it runs. Handlers register against a host instead of `ipcMain`
- * directly, so the same handler code can be served either in this Electron
- * process (ElectronIpcHost) or, later, by a standalone server over a
- * WebSocket (a future WsHost) — local or remote, same handlers.
- *
- * Mirrors the renderer's Transport on the other side of the boundary:
- *   - handle: request/response   (was ipcMain.handle)
- *   - on:     fire-and-forget in (was ipcMain.on)
- *   - emit:   push out to client (was window.webContents.send)
- *
- * Handlers receive only the channel args — never the Electron event — so they
- * stay transport-agnostic.
+ * Backend-side mirror of the renderer Transport: handlers register handle/on/
+ * emit against a host, not ipcMain directly, so the same code can run in this
+ * Electron process (ElectronIpcHost) or a future remote server. Handlers get
+ * only the channel args — never the Electron event — to stay transport-agnostic.
  */
 import { ipcMain, type BrowserWindow } from 'electron'
 
