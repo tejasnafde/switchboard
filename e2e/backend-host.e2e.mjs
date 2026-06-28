@@ -54,6 +54,10 @@ try {
       lsp: await api.lsp.definition({ workspaceRoot: repo, absPath: `${repo}/README.md`, position: { line: 0, character: 0 } }),
       kanban: await api.kanban.list(repo),
       providers: await api.providerInstances.list(),
+      // app.ts-migrated channels: settings round-trip + projects list
+      settingsSet: await api.settings.set('sb-e2e-key', 'sb-e2e-val'),
+      settingsGet: await api.settings.get('sb-e2e-key'),
+      projects: await api.app.getProjects(),
     }
   }, repoRoot)
 
@@ -69,6 +73,9 @@ try {
   // kanban + provider-instances
   check(Array.isArray(r.kanban), 'kanban:list returns an array')
   check(Array.isArray(r.providers), 'provider-instances:list returns an array')
+  // app.ts handlers (settings get/set, getProjects) route through the host seam
+  check(r.settingsGet === 'sb-e2e-val', 'settings:set→get round-trips through the host seam')
+  check(Array.isArray(r.projects), 'app:get-projects returns an array')
 
   // terminal — exercises host.emit + host.on (the streaming path) end to end:
   // create a pty, write a command, assert its output streams back.
