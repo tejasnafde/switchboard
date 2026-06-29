@@ -17,6 +17,7 @@ const PIP_COLOR: Record<MachineStatus, string> = {
   connected: 'var(--success)',
   connecting: 'var(--warning)',
   offline: 'var(--text-muted)',
+  error: 'var(--error)',
 }
 
 function SortableMachine({
