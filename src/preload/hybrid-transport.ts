@@ -6,7 +6,7 @@
  * to IPC; everything else goes to the remote backend.
  */
 import type { Transport } from '@shared/transport'
-import { AppChannels } from '@shared/ipc-channels'
+import { AppChannels, MachineChannels } from '@shared/ipc-channels'
 
 const LOCAL_CHANNELS = new Set<string>([
   AppChannels.OPEN_FOLDER,
@@ -14,6 +14,8 @@ const LOCAL_CHANNELS = new Set<string>([
   AppChannels.RELAUNCH,
   AppChannels.SET_VIBRANCY,
   AppChannels.CHECK_FOR_UPDATES,
+  // The machine registry is this laptop's list of remotes, not the VM's.
+  ...Object.values(MachineChannels),
 ])
 
 export class HybridTransport implements Transport {

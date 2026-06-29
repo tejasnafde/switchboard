@@ -64,6 +64,16 @@ export const AppChannels = {
   SET_CONVERSATION_WORKTREE: 'app:set-conversation-worktree',
 } as const
 
+export const MachineChannels = {
+  LIST: 'machines:list',
+  CREATE: 'machines:create',
+  UPDATE: 'machines:update',
+  DELETE: 'machines:delete',
+  REORDER: 'machines:reorder',
+  /** Parse ~/.ssh/config into host candidates for the "Add machine" picker. */
+  LIST_SSH_HOSTS: 'machines:list-ssh-hosts',
+} as const
+
 export const KanbanChannels = {
   LIST: 'kanban:list',
   CREATE: 'kanban:create',

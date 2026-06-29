@@ -2,8 +2,9 @@ import { contextBridge } from 'electron'
 import { IpcTransport, type Transport } from './transport'
 import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
+import type { Machine, MachineInput, SshHost } from '@shared/machines'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -381,6 +382,17 @@ const api = {
     }) => transport.invoke(LspChannels.HOVER, args),
     documentSymbols: (args: { workspaceRoot: string; absPath: string }) =>
       transport.invoke(LspChannels.DOCUMENT_SYMBOLS, args),
+  },
+
+  // ─── Machines (local + remote SSH hosts) ─────────────────────
+  machines: {
+    list: (): Promise<Machine[]> => transport.invoke(MachineChannels.LIST),
+    create: (input: MachineInput): Promise<Machine> => transport.invoke(MachineChannels.CREATE, input),
+    update: (id: string, patch: Partial<MachineInput>): Promise<Machine | null> =>
+      transport.invoke(MachineChannels.UPDATE, id, patch),
+    delete: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DELETE, id),
+    reorder: (ids: string[]): Promise<{ ok: true }> => transport.invoke(MachineChannels.REORDER, ids),
+    listSshHosts: (): Promise<SshHost[]> => transport.invoke(MachineChannels.LIST_SSH_HOSTS),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────
