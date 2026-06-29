@@ -52,6 +52,8 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
   const remove = useMachineStore((s) => s.remove)
   const reorder = useMachineStore((s) => s.reorder)
   const snapshots = useMachineStore((s) => s.snapshots)
+  const connect = useMachineStore((s) => s.connect)
+  const disconnect = useMachineStore((s) => s.disconnect)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const nodes = buildMachineList(remotes, { localName: 'This Mac', connections })
@@ -68,23 +70,40 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
     void reorder(arrayMove(ids, from, to))
   }
 
-  const renderRemoteBody = (machineId: string) => {
-    const snap = snapshots[machineId]
+  const renderRemoteBody = (node: MachineNode) => {
+    const snap = snapshots[node.id]
     const projects = cachedProjects(snap)
-    if (projects.length === 0) {
-      return <div className="sidebar-machine-empty">Not connected. Remote connect ships in a later update.</div>
-    }
+    const offline = node.status === 'offline' || node.status === 'error'
     return (
       <div className="sidebar-machine-cached">
-        <div className="cached-banner">{syncedAgoLabel(snap?.syncedAt, Date.now())} · read-only</div>
-        {projects.map((p) => (
-          <div key={p.path} className="cached-project">
-            <div className="cached-project-name">{p.name}</div>
-            {p.sessions.map((s) => (
-              <div key={s.id} className="cached-chat">{s.title}</div>
-            ))}
-          </div>
-        ))}
+        <div className="cached-banner">
+          {node.status === 'connecting' ? (
+            <span>Connecting…</span>
+          ) : node.status === 'connected' ? (
+            <button className="machine-connect" onClick={() => void disconnect(node.id)}>
+              Disconnect
+            </button>
+          ) : (
+            <button className="machine-connect" onClick={() => void connect(node.id)}>
+              {node.status === 'error' ? 'Retry connect' : 'Connect'}
+            </button>
+          )}
+          {offline && projects.length > 0 && (
+            <span className="cached-label">{syncedAgoLabel(snap?.syncedAt, Date.now())} · read-only</span>
+          )}
+        </div>
+        {projects.length === 0 ? (
+          <div className="sidebar-machine-empty">Not connected. Connect to browse this machine.</div>
+        ) : (
+          projects.map((p) => (
+            <div key={p.path} className="cached-project">
+              <div className="cached-project-name">{p.name}</div>
+              {p.sessions.map((s) => (
+                <div key={s.id} className="cached-chat">{s.title}</div>
+              ))}
+            </div>
+          ))
+        )}
       </div>
     )
   }
@@ -125,7 +144,7 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
         </header>
         {!isCollapsed && (
           <div className="sidebar-machine-body">
-            {node.kind === 'local' ? children : renderRemoteBody(node.id)}
+            {node.kind === 'local' ? children : renderRemoteBody(node)}
           </div>
         )}
       </section>

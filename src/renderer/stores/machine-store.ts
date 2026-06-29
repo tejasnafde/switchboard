@@ -4,8 +4,8 @@
  * hydrated on launch and re-hydrated after mutations. The local machine is
  * synthesized in the view layer (see buildMachineList), not stored here.
  *
- * Connection state is renderer-only for now (M2). Actual SSH-tunnel connect
- * lands in M4; until then everything reads `offline`.
+ * Connection state is driven by the main-process ConnectionManager (M4b): the
+ * renderer kicks off connect/disconnect and reflects the status events it emits.
  */
 import { create } from 'zustand'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
@@ -34,6 +34,10 @@ interface MachineStore {
   reorder: (ids: string[]) => Promise<void>
   loadSshHosts: () => Promise<void>
   loadSnapshots: () => Promise<void>
+  connect: (id: string) => Promise<void>
+  disconnect: (id: string) => Promise<void>
+  /** Subscribe to main's per-machine status events. Returns an unsubscribe fn. */
+  subscribeStatus: () => () => void
   setActive: (id: string) => void
   toggleCollapsed: (id: string) => void
 }
@@ -94,6 +98,34 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       log.warn('loadSnapshots failed', err)
     }
   },
+
+  connect: async (id) => {
+    set((s) => ({ connections: { ...s.connections, [id]: 'connecting' } }))
+    try {
+      const res = await window.api.machines.connect(id)
+      if (!res.ok) {
+        set((s) => ({ connections: { ...s.connections, [id]: 'error' } }))
+        log.warn('connect rejected', res.error)
+      }
+    } catch (err) {
+      set((s) => ({ connections: { ...s.connections, [id]: 'error' } }))
+      log.warn('connect failed', err)
+    }
+  },
+
+  disconnect: async (id) => {
+    try {
+      await window.api.machines.disconnect(id)
+    } catch (err) {
+      log.warn('disconnect failed', err)
+    }
+    set((s) => ({ connections: { ...s.connections, [id]: 'offline' } }))
+  },
+
+  subscribeStatus: () =>
+    window.api.machines.onStatus((id, status) =>
+      set((s) => ({ connections: { ...s.connections, [id]: status as MachineStatus } })),
+    ),
 
   setActive: (id) => set({ activeMachineId: id }),
 

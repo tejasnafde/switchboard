@@ -11,10 +11,21 @@ import { MachineChannels } from '@shared/ipc-channels'
 import { createMainLogger } from '../logger'
 import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, getMachineSnapshots, type MachineInput } from '../db/machines'
 import { parseSshConfig } from '../machines/sshConfig'
+import { ConnectionManager } from '../machines/connectionManager'
+import { allocatePort, spawnTunnel, waitForHealth, REMOTE_PORT, REMOTE_COMMAND } from '../machines/connectDeps'
 
 const log = createMainLogger('ipc:machines')
 
 export function registerMachineHandlers(host: BackendHost): void {
+  const connections = new ConnectionManager({
+    allocatePort,
+    spawnTunnel,
+    waitForHealth,
+    remotePort: REMOTE_PORT,
+    remoteCommand: REMOTE_COMMAND,
+    onStatus: (machineId, status) => host.emit(MachineChannels.STATUS, machineId, status),
+  })
+
   host.handle(MachineChannels.LIST, () => listMachines())
 
   host.handle(MachineChannels.CREATE, (input: MachineInput) => createMachine(input, Date.now()))
@@ -34,6 +45,19 @@ export function registerMachineHandlers(host: BackendHost): void {
   })
 
   host.handle(MachineChannels.GET_SNAPSHOTS, () => getMachineSnapshots())
+
+  host.handle(MachineChannels.CONNECT, (id: string) => {
+    const machine = listMachines().find((m) => m.id === id)
+    if (!machine) return { ok: false as const, error: 'unknown machine' }
+    // Fire and forget: status flows to the renderer via MachineChannels.STATUS.
+    void connections.connect(machine)
+    return { ok: true as const }
+  })
+
+  host.handle(MachineChannels.DISCONNECT, async (id: string) => {
+    await connections.disconnect(id)
+    return { ok: true as const }
+  })
 
   host.handle(MachineChannels.LIST_SSH_HOSTS, async () => {
     try {

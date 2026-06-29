@@ -56,26 +56,26 @@ backend. Proven in `tests/unit/provider-switch-ws.test.ts`.
 - **M4a** `src/main/machines/sshTunnel.ts` (`buildTunnelCommand`),
   `src/main/machines/connectionStatus.ts` (`nextConnectionStatus` reducer).
   `MachineStatus` gained `'error'` + a red pip.
+- **M4b step 1 (spawn + health)** `src/main/machines/connectionManager.ts`
+  (`ConnectionManager` - DI lifecycle, unit-tested) +
+  `src/main/machines/connectDeps.ts` (node impls: `allocatePort`, `spawnTunnel`,
+  `waitForHealth`; deploy contract = `switchboard-server` on the remote PATH).
+  `machines:connect` / `machines:disconnect` / `machines:status` channels, store
+  actions + status subscription, and a live Connect/Disconnect button in
+  `MachineLayer`. Connecting flips the pip; it does NOT yet route data (step 2).
 
 ## What's left: M4b (the big architectural half)
 
-1. **Spawn + health**: a main-process connection manager that, on connect:
-   allocate a free local port; `spawn` the tunnel from `buildTunnelCommand`
-   (start the remote server bound to a remote port, forwarded to local); poll
-   `ws://127.0.0.1:<localPort>` for health; drive `nextConnectionStatus`; emit
-   per-machine status events to the renderer (pip goes connecting -> connected).
-   `machines:connect` / `machines:disconnect` IPC. Wire the Connect button
-   (currently the remote body says "ships in a later update").
-2. **Per-machine transport routing** (the hard part): today the renderer has ONE
+1. **Per-machine transport routing** (the hard part): today the renderer has ONE
    transport chosen at preload load. A connected remote's sessions/terminals/
    files need to use THAT machine's `WsTransport` while local stays on IPC.
    Options to weigh: (a) per-window backend (simpler - a window targets one
    machine; matches multi-window habit), (b) true per-session routing (a
    transport registry keyed by the session's machine). Recommend starting with
    (a). This touches how `window.api.*` dispatches - design before coding.
-3. **Populate the M3 snapshot on connect**: after connect, scan the remote's
+2. **Populate the M3 snapshot on connect**: after connect, scan the remote's
    projects/sessions and call `saveMachineSnapshot` so offline browse works.
-4. **OAuth on the VM**: providers log in on the remote (oauth dirs are not
+3. **OAuth on the VM**: providers log in on the remote (oauth dirs are not
    forwarded), consistent with t3code. Env-mode creds use `SWITCHBOARD_SECRET`.
 
 ## Testing
