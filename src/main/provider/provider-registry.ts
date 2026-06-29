@@ -54,10 +54,12 @@ export class ProviderRegistry {
   /** Unsubscribe fn for the renderer bridge subscription. */
   private rendererUnsub: (() => void) | null = null
 
-  constructor(host: BackendHost) {
+  // `adapters` is injectable for tests (e.g. a mock echo provider exercising
+  // the full path over a WsHost); production passes none and gets the real set.
+  constructor(host: BackendHost, adapters?: Map<ProviderKind, ProviderAdapter>) {
     this.host = host
     this.opencodeAcp = new OpencodeAcpAdapter()
-    this.adapters = new Map<ProviderKind, ProviderAdapter>([
+    this.adapters = adapters ?? new Map<ProviderKind, ProviderAdapter>([
       ['claude', new ClaudeAdapter()],
       ['codex', new CodexAdapter()],
       ['opencode', this.opencodeAcp],
