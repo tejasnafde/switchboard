@@ -9,8 +9,8 @@ import { useMachineStore } from '../../stores/machine-store'
 import { buildMachineList, type MachineStatus } from './machineList'
 
 const PIP_COLOR: Record<MachineStatus, string> = {
-  connected: 'var(--ok, #3fb950)',
-  connecting: 'var(--warn, #d29922)',
+  connected: 'var(--success)',
+  connecting: 'var(--warning)',
   offline: 'var(--text-muted)',
 }
 
@@ -50,7 +50,7 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
                     void remove(node.id)
                   }}
                 >
-                  {'×'}
+                  ×
                 </button>
               )}
             </header>
