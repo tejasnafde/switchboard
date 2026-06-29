@@ -3,6 +3,19 @@
  * to a snapshot's cached project list (read-only browse of an offline machine).
  */
 import type { CachedProject, MachineSnapshot } from '@shared/machines'
+import type { Project } from '@shared/types'
+
+/** Trim a remote's live project list down to the cached shape we browse offline. */
+export function projectsToSnapshot(projects: Project[], syncedAt: number): MachineSnapshot {
+  return {
+    syncedAt,
+    projects: projects.map((p) => ({
+      path: p.path,
+      name: p.name,
+      sessions: p.sessions.map((s) => ({ id: s.id, title: s.title })),
+    })),
+  }
+}
 
 export function syncedAgoLabel(syncedAt: number | undefined, now: number): string {
   if (!syncedAt) return ''

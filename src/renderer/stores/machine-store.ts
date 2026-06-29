@@ -9,7 +9,10 @@
  */
 import { create } from 'zustand'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
+import type { Project } from '@shared/types'
+import { AppChannels } from '@shared/ipc-channels'
 import type { MachineStatus } from '../components/sidebar/machineList'
+import { projectsToSnapshot } from '../components/sidebar/machineSnapshot'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:machines')
@@ -34,6 +37,8 @@ interface MachineStore {
   reorder: (ids: string[]) => Promise<void>
   loadSshHosts: () => Promise<void>
   loadSnapshots: () => Promise<void>
+  /** Scan a connected remote's projects and cache them for offline browse. */
+  syncMachine: (id: string) => Promise<void>
   connect: (id: string) => Promise<void>
   disconnect: (id: string) => Promise<void>
   /** Subscribe to main's per-machine status events. Returns an unsubscribe fn. */
@@ -99,6 +104,17 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     }
   },
 
+  syncMachine: async (id) => {
+    try {
+      const projects = await window.api.routing.invokeOn<Project[]>(id, AppChannels.GET_PROJECTS)
+      const snapshot = projectsToSnapshot(projects, Date.now())
+      await window.api.machines.saveSnapshot(id, snapshot)
+      set((s) => ({ snapshots: { ...s.snapshots, [id]: snapshot } }))
+    } catch (err) {
+      log.warn('syncMachine failed', err)
+    }
+  },
+
   connect: async (id) => {
     set((s) => ({ connections: { ...s.connections, [id]: 'connecting' } }))
     try {
@@ -124,8 +140,12 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
 
   subscribeStatus: () =>
     window.api.machines.onStatus((id, status, url) => {
-      if (status === 'connected' && url) window.api.routing.connectMachine(id, url)
-      else if (status === 'offline' || status === 'error') window.api.routing.disconnectMachine(id)
+      if (status === 'connected' && url) {
+        window.api.routing.connectMachine(id, url)
+        void get().syncMachine(id)
+      } else if (status === 'offline' || status === 'error') {
+        window.api.routing.disconnectMachine(id)
+      }
       set((s) => ({ connections: { ...s.connections, [id]: status as MachineStatus } }))
     }),
 

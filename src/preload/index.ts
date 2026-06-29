@@ -404,6 +404,8 @@ const api = {
     reorder: (ids: string[]): Promise<{ ok: true }> => transport.invoke(MachineChannels.REORDER, ids),
     listSshHosts: (): Promise<SshHost[]> => transport.invoke(MachineChannels.LIST_SSH_HOSTS),
     getSnapshots: (): Promise<Record<string, MachineSnapshot>> => transport.invoke(MachineChannels.GET_SNAPSHOTS),
+    saveSnapshot: (id: string, snapshot: MachineSnapshot): Promise<{ ok: true }> =>
+      transport.invoke(MachineChannels.SAVE_SNAPSHOT, id, snapshot),
     connect: (id: string): Promise<{ ok: boolean; error?: string }> => transport.invoke(MachineChannels.CONNECT, id),
     disconnect: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DISCONNECT, id),
     onStatus: (callback: (machineId: string, status: string, url: string | null) => void): (() => void) =>
@@ -418,6 +420,10 @@ const api = {
     /** Bind a threadId/terminal id to a machine so its calls route there. */
     bind: (resourceId: string, machineId: string): void => routingTable.bind(resourceId, machineId),
     unbind: (resourceId: string): void => routingTable.unbind(resourceId),
+    /** Invoke a channel on a specific machine's backend, bypassing the resolver. */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    invokeOn: <T = any>(machineId: string, channel: string, ...args: unknown[]): Promise<T> =>
+      router.invokeOn<T>(machineId, channel, ...args),
     /** Register a connected remote's WS backend so calls bound to it can dial it. */
     connectMachine: (machineId: string, url: string): void => {
       if (remoteTransports.has(machineId)) return

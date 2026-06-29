@@ -101,6 +101,21 @@ describe('TransportRouter', () => {
     expect(await router.invoke('x')).toBe('local')
   })
 
+  it('invokeOn targets a specific machine regardless of the resolver', async () => {
+    const local = fake('local')
+    const remote = fake('remote')
+    const router = new TransportRouter(local) // default resolver -> local
+    router.register('m1', remote)
+    expect(await router.invokeOn('m1', 'app:get-projects')).toBe('remote')
+    expect(remote.invoked).toEqual([['app:get-projects', []]])
+  })
+
+  it('invokeOn falls back to local for an unregistered machine', async () => {
+    const local = fake('local')
+    const router = new TransportRouter(local)
+    expect(await router.invokeOn('ghost', 'app:get-projects')).toBe('local')
+  })
+
   it('unsubscribe detaches from all transports', () => {
     const local = fake('local')
     const remote = fake('remote')

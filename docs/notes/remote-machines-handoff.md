@@ -63,19 +63,33 @@ backend. Proven in `tests/unit/provider-switch-ws.test.ts`.
   `machines:connect` / `machines:disconnect` / `machines:status` channels, store
   actions + status subscription, and a live Connect/Disconnect button in
   `MachineLayer`. Connecting flips the pip; it does NOT yet route data (step 2).
+- **M4b step 2 (per-session routing)** chosen model: ONE window live-mixes local
+  + multiple remotes, each call routed to its session's backend.
+  - **2a** `src/preload/transport-router.ts` (`TransportRouter`): holds one
+    Transport per machine ('local' + a WsTransport per remote), routes
+    invoke/send by a resolver, `invokeOn(machineId, ...)` to target one directly,
+    and fans `on()` out to every transport (current + future) so events merge.
+  - **2b** `src/preload/routing-table.ts` (`RoutingTable`): `resolve(channel,
+    args)` keys off arg0 (threadId / terminal id) or `opts.threadId`/`opts.id`;
+    create-style calls carry an explicit `opts.machineId`. `window.api.routing.
+    {bind,unbind,connectMachine,disconnectMachine,invokeOn}`. `machines:status`
+    now carries the local ws URL; the store registers/unregisters a WsTransport
+    on connect/disconnect.
+- **M4b step 3 (snapshot on connect)** `machineSnapshot.projectsToSnapshot`,
+  `machines:save-snapshot`, `machine-store.syncMachine` - on connect the store
+  invokes `app:get-projects` ON the remote, trims to `CachedProject[]`, persists
+  via `saveMachineSnapshot`, and updates the live tree.
 
-## What's left: M4b (the big architectural half)
+## What's left: M4b
 
-1. **Per-machine transport routing** (the hard part): today the renderer has ONE
-   transport chosen at preload load. A connected remote's sessions/terminals/
-   files need to use THAT machine's `WsTransport` while local stays on IPC.
-   Options to weigh: (a) per-window backend (simpler - a window targets one
-   machine; matches multi-window habit), (b) true per-session routing (a
-   transport registry keyed by the session's machine). Recommend starting with
-   (a). This touches how `window.api.*` dispatches - design before coding.
-2. **Populate the M3 snapshot on connect**: after connect, scan the remote's
-   projects/sessions and call `saveMachineSnapshot` so offline browse works.
-3. **OAuth on the VM**: providers log in on the remote (oauth dirs are not
+1. **Launch path (lights up per-session routing end to end)**: clicking a remote
+   project/chat must (a) `routing.bind(threadId, machineId)` before
+   `provider.startSession`, (b) create/scan the conversation ON the remote
+   (`routing.invokeOn` or a bound call), (c) bind terminal ids likewise. The
+   plumbing (2a/2b/3) is done; this is wiring the sidebar remote tree + chat
+   launch to use it. Provider-instance switching must resolve on the remote
+   (the daily plan-hop constraint).
+2. **OAuth on the VM**: providers log in on the remote (oauth dirs are not
    forwarded), consistent with t3code. Env-mode creds use `SWITCHBOARD_SECRET`.
 
 ## Testing
