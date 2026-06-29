@@ -25,6 +25,8 @@ const reorder = vi.fn(async () => ({ ok: true as const }))
 let statusCb: ((id: string, status: string, url: string | null) => void) | null = null
 const connectMachine = vi.fn()
 const disconnectMachine = vi.fn()
+const invokeOn = vi.fn(async () => [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', source: 'codex', startedAt: 0, messageCount: 1, filePath: '/x' }] }])
+const saveSnapshot = vi.fn(async () => ({ ok: true as const }))
 
 beforeEach(() => {
   stored = [mk('a', 0), mk('b', 1), mk('c', 2)]
@@ -38,12 +40,13 @@ beforeEach(() => {
         delete: del,
         reorder,
         listSshHosts: vi.fn(async () => []),
+        saveSnapshot,
         onStatus: vi.fn((cb) => {
           statusCb = cb
           return () => {}
         }),
       },
-      routing: { connectMachine, disconnectMachine },
+      routing: { connectMachine, disconnectMachine, invokeOn },
     },
   }
   useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [] })
@@ -85,6 +88,14 @@ describe('machine-store', () => {
     statusCb!('m1', 'error', null)
     expect(disconnectMachine).toHaveBeenCalledWith('m1')
     expect(useMachineStore.getState().connections.m1).toBe('error')
+  })
+
+  it('syncMachine scans the remote, persists, and caches the snapshot', async () => {
+    await useMachineStore.getState().syncMachine('m1')
+    expect(invokeOn).toHaveBeenCalledWith('m1', 'app:get-projects')
+    expect(saveSnapshot).toHaveBeenCalled()
+    const snap = useMachineStore.getState().snapshots.m1
+    expect(snap.projects).toEqual([{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1' }] }])
   })
 
   it('subscribeStatus does not register a transport while still connecting', () => {

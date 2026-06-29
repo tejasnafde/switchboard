@@ -93,7 +93,11 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
           )}
         </div>
         {projects.length === 0 ? (
-          <div className="sidebar-machine-empty">Not connected. Connect to browse this machine.</div>
+          <div className="sidebar-machine-empty">
+            {node.status === 'connected'
+              ? 'No projects on this machine yet.'
+              : 'Not connected. Connect to browse this machine.'}
+          </div>
         ) : (
           projects.map((p) => (
             <div key={p.path} className="cached-project">

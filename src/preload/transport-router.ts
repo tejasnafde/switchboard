@@ -55,6 +55,12 @@ export class TransportRouter implements Transport {
     return this.pick(channel, args).invoke<T>(channel, ...args)
   }
 
+  /** Invoke on a named machine directly, bypassing the resolver (e.g. to scan a remote on connect). */
+  invokeOn<T>(machineId: string, channel: string, ...args: unknown[]): Promise<T> {
+    const t = this.transports.get(machineId) ?? this.transports.get('local')!
+    return t.invoke<T>(channel, ...args)
+  }
+
   send(channel: string, ...args: unknown[]): void {
     this.pick(channel, args).send(channel, ...args)
   }

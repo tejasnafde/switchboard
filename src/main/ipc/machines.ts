@@ -9,7 +9,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { MachineChannels } from '@shared/ipc-channels'
 import { createMainLogger } from '../logger'
-import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, getMachineSnapshots, type MachineInput } from '../db/machines'
+import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, getMachineSnapshots, saveMachineSnapshot, type MachineInput } from '../db/machines'
+import type { MachineSnapshot } from '@shared/machines'
 import { parseSshConfig } from '../machines/sshConfig'
 import { ConnectionManager } from '../machines/connectionManager'
 import { allocatePort, spawnTunnel, waitForHealth, REMOTE_PORT, REMOTE_COMMAND } from '../machines/connectDeps'
@@ -45,6 +46,11 @@ export function registerMachineHandlers(host: BackendHost): void {
   })
 
   host.handle(MachineChannels.GET_SNAPSHOTS, () => getMachineSnapshots())
+
+  host.handle(MachineChannels.SAVE_SNAPSHOT, (id: string, snapshot: MachineSnapshot) => {
+    saveMachineSnapshot(id, snapshot)
+    return { ok: true as const }
+  })
 
   host.handle(MachineChannels.CONNECT, (id: string) => {
     const machine = listMachines().find((m) => m.id === id)
