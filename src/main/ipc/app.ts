@@ -1,7 +1,5 @@
-import { ipcMain, dialog, app, type BrowserWindow } from 'electron'
 import type { BackendHost } from '../backend/host'
-import { basename } from 'path'
-import { readFile, writeFile } from 'fs/promises'
+import { readFile } from 'fs/promises'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
@@ -60,52 +58,23 @@ import { defaultClaudeDir } from '../provider/claude-session-migrate'
 import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
 import { JsonlParser } from '../agent/jsonl-parser'
 import { forkConversation } from '../conversations/fork'
-import { readWorkspaceConfig, writeWorkspaceConfig, watchWorkspaceConfig } from '../workspace/workspace-store'
+import { readWorkspaceConfig, writeWorkspaceConfig, watchWorkspaceConfig, setWorkspaceEmitter } from '../workspace/workspace-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
 
 const log = createLogger('ipc:app')
 
 /** All Claude config roots: every enabled oauth_dir + the default ~/.claude. */
-function claudeCandidateDirs(): string[] {
+export function claudeCandidateDirs(): string[] {
   return Array.from(new Set([
     ...listOauthDirsForAgent('claude-code'),
     defaultClaudeDir(),
   ]))
 }
 
-export function registerAppHandlers(host: BackendHost, window: BrowserWindow): void {
-  // host.handle self-cleans; only the desktop-only ipcMain handlers below need
-  // explicit removal to re-register on macOS activate.
-  ipcMain.removeHandler(AppChannels.OPEN_FOLDER)
-  ipcMain.removeHandler(AppChannels.EXPORT_MARKDOWN)
-  ipcMain.removeHandler(AppChannels.RELAUNCH)
-  ipcMain.removeHandler(AppChannels.SET_VIBRANCY)
-
-  // Desktop-only (native dialog) — stays on ipcMain; can't run on a remote backend.
-  ipcMain.handle(AppChannels.OPEN_FOLDER, async () => {
-    log.info('open-folder dialog')
-    const result = await dialog.showOpenDialog({
-      properties: ['openDirectory'],
-      title: 'Add Project Folder',
-    })
-    if (result.canceled || result.filePaths.length === 0) return null
-
-    const folderPath = result.filePaths[0]
-    const name = basename(folderPath)
-    log.info(`folder selected: ${folderPath}`)
-
-    // Persist to SQLite
-    addProject(folderPath, name)
-
-    // Scan for existing sessions across all Claude auth profiles (filter archived globally)
-    const rawSessions = await scanAllSessions(folderPath, claudeCandidateDirs())
-    const archivedSet = getArchivedConversationIds()
-    const sessions = rawSessions.filter((s) => !archivedSet.has(s.id))
-    log.info(`found ${sessions.length} sessions for ${folderPath} (${rawSessions.length - sessions.length} archived)`)
-
-    const project: Project = { path: folderPath, name, sessions, workspaceId: null }
-    return project
-  })
+// Data handlers — transport-agnostic, run on either ElectronIpcHost or WsHost.
+// Native-dialog / window / app-lifecycle handlers live in app-desktop.ts.
+export function registerAppHandlers(host: BackendHost): void {
+  setWorkspaceEmitter((channel, ...args) => host.emit(channel, ...args))
 
   host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {
     log.info(`scan-sessions: ${projectPath}`)
@@ -523,14 +492,6 @@ export function registerAppHandlers(host: BackendHost, window: BrowserWindow): v
     return getArchivedConversations()
   })
 
-  // Desktop-only (app lifecycle) — stays on ipcMain.
-  ipcMain.handle(AppChannels.RELAUNCH, () => {
-    log.info('relaunching app...')
-    app.relaunch()
-    app.exit(0)
-  })
-
-  // Export conversation as markdown — renderer serializes, main writes.
   // Remove a row from thread_sessions — un-hides a session from the
   // sidebar. Used when an automatic ancestry record was wrong, or when
   // the user wants to unmerge.
@@ -557,25 +518,6 @@ export function registerAppHandlers(host: BackendHost, window: BrowserWindow): v
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : 'unknown' }
-    }
-  })
-
-  // Desktop-only (native save dialog + BrowserWindow) — stays on ipcMain.
-  ipcMain.handle(AppChannels.EXPORT_MARKDOWN, async (_event, params: { suggestedFilename: string; content: string }) => {
-    const result = await dialog.showSaveDialog(window, {
-      title: 'Export Conversation',
-      defaultPath: params.suggestedFilename,
-      filters: [{ name: 'Markdown', extensions: ['md'] }],
-    })
-    if (result.canceled || !result.filePath) return { ok: false, canceled: true }
-    try {
-      await writeFile(result.filePath, params.content, 'utf-8')
-      log.info(`exported markdown: ${result.filePath}`)
-      return { ok: true, path: result.filePath }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      log.error(`export failed: ${message}`)
-      return { ok: false, error: message }
     }
   })
 
@@ -617,20 +559,4 @@ export function registerAppHandlers(host: BackendHost, window: BrowserWindow): v
       savedAt: r.saved_at,
     })),
   )
-
-  // Vibrancy toggle for translucent theme
-  // Desktop-only (window vibrancy) — stays on ipcMain; needs the BrowserWindow.
-  ipcMain.handle(AppChannels.SET_VIBRANCY, (_event, enabled: boolean) => {
-    if (window.isDestroyed()) return
-    if (process.platform === 'darwin') {
-      if (enabled) {
-        window.setVibrancy('sidebar')
-        window.setBackgroundColor('#00000000')
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Electron types reject null but it is the documented way to clear vibrancy
-        window.setVibrancy(null as any)
-        window.setBackgroundColor('#0a0a0a')
-      }
-    }
-  })
 }

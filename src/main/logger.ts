@@ -10,7 +10,7 @@
 
 import { join } from 'path'
 import { mkdirSync, appendFileSync, readdirSync, unlinkSync, statSync } from 'fs'
-import { app } from 'electron'
+import { userDataDir } from './runtime'
 
 const RETENTION_DAYS = 7
 const LOG_DIR_NAME = 'logs'
@@ -24,7 +24,7 @@ function init(): void {
   initialized = true
 
   try {
-    logDir = join(app.getPath('userData'), LOG_DIR_NAME)
+    logDir = join(userDataDir(), LOG_DIR_NAME)
     mkdirSync(logDir, { recursive: true })
 
     const date = new Date().toISOString().slice(0, 10) // 2026-04-20

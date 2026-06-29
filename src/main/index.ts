@@ -20,6 +20,7 @@ import { join } from 'path'
 import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
+import { registerAppDesktopHandlers } from './ipc/app-desktop'
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
@@ -342,7 +343,8 @@ app.whenReady().then(() => {
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)
-  registerAppHandlers(backendHost, mainWindow)
+  registerAppHandlers(backendHost)
+  registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
   registerLspHandlers(backendHost)
@@ -363,7 +365,8 @@ app.whenReady().then(() => {
       const reactivatedHost = new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
       registerAgentHandlers(reactivatedHost)
-      registerAppHandlers(reactivatedHost, mainWindow)
+      registerAppHandlers(reactivatedHost)
+      registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
       registerKanbanHandlers(reactivatedHost)

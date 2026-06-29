@@ -59,7 +59,9 @@ describe('WsTransport ↔ WsHost loopback', () => {
     host.on('tick', (n: number) => seen.push(n))
     client = new WsTransport(url)
     client.send('tick', 7)
-    await tick()
+    // The send is queued until the socket opens; a round-trip guarantees it
+    // flushed (FIFO) and the host processed it before we assert.
+    await client.invoke('__ready__').catch(() => {})
     expect(seen).toEqual([7])
   })
 

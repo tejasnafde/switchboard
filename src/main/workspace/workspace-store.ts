@@ -1,9 +1,16 @@
 import { join } from 'path'
 import { readFileSync, writeFileSync, mkdirSync, existsSync, watch, type FSWatcher } from 'fs'
-import { BrowserWindow } from 'electron'
 import { createMainLogger as createLogger } from '../logger'
 
 const log = createLogger('workspace')
+
+// Push to the renderer via whichever host is wired (ElectronIpcHost or WsHost),
+// set once at handler registration. No-op until then.
+type WorkspaceEmitter = (channel: string, ...args: unknown[]) => void
+let emit: WorkspaceEmitter = () => {}
+export function setWorkspaceEmitter(fn: WorkspaceEmitter): void {
+  emit = fn
+}
 
 function configPath(projectPath: string): string {
   return join(projectPath, '.switchboard', 'workspace.yaml')
@@ -24,10 +31,7 @@ export function watchWorkspaceConfig(projectPath: string): void {
     const watcher = watch(path, (eventType) => {
       if (eventType === 'change') {
         log.info(`workspace.yaml changed for ${projectPath}, notifying renderer...`)
-        const window = BrowserWindow.getAllWindows()[0]
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('app:workspace-changed', projectPath)
-        }
+        emit('app:workspace-changed', projectPath)
       }
     })
     watchers.set(projectPath, watcher)

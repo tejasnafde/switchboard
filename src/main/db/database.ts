@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3'
-import { app } from 'electron'
+import { userDataDir } from '../runtime'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
 import { createMainLogger as createLogger } from '../logger'
@@ -14,8 +14,7 @@ const log = createLogger('db')
 let db: Database.Database | null = null
 
 function getDbPath(): string {
-  const userDataPath = app.getPath('userData')
-  const dbDir = join(userDataPath, 'data')
+  const dbDir = join(userDataDir(), 'data')
   mkdirSync(dbDir, { recursive: true })
   return join(dbDir, 'switchboard.db')
 }
