@@ -1,5 +1,7 @@
 import { contextBridge } from 'electron'
 import { IpcTransport, type Transport } from './transport'
+import { WsTransport } from '@shared/ws-transport'
+import { HybridTransport } from './hybrid-transport'
 import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type {
@@ -45,7 +47,14 @@ export interface ProviderInstanceUpsertInput {
  * The renderer calls window.api.* — never touches ipcRenderer directly; every
  * method goes through `transport`, the swappable renderer↔backend seam.
  */
-const transport: Transport = new IpcTransport()
+// SWITCHBOARD_BACKEND_URL (e.g. ws://vm-host:8765) points the app at a remote
+// backend; desktop-only channels still resolve to local IPC via HybridTransport.
+// Unset → fully local, as before.
+const backendUrl = process.env.SWITCHBOARD_BACKEND_URL
+const transport: Transport = backendUrl
+  ? new HybridTransport(new IpcTransport(), new WsTransport(backendUrl))
+  : new IpcTransport()
+if (backendUrl) console.info(`[SB:preload] remote backend: ${backendUrl}`)
 
 const api = {
   // ─── Terminal ────────────────────────────────────────────────────
