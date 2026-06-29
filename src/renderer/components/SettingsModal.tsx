@@ -37,6 +37,7 @@ const THEMES: { value: ThemeName; label: string; desc: string }[] = [
   { value: 'dark', label: 'Dark', desc: 'Default dark interface' },
   { value: 'light', label: 'Light', desc: 'Clean light interface' },
   { value: 'translucent', label: 'Translucent', desc: 'Blurred desktop vibrancy (macOS)' },
+  { value: 'system', label: 'System', desc: 'Follow OS light/dark appearance' },
 ]
 
 interface ArchivedConv {

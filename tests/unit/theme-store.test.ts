@@ -54,4 +54,17 @@ describe('theme-store', () => {
     setTheme('translucent')
     expect(useThemeStore.getState().theme).toBe('translucent')
   })
+
+  it('system theme resolves to the OS appearance', () => {
+    const matchMedia = vi.fn().mockReturnValue({ matches: true, addEventListener: vi.fn() })
+    ;(globalThis.window as { matchMedia?: typeof matchMedia }).matchMedia = matchMedia
+
+    useThemeStore.getState().setTheme('system')
+    expect(useThemeStore.getState().theme).toBe('system')
+    expect(mockClassList.className).toBe('theme-dark')
+
+    matchMedia.mockReturnValue({ matches: false, addEventListener: vi.fn() })
+    useThemeStore.getState().setTheme('system')
+    expect(mockClassList.className).toBe('theme-light')
+  })
 })
