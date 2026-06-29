@@ -1,11 +1,7 @@
 /**
- * Client side of the remote boundary: a Transport that speaks ws-protocol over
- * a WebSocket instead of Electron IPC. Uses the platform-global WebSocket
- * (browser in the renderer, undici in Node 24+) so it needs no dependency.
- *
- * ponytail: single connection, no reconnect/backoff yet — add when a dropped
- * VM link is a real scenario (Phase 2). Outgoing frames before 'open' are
- * queued; in-flight invokes reject on socket close.
+ * Client Transport over a WebSocket (vs Electron IPC). Uses the global
+ * WebSocket so it needs no dependency. Frames before 'open' queue; in-flight
+ * invokes reject on close. ponytail: single connection, no reconnect yet.
  */
 import { encodeFrame, decodeFrame, type WsFrame } from './ws-protocol'
 import type { Transport } from './transport'

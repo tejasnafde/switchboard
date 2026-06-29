@@ -1,14 +1,7 @@
 /**
- * Standalone headless backend. Boots the same handler set + ProviderRegistry
- * the Electron main process runs, but over a WsHost (WebSocket) instead of
- * Electron IPC — so it can run on a remote VM. Desktop-only handlers
- * (native dialogs, window vibrancy) are deliberately omitted.
- *
- *   PORT                — listen port (default 8765)
- *   SWITCHBOARD_DATA_DIR — DB / app-support root (default ~/.switchboard)
- *   SWITCHBOARD_SECRET   — passphrase for env-mode provider credentials
- *
- * Run: npm run build:server && npm run server
+ * Standalone headless backend: the same handlers + ProviderRegistry over a
+ * WsHost, for running on a VM. Desktop-only handlers are omitted.
+ * Env: PORT, SWITCHBOARD_DATA_DIR, SWITCHBOARD_SECRET.
  */
 import { WebSocketServer } from 'ws'
 import { WsHost } from '../main/backend/ws-host'
