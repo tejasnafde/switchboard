@@ -267,7 +267,7 @@ describe('JsonlParser', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    // This is how Claude Code sends tool results — as user messages with tool_result content
+    // This is how Claude Code sends tool results - as user messages with tool_result content
     parser.feed(JSON.stringify({
       type: 'user',
       message: {
@@ -279,7 +279,7 @@ describe('JsonlParser', () => {
       uuid: 'tool-result-1',
     }) + '\n')
 
-    // Should be skipped — not a real user message
+    // Should be skipped - not a real user message
     expect(messages).toHaveLength(0)
   })
 
@@ -306,7 +306,7 @@ describe('JsonlParser', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
 
-    // Assistant message with only a thinking block — no visible content
+    // Assistant message with only a thinking block - no visible content
     parser.feed(JSON.stringify({
       type: 'assistant',
       message: {
@@ -354,7 +354,7 @@ describe('JsonlParser', () => {
  * content. Now user messages reconstruct MessageImage[] from Claude's
  * image blocks.
  */
-describe('JsonlParser — image extraction', () => {
+describe('JsonlParser - image extraction', () => {
   it('extracts base64 images from a user message content array', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
@@ -444,7 +444,7 @@ describe('JsonlParser — image extraction', () => {
  * event types. Codex uses `response_item` with `payload.{type,role,content}`.
  * The source param on the parser now routes to a Codex-specific normalizer.
  */
-describe('JsonlParser — Codex source', () => {
+describe('JsonlParser - Codex source', () => {
   it('parses a Codex assistant response_item', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
@@ -455,13 +455,13 @@ describe('JsonlParser — Codex source', () => {
       payload: {
         type: 'message',
         role: 'assistant',
-        content: [{ type: 'output_text', text: 'Got it — here is my plan.' }],
+        content: [{ type: 'output_text', text: 'Got it - here is my plan.' }],
       },
     }) + '\n')
 
     expect(messages).toHaveLength(1)
     expect(messages[0].role).toBe('assistant')
-    expect(messages[0].content).toBe('Got it — here is my plan.')
+    expect(messages[0].content).toBe('Got it - here is my plan.')
     // ISO timestamp should be parsed
     expect(messages[0].timestamp).toBe(Date.parse('2026-02-03T08:04:55.675Z'))
   })

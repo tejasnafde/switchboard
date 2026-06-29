@@ -8,7 +8,7 @@
  *
  * Markdown preview toggle: when `path` ends in `.md` AND mdMode='preview',
  * we render `marked` HTML in a sibling div and hide the editor. CM6 with
- * `lang-markdown` highlights raw markdown source — it doesn't render to
+ * `lang-markdown` highlights raw markdown source - it doesn't render to
  * HTML, so preview is a separate code path. Switching to 'raw' shows the
  * editor again.
  *
@@ -79,7 +79,7 @@ export const FileViewerPane = memo(function FileViewerPane(): React.ReactElement
         })
         if (isMarkdown) {
           try {
-            // Sanitize — a hostile README must not run scripts via innerHTML.
+            // Sanitize - a hostile README must not run scripts via innerHTML.
             const html = marked.parse(res.content, { async: false }) as string
             setMdPreview(DOMPurify.sanitize(html))
           } catch (err) {

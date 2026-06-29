@@ -23,7 +23,7 @@ describe('registerFilesHandlers via BackendHost', () => {
     expect([...host.handlers.keys()].sort()).toEqual(Object.values(FilesChannels).sort())
   })
 
-  it('handlers run without Electron — grep-symbol rejects a non-identifier', async () => {
+  it('handlers run without Electron - grep-symbol rejects a non-identifier', async () => {
     const host = new FakeHost()
     registerFilesHandlers(host)
     const grep = host.handlers.get(FilesChannels.GREP_SYMBOL)!

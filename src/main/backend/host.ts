@@ -2,7 +2,7 @@
  * Backend-side mirror of the renderer Transport: handlers register handle/on/
  * emit against a host, not ipcMain directly, so the same code can run in this
  * Electron process (ElectronIpcHost) or a future remote server. Handlers get
- * only the channel args — never the Electron event — to stay transport-agnostic.
+ * only the channel args - never the Electron event - to stay transport-agnostic.
  */
 import { ipcMain, type BrowserWindow } from 'electron'
 

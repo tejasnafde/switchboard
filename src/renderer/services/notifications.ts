@@ -44,7 +44,7 @@ export async function setNotificationsEnabled(enabled: boolean): Promise<void> {
 }
 
 /**
- * Fire a test notification — used by the Settings UI to let users verify
+ * Fire a test notification - used by the Settings UI to let users verify
  * their OS-level permission grant and toggle state end-to-end. Bypasses
  * the "is user looking at the window" guard so the notification always
  * appears when possible.
@@ -71,7 +71,7 @@ export async function fireTestNotification(): Promise<{ ok: boolean; reason?: st
   }
   try {
     const n = new Notification('Switchboard', {
-      body: 'Test notification — Switchboard will notify you when an agent turn finishes in a backgrounded chat.',
+      body: 'Test notification - Switchboard will notify you when an agent turn finishes in a backgrounded chat.',
       tag: 'switchboard.test',
     })
     n.onclick = () => { try { window.focus() } catch { /* ignore */ } n.close() }
@@ -81,7 +81,7 @@ export async function fireTestNotification(): Promise<{ ok: boolean; reason?: st
   }
 }
 
-/** Current permission state — exposed for Settings UI diagnostics. */
+/** Current permission state - exposed for Settings UI diagnostics. */
 export function currentNotificationPermission(): NotificationPermission | 'unsupported' {
   if (typeof Notification === 'undefined') return 'unsupported'
   return Notification.permission
@@ -125,7 +125,7 @@ export async function notifyTurnCompleted(opts: {
   const title = titleParts.join(' · ')
 
   const notif = new Notification(title, {
-    body: sessionTitle + ' — turn finished',
+    body: sessionTitle + ' - turn finished',
     silent: false,
     tag: `turn.${threadId}`, // coalesce multiple notifs for the same session
   })

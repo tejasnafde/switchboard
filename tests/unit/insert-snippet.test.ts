@@ -1,5 +1,5 @@
 /**
- * Unit tests for `insertSnippetWithNewlineGuards` — the pure helper behind
+ * Unit tests for `insertSnippetWithNewlineGuards` - the pure helper behind
  * CardModal's image-paste path. The guards exist so an embedded
  * `![](data:...)` always lands on its own line regardless of where the
  * caret happens to be.

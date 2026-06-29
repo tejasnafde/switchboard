@@ -46,7 +46,7 @@ describe('IpcTransport', () => {
     const [channel, wrapped] = ipc.on.mock.calls[0] as [string, (...a: unknown[]) => void]
     expect(channel).toBe('term:exit')
 
-    // Simulate Electron delivering (event, ...args) — the event must be dropped.
+    // Simulate Electron delivering (event, ...args) - the event must be dropped.
     wrapped({ sender: {} }, 'pane-1', 0)
     expect(seen).toEqual([['pane-1', 0]])
 

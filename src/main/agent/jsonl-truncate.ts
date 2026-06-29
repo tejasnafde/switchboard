@@ -4,7 +4,7 @@
  * The renderer hands us a 1-based count of *visible* events to keep
  * (its own message-array index of the clicked message). We replay the
  * same visibility predicate the JsonlParser uses, copy lines through
- * the Nth visible event, and report the resume anchor (Claude only —
+ * the Nth visible event, and report the resume anchor (Claude only -
  * Codex events lack a stable per-line id).
  *
  * Non-visible meta lines (Claude `summary`, Codex `session_meta` /
@@ -19,7 +19,7 @@ export interface TruncateClaudeOptions {
   /**
    * If provided, every kept line's `sessionId` field is rewritten to
    * this value. The Claude SDK keys resume by filename, but the per-line
-   * sessionId is what shows up in the UI's session metadata — keep them
+   * sessionId is what shows up in the UI's session metadata - keep them
    * in sync so the new file reads as a brand-new session, not a clone.
    */
   newSessionId?: string
@@ -27,7 +27,7 @@ export interface TruncateClaudeOptions {
 
 export interface TruncateClaudeResult {
   newContent: string
-  /** uuid of the last kept visible line — the resume anchor — or null if none. */
+  /** uuid of the last kept visible line - the resume anchor - or null if none. */
   anchorUuid: string | null
   keptVisibleCount: number
 }
@@ -58,7 +58,7 @@ export function truncateClaudeJsonl(
     if (!trimmed) continue
 
     let parsed: Record<string, unknown> | null = null
-    try { parsed = JSON.parse(trimmed) as Record<string, unknown> } catch { /* malformed — skip entirely */ continue }
+    try { parsed = JSON.parse(trimmed) as Record<string, unknown> } catch { /* malformed - skip entirely */ continue }
 
     const visible = isClaudeVisible(parsed)
     if (visible) {
@@ -83,7 +83,7 @@ export function truncateClaudeJsonl(
   }
 }
 
-/** Same predicate as JsonlParser's Claude branch — exported so fork.ts
+/** Same predicate as JsonlParser's Claude branch - exported so fork.ts
  *  can count visible events per fragment without re-implementing it. */
 export function isClaudeVisible(event: Record<string, unknown>): boolean {
   const type = event.type
@@ -113,7 +113,7 @@ function userHasContent(message: unknown): boolean {
   if (typeof m.content === 'string') return m.content.length > 0
   if (Array.isArray(m.content)) {
     if (m.content.length === 0) return false
-    // Pure tool_result/image blocks come from the tool-use protocol — the
+    // Pure tool_result/image blocks come from the tool-use protocol - the
     // parser hides them from the user-facing transcript. An image block
     // with no surrounding text is still "visible" because Switchboard
     // keeps image-only user messages.
@@ -172,7 +172,7 @@ export function truncateCodexJsonl(
  * compaction). Earlier fragments come through verbatim; the cut lands
  * inside the fragment whose visible-event range covers the target index.
  *
- * Pure helper — fs reads happen in the caller. The order of `fragments`
+ * Pure helper - fs reads happen in the caller. The order of `fragments`
  * is the chronological order the caller establishes (oldest first).
  */
 export function assembleClaudeFork(

@@ -1,13 +1,13 @@
 /**
  * Sidebar leading icon for a project. Tries to load the project's
  * auto-detected favicon (`<img src="sb-favicon://favicon?path=...">`); on
- * any load error — including no favicon found (404) or non-image content —
+ * any load error - including no favicon found (404) or non-image content -
  * falls back to a generic folder glyph that visually matches the rest of
  * the sidebar.
  *
  * The protocol handler lives in main/protocol/sb-favicon.ts and is
  * registered in main/index.ts. The renderer doesn't know or care what's
- * on disk — it just hits the URL and lets `<img onError>` decide whether
+ * on disk - it just hits the URL and lets `<img onError>` decide whether
  * to swap to the fallback.
  *
  * Cross-platform note: the project path is percent-encoded into a query

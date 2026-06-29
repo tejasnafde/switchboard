@@ -82,7 +82,7 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
           if (resp.messages.length > 0) setMessages(resp.meta.id, resp.messages)
         }
       } catch {
-        /* best-effort — setActiveSession still fires below */
+        /* best-effort - setActiveSession still fires below */
       }
     }
 

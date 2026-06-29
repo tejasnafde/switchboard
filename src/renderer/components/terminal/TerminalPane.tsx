@@ -24,7 +24,7 @@ interface TerminalPaneProps {
   /**
    * Pane was restored from a saved layout and hasn't been manually
    * started yet. Renders a "Start terminal" overlay instead of
-   * spawning a PTY — avoids silently re-running long commands
+   * spawning a PTY - avoids silently re-running long commands
    * (e.g. `npm run dev`) on every app launch.
    */
   stale?: boolean
@@ -53,7 +53,7 @@ export const TerminalPane = memo(function TerminalPane(props: TerminalPaneProps)
     })
   }, [searchOpen, id])
 
-  // ⌘F (macOS) / Ctrl+F (Windows/Linux) intercept — document-level so
+  // ⌘F (macOS) / Ctrl+F (Windows/Linux) intercept - document-level so
   // we catch the keydown even when focus is somewhere ambiguous (body,
   // container without tabIndex). Scope: only fire when activeElement
   // is INSIDE this pane's subtree (i.e. the user has actually focused
@@ -168,7 +168,7 @@ function LivePane({ id, sessionId, cwd, command, wait_for, onFocus }: TerminalPa
 
 /**
  * Overlay shown when a pane is restored from saved layout. User clicks
- * "Start" to spawn the PTY — prevents silent re-runs of long-running
+ * "Start" to spawn the PTY - prevents silent re-runs of long-running
  * commands on every app launch.
  */
 function StalePaneOverlay({

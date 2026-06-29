@@ -1,7 +1,7 @@
 /**
  * Lightweight pub/sub for session lifecycle events (rename, etc).
  * Used to keep Sidebar's local projects state in sync with ChatPanel
- * edits and vice versa — without hoisting state or pulling in a store.
+ * edits and vice versa - without hoisting state or pulling in a store.
  */
 
 type RenameListener = (sessionId: string, title: string) => void

@@ -5,7 +5,7 @@
 #
 # Steps, fail-fast:
 #   1. Deslop-lint staged TS files (catches new `as any`, useless catches,
-#      etc. — pre-existing violations are tracked separately via
+#      etc. - pre-existing violations are tracked separately via
 #      `npm run lint:deslop`).
 #   2. Run the test suite.
 #

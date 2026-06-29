@@ -39,7 +39,7 @@ wss.on('error', (err) => log.error('server error', err))
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
-    log.info(`${sig} — shutting down`)
+    log.info(`${sig} - shutting down`)
     void registry.stopAll().finally(() => wss.close(() => process.exit(0)))
   })
 }

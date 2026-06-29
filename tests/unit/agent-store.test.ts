@@ -119,7 +119,7 @@ describe('agent-store', () => {
 
   it('removeSession calls provider.stopSession to tear down the main-process adapter', () => {
     // Tab close / archive must kill the adapter session in main, not just
-    // drop the renderer state — otherwise the Codex / OpenCode child
+    // drop the renderer state - otherwise the Codex / OpenCode child
     // process leaks until the whole app exits.
     const stopSession = vi.fn(() => Promise.resolve())
     ;(globalThis as unknown as { window: { api: { provider: { stopSession: typeof stopSession } } } }).window = {
@@ -156,7 +156,7 @@ describe('agent-store', () => {
     expect(after.find((s) => s.id === 'b')?.tokenUsage?.usedTokens).toBe(80000)
   })
 
-  it('appendMessage is idempotent — duplicate IDs are silently dropped', () => {
+  it('appendMessage is idempotent - duplicate IDs are silently dropped', () => {
     // Regression: with two ChatPanel panes mounted, each registers its own
     // ipcRenderer event listener. Every provider event (tool.started, content,
     // etc.) fires once per pane, so appendMessage can be called twice with the
@@ -166,13 +166,13 @@ describe('agent-store', () => {
 
     const msg = { id: 'tool_toolu_01ABC', role: 'assistant' as const, content: '', timestamp: 1000 }
     appendMessage('s1', msg)
-    appendMessage('s1', msg) // second call — same id, same content
+    appendMessage('s1', msg) // second call - same id, same content
     appendMessage('s1', { ...msg, content: 'different' }) // same id, different content
 
     const session = useAgentStore.getState().sessions[0]
     expect(session.messages).toHaveLength(1)
     expect(session.messages[0].id).toBe('tool_toolu_01ABC')
-    // Original content is preserved — later duplicates don't overwrite
+    // Original content is preserved - later duplicates don't overwrite
     expect(session.messages[0].content).toBe('')
   })
 })

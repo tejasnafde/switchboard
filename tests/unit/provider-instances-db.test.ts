@@ -73,7 +73,7 @@ function seedDefaults() {
   }
 }
 
-// SQL pattern matcher — tied to providerInstances.ts queries.
+// SQL pattern matcher - tied to providerInstances.ts queries.
 function prepare(sql: string) {
   const norm = sql.replace(/\s+/g, ' ').trim()
   return {
@@ -164,7 +164,7 @@ describe('encryptEnv / decryptEnv', () => {
     const { encryptEnv, decryptEnv } = await loadModule()
     const plain = { ANTHROPIC_API_KEY: 'sk-test-123', NVIDIA_API_KEY: 'nv-456' }
     const blob = encryptEnv(plain)
-    expect(blob[0]).toBe(0x00) // sentinel byte — invalid UTF-8 JSON start
+    expect(blob[0]).toBe(0x00) // sentinel byte - invalid UTF-8 JSON start
     expect(decryptEnv(blob)).toEqual(plain)
   })
 
@@ -191,7 +191,7 @@ describe('encryptEnv / decryptEnv', () => {
     const { encryptEnv, decryptEnv } = await loadModule()
     const plain = { ANTHROPIC_API_KEY: 'sk-headless' }
     const blob = encryptEnv(plain)
-    expect(blob[0]).toBe(0x00) // sentinel — not plaintext
+    expect(blob[0]).toBe(0x00) // sentinel - not plaintext
     expect(blob.toString('utf-8')).not.toContain('sk-headless') // actually encrypted
     expect(decryptEnv(blob)).toEqual(plain)
   })

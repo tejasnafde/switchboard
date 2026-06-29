@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════════════
-   Switchboard — Theme System
+   Switchboard - Theme System
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ─── Dark theme (default) ──────────────────────────────────────── */
@@ -8,7 +8,7 @@
   --bg-secondary: #111111;
   --bg-tertiary: #1a1a1a;
   --bg-surface: #141414;
-  /* Used for floating surfaces (modals, popovers) — always fully opaque
+  /* Used for floating surfaces (modals, popovers) - always fully opaque
      so content behind is never visible through them. */
   --bg-elevated: #1c1c1c;
   --bg-glass: rgba(10, 10, 10, 0.88);
@@ -35,7 +35,7 @@
   --terminal-cursor: #58a6ff;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
-  /* Sidebar workspace tag palette — saturated against the dark canvas. */
+  /* Sidebar workspace tag palette - saturated against the dark canvas. */
   --workspace-color-1: #f78166; /* ember */
   --workspace-color-2: #d2a8ff; /* lilac */
   --workspace-color-3: #7ee787; /* lichen */
@@ -70,7 +70,7 @@
   --terminal-cursor: #2563eb;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
-  /* Sidebar workspace tag palette — deeper hues so they read against paper. */
+  /* Sidebar workspace tag palette - deeper hues so they read against paper. */
   --workspace-color-1: #c2410c;
   --workspace-color-2: #7c3aed;
   --workspace-color-3: #15803d;
@@ -80,7 +80,7 @@
 }
 
 /* ─── Translucent theme ─────────────────────────────────────────── */
-/* Translucent — main surfaces transparent so macOS vibrancy shows through. */
+/* Translucent - main surfaces transparent so macOS vibrancy shows through. */
 .theme-translucent {
   --bg-primary: transparent;
   --bg-secondary: rgba(0, 0, 0, 0.03);
@@ -105,7 +105,7 @@
   --terminal-cursor: #58a6ff;
   --shadow-sm: none;
   --shadow-md: none;
-  /* Sidebar workspace tag palette — brighter so they survive the wallpaper. */
+  /* Sidebar workspace tag palette - brighter so they survive the wallpaper. */
   --workspace-color-1: #ffb199;
   --workspace-color-2: #e9c8ff;
   --workspace-color-3: #b6f0bd;
@@ -148,8 +148,8 @@ html[data-fullscreen="true"] .theme-translucent {
   --terminal-bg: #0a0a0a;
 }
 
-/* Main panels: ChatPanel, Sidebar, TerminalStrip — fully transparent in translucent mode.
-   Do NOT add new borders here — the surrounding layout (App.tsx) already
+/* Main panels: ChatPanel, Sidebar, TerminalStrip - fully transparent in translucent mode.
+   Do NOT add new borders here - the surrounding layout (App.tsx) already
    renders panel borders via `--border` which applies in all themes. An
    extra border here caused a 1px layout shift when switching themes. */
 .theme-translucent .sidebar-root {
@@ -160,7 +160,7 @@ html[data-fullscreen="true"] .theme-translucent {
   background: transparent !important;
 }
 
-/* Settings modal must always be opaque — even in translucent mode */
+/* Settings modal must always be opaque - even in translucent mode */
 .settings-modal-content {
   background: var(--bg-surface);
   box-shadow: var(--shadow-md);
@@ -170,7 +170,7 @@ html[data-fullscreen="true"] .theme-translucent {
    background regardless of theme so their content is readable against
    whatever's behind them (chat messages, terminals, or the translucent
    window itself). The var(--bg-secondary) alpha was too low in both
-   dark + translucent themes — content bled through. */
+   dark + translucent themes - content bled through. */
 .sb-floating-surface {
   background: var(--bg-elevated, #1c1c1c) !important;
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
@@ -241,7 +241,7 @@ html, body, #root {
   background: var(--text-muted);
 }
 
-/* Chat-pane scrollbar — wider with right-side breathing room so users
+/* Chat-pane scrollbar - wider with right-side breathing room so users
    don't catch the terminal/chat resize handle when grabbing it. The
    default 5px track sits flush against the pane's right edge, which is
    exactly where the split-pane handle hit-target lives; widening the
@@ -254,7 +254,7 @@ html, body, #root {
 
 [data-chat-panel="true"] *::-webkit-scrollbar-thumb {
   background: var(--bg-tertiary);
-  /* Border trick — transparent border eats into the track so the visible
+  /* Border trick - transparent border eats into the track so the visible
      thumb is ~6px wide while the hit-target stays the full 12px. Keeps
      the bar easy to grab without making it visually heavy. */
   border: 3px solid transparent;
@@ -345,7 +345,7 @@ html, body, #root {
 }
 
 /* The spine: 3px color rail running the height of an expanded workspace.
-   Retracts to a small nub when collapsed — that retraction is the visual
+   Retracts to a small nub when collapsed - that retraction is the visual
    signature of the design. */
 .sidebar-workspace::before {
   content: '';
@@ -541,7 +541,7 @@ html, body, #root {
   flex-shrink: 0;
 }
 
-/* Compose icon — hidden until project header hover */
+/* Compose icon - hidden until project header hover */
 .sidebar-project-compose {
   position: absolute;
   right: 10px;
@@ -653,7 +653,7 @@ html, body, #root {
  * adjacent `.sidebar-thread-time` simultaneously collapsed (width:0
  * with overflow:visible, so the time text painted *over* where the
  * button would land). The result was a click target that flickered
- * across hover transitions — visible to the eye, but the click event
+ * across hover transitions - visible to the eye, but the click event
  * landed on residual time-text rendering ahead of the button. Right-
  * click on the row still worked because the row's onContextMenu fires
  * regardless of which child the pointer is over.
@@ -680,7 +680,7 @@ html, body, #root {
   border-radius: 3px;
   opacity: 0;
   /* z-index keeps the button above the (possibly still-rendering) time
-   * text during the 120ms opacity fade — belt-and-braces alongside the
+   * text during the 120ms opacity fade - belt-and-braces alongside the
    * absolute positioning. */
   z-index: 1;
   transition: opacity 0.12s, background 0.12s, color 0.12s;
@@ -885,7 +885,7 @@ html, body, #root {
   40% { opacity: 1; transform: scale(1.2); }
 }
 
-/* Kanban tile liveness pip — soft halo pulse for running/thinking
+/* Kanban tile liveness pip - soft halo pulse for running/thinking
    sessions. Distinct from the typing-indicator `pulse` above so we can
    tune ring color without affecting typing dots. */
 @keyframes sb-kanban-pulse {
@@ -938,7 +938,7 @@ html, body, #root {
   padding: 0;
 }
 
-/* Per-code-block copy button — markdown content and tool call blocks */
+/* Per-code-block copy button - markdown content and tool call blocks */
 .markdown-content pre {
   position: relative;
 }
@@ -1030,7 +1030,7 @@ html, body, #root {
   border-radius: var(--radius);
 }
 
-/* In-chat search match — wraps the matched phrase only (not the
+/* In-chat search match - wraps the matched phrase only (not the
  * whole bubble). Active match gets the brighter accent treatment. */
 mark.sb-search-mark {
   background: rgba(255, 200, 80, 0.28);
@@ -1048,7 +1048,7 @@ mark.sb-search-mark.active {
 /* File viewer: code mode needs the inner <pre> to honor its natural
  * width so the body's overflow-x scrollbar engages on long lines.
  * Shiki emits `<pre class="shiki">` with no inline overflow style;
- * default UA `pre` rules apply and that's what we want — but we want
+ * default UA `pre` rules apply and that's what we want - but we want
  * the OUTER body to scroll, not the pre, so we kill any margin and
  * keep `white-space: pre` (xterm-style, no wrap). */
 .sb-file-viewer-code pre {

@@ -6,7 +6,7 @@ process.on('uncaughtException', (err) => {
 
 // Surface promise rejections that nobody awaited. Without this, an
 // adapter or IPC handler that throws inside a fire-and-forget Promise
-// vanishes silently — the bug shows up days later as "the UI just
+// vanishes silently - the bug shows up days later as "the UI just
 // stopped updating" with zero log trail. We log and keep the process
 // alive (Node's default may switch to crash-on-unhandled in future
 // majors; explicit handler keeps behaviour predictable).
@@ -55,7 +55,7 @@ protocol.registerSchemesAsPrivileged([
     },
   },
   {
-    // Sidebar leading-icon protocol — serves the project's auto-detected
+    // Sidebar leading-icon protocol - serves the project's auto-detected
     // favicon. Implementation in main/protocol/sb-favicon.ts; renderer
     // uses it via <img src="sb-favicon://favicon?path=...">.
     scheme: 'sb-favicon',
@@ -67,7 +67,7 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
-// Single instance lock — prevent multiple windows
+// Single instance lock - prevent multiple windows
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
   app.quit()
@@ -145,7 +145,7 @@ function createWindow(): BrowserWindow {
     shell.openExternal(url)
   })
 
-  // Intercept ⌘W / ⌘⇧W — renderer decides whether to close a tab, window, or app
+  // Intercept ⌘W / ⌘⇧W - renderer decides whether to close a tab, window, or app
   window.webContents.on('before-input-event', (event, input) => {
     if ((input.meta || input.control) && input.key.toLowerCase() === 'w' && input.type === 'keyDown') {
       event.preventDefault()
@@ -180,7 +180,7 @@ function createWindow(): BrowserWindow {
       const levels = ['debug', 'info', 'warn', 'error']
       const src = sourceId ? sourceId.split('/').pop() : ''
       console.log(`[renderer:${levels[level] ?? level}] ${message} (${src}:${line})`)
-    } catch { /* EPIPE if stdout is closed — ignore */ }
+    } catch { /* EPIPE if stdout is closed - ignore */ }
   })
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {
@@ -194,7 +194,7 @@ function createWindow(): BrowserWindow {
 
 /**
  * Resolve `sb-tour://<id>.mp4` to a file path under `videos/dist/`.
- * Falls through to a 404 if the file doesn't exist — the renderer's
+ * Falls through to a 404 if the file doesn't exist - the renderer's
  * <video> error handler will show the text-only fallback.
  */
 function registerTourProtocol(): void {
@@ -218,7 +218,7 @@ function registerTourProtocol(): void {
   for (const r of roots) {
     if (fs.existsSync(r)) { videosRoot = r; break }
   }
-  log.info(`[tour] videosRoot = ${videosRoot ?? '(none found)'} — searched: ${roots.join(' | ')}`)
+  log.info(`[tour] videosRoot = ${videosRoot ?? '(none found)'} - searched: ${roots.join(' | ')}`)
 
   protocol.handle('sb-tour', async (request) => {
     log.info(`[tour] request: ${request.url}`)
@@ -227,7 +227,7 @@ function registerTourProtocol(): void {
       // `new URL('sb-tour://welcome.mp4')` parses welcome.mp4 as the
       // hostname (with a trailing pathname of '/'), NOT as the path.
       // Concatenating hostname+pathname therefore yields 'welcome.mp4/'
-      // — a string with a slash, which our old guard then rejected as
+      // - a string with a slash, which our old guard then rejected as
       // forbidden. Strip the trailing slash and pull just the hostname
       // when the pathname is empty/'/'.
       const rawPath = url.pathname && url.pathname !== '/' ? url.pathname : ''
@@ -249,7 +249,7 @@ function registerTourProtocol(): void {
       // Delegate to net.fetch with a file:// URL. Chromium's <video>
       // element wants byte-range responses to start playback (otherwise
       // the readyState stays at HAVE_NOTHING and onError fires after a
-      // brief delay — which is exactly the "Clip not yet available"
+      // brief delay - which is exactly the "Clip not yet available"
       // fallback we kept hitting). net.fetch on file:// gives us range
       // support for free; our previous one-shot Uint8Array Response did
       // not.
@@ -294,7 +294,7 @@ app.whenReady().then(() => {
     }
   }
 
-  // App menu — needed for ⌘, to reach the renderer
+  // App menu - needed for ⌘, to reach the renderer
   const menuTemplate: Electron.MenuItemConstructorOptions[] = [
     {
       label: app.name,
@@ -350,12 +350,12 @@ app.whenReady().then(() => {
   registerLspHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
-  // Auto-update — silent check on launch when packaged. No-op in dev
+  // Auto-update - silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what
   // version to compare against. See `src/main/updater.ts`.
   registerAutoUpdater(mainWindow)
 
-  // Provider registry — new agent bridge (SDK-based)
+  // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
   providerRegistry.registerIpcHandlers()
 

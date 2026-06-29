@@ -1,4 +1,4 @@
-# Rate Limit Event Handling — Design
+# Rate Limit Event Handling - Design
 
 **Date:** 2026-06-10
 **Status:** Approved
@@ -12,7 +12,7 @@ with `rate_limit_info.status === 'rejected'`. Without handling this, turns silen
 explanation surfaced to the user.
 
 Switchboard is currently on `@anthropic-ai/claude-agent-sdk ^0.2.114`. The `rate_limit_event`
-message type and `SDKRateLimitInfo` shape have been stable since 0.2.77 — no SDK upgrade is
+message type and `SDKRateLimitInfo` shape have been stable since 0.2.77 - no SDK upgrade is
 needed to fix this.
 
 ## Goal
@@ -21,7 +21,7 @@ Surface a clear, actionable error to the user when their Claude Code credit wind
 without introducing new event types, new UI components, or any risk to existing users who are
 nowhere near their limits.
 
-## Decision: Approach A — Adapter-only, zero new types
+## Decision: Approach A - Adapter-only, zero new types
 
 Add a single `case 'rate_limit_event':` to the `handleSDKMessage` switch in
 `claude-adapter.ts`. On `status === 'rejected'`, emit the existing `RuntimeErrorEvent` +
@@ -30,9 +30,9 @@ dropped.
 
 **Rationale:**
 - Zero changes to `provider-events.ts`, `ChatPanel.tsx`, `MessageBubble.tsx`, or
-  `exportMarkdown.ts` — the existing error bubble and red-status-dot rendering cover everything.
+  `exportMarkdown.ts` - the existing error bubble and red-status-dot rendering cover everything.
 - No IPC schema changes means no renderer-side risk.
-- `allowed_warning` handling (proactive near-limit toasts) is explicitly deferred — it can be a
+- `allowed_warning` handling (proactive near-limit toasts) is explicitly deferred - it can be a
   clean follow-up PR if needed. The user confirmed: only surface on hard rejection.
 - The SDK likely fires one `rate_limit_event` per turn; debounce guards are unnecessary
   complexity for now.
@@ -81,11 +81,11 @@ case 'rate_limit_event': {
 
 ### Files NOT changed
 
-- `src/shared/provider-events.ts` — no new event types
-- `src/renderer/components/chat/ChatPanel.tsx` — existing `error` handler covers it
-- `src/renderer/components/chat/MessageBubble.tsx` — existing red error bubble covers it
-- `src/main/ipc/enrichDisplayBody.ts` — error messages already handled
-- `src/main/agent/exportMarkdown.ts` — error messages already export as plain text
+- `src/shared/provider-events.ts` - no new event types
+- `src/renderer/components/chat/ChatPanel.tsx` - existing `error` handler covers it
+- `src/renderer/components/chat/MessageBubble.tsx` - existing red error bubble covers it
+- `src/main/ipc/enrichDisplayBody.ts` - error messages already handled
+- `src/main/agent/exportMarkdown.ts` - error messages already export as plain text
 
 ## Tests
 
@@ -102,9 +102,9 @@ New file `tests/unit/claude-adapter-rate-limit.test.ts`:
 
 ## Out of scope
 
-- `allowed_warning` near-limit toasts — deferred.
-- New `RuntimeRateLimitEvent` type — deferred until there's a reason to distinguish rate-limit
+- `allowed_warning` near-limit toasts - deferred.
+- New `RuntimeRateLimitEvent` type - deferred until there's a reason to distinguish rate-limit
   errors from other errors in the renderer.
-- Codex / OpenCode adapters — Codex already forwards `account/rateLimits/updated` via its own
+- Codex / OpenCode adapters - Codex already forwards `account/rateLimits/updated` via its own
   event pipeline. OpenCode (ACP) has no equivalent yet.
-- SDK upgrade to 0.3.x — orthogonal; tracked separately.
+- SDK upgrade to 0.3.x - orthogonal; tracked separately.

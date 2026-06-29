@@ -28,7 +28,7 @@ interface ManagedAgent {
   seenToolIds: Set<string>
 }
 
-/** Clean env for spawning CLI — strip ELECTRON_RUN_AS_NODE, ensure PATH is complete */
+/** Clean env for spawning CLI - strip ELECTRON_RUN_AS_NODE, ensure PATH is complete */
 function cleanEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE

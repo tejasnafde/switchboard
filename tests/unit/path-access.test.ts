@@ -36,7 +36,7 @@ describe('assertCwdReadable', () => {
 
   it('throws TccAccessError on EPERM under a protected path', async () => {
     // Simulate by creating a dir under ~/Downloads (a real TCC root) and
-    // dropping read perms — fs.access(R_OK) will return EACCES, which we
+    // dropping read perms - fs.access(R_OK) will return EACCES, which we
     // map to TccAccessError. (We can't fabricate EPERM portably, but the
     // handler treats EACCES the same.)
     const home = process.env.HOME!
@@ -45,7 +45,7 @@ describe('assertCwdReadable', () => {
     try {
       dir = await mkdtemp(join(root, 'switchboard-tcc-test-'))
     } catch {
-      // No write access to ~/Downloads in this env — skip.
+      // No write access to ~/Downloads in this env - skip.
       return
     }
     try {

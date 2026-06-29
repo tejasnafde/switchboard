@@ -34,7 +34,7 @@ describe('archiveActionForStatusChange', () => {
   })
 
   it('returns "none" when next is undefined (status not in patch)', () => {
-    // updateKanbanCard receives a partial patch — no `status` key means
+    // updateKanbanCard receives a partial patch - no `status` key means
     // the column isn't changing, so no archive action.
     expect(archiveActionForStatusChange('done', undefined)).toBe('none')
     expect(archiveActionForStatusChange('backlog', undefined)).toBe('none')

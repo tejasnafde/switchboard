@@ -55,7 +55,7 @@ export async function resolveDefinition(args: ResolveArgs): Promise<ResolvedDefi
       /* fall through to grep / tree-sitter */
     }
   }
-  // git grep fallback — works for every language when LSP can't resolve.
+  // git grep fallback - works for every language when LSP can't resolve.
   if (args.sources.grep) {
     try {
       const hits = await args.sources.grep({ symbol: args.symbol })

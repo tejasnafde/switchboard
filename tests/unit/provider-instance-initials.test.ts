@@ -1,5 +1,5 @@
 /**
- * `providerInstanceInitials` — pure helper that produces the 2-character
+ * `providerInstanceInitials` - pure helper that produces the 2-character
  * badge shown in the instance rail / picker chip / settings card. Lifted
  * from t3code's helper of the same name.
  */

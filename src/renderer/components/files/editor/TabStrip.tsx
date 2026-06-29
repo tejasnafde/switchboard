@@ -4,7 +4,7 @@
  * focuses the tab; clicking the x closes it (with confirm if dirty).
  *
  * Drag-to-reorder uses the same `@dnd-kit` we already pull for the
- * sidebar — keeps the bundle slim. We don't try to be clever about
+ * sidebar - keeps the bundle slim. We don't try to be clever about
  * overflow; the strip uses `overflowX: auto` so a packed strip pans
  * horizontally on hover.
  */
@@ -22,7 +22,7 @@ function basename(path: string): string {
 }
 
 // Stable empty reference so Zustand's getSnapshot never returns a fresh []
-// on every call — that would trigger an infinite useSyncExternalStore loop.
+// on every call - that would trigger an infinite useSyncExternalStore loop.
 const EMPTY_TABS: string[] = []
 
 export function TabStrip({ sessionId }: Props): React.ReactElement | null {

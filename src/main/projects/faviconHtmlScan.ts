@@ -4,7 +4,7 @@
  * files for a `<link rel="icon" href="...">` tag, resolve the href against
  * the file's directory, and return the result *if* the resolved path is
  * still inside the project root. Anything escaping (../../etc/passwd) is
- * rejected — same posture as path-access.ts.
+ * rejected - same posture as path-access.ts.
  *
  * Two functions:
  *   - findFaviconHrefInHtml(html): pure regex-based parser. Doesn't know
@@ -110,7 +110,7 @@ function resolveHrefToAbs(
     : resolve(htmlFileAbs, '..', cleaned)
 
   // Containment check: candidateAbs must be inside projectRoot. Use
-  // path.relative — if the result starts with `..` or is absolute, the
+  // path.relative - if the result starts with `..` or is absolute, the
   // candidate escapes the root.
   const rel = relative(projectRoot, candidateAbs)
   if (rel.startsWith('..' + sep) || rel === '..' || isAbsolute(rel)) return null

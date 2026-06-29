@@ -1,5 +1,5 @@
 /**
- * Claude Agent SDK adapter — streaming input mode.
+ * Claude Agent SDK adapter - streaming input mode.
  *
  * Uses @anthropic-ai/claude-agent-sdk's query() with an AsyncIterable prompt
  * so the session stays alive across turns. sendTurn pushes a new user message
@@ -28,7 +28,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *   1. If `hint` is already a UUID, use it.
  *   2. Otherwise, look up children of `threadId` recorded in
  *      `thread_sessions` (Claude SDK emits a `session` event on every
- *      new session_id it assigns — we persist those as children) and
+ *      new session_id it assigns - we persist those as children) and
  *      pick the most recent UUID.
  *   3. If nothing matches, return undefined → SDK starts a fresh session.
  */
@@ -43,7 +43,7 @@ function resolveClaudeResumeId(threadId: string, hint?: string): string | undefi
       const id = ids[i]
       if (UUID_RE.test(id)) return id
     }
-  } catch { /* DB might not be ready yet — fine, we'll start fresh */ }
+  } catch { /* DB might not be ready yet - fine, we'll start fresh */ }
   return undefined
 }
 import type {
@@ -58,7 +58,7 @@ import type { ProviderSkill } from '@shared/types'
 
 const log = createLogger('provider:claude')
 
-// SDK types — dynamic import at runtime
+// SDK types - dynamic import at runtime
 type SDKQuery = import('@anthropic-ai/claude-agent-sdk').Query
 type SDKMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
 type SDKUserMessage = import('@anthropic-ai/claude-agent-sdk').SDKUserMessage
@@ -96,7 +96,7 @@ export function buildClaudeCliEnv(): Record<string, string> {
     `${home}/.local/bin`,
   ].join(':')
   raw.PATH = `${extra}:${raw.PATH || '/usr/bin:/bin'}`
-  // Strip undefined values — SDK expects Record<string, string>
+  // Strip undefined values - SDK expects Record<string, string>
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(raw)) {
     if (v !== undefined) env[k] = v
@@ -104,7 +104,7 @@ export function buildClaudeCliEnv(): Record<string, string> {
   return env
 }
 
-/** Find the claude binary — cached after first lookup */
+/** Find the claude binary - cached after first lookup */
 let cachedClaudeBin: string | undefined
 export function findClaudeBin(): string | undefined {
   if (cachedClaudeBin) return cachedClaudeBin
@@ -150,7 +150,7 @@ import {
 } from '../claude-session-migrate'
 import { shapeQuestionAnswers } from './question-answers'
 
-// ─── Prompt queue — push new SDKUserMessages into a running query ──
+// ─── Prompt queue - push new SDKUserMessages into a running query ──
 
 class PromptQueue implements AsyncIterable<SDKUserMessage> {
   private buffer: SDKUserMessage[] = []
@@ -273,7 +273,7 @@ interface ActiveSession {
    */
   turnStartedAt: number | null
   /**
-   * Slash commands the SDK exposes for this session — captured from the
+   * Slash commands the SDK exposes for this session - captured from the
    * `system/init` event's `slash_commands` field. Surfaced to the renderer
    * via `listSkills()` so the chat-input slash menu can include
    * Claude-defined commands (`/commit`, `/explain`, user-defined `.claude/commands/*`).
@@ -316,12 +316,12 @@ export class ClaudeAdapter implements ProviderAdapter {
     // right resume target for any thread that's had at least one turn.
     let resumeId = resolveClaudeResumeId(opts.threadId, opts.resumeSessionId)
     if (opts.resumeSessionId && !resumeId) {
-      log.info(`resume: no valid UUID for thread ${opts.threadId} (hint=${opts.resumeSessionId}) — starting fresh`)
+      log.info(`resume: no valid UUID for thread ${opts.threadId} (hint=${opts.resumeSessionId}) - starting fresh`)
     }
 
     // Detect oauth_dir rotation. If the previous startSession ran under a
     // different CLAUDE_CONFIG_DIR, the session JSONL lives in that profile,
-    // not the new one — the SDK's resume call would throw "No conversation
+    // not the new one - the SDK's resume call would throw "No conversation
     // found with session ID". Copy the JSONL across so resume succeeds and
     // turn-by-turn context is preserved.
     const newOauthDir = opts.resolvedOauthDir ?? null
@@ -355,14 +355,14 @@ export class ClaudeAdapter implements ProviderAdapter {
         }
       }
       if (migrateResult && !migrateResult.ok) {
-        log.warn(`session migrate failed (${migrateResult.reason}) — starting fresh`)
+        log.warn(`session migrate failed (${migrateResult.reason}) - starting fresh`)
         onEvent({
           type: 'content',
           threadId: opts.threadId,
           messageId: `sys_migrate_${Date.now()}`,
           text:
             migrateResult.reason === 'source-missing'
-              ? '(Couldn\'t migrate session history across profiles — original JSONL is gone. Starting fresh under the new instance.)'
+              ? '(Couldn\'t migrate session history across profiles - original JSONL is gone. Starting fresh under the new instance.)'
               : `(Couldn't migrate session history: ${migrateResult.detail}. Starting fresh.)`,
           streamKind: 'reasoning',
         })
@@ -422,17 +422,17 @@ export class ClaudeAdapter implements ProviderAdapter {
       if (active.query) {
         try {
           await active.query.setPermissionMode(RUNTIME_MODE_TO_PERMISSION[runtimeMode])
-        } catch { /* ignore — best-effort */ }
+        } catch { /* ignore - best-effort */ }
       }
     }
 
-    // Immediately show "running" in UI — don't wait for SDK import + query startup
+    // Immediately show "running" in UI - don't wait for SDK import + query startup
     if (active.session.status !== 'running') {
       active.session.status = 'running'
       active.onEvent({ type: 'status', threadId, status: 'running' })
     }
 
-    // Build SDK content — text + optional image blocks
+    // Build SDK content - text + optional image blocks
     let content: string | Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }>
     if (images && images.length > 0) {
       const blocks: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
@@ -458,7 +458,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       content = message
     }
 
-    // Push the message into the prompt queue — must match SDKUserMessage shape:
+    // Push the message into the prompt queue - must match SDKUserMessage shape:
     // { type: 'user', message: MessageParam, parent_tool_use_id: string | null }
     const userMsg: SDKUserMessage = {
       type: 'user',
@@ -468,7 +468,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     active.prompt.push(userMsg)
     // Stamp wall-clock turn start now (not when SDK actually picks it up).
     // The user-perceived "Worked for X" should include any queueing delay
-    // — that's the experience they're judging.
+    // - that's the experience they're judging.
     active.turnStartedAt = Date.now()
 
     // If we haven't started the SDK query yet, kick it off now
@@ -482,7 +482,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   /**
    * Start the long-running query + drain its message stream.
-   * Runs once per session — subsequent sendTurn calls just push to the queue.
+   * Runs once per session - subsequent sendTurn calls just push to the queue.
    */
   private async startDraining(threadId: string, active: ActiveSession): Promise<void> {
     const sdk = await import('@anthropic-ai/claude-agent-sdk')
@@ -518,7 +518,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       // the tool's input so the SDK's own tool shortcircuits with those
       // values (rather than trying to prompt interactively itself).
       //
-      // Previous bug: we set `__user_answers` on updatedInput — the SDK's
+      // Previous bug: we set `__user_answers` on updatedInput - the SDK's
       // AskUserQuestion tool doesn't know that field, so it fell back to
       // its default (first option). T3 Code uses the same pattern as us
       // here: return `allow` + updatedInput that contains a top-level
@@ -543,7 +543,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // Shape into the SDK's wire contract: answers keyed by question
           // *text* (not header/id), multi-select joined as comma-space string.
           // See `question-answers.ts` for the regression that motivated the
-          // helper — keying by header silently dropped every answer.
+          // helper - keying by header silently dropped every answer.
           const shaped = shapeQuestionAnswers(questions, userAnswers)
 
           log.info(`question answered: ${threadId} requestId=${requestId} answers=${JSON.stringify(shaped.answers).slice(0, 300)}`)
@@ -555,7 +555,7 @@ export class ClaudeAdapter implements ProviderAdapter {
             },
           } as PermissionResult
         }
-        log.warn(`AskUserQuestion: parseQuestions returned 0 — falling through to regular approval`)
+        log.warn(`AskUserQuestion: parseQuestions returned 0 - falling through to regular approval`)
       }
 
       const currentMode = active.session.runtimeMode
@@ -568,7 +568,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         const reason = denialMessage(currentMode, toolName)
         // Emit a UI-facing event so the renderer can show a denial pill in
         // the chat stream. Without this, the user only sees the agent's next
-        // prose reaction to the denial — no visible policy-level signal.
+        // prose reaction to the denial - no visible policy-level signal.
         active.onEvent({
           type: 'tool.denied',
           threadId,
@@ -581,7 +581,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           message: reason,
         } as PermissionResult
       }
-      // 'prompt' — fall through to approval request flow below
+      // 'prompt' - fall through to approval request flow below
 
       const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const detail = typeof toolInput === 'object'
@@ -617,14 +617,14 @@ export class ClaudeAdapter implements ProviderAdapter {
       permissionMode,
       // Always enable the dangerously-skip-permissions CLI flag so the user
       // can toggle to Full Access mid-session. Our `canUseTool` is the
-      // authoritative gate — the SDK-level checks become advisory. Without
+      // authoritative gate - the SDK-level checks become advisory. Without
       // this flag, setPermissionMode('bypassPermissions') mid-turn throws
       // "session was not launched with --dangerously-skip-permissions".
       allowDangerouslySkipPermissions: true,
       canUseTool,
       abortController: active.abortController,
       ...(active.session.sessionId ? { resume: active.session.sessionId } : {}),
-      // Electron doesn't inherit full shell PATH — pass explicit binary + env
+      // Electron doesn't inherit full shell PATH - pass explicit binary + env
       ...(claudeBin ? { pathToClaudeCodeExecutable: claudeBin } : {}),
       env,
       includePartialMessages: true,
@@ -650,7 +650,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       active.session.status = 'idle'
       active.onEvent({ type: 'status', threadId, status: 'idle' })
     } catch (err) {
-      // Session was torn down (stop/archive/rotate) — the subprocess exit is
+      // Session was torn down (stop/archive/rotate) - the subprocess exit is
       // expected. Bail before the retry branch, which would otherwise read
       // "exited with code" and respawn a fresh query, re-leaking a process.
       if (this.sessions.get(threadId) !== active) return
@@ -673,7 +673,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           type: 'content',
           threadId,
           messageId: `sys_retry_${Date.now()}`,
-          text: '(Retrying as new session — could not resume imported conversation)',
+          text: '(Retrying as new session - could not resume imported conversation)',
           streamKind: 'reasoning',
         })
 
@@ -720,7 +720,7 @@ export class ClaudeAdapter implements ProviderAdapter {
   async listSkills(threadId: string): Promise<ProviderSkill[]> {
     const active = this.sessions.get(threadId)
     if (!active) return []
-    // Prefer the live SDK source-of-truth — `supportedCommands()` reflects
+    // Prefer the live SDK source-of-truth - `supportedCommands()` reflects
     // both built-ins and any user-defined commands in `.claude/commands/*`.
     // If the query hasn't started yet, fall back to whatever we captured
     // from the system/init event (or empty if neither has happened yet).
@@ -802,7 +802,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     const active = this.sessions.get(threadId)
     if (!active) return
 
-    // Reap the spawned `claude` CLI subprocess — closing the queue + aborting
+    // Reap the spawned `claude` CLI subprocess - closing the queue + aborting
     // doesn't kill it, so each stopped session would leak an OS process.
     if (active.query) {
       try {
@@ -853,7 +853,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         // Capture slash commands the SDK announces in `system/init`.
         // The SDK ships them in `slash_commands` (string[]) on subtype 'init',
         // and on newer builds adds a richer `commands` (SlashCommand[]) field.
-        // We accept either shape — the slash menu will render whichever
+        // We accept either shape - the slash menu will render whichever
         // arrived. Cached on the active session so listSkills() can return
         // it without re-asking the SDK.
         if (sys.subtype === 'init') {
@@ -871,7 +871,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // session_id mid-turn (i.e. we asked to resume X and got Y back).
           // Previously we recorded on every system event, which incorrectly
           // linked unrelated chats the user just happened to open into some
-          // other thread's ancestry chain — and hid them from the sidebar.
+          // other thread's ancestry chain - and hid them from the sidebar.
           const rotated = previousId && previousId !== newId && newId !== threadId
           active.session.sessionId = newId
           if (rotated) {
@@ -886,7 +886,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           })
         }
 
-        // Compaction event — context window shrank, refresh usage
+        // Compaction event - context window shrank, refresh usage
         if (sys.subtype === 'status' && sys.compact_result === 'success') {
           log.info(`compaction completed: ${threadId}`)
           if (active.query) {
@@ -1000,7 +1000,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           if (block.type === 'tool_use' && block.id) {
             // Skip tools we render with custom UI (QuestionCard / PlanCard).
             // The canUseTool handler intercepts these and emits question.asked /
-            // plan.proposed events instead — showing the raw JSON tool call
+            // plan.proposed events instead - showing the raw JSON tool call
             // alongside the custom UI would be duplicate + ugly.
             if (block.name && CUSTOM_UI_TOOLS.has(block.name)) continue
             active.currentMessageId = null
@@ -1057,7 +1057,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           })
         }
 
-        // Between turns — waiting for next user message
+        // Between turns - waiting for next user message
         active.session.status = 'idle'
         active.onEvent({ type: 'status', threadId, status: 'idle' })
         break

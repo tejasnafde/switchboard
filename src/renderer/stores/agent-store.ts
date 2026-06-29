@@ -10,7 +10,7 @@ export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
 /**
  * Module-level "last chosen" runtime mode used as the default seed when a
  * new session is created and the caller doesn't pass an explicit mode. This
- * is the user-visible "source of truth" for the default — it gets hydrated
+ * is the user-visible "source of truth" for the default - it gets hydrated
  * from settings DB at app boot and updated whenever the user picks a mode
  * in any chat. Without this, every newly opened chat (sidebar new, kanban
  * card click, search-modal jump) would silently revert to 'sandbox' even
@@ -33,7 +33,7 @@ interface AgentSession {
   projectPath?: string
   /**
    * Absolute path to the git worktree backing this session, if it was
-   * created with worktree mode. When present, this — not `projectPath` —
+   * created with worktree mode. When present, this - not `projectPath` -
    * is the cwd handed to the agent adapter at start. `projectPath`
    * always points at the parent repo so the sidebar can still group
    * by project.
@@ -49,12 +49,12 @@ interface AgentSession {
   title?: string
   /** Permission mode for this session (sandbox / accept-edits / full-access / plan) */
   runtimeMode: RuntimeMode
-  /** Model identifier (provider-specific — e.g. 'claude-opus-4-5' or 'gpt-5') */
+  /** Model identifier (provider-specific - e.g. 'claude-opus-4-5' or 'gpt-5') */
   model?: string
   /**
    * Currently selected provider-instance id (named credential set). When
    * undefined, the registry resolves to `<agentType>-default` at session
-   * start. Changing this requires a session restart — handled by the
+   * start. Changing this requires a session restart - handled by the
    * ChatPanel agent/instance change flow.
    */
   instanceId?: string
@@ -97,7 +97,7 @@ interface AgentStore {
   sessions: AgentSession[]
   activeSessionId: string | null
   /**
-   * Pending "scroll to this message" request — set by SearchModal when the
+   * Pending "scroll to this message" request - set by SearchModal when the
    * user clicks a result, or by the Saved-bookmarks list. MessageList picks
    * it up via its subscription and tells the virtualizer to scroll to the
    * right row, then clears.
@@ -131,8 +131,8 @@ interface AgentStore {
   setTokenUsage: (sessionId: string, usage: { usedTokens: number; maxTokens: number | null }) => void
   /**
    * Switch the agent backend (claude-code / codex / opencode) for a
-   * session. Required so consumers like StatusBar — which read from the
-   * store rather than the chat-panel-local `agentType` state — see the
+   * session. Required so consumers like StatusBar - which read from the
+   * store rather than the chat-panel-local `agentType` state - see the
    * change immediately. Without this, the bottom status bar lagged the
    * dropdown by a full provider round-trip.
    */
@@ -145,7 +145,7 @@ interface AgentStore {
   /**
    * Switch the worktree pointer mid-session. Called when the branch
    * picker's `swap-cwd` action fires. Does NOT restart the running
-   * adapter — the change applies to the next session launch (e.g. on
+   * adapter - the change applies to the next session launch (e.g. on
    * app restart) and to anything that reads `worktreePath` reactively
    * (sidebar tags, future cwd badges).
    */
@@ -156,7 +156,7 @@ interface AgentStore {
   ) => void
   requestScrollToMessage: (sessionId: string, messageId: string, query?: string) => void
   /** Bookmarks know only the timestamp at save time, so the click path uses
-   *  this variant — MessageList resolves it to the message id on its end. */
+   *  this variant - MessageList resolves it to the message id on its end. */
   requestScrollToTimestamp: (sessionId: string, messageTimestamp: number) => void
   clearScrollToMessage: () => void
 }
@@ -184,7 +184,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     // Tear down the main-process adapter session before dropping the
     // renderer state. Without this, archiving / closing a tab leaks the
     // adapter process (Codex app-server, OpenCode ACP child, Claude SDK
-    // query loop) — they keep their cwd, file handles, and TCP sockets
+    // query loop) - they keep their cwd, file handles, and TCP sockets
     // until the whole Electron app exits. Fire-and-forget: if the main
     // process has already cleaned the session up (e.g. on shutdown) the
     // IPC handler is a no-op.
@@ -343,16 +343,16 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setAgentType: (sessionId, type) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        // Also clear the model — a model id from one provider is almost
+        // Also clear the model - a model id from one provider is almost
         // never valid on another (e.g. nvidia-nim/* on Codex). Clearing
         // forces the next session to use the new provider's default
         // instead of carrying over an orphan id that the ModelPicker
-        // would render as "custom". Same logic for `instanceId` —
+        // would render as "custom". Same logic for `instanceId` -
         // instances are scoped to a single agent kind; carrying one
         // over after a switch would point at a stale row from the
         // previous kind. `resumeSessionId` is also cleared because
         // session-id namespaces differ across kinds (Claude UUID vs.
-        // Codex rollout id) — there's no migration path.
+        // Codex rollout id) - there's no migration path.
         s.id === sessionId
           ? { ...s, type, model: undefined, instanceId: undefined, resumeSessionId: undefined }
           : s
@@ -362,7 +362,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setInstanceId: (sessionId, instanceId) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        // Keep `resumeSessionId` — the Claude adapter migrates the session
+        // Keep `resumeSessionId` - the Claude adapter migrates the session
         // JSONL across profiles when `oauth_dir` differs, so resume by UUID
         // still works. Clearing here would silently drop conversation
         // history on every instance switch.

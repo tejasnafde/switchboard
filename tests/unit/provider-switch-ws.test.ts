@@ -5,7 +5,7 @@
  * → back over the wire). Proves the daily plan-hopping workflow survives a
  * backend running on a VM, with no Electron and no real provider auth.
  *
- * DB access in the registry's START_SESSION path is mocked — this exercises the
+ * DB access in the registry's START_SESSION path is mocked - this exercises the
  * transport + registry + adapter wiring, not SQLite.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest'

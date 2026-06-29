@@ -42,7 +42,7 @@ export function slugForBranch(branch: string): string {
 }
 
 /**
- * Strip any trailing separator before taking the basename — both POSIX
+ * Strip any trailing separator before taking the basename - both POSIX
  * and Windows conventions. Then slugify so the on-disk dir name is
  * file-system safe regardless of what the user named their repo.
  */
@@ -54,7 +54,7 @@ export function slugForRepo(projectPath: string): string {
   return slugify(base, 40) || 'repo'
 }
 
-/** 8-char hex hash of the absolute project path — collision avoidance. */
+/** 8-char hex hash of the absolute project path - collision avoidance. */
 function projectPathHash(projectPath: string): string {
   return createHash('sha1').update(projectPath).digest('hex').slice(0, 8)
 }

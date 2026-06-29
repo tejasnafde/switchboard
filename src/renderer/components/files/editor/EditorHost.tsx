@@ -1,11 +1,11 @@
 /**
  * Mounts a single CodeMirror EditorView per host instance and swaps in
  * the active buffer's state on bufferId change. The view is created
- * once and reused — `view.setState(buffer.state)` preserves cursor /
+ * once and reused - `view.setState(buffer.state)` preserves cursor /
  * scroll / undo because each Buffer carries its own EditorState.
  *
  * On every doc-changing transaction, the view dispatches the new state
- * back to the editor-store via `setState(id, state)` — that's the
+ * back to the editor-store via `setState(id, state)` - that's the
  * single seat of truth for dirty tracking and tab persistence.
  *
  * Theme + read-only changes propagate via Compartments without rebuilding
@@ -37,7 +37,7 @@ import { lspChangeDoc, lspOpenDoc } from '../../../services/lspClient'
 
 interface Props {
   bufferId: string | null
-  /** Used to resolve save targets — passed verbatim to `files:write-file`. */
+  /** Used to resolve save targets - passed verbatim to `files:write-file`. */
   repoRoot: string | null
 }
 
@@ -61,7 +61,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
   // Construct the EditorView exactly once per mount.
   useEffect(() => {
     if (!containerRef.current || viewRef.current) return
-    // ⌘S / Ctrl+S — save active buffer. Prec.high so it beats CM6 defaults.
+    // ⌘S / Ctrl+S - save active buffer. Prec.high so it beats CM6 defaults.
     const saveKeymap = Prec.high(
       keymap.of([
         {
@@ -92,7 +92,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
                 log.warn('save failed', res.error)
                 return
               }
-              // Changed on disk since open — let the user choose, don't drop it.
+              // Changed on disk since open - let the user choose, don't drop it.
               const overwrite = window.confirm(
                 `"${buf.path}" changed on disk since you opened it.\n\n` +
                   `OK = overwrite the disk version with your edits\n` +
@@ -126,7 +126,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       ]),
     )
     // The ⌘-click extension needs the live path of the currently mounted
-    // buffer — we close over a ref so swapping tabs updates the lookup
+    // buffer - we close over a ref so swapping tabs updates the lookup
     // without re-creating the view.
     const getPathForJump = (): string | null => {
       const id = mountedBufferRef.current
@@ -166,7 +166,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       initializedRef.current.clear()
     }
   }, [])
-  // Note: themeName intentionally NOT in deps — view persists; theme
+  // Note: themeName intentionally NOT in deps - view persists; theme
   // updates via the dedicated effect below using a Compartment.
 
   // Swap the active buffer's state into the view when bufferId changes.
@@ -191,7 +191,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
       initializedRef.current.add(bufferId)
     }
     view.setState(target)
-    // setState bypasses the dispatch override — round-trip to the store.
+    // setState bypasses the dispatch override - round-trip to the store.
     useEditorStore.getState().setState(bufferId, view.state)
     // Focus on open/switch so focus-routed keys (⌘W, F12) hit the editor.
     view.focus()
@@ -259,7 +259,7 @@ export function EditorHost({ bufferId, repoRoot }: Props): React.ReactElement {
     return () => clearTimeout(timeout)
   }, [bufferId, repoRoot, bufState])
 
-  // Theme propagation via Compartment — no state rebuild.
+  // Theme propagation via Compartment - no state rebuild.
   useEffect(() => {
     const view = viewRef.current
     if (!view) return

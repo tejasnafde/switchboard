@@ -22,7 +22,7 @@ import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branchPickerP
 interface TriggerProps {
   cwd: string | null
   /**
-   * Called when the picker resolves to a `swap-cwd` action — the picked
+   * Called when the picker resolves to a `swap-cwd` action - the picked
    * branch already has a worktree at `newCwd`, so the caller should
    * update its session/conversation pointer to the new path. Caller
    * also persists via `app.setConversationWorktree`.
@@ -160,7 +160,7 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
       }
       setSwitching(ref.name)
       if (action.kind === 'swap-cwd') {
-        // No git command — the picked branch already lives in another
+        // No git command - the picked branch already lives in another
         // worktree on disk. Caller persists the new cwd onto its
         // session/conversation row.
         onSwapWorktree?.(action.newCwd, ref.name)

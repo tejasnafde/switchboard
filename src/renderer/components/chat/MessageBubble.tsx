@@ -24,7 +24,7 @@ interface MessageBubbleProps {
   message: ChatMessage
   /**
    * Conversation id this bubble belongs to. Required for fork-from-message
-   * — without it, dual-chat right-clicks on the right panel would silently
+   * - without it, dual-chat right-clicks on the right panel would silently
    * fork the *left* panel's session (the global activeSessionId). When
    * undefined we fall back to activeSessionId, which is fine for the
    * single-pane case.
@@ -35,7 +35,7 @@ interface MessageBubbleProps {
    * (built-ins + agent-advertised skills). Used to gate the leading-`/cmd`
    * chip so typos like `/halp` render as plain text instead of
    * masquerading as recognized skills. Undefined while the session's
-   * skills haven't been published yet — chip rendering is suppressed
+   * skills haven't been published yet - chip rendering is suppressed
    * rather than risk a false positive.
    */
   knownSkillNames?: Set<string>
@@ -77,7 +77,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   const [forkBusy, setForkBusy] = useState<false | 'plain' | 'worktree'>(false)
   const [forkError, setForkError] = useState<string | null>(null)
   // After a successful "Fork to worktree" the new branch name flashes
-  // briefly at the bottom of the chat — tells the user where their files
+  // briefly at the bottom of the chat - tells the user where their files
   // landed without forcing them to dig into the sidebar's secondary line.
   const [forkToast, setForkToast] = useState<string | null>(null)
 
@@ -115,7 +115,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // Inline file-pill enhancement: replace `<code>src/foo.ts:42-58</code>`
   // with clickable chips that open the file viewer at that line range.
   // Verifies existence on disk via debounced files:resolve before swapping
-  // — paths the agent hallucinated stay as plain code.
+  // - paths the agent hallucinated stay as plain code.
   useEffect(() => {
     const root = markdownRef.current
     if (!root) return
@@ -154,7 +154,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         )
       })
 
-      // Async existence check — if the file doesn't resolve, revert to plain code.
+      // Async existence check - if the file doesn't resolve, revert to plain code.
       const api = window.api
       if (api?.files?.resolve) {
         api.files.resolve(projectPath, ref.path).then((res: { exists: boolean }) => {
@@ -163,7 +163,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             code.textContent = originalText
             span.replaceWith(code)
           }
-        }).catch(() => { /* ignore — leave optimistic chip */ })
+        }).catch(() => { /* ignore - leave optimistic chip */ })
       }
       return span
     })
@@ -219,7 +219,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   const handleForkRequest = async (withWorktree: boolean = false) => {
     const store = useAgentStore.getState()
     // Prefer the conversation this bubble belongs to (passed from
-    // MessageList) over the global activeSessionId — in dual-chat the
+    // MessageList) over the global activeSessionId - in dual-chat the
     // active id tracks focus, not which panel was right-clicked.
     const sourceId = sessionId ?? store.activeSessionId
     const session = sourceId ? store.sessions.find((s) => s.id === sourceId) : null
@@ -227,7 +227,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       setForkError('No active session')
       return
     }
-    // Block forking mid-turn — Claude SDK can't safely truncate while it's
+    // Block forking mid-turn - Claude SDK can't safely truncate while it's
     // actively appending to the JSONL, and the user's freshly-typed reply
     // would race the fork's resume anchor.
     if (session.status !== 'idle') {
@@ -254,7 +254,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         setForkMenu(null)
         if (res.worktree) {
           setForkToast(`Forked to ${res.worktree.branch}`)
-          // Self-dismiss after a beat — toast is informational, not
+          // Self-dismiss after a beat - toast is informational, not
           // actionable, so a 4s window is plenty for the eye to catch.
           setTimeout(() => setForkToast(null), 4000)
         }
@@ -298,7 +298,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       data-message-id={message.id}
       data-context-source={message.role === 'assistant' ? 'chat-message' : undefined}
       onContextMenu={(e) => {
-        // Skip the menu for system / error messages — they aren't fork
+        // Skip the menu for system / error messages - they aren't fork
         // anchors. Image-lightbox right-click is portal'd to body and
         // doesn't bubble through this handler, so it stays unaffected.
         if (isSystem) return
@@ -474,13 +474,13 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             <span style={{ color: 'var(--text-muted)' }}>·</span>
             <span style={{ color: 'var(--text-muted)', fontFamily: 'inherit' }}>
               {message.denial.mode === 'plan'
-                ? 'Plan mode — switch to Sandbox/Edits to execute'
+                ? 'Plan mode - switch to Sandbox/Edits to execute'
                 : message.denial.reason}
             </span>
           </div>
         )}
 
-        {/* Per-turn duration ("Worked for 1.4s") — Cursor-style indicator
+        {/* Per-turn duration ("Worked for 1.4s") - Cursor-style indicator
             shown only on the last assistant message of a completed turn. */}
         {message.role === 'assistant' && typeof message.turnDurationMs === 'number' && (
           <div
@@ -527,7 +527,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         )}
       </div>
 
-      {/* Message action bar — sits BELOW the bubble so the buttons never
+      {/* Message action bar - sits BELOW the bubble so the buttons never
           overlap message text. Low opacity at rest; full on bubble-row
           hover (via `.message-bubble-row:hover` CSS rule). Leaves room
           here for future actions (edit, retry, thread, etc). */}
@@ -596,7 +596,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         </div>
       )}
 
-      {/* Right-click context menu — portal'd to body so it escapes the
+      {/* Right-click context menu - portal'd to body so it escapes the
           virtualizer's transformed row. Mirrors SlashCommandMenu's
           `sb-floating-surface` look so all our floating menus feel like
           one family. */}
@@ -636,7 +636,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         document.body,
       )}
 
-      {/* Image lightbox — portalled to document.body so it escapes any
+      {/* Image lightbox - portalled to document.body so it escapes any
           transformed or overflow-hidden ancestor (the virtualizer uses
           transform on each row, which otherwise clips this to the row). */}
       {previewImage && createPortal(
@@ -716,7 +716,7 @@ function ForwardMenu({ content }: { content: string }) {
   const rootRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const popoverRef = useRef<HTMLDivElement>(null)
-  // Popover position in viewport coords — recomputed on open + scroll/resize
+  // Popover position in viewport coords - recomputed on open + scroll/resize
   // so it stays anchored to the button after portalling to document.body.
   const [popoverPos, setPopoverPos] = useState<{ top: number; right: number } | null>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
@@ -774,7 +774,7 @@ function ForwardMenu({ content }: { content: string }) {
 
   const others = sessions.filter((s) => s.id !== activeSessionId)
 
-  // Used to be `if (others.length === 0) return null` — that hid the
+  // Used to be `if (others.length === 0) return null` - that hid the
   // button entirely for single-session users and made the feature
   // undiscoverable. Now always show the button; when clicked with no
   // targets, the popover shows an empty-state.
@@ -901,7 +901,7 @@ function ForwardMenu({ content }: { content: string }) {
  * dismisses on click-outside / Escape. The actual fork work runs in
  * `forkAndOpenSession` via the parent's `onFork` callback so this stays
  * a presentational component (easier to slot more actions in later
- * — Edit message, Retry from here, etc.).
+ * - Edit message, Retry from here, etc.).
  */
 function ForkContextMenu({
   x, y, busy, error, onFork, onForkWorktree, onDismiss,
@@ -920,7 +920,7 @@ function ForkContextMenu({
   const ref = useRef<HTMLDivElement>(null)
   // Clamp the menu inside the viewport so a right-click near the edge
   // doesn't push it off-screen. We render hidden on first paint, measure
-  // synchronously in useLayoutEffect, and reveal on the same frame — that
+  // synchronously in useLayoutEffect, and reveal on the same frame - that
   // way the user never sees the unclamped position flash before the
   // post-measure correction lands.
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null)

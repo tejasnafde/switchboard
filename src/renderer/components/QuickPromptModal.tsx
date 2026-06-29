@@ -122,7 +122,7 @@ export function QuickPromptModal({ open, onClose }: QuickPromptModalProps) {
             </span>
           ) : (
             <span style={{ color: 'var(--error)' }}>
-              No active chat — open or create one first.
+              No active chat - open or create one first.
             </span>
           )}
         </div>

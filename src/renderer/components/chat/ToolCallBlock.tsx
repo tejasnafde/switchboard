@@ -362,7 +362,7 @@ export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
           {summary.label}
         </span>
 
-        {/* Detail — monospace, truncated */}
+        {/* Detail - monospace, truncated */}
         {summary.detail && (
           <span style={{
             flex: 1,

@@ -58,7 +58,7 @@ function UnreadBadge({ sessionId }: { sessionId: string }) {
   )
 }
 
-/** Sum of unread counts across a workspace group — surfaces activity when the
+/** Sum of unread counts across a workspace group - surfaces activity when the
  *  workspace is collapsed and per-session badges are hidden. */
 function useGroupUnreadCount(sessionIds: string[]): number {
   // Select the sessions array (stable reference) once, then reduce with a
@@ -73,7 +73,7 @@ function useGroupUnreadCount(sessionIds: string[]): number {
 }
 
 /** Aggregated unread badge on workspace headers. Only rendered while
- *  the workspace is collapsed — when expanded, the per-session pills
+ *  the workspace is collapsed - when expanded, the per-session pills
  *  inside cover the same information and the workspace pill becomes
  *  redundant noise. */
 function WorkspaceUnreadBadge({ sessionIds, expanded }: { sessionIds: string[]; expanded?: boolean }) {
@@ -158,7 +158,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   const editRef = useRef<HTMLInputElement>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
 
-  // Persisted collapse state — single source of truth lives in layout-store
+  // Persisted collapse state - single source of truth lives in layout-store
   // so it survives reload (and the SidebarFilter's auto-expand only touches
   // the local view, never the persisted truth).
   const collapsedProjects = useLayoutStore((s) => s.sidebarCollapsedProjects)
@@ -202,7 +202,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     refreshWorkspaces()
     window.api.app.getProjects().then((saved: Project[]) => {
       if (saved?.length) {
-        // Default-collapse only on first run — once the user has expanded
+        // Default-collapse only on first run - once the user has expanded
         // anything, layout-store drives the truth across reloads.
         const stored = useLayoutStore.getState().sidebarCollapsedProjects
         if (stored.length === 0) {
@@ -359,7 +359,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           const source = session.source === 'codex' ? 'codex' : 'claude-code'
           messages = await window.api.app.loadSession(session.filePath, session.id, source)
         }
-      } catch { /* best-effort — export whatever we have */ }
+      } catch { /* best-effort - export whatever we have */ }
     }
     const content = serializeConversationToMarkdown({
       title: session.title ?? 'Conversation',
@@ -389,7 +389,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         )
       )
     } catch {
-      // best-effort — next getProjects refresh will correct state
+      // best-effort - next getProjects refresh will correct state
     }
   }, [])
 
@@ -418,7 +418,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     setProjects((prev) => prev.map((p) => p.path === projectPath ? { ...p, workspaceId } : p))
     try {
       await window.api.app.assignProjectWorkspace(projectPath, workspaceId)
-    } catch { /* optimistic — next refresh will correct */ }
+    } catch { /* optimistic - next refresh will correct */ }
   }, [])
 
   const handleCreateWorkspaceFromProject = useCallback(async (projectPath: string) => {
@@ -433,7 +433,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
 
   // Drives both same- and cross-workspace drops off the *rendered* flat
   // order (what SortableContext.items sees), not the raw `projects` array
-  // — dnd-kit's drag indices are relative to that. Cross-workspace drops
+  // - dnd-kit's drag indices are relative to that. Cross-workspace drops
   // also flip the dragged item's workspaceId so it lands in the target
   // bucket at the visual drop slot.
   const handleDragEnd = useCallback((event: DragEndEvent) => {
@@ -468,7 +468,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     if (outcome.type === 'reassign') {
       void window.api.app
         .assignProjectWorkspace(outcome.projectPath, outcome.targetWorkspaceId)
-        .catch(() => { /* optimistic — next refresh corrects */ })
+        .catch(() => { /* optimistic - next refresh corrects */ })
     }
   }, [projects, workspaces])
 
@@ -680,7 +680,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
 
       {/* Project + thread list */}
       <div className="sidebar-list">
-        {/* ── Saved bookmarks (top of sidebar — keeps the list discoverable
+        {/* ── Saved bookmarks (top of sidebar - keeps the list discoverable
               without burying it under projects) ────────────────────────── */}
         {bookmarks.length > 0 && (
           <section style={{ borderBottom: '1px solid var(--border)', marginBottom: '4px' }}>
@@ -878,7 +878,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         />
       )}
 
-      {/* Right-click on a project header — workspace assignment */}
+      {/* Right-click on a project header - workspace assignment */}
       {projectMenu && (
         <SidebarContextMenu
           x={projectMenu.x}
@@ -917,7 +917,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         />
       )}
 
-      {/* Workspace manager modal — rename / recolor / delete */}
+      {/* Workspace manager modal - rename / recolor / delete */}
       {managerOpen && (
         <WorkspaceManager
           workspaces={workspaces}
@@ -934,7 +934,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         />
       )}
 
-      {/* Merge-fragment picker — lists sibling chats in the same project. */}
+      {/* Merge-fragment picker - lists sibling chats in the same project. */}
       {mergePickerFor && (
         <MergeIntoPicker
           fragment={mergePickerFor}
@@ -955,7 +955,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
 
 /**
  * Modal picker for attaching a fragmented session into another thread.
- * Lists sibling chats in the same project — picking one re-parents the
+ * Lists sibling chats in the same project - picking one re-parents the
  * fragment via `app:attach-to-thread`. Keyboard-first: ↑↓/Enter/Esc.
  */
 function MergeIntoPicker({

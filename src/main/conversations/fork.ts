@@ -38,14 +38,14 @@ export interface ForkInput {
   /**
    * Optional: id of the right-clicked message in the renderer's current
    * snapshot. Stored on the new conversation row purely for audit /
-   * lineage display — never used to drive truncation logic.
+   * lineage display - never used to drive truncation logic.
    */
   forkedAtMessageId?: string
   /**
    * When true, also `git worktree add` a fresh branch off the source
    * repo's HEAD and point the new conversation's `projectPath` at it.
    * The slug is derived from the picked message body via
-   * `makeBranchSlug`. Worktree creation runs *before* JSONL surgery —
+   * `makeBranchSlug`. Worktree creation runs *before* JSONL surgery -
    * if it fails (no git, no commits, etc.), the fork bails entirely
    * and no conversation row is written. See `#5` kickoff doc.
    */
@@ -95,7 +95,7 @@ export interface ForkResult {
 
 /**
  * Spawn a new conversation that mirrors the first N messages of `source`
- * and is wired so the underlying agent picks up real context — not just a
+ * and is wired so the underlying agent picks up real context - not just a
  * visual transcript. See `docs/notes/session-kickoff-fork-from-message.md`
  * for the full design rationale.
  */
@@ -157,7 +157,7 @@ export async function forkConversation(input: ForkInput): Promise<ForkResult> {
 
   if (source.agent_type === 'claude-code') return await forkClaude(ctx)
   if (source.agent_type === 'codex') return await forkCodex(ctx)
-  // OpenCode (and any other / unknown agent) — degraded summary-only.
+  // OpenCode (and any other / unknown agent) - degraded summary-only.
   // TODO(opencode-acp): wire this up once ACP exposes a `session/load` (or
   // equivalent) endpoint. Until then a fork gets the visible transcript
   // but the new agent process starts cold without that context.
@@ -175,7 +175,7 @@ interface ForkContext {
   keptMessages: ChatMessage[]
   upToVisibleIndex: number
   title: string
-  /** The path the *new* conversation should be rooted at — equals
+  /** The path the *new* conversation should be rooted at - equals
    *  `source.project_path` for non-worktree forks and the new worktree
    *  path when `withWorktree: true`. */
   effectiveProjectPath: string
@@ -212,7 +212,7 @@ async function forkClaude(ctx: ForkContext): Promise<ForkResult> {
   const targetProjectDir = join(homedir(), '.claude', 'projects', encodeClaudeProjectPath(effectiveProjectPath))
   // The source thread can span multiple JSONL files (Claude SDK rotates
   // session_id during compaction). Read every fragment in chronological
-  // order and let `assembleClaudeFork` walk the merged stream — the cut
+  // order and let `assembleClaudeFork` walk the merged stream - the cut
   // can land anywhere, including past the first fragment, and earlier
   // fragments must come along verbatim or the resume context is broken.
   const fragmentPaths = await listClaudeFragmentPaths(sourceProjectDir, source.id)
@@ -317,7 +317,7 @@ async function forkCodex(ctx: ForkContext): Promise<ForkResult> {
   // starts the new Codex session cold.
   // TODO(codex-resume): pipe `resumeSessionId` through the codex adapter's
   // `session/start` JSON-RPC and verify the daemon picks up the truncated
-  // rollout — see kickoff doc step 4.
+  // rollout - see kickoff doc step 4.
   const newId = randomUUID()
   try {
     const sourceFile = await findCodexRollout(source.id)
@@ -381,7 +381,7 @@ async function walkForSuffix(dir: string, suffix: string, maxDepth: number): Pro
   for (const name of entries) {
     const full = join(dir, name)
     if (name.endsWith(suffix)) return full
-    // Cheap dir test — try to recurse, ignore "not a dir" errors.
+    // Cheap dir test - try to recurse, ignore "not a dir" errors.
     const found = await walkForSuffix(full, suffix, maxDepth - 1)
     if (found) return found
   }
@@ -392,7 +392,7 @@ async function walkForSuffix(dir: string, suffix: string, maxDepth: number): Pro
 
 async function forkSummaryOnly(ctx: ForkContext, agentType: string): Promise<ForkResult> {
   const { source, input, keptMessages, title, effectiveProjectPath, worktreeMeta } = ctx
-  // No JSONL surgery — just clone the row and the message stream. The
+  // No JSONL surgery - just clone the row and the message stream. The
   // new agent process will start cold; the renderer prepends a synthetic
   // system message in `forkAndOpenSession` so the user sees the warning.
   const newId = randomUUID()
@@ -463,7 +463,7 @@ async function loadSourceMessages(
 
   // Fallback: pull directly from the messages table. Every streamed message
   // is persisted in real-time by `saveMessage`, so the DB is always
-  // authoritative — JSONL parse can miss when the rollout file is in a
+  // authoritative - JSONL parse can miss when the rollout file is in a
   // non-standard location (Codex `agent_*` ids), when we haven't wired up
   // on-disk parsing (OpenCode), or when the thread hasn't compacted yet.
   return getMessagesForConversation(source.id).map((row) => ({
@@ -500,7 +500,7 @@ function tryParseJson<T>(s: string): T | undefined {
 function toMessageRow(m: ChatMessage): {
   id: string; role: string; content: string; timestamp: number
 } {
-  // Fresh id so the fork owns its message stream — reusing source ids
+  // Fresh id so the fork owns its message stream - reusing source ids
   // would collide if `messages.id` ever picks up a UNIQUE constraint.
   return { id: randomUUID(), role: m.role, content: m.content, timestamp: m.timestamp }
 }

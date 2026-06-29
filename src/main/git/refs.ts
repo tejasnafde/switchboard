@@ -10,7 +10,7 @@
  *   - getCurrentBranch(cwd): used by the trigger chip to render `main ▾`.
  *
  * Pure parsers (parseForEachRef, parseWorktreeBranchMap) and the
- * isValidRefName guard are exported separately for unit testing — same
+ * isValidRefName guard are exported separately for unit testing - same
  * pattern as src/main/worktree.ts.
  *
  * Cross-platform: every path comes back from git CLI as the OS-native
@@ -25,7 +25,7 @@ const log = createMainLogger('git-refs')
 const execFileP = promisify(execFile)
 
 export interface Ref {
-  /** Short name — `main`, `feat/foo`, `origin/feature` (no `refs/heads/` prefix). */
+  /** Short name - `main`, `feat/foo`, `origin/feature` (no `refs/heads/` prefix). */
   name: string
   /** SHA the ref points at (short or long, whatever git emitted). */
   sha: string
@@ -41,7 +41,7 @@ export interface Ref {
   worktreePath: string | null
 }
 
-/** Test seam — same shape as the worktree.ts GitRunner. */
+/** Test seam - same shape as the worktree.ts GitRunner. */
 export type GitRunner = (
   args: string[],
   cwd: string,
@@ -109,7 +109,7 @@ export function parseForEachRef(stdout: string, worktreeMap: Map<string, string>
       name = refname.slice('refs/remotes/'.length)
       isRemote = true
     } else {
-      continue // tags / stash / other namespaces — out of scope
+      continue // tags / stash / other namespaces - out of scope
     }
     out.push({
       name,
@@ -132,7 +132,7 @@ export function parseForEachRef(stdout: string, worktreeMap: Map<string, string>
  *   - reject empty + overlong (>= 256 chars is well past sanity)
  *   - reject `.lock` suffix and trailing `/`
  *
- * Not a full check-ref-format port — git itself will reject the
+ * Not a full check-ref-format port - git itself will reject the
  * remaining edge cases. This guard is just enough to make sure we
  * never call `execFile('git', ['checkout', userInput])` with something
  * that could be mistaken for a CLI flag.
@@ -148,7 +148,7 @@ export function isValidRefName(name: string): boolean {
 }
 
 export async function listRefs(cwd: string, runner: GitRunner = defaultRunner): Promise<Ref[]> {
-  // Worktree map first — small + needed to annotate refs with their
+  // Worktree map first - small + needed to annotate refs with their
   // associated worktree paths. Errors here aren't fatal; the picker just
   // loses the reuse hint.
   let worktreeMap = new Map<string, string>()
@@ -159,7 +159,7 @@ export async function listRefs(cwd: string, runner: GitRunner = defaultRunner): 
     log.warn(`worktree list failed: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  // Tab-delimited — branch names can't contain whitespace so this is safe,
+  // Tab-delimited - branch names can't contain whitespace so this is safe,
   // and unlike NUL, tab survives Node.js execFile's argument validation.
   const { stdout } = await runner(
     [
@@ -190,7 +190,7 @@ export async function getCurrentBranch(
 ): Promise<string | null> {
   const { stdout } = await runner(['rev-parse', '--abbrev-ref', 'HEAD'], cwd)
   const branch = stdout.trim()
-  // Detached HEAD prints the literal string 'HEAD' — surface that as null
+  // Detached HEAD prints the literal string 'HEAD' - surface that as null
   // so the trigger chip can fall back to "(detached)".
   if (!branch || branch === 'HEAD') return null
   return branch

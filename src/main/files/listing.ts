@@ -77,14 +77,14 @@ export interface CappedRead {
   content: string
   truncated: boolean
   totalBytes: number
-  /** On-disk mtime at the moment of the read — passed through to the editor
+  /** On-disk mtime at the moment of the read - passed through to the editor
    *  so save-conflict detection uses the real file mtime, not Date.now(). */
   mtimeMs: number
 }
 
 /**
  * Recursive walk of `repoRoot`, returning repo-relative paths. Used by
- * the ⌘P quick-open modal — gitignored files are *included* (the user
+ * the ⌘P quick-open modal - gitignored files are *included* (the user
  * explicitly asked to skim build output / lockfiles too) but the giant
  * always-noise dirs `.git` and `node_modules` are skipped to keep the
  * traversal under a few seconds even on monorepos.

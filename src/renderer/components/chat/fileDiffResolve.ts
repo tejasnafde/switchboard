@@ -7,7 +7,7 @@
  *
  * Note on `resolvedContent`: @pierre/diffs stores each line WITH its own
  * trailing newline, so the file is reconstructed by joining with the empty
- * string — not '\n'.
+ * string - not '\n'.
  */
 import {
   parseDiffFromFile,
@@ -56,7 +56,7 @@ function trimEol(s: string | undefined): string {
 
 /**
  * Project one hunk into a flat list of unified-diff rows (context / add / del)
- * with line numbers, walking the hunk's content groups. Pure — used by the
+ * with line numbers, walking the hunk's content groups. Pure - used by the
  * card to render and unit-tested for correctness.
  */
 export function hunkRows(fd: FileDiffMetadata, hunkIndex: number): DiffRow[] {

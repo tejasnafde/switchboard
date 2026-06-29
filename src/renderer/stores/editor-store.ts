@@ -1,17 +1,17 @@
 /**
  * Multi-buffer / tab state for the right-pane file editor. Each Buffer
  * holds a CodeMirror EditorState so switching tabs is `view.setState(
- * buffer.state)` — O(1), preserves cursor + scroll + undo for free.
+ * buffer.state)` - O(1), preserves cursor + scroll + undo for free.
  *
  * The store is intentionally minimal: it owns the *map of buffers* and
  * the *per-session tab list / active id*. The actual EditorView lives
- * in `EditorHost.tsx` as a single ref-tracked instance — switching tabs
+ * in `EditorHost.tsx` as a single ref-tracked instance - switching tabs
  * just dispatches a setState, never tearing down the view.
  *
  * Why per-session active + tabs? A user may have multiple chat sessions
  * pointing at the same project but be navigating different files in
  * each. Pinning the tab list to the session matches what they expect
- * when they switch sessions and back — their open files come with them.
+ * when they switch sessions and back - their open files come with them.
  *
  * Buffer creation is *idempotent by path*: opening the same file twice
  * (e.g. clicking it in the file tree, then again from a chat pill)
@@ -40,7 +40,7 @@ export interface Buffer {
   savedDoc: string
   /** True when the in-memory doc has diverged from `savedDoc`. */
   dirty: boolean
-  /** CodeMirror state — owns the doc, history, selection, language extensions. */
+  /** CodeMirror state - owns the doc, history, selection, language extensions. */
   state: EditorState
 }
 
@@ -59,7 +59,7 @@ interface CloseOpts {
 
 interface EditorStore {
   buffers: Record<string, Buffer>
-  /** Per-session ordered list of buffer ids — drives the tab strip. */
+  /** Per-session ordered list of buffer ids - drives the tab strip. */
   tabsBySession: Record<string, string[]>
   /** Per-session active buffer id (null = no tabs open in that session). */
   activeBySession: Record<string, string | null>
@@ -80,7 +80,7 @@ interface EditorStore {
   navForward: (sessionId: string) => NavEntry | null
   canNavBack: (sessionId: string) => boolean
   canNavForward: (sessionId: string) => boolean
-  /** Replace a buffer's CM state — called by the EditorView after edits. */
+  /** Replace a buffer's CM state - called by the EditorView after edits. */
   setState: (id: string, state: EditorState) => void
   /** Mark a buffer as saved (clear dirty, update mtime + savedDoc). */
   markSaved: (id: string, savedDoc: string, mtimeMs: number) => void
@@ -124,7 +124,7 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   openBuffer: ({ sessionId, path, content, mtimeMs, extensions = [] }) => {
     const existing = findBufferByPath(get(), sessionId, path)
     if (existing) {
-      // Already open — just focus.
+      // Already open - just focus.
       set((s) => ({ activeBySession: { ...s.activeBySession, [sessionId]: existing } }))
       return existing
     }

@@ -5,13 +5,13 @@
  * work is parallel iteration. If two cards both edit the main checkout,
  * one's `git checkout` kills the other's running tests / running
  * agent. Worktrees give every card its own working tree on its own
- * branch while sharing the underlying object DB — cheap, fast, and the
+ * branch while sharing the underlying object DB - cheap, fast, and the
  * cleanup is `git worktree remove`.
  *
  * All functions shell out to the `git` CLI. We deliberately avoid
  * libgit2 / nodegit: git's worktree semantics are subtle (locked
  * worktrees, prunable refs, dirty workdirs), and the CLI's behaviour
- * is the canonical reference. Spawning a process per call is fine —
+ * is the canonical reference. Spawning a process per call is fine -
  * worktree ops happen at human pace, not in a hot loop.
  *
  * Pure-ish module: every fn takes paths + accepts an optional
@@ -95,16 +95,16 @@ export async function createWorktree(
  *
  * Differences vs. the kanban path:
  *   - Caller provides the slug (derived from a message summary by
- *     `makeBranchSlug`) — no card id to mix in.
+ *     `makeBranchSlug`) - no card id to mix in.
  *   - Caller picks the base ref so we can branch off whatever the
  *     parent conversation's `projectPath` was checked out to (which
  *     may itself be a feature branch, not always `main`/`HEAD`).
  *   - Branch / directory collisions resolve by suffix (`-2`, `-3`, …)
- *     instead of bailing — two forks of the same message are a
+ *     instead of bailing - two forks of the same message are a
  *     legitimate user flow (try-this-then-try-that). Caps at
  *     COLLISION_MAX so a permanently-broken state doesn't spin.
  *
- * `slug` arrives in already-prefixed form (e.g. `fork/fix-redis`) — we
+ * `slug` arrives in already-prefixed form (e.g. `fork/fix-redis`) - we
  * use it verbatim for the branch name and the basename of the worktree
  * directory after stripping the leading namespace.
  */
@@ -139,7 +139,7 @@ export async function createForkWorktree(
       const msg = err instanceof Error ? err.message : String(err)
       // Collision-shaped errors: branch exists, path exists, or path
       // already registered as a worktree. Anything else (e.g. shallow
-      // repo, missing baseRef, no commits) is fatal — don't keep
+      // repo, missing baseRef, no commits) is fatal - don't keep
       // retrying on a config problem the user has to fix.
       if (!/already exists|already used by|already checked out/i.test(msg)) {
         throw err
@@ -158,7 +158,7 @@ export async function createForkWorktree(
  * acknowledged data loss.
  *
  * Also deletes the branch the worktree was on, iff it matches our
- * `kanban/` prefix — leaves user-created branches alone.
+ * `kanban/` prefix - leaves user-created branches alone.
  */
 export async function removeWorktree(
   repoPath: string,
@@ -290,13 +290,13 @@ export async function rmWorktreeDir(worktreePath: string): Promise<void> {
  * Distinct from `createWorktree` (kanban) and `createForkWorktree`
  * (fork-from-message) because:
  *   - Path lives outside the project tree, not under `.switchboard/`
- *   - No collision-suffix retry — the deterministic path is the
+ *   - No collision-suffix retry - the deterministic path is the
  *     contract; if it's already taken the caller has a stale state to
  *     clean up explicitly.
  */
 export interface CreateSessionWorktreeOpts {
   projectPath: string
-  /** Human-meaningful branch slug — `sb/` prefix is added if missing. */
+  /** Human-meaningful branch slug - `sb/` prefix is added if missing. */
   branchSlug: string
   /** What to fork off. Defaults to `HEAD` (current branch tip). */
   baseRef?: string
@@ -318,7 +318,7 @@ export async function createSessionWorktree(
     projectPath: opts.projectPath,
     branch,
   })
-  // Ensure the parent dir exists — `git worktree add` requires the
+  // Ensure the parent dir exists - `git worktree add` requires the
   // *target* dir to be absent but the parent to be present.
   await mkdir(dirname(path), { recursive: true })
   log.info(`createSessionWorktree: ${path} (branch ${branch}, base ${baseRef})`)

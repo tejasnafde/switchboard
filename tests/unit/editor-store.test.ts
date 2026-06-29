@@ -1,12 +1,12 @@
 /**
  * Editor store backs the multi-buffer / tab-strip surface for the file
  * editor pane. The Buffer object holds a CodeMirror EditorState so
- * switching tabs is `view.setState(buffer.state)` — O(1), preserves
+ * switching tabs is `view.setState(buffer.state)` - O(1), preserves
  * cursor + scroll + undo for free.
  *
  * Tested behaviors:
  *   - openBuffer creates a Buffer for a path; second call for same path
- *     returns the existing one (idempotent — clicking the file tree
+ *     returns the existing one (idempotent - clicking the file tree
  *     twice doesn't fork buffers)
  *   - per-session tab list / active tab tracking
  *   - markDirty / clearDirty / closeBuffer
@@ -19,7 +19,7 @@ beforeEach(() => {
   useEditorStore.setState({ buffers: {}, tabsBySession: {}, activeBySession: {} })
 })
 
-describe('useEditorStore — openBuffer', () => {
+describe('useEditorStore - openBuffer', () => {
   it('creates a buffer keyed by path with the supplied content + mtime', () => {
     const id = useEditorStore.getState().openBuffer({
       sessionId: 's1', path: '/repo/foo.ts', content: 'hello', mtimeMs: 1000,
@@ -31,7 +31,7 @@ describe('useEditorStore — openBuffer', () => {
     expect(buf.mtimeMs).toBe(1000)
   })
 
-  it('is idempotent — re-opening the same path returns the existing buffer id', () => {
+  it('is idempotent - re-opening the same path returns the existing buffer id', () => {
     const a = useEditorStore.getState().openBuffer({
       sessionId: 's1', path: '/repo/foo.ts', content: 'v1', mtimeMs: 1,
     })
@@ -62,7 +62,7 @@ describe('useEditorStore — openBuffer', () => {
   })
 })
 
-describe('useEditorStore — markDirty / closeBuffer', () => {
+describe('useEditorStore - markDirty / closeBuffer', () => {
   it('markDirty flips the dirty flag on the buffer', () => {
     const id = useEditorStore.getState().openBuffer({
       sessionId: 's1', path: '/r/a.ts', content: '', mtimeMs: 1,
@@ -108,7 +108,7 @@ describe('useEditorStore — markDirty / closeBuffer', () => {
   })
 })
 
-describe('useEditorStore — save force + reload (E3 conflict flow)', () => {
+describe('useEditorStore - save force + reload (E3 conflict flow)', () => {
   let lastWrite: { expectedMtimeMs: number | undefined } | null = null
   beforeEach(() => {
     lastWrite = null
@@ -159,7 +159,7 @@ describe('useEditorStore — save force + reload (E3 conflict flow)', () => {
   })
 })
 
-describe('useEditorStore — focusBuffer', () => {
+describe('useEditorStore - focusBuffer', () => {
   it('sets activeBySession to the focused buffer id', () => {
     const a = useEditorStore.getState().openBuffer({
       sessionId: 's1', path: '/r/a.ts', content: '', mtimeMs: 1,

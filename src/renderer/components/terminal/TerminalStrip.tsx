@@ -12,7 +12,7 @@ function getSessionCwd(sessionId: string | null): string | undefined {
 }
 
 /**
- * TerminalGrid — rows of windows. Each window holds stacked panes (tabs).
+ * TerminalGrid - rows of windows. Each window holds stacked panes (tabs).
  */
 export function TerminalStrip() {
   const activeSessionId = useTerminalStore((s) => s.activeSessionId)

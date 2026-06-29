@@ -1,5 +1,5 @@
 /**
- * Provider abstraction layer — internal (main-process) adapter interface.
+ * Provider abstraction layer - internal (main-process) adapter interface.
  *
  * The wire-format event types (RuntimeEvent union, Question, etc.) live in
  * `src/shared/provider-events.ts` so both preload and renderer can type their
@@ -160,7 +160,7 @@ export interface ProviderAdapter {
    * session (Claude SDK's `init.commands`, Codex's `skills/list`, etc.).
    * Returns `[]` when the provider has none or hasn't initialized yet.
    *
-   * Optional — providers without a skill registry (OpenCode) can omit it.
+   * Optional - providers without a skill registry (OpenCode) can omit it.
    */
   listSkills?(threadId: string): Promise<import('@shared/types').ProviderSkill[]>
 }

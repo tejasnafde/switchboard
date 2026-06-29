@@ -1,6 +1,6 @@
 /**
- * Pure gitignore matching for the file tree pane. We *annotate* — never
- * filter — so users can still see and click `node_modules/` etc., just
+ * Pure gitignore matching for the file tree pane. We *annotate* - never
+ * filter - so users can still see and click `node_modules/` etc., just
  * rendered greyed-out (VS Code-style).
  *
  * Implementation kept tiny: handles the patterns common in JS/Python repos:
@@ -96,7 +96,7 @@ describe('isIgnored', () => {
 
   it('treats a pattern containing a slash as anchored to root', () => {
     // Per gitignore semantics, a slash in the middle of a pattern anchors it
-    // to the repo root — `foo/bar` matches `foo/bar` but NOT `a/foo/bar`.
+    // to the repo root - `foo/bar` matches `foo/bar` but NOT `a/foo/bar`.
     const rules = parseGitignore('foo/bar\n')
     expect(isIgnored('foo/bar', true, rules)).toBe(true)
     expect(isIgnored('a/foo/bar', true, rules)).toBe(false)

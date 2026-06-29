@@ -1,5 +1,5 @@
 /**
- * Kanban IPC handlers — card CRUD + per-card worktree lifecycle.
+ * Kanban IPC handlers - card CRUD + per-card worktree lifecycle.
  *
  * Cards live in SQLite (`kanban_cards`); worktrees live on disk under
  * `<projectPath>/.switchboard/worktrees/`. The two are linked by the
@@ -51,7 +51,7 @@ export function registerKanbanHandlers(host: BackendHost): void {
         const updated = setKanbanWorktree(id, path, branch)
         return updated ?? card
       } catch (err) {
-        // Card already created — surface the worktree failure but keep
+        // Card already created - surface the worktree failure but keep
         // the row, so the user can retry / decide to drop the worktree
         // requirement instead of losing their description.
         log.warn(`worktree creation failed for ${id}: ${err instanceof Error ? err.message : String(err)}`)
@@ -62,7 +62,7 @@ export function registerKanbanHandlers(host: BackendHost): void {
   })
 
   host.handle(KanbanChannels.UPDATE, async (id: string, patch: KanbanCardUpdate) => {
-    // Log conversation-link transitions specifically — they're the
+    // Log conversation-link transitions specifically - they're the
     // signal that a card is being launched, and the only way to trace
     // launches end-to-end across the renderer/main boundary.
     if (Object.prototype.hasOwnProperty.call(patch, 'conversationId')) {
@@ -122,7 +122,7 @@ export function registerKanbanHandlers(host: BackendHost): void {
   })
 
   /**
-   * Stale worktree removal — operates on a path, not a card id. Guards against
+   * Stale worktree removal - operates on a path, not a card id. Guards against
    * arbitrary-path removal by requiring the target to appear in `git worktree list`
    * for this repo; falls back to a `.switchboard/worktrees/` prefix check for dirs
    * git has already pruned but are still on disk. Falls through to `rmWorktreeDir`

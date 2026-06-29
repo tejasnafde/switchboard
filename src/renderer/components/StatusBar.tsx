@@ -12,7 +12,7 @@ import { agentLabel, defaultInstanceId } from '@shared/types'
  *   - Active session's agent type + status (thinking / idle / running / error)
  *   - Total terminal pane count for the active session
  *
- * Kept deliberately thin — this is the last persistent surface besides the
+ * Kept deliberately thin - this is the last persistent surface besides the
  * titlebar. Avoid putting controls here; use the command palette or chat
  * footer for actions.
  */
@@ -31,7 +31,7 @@ export function StatusBar() {
   const label = agentLabel(session?.type)
 
   // Provider instance (named credential set) for the active session.
-  // Falls back to "<kind>-default" — matches the resolver in main.
+  // Falls back to "<kind>-default" - matches the resolver in main.
   // Only show the label when there's >1 instance for this kind so the
   // status bar stays uncluttered for single-account users.
   const allInstances = useProviderInstanceStore((s) => s.instances)
@@ -119,7 +119,7 @@ export function StatusBar() {
 
       <span style={{ flex: 1 }} />
 
-      {/* Cumulative session cost (ACP adapters only — currently OpenCode).
+      {/* Cumulative session cost (ACP adapters only - currently OpenCode).
           Hidden when zero or undefined so Claude/Codex sessions stay clean. */}
       {typeof session?.costUsd === 'number' && session.costUsd > 0 && (
         <span title="Cumulative session cost reported by the agent">

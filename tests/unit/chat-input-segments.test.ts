@@ -63,12 +63,12 @@ describe('parseBodyToSegments', () => {
     ])
   })
 
-  it('treats malformed tokens as plain text (regression — the parser must not eat brackets)', () => {
-    // Single bracket, no closing — leave alone.
+  it('treats malformed tokens as plain text (regression - the parser must not eat brackets)', () => {
+    // Single bracket, no closing - leave alone.
     expect(parseBodyToSegments('[pill:a]')).toEqual([
       { type: 'text', text: '[pill:a]' },
     ])
-    // Mismatched id chars (whitespace) — not a token.
+    // Mismatched id chars (whitespace) - not a token.
     expect(parseBodyToSegments('[[pill:a b]]')).toEqual([
       { type: 'text', text: '[[pill:a b]]' },
     ])

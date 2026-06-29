@@ -1,6 +1,6 @@
 /**
  * Per-session back/forward navigation history. Pure data structure +
- * pure transitions — owned by editor-store, mutated through these
+ * pure transitions - owned by editor-store, mutated through these
  * helpers so the stack semantics are consistent everywhere a "jump"
  * happens (file pill click, ⌘P open, ⌘-click to definition, etc.).
  *
@@ -9,7 +9,7 @@
  * convention; matches every browser back-button you've ever used).
  *
  * Coalescing: consecutive pushes of the same path within ~10 lines
- * collapse onto the latest entry — the user moving their cursor a
+ * collapse onto the latest entry - the user moving their cursor a
  * couple lines down or clicking around inside the same function should
  * not flood history. A line-delta of 10 mirrors VS Code's heuristic.
  */

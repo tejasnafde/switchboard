@@ -1,7 +1,7 @@
 /**
- * Unit tests for `decideDragOutcome` — the pure dispatcher behind sidebar
+ * Unit tests for `decideDragOutcome` - the pure dispatcher behind sidebar
  * drag-end. Indices are computed in the *rendered* flat order (the same
- * array passed to SortableContext.items), NOT raw `projects` order — this
+ * array passed to SortableContext.items), NOT raw `projects` order - this
  * is what fixes the "swap adjacent items across a workspace boundary"
  * bug. Same-workspace drops emit `reorder`; cross-workspace drops emit
  * `reassign` carrying both the new workspaceId and the rendered drop
@@ -83,7 +83,7 @@ describe('decideDragOutcome', () => {
     })
   })
 
-  it('uses rendered order — not raw projects order — for indices', () => {
+  it('uses rendered order - not raw projects order - for indices', () => {
     // Raw `projects` is interleaved (e.g. by added_at), but rendered order
     // is grouped by workspace. This is the regression case for the
     // cross-boundary "swap" bug: dragging the first project of W2 (rendered

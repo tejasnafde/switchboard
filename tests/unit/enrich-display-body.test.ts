@@ -1,5 +1,5 @@
 /**
- * Unit tests for `enrichMessagesWithDisplayBody` — the join that lets
+ * Unit tests for `enrichMessagesWithDisplayBody` - the join that lets
  * persisted pill chips reappear on reload. JSONL is the source of truth
  * for content; the DB side-loads `display_body` + `pills_meta` keyed by
  * `(role='user', content)`.

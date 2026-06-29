@@ -9,7 +9,7 @@ interface SidebarFilterProps {
 
 /**
  * Tiny controlled filter input that lives at the top of the sidebar.
- * Debounced 100ms — fast enough to feel live, slow enough to not flicker
+ * Debounced 100ms - fast enough to feel live, slow enough to not flicker
  * the whole tree on every keystroke when there are hundreds of sessions.
  *
  * Doesn't own the filtered tree; just emits the current query string.

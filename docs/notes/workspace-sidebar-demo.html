@@ -6,7 +6,7 @@
 <style>
 /* ─────────────────────────────────────────────────────────────
    Aesthetic: archive dossier.
-   Workspaces are color-spined file dividers — the 3px color
+   Workspaces are color-spined file dividers - the 3px color
    rail running the height of each workspace body is the load-
    bearing visual, not typography. Fonts match the rest of the
    app: system sans for chrome, JetBrains Mono only where the
@@ -96,7 +96,7 @@ html, body {
   text-rendering: optimizeLegibility;
 }
 
-/* Stage — fakes the Electron window context so themes feel real */
+/* Stage - fakes the Electron window context so themes feel real */
 .stage {
   min-height: 100vh;
   display: grid;
@@ -301,7 +301,7 @@ html, body {
   opacity: 0.6;
 }
 
-/* Header row — chevron, workspace name, count chip */
+/* Header row - chevron, workspace name, count chip */
 .workspace-header {
   display: flex;
   align-items: baseline;
@@ -346,7 +346,7 @@ html, body {
   background: var(--bg-tertiary);
 }
 
-/* Body — projects + sessions */
+/* Body - projects + sessions */
 .workspace-body {
   padding: 2px 0 8px 18px;
   display: flex;
@@ -723,7 +723,7 @@ html, body {
         </div>
       </section>
 
-      <!-- UNGROUPED — typographic & visually demoted on purpose -->
+      <!-- UNGROUPED - typographic & visually demoted on purpose -->
       <section class="workspace ungrouped">
         <header class="workspace-header">
           <span class="chev">▾</span>
@@ -757,10 +757,10 @@ html, body {
       <h3>Workspace sidebar</h3>
       <strong style="font-family:var(--font-mono);font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-muted)">Aesthetic notes</strong>
       <ul>
-        <li>Fonts match the existing app — system sans for chrome, JetBrains Mono only where the app already uses it (project paths, count chips, session timestamps).</li>
-        <li>Workspace names: uppercase tracked sans, weight 600 — sits as a header tier above project rows without introducing a new typeface.</li>
-        <li>Each workspace owns a 3px color spine (<code>--workspace-color-1..6</code>) that runs the full height of the expanded body. Collapsed workspaces shrink it to a 12px nub — the rail visibly retracts.</li>
-        <li>"Ungrouped" gets a dotted spine and muted tracked-caps name — it's a holding bay, not a peer.</li>
+        <li>Fonts match the existing app - system sans for chrome, JetBrains Mono only where the app already uses it (project paths, count chips, session timestamps).</li>
+        <li>Workspace names: uppercase tracked sans, weight 600 - sits as a header tier above project rows without introducing a new typeface.</li>
+        <li>Each workspace owns a 3px color spine (<code>--workspace-color-1..6</code>) that runs the full height of the expanded body. Collapsed workspaces shrink it to a 12px nub - the rail visibly retracts.</li>
+        <li>"Ungrouped" gets a dotted spine and muted tracked-caps name - it's a holding bay, not a peer.</li>
         <li>Drag-target workspaces (<code>.drag-target</code> on "Open Source") get an <code>--accent-subtle</code> wash + dashed outline.</li>
         <li>Filter input lives between masthead and the workspace stack. <code>⌘/</code> kbd hint mirrors xterm <code>⌘F</code>.</li>
         <li>Three theme palettes; workspace colors are <em>retuned per theme</em> for legibility (a saturated red on translucent looks washed out without a brighter token).</li>

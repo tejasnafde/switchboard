@@ -1,7 +1,7 @@
 /**
  * IPC bridge for the LSP subsystem. Each handler:
  *   1. Resolves the LSP language for the file (returns null silently
- *      for unsupported languages — caller falls back to tree-sitter).
+ *      for unsupported languages - caller falls back to tree-sitter).
  *   2. Forwards to the per-workspace server via `lsp/manager.ts`.
  *   3. Returns a discriminated `{ ok, ... } | { ok: false, error }`.
  *

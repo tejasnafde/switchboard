@@ -15,7 +15,7 @@ import { templateListReducer } from '../services/templateListReducer'
  * - No terminals on cold start (empty state)
  * - When a session is activated the FIRST time: load layout from SQLite →
  *   workspace.yaml → default (single window with one pane)
- * - When switching sessions: PTYs STAY ALIVE — we just show/hide based on active session
+ * - When switching sessions: PTYs STAY ALIVE - we just show/hide based on active session
  * - PTYs only killed when: user closes a pane or session is deleted
  *
  * workspace.yaml mapping (v0.1.20+):
@@ -59,7 +59,7 @@ export function useTerminalLifecycle() {
       const session = useAgentStore.getState().sessions.find((s) => s.id === activeId)
       if (session && session.projectPath === projectPath) {
         // Capture the session's current template name BEFORE clearing
-        // so the respawn can ask for the same one — the resolver will
+        // so the respawn can ask for the same one - the resolver will
         // fall back to default if the user just deleted it from YAML.
         const currentTemplate = useTerminalStore.getState().getSessionTemplateName(activeId)
         useTerminalStore.getState().clearSessionLayout(activeId)
@@ -115,7 +115,7 @@ async function spawnTerminalsForSession(
 ) {
   const store = useTerminalStore.getState()
 
-  // 1. Try SQLite — restore the prior live layout exactly. Picker
+  // 1. Try SQLite - restore the prior live layout exactly. Picker
   //    badge gets the saved template_name back so the user sees the
   //    name they chose last session.
   if (!forceWorkspaceConfig) {
@@ -132,7 +132,7 @@ async function spawnTerminalsForSession(
     } catch { /* fall through */ }
   }
 
-  // 2. Try workspace.yaml — hydrate from named template (or default).
+  // 2. Try workspace.yaml - hydrate from named template (or default).
   if (projectPath) {
     try {
       const yamlContent = await window.api.app.getWorkspaceConfig(projectPath)
@@ -175,7 +175,7 @@ function restoreFromSaved(sessionId: string, rows: SavedRow[], projectPath?: str
       if (panes.length === 0) continue
 
       const first = panes[0]
-      // `stale: true` — panes restored from the previous session start in
+      // `stale: true` - panes restored from the previous session start in
       // a paused state. TerminalPane renders a "Start terminal" overlay
       // instead of silently respawning long-running commands (e.g. dev
       // servers) on every app launch.
@@ -192,10 +192,10 @@ function restoreFromSaved(sessionId: string, rows: SavedRow[], projectPath?: str
         windowRef = store.addWindow(sessionId, commonOpts(first))
         firstWindow = false
       } else if (wi === 0) {
-        // New row — split down
+        // New row - split down
         windowRef = store.splitActiveWindow(sessionId, 'column', commonOpts(first))
       } else {
-        // Same row — split right
+        // Same row - split right
         windowRef = store.splitActiveWindow(sessionId, 'row', commonOpts(first))
       }
 
@@ -217,7 +217,7 @@ function restoreFromSaved(sessionId: string, rows: SavedRow[], projectPath?: str
 
 /**
  * Walk a planner op list and dispatch each op to the terminal store.
- * Pure top-of-store — no PTY work happens here, just layout shape.
+ * Pure top-of-store - no PTY work happens here, just layout shape.
  */
 function spawnFromTemplate(sessionId: string, template: WorkspaceTemplate, projectPath: string) {
   const store = useTerminalStore.getState()
@@ -289,7 +289,7 @@ export async function applyTemplate(
 }
 
 /**
- * Clear the template pin on this session — the chat falls back to the
+ * Clear the template pin on this session - the chat falls back to the
  * implicit `default` template on next activation. Doesn't tear down
  * the current panes; just removes the explicit binding so a relaunch
  * picks `default` instead of the previously-pinned name.
@@ -305,7 +305,7 @@ export function clearTemplatePin(sessionId: string): void {
  * project-relative paths when possible (so the template is portable
  * across machines that have the project at different absolute paths).
  *
- * Caveat: `on_start` is NOT captured — there's no sane way to read
+ * Caveat: `on_start` is NOT captured - there's no sane way to read
  * back what command(s) the user typed into a live shell. Templates
  * created via this snapshot start panes in a plain shell at the
  * recorded cwd; any startup commands need to be added by hand.
@@ -318,12 +318,12 @@ function snapshotCurrentAsTemplate(sessionId: string, projectPath: string): Work
     if (!cwd) return undefined
     if (cwd === projectPath) return '.'
     if (cwd.startsWith(projectPrefix)) return cwd.slice(projectPrefix.length)
-    return cwd  // outside the project — keep absolute
+    return cwd  // outside the project - keep absolute
   }
 
   // Each row in YAML corresponds to a row in the live layout. Tabs
   // (multiple panes inside a single window) get flattened into siblings
-  // in the same row — we don't have a YAML representation for tabs
+  // in the same row - we don't have a YAML representation for tabs
   // today, and surfacing them as side-by-side panes loses the least.
   const rows = layout.rows.map((row) => ({
     panes: row.windowIds.flatMap((wid) => {
@@ -339,7 +339,7 @@ function snapshotCurrentAsTemplate(sessionId: string, projectPath: string): Work
     }),
   })).filter((r) => r.panes.length > 0)
 
-  // Flatten to terminals[] when the layout is exactly one row — keeps
+  // Flatten to terminals[] when the layout is exactly one row - keeps
   // the YAML shape simpler (legacy `terminals:` flat list) for the
   // common single-row case, and round-trips cleanly through the parser.
   if (rows.length === 1) {
@@ -354,11 +354,11 @@ function snapshotCurrentAsTemplate(sessionId: string, projectPath: string): Work
 /**
  * Save the session's current pane layout as a named template in the
  * project's workspace.yaml. If a template with that name already exists,
- * the call is rejected — caller should rename via the Settings list
+ * the call is rejected - caller should rename via the Settings list
  * editor first.
  *
  * Returns `{ ok: true }` on success or `{ ok: false, error }` on
- * validation / serialization failure. Does NOT swallow disk errors —
+ * validation / serialization failure. Does NOT swallow disk errors -
  * those propagate to the caller's catch.
  */
 export async function saveCurrentLayoutAsTemplate(
@@ -391,7 +391,7 @@ export async function saveCurrentLayoutAsTemplate(
 
   const body = snapshotCurrentAsTemplate(sessionId, projectPath)
 
-  // If the target name already exists, bail — overwrite would silently
+  // If the target name already exists, bail - overwrite would silently
   // lose the user's hand-written `on_start` directives.
   if (currentTemplates[trimmed]) {
     return { ok: false, error: `Template "${trimmed}" already exists. Pick a different name.` }

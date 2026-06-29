@@ -21,7 +21,7 @@ import { formatFileViewerContext, formatChatMessageContext } from './contextForm
 
 // Cap on captured terminal output so a runaway selection doesn't blow
 // the agent's context window. Modern context windows are 200k+ so 4k was
-// way too tight (truncated typical stack traces). 50k ≈ 12.5k tokens —
+// way too tight (truncated typical stack traces). 50k ≈ 12.5k tokens -
 // still leaves >85% of the window free even on small models, but covers
 // almost any practical terminal selection without truncation. If a user
 // genuinely needs more, they can paste in chunks or use ⌘K instead.
@@ -38,7 +38,7 @@ export interface TerminalContext {
 /**
  * Format a terminal selection into a chat-friendly context block.
  *
- * Pure function — inputs fully determine output. Tested in
+ * Pure function - inputs fully determine output. Tested in
  * tests/unit/context-bridge.test.ts.
  *
  * Example output:
@@ -71,7 +71,7 @@ export function formatTerminalContext(ctx: TerminalContext): string {
     truncated = true
   }
 
-  // Use a fenced block when the selection spans multiple lines — makes
+  // Use a fenced block when the selection spans multiple lines - makes
   // it clearer to the agent that this is captured output, not a message.
   const isMultiLine = body.includes('\n')
   const wrapped = isMultiLine ? '```\n' + body + '\n```' : body
@@ -157,7 +157,7 @@ export function findActiveTerminalSelection(): {
 /**
  * Walk up from an element to find the nearest `[data-context-source]`
  * ancestor. Returns its value (`'terminal' | 'file-viewer' | 'chat-message'`)
- * or null if there isn't one — caller should fall back to the legacy
+ * or null if there isn't one - caller should fall back to the legacy
  * terminal-only path.
  */
 export function findContextSource(el: Element | null): string | null {
@@ -185,7 +185,7 @@ function getDomSelectionText(): string {
  * Determine which line range a viewer selection covers. CM6 wraps each
  * doc line in `<div class="cm-line">`; we count those in the start
  * container's ancestry to derive 1-based line numbers. Older Shiki HTML
- * used `.line` / `[data-line]` — still matched for back-compat. Best
+ * used `.line` / `[data-line]` - still matched for back-compat. Best
  * effort; falls back to start=end=1 if the structure doesn't match.
  */
 function viewerSelectionLineRange(viewerRoot: Element): { start: number; end: number } {
@@ -233,7 +233,7 @@ export function captureSelection(): boolean {
   if (source === 'file-viewer') {
     const root = anchorEl?.closest('[data-context-source="file-viewer"]') as HTMLElement | null
     // `data-file-path` lives on FileViewerPane's outer wrapper, not on
-    // EditorHost's container — walk up independently to find it.
+    // EditorHost's container - walk up independently to find it.
     const path = anchorEl?.closest('[data-file-path]')?.getAttribute('data-file-path') ?? ''
     const text = getDomSelectionText()
     if (!path || !text.trim()) return appendTerminalSelectionToDraft()
@@ -315,7 +315,7 @@ export function appendTerminalSelectionToDraft(): boolean {
 /**
  * ⌘K implementation: send a one-shot prompt to the active session,
  * optionally with the current terminal selection as prepended context.
- * Bypasses the ChatInput draft — message goes straight to the agent.
+ * Bypasses the ChatInput draft - message goes straight to the agent.
  *
  * Returns `true` on success, `false` if there's no active session to
  * send to.

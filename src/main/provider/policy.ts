@@ -7,7 +7,7 @@
  * means any adapter can reuse it and there's a single place to update
  * policy rules.
  *
- * Not all tool names are identical across providers — Codex uses tool
+ * Not all tool names are identical across providers - Codex uses tool
  * names like `shell`, `edit`, etc. The policy normalizes via tool-name
  * equivalence sets (`EQUIV_EDIT_TOOLS`) so the same mode produces the same
  * behavior regardless of provider.
@@ -29,7 +29,7 @@ export const PLAN_READ_ONLY_TOOLS = new Set([
   'WebFetch',
   'WebSearch',
   'TodoWrite',
-  // Codex equivalents — names the app-server uses
+  // Codex equivalents - names the app-server uses
   'read_file',
   'list_files',
   'search_files',
@@ -89,7 +89,7 @@ export function decidePermission(mode: RuntimeMode, toolName: string): Permissio
     return 'deny'
   }
 
-  // sandbox (default) — always prompt
+  // sandbox (default) - always prompt
   return 'prompt'
 }
 
@@ -99,7 +99,7 @@ export function decidePermission(mode: RuntimeMode, toolName: string): Permissio
  */
 export function denialMessage(mode: RuntimeMode, _toolName: string): string {
   if (mode === 'plan') {
-    return 'Plan mode — tool execution is blocked. Use ExitPlanMode to propose your plan, or switch to Sandbox/Accept-Edits to execute.'
+    return 'Plan mode - tool execution is blocked. Use ExitPlanMode to propose your plan, or switch to Sandbox/Accept-Edits to execute.'
   }
   return 'Denied by permission policy'
 }

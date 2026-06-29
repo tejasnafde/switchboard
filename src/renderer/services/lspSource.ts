@@ -7,7 +7,7 @@
  *   - silently returns empty when the language is unsupported
  *
  * Workspace root is resolved via the agent-store's active session (the
- * worktree path if set, else the project path) — same routing as
+ * worktree path if set, else the project path) - same routing as
  * `ChatPanel`'s cwd resolution.
  */
 import { useAgentStore } from '../stores/agent-store'
@@ -22,7 +22,7 @@ function uriToPath(uri: string): string {
   // file:///abs/path → /abs/path (POSIX) or C:/foo (Windows).
   if (!uri.startsWith('file://')) return uri
   const stripped = uri.slice('file://'.length)
-  // On Windows file:///C:/foo → /C:/foo — drop the leading `/`.
+  // On Windows file:///C:/foo → /C:/foo - drop the leading `/`.
   if (/^\/[A-Za-z]:/.test(stripped)) return decodeURIComponent(stripped.slice(1))
   return decodeURIComponent(stripped)
 }

@@ -1,5 +1,5 @@
 /**
- * Provider runtime events — the wire format for main → renderer provider updates.
+ * Provider runtime events - the wire format for main → renderer provider updates.
  *
  * Lives in `shared/` so both the preload (main-scope) and renderer can type
  * `window.api.provider.onEvent` against the same discriminated union. Keeping
@@ -105,7 +105,7 @@ export interface RuntimeTurnCompletedEvent {
   /**
    * Wall-clock duration of the turn in milliseconds, measured from when the
    * adapter accepted the user message to when the agent finished responding.
-   * Optional — adapters that can't measure (e.g. legacy paths) omit it.
+   * Optional - adapters that can't measure (e.g. legacy paths) omit it.
    * Rendered by MessageBubble as "Worked for X.Xs" Cursor-style.
    */
   durationMs?: number
@@ -143,7 +143,7 @@ export interface RuntimeContextWindowEvent {
  * Emitted when the agent reports an updated set of model variants for the
  * currently selected model (ACP's `_meta.opencode.availableVariants`).
  * Variants like 'low' / 'medium' / 'high' / 'max' map to thinking-budget
- * tiers — not all models support them, hence the dynamic shape.
+ * tiers - not all models support them, hence the dynamic shape.
  */
 export interface RuntimeModelVariantsEvent {
   type: 'model.variants'
@@ -176,7 +176,7 @@ export interface Question {
   multiSelect: boolean
 }
 
-/** Agent invoked AskUserQuestion — show UI to collect answers */
+/** Agent invoked AskUserQuestion - show UI to collect answers */
 export interface RuntimeQuestionAskedEvent {
   type: 'question.asked'
   threadId: string
@@ -194,7 +194,7 @@ export interface RuntimeQuestionAnsweredEvent {
 /**
  * Emitted once per file changed during a turn, derived from a git checkpoint
  * diff (start-of-turn snapshot vs end-of-turn working tree). Provider-agnostic
- * — git is the source of truth, so this fires identically for Claude / Codex /
+ * - git is the source of truth, so this fires identically for Claude / Codex /
  * OpenCode regardless of how each surfaces its edits. Drives the Cursor-style
  * in-chat diff card with per-hunk accept/reject.
  */
@@ -205,7 +205,7 @@ export interface RuntimeFileEditedEvent {
   turnId: string
   /** Stable id for coalescing re-edits of the same file within a turn. */
   fileEditId: string
-  /** Absolute repo root the edit is relative to — renderer needs it for write-back. */
+  /** Absolute repo root the edit is relative to - renderer needs it for write-back. */
   repoRoot: string
   relPath: string
   changeKind: 'add' | 'modify' | 'delete'

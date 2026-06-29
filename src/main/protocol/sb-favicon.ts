@@ -1,5 +1,5 @@
 /**
- * `sb-favicon://` Electron custom protocol — serves a project's auto-detected
+ * `sb-favicon://` Electron custom protocol - serves a project's auto-detected
  * favicon to the renderer's <img> tag in the sidebar. Mirrors the existing
  * `sb-tour://` registration in main/index.ts.
  *
@@ -11,7 +11,7 @@
  * Security:
  *   1. The path query param must exactly match one of the registered
  *      projects (DB-backed `knownProjectsLookup`). The renderer can only
- *      ask for favicons of projects it actually has registered — no
+ *      ask for favicons of projects it actually has registered - no
  *      arbitrary disk reads.
  *   2. The favicon resolver itself only probes a fixed list of paths
  *      *inside* the project root (faviconResolver.ts), so even with a
@@ -44,7 +44,7 @@ export function parseFaviconUrl(rawUrl: string): ParsedFaviconUrl | null {
 
 /**
  * Exact-match containment check. The favicon protocol may only serve
- * projects the renderer has registered — anything else is an attack or
+ * projects the renderer has registered - anything else is an attack or
  * a bug. Prefix matching is intentionally disallowed: a known project
  * at `/Users/me/foo` does NOT authorize requests for `/Users/me/foo/.env`.
  */

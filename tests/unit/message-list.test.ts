@@ -9,7 +9,7 @@ import { groupIntoTurns, roleLabel } from '../../src/renderer/components/chat/Me
  * groupIntoTurns dropped any message with `content === ''` that didn't also
  * have toolCalls or an approval attachment. QuestionCard and PlanCard
  * messages have empty content (the UI is in the attachment), so they were
- * silently filtered out before rendering — the message was in the store,
+ * silently filtered out before rendering - the message was in the store,
  * just invisible.
  *
  * Attachments that MUST keep a message alive:
@@ -146,7 +146,7 @@ describe('groupIntoTurns', () => {
         content: '',
         denial: {
           toolName: 'Write',
-          reason: 'Plan mode — blocked',
+          reason: 'Plan mode - blocked',
           mode: 'plan',
         },
       }),

@@ -1,7 +1,7 @@
 /**
  * Pure planner that turns a parsed `WorkspaceTemplate` into a sequence of
  * terminal-store ops. Exists so the lifecycle hook stays a thin shell over
- * tested logic — see `tests/unit/template-apply.test.ts` for the contract.
+ * tested logic - see `tests/unit/template-apply.test.ts` for the contract.
  *
  * The op vocabulary mirrors `useTerminalStore`:
  *   - addWindow      → first pane in the layout (anchor)
@@ -91,7 +91,7 @@ export function planTemplateSpawn(template: WorkspaceTemplate, projectPath: stri
     return ops
   }
 
-  // Empty template — emit one default pane so the strip isn't blank.
+  // Empty template - emit one default pane so the strip isn't blank.
   return [{
     kind: 'addWindow',
     opts: { label: 'Terminal 1', cwd: projectPath, command: undefined, wait_for: undefined },
@@ -105,7 +105,7 @@ export interface TemplateResolution {
   templateName: string
   /** True when the requested template was missing and we fell back to default. */
   fellBack: boolean
-  /** Set when fellBack=true — the name the user originally requested. */
+  /** Set when fellBack=true - the name the user originally requested. */
   removedName?: string
 }
 

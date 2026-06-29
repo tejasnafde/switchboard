@@ -1,7 +1,7 @@
 /**
  * CheckpointTracker turns the git-checkpoint primitives into the provider-
  * agnostic turn lifecycle: snapshot at turn start, diff at turn end, and emit
- * one `file.edited` runtime event per changed file. Pure logic — git is faked.
+ * one `file.edited` runtime event per changed file. Pure logic - git is faked.
  */
 import { describe, it, expect } from 'vitest'
 import { CheckpointTracker } from '../../src/main/provider/checkpoint-tracker'
@@ -62,7 +62,7 @@ describe('CheckpointTracker', () => {
     const files: CheckpointFileDiff[] = [
       { relPath: 'a.ts', changeKind: 'modify', oldContent: 'o', newContent: 'n' },
     ]
-    // now() is pinned to a constant — two back-to-back turns would collide if
+    // now() is pinned to a constant - two back-to-back turns would collide if
     // the turn id were derived from the clock.
     const t = new CheckpointTracker(fakeDeps({ files }))
     await t.beginTurn('thread-1', '/repo')

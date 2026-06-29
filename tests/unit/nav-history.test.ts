@@ -49,7 +49,7 @@ describe('openInViewer history (D6/D7)', () => {
 
   it('recordLocation makes back return to the exact invocation spot (Bug B)', () => {
     // Opened a.ts (recorded at line 1), then scrolled/clicked to line 40 and
-    // jumped to a definition in b.ts. Back must return to a.ts:40 — not the
+    // jumped to a definition in b.ts. Back must return to a.ts:40 - not the
     // stale a.ts:1 entry, and not some earlier file.
     useLayoutStore.getState().openInViewer('a.ts', { start: 1, end: 1 })
     recordLocation('s1', 'a.ts', 40)

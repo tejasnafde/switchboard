@@ -14,7 +14,7 @@ export interface WorkspaceRow {
 }
 
 /**
- * Single named template — either a flat list of terminals or a
+ * Single named template - either a flat list of terminals or a
  * row/column layout. The two are mutually exclusive at the schema
  * level (presence of `rows` overrides `terminals`).
  */
@@ -53,7 +53,7 @@ function parseTerminalEntry(raw: unknown, index: number): WorkspaceTerminal | nu
 }
 
 /**
- * Parse a single template body — accepts either `terminals: []` or
+ * Parse a single template body - accepts either `terminals: []` or
  * `rows: []` (rows wins when both are present, matching legacy
  * top-level behavior). Returns `null` if the body has neither.
  */
@@ -100,7 +100,7 @@ export function parseTemplateBody(raw: unknown): WorkspaceTemplate | null {
  *
  * Schema priority:
  *  1. Top-level `terminals:` or `rows:` → materialized as `templates.default`
- *     (back-compat — existing files have no `templates:` block).
+ *     (back-compat - existing files have no `templates:` block).
  *  2. `templates: { name: { terminals|rows } }` → named templates, merged
  *     into the result. Top-level + templates can co-exist; the top-level
  *     contents become `templates.default` if no explicit `default` is
@@ -135,7 +135,7 @@ export function parseWorkspaceConfig(input: string): WorkspaceConfig {
     }
   }
 
-  // Top-level mirror — existing callers still read `config.terminals`
+  // Top-level mirror - existing callers still read `config.terminals`
   // and `config.rows` directly. We surface the `default` template's
   // contents there.
   const def = templates.default
@@ -174,7 +174,7 @@ export function serializeWorkspaceConfig(config: WorkspaceConfig): string {
       sorted.map((name) => [name, serializeTemplate(templates[name])]),
     )
   } else {
-    // Legacy shape — preserve the original top-level layout.
+    // Legacy shape - preserve the original top-level layout.
     const tpl = templates.default ?? { terminals: config.terminals, rows: config.rows }
     Object.assign(obj, serializeTemplate(tpl))
   }

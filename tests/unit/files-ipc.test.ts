@@ -5,8 +5,8 @@
  *      the renderer can grey them out (VS Code style) while keeping them
  *      clickable.
  *   2. File reads enforce a byte cap so the viewer never OOMs on a 50 MB
- *      log dump — caller gets a `truncated:true` flag to render a banner.
- *   3. Parsed `.gitignore` rules are memoized by `(path, mtimeMs)` — so
+ *      log dump - caller gets a `truncated:true` flag to render a banner.
+ *   3. Parsed `.gitignore` rules are memoized by `(path, mtimeMs)` - so
  *      hot directories don't re-parse the same file on every tree expand.
  *      Cache invalidates as soon as the file is rewritten.
  */
@@ -76,7 +76,7 @@ describe('getCachedGitignore', () => {
     writeFileSync(p, 'node_modules\n')
     const a = await getCachedGitignore(p)
     const b = await getCachedGitignore(p)
-    expect(a).toBe(b) // referential equality — proves cache hit
+    expect(a).toBe(b) // referential equality - proves cache hit
   })
 
   it('reparses when mtime changes', async () => {

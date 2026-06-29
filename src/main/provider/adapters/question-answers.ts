@@ -24,7 +24,7 @@ export interface ShapedAnswerPayload {
 }
 
 /**
- * @param questions  Parallel to `userAnswers` — i-th question gets i-th answer.
+ * @param questions  Parallel to `userAnswers` - i-th question gets i-th answer.
  * @param userAnswers `string[][]` from QuestionCard. For each question, an
  *   array of selected option labels. For "Other" free-text, QuestionCard
  *   collapses the typed string into picks[0] of length 1.

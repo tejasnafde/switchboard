@@ -2,10 +2,10 @@
  * Parse `git diff HEAD --no-color -- <file>` output into per-line hunks
  * the editor's gutter extension can paint.
  *
- *   - kind 'add' — lines added in the working tree, no surrounding deletions
- *   - kind 'del' — lines removed; anchored to the line *after* the deletion
+ *   - kind 'add' - lines added in the working tree, no surrounding deletions
+ *   - kind 'del' - lines removed; anchored to the line *after* the deletion
  *     in the new file so the gutter shows a marker the user can still see
- *   - kind 'mod' — paired add/del (line N replaced by line N')
+ *   - kind 'mod' - paired add/del (line N replaced by line N')
  *
  * For a hunk header `@@ -a,b +c,d @@`:
  *   - `c..c+d-1` is the added range in the new file
@@ -13,7 +13,7 @@
  *     `+` lines as `mod`; non-overlapping `+` lines are `add`; orphan
  *     `-` runs become a single `del` anchored at the new-file position
  *
- * We don't try to be cleverer than git here — patches with rename
+ * We don't try to be cleverer than git here - patches with rename
  * markers, binary files, or `--` mode lines just contribute zero hunks.
  */
 export interface DiffHunk {
@@ -83,7 +83,7 @@ export function parseUnifiedDiff(diff: string): DiffHunk[] {
       hunks.push({ kind: 'del', startLine: anchorForDel, endLine: anchorForDel })
     }
     if (newCount === 0 && dels > 0) {
-      // Pure deletion at end of file — newCount can be 0 with newStart
+      // Pure deletion at end of file - newCount can be 0 with newStart
       // pointing one *before* the first surviving line. Anchor the del
       // marker on `newStart + 1` so it shows up on a real line.
       const last = hunks[hunks.length - 1]

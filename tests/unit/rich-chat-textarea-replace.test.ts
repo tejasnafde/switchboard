@@ -21,7 +21,7 @@ function extractReplaceRangeBody(src: string): string {
   while ((m = re.exec(src)) !== null) { start = m.index; break }
   if (start === -1) throw new Error('replaceRange impl not found')
   // Find the matching closing brace of the arrow body. `replaceRange:
-  // (start, end, replacement) => { ... }` — brace-count from the first
+  // (start, end, replacement) => { ... }` - brace-count from the first
   // `{` after the arrow.
   const arrow = src.indexOf('=>', start)
   const open = src.indexOf('{', arrow)
@@ -41,7 +41,7 @@ describe('RichChatTextarea.replaceRange shape', () => {
   const src = readFileSync(SRC, 'utf8')
   const body = extractReplaceRangeBody(src)
 
-  it('does NOT call setValue — that re-render races with editor.update and resets the caret', () => {
+  it('does NOT call setValue - that re-render races with editor.update and resets the caret', () => {
     // Allow the substring inside comments (we mention the bug there) but
     // forbid the actual call expression.
     const stripComments = body

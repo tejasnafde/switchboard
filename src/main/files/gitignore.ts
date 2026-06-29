@@ -1,5 +1,5 @@
 /**
- * Tiny gitignore matcher — annotates (never filters) entries for the file
+ * Tiny gitignore matcher - annotates (never filters) entries for the file
  * tree pane so users can still see/click `node_modules/` etc. but rendered
  * greyed out (VS Code style).
  *
@@ -11,7 +11,7 @@
  *   - `!` negation (later rules win)
  *   - blank lines + `#` comments ignored
  *
- * Not aiming for full git semantics — no nested `.gitignore` composition,
+ * Not aiming for full git semantics - no nested `.gitignore` composition,
  * no `**` recursion subtleties. Good enough for the visual cue.
  */
 export interface GitignoreRule {
@@ -78,7 +78,7 @@ export function parseGitignore(content: string): GitignoreRule[] {
       const src = patternToRegexSource(pattern)
       // Anchored (leading slash): match from root. Bare name (no slash):
       // match any path segment. A slash mid-pattern (e.g. `foo/bar`) is also
-      // root-relative per gitignore semantics — not matched at arbitrary depth.
+      // root-relative per gitignore semantics - not matched at arbitrary depth.
       // Case-insensitive to mirror git core.ignorecase on macOS/Windows.
       if (anchored || pattern.includes('/')) {
         regex = new RegExp('^' + src + '$', 'i')
@@ -86,7 +86,7 @@ export function parseGitignore(content: string): GitignoreRule[] {
         regex = new RegExp('(^|/)' + src + '$', 'i')
       }
     } catch {
-      // Malformed pattern — install a never-matches sentinel so callers
+      // Malformed pattern - install a never-matches sentinel so callers
       // don't crash on weird input.
       regex = /a^/
     }
@@ -99,7 +99,7 @@ export function parseGitignore(content: string): GitignoreRule[] {
 /**
  * Check whether a repo-relative path is ignored. `isDir` controls
  * directory-only patterns. Later rules override earlier ones (gitignore
- * semantics) — so a `!keep.log` after `*.log` un-ignores `keep.log`.
+ * semantics) - so a `!keep.log` after `*.log` un-ignores `keep.log`.
  */
 export function isIgnored(relPath: string, isDir: boolean, rules: GitignoreRule[]): boolean {
   let ignored = false

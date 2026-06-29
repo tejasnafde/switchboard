@@ -21,7 +21,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
   )
   // Free-text "None of the above" fallback, per question. When a question
   // has a non-empty otherText, that overrides any picked option(s) on
-  // submit — the agent sees the typed string as the user's answer.
+  // submit - the agent sees the typed string as the user's answer.
   const [otherTexts, setOtherTexts] = useState<string[]>(
     () => question.questions.map(() => '')
   )
@@ -39,7 +39,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
   const submitAll = (all: string[][]) => {
     if (answered) return
     // If a question has a non-empty free-text answer, use that as the
-    // sole "selection" — agent sees the typed string instead of the
+    // sole "selection" - agent sees the typed string instead of the
     // picked option(s). Lets users escape out of fixed-choice questions.
     const resolved = all.map((picks, i) => {
       const text = (otherTexts[i] ?? '').trim()
@@ -76,7 +76,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     const nextAll = selections.map((s, i) => (i === qIdx ? nextForQ : s))
     setSelections(nextAll)
     // Clicking a preset option clears any in-progress free-text for that
-    // question — user can't "half-type" an Other answer AND pick an option.
+    // question - user can't "half-type" an Other answer AND pick an option.
     setOtherTexts((prev) => prev.map((t, i) => (i === qIdx ? '' : t)))
     setOtherOpen((prev) => prev.map((v, i) => (i === qIdx ? false : v)))
 
@@ -90,7 +90,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     }
   }
 
-  // Keyboard shortcut handler — number keys 1-9
+  // Keyboard shortcut handler - number keys 1-9
   useEffect(() => {
     if (answered || !activeQ) return
     const handler = (e: KeyboardEvent) => {
@@ -107,7 +107,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [qIdx, selections, answered, activeQ?.id])
 
   // Cleanup auto-advance timer on unmount
@@ -320,7 +320,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
         )}
       </div>
 
-      {/* Footer — multi-select or manual advance */}
+      {/* Footer - multi-select or manual advance */}
       {!answered && (activeQ.multiSelect || totalQuestions > 1) && (
         <div style={{
           display: 'flex',
@@ -396,12 +396,12 @@ const btnGhost: React.CSSProperties = {
 /**
  * "None of the above" escape hatch.
  *
- * Collapsed state: a dashed-border row labeled "None of the above — let
+ * Collapsed state: a dashed-border row labeled "None of the above - let
  * me explain…". Click it to expand.
  *
  * Expanded state: a single-line textarea + a small Cancel (×) button.
  * Typing in the textarea overrides any picked option when the user
- * advances — their typed string becomes the answer the agent sees.
+ * advances - their typed string becomes the answer the agent sees.
  */
 function OtherOption({
   isOpen,
@@ -455,7 +455,7 @@ function OtherOption({
         }}
       >
         <span style={{ flexShrink: 0, opacity: 0.7 }}>+</span>
-        <span>None of the above — let me explain…</span>
+        <span>None of the above - let me explain…</span>
       </button>
     )
   }
@@ -495,7 +495,7 @@ function OtherOption({
       <button
         type="button"
         onClick={onCancel}
-        title="Cancel — back to preset options"
+        title="Cancel - back to preset options"
         style={{
           background: 'transparent',
           border: 'none',

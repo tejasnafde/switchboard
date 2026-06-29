@@ -7,7 +7,7 @@ interface FeatureTourModalProps {
   /** Step index to start at (default 0). Setting state lifts to caller so
    *  Settings → "Play this step" can deep-link a specific clip. */
   startAt?: number
-  /** Called when the user clicks a "Try it" pill — caller routes to the
+  /** Called when the user clicks a "Try it" pill - caller routes to the
    *  appropriate UI (e.g. focus chat input, open search). */
   onTryIt?: (action: TryItAction) => void
 }
@@ -19,7 +19,7 @@ interface FeatureTourModalProps {
  *
  * The video for each step streams via the `sb-tour://<id>.mp4` custom
  * protocol registered in main. Missing MP4s fall through to the
- * text-only fallback — the modal stays usable while we backfill clips.
+ * text-only fallback - the modal stays usable while we backfill clips.
  */
 export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: FeatureTourModalProps) {
   const [idx, setIdx] = useState(startAt)
@@ -97,7 +97,7 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
         style={{
           width: '720px',
           maxWidth: 'calc(100vw - 80px)',
-          // Hardcoded opaque shade — DON'T use var(--bg-secondary) here.
+          // Hardcoded opaque shade - DON'T use var(--bg-secondary) here.
           // On the translucent theme that token is rgba(...) and the
           // modal becomes see-through against the dimmed chat behind.
           // This matches our dark theme value but stays solid in every
@@ -167,7 +167,7 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
               lineHeight: 1.6,
             }}>
               <div style={{ fontSize: '32px', marginBottom: '10px', opacity: 0.5 }}>▶</div>
-              <div>Clip not yet available — see description below.</div>
+              <div>Clip not yet available - see description below.</div>
             </div>
           )}
         </div>

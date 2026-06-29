@@ -68,7 +68,7 @@ export async function lspCloseDoc(workspaceRoot: string, absPath: string): Promi
   }
 }
 
-/** Test-only — clear in-memory open-doc tracking between tests. */
+/** Test-only - clear in-memory open-doc tracking between tests. */
 export function __resetLspClientForTests(): void {
   openDocs.clear()
   versionByDoc.clear()

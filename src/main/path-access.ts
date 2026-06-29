@@ -3,8 +3,8 @@
  *
  * macOS TCC ("Files and Folders" / "Full Disk Access") gates app access to
  * ~/Desktop, ~/Documents, ~/Downloads, and a few other locations. When a
- * grant is missing — or, more commonly, when the user toggled it on but
- * never relaunched Switchboard — every FS syscall the embedded PTY/SDK
+ * grant is missing - or, more commonly, when the user toggled it on but
+ * never relaunched Switchboard - every FS syscall the embedded PTY/SDK
  * makes returns EPERM. Surfacing the raw error from deep in the adapter
  * stack reads as a Claude/Codex bug; instead we detect it here and throw
  * a message that names the actual cause and the fix.
@@ -41,7 +41,7 @@ export class TccAccessError extends Error {
 /**
  * Throws TccAccessError if `cwd` is a TCC-protected location that the
  * current process can't read. Resolves silently otherwise (including
- * non-darwin, non-protected paths, and paths that don't exist — those
+ * non-darwin, non-protected paths, and paths that don't exist - those
  * surface as their own errors downstream).
  */
 export async function assertCwdReadable(cwd: string): Promise<void> {
@@ -53,6 +53,6 @@ export async function assertCwdReadable(cwd: string): Promise<void> {
     if (code === 'EPERM' || code === 'EACCES') {
       throw new TccAccessError(cwd)
     }
-    // ENOENT and friends fall through — adapter will report them.
+    // ENOENT and friends fall through - adapter will report them.
   }
 }

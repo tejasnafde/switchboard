@@ -5,8 +5,8 @@
  * Boots the *built* app under Playwright/Electron with an isolated
  * `--user-data-dir` (so the single-instance lock never collides with a
  * released build the user is running), then calls every migrated
- * window.api.* channel from the renderer. This exercises the real path —
- * preload Transport → IPC → ElectronIpcHost → registerXHandlers handler —
+ * window.api.* channel from the renderer. This exercises the real path -
+ * preload Transport → IPC → ElectronIpcHost → registerXHandlers handler -
  * which unit tests can't, and is the thing that breaks if the seam is wrong.
  *
  * Run: npm run build && node e2e/backend-host.e2e.mjs
@@ -19,7 +19,7 @@ import { resolve, join } from 'node:path'
 
 const repoRoot = process.cwd()
 if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
-  console.error('✗ out/main/index.js missing — run `npm run build` first')
+  console.error('✗ out/main/index.js missing - run `npm run build` first')
   process.exit(1)
 }
 
@@ -77,7 +77,7 @@ try {
   check(r.settingsGet === 'sb-e2e-val', 'settings:set→get round-trips through the host seam')
   check(Array.isArray(r.projects), 'app:get-projects returns an array')
 
-  // terminal — exercises host.emit + host.on (the streaming path) end to end:
+  // terminal - exercises host.emit + host.on (the streaming path) end to end:
   // create a pty, write a command, assert its output streams back.
   const termOut = await win.evaluate(
     (repo) =>
@@ -100,7 +100,7 @@ try {
   )
   check(typeof termOut === 'string' && termOut.includes('SBE2E_OK'), 'terminal create→write→onOutput streams (host.emit/on)')
 
-  // provider-registry — proves the provider channels route through the migrated
+  // provider-registry - proves the provider channels route through the migrated
   // host.handle seam. (A live instance-switch assertion needs real provider auth
   // / a mock adapter and lands with the WS-boundary phase.)
   const prov = await win.evaluate(async () => ({

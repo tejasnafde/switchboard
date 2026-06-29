@@ -21,7 +21,7 @@ export function encodeClaudeProjectPath(projectPath: string): string {
 
 /**
  * Returns true iff the given Claude projects directory name corresponds
- * exactly to the given project path. Exact match — do NOT substring-match,
+ * exactly to the given project path. Exact match - do NOT substring-match,
  * because a child project's dir name begins with the parent's encoded string.
  */
 export function isClaudeDirForProject(dir: string, projectPath: string): boolean {
@@ -63,7 +63,7 @@ async function scanClaudeProjectsDir(
     const dirs = await readdir(claudeDir)
 
     for (const dir of dirs) {
-      // Exact match only — previously used `dir.includes(encoded)` which caused
+      // Exact match only - previously used `dir.includes(encoded)` which caused
       // parent projects (e.g. /Users/foo/ssg) to incorrectly pick up sessions
       // from child projects (e.g. /Users/foo/ssg/submodule), since the child
       // dir name begins with the parent's encoded string.
@@ -95,7 +95,7 @@ async function scanClaudeProjectsDir(
           }
         }
       } catch {
-        // No index file — scan for .jsonl files directly
+        // No index file - scan for .jsonl files directly
         const files = await readdir(projectDir).catch(() => [])
         for (const file of files) {
           if (!file.endsWith('.jsonl')) continue
@@ -123,7 +123,7 @@ async function scanClaudeProjectsDir(
                 : ''
               if (text) title = generateTitle(text)
             }
-          } catch { /* title extraction failed — use default */ }
+          } catch { /* title extraction failed - use default */ }
 
           sessions.push({
             id,
@@ -137,7 +137,7 @@ async function scanClaudeProjectsDir(
       }
     }
   } catch {
-    // projects dir doesn't exist for this base — skip
+    // projects dir doesn't exist for this base - skip
   }
 }
 
@@ -231,7 +231,7 @@ export async function scanOpenCodeSessions(projectPath: string): Promise<Session
 /**
  * Scan all sources for a project.
  *
- * `claudeBaseDirs` — every Claude config root to look inside (e.g. ~/.claude
+ * `claudeBaseDirs` - every Claude config root to look inside (e.g. ~/.claude
  * plus every oauth_dir from provider_instances). Callers in app.ts build this
  * list from `listOauthDirsForAgent` + `defaultClaudeDir()` so multi-auth
  * sessions show up in the sidebar regardless of which profile wrote them.

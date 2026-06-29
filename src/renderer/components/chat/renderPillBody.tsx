@@ -1,6 +1,6 @@
 /**
  * Splits a pill-tokenized body string (`text [[pill:id]] more text`) into
- * an ordered React node array — text spans interleaved with chips.
+ * an ordered React node array - text spans interleaved with chips.
  * Tokens whose ids aren't in `pillsMeta` are dropped (matches the
  * editor's hydration semantics).
  */
@@ -15,7 +15,7 @@ const TOKEN_RE = /\[\[pill:([a-zA-Z0-9_-]+)\]\]/g
 export function renderPillBody(body: string, pillsMeta: PillsMeta): ReactNode[] {
   const out: ReactNode[] = []
   if (!body) return out
-  // Fresh regex per call — guard against sticky lastIndex if TOKEN_RE were reused.
+  // Fresh regex per call - guard against sticky lastIndex if TOKEN_RE were reused.
   const re = new RegExp(TOKEN_RE.source, 'g')
   let cursor = 0
   let m: RegExpExecArray | null

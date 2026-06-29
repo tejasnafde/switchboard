@@ -1,7 +1,7 @@
 /**
  * Auto-detect a project's favicon for the sidebar leading icon. Mirrors
- * t3code's ProjectFaviconResolver probe order — root, public/, app/, src/,
- * assets/, .idea/ — and falls back to scanning HTML `<link rel="icon">`
+ * t3code's ProjectFaviconResolver probe order - root, public/, app/, src/,
+ * assets/, .idea/ - and falls back to scanning HTML `<link rel="icon">`
  * tags. Cross-platform: paths join via node:path, no hardcoded separators.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -32,7 +32,7 @@ function touch(rel: string, content = ''): string {
   return abs
 }
 
-describe('resolveProjectFavicon — probe order', () => {
+describe('resolveProjectFavicon - probe order', () => {
   it('returns null when no favicon exists anywhere in the project', async () => {
     const result = await resolveProjectFavicon(tmp)
     expect(result).toBeNull()
@@ -72,7 +72,7 @@ describe('resolveProjectFavicon — probe order', () => {
   })
 })
 
-describe('resolveProjectFavicon — MIME detection', () => {
+describe('resolveProjectFavicon - MIME detection', () => {
   it('maps .svg to image/svg+xml', async () => {
     touch('favicon.svg', '<svg/>')
     const r = await resolveProjectFavicon(tmp)
@@ -80,7 +80,7 @@ describe('resolveProjectFavicon — MIME detection', () => {
   })
 
   it('maps .ico to image/x-icon', async () => {
-    // ICO header bytes — content irrelevant to MIME mapping (extension-driven).
+    // ICO header bytes - content irrelevant to MIME mapping (extension-driven).
     touch('favicon.ico', '\x00\x00\x01\x00')
     const r = await resolveProjectFavicon(tmp)
     expect(r!.mime).toBe('image/x-icon')
@@ -93,7 +93,7 @@ describe('resolveProjectFavicon — MIME detection', () => {
   })
 })
 
-describe('resolveProjectFavicon — HTML fallback chain', () => {
+describe('resolveProjectFavicon - HTML fallback chain', () => {
   it('falls through to <link rel=icon> scan when no static probe matches', async () => {
     // No favicon at any of the well-known probe paths, but index.html
     // points to one in a non-standard location.
@@ -105,7 +105,7 @@ describe('resolveProjectFavicon — HTML fallback chain', () => {
   })
 })
 
-describe('resolveProjectFavicon — caching', () => {
+describe('resolveProjectFavicon - caching', () => {
   it('caches the result so a second call does not re-probe (returns same object identity)', async () => {
     touch('favicon.svg', '<svg/>')
     const first = await resolveProjectFavicon(tmp)
@@ -118,14 +118,14 @@ describe('resolveProjectFavicon — caching', () => {
     touch('favicon.svg', '<svg/>')
     const first = await resolveProjectFavicon(tmp)
 
-    // Bump root mtime forward by 5 seconds — simulates a file add/remove
+    // Bump root mtime forward by 5 seconds - simulates a file add/remove
     // inside the project (which always bumps the parent dir mtime).
     const stat = statSync(tmp)
     const future = new Date(stat.mtimeMs + 5_000)
     utimesSync(tmp, future, future)
 
     const second = await resolveProjectFavicon(tmp)
-    // Cache miss — fresh probe returns a new object
+    // Cache miss - fresh probe returns a new object
     expect(second).not.toBe(first)
     // ...but the result is still the same favicon
     expect(second!.absPath).toBe(first!.absPath)

@@ -1,7 +1,7 @@
 /**
  * CM6 gutter extension that paints a colored bar (3px wide) per line
  * based on diff hunks fetched via `git:file-diff`. The hunks live in a
- * StateField so updates are a `dispatch({ effects })` away — no rebuild.
+ * StateField so updates are a `dispatch({ effects })` away - no rebuild.
  *
  * Colors:
  *   - add → green

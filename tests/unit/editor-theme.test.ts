@@ -1,6 +1,6 @@
 /**
  * Snapshot test for the GitHub-Dark / Light token tables. The visible
- * identity of the editor is a port of Shiki's github-dark theme — if a
+ * identity of the editor is a port of Shiki's github-dark theme - if a
  * token color drifts here, the editor's syntax highlight will look
  * different from the chat-bubble code blocks (which still render via
  * Shiki). The exported color tables are the regression net.

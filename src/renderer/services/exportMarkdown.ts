@@ -9,11 +9,11 @@ import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types
  *   *Started: Mon Apr 21 2026*
  *
  *   ---
- *   ## You — 14:32
+ *   ## You - 14:32
  *   {user text}
  *
  *   ---
- *   ## Claude — 14:33
+ *   ## Claude - 14:33
  *   {assistant markdown}
  *
  *   <details><summary>Bash: ls -la</summary>
@@ -68,7 +68,7 @@ export function serializeConversationToMarkdown(opts: {
       const time = new Date(msg.timestamp).toLocaleTimeString([], {
         hour: '2-digit', minute: '2-digit',
       })
-      lines.push(`## ${label} — ${time}`)
+      lines.push(`## ${label} - ${time}`)
       lines.push('')
       lastRole = msg.role
     }
@@ -93,7 +93,7 @@ export function serializeConversationToMarkdown(opts: {
       for (const tc of msg.toolCalls) {
         const summary = summarizeToolCall(tc.name, tc.input)
         lines.push(`<details>`)
-        lines.push(`<summary><strong>${escapeHtml(tc.name)}</strong>${summary ? ` — <code>${escapeHtml(summary)}</code>` : ''}</summary>`)
+        lines.push(`<summary><strong>${escapeHtml(tc.name)}</strong>${summary ? ` - <code>${escapeHtml(summary)}</code>` : ''}</summary>`)
         lines.push('')
         lines.push('```')
         lines.push(typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input, null, 2))
@@ -113,7 +113,7 @@ export function serializeConversationToMarkdown(opts: {
 
     // Approval card
     if (msg.approval) {
-      lines.push(`> **Permission request** — \`${msg.approval.toolName}\` (${msg.approval.status})`)
+      lines.push(`> **Permission request** - \`${msg.approval.toolName}\` (${msg.approval.status})`)
       if (msg.approval.detail) {
         lines.push('> ```')
         for (const l of msg.approval.detail.split('\n')) lines.push(`> ${l}`)
@@ -135,9 +135,9 @@ export function serializeConversationToMarkdown(opts: {
       lines.push(`### Questions (${msg.question.status})`)
       lines.push('')
       for (const q of msg.question.questions) {
-        lines.push(`**${q.header}** — ${q.question}`)
+        lines.push(`**${q.header}** - ${q.question}`)
         for (const opt of q.options) {
-          lines.push(`- ${opt.label}${opt.description ? ` — ${opt.description}` : ''}`)
+          lines.push(`- ${opt.label}${opt.description ? ` - ${opt.description}` : ''}`)
         }
         lines.push('')
       }
@@ -149,7 +149,7 @@ export function serializeConversationToMarkdown(opts: {
 
     // Denial pill
     if (msg.denial) {
-      lines.push(`> 🚫 **Blocked** — \`${msg.denial.toolName}\` (${msg.denial.mode}): ${msg.denial.reason}`)
+      lines.push(`> 🚫 **Blocked** - \`${msg.denial.toolName}\` (${msg.denial.mode}): ${msg.denial.reason}`)
       lines.push('')
     }
   }

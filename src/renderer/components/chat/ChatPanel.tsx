@@ -131,13 +131,13 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     if (!sessionId) return
     // Write-through to the store so other consumers (StatusBar, sidebar
     // session badges, command-palette filters) see the new agent type
-    // immediately. setAgentType also clears the stored `model` — a model
+    // immediately. setAgentType also clears the stored `model` - a model
     // id from one provider almost never round-trips to another (e.g.
     // OpenCode's `nvidia-nim/z-ai/glm-5.1` is meaningless on Codex), and
     // leaving the orphan id in place caused ModelPicker to fall into
     // its "custom" branch on the new agent.
     storeSetAgentType(sessionId, t)
-    // Reset persisted instance id to the new kind's default — the previous
+    // Reset persisted instance id to the new kind's default - the previous
     // instance belongs to the old agent kind and `resolveProviderInstance`
     // would reject it on kind mismatch.
     window.api.app.setConversationProviderInstanceId(sessionId, defaultInstanceId(t)).catch(() => {})
@@ -158,7 +158,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     if (nextInstanceId) {
       window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId).catch(() => {})
     }
-    // Record a rotation marker in the chat stream — only when there's
+    // Record a rotation marker in the chat stream - only when there's
     // actually a prior conversation to attribute (skip on freshly-opened
     // sessions where the picker is just being set up).
     const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
@@ -365,7 +365,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
         case 'context_window': {
-          // Real context usage from SDK — reflects compaction too
+          // Real context usage from SDK - reflects compaction too
           useAgentStore.getState().setTokenUsage(tid, {
             usedTokens: event.usedTokens,
             maxTokens: event.maxTokens ?? null,
@@ -527,7 +527,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         persist()
         return
       }
-      // Rejecting an agent-*added* file means it shouldn't exist — delete it
+      // Rejecting an agent-*added* file means it shouldn't exist - delete it
       // rather than leaving a stray empty file (matches Cursor's revert).
       const writeBack =
         fd.changeKind === 'add' && status === 'rejected'
@@ -536,7 +536,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       void writeBack
         .then((res) => {
           if (!res.ok) {
-            // Don't persist the status — leave the card actionable so the user
+            // Don't persist the status - leave the card actionable so the user
             // can retry rather than silently believing the revert landed.
             log.warn('file-diff write-back failed', {
               relPath: fd.relPath,
@@ -580,7 +580,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     setTimeout(() => {
       handleSend(pending.text)
     }, 100)
-    // handleSend isn't in deps since we don't want to re-fire — it's called once
+    // handleSend isn't in deps since we don't want to re-fire - it's called once
   }, [status, sessionId])
 
   // ── Rename handler ────────────────────────────────────────────
@@ -649,7 +649,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         pillsMeta: extras?.pillsMeta,
       }
       appendMessage(sessionId, userMsg)
-      // Optimistic status so the "thinking" indicator shows immediately —
+      // Optimistic status so the "thinking" indicator shows immediately -
       // real status events from the provider will override this.
       updateStatus(sessionId, 'running')
 
@@ -671,7 +671,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         emitSessionRename(sessionId, title)
       }
 
-      // Provider path (SDK). Legacy `--print` agent path removed — all
+      // Provider path (SDK). Legacy `--print` agent path removed - all
       // traffic now goes through the Claude Agent SDK / Codex app-server
       // via the provider bridge.
       const providerApi = window.api.provider
@@ -723,7 +723,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // after a session restart (e.g. instance chip switch resets
     // providerStartedRef, so the next send re-spawns with new opts). Without
     // these in the deps, the captured closure stays on the prior values and
-    // the new session boots under the old credentials — visible as "instance
+    // the new session boots under the old credentials - visible as "instance
     // switch had no effect" in the registry log.
     [sessionId, agentType, projectPath, runtimeMode, appendMessage, messages.length, resumeSessionId, setTitle, instanceId, model, reasoningEffort],
   )
@@ -780,7 +780,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     })
   }, [])
 
-  // ⌘F intercept — uses a document-level capture listener instead of an
+  // ⌘F intercept - uses a document-level capture listener instead of an
   // onKeyDownCapture on the wrapper, because the wrapper is only on the
   // capture path when document.activeElement is INSIDE this panel. After
   // the user clicks the chat title, sidebar, or anywhere ambiguous the
@@ -801,17 +801,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       const active = document.activeElement as Element | null
       const inThisPanel = !!active && el.contains(active)
       // If focus is inside ANOTHER chat panel (dual-chat mode), don't
-      // steal — that panel's listener will handle it.
+      // steal - that panel's listener will handle it.
       const inAnyChatPanel = !!active && !!active.closest('[data-chat-panel="true"]')
       // If focus is inside a terminal (xterm), the terminal pane will
-      // claim ⌘F via its own listener — bail so we don't double-trigger.
+      // claim ⌘F via its own listener - bail so we don't double-trigger.
       const inTerminal = !!active && (
         active.classList.contains('xterm-helper-textarea') ||
         !!active.closest('.xterm') ||
         !!active.closest('[data-terminal-pane="true"]')
       )
       // If focus is inside the CM6 file editor, let it handle ⌘F natively
-      // via its own searchKeymap binding — bail so we don't steal it.
+      // via its own searchKeymap binding - bail so we don't steal it.
       const inFileViewer = !!active && !!active.closest('[data-context-source="file-viewer"]')
       if (inTerminal || inFileViewer) return
       if (!inThisPanel) {
@@ -894,7 +894,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           }}
         />
 
-        {/* Folder / Chat name — flex group that truncates cleanly */}
+        {/* Folder / Chat name - flex group that truncates cleanly */}
         {hasSession ? (
           <div style={{
             display: 'flex',
@@ -995,7 +995,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         <span style={{ flex: 1 }} />
 
         {/* Right-panel close button (only shown when this is the secondary
-            panel in dual-chat mode — passed via `onClose` prop) */}
+            panel in dual-chat mode - passed via `onClose` prop) */}
         {onClose && (
           <button
             onClick={onClose}
@@ -1057,7 +1057,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         </div>
       )}
 
-      {/* Input — now includes runtime mode + context meter in footer */}
+      {/* Input - now includes runtime mode + context meter in footer */}
       <ChatInput
         sessionId={sessionId}
         onSend={handleSend}

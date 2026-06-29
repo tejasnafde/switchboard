@@ -1,6 +1,6 @@
 /**
  * Type-safe IPC channel definitions.
- * Both main and renderer import from here — single source of truth.
+ * Both main and renderer import from here - single source of truth.
  */
 
 export const TerminalChannels = {
@@ -53,7 +53,7 @@ export const AppChannels = {
   WORKSPACE_REORDER: 'app:workspace-reorder',
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
   FORK_CONVERSATION: 'app:fork-conversation',
-  // Editor tabs persistence — open files survive app restart per session.
+  // Editor tabs persistence - open files survive app restart per session.
   EDITOR_TABS_LOAD: 'app:editor-tabs-load',
   EDITOR_TABS_SAVE: 'app:editor-tabs-save',
   /**
@@ -102,7 +102,7 @@ export const GitChannels = {
   LIST_REFS: 'git:list-refs',
   SWITCH_REF: 'git:switch-ref',
   CURRENT_BRANCH: 'git:current-branch',
-  /** Editor gutter — hunks for a single file, computed against HEAD. */
+  /** Editor gutter - hunks for a single file, computed against HEAD. */
   FILE_DIFF: 'git:file-diff',
   /**
    * Create a deterministic-path worktree under userData/worktrees for a
@@ -114,7 +114,7 @@ export const GitChannels = {
 } as const
 
 /**
- * LSP bridge — main-process spawns typescript-language-server / pyright
+ * LSP bridge - main-process spawns typescript-language-server / pyright
  * per workspace; renderer sends document lifecycle + queries via these
  * channels and gets typed results / diagnostics back.
  */

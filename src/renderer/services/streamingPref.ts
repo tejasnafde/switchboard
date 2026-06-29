@@ -5,7 +5,7 @@
  * flushes once on turn.completed (see streamingBuffer.ts).
  *
  * Same persistence + cache pattern as `notifications.ts` and
- * `sessionEnvMode.ts` — one read on first access, one write to flip;
+ * `sessionEnvMode.ts` - one read on first access, one write to flip;
  * settings KV is the source of truth.
  */
 const SETTING_KEY = 'assistantStreamingEnabled'

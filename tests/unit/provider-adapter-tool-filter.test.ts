@@ -9,12 +9,12 @@ import { CUSTOM_UI_TOOLS } from '../../src/main/provider/adapters/claude-adapter
  * `ExitPlanMode`. These are rendered via QuestionCard / PlanCard driven by
  * `question.asked` / `plan.proposed` events. Emitting tool.started in
  * addition caused the raw JSON tool-call block to appear alongside (or
- * before) the custom card — duplicate + ugly.
+ * before) the custom card - duplicate + ugly.
  *
  * The fix: loop body now does `if (CUSTOM_UI_TOOLS.has(block.name)) continue`.
  * These tests lock in the membership of that set.
  */
-describe('CUSTOM_UI_TOOLS — tools suppressed from tool.started emission', () => {
+describe('CUSTOM_UI_TOOLS - tools suppressed from tool.started emission', () => {
   it('suppresses AskUserQuestion (rendered by QuestionCard)', () => {
     expect(CUSTOM_UI_TOOLS.has('AskUserQuestion')).toBe(true)
   })
@@ -33,7 +33,7 @@ describe('CUSTOM_UI_TOOLS — tools suppressed from tool.started emission', () =
     expect(CUSTOM_UI_TOOLS.has('mcp__slack__post_message')).toBe(false)
   })
 
-  it('keeps the set tight — only Claude+Codex custom-UI tool names', () => {
+  it('keeps the set tight - only Claude+Codex custom-UI tool names', () => {
     // Adding a tool here means you also need a custom card component to
     // render it. If this test fails, make sure the corresponding MessageBubble
     // branch exists before adding to the set.

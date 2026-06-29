@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Switchboard - Machine hierarchy (UX mock v2)</title>
+<style>
+:root{
+  --bg:#0c0d10; --panel:#141519; --panel2:#1a1c22; --panel3:#20232b; --border:#26282f;
+  --text:#e6e8ec; --muted:#8b909a; --faint:#5a5f6a; --accent:#3b82f6; --accent-sub:rgba(59,130,246,.15);
+  --green:#3fb950; --amber:#d29922; --red:#f85149; --purple:#a371f7;
+  --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#000;color:var(--text);
+  font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:24px;gap:16px}
+h1{font-size:15px;font-weight:600;margin:0}
+.sub{font-size:12.5px;color:var(--muted);margin:-8px 0 4px;text-align:center;max-width:940px}
+.stage{width:980px;max-width:96vw}
+
+.win{background:var(--bg);border:1px solid var(--border);border-radius:10px;overflow:hidden;
+  box-shadow:0 24px 70px rgba(0,0,0,.6);height:650px;display:flex;flex-direction:column}
+.titlebar{height:38px;display:flex;align-items:center;gap:8px;padding:0 12px;background:var(--panel);border-bottom:1px solid var(--border)}
+.dots{display:flex;gap:6px}.dot{width:11px;height:11px;border-radius:50%}
+.dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+.title{font-size:12px;color:var(--muted);flex:1;text-align:center}
+.hostbadge{font-size:11px;font-family:var(--mono);padding:3px 9px;border-radius:20px;border:1px solid rgba(59,130,246,.5);
+  color:#cfe3ff;display:flex;align-items:center;gap:6px;background:var(--accent-sub)}
+.hostbadge .pip{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 7px var(--green)}
+
+.body{flex:1;display:flex;min-height:0}
+.sidebar{width:286px;border-right:1px solid var(--border);background:var(--panel);
+  padding:8px 6px;display:flex;flex-direction:column;gap:1px;overflow:auto}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+
+.row{display:flex;align-items:center;gap:7px;border-radius:6px;cursor:default;font-size:13px;
+  padding:5px 8px;color:var(--text);white-space:nowrap;position:relative}
+.row .grip{width:10px;flex:none;color:var(--faint);opacity:0;font-size:11px;cursor:grab;letter-spacing:-2px}
+.machine>.row:hover .grip,.ws>.row:hover .grip{opacity:.55}
+.row .tw{width:11px;color:var(--faint);font-size:10px;flex:none;text-align:center}
+.row .ic{width:15px;flex:none;text-align:center;font-size:12px}
+.row .lbl{overflow:hidden;text-overflow:ellipsis}
+.row .badge{margin-left:auto;font-size:10px;min-width:16px;height:16px;padding:0 5px;border-radius:9px;
+  background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600}
+
+.machine{margin-top:6px}
+.machine>.row{font-size:12.5px;font-weight:600;background:var(--panel2);border:1px solid var(--border)}
+.pip{width:7px;height:7px;border-radius:50%;flex:none}
+.pip.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+.pip.off{background:var(--faint)}
+.pip.warn{background:var(--amber);box-shadow:0 0 6px var(--amber);animation:blink 1.1s infinite}
+@keyframes blink{50%{opacity:.35}}
+.machine .host{font-size:10px;color:var(--muted);font-family:var(--mono);font-weight:400;margin-left:6px;overflow:hidden;text-overflow:ellipsis}
+.tag{font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+  border:1px solid var(--border);border-radius:4px;padding:0 4px;margin-left:6px;font-weight:600}
+
+/* inline connect controls on the machine row */
+.act{margin-left:auto;display:flex;align-items:center;gap:6px;flex:none}
+.btn{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:5px;border:1px solid rgba(59,130,246,.5);
+  background:var(--accent-sub);color:#cfe3ff;cursor:pointer;display:flex;align-items:center;gap:4px}
+.btn.ghost{border-color:var(--border);background:transparent;color:var(--muted)}
+.btn:hover{border-color:var(--accent);color:#fff}
+.spin{display:inline-block;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.synced{font-size:9.5px;color:var(--faint);font-family:var(--mono)}
+
+.kids{display:flex;flex-direction:column;gap:1px;margin:2px 0 2px 15px;border-left:1px solid var(--border);padding-left:4px}
+.ws>.row{font-weight:500}
+.ws .swatch{width:8px;height:8px;border-radius:2px;flex:none}
+.proj>.row .ic{color:#5a6}
+.chat>.row{color:var(--muted);font-size:12.5px}
+.chat>.row.active{background:var(--accent-sub);color:#cfe3ff}
+.chat .agent{width:6px;height:6px;border-radius:50%;flex:none}
+.chat .agent.cl{background:#d97757}.chat .agent.cx{background:#10a37f}.chat .agent.oc{background:var(--purple)}
+
+/* read-only cached (offline) subtree */
+.cached .row{color:var(--faint)}
+.cached .row .lbl{font-style:italic}
+.cached .swatch,.cached .agent{filter:grayscale(1) opacity(.6)}
+.readonly{font-size:9px;color:var(--faint);border:1px solid var(--border);border-radius:4px;padding:0 4px;margin-left:auto;font-family:var(--mono)}
+
+.addmachine{margin-top:8px;font-size:12px;color:var(--muted);border:1px dashed var(--border);
+  border-radius:6px;padding:7px 8px;display:flex;align-items:center;gap:7px}
+
+.pane-h{height:30px;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 12px;
+  font-size:11px;color:var(--muted);font-family:var(--mono);gap:8px;background:var(--panel2)}
+.crumb{display:flex;align-items:center;gap:6px}.crumb .sep{color:var(--faint)}.crumb .m{color:#cfe3ff}
+.chatarea{flex:1;padding:18px 20px;display:flex;flex-direction:column;gap:13px;overflow:hidden;position:relative}
+.msg{max-width:80%}.msg .who{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.msg .bub{background:var(--panel2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;font-size:13px}
+.msg.me{align-self:flex-end}.msg.me .bub{background:var(--accent-sub);border-color:rgba(59,130,246,.4);color:#dce9ff}
+.composer{border-top:1px solid var(--border);padding:10px 14px;display:flex;flex-direction:column;gap:8px}
+.reconnect{font-size:11.5px;color:#f0c674;background:rgba(210,153,34,.14);border:1px solid rgba(210,153,34,.4);
+  border-radius:7px;padding:7px 10px;display:flex;align-items:center;gap:8px}
+.inputbar{display:flex;align-items:center;gap:8px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:var(--panel2);color:var(--muted);font-size:13px}
+.inputbar .send{margin-left:auto;font-size:11px;color:#cfe3ff;border:1px solid rgba(59,130,246,.5);border-radius:6px;padding:3px 10px;background:var(--accent-sub)}
+.statusbar{height:25px;border-top:1px solid var(--border);background:var(--panel);display:flex;align-items:center;gap:14px;padding:0 12px;font-size:11px;color:var(--muted);font-family:var(--mono)}
+.statusbar .s{display:flex;align-items:center;gap:5px}
+
+.legend{width:980px;max-width:96vw;display:flex;gap:10px;flex-wrap:wrap}
+.card{flex:1;min-width:220px;background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--accent);
+  border-radius:8px;padding:12px 14px;font-size:12.5px}
+.card .k{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);display:block;margin-bottom:5px}
+.card b{color:#cfe3ff;font-weight:600}
+code{font-family:var(--mono);font-size:11.5px;color:#cfe3ff;background:var(--panel3);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+  <h1>Switchboard - Machines layer · connect is explicit, browse works offline</h1>
+  <div class="sub"><b>Machine → Workspace → Project → Chat.</b> Drag to reorder machines (and workspaces) like projects today. Expanding a remote does <b>not</b> connect - you browse a cached read-only snapshot; an inline <b>Connect</b> button (or sending a message) goes live.</div>
+
+  <div class="stage">
+    <div class="win">
+      <div class="titlebar">
+        <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
+        <div class="title">switchboard - api · fix auth bug</div>
+        <div class="hostbadge"><span class="pip"></span> prod-vm</div>
+      </div>
+
+      <div class="body">
+        <div class="sidebar">
+
+          <!-- LOCAL -->
+          <div class="machine">
+            <div class="row"><span class="grip">⠿</span><span class="tw">▾</span><span class="pip on"></span><span class="lbl">This Mac</span><span class="tag">local</span></div>
+            <div class="kids">
+              <div class="ws">
+                <div class="row"><span class="grip">⠿</span><span class="tw">▾</span><span class="swatch" style="background:#3b82f6"></span><span class="lbl">Client A</span></div>
+                <div class="kids">
+                  <div class="proj">
+                    <div class="row"><span class="tw">▾</span><span class="ic">📁</span><span class="lbl">api</span></div>
+                    <div class="kids">
+                      <div class="chat"><div class="row"><span class="tw"></span><span class="agent cl"></span><span class="lbl">fix auth bug</span></div></div>
+                      <div class="chat"><div class="row"><span class="tw"></span><span class="agent cx"></span><span class="lbl">rate-limit retries</span></div></div>
+                    </div>
+                  </div>
+                  <div class="proj"><div class="row"><span class="tw">▸</span><span class="ic">📁</span><span class="lbl">web</span><span class="badge">2</span></div></div>
+                </div>
+              </div>
+              <div class="ws"><div class="row"><span class="grip">⠿</span><span class="tw">▸</span><span class="swatch" style="background:#a371f7"></span><span class="lbl">Personal</span></div></div>
+            </div>
+          </div>
+
+          <!-- REMOTE: CONNECTED -->
+          <div class="machine">
+            <div class="row"><span class="grip">⠿</span><span class="tw">▾</span><span class="pip on"></span><span class="lbl">prod-vm</span>
+              <span class="act"><span class="btn ghost" title="Disconnect">⏏</span></span></div>
+            <div class="kids">
+              <div class="ws">
+                <div class="row"><span class="tw">▾</span><span class="swatch" style="background:#3fb950"></span><span class="lbl">Infra</span></div>
+                <div class="kids">
+                  <div class="proj">
+                    <div class="row"><span class="tw">▾</span><span class="ic">📁</span><span class="lbl">api</span></div>
+                    <div class="kids">
+                      <div class="chat"><div class="row active"><span class="tw"></span><span class="agent cl"></span><span class="lbl">fix auth bug</span></div></div>
+                      <div class="chat"><div class="row"><span class="tw"></span><span class="agent oc"></span><span class="lbl">migrate sqlite → pg</span></div></div>
+                    </div>
+                  </div>
+                  <div class="proj"><div class="row"><span class="tw">▸</span><span class="ic">📁</span><span class="lbl">workers</span></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- REMOTE: CONNECTING (triggered by Connect / by sending) -->
+          <div class="machine">
+            <div class="row"><span class="grip">⠿</span><span class="tw">▸</span><span class="pip warn"></span><span class="lbl">gpu-box</span>
+              <span class="act"><span class="btn"><span class="spin">◐</span> connecting…</span></span></div>
+          </div>
+
+          <!-- REMOTE: OFFLINE but EXPANDED - cached read-only browse -->
+          <div class="machine">
+            <div class="row"><span class="grip">⠿</span><span class="tw">▾</span><span class="pip off"></span><span class="lbl">staging</span>
+              <span class="act"><span class="synced">synced 2h ago</span><span class="btn">⏻ Connect</span></span></div>
+            <div class="kids cached">
+              <div class="ws">
+                <div class="row"><span class="tw">▾</span><span class="swatch" style="background:#d29922"></span><span class="lbl">Deploys</span><span class="readonly">read-only</span></div>
+                <div class="kids">
+                  <div class="proj">
+                    <div class="row"><span class="tw">▾</span><span class="ic">📁</span><span class="lbl">acme-web</span></div>
+                    <div class="kids">
+                      <div class="chat"><div class="row"><span class="tw"></span><span class="agent cl"></span><span class="lbl">flaky e2e on CI</span></div></div>
+                      <div class="chat"><div class="row"><span class="tw"></span><span class="agent cx"></span><span class="lbl">bump node 20→24</span></div></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="addmachine"><span class="ic">＋</span> Add machine… <span style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)">~/.ssh/config</span></div>
+        </div>
+
+        <!-- MAIN: viewing a cached offline chat; sending will reconnect -->
+        <div class="main">
+          <div class="pane-h"><div class="crumb"><span class="m">staging</span><span class="sep">›</span>Deploys<span class="sep">›</span>acme-web<span class="sep">›</span>flaky e2e on CI <span class="readonly">read-only · offline</span></div></div>
+          <div class="chatarea">
+            <div class="msg me"><div class="who">you · 2h ago</div><div class="bub">the playwright e2e flakes on the windows runner - timing?</div></div>
+            <div class="msg"><div class="who">claude · cached</div><div class="bub">Likely - the send asserts on a fixed timer before the socket opens. Awaiting a round-trip instead would make it deterministic. <span style="color:var(--faint)">(cached from last session)</span></div></div>
+          </div>
+          <div class="composer">
+            <div class="reconnect">⏻ <b>staging is offline.</b> Sending will reconnect (SSH tunnel + remote server) - about 3s.</div>
+            <div class="inputbar">Reply to continue on staging…<span class="send">↵ Connect &amp; send</span></div>
+          </div>
+          <div class="statusbar">
+            <span class="s"><span class="pip off" style="width:7px;height:7px"></span> staging · offline</span>
+            <span class="s">acme-web</span>
+            <span class="s" style="margin-left:auto">browsing cached snapshot</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="card"><span class="k">Drag to reorder - unchanged</span>Machines reorder by drag (the <b>⠿</b> grip on hover), exactly like projects do today - same <code>@dnd-kit</code> UX, just one level up. Workspaces still reorder within a machine.</div>
+    <div class="card"><span class="k">Expand ≠ connect</span>Expanding a remote opens its <b>cached</b> tree - no connection. You browse the chat list and read prior messages offline. Connecting is a deliberate act.</div>
+    <div class="card"><span class="k">Two ways to go live</span>The inline <b>⏻ Connect</b> button on the machine row, or just <b>sending a message</b> - that auto-attempts the connect, then delivers. Composer shows the reconnect notice first.</div>
+    <div class="card"><span class="k">Cached vs live</span>Cached = greyed, italic, <code>read-only</code> (workspaces/projects/chat list + last messages, synced while connected). Never synced before? The machine expands to a single <b>Connect to load</b> row.</div>
+  </div>
+</body>
+</html>

@@ -3,7 +3,7 @@
  * profile to another so the SDK's UUID-based resume keeps working when
  * the user switches between oauth_dir provider instances mid-conversation.
  *
- * Tests run against real tmp directories — pure I/O, no mocks needed.
+ * Tests run against real tmp directories - pure I/O, no mocks needed.
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs'
@@ -83,7 +83,7 @@ describe('migrateClaudeSession', () => {
     expect(existsSync(srcPath)).toBe(true)
   })
 
-  it('is idempotent — second call overwrites with the same content', () => {
+  it('is idempotent - second call overwrites with the same content', () => {
     const content = '{"type":"user","content":"hi"}\n'
     seedSource(content)
 

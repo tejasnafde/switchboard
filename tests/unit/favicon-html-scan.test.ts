@@ -98,7 +98,7 @@ describe('resolveFaviconViaHtml', () => {
   })
 
   it('walks the candidate file list in priority order', async () => {
-    // index.html is first in the list — should win even if app/root.tsx
+    // index.html is first in the list - should win even if app/root.tsx
     // also has a favicon link.
     const winner = touch('favicon.svg', '<svg/>')
     touch('app/icon.svg', '<svg/>')

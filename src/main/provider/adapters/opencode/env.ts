@@ -3,7 +3,7 @@
  *
  * These were originally lived inline in `opencode-adapter.ts`. The ACP
  * rewrite still needs binary discovery, login-shell env probing, and
- * settings-DB key injection — but neither adapter should own the helpers
+ * settings-DB key injection - but neither adapter should own the helpers
  * exclusively while both are in-tree behind the feature flag.
  */
 
@@ -107,7 +107,7 @@ export function loadShellEnv(): Record<string, string> | null {
     const hasNvidia = 'NVIDIA_API_KEY' in env
     log.info(`shell env loaded: ${Object.keys(env).length} vars (NVIDIA_API_KEY ${hasNvidia ? 'present' : 'MISSING'})`)
   } else {
-    log.warn('shell env probe failed — opencode may not see API keys from ~/.zshrc')
+    log.warn('shell env probe failed - opencode may not see API keys from ~/.zshrc')
   }
   return env
 }

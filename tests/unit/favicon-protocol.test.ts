@@ -1,7 +1,7 @@
 /**
  * Pure parser + authorization for the `sb-favicon://` Electron protocol.
  * The actual `protocol.handle` callback is a thin adapter over these
- * functions — keeping them pure means we can test the security posture
+ * functions - keeping them pure means we can test the security posture
  * without spinning up Electron.
  *
  * URL shape:  `sb-favicon://favicon?path=<percent-encoded-absolute-path>`
@@ -9,7 +9,7 @@
  *   - the absolute project path is carried in the `path` query param
  *
  * Security: parseFaviconUrl returns the path as-is; isAuthorizedProjectPath
- * is the containment check — the path must exactly match one of the
+ * is the containment check - the path must exactly match one of the
  * registered projects. We never serve favicons from arbitrary disk
  * locations the renderer asks for.
  */
@@ -65,7 +65,7 @@ describe('isAuthorizedProjectPath', () => {
 
   it('rejects subpaths of a known project (only the project root is authorized)', () => {
     // Even if /Users/me/projects/foo is known, /Users/me/projects/foo/secret
-    // is a *different* path — favicon resolver only ever looks at probes
+    // is a *different* path - favicon resolver only ever looks at probes
     // under the project root, so anything else is a bug or attack.
     expect(isAuthorizedProjectPath('/Users/me/projects/foo/.env', known)).toBe(false)
   })

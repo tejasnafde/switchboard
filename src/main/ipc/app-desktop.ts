@@ -1,7 +1,7 @@
 /**
  * Desktop-only IPC handlers: native dialogs (folder picker, save dialog), app
  * lifecycle (relaunch), and window vibrancy. They need Electron's app / dialog /
- * BrowserWindow, so they can't run on a headless backend — registered on
+ * BrowserWindow, so they can't run on a headless backend - registered on
  * ipcMain in the Electron main process only, never on the WsHost.
  */
 import { ipcMain, dialog, app, type BrowserWindow } from 'electron'

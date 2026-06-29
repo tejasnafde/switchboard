@@ -4,7 +4,7 @@
  * MessageBubble renders markdown via `marked` + `dangerouslySetInnerHTML`.
  * After paint, we walk the resulting DOM looking for inline `<code>`
  * elements (i.e. NOT inside a `<pre>` block) whose text looks like a
- * project-relative file path — and replace them with clickable chips that
+ * project-relative file path - and replace them with clickable chips that
  * open the file viewer at the right line range.
  *
  * Existence on disk is verified via a debounced `files:resolve` IPC call
@@ -13,7 +13,7 @@
  *
  * This module exposes the DOM walker (`enhanceFilePills`) plus a pure
  * helper `pickPillCandidates(rootHtml)` that scans the rendered HTML
- * string and returns the inline-code matches — used in tests to lock down
+ * string and returns the inline-code matches - used in tests to lock down
  * the heuristic without spinning up jsdom.
  */
 import { parseFilePathRef, type FilePathRef } from '@shared/filePathRef'
@@ -30,7 +30,7 @@ export interface PillCandidate {
  *
  * Implementation note: regex on HTML is fragile in general but marked's
  * output is well-formed and we only need to find `<code>foo</code>`
- * outside `<pre>...</pre>` — a small recursive split handles it.
+ * outside `<pre>...</pre>` - a small recursive split handles it.
  */
 export function pickPillCandidates(html: string): PillCandidate[] {
   if (!html) return []
@@ -71,12 +71,12 @@ function decodeEntities(s: string): string {
  * Walk a rendered markdown root and replace path-shaped inline `<code>`
  * elements with chip nodes via the supplied factory. The factory receives
  * the parsed FilePathRef and returns the replacement DOM node (kept as a
- * factory so this module stays React-agnostic — actual chip is built in
+ * factory so this module stays React-agnostic - actual chip is built in
  * MessageBubble where it has access to the layout-store / event bus).
  *
  * Skips:
  *   - `<code>` children of `<pre>` (block code)
- *   - already-enhanced nodes (data-pill="1") — guards against re-entrancy
+ *   - already-enhanced nodes (data-pill="1") - guards against re-entrancy
  *     since MessageBubble re-runs this on every render via useEffect.
  */
 export function enhanceFilePills(

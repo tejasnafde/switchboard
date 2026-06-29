@@ -10,12 +10,12 @@ import { truncateClaudeJsonl, truncateCodexJsonl, assembleClaudeFork } from '../
 // `assistant`/`user`/`result` lines that carry visible content.
 //
 // `truncateClaudeJsonl` takes a 1-based count of *visible* events to
-// keep — that's the contract the IPC layer can compute by indexing the
+// keep - that's the contract the IPC layer can compute by indexing the
 // renderer's loaded message array. It returns the truncated text plus
 // the uuid of the last kept visible line (the resume anchor).
 
 const claudeFixture = [
-  // Pre-history summary line — non-visible, kept for context.
+  // Pre-history summary line - non-visible, kept for context.
   JSON.stringify({ type: 'summary', summary: 'old chat', leafUuid: 'sum-1' }),
   // Visible user #1
   JSON.stringify({
@@ -66,7 +66,7 @@ describe('truncateClaudeJsonl', () => {
   it('rewrites sessionId on kept lines when newSessionId is provided', () => {
     const r = truncateClaudeJsonl(claudeFixture, 2, { newSessionId: 'fresh-uuid' })
     const lines = r.newContent.trim().split('\n').map((l) => JSON.parse(l))
-    // The summary line has no sessionId — leave it alone.
+    // The summary line has no sessionId - leave it alone.
     expect(lines[0].type).toBe('summary')
     expect(lines[1].sessionId).toBe('fresh-uuid')
     expect(lines[2].sessionId).toBe('fresh-uuid')
@@ -83,12 +83,12 @@ describe('truncateClaudeJsonl', () => {
 //
 // Codex events don't have a per-line uuid; the truncation contract is
 // purely positional. We count `response_item` events whose payload is a
-// user/assistant message — same predicate JsonlParser uses for Codex.
+// user/assistant message - same predicate JsonlParser uses for Codex.
 
 const codexFixture = [
   JSON.stringify({ type: 'session_meta', payload: {} }),
   JSON.stringify({ type: 'event_msg', payload: { type: 'task_started' } }),
-  // Developer/system prompt — skipped by the parser, kept verbatim.
+  // Developer/system prompt - skipped by the parser, kept verbatim.
   JSON.stringify({
     type: 'response_item',
     payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: 'preamble' }] },

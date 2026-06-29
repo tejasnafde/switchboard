@@ -2,9 +2,9 @@ import { useRef, useEffect, type RefObject } from 'react'
 
 interface ResizeHandleProps {
   direction: 'horizontal' | 'vertical'
-  /** Ref to the element BEFORE the handle (left/top) — optional for flex:1 panels */
+  /** Ref to the element BEFORE the handle (left/top) - optional for flex:1 panels */
   beforeRef?: RefObject<HTMLDivElement | null>
-  /** Ref to the element AFTER the handle (right/bottom) — optional for flex:1 panels */
+  /** Ref to the element AFTER the handle (right/bottom) - optional for flex:1 panels */
   afterRef?: RefObject<HTMLDivElement | null>
   /** CSS property to manipulate */
   prop?: 'width' | 'height'
@@ -16,7 +16,7 @@ interface ResizeHandleProps {
   max?: number
   /** Called with final px value when drag ends */
   onResizeEnd?: (sizePx: number) => void
-  /** Called on every frame during drag — use for fit triggers */
+  /** Called on every frame during drag - use for fit triggers */
   onResizing?: () => void
   /** Show/hide the handle */
   visible?: boolean
@@ -164,7 +164,7 @@ export function ResizeHandle({
         zIndex: 10,
       }}
     >
-      {/* Expanded hit target — transparent background so it's still
+      {/* Expanded hit target - transparent background so it's still
           hit-testable by pointer events (empty divs without background
           can be no-op in some renderers). */}
       <div

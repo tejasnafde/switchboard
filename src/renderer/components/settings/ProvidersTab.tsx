@@ -1,5 +1,5 @@
 /**
- * Providers tab — CRUD UI for named provider instances per agent kind.
+ * Providers tab - CRUD UI for named provider instances per agent kind.
  */
 
 import { useEffect, useState } from 'react'
@@ -46,7 +46,7 @@ export function ProvidersTab() {
   return (
     <div>
       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.6 }}>
-        Each agent kind can have multiple named credential sets — useful for
+        Each agent kind can have multiple named credential sets - useful for
         switching between work / personal accounts without juggling shell env.
         Env values are encrypted at rest via Electron safeStorage; the
         renderer never sees decrypted secrets.
@@ -224,7 +224,7 @@ function ProviderInstanceCard({
         </div>
         <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
           {instance.authMode === 'oauth_dir'
-            ? `OAuth dir: ${instance.oauthDir || '—'}`
+            ? `OAuth dir: ${instance.oauthDir || '-'}`
             : instance.envKeys.length > 0
               ? instance.envKeys.map((k) => `${k} ●●●`).join(' · ')
               : 'No env overrides (uses shell / process env)'}
@@ -314,7 +314,7 @@ function ProviderInstanceDialog({
     instance?.authMode ?? 'env',
   )
   const [oauthDir, setOauthDir] = useState(instance?.oauthDir ?? '')
-  // Env: existing keys are surfaced (values empty — main never re-sends).
+  // Env: existing keys are surfaced (values empty - main never re-sends).
   // User types new values to overwrite; leaving blank keeps the existing
   // encrypted blob for that key untouched (we send only filled-in keys).
   const [envRows, setEnvRows] = useState<{ key: string; value: string }[]>(() => {
@@ -416,7 +416,7 @@ function ProviderInstanceDialog({
         }}
       >
         <div style={{ fontSize: '13px', fontWeight: 600, marginBottom: '14px' }}>
-          {instance ? `Edit Instance — ${agentLabel(kind)}` : `New Instance — ${agentLabel(kind)}`}
+          {instance ? `Edit Instance - ${agentLabel(kind)}` : `New Instance - ${agentLabel(kind)}`}
         </div>
 
         <Field label="Display name">

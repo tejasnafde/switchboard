@@ -41,7 +41,7 @@ function sessionsMap(adapter: ClaudeAdapter): Map<string, unknown> {
   return (adapter as any).sessions
 }
 
-describe('ClaudeAdapter.stopSession — subprocess teardown', () => {
+describe('ClaudeAdapter.stopSession - subprocess teardown', () => {
   it('calls query.close() to reap the CLI subprocess', async () => {
     const close = vi.fn()
     const adapter = new ClaudeAdapter()
@@ -73,7 +73,7 @@ describe('ClaudeAdapter.stopSession — subprocess teardown', () => {
     expect(sessionsMap(adapter).has('thread-1')).toBe(false)
   })
 
-  it('does not throw when query.close() throws — cleanup still completes', async () => {
+  it('does not throw when query.close() throws - cleanup still completes', async () => {
     const close = vi.fn(() => {
       throw new Error('subprocess already gone')
     })

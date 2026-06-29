@@ -12,7 +12,7 @@
  * Why a separate script: prebuild (typecheck + vitest) verifies source
  * correctness, but vitest runs under Node's ESM resolver and never
  * actually loads the packaged CJS bundle. v0.1.16 shipped broken
- * because of exactly that gap — the SDK loaded fine in tests but the
+ * because of exactly that gap - the SDK loaded fine in tests but the
  * packaged bundle's `require()` of an ESM-only dep crashed at launch.
  */
 import { spawn } from 'node:child_process'
@@ -46,7 +46,7 @@ if (typeof electronPath !== 'string') {
 // without the sandbox is safe and matches how `electron-builder`'s own
 // post-pack tests behave on the same runners.
 //
-// Headless ubuntu-latest runners also have no X server — Chromium's
+// Headless ubuntu-latest runners also have no X server - Chromium's
 // ozone/x11 backend aborts ("Missing X server or $DISPLAY") before
 // `app.whenReady()` fires. Wrap under `xvfb-run` (preinstalled on
 // ubuntu-latest) when DISPLAY is missing.
@@ -73,7 +73,7 @@ const child = spawn(command, args, {
 
 const TIMEOUT_MS = 30_000
 const timer = setTimeout(() => {
-  console.error(`[smoke-test] timed out after ${TIMEOUT_MS}ms — main never reached app.whenReady()`)
+  console.error(`[smoke-test] timed out after ${TIMEOUT_MS}ms - main never reached app.whenReady()`)
   child.kill('SIGKILL')
   process.exit(1)
 }, TIMEOUT_MS)
@@ -81,7 +81,7 @@ const timer = setTimeout(() => {
 child.on('exit', (code, signal) => {
   clearTimeout(timer)
   if (code === 0) {
-    console.log('[smoke-test] OK — packaged main bundle boots cleanly')
+    console.log('[smoke-test] OK - packaged main bundle boots cleanly')
     process.exit(0)
   }
   console.error(`[smoke-test] FAILED (code=${code}, signal=${signal})`)

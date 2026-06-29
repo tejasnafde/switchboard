@@ -4,7 +4,7 @@
  * Each directory is a controlled `<details>`-style node that fetches its
  * children on first expand via `files:list-dir`. Gitignored entries are
  * rendered with `data-gitignored="true"` (CSS handles 50% opacity) but
- * remain clickable — VS Code style.
+ * remain clickable - VS Code style.
  *
  * Performance:
  *   - Children are loaded only when the directory expands; a subtree is
@@ -12,7 +12,7 @@
  *     zero IPC.
  *   - Listings are cached in component state per absolute path; re-opening
  *     a folder we already loaded is instant.
- *   - We deliberately do NOT virtualize at this level — most repos have
+ *   - We deliberately do NOT virtualize at this level - most repos have
  *     fewer than ~200 entries in any one dir, and adding react-virtual
  *     for that depth would dominate the perf budget. If we ever need it,
  *     swap the inner UL for a virtualizer.
@@ -194,7 +194,7 @@ export function FileTreePane(): React.ReactElement | null {
       <ul style={{ listStyle: 'none', margin: 0, padding: '4px 0' }}>
         {/*
           Key by repoRoot so switching active session forces a fresh
-          mount — otherwise React reuses the existing DirNode subtree
+          mount - otherwise React reuses the existing DirNode subtree
           and you keep seeing the previous project's cached entries.
         */}
         <DirNode

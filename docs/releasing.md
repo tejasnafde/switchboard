@@ -10,7 +10,7 @@ install instructions live in `README.md`.
 npm version patch          # or minor / major
 git push && git push --tags
 
-# 2. Wait ~10 min — GitHub Actions builds for macOS arm64 + Windows x64
+# 2. Wait ~10 min - GitHub Actions builds for macOS arm64 + Windows x64
 #    in parallel and publishes both to the same Release.
 
 # 3. Verify the Release page contains:
@@ -22,7 +22,7 @@ git push && git push --tags
 #    - latest.yml              ← required for Windows auto-update
 ```
 
-Note: macOS ships as a `.zip` (not `.dmg`) — `dmg-builder` crashes on the
+Note: macOS ships as a `.zip` (not `.dmg`) - `dmg-builder` crashes on the
 `macos-14` CI runner (`hdiutil: create failed - Device not configured`).
 Users drag `Switchboard.app` from the zip to `/Applications` on first install.
 Auto-update uses the zip directly and works without the DMG.
@@ -46,7 +46,7 @@ the renderer talks to a small main-process module
    `update-downloaded`. The Settings UI surfaces a "Restart and
    install" button at that point.
 
-The updater is **a no-op in `npm run dev`** — `app.isPackaged` is
+The updater is **a no-op in `npm run dev`** - `app.isPackaged` is
 false, so there's no version baseline to compare against. Test against
 a real `.zip` / `.exe`.
 
@@ -60,7 +60,7 @@ a real `.zip` / `.exe`.
 - Make sure `package.json#version` matches what you want to publish.
   electron-builder will refuse to publish if the version doesn't match
   the git tag (sans `v` prefix).
-- Make sure no secrets are about to land — `git diff` for any
+- Make sure no secrets are about to land - `git diff` for any
   `ANTHROPIC_API_KEY`, `GH_TOKEN`, `.env*`, `*.pem`, `*.key` etc. The
   `.gitignore` covers the common cases but a manual scan never hurts.
 
@@ -77,7 +77,7 @@ npm version patch
 git push origin main --follow-tags
 ```
 
-`--follow-tags` (or two pushes — `git push && git push --tags`) is
+`--follow-tags` (or two pushes - `git push && git push --tags`) is
 mandatory; the workflow only triggers on tag pushes.
 
 ### 3. Watch the build
@@ -108,7 +108,7 @@ npm run dist:mac   # → release/Switchboard-X.Y.Z-arm64.dmg
 npm run dist:win   # → release/Switchboard Setup X.Y.Z.exe (Windows host only)
 ```
 
-These don't touch GitHub — useful for one-off testing.
+These don't touch GitHub - useful for one-off testing.
 
 `dist:win` only works from a Windows host because the
 `@anthropic-ai/claude-agent-sdk-win32-x64` optional dependency only
@@ -123,7 +123,7 @@ We don't have an Apple Developer certificate, so app bundles are
 unsigned. Users will see one of two prompts:
 
 - **First install**: "Switchboard can't be opened because the
-  developer cannot be verified." — Right-click the app in Finder →
+  developer cannot be verified." - Right-click the app in Finder →
   Open → Open. macOS remembers this choice for the current binary.
 - **After every auto-update**: macOS Gatekeeper re-quarantines the
   replaced app bundle. Users have to right-click → Open again, **or**
@@ -131,7 +131,7 @@ unsigned. Users will see one of two prompts:
   in a terminal. There is no way around this without paying $99/year
   for the Apple Developer Program; document loudly.
 
-The auto-update flow itself works fine — the updater downloads the
+The auto-update flow itself works fine - the updater downloads the
 new version and replaces the app bundle. It's purely the post-replace
 launch that gets re-quarantined.
 
@@ -146,7 +146,7 @@ electron-builder will sign + notarize on every release.
 ## Windows SmartScreen caveats
 
 Windows builds are also unsigned. Users see "Windows protected your
-PC" the first time they run the installer — click **More info → Run
+PC" the first time they run the installer - click **More info → Run
 anyway**. Auto-update is silent thereafter.
 
 Buying a Windows code-signing cert (~$200–400/yr from Sectigo or
@@ -159,7 +159,7 @@ similar) removes the prompt; until then, accept the friction.
 If a release ships a critical bug:
 
 1. Go to the Release on GitHub and **delete** it (or mark it as
-   "Draft" — the auto-updater ignores draft releases).
+   "Draft" - the auto-updater ignores draft releases).
 2. The previous Release's `latest-mac.yml` / `latest.yml` becomes
    the most recent published metadata.
 3. On users' next update check (every launch + every manual click),
@@ -191,6 +191,6 @@ The matrix is intentionally minimal. To add Linux:
 3. Push a tag. The Release will gain `*.AppImage` and a Linux
    `latest-linux.yml` for auto-update.
 
-Windows arm64 is the same drill — add `arm64` to the existing `win.target`
+Windows arm64 is the same drill - add `arm64` to the existing `win.target`
 arch list. We've kept it off because it doubles per-tag CI time and
 Windows-on-ARM market share is thin.

@@ -38,7 +38,7 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
   const { relPath, oldContent, newContent, changeKind, status } = fileDiff
 
   // Build diff metadata once per (old,new). Guard against the degenerate
-  // equal-content case (shouldn't happen — checkpoints only report changes).
+  // equal-content case (shouldn't happen - checkpoints only report changes).
   const metadata = useMemo(() => {
     try {
       return buildFileDiff(relPath, oldContent, newContent)
@@ -52,7 +52,7 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
   const [reverted, setReverted] = useState<Record<number, boolean>>({})
   const resolved = status !== 'pending'
 
-  // Resolved cards start collapsed — decision is made, they're just history.
+  // Resolved cards start collapsed - decision is made, they're just history.
   // Pending cards start expanded so the user sees what needs reviewing.
   const [collapsed, setCollapsed] = useState(resolved)
 
@@ -99,7 +99,7 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
         fontSize: 12,
       }}
     >
-      {/* Header — full row is clickable to toggle */}
+      {/* Header - full row is clickable to toggle */}
       <div
         role="button"
         tabIndex={0}
@@ -151,14 +151,14 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
         )}
       </div>
 
-      {/* Collapsible body — grid trick animates height without knowing it */}
+      {/* Collapsible body - grid trick animates height without knowing it */}
       <div style={{
         display: 'grid',
         gridTemplateRows: collapsed ? '0fr' : '1fr',
         transition: 'grid-template-rows 200ms cubic-bezier(0.4,0,0.2,1)',
       }}>
         <div style={{ overflow: 'hidden' }}>
-          {/* Hunks — bounded height with scroll so a large diff stays usable */}
+          {/* Hunks - bounded height with scroll so a large diff stays usable */}
           {metadata == null ? (
             <div style={{ padding: 10, opacity: 0.6 }}>Unable to render diff for this file.</div>
           ) : (

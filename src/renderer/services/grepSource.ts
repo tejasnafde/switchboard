@@ -1,7 +1,7 @@
 /**
  * `git grep` definition fallback. When LSP can't resolve a symbol (cold
  * server, or a non-LSP language), grep the repo for its declaration so
- * ⌘-click still lands somewhere useful. Returns repo-relative paths — the
+ * ⌘-click still lands somewhere useful. Returns repo-relative paths - the
  * same shape openInViewer expects.
  */
 import { useAgentStore } from '../stores/agent-store'

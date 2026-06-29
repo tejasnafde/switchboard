@@ -1,5 +1,5 @@
 /**
- * Unit tests for `computeTargetSize` — the pure half of the image-downscale
+ * Unit tests for `computeTargetSize` - the pure half of the image-downscale
  * helper. The DOM-using `downscaleImage` itself isn't unit-tested here
  * (canvas APIs aren't available under vitest's node environment); the
  * dimension math is the high-risk part and lives behind a pure boundary.

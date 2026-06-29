@@ -1,6 +1,6 @@
 /**
  * ⌘P fuzzy file finder. Lists every file in the active session's repo
- * (gitignored files included on purpose — user wants to peek at lockfiles,
+ * (gitignored files included on purpose - user wants to peek at lockfiles,
  * build output, etc). Capped at 10k paths upstream so cold listings are
  * a few hundred ms at worst.
  *
@@ -33,7 +33,7 @@ export function QuickOpenModal({ open, onClose }: QuickOpenModalProps): React.Re
   const listRef = useRef<HTMLDivElement>(null)
 
   // Load the file list on open. Cache across reopens at the modal level
-  // — if the user opens ⌘P twice in a row we reuse last cycle's listing.
+  // - if the user opens ⌘P twice in a row we reuse last cycle's listing.
   // Crude but effective; bust on session change.
   const cacheRef = useRef<{ repoRoot: string; files: string[] } | null>(null)
   useEffect(() => {

@@ -5,12 +5,12 @@ import { colorTokenForWorkspace } from './sidebar-helpers'
 interface WorkspaceManagerProps {
   workspaces: Workspace[]
   onClose: () => void
-  /** Refresh trigger — caller refetches workspaces from main after any mutation. */
+  /** Refresh trigger - caller refetches workspaces from main after any mutation. */
   onMutated: () => void
 }
 
 /**
- * Bespoke modal for managing workspaces — list with rename / recolor /
+ * Bespoke modal for managing workspaces - list with rename / recolor /
  * delete. Mirrors the visual style of MergeIntoPicker. Reorder is left
  * to right-click in the sidebar (drag-reorder ships with v2).
  */
@@ -58,7 +58,7 @@ export function WorkspaceManager({ workspaces, onClose, onMutated }: WorkspaceMa
 
   const handleDelete = async (w: Workspace) => {
     const ok = window.confirm(
-      `Delete workspace "${w.name}"?\n\nProjects in this workspace will move back to Ungrouped — no chats are deleted.`
+      `Delete workspace "${w.name}"?\n\nProjects in this workspace will move back to Ungrouped - no chats are deleted.`
     )
     if (!ok) return
     await window.api.app.workspaces.delete(w.id)

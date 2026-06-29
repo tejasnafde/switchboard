@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 
 /**
  * Test the layout store's state transitions.
- * We test the pure logic here — DOM manipulation is tested via e2e.
+ * We test the pure logic here - DOM manipulation is tested via e2e.
  */
 
 // Inline the store logic so we can test without zustand's React dependency

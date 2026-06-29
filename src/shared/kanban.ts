@@ -1,9 +1,9 @@
 /**
- * Kanban — shared types between main and renderer.
+ * Kanban - shared types between main and renderer.
  *
  * v1 model: a card is a unit of agent work scoped to one project.
  * Status drives column placement. Tags are user-controlled labels for
- * filtering/grouping. `costCapUsd` is an opt-in ceiling — when an
+ * filtering/grouping. `costCapUsd` is an opt-in ceiling - when an
  * adapter reports cumulative cost ≥ cap we surface a needs-input flag
  * rather than auto-killing the run (the user might want to extend).
  *
@@ -38,11 +38,11 @@ export interface KanbanCard {
   status: KanbanStatus
   /** Optional spend ceiling in USD; null = no cap. */
   costCapUsd: number | null
-  /** Initial runtime mode at launch. Not a live mirror — once a session exists, the chat panel owns the live mode. */
+  /** Initial runtime mode at launch. Not a live mirror - once a session exists, the chat panel owns the live mode. */
   runtimeMode: RuntimeMode
   /** Cumulative reported cost for the linked session. Null until first update. */
   costUsedUsd: number | null
-  /** Set when the user clicks "Start" — links the card to a chat session. */
+  /** Set when the user clicks "Start" - links the card to a chat session. */
   conversationId: string | null
   /** Absolute path of the per-card git worktree, or null if the card uses the project's main checkout. */
   worktreePath: string | null

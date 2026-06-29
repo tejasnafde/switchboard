@@ -8,7 +8,7 @@
  *   [[pill:<id>]]
  *
  * inside the plain-text body. The contenteditable surface owns DOM
- * concerns (rendering tokens as chips, mapping caret offsets) — these
+ * concerns (rendering tokens as chips, mapping caret offsets) - these
  * functions own the *string arithmetic* that has to stay correct
  * across every interaction.
  *
@@ -34,12 +34,12 @@ export type BodySegment =
   | { type: 'pill'; id: string }
 
 /**
- * Inverse of `serializeBodyWithPills` — turns a string with `[[pill:id]]`
+ * Inverse of `serializeBodyWithPills` - turns a string with `[[pill:id]]`
  * tokens into an ordered sequence of text / pill segments. Used by the
  * Lexical editor to hydrate its node tree from a saved draft.
  *
  * Malformed pill-shaped strings (single bracket, whitespace in id, etc.)
- * are preserved as plain text — the regex requires double brackets and
+ * are preserved as plain text - the regex requires double brackets and
  * a strict id charset (`[a-zA-Z0-9_-]+`), so anything that doesn't match
  * falls into the surrounding text segment unchanged.
  */
@@ -102,7 +102,7 @@ export function insertPillAtCursor(
  * pill's `content` string from `pillsById`. Tokens whose ids are no
  * longer in the map (because the user removed the chip) are dropped.
  *
- * Replacement is single-pass and non-recursive — pill content is
+ * Replacement is single-pass and non-recursive - pill content is
  * opaque, so a pill that happens to contain a token-shaped substring
  * is NOT re-expanded. This keeps the wire format predictable even when
  * users paste agent-formatted text into a pill.

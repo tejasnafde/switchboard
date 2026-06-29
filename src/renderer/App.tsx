@@ -35,7 +35,7 @@ import { createRendererLogger } from './logger'
 const log = createRendererLogger('app')
 
 /**
- * Root layout — flat flex row, no nesting.
+ * Root layout - flat flex row, no nesting.
  * All panels always mounted. Toggles use visibility:hidden + width:0.
  * Resize handles manipulate DOM directly during drag.
  */
@@ -106,7 +106,7 @@ export function App() {
           // Defer one tick so first render settles before the modal mounts
           setTimeout(() => { if (!cancelled) { setTourStartAt(0); setTourOpen(true) } }, 400)
         }
-      } catch { /* settings unavailable — silently skip auto-open */ }
+      } catch { /* settings unavailable - silently skip auto-open */ }
     })()
     return () => { cancelled = true }
   }, [])
@@ -114,7 +114,7 @@ export function App() {
   const handleTryIt = useCallback((action: TryItAction) => {
     if (action.kind === 'focus-chat-with-slash') {
       // Focus the chat input and pre-type "/". ChatInput owns its own
-      // textarea ref via querySelector — keep this loose to avoid a new
+      // textarea ref via querySelector - keep this loose to avoid a new
       // global event bus just for the tour.
       setTimeout(() => {
         const ta = document.querySelector<HTMLTextAreaElement>('[data-chat-input-textarea]')
@@ -207,7 +207,7 @@ export function App() {
     }
   }, [])
 
-  // Intercept external link clicks — open in default browser
+  // Intercept external link clicks - open in default browser
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const target = e.target as HTMLElement
@@ -274,7 +274,7 @@ export function App() {
         return
       }
 
-      // Only close a terminal when one is actually focused — never from
+      // Only close a terminal when one is actually focused - never from
       // ambiguous focus (that's how ⌘W was killing SSH'd-in ptys).
       if (focus === 'terminal') {
         const sid = useAgentStore.getState().activeSessionId
@@ -284,11 +284,11 @@ export function App() {
           const win = wid ? layout.windows[wid] : null
           if (win) {
             if (opts.shift) {
-              // ⌘⇧W — close the whole window and its tabs
+              // ⌘⇧W - close the whole window and its tabs
               for (const pid of win.paneIds) destroyTerminal(pid)
               useTerminalStore.getState().removeWindow(sid, wid!)
             } else {
-              // ⌘W — close just the active tab (window closes itself if last tab)
+              // ⌘W - close just the active tab (window closes itself if last tab)
               const activePaneId = win.activePaneId
               if (activePaneId) {
                 destroyTerminal(activePaneId)
@@ -298,7 +298,7 @@ export function App() {
             return
           }
         }
-        // Terminal focused but no pane to close — close the app window.
+        // Terminal focused but no pane to close - close the app window.
         window.api.closeWindow?.()
       }
       // 'other' / ambiguous focus → do nothing (no destructive close).
@@ -306,7 +306,7 @@ export function App() {
     return () => { remove() }
   }, [])
 
-  // "+ New Chat" — create a fresh session tied to a project. When the
+  // "+ New Chat" - create a fresh session tied to a project. When the
   // default workspace mode is "worktree", shell out to `git worktree
   // add` first and stamp the result on `worktreePath`; `projectPath`
   // stays the parent repo so the sidebar groups correctly. A failed
@@ -368,7 +368,7 @@ export function App() {
     [addSession, setActiveSession],
   )
 
-  // Click a session in sidebar — load its messages from disk. If we're
+  // Click a session in sidebar - load its messages from disk. If we're
   // in kanban view, drop back to chats so the user actually sees the
   // session they just clicked.
   const handleSessionSelect = useCallback(
@@ -387,7 +387,7 @@ export function App() {
       const existing = storeState.sessions.find((s) => s.id === session.id)
       if (existing) {
         setActiveSession(session.id)
-        // Messages may have been evicted — reload from disk if so.
+        // Messages may have been evicted - reload from disk if so.
         if (needsMessageReload(existing)) {
           try {
             const resp = await window.api.app.loadSessionById(session.id) as {
@@ -395,19 +395,19 @@ export function App() {
               meta: { id: string; title: string; projectPath: string; agentType: string } | null
             }
             if (resp?.messages?.length) setMessages(session.id, resp.messages)
-          } catch { /* failed reload — session shows empty state */ }
+          } catch { /* failed reload - session shows empty state */ }
         }
         return
       }
 
-      // Terminal sessions have no JSONL — PTY is gone after restart, just activate.
+      // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
       if (session.agentType === 'terminal') {
         addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title })
         setActiveSession(session.id)
         return
       }
 
-      // First open: create session in store — pass session.id as resumeSessionId
+      // First open: create session in store - pass session.id as resumeSessionId
       // so Claude CLI can --resume the conversation. Hydrate the
       // worktree pointer so a session that was created in worktree
       // mode resumes in its worktree, not the parent repo.
@@ -454,7 +454,7 @@ export function App() {
       } catch { /* best-effort */ }
 
       // Load messages via loadSessionById so the main process scans every
-      // known oauth_dir for this agent kind — sessions whose last turn ran
+      // known oauth_dir for this agent kind - sessions whose last turn ran
       // under a non-default profile (e.g. after instance rotation) write
       // JSONLs under that profile's dir, which the project scanner doesn't
       // see (it only walks ~/.claude).
@@ -464,7 +464,7 @@ export function App() {
           meta: { id: string; title: string; projectPath: string; agentType: string } | null
         }
         if (resp?.messages?.length) setMessages(session.id, resp.messages)
-      } catch { /* failed load — session shows empty state */ }
+      } catch { /* failed load - session shows empty state */ }
     },
     [addSession, setActiveSession, setMessages, clearMessages],
   )
@@ -484,18 +484,18 @@ export function App() {
   }, [activeAgentSessionId, termSetActiveSession])
 
   // Restore the per-session viewer file when the active session changes.
-  // Each chat keeps its own viewer context — switching back to a chat
+  // Each chat keeps its own viewer context - switching back to a chat
   // lands on the file you were last reading there.
   useEffect(() => {
     useLayoutStore.getState().hydrateViewerForSession(activeAgentSessionId)
   }, [activeAgentSessionId])
 
-  // Terminal lifecycle — spawn/kill PTYs on session change
+  // Terminal lifecycle - spawn/kill PTYs on session change
   useTerminalLifecycle()
 
   // Keyboard shortcuts
   useEffect(() => {
-    // ⌘-/⌘⇧- (macOS) or Alt+←/→ (Win/Linux) — VS Code-style editor back/forward
+    // ⌘-/⌘⇧- (macOS) or Alt+←/→ (Win/Linux) - VS Code-style editor back/forward
     const isMac =(typeof navigator !== 'undefined' && /Mac|iPad|iPhone/.test(navigator.platform)) || process.platform === 'darwin'
     const handleNavKeys = (e: KeyboardEvent): boolean => {
       if (useLayoutStore.getState().rightPaneMode !== 'files') return false
@@ -538,23 +538,23 @@ export function App() {
           e.preventDefault()
           toggleTerminal()
         }
-        // ⌘+Shift+E — toggle right pane: terminal ↔ files
+        // ⌘+Shift+E - toggle right pane: terminal ↔ files
         else if ((e.key === 'e' || e.key === 'E') && e.shiftKey) {
           e.preventDefault()
           toggleRightPaneMode()
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
         }
-        // ⌘+Shift+K — toggle top-level app view (chats ↔ kanban board)
+        // ⌘+Shift+K - toggle top-level app view (chats ↔ kanban board)
         else if ((e.key === 'k' || e.key === 'K') && e.shiftKey) {
           e.preventDefault()
           useLayoutStore.getState().toggleAppView()
         }
-        // ⌘+Shift+P — command palette
+        // ⌘+Shift+P - command palette
         else if ((e.key === 'p' || e.key === 'P') && e.shiftKey) {
           e.preventDefault()
           setPaletteOpen((prev) => !prev)
         }
-        // ⌘+P — fuzzy file finder (Quick Open). Skip when another modal
+        // ⌘+P - fuzzy file finder (Quick Open). Skip when another modal
         // is already up so we don't stack them, and bail when focus is
         // in any text input so users typing "p" with their cmd key down
         // don't accidentally trigger it.
@@ -564,16 +564,16 @@ export function App() {
           e.preventDefault()
           setQuickOpenOpen(true)
         }
-        // ⌘+Shift+F — search across conversations
+        // ⌘+Shift+F - search across conversations
         else if ((e.key === 'f' || e.key === 'F') && e.shiftKey) {
           e.preventDefault()
           setSearchOpen((prev) => !prev)
         }
-        // ⌘+⇧+T — new window in a new row (below)
-        // ⌘+T    — new window in the same row (right of active)
+        // ⌘+⇧+T - new window in a new row (below)
+        // ⌘+T    - new window in the same row (right of active)
         //
         // Previously: silently did nothing when `activeSessionId` was
-        // null — a bad UX that made the shortcut feel broken. Now:
+        // null - a bad UX that made the shortcut feel broken. Now:
         // falls back to the first available session; if none exist,
         // logs a helpful console warning so devtools shows the reason.
         else if (e.key.toLowerCase() === 't') {
@@ -581,13 +581,13 @@ export function App() {
           const agentState = useAgentStore.getState()
           let sid = agentState.activeSessionId
           if (!sid) {
-            // Fallback — pick the most recent session so ⌘T still works
+            // Fallback - pick the most recent session so ⌘T still works
             // even if the user hasn't explicitly focused a chat.
             sid = agentState.sessions[0]?.id ?? null
             if (sid) agentState.setActiveSession(sid)
           }
           if (!sid) {
-            log.warn('⌘T: no session available — open or create a chat first')
+            log.warn('⌘T: no session available - open or create a chat first')
             return
           }
           const st = useTerminalStore.getState()
@@ -601,12 +601,12 @@ export function App() {
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
           if (ref) setTimeout(() => focusTerminal(ref.paneId), 80)
         }
-        // ⌘+Shift+| — toggle dual-chat mode (opens rightmost inactive
+        // ⌘+Shift+| - toggle dual-chat mode (opens rightmost inactive
         // session on the right, or closes if already dual). When opening,
         // pick the most-recent session that isn't the currently active one.
         //
         // Guard: skip when the user is typing in a text input / textarea /
-        // contenteditable — otherwise this shortcut eats characters and
+        // contenteditable - otherwise this shortcut eats characters and
         // wipes in-progress drafts with attachments.
         else if (e.key === '|' || (e.key === '\\' && e.shiftKey)) {
           const active = document.activeElement
@@ -619,12 +619,12 @@ export function App() {
           if (layout.dualChat) {
             layout.closeRightPanel()
           } else {
-            // Open the session picker — lets the user choose which session
+            // Open the session picker - lets the user choose which session
             // opens in the right panel instead of auto-picking the last one.
             setSessionPickerOpen(true)
           }
         }
-        // ⌘+Backspace — interrupt the current agent turn. xterm's helper
+        // ⌘+Backspace - interrupt the current agent turn. xterm's helper
         // textarea counts as text input so ⌘+Delete keeps its line-kill behavior.
         else if (e.key === 'Backspace' && !e.shiftKey && !e.altKey) {
           const sid = useAgentStore.getState().activeSessionId
@@ -642,7 +642,7 @@ export function App() {
             }
           }
         }
-        // ⌘+L — context bridge: append active terminal selection to the
+        // ⌘+L - context bridge: append active terminal selection to the
         // chat draft. User types their question after the pasted context
         // and hits Send as normal.
         else if ((e.key === 'l' || e.key === 'L') && !e.shiftKey) {
@@ -652,7 +652,7 @@ export function App() {
           // terminal-only flow when nothing is wired up.
           const appended = captureSelection()
           if (!appended) {
-            log.info('⌘L: no selection — select text in a terminal, file viewer, or chat message first')
+            log.info('⌘L: no selection - select text in a terminal, file viewer, or chat message first')
           } else {
             // Focus the chat input so user can immediately type their question.
             // (ChatInput's textarea doesn't have a stable ref at the App level,
@@ -665,13 +665,13 @@ export function App() {
             }, 40)
           }
         }
-        // ⌘+K — quick prompt: open the floating prompt bar. Pre-fills
+        // ⌘+K - quick prompt: open the floating prompt bar. Pre-fills
         // with the current terminal selection as context (if any).
         else if (e.key === 'k' || e.key === 'K') {
           e.preventDefault()
           setQuickPromptOpen(true)
         }
-        // ⌘+\ — new tab in the active window
+        // ⌘+\ - new tab in the active window
         else if (e.key === '\\' && !e.shiftKey) {
           const sid = useAgentStore.getState().activeSessionId
           if (sid) {
@@ -684,7 +684,7 @@ export function App() {
             if (pid) setTimeout(() => focusTerminal(pid), 80)
           }
         }
-        // ⌘+⇧+] — next tab in active window
+        // ⌘+⇧+] - next tab in active window
         else if (e.key === '}' || (e.key === ']' && e.shiftKey)) {
           const sid = useAgentStore.getState().activeSessionId
           if (sid) {
@@ -694,7 +694,7 @@ export function App() {
             if (pid) setTimeout(() => focusTerminal(pid), 40)
           }
         }
-        // ⌘+⇧+[ — prev tab in active window
+        // ⌘+⇧+[ - prev tab in active window
         else if (e.key === '{' || (e.key === '[' && e.shiftKey)) {
           const sid = useAgentStore.getState().activeSessionId
           if (sid) {
@@ -704,7 +704,7 @@ export function App() {
             if (pid) setTimeout(() => focusTerminal(pid), 40)
           }
         }
-        // ⌘+⌥+Arrow — navigate between windows directionally
+        // ⌘+⌥+Arrow - navigate between windows directionally
         else if (e.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
           const sid = useAgentStore.getState().activeSessionId
           if (!sid) return
@@ -714,7 +714,7 @@ export function App() {
           const pid = useTerminalStore.getState().getActivePaneId(sid)
           if (pid) setTimeout(() => focusTerminal(pid), 40)
         }
-        // ⌘+1..9 — focus window by index
+        // ⌘+1..9 - focus window by index
         else if (e.key >= '1' && e.key <= '9') {
           const sid = useAgentStore.getState().activeSessionId
           if (sid) {
@@ -765,7 +765,7 @@ export function App() {
         <span style={{ flex: 1 }} />
         <span style={{ fontWeight: 500, letterSpacing: '0.3px' }}>Switchboard</span>
         <span style={{ flex: 1, display: 'flex', justifyContent: 'flex-end', paddingRight: '12px', alignItems: 'center', gap: '8px' }}>
-          {/* Chats ↔ Board view toggle. ⌘⇧K does the same thing — this
+          {/* Chats ↔ Board view toggle. ⌘⇧K does the same thing - this
               gives discoverability for users who don't know the shortcut. */}
           <ViewToggle />
           <button
@@ -794,14 +794,14 @@ export function App() {
         </span>
       </div>
 
-      {/* Body — flat flex row, all panels always mounted. The chat +
+      {/* Body - flat flex row, all panels always mounted. The chat +
            terminal stack and the kanban view are siblings; we toggle
            between them with `display: none` so xterm/PTY state and the
            Shiki cache survive the swap (same pattern as the right-pane
            terminal↔files toggle). Avoids the translucent-theme bleed-
            through that an absolute overlay caused. */}
       <div style={{ flex: '1 1 0%', display: 'flex', minHeight: 0 }}>
-        {/* Sidebar — width + visibility driven from JSX (not imperatively
+        {/* Sidebar - width + visibility driven from JSX (not imperatively
              mutated in the store) so React reconciles drag-time writes
              back to state on the next commit. See layout-store.ts. */}
         <div
@@ -829,7 +829,7 @@ export function App() {
         />
 
         {/* Engineering view: chat + terminal stack. Hidden (not unmounted)
-            when the user switches to the board view — preserves PTY +
+            when the user switches to the board view - preserves PTY +
             xterm + Shiki state across toggles. */}
         <div
           style={{
@@ -840,7 +840,7 @@ export function App() {
             position: 'relative',
           }}
         >
-          {/* Chat — fills remaining space. In dual mode, renders two
+          {/* Chat - fills remaining space. In dual mode, renders two
               ChatPanels side-by-side with a draggable divider.
               Ratio lives in refs during drag for perf; on release we commit
               to the store so it persists on layout changes / remount. */}
@@ -854,7 +854,7 @@ export function App() {
             </div>
           )}
 
-          {/* Terminal divider — `beforeRef` intentionally omitted; the chat
+          {/* Terminal divider - `beforeRef` intentionally omitted; the chat
               panel between sidebar and terminal is flex:1, no width to pin.
               Wiring sidebarRef here causes the "can't resize either pane"
               bug; pinned by tests/unit/resize-handle-wiring.test.ts. */}
@@ -868,7 +868,7 @@ export function App() {
             visible={terminalVisible}
           />
 
-          {/* Right pane: terminal OR files (toggle via ⌘⇧E). Both stay mounted —
+          {/* Right pane: terminal OR files (toggle via ⌘⇧E). Both stay mounted -
                hiding instead of unmounting preserves xterm/pty state and Shiki
                cache between toggles, matching the terminal-registry pattern. */}
           <div
@@ -906,7 +906,7 @@ export function App() {
 
         {/* PM view: kanban board. Always mounted so the project +
             workspace lists and the filter dropdowns stay warm across
-            toggles — unmounting on every swap was causing a visible
+            toggles - unmounting on every swap was causing a visible
             empty-dropdown flicker every time the user came back. */}
         <div
           style={{
@@ -1041,7 +1041,7 @@ function ViewToggle(): React.ReactElement {
 }
 
 /**
- * Dual-chat container — renders two ChatPanels and a performant split
+ * Dual-chat container - renders two ChatPanels and a performant split
  * handle between them. The ratio is written directly to the two panels'
  * `flexGrow` via refs during drag (no React re-renders, no store churn).
  * On release, the final ratio is committed to layout-store so it survives
@@ -1136,7 +1136,7 @@ function ChatSplitHandle({
         const local = e.clientX - rect.left
         const ratio = Math.max(0.2, Math.min(0.8, local / rect.width))
         currentRatioRef.current = ratio
-        // Direct DOM writes — no React re-render during drag.
+        // Direct DOM writes - no React re-render during drag.
         if (leftRef.current) leftRef.current.style.flex = `${ratio} 1 0%`
         if (rightRef.current) rightRef.current.style.flex = `${1 - ratio} 1 0%`
       }}

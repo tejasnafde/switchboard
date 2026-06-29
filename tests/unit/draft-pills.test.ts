@@ -1,7 +1,7 @@
 /**
  * Draft pills are the structured, removable chips that float above the
  * chat textarea (Cursor-style). Each pill carries a short *label* (what
- * the user sees on the chip — e.g. `cloudbuild.base.yaml (2-9)`) plus
+ * the user sees on the chip - e.g. `cloudbuild.base.yaml (2-9)`) plus
  * the *content* that gets serialized into the message body when the user
  * hits Send. Plain typed text continues to live in the draft string.
  *

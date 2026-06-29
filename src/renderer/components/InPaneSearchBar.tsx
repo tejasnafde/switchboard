@@ -2,14 +2,14 @@ import { useEffect, useRef, useState } from 'react'
 
 /**
  * Small floating search bar used by both `TerminalPane` and `ChatPanel`
- * for ⌘F in-pane search. Surface-agnostic — the parent owns the actual
+ * for ⌘F in-pane search. Surface-agnostic - the parent owns the actual
  * search algorithm and just hands us callbacks.
  *
  * Behavior:
  *  - Mounts focused. ⌘F again is a no-op (parent decides whether to
  *    re-focus the input or no-op).
  *  - Enter → onNext, Shift+Enter → onPrev, Escape → onClose.
- *  - Input is debounced via React state — every change calls onQuery
+ *  - Input is debounced via React state - every change calls onQuery
  *    so the parent can run the search (terminal: searchAddon.findNext;
  *    chat: filter messages list).
  */
@@ -49,9 +49,9 @@ export function InPaneSearchBar({
       // Stop pointer events from reaching whatever is rendered behind the
       // bar (terminal LivePane has `onClick={onFocus}` which calls
       // `terminal.focus()` and yanks focus right back from our input).
-      // mousedown is the one that matters — focus moves on mousedown,
-      // not click — so we capture it before xterm's listener fires.
-      // Bubble-phase handlers — stopping propagation in the capture phase
+      // mousedown is the one that matters - focus moves on mousedown,
+      // not click - so we capture it before xterm's listener fires.
+      // Bubble-phase handlers - stopping propagation in the capture phase
       // also blocks descendant onClick / onMouseDown (the × button), so
       // the close button never fires (and the user has to click the
       // input + press Escape to dismiss). Bubble phase runs AFTER the
@@ -74,7 +74,7 @@ export function InPaneSearchBar({
       // stopPropagation so keystrokes typed in the search box don't bubble
       // up to the pane's ⌘F handler (which would re-focus or close it).
       onKeyDown={(e) => {
-        // Stop ALL keys from bubbling out of the search bar — otherwise
+        // Stop ALL keys from bubbling out of the search bar - otherwise
         // pressing arrow keys would also drive the chat textarea or the
         // terminal underneath.
         if (e.key === 'Escape') {
@@ -95,7 +95,7 @@ export function InPaneSearchBar({
           e.stopPropagation()
           onPrev()
         } else if (e.key === 'F3' || (e.key === 'g' && (e.metaKey || e.ctrlKey))) {
-          // ⌘G (macOS) / Ctrl+G (Windows/Linux) / F3 — "find next"
+          // ⌘G (macOS) / Ctrl+G (Windows/Linux) / F3 - "find next"
           // muscle memory across platforms.
           e.preventDefault()
           e.stopPropagation()
@@ -112,7 +112,7 @@ export function InPaneSearchBar({
         alignItems: 'center',
         gap: 6,
         padding: '6px 8px',
-        // Hardcoded opaque background — `var(--bg-secondary)` is alpha-blended
+        // Hardcoded opaque background - `var(--bg-secondary)` is alpha-blended
         // in the glass theme and the bar has to read clearly over terminal /
         // chat content, so we don't honor that variable here.
         background: '#1a1d24',

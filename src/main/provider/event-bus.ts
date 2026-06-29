@@ -10,7 +10,7 @@
  * The bus inverts that: adapters publish to the bus, and N independent
  * subscribers consume. The renderer bridge is one subscriber; the
  * task-state recorder (used by background tasks / kanban) is another.
- * Adding a third — telemetry, replay, whatever — costs one `subscribe()`
+ * Adding a third - telemetry, replay, whatever - costs one `subscribe()`
  * call instead of a registry refactor.
  *
  * Implemented over Node's EventEmitter for zero-dep simplicity. The
@@ -43,7 +43,7 @@ export class RuntimeEventBus {
   }
 
   /**
-   * Register a subscriber. Returns an unsubscribe fn — caller is
+   * Register a subscriber. Returns an unsubscribe fn - caller is
    * responsible for invoking it on teardown to avoid memory leaks.
    */
   subscribe(listener: RuntimeEventListener): () => void {

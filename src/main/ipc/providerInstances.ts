@@ -103,7 +103,7 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
   try {
     if (instance.agentType === 'claude-code') {
       const bin = findClaudeBin()
-      if (!bin) return { ok: false, message: 'claude binary not found — install Claude Code and ensure it is on PATH' }
+      if (!bin) return { ok: false, message: 'claude binary not found - install Claude Code and ensure it is on PATH' }
       const out = spawnSync(bin, ['auth', 'status'], { env, timeout: 7000, encoding: 'utf-8' })
       if (out.error) return { ok: false, message: `claude error: ${out.error.message}` }
       if (out.status !== 0) {
@@ -118,7 +118,7 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
     }
     if (instance.agentType === 'codex') {
       const codexBin = findCodexPath()
-      if (!codexBin) return { ok: false, message: 'codex binary not found — install Codex and ensure it is on PATH' }
+      if (!codexBin) return { ok: false, message: 'codex binary not found - install Codex and ensure it is on PATH' }
       const out = spawnSync(codexBin, ['login', 'status'], { env, timeout: 5000, encoding: 'utf-8' })
       if (out.error) return { ok: false, message: `codex error: ${out.error.message}` }
       // `codex login status` exits 0 when logged in; non-zero means not logged in.

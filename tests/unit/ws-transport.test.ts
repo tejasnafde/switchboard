@@ -1,8 +1,8 @@
 /**
  * Loopback test for the remote boundary: a real WsHost (over a ws server) and
  * a real WsTransport (over the global WebSocket) talking the ws-protocol on an
- * ephemeral port. Proves invoke/send/emit round-trip end to end — the contract
- * a future server.js relies on — with no Electron in the loop.
+ * ephemeral port. Proves invoke/send/emit round-trip end to end - the contract
+ * a future server.js relies on - with no Electron in the loop.
  */
 import { describe, it, expect, afterEach } from 'vitest'
 import { WebSocketServer, type AddressInfo } from 'ws'

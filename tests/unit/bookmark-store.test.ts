@@ -64,7 +64,7 @@ describe('bookmark-store', () => {
     expect(id).toBe(useBookmarkStore.getState().bookmarks[0].id)
   })
 
-  it('save is idempotent — second save is a no-op', async () => {
+  it('save is idempotent - second save is a no-op', async () => {
     const api = makeApi()
     stubApi(api)
     await useBookmarkStore.getState().save(BASE_PARAMS)

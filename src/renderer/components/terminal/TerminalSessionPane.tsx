@@ -1,5 +1,5 @@
 /**
- * TerminalSessionPane — full-height terminal for sessions with type='terminal'.
+ * TerminalSessionPane - full-height terminal for sessions with type='terminal'.
  * Replaces the chat panel in the center column when a terminal session is active.
  */
 import { useEffect, useRef } from 'react'
@@ -18,7 +18,7 @@ export function TerminalSessionPane({ paneId }: Props) {
 
     const ro = new ResizeObserver(() => fitTerminal(paneId))
     ro.observe(containerRef.current)
-    // Don't kill PTY on unmount — pane survives panel toggles, same as TerminalPane.
+    // Don't kill PTY on unmount - pane survives panel toggles, same as TerminalPane.
     return () => ro.disconnect()
   }, [paneId])
 
