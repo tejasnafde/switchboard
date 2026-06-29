@@ -394,6 +394,10 @@ const api = {
     reorder: (ids: string[]): Promise<{ ok: true }> => transport.invoke(MachineChannels.REORDER, ids),
     listSshHosts: (): Promise<SshHost[]> => transport.invoke(MachineChannels.LIST_SSH_HOSTS),
     getSnapshots: (): Promise<Record<string, MachineSnapshot>> => transport.invoke(MachineChannels.GET_SNAPSHOTS),
+    connect: (id: string): Promise<{ ok: boolean; error?: string }> => transport.invoke(MachineChannels.CONNECT, id),
+    disconnect: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DISCONNECT, id),
+    onStatus: (callback: (machineId: string, status: string) => void): (() => void) =>
+      transport.on<[string, string]>(MachineChannels.STATUS, (machineId, status) => callback(machineId, status)),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────

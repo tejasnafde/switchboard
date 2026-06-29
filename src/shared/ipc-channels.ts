@@ -74,6 +74,12 @@ export const MachineChannels = {
   LIST_SSH_HOSTS: 'machines:list-ssh-hosts',
   /** Cached per-remote tree snapshots for offline read-only browse. */
   GET_SNAPSHOTS: 'machines:get-snapshots',
+  /** Open an ssh tunnel to a remote and boot its backend. */
+  CONNECT: 'machines:connect',
+  /** Tear down a remote's tunnel. */
+  DISCONNECT: 'machines:disconnect',
+  /** Main -> renderer: per-machine connection status changed. */
+  STATUS: 'machines:status',
 } as const
 
 export const KanbanChannels = {

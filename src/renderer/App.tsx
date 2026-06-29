@@ -171,6 +171,7 @@ export function App() {
     void useMachineStore.getState().hydrate()
     void useMachineStore.getState().loadSshHosts()
     void useMachineStore.getState().loadSnapshots()
+    return useMachineStore.getState().subscribeStatus()
   }, [])
 
   // Load saved theme on mount
