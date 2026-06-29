@@ -14,10 +14,9 @@ import type { SafeStorage } from 'electron'
 
 export const isElectron = !!process.versions.electron
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function electron(): any {
-  // require() stays unevaluated under Node since isElectron gates every call;
-  // electron is marked external in both build targets.
+// Only reached when isElectron; electron is external in both build targets, so
+// this require never resolves in a plain-Node process.
+function electron(): typeof import('electron') {
   return require('electron')
 }
 
