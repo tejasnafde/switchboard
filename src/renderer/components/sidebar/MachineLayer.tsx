@@ -11,6 +11,7 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { useMachineStore } from '../../stores/machine-store'
 import { buildMachineList, type MachineNode, type MachineStatus } from './machineList'
+import { syncedAgoLabel, cachedProjects } from './machineSnapshot'
 
 const PIP_COLOR: Record<MachineStatus, string> = {
   connected: 'var(--success)',
@@ -49,6 +50,7 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
   const toggleCollapsed = useMachineStore((s) => s.toggleCollapsed)
   const remove = useMachineStore((s) => s.remove)
   const reorder = useMachineStore((s) => s.reorder)
+  const snapshots = useMachineStore((s) => s.snapshots)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const nodes = buildMachineList(remotes, { localName: 'This Mac', connections })
@@ -63,6 +65,27 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
     const to = ids.indexOf(String(over.id))
     if (from === -1 || to === -1) return
     void reorder(arrayMove(ids, from, to))
+  }
+
+  const renderRemoteBody = (machineId: string) => {
+    const snap = snapshots[machineId]
+    const projects = cachedProjects(snap)
+    if (projects.length === 0) {
+      return <div className="sidebar-machine-empty">Not connected. Remote connect ships in a later update.</div>
+    }
+    return (
+      <div className="sidebar-machine-cached">
+        <div className="cached-banner">{syncedAgoLabel(snap?.syncedAt, Date.now())} · read-only</div>
+        {projects.map((p) => (
+          <div key={p.path} className="cached-project">
+            <div className="cached-project-name">{p.name}</div>
+            {p.sessions.map((s) => (
+              <div key={s.id} className="cached-chat">{s.title}</div>
+            ))}
+          </div>
+        ))}
+      </div>
+    )
   }
 
   const renderNode = (node: MachineNode, dragHandleProps?: Record<string, unknown>) => {
@@ -101,11 +124,7 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
         </header>
         {!isCollapsed && (
           <div className="sidebar-machine-body">
-            {node.kind === 'local' ? (
-              children
-            ) : (
-              <div className="sidebar-machine-empty">Not connected. Remote connect ships in a later update.</div>
-            )}
+            {node.kind === 'local' ? children : renderRemoteBody(node.id)}
           </div>
         )}
       </section>

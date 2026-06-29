@@ -1286,3 +1286,35 @@ mark.sb-search-mark.active {
 .sidebar-machine-header:hover .machine-grip {
   opacity: 0.5;
 }
+
+/* Offline cached tree (read-only browse of a remote) */
+.sidebar-machine-cached {
+  opacity: 0.6;
+  padding: 2px 0 6px;
+}
+.cached-banner {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 3px 12px 5px 24px;
+  font-family: var(--mono, monospace);
+}
+.cached-project {
+  padding: 2px 0;
+}
+.cached-project-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 3px 12px 3px 24px;
+  font-style: italic;
+}
+.cached-chat {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 2px 12px 2px 38px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: italic;
+}

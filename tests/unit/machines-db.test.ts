@@ -18,8 +18,15 @@ interface DbRow {
 }
 
 const store = new Map<string, DbRow>()
+const snapStore = new Map<string, { data: string; synced_at: number }>()
 
 function prepare(sql: string) {
+  if (sql.startsWith('INSERT INTO machine_snapshots')) {
+    return { run: (id: string, data: string, syncedAt: number) => snapStore.set(id, { data, synced_at: syncedAt }) }
+  }
+  if (sql.includes('FROM machine_snapshots')) {
+    return { all: () => [...snapStore.entries()].map(([machine_id, v]) => ({ machine_id, ...v })) }
+  }
   if (sql.includes('ORDER BY sort_order')) {
     return {
       all: () =>
@@ -86,9 +93,12 @@ vi.mock('../../src/main/db/database', () => ({
   getDb: () => ({ prepare, transaction: (fn: (a: unknown) => void) => (a: unknown) => fn(a) }),
 }))
 
-import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines } from '../../src/main/db/machines'
+import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, saveMachineSnapshot, getMachineSnapshots } from '../../src/main/db/machines'
 
-beforeEach(() => store.clear())
+beforeEach(() => {
+  store.clear()
+  snapStore.clear()
+})
 
 describe('machines CRUD', () => {
   it('createMachine assigns incrementing sort_order and round-trips fields', () => {
@@ -129,5 +139,17 @@ describe('machines CRUD', () => {
     const m = createMachine({ name: 'gone', sshHost: 'h' }, 1)
     deleteMachine(m.id)
     expect(listMachines()).toEqual([])
+  })
+
+  it('saveMachineSnapshot upserts and getMachineSnapshots round-trips', () => {
+    saveMachineSnapshot('m1', { syncedAt: 100, projects: [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't' }] }] })
+    let snaps = getMachineSnapshots()
+    expect(snaps.m1.syncedAt).toBe(100)
+    expect(snaps.m1.projects[0].name).toBe('api')
+    // upsert replaces
+    saveMachineSnapshot('m1', { syncedAt: 200, projects: [] })
+    snaps = getMachineSnapshots()
+    expect(snaps.m1.syncedAt).toBe(200)
+    expect(snaps.m1.projects).toEqual([])
   })
 })

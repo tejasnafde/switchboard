@@ -9,7 +9,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { MachineChannels } from '@shared/ipc-channels'
 import { createMainLogger } from '../logger'
-import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, type MachineInput } from '../db/machines'
+import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, getMachineSnapshots, type MachineInput } from '../db/machines'
 import { parseSshConfig } from '../machines/sshConfig'
 
 const log = createMainLogger('ipc:machines')
@@ -32,6 +32,8 @@ export function registerMachineHandlers(host: BackendHost): void {
     reorderMachines(ids, Date.now())
     return { ok: true }
   })
+
+  host.handle(MachineChannels.GET_SNAPSHOTS, () => getMachineSnapshots())
 
   host.handle(MachineChannels.LIST_SSH_HOSTS, async () => {
     try {
