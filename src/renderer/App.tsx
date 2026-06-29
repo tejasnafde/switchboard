@@ -7,6 +7,7 @@ import { closeEditorTab } from './components/files/editor/editorTabClose'
 import { useBookmarkStore } from './stores/bookmark-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
+import { useMachineStore } from './stores/machine-store'
 import { useTerminalLifecycle } from './hooks/useTerminalLifecycle'
 import { ResizeHandle } from './components/layout/ResizeHandle'
 import { Sidebar } from './components/sidebar/Sidebar'
@@ -164,6 +165,12 @@ export function App() {
 
   // Load bookmarks on mount
   useEffect(() => { void useBookmarkStore.getState().load() }, [])
+
+  // Machine registry (remote SSH hosts) - hydrate once on launch.
+  useEffect(() => {
+    void useMachineStore.getState().hydrate()
+    void useMachineStore.getState().loadSshHosts()
+  }, [])
 
   // Load saved theme on mount
   useEffect(() => {
