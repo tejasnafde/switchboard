@@ -1273,3 +1273,16 @@ mark.sb-search-mark.active {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.machine-grip {
+  flex: none;
+  width: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: grab;
+  opacity: 0;
+  letter-spacing: -2px;
+}
+.sidebar-machine-header:hover .machine-grip {
+  opacity: 0.5;
+}
