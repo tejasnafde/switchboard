@@ -2,6 +2,13 @@ import { EventEmitter } from 'events'
 import { PassThrough } from 'stream'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+// These tests spawn a (mocked) codex app-server and await the JSON-RPC
+// handshake. On CPU-starved parallel CI runners (Windows) that in-process
+// round-trip can exceed vitest's 5s default and trip a spurious timeout - the
+// adapter's own 30s INIT_TIMEOUT_MS is the real hang guard, so give the file
+// headroom.
+vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 })
+
 const writes: string[] = []
 let emitFailedTurn = false
 let stallInitialize = false
