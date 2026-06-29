@@ -22,6 +22,8 @@ import { serializeConversationToMarkdown, suggestedExportFilename } from '../../
 import { SidebarFilter } from './SidebarFilter'
 import { decideDragOutcome } from './dragLogic'
 import { WorkspaceManager } from './WorkspaceManager'
+import { MachineLayer } from './MachineLayer'
+import { AddMachineModal } from './AddMachineModal'
 import { ProjectFavicon } from './ProjectFavicon'
 import {
   groupProjectsByWorkspace,
@@ -154,6 +156,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   const [editValue, setEditValue] = useState('')
   const [filterQuery, setFilterQuery] = useState('')
   const [managerOpen, setManagerOpen] = useState(false)
+  const [addMachineOpen, setAddMachineOpen] = useState(false)
   const [savedOpen, setSavedOpen] = useState(false)
   const editRef = useRef<HTMLInputElement>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
@@ -738,6 +741,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           </section>
         )}
 
+        <MachineLayer onAddMachine={() => setAddMachineOpen(true)}>
         <DndContext
           sensors={sensors}
           modifiers={[restrictToVerticalAxis]}
@@ -806,6 +810,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
             )}
           </SortableContext>
         </DndContext>
+        </MachineLayer>
 
 
         {projects.length === 0 && (
@@ -933,6 +938,8 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           }}
         />
       )}
+
+      {addMachineOpen && <AddMachineModal onClose={() => setAddMachineOpen(false)} />}
 
       {/* Merge-fragment picker - lists sibling chats in the same project. */}
       {mergePickerFor && (
