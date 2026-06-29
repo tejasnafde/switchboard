@@ -170,6 +170,7 @@ export function App() {
   useEffect(() => {
     void useMachineStore.getState().hydrate()
     void useMachineStore.getState().loadSshHosts()
+    void useMachineStore.getState().loadSnapshots()
   }, [])
 
   // Load saved theme on mount

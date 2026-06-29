@@ -28,3 +28,16 @@ export interface SshHost {
   user?: string
   port: number
 }
+
+/** A trimmed project + chat list, cached per remote so its tree can be browsed
+ *  read-only while offline. Populated from the remote on connect (M4). */
+export interface CachedProject {
+  path: string
+  name: string
+  sessions: Array<{ id: string; title: string }>
+}
+
+export interface MachineSnapshot {
+  syncedAt: number
+  projects: CachedProject[]
+}

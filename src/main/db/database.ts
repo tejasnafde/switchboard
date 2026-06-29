@@ -368,6 +368,12 @@ function migrate(db: Database.Database): void {
       updated_at  INTEGER NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_machines_sort ON machines(sort_order);
+
+    CREATE TABLE IF NOT EXISTS machine_snapshots (
+      machine_id TEXT PRIMARY KEY,
+      data       TEXT NOT NULL,
+      synced_at  INTEGER NOT NULL
+    );
   `)
 
   log.info('database migrated')

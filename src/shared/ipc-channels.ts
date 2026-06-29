@@ -72,6 +72,8 @@ export const MachineChannels = {
   REORDER: 'machines:reorder',
   /** Parse ~/.ssh/config into host candidates for the "Add machine" picker. */
   LIST_SSH_HOSTS: 'machines:list-ssh-hosts',
+  /** Cached per-remote tree snapshots for offline read-only browse. */
+  GET_SNAPSHOTS: 'machines:get-snapshots',
 } as const
 
 export const KanbanChannels = {

@@ -8,7 +8,7 @@
  * lands in M4; until then everything reads `offline`.
  */
 import { create } from 'zustand'
-import type { Machine, MachineInput, SshHost } from '@shared/machines'
+import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type { MachineStatus } from '../components/sidebar/machineList'
 import { createRendererLogger } from '../logger'
 
@@ -24,6 +24,8 @@ interface MachineStore {
   collapsed: Set<string>
   /** ~/.ssh/config candidates for the Add-machine picker. */
   sshHosts: SshHost[]
+  /** machineId -> cached tree snapshot for offline read-only browse. */
+  snapshots: Record<string, MachineSnapshot>
 
   hydrate: () => Promise<void>
   add: (input: MachineInput) => Promise<Machine | null>
@@ -31,6 +33,7 @@ interface MachineStore {
   remove: (id: string) => Promise<void>
   reorder: (ids: string[]) => Promise<void>
   loadSshHosts: () => Promise<void>
+  loadSnapshots: () => Promise<void>
   setActive: (id: string) => void
   toggleCollapsed: (id: string) => void
 }
@@ -41,6 +44,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   activeMachineId: 'local',
   collapsed: new Set(),
   sshHosts: [],
+  snapshots: {},
 
   hydrate: async () => {
     const api = window.api?.machines
@@ -80,6 +84,14 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       set({ sshHosts: await window.api.machines.listSshHosts() })
     } catch (err) {
       log.warn('loadSshHosts failed', err)
+    }
+  },
+
+  loadSnapshots: async () => {
+    try {
+      set({ snapshots: await window.api.machines.getSnapshots() })
+    } catch (err) {
+      log.warn('loadSnapshots failed', err)
     }
   },
 

@@ -4,7 +4,7 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
-import type { Machine, MachineInput, SshHost } from '@shared/machines'
+import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
@@ -393,6 +393,7 @@ const api = {
     delete: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DELETE, id),
     reorder: (ids: string[]): Promise<{ ok: true }> => transport.invoke(MachineChannels.REORDER, ids),
     listSshHosts: (): Promise<SshHost[]> => transport.invoke(MachineChannels.LIST_SSH_HOSTS),
+    getSnapshots: (): Promise<Record<string, MachineSnapshot>> => transport.invoke(MachineChannels.GET_SNAPSHOTS),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────

@@ -5,7 +5,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { getDb } from './database'
-import type { Machine, MachineInput } from '@shared/machines'
+import type { Machine, MachineInput, MachineSnapshot } from '@shared/machines'
 
 export type { Machine, MachineInput }
 
@@ -101,4 +101,30 @@ export function reorderMachines(ids: string[], now: number): void {
     ordered.forEach((id, i) => stmt.run(i, now, id))
   })
   tx(ids)
+}
+
+// ─── Offline snapshots (cached remote tree, populated on connect) ────
+
+export function saveMachineSnapshot(machineId: string, snapshot: MachineSnapshot): void {
+  getDb()
+    .prepare(
+      `INSERT INTO machine_snapshots (machine_id, data, synced_at) VALUES (?, ?, ?)
+       ON CONFLICT(machine_id) DO UPDATE SET data = excluded.data, synced_at = excluded.synced_at`,
+    )
+    .run(machineId, JSON.stringify(snapshot.projects), snapshot.syncedAt)
+}
+
+export function getMachineSnapshots(): Record<string, MachineSnapshot> {
+  const rows = getDb()
+    .prepare('SELECT machine_id, data, synced_at FROM machine_snapshots')
+    .all() as Array<{ machine_id: string; data: string; synced_at: number }>
+  const out: Record<string, MachineSnapshot> = {}
+  for (const r of rows) {
+    try {
+      out[r.machine_id] = { syncedAt: r.synced_at, projects: JSON.parse(r.data) }
+    } catch {
+      /* skip a corrupt snapshot row */
+    }
+  }
+  return out
 }
