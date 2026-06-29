@@ -123,9 +123,11 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   },
 
   subscribeStatus: () =>
-    window.api.machines.onStatus((id, status) =>
-      set((s) => ({ connections: { ...s.connections, [id]: status as MachineStatus } })),
-    ),
+    window.api.machines.onStatus((id, status, url) => {
+      if (status === 'connected' && url) window.api.routing.connectMachine(id, url)
+      else if (status === 'offline' || status === 'error') window.api.routing.disconnectMachine(id)
+      set((s) => ({ connections: { ...s.connections, [id]: status as MachineStatus } }))
+    }),
 
   setActive: (id) => set({ activeMachineId: id }),
 

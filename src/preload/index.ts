@@ -3,6 +3,7 @@ import { IpcTransport, type Transport } from './transport'
 import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter } from './transport-router'
+import { RoutingTable } from './routing-table'
 import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
@@ -57,9 +58,14 @@ const baseTransport: Transport = backendUrl
   ? new HybridTransport(new IpcTransport(), new WsTransport(backendUrl))
   : new IpcTransport()
 if (backendUrl) console.info(`[SB:preload] remote backend: ${backendUrl}`)
-// Router holds 'local' (above) plus a WsTransport per connected remote (M4b 2b).
-// With only 'local' registered and the default resolver, it is a pass-through.
-const transport: Transport = new TransportRouter(baseTransport)
+// Router holds 'local' (above) plus a WsTransport per connected remote; the
+// routing table decides which one each call hits (keyed by threadId/terminal id
+// the renderer binds at creation). Unbound calls stay local, so a fully-local
+// app behaves exactly as before.
+const routingTable = new RoutingTable()
+const router = new TransportRouter(baseTransport, (channel, args) => routingTable.resolve(channel, args))
+const remoteTransports = new Map<string, WsTransport>()
+const transport: Transport = router
 
 const api = {
   // ─── Terminal ────────────────────────────────────────────────────
@@ -400,8 +406,31 @@ const api = {
     getSnapshots: (): Promise<Record<string, MachineSnapshot>> => transport.invoke(MachineChannels.GET_SNAPSHOTS),
     connect: (id: string): Promise<{ ok: boolean; error?: string }> => transport.invoke(MachineChannels.CONNECT, id),
     disconnect: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DISCONNECT, id),
-    onStatus: (callback: (machineId: string, status: string) => void): (() => void) =>
-      transport.on<[string, string]>(MachineChannels.STATUS, (machineId, status) => callback(machineId, status)),
+    onStatus: (callback: (machineId: string, status: string, url: string | null) => void): (() => void) =>
+      transport.on<[string, string, string | null]>(MachineChannels.STATUS, (machineId, status, url) =>
+        callback(machineId, status, url ?? null),
+      ),
+  },
+
+  // ─── Transport routing (per-session local/remote backend dispatch) ──
+  // Renderer-local: these mutate the preload router/table directly, no IPC.
+  routing: {
+    /** Bind a threadId/terminal id to a machine so its calls route there. */
+    bind: (resourceId: string, machineId: string): void => routingTable.bind(resourceId, machineId),
+    unbind: (resourceId: string): void => routingTable.unbind(resourceId),
+    /** Register a connected remote's WS backend so calls bound to it can dial it. */
+    connectMachine: (machineId: string, url: string): void => {
+      if (remoteTransports.has(machineId)) return
+      const ws = new WsTransport(url)
+      remoteTransports.set(machineId, ws)
+      router.register(machineId, ws)
+    },
+    disconnectMachine: (machineId: string): void => {
+      router.unregister(machineId)
+      routingTable.forgetMachine(machineId)
+      remoteTransports.get(machineId)?.close()
+      remoteTransports.delete(machineId)
+    },
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────

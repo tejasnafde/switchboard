@@ -21,7 +21,8 @@ export interface ConnectionManagerDeps {
   waitForHealth: (url: string) => Promise<boolean>
   remotePort: number
   remoteCommand: string
-  onStatus: (machineId: string, status: ConnectionStatus) => void
+  /** url is the local ws:// to dial when connected, null otherwise. */
+  onStatus: (machineId: string, status: ConnectionStatus, url: string | null) => void
 }
 
 interface Conn {
@@ -84,6 +85,6 @@ export class ConnectionManager {
     const next = nextConnectionStatus(conn.status, event)
     if (next === conn.status) return
     conn.status = next
-    this.deps.onStatus(machineId, next)
+    this.deps.onStatus(machineId, next, this.urlOf(machineId))
   }
 }

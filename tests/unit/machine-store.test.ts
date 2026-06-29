@@ -22,9 +22,13 @@ const del = vi.fn(async (id: string) => {
   return { ok: true as const }
 })
 const reorder = vi.fn(async () => ({ ok: true as const }))
+let statusCb: ((id: string, status: string, url: string | null) => void) | null = null
+const connectMachine = vi.fn()
+const disconnectMachine = vi.fn()
 
 beforeEach(() => {
   stored = [mk('a', 0), mk('b', 1), mk('c', 2)]
+  statusCb = null
   ;(globalThis as { window?: unknown }).window = {
     api: {
       machines: {
@@ -34,7 +38,12 @@ beforeEach(() => {
         delete: del,
         reorder,
         listSshHosts: vi.fn(async () => []),
+        onStatus: vi.fn((cb) => {
+          statusCb = cb
+          return () => {}
+        }),
       },
+      routing: { connectMachine, disconnectMachine },
     },
   }
   useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [] })
@@ -65,6 +74,24 @@ describe('machine-store', () => {
     await useMachineStore.getState().remove('b')
     expect(del).toHaveBeenCalledWith('b')
     expect(useMachineStore.getState().remotes.map((m) => m.id)).toEqual(['a', 'c'])
+  })
+
+  it('subscribeStatus registers a remote transport on connect and tears it down on drop', () => {
+    useMachineStore.getState().subscribeStatus()
+    statusCb!('m1', 'connected', 'ws://127.0.0.1:7681')
+    expect(connectMachine).toHaveBeenCalledWith('m1', 'ws://127.0.0.1:7681')
+    expect(useMachineStore.getState().connections.m1).toBe('connected')
+
+    statusCb!('m1', 'error', null)
+    expect(disconnectMachine).toHaveBeenCalledWith('m1')
+    expect(useMachineStore.getState().connections.m1).toBe('error')
+  })
+
+  it('subscribeStatus does not register a transport while still connecting', () => {
+    useMachineStore.getState().subscribeStatus()
+    statusCb!('m1', 'connecting', null)
+    expect(connectMachine).not.toHaveBeenCalled()
+    expect(disconnectMachine).not.toHaveBeenCalled()
   })
 
   it('toggleCollapsed flips membership', () => {
