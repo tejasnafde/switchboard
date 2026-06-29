@@ -1,12 +1,6 @@
 /**
- * Environment shim for code that must run both inside the Electron main process
- * and in a headless `node server.js` backend. Electron APIs are reached lazily
- * (only when actually running under Electron) so importing this module never
- * pulls `electron` into a plain-Node process.
- *
- *   userDataDir() — DB / app-support root
- *   appRootDir()  — repo/app root for resolving bundled binaries (LSP servers)
- *   getSafeStorage() — Electron keychain crypto, or null when headless
+ * Lazy Electron shim so the same modules load under Electron and a headless
+ * `node` backend — electron is required only when actually running under it.
  */
 import { homedir } from 'os'
 import { join } from 'path'

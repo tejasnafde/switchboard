@@ -1,12 +1,7 @@
 /**
- * Server side of the remote boundary: a BackendHost that serves the same
- * registerXHandlers / ProviderRegistry code over ws-protocol instead of
- * Electron IPC. server.js constructs one around a WebSocketServer; the same
- * handlers that run in-process under ElectronIpcHost run here unchanged.
- *
- * ponytail: emit broadcasts to every connected client (one renderer expected;
- * extra clients are harmless). Per-client routing lands if multi-window remote
- * becomes real.
+ * Server BackendHost over ws-protocol: the same registerX handlers that run
+ * under ElectronIpcHost run here unchanged. emit broadcasts to all connected
+ * clients (one expected).
  */
 import { WebSocketServer, type WebSocket } from 'ws'
 import { encodeFrame, decodeFrame, type WsFrame } from '@shared/ws-protocol'

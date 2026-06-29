@@ -1,11 +1,6 @@
 /**
- * Wire protocol for the remote backend boundary. A thin correlation-id layer
- * over WebSocket text frames so the Transport (client) and BackendHost (server)
- * agree on framing. JSON is the codec — frames are small and human-debuggable.
- *
- *   invoke  → req  → res        (correlated by id)
- *   send    → snd               (fire-and-forget, no reply)
- *   on/emit ← evt               (server push)
+ * Wire frames for the remote boundary (JSON codec): invoke → req/res
+ * (correlated by id), send → snd, push → evt.
  */
 
 export type WsFrame =
