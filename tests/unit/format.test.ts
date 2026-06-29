@@ -2,7 +2,7 @@
  * Unit tests for shared formatting helpers.
  *
  * `fmtDuration` is used by MessageBubble to render "Worked for 1.4s" under
- * each completed assistant turn — Cursor-style indicator. Must handle:
+ * each completed assistant turn - Cursor-style indicator. Must handle:
  *   - sub-second (200 → "0.2s")
  *   - sub-minute decimals (1400 → "1.4s")
  *   - minute+second (65000 → "1m 5s")

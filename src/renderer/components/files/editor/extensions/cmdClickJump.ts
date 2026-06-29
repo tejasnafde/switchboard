@@ -100,7 +100,7 @@ export function runDefinitionJump(
     .catch((err) => log.warn('jump-to-definition failed', { symbol: w.word, err }))
 }
 
-/** F12 — jump to definition of the symbol under the cursor. */
+/** F12 - jump to definition of the symbol under the cursor. */
 export function jumpToDefinitionAtCursor(
   view: EditorView,
   getPath: () => string | null,
@@ -140,7 +140,7 @@ export function cmdClickJump(
       apply(e.metaKey || e.ctrlKey ? rangeAt(e.clientX, e.clientY) : null)
     }
     // Pressing/releasing the modifier while the mouse is stationary should
-    // show/hide the underline too — recompute at the last known position.
+    // show/hide the underline too - recompute at the last known position.
     const onKey = (e: KeyboardEvent): void => {
       apply(e.metaKey || e.ctrlKey ? rangeAt(lastX, lastY) : null)
     }

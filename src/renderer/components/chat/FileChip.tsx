@@ -5,7 +5,7 @@
  *   1. Post-processed `<code>` in MessageBubble that resolves to a real
  *      repo file → click opens the FileViewerPane scrolled to the line
  *      range.
- *   2. Selection-to-pill from the file viewer / terminal — same chip, but
+ *   2. Selection-to-pill from the file viewer / terminal - same chip, but
  *      inserted inline into the chat input draft (handled by the draft
  *      store; the chip itself is identical).
  */

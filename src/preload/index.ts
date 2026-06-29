@@ -44,7 +44,7 @@ export interface ProviderInstanceUpsertInput {
 
 /**
  * Expose a typed API to the renderer via contextBridge.
- * The renderer calls window.api.* — never touches ipcRenderer directly; every
+ * The renderer calls window.api.* - never touches ipcRenderer directly; every
  * method goes through `transport`, the swappable renderer↔backend seam.
  */
 // SWITCHBOARD_BACKEND_URL (e.g. ws://vm-host:8765) points the app at a remote

@@ -85,7 +85,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
         </span>
       </div>
 
-      {/* Detail — collapsible. Long JSON tool inputs used to overflow a
+      {/* Detail - collapsible. Long JSON tool inputs used to overflow a
           160px box silently; now default-collapsed with a summary line. */}
       <ApprovalDetail detail={message.approval.detail} />
 
@@ -256,7 +256,7 @@ const btnStyles: Record<string, React.CSSProperties> = {
 
 /**
  * Collapsible tool-input detail. Long JSON used to overflow a 160px
- * scrolling box silently — users couldn't tell what they were approving
+ * scrolling box silently - users couldn't tell what they were approving
  * without clicking into it. Now shows a one-line summary by default with
  * an expand toggle. Uses native <details> for zero-dep accessibility.
  */
@@ -322,13 +322,13 @@ function ApprovalDetail({ detail }: { detail: string }) {
  * Extract a one-line summary from a tool-input detail string.
  *
  * The detail is often pretty-printed JSON truncated at 500 chars by the
- * adapter — so JSON.parse often fails on incomplete JSON. We try
+ * adapter - so JSON.parse often fails on incomplete JSON. We try
  * structured extraction first, then regex fallback on common keys
  * (`file_path`, `command`, `path`, `url`) that appear in the raw text
  * even when the JSON is truncated.
  *
  * Previous bug: fallback was `detail.split('\n')[0]` which produced just
- * `{` for pretty-printed JSON — useless as a summary.
+ * `{` for pretty-printed JSON - useless as a summary.
  */
 function extractSummary(detail: string): string {
   // Try parsing as complete JSON first.
@@ -346,7 +346,7 @@ function extractSummary(detail: string): string {
     // JSON is likely truncated. Fall through to regex.
   }
 
-  // Regex fallback — pull known keys from the raw (possibly truncated) text.
+  // Regex fallback - pull known keys from the raw (possibly truncated) text.
   // These patterns match pretty-printed JSON like: "file_path": "/Users/foo/bar.ts"
   for (const key of ['file_path', 'command', 'path', 'url']) {
     const match = new RegExp(`"${key}":\\s*"([^"]*)"`, 'i').exec(detail)

@@ -1,7 +1,7 @@
 /**
  * Inline chip node for the rich chat input.
  *
- * `PillNode` is a Lexical `DecoratorNode` — it renders custom React
+ * `PillNode` is a Lexical `DecoratorNode` - it renders custom React
  * (the chip) but participates in the editor's text/selection model
  * like any other inline node. That's the whole reason we picked
  * Lexical over a hand-rolled contenteditable: DecoratorNodes get IME
@@ -69,7 +69,7 @@ function PillChip({ pillId, label, kind, nodeKey }: PillChipProps): JSX.Element 
           type="button"
           aria-label={`Remove ${label}`}
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleRemove() }}
-          // Prevent focus stealing — without this, clicking × moves focus
+          // Prevent focus stealing - without this, clicking × moves focus
           // out of the editor and the user has to re-click into the chip.
           onMouseDown={(e) => e.preventDefault()}
           style={{
@@ -109,7 +109,7 @@ export class PillNode extends DecoratorNode<JSX.Element> {
     this.__kind = kind
   }
 
-  /** Pill id is what survives serialization — label + kind are looked up at render time. */
+  /** Pill id is what survives serialization - label + kind are looked up at render time. */
   getPillId(): string { return this.__pillId }
   getLabel(): string { return this.__label }
   getKindValue(): DraftPillKind { return this.__kind }
@@ -125,7 +125,7 @@ export class PillNode extends DecoratorNode<JSX.Element> {
 
   isInline(): boolean { return true }
   isKeyboardSelectable(): boolean { return true }
-  // Treat the chip as one indivisible unit — Backspace deletes the whole
+  // Treat the chip as one indivisible unit - Backspace deletes the whole
   // pill, arrow keys jump past it. Without this, users could caret-into
   // the empty chip and get stuck.
   isIsolated(): boolean { return true }

@@ -1,5 +1,5 @@
 /**
- * Tests for `sortTemplatesByRecency` — picker dropdown sort key.
+ * Tests for `sortTemplatesByRecency` - picker dropdown sort key.
  *
  * Recency desc, then `default` first, then alphabetical for the
  * remaining no-recorded-use bucket.
@@ -41,7 +41,7 @@ describe('sortTemplatesByRecency', () => {
   it('scopes recency per-project', () => {
     recordTemplateUsage('/proj-a', 'staging')
     const out = sortTemplatesByRecency(['default', 'staging'], '/proj-b')
-    // /proj-b has no recorded use — alphabetical with default first.
+    // /proj-b has no recorded use - alphabetical with default first.
     expect(out).toEqual(['default', 'staging'])
   })
 

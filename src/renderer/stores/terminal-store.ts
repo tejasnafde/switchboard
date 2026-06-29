@@ -6,7 +6,7 @@ import { destroyTerminal } from '../services/terminal-registry'
 
 /**
  * Pane = a single terminal (one PTY + one xterm instance).
- * Stacked inside a Window — only the active pane is visible.
+ * Stacked inside a Window - only the active pane is visible.
  */
 export interface PaneState {
   id: string
@@ -52,7 +52,7 @@ interface PaneOptions {
   cwd?: string
   command?: string
   wait_for?: string
-  /** Restored from saved layout — pane starts in a "stale" state awaiting user confirmation. */
+  /** Restored from saved layout - pane starts in a "stale" state awaiting user confirmation. */
   stale?: boolean
 }
 
@@ -105,7 +105,7 @@ interface TerminalStore {
    * persisted into `session_layouts.template_name`.
    */
   templateNames: Record<string, string>
-  /** Deprecated — kept for backward compat in older callers */
+  /** Deprecated - kept for backward compat in older callers */
   globalActivePaneId: string | null
   activeSessionId: string | null
 
@@ -137,14 +137,14 @@ interface TerminalStore {
   // Metadata
   updatePaneLabel: (sessionId: string, paneId: string, label: string) => void
   updatePaneStatus: (sessionId: string, paneId: string, status: TerminalStatus) => void
-  /** Clear the `stale` flag on a pane — flips it from "awaiting start" to live. */
+  /** Clear the `stale` flag on a pane - flips it from "awaiting start" to live. */
   markPaneStarted: (sessionId: string, paneId: string) => void
 
   // Session lifecycle
   setActiveSession: (sessionId: string | null) => void
   clearSessionLayout: (sessionId: string) => void
 
-  // Template tracking — used by the per-chat picker chip
+  // Template tracking - used by the per-chat picker chip
   getSessionTemplateName: (sessionId: string) => string | null
   setSessionTemplateName: (sessionId: string, name: string | null) => void
 }
@@ -236,7 +236,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
 
       let rows: RowState[]
       if (direction === 'row') {
-        // Same row — insert immediately after the active window
+        // Same row - insert immediately after the active window
         rows = prev.rows.map((r, i) => {
           if (i !== rowIndex) return r
           const activeIdx = r.windowIds.indexOf(activeWindowId)
@@ -245,7 +245,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
           return { ...r, windowIds: next }
         })
       } else {
-        // column — new row right after the active row
+        // column - new row right after the active row
         const newRow: RowState = { id: genRowId(), windowIds: [windowId] }
         rows = [...prev.rows.slice(0, rowIndex + 1), newRow, ...prev.rows.slice(rowIndex + 1)]
       }
@@ -420,7 +420,7 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
         }
       }
 
-      // Window survives — update activePaneId if we removed the active one
+      // Window survives - update activePaneId if we removed the active one
       const newActive = win.activePaneId === paneId
         ? remainingPanes[Math.max(0, win.paneIds.indexOf(paneId) - 1)]
         : win.activePaneId

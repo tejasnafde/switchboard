@@ -1,6 +1,6 @@
 /**
  * Resolve "find all references" for the symbol at a position, with a one-line
- * code preview per hit (for the inline peek panel). LSP-only — returns [] for
+ * code preview per hit (for the inline peek panel). LSP-only - returns [] for
  * unsupported languages or a cold server. Paths come back repo-relative.
  */
 import { useAgentStore } from '../stores/agent-store'

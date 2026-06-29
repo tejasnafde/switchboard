@@ -104,7 +104,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     if (open && activeTab === 'archived') loadArchived()
   }, [open, activeTab, loadArchived])
 
-  // Workspaces tab — load project list once
+  // Workspaces tab - load project list once
   useEffect(() => {
     if (!open || activeTab !== 'workspaces') return
     window.api.app.getProjects().then((rows: WorkspaceProject[]) => {
@@ -124,7 +124,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       } catch {
         parsed = { terminals: [], templates: { default: { terminals: [] } } }
       }
-      // Ensure `default` always exists — the reducer + lifecycle assume it.
+      // Ensure `default` always exists - the reducer + lifecycle assume it.
       if (!parsed.templates || !parsed.templates.default) {
         parsed = {
           ...parsed,
@@ -246,7 +246,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     setArchived((prev) => prev.filter((c) => c.id !== conv.id))
     try {
       await window.api.app.unarchiveConversation(conv.id)
-      // Trigger sidebar refresh via rename event (same title — just to nudge the list)
+      // Trigger sidebar refresh via rename event (same title - just to nudge the list)
       emitSessionRename(conv.id, conv.title)
       // Also dispatch a generic event to prompt project reload
       window.dispatchEvent(new CustomEvent('sidebar-refresh'))
@@ -392,12 +392,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 </div>
               </SettingsSection>
 
-              {/* Threads — default workspace mode for new sessions */}
+              {/* Threads - default workspace mode for new sessions */}
               <SettingsSection title="Threads">
                 <DefaultEnvModeToggle />
               </SettingsSection>
 
-              {/* Responses — token-by-token streaming gate */}
+              {/* Responses - token-by-token streaming gate */}
               <SettingsSection title="Responses">
                 <StreamAssistantToggle />
               </SettingsSection>
@@ -860,7 +860,7 @@ function DefaultEnvModeToggle() {
  * buffer until the turn completes and render the final reply in one
  * shot. The buffering policy lives in `streamingBuffer.ts`; the gate
  * is in ChatPanel's content / turn.completed handlers. Takes effect on
- * the next panel mount or session switch — flipping mid-turn doesn't
+ * the next panel mount or session switch - flipping mid-turn doesn't
  * retroactively buffer in-flight content.
  */
 function StreamAssistantToggle() {
@@ -930,7 +930,7 @@ function NotificationToggle() {
     setTestResult('Firing…')
     const r = await fireTestNotification()
     setPermission(currentNotificationPermission())
-    setTestResult(r.ok ? 'Sent — check Notification Center.' : (r.reason ?? 'Failed.'))
+    setTestResult(r.ok ? 'Sent - check Notification Center.' : (r.reason ?? 'Failed.'))
     setTimeout(() => setTestResult(null), 6000)
   }
 
@@ -1105,8 +1105,8 @@ function TourTab({ onClose }: { onClose: () => void }) {
 /**
  * About → Updates row. Renders the current updater status (idle /
  * checking / available / downloaded / etc.) plus a manual "Check for
- * updates" button that bypasses the launch-time auto-check, and —
- * once an update has been downloaded — a "Restart and install"
+ * updates" button that bypasses the launch-time auto-check, and -
+ * once an update has been downloaded - a "Restart and install"
  * button. In dev (non-packaged) builds the row reports the
  * "unsupported" status since electron-updater has nothing to compare
  * against.
@@ -1149,7 +1149,7 @@ function UpdateCheckRow() {
       case 'idle': return 'Idle.'
       case 'checking': return 'Checking…'
       case 'up-to-date': return `You're on the latest version (${status.version}).`
-      case 'available': return `Update available — downloading ${status.version}…`
+      case 'available': return `Update available - downloading ${status.version}…`
       case 'downloading': return `Downloading… ${status.percent}%`
       case 'downloaded': return `Update ready: ${status.version}. Restart to install.`
       case 'error': return `Couldn't check: ${status.message}`
@@ -1205,7 +1205,7 @@ function UpdateCheckRow() {
         )}
       </div>
       <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-        Updates are checked automatically when the app launches. Builds are unsigned —
+        Updates are checked automatically when the app launches. Builds are unsigned -
         on macOS, Gatekeeper may re-quarantine each version (right-click → Open, or run{' '}
         <code style={{ fontFamily: 'var(--font-mono)' }}>
           xattr -dr com.apple.quarantine /Applications/Switchboard.app

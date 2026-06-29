@@ -7,7 +7,7 @@
  *   - CURRENT_BRANCH → trigger-chip label
  *
  * All handlers return a discriminated `{ ok: true, ... } | { ok: false, error }`
- * shape so the renderer never has to wrap calls in try/catch — same
+ * shape so the renderer never has to wrap calls in try/catch - same
  * convention as the FilesChannels handlers.
  */
 import { userDataDir } from '../runtime'
@@ -81,7 +81,7 @@ export function registerGitHandlers(host: BackendHost): void {
         return { ok: true, hunks: parseUnifiedDiff(stdout) }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        // Untracked / not-a-repo / binary — just return empty hunks.
+        // Untracked / not-a-repo / binary - just return empty hunks.
         if (/not a git repository|exists on disk, but not in/i.test(msg)) {
           return { ok: true, hunks: [] }
         }

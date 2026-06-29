@@ -6,7 +6,7 @@
  *   2. editor-store opens (or focuses) the buffer for that path.
  *   3. Nav history gets a push so ⌘[ / Ctrl+- can step back later.
  *
- * Cursor-only moves *within* the same buffer don't go through here —
+ * Cursor-only moves *within* the same buffer don't go through here -
  * those are normal CM6 transactions.
  */
 import { useLayoutStore } from '../../../../stores/layout-store'

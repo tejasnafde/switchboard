@@ -1,15 +1,15 @@
 /**
- * KanbanView — top-level kanban board, scoped by workspace + project.
+ * KanbanView - top-level kanban board, scoped by workspace + project.
  *
  * Replaces the per-session right-pane kanban. Lives at App level alongside
- * (not inside) the chat layout — the sidebar stays mounted and drives
+ * (not inside) the chat layout - the sidebar stays mounted and drives
  * filtering: clicking a workspace in the sidebar narrows the board, and
  * clicking a session there exits back to chat view.
  *
  * The default scope is "All workspaces" (every project the user has
  * opened). Selecting a workspace narrows to its projects; a further
  * project filter drills down to one project. We don't aggregate cards in
- * main — kanban-store hydrates per-project and we union in-memory, which
+ * main - kanban-store hydrates per-project and we union in-memory, which
  * keeps the IPC surface minimal at the cost of N round-trips on first
  * load (O(projects), not O(cards), and projects are typically <20).
  *
@@ -103,7 +103,7 @@ export function KanbanView(): React.ReactElement {
   }, [projects, workspaceFilter])
 
   // Hydrate kanban cards for every project we'll display. Re-runs when
-  // the scope changes — kanban-store dedupes on key so refreshes stay
+  // the scope changes - kanban-store dedupes on key so refreshes stay
   // cheap. We deliberately don't await: cards stream in per-project.
   useEffect(() => {
     for (const p of scopedProjects) {
@@ -143,8 +143,8 @@ export function KanbanView(): React.ReactElement {
   }, [projects])
 
   // Two CTAs:
-  //   ▶  (background) — start the agent, stay on the kanban board.
-  //   ↗  (open)       — start (or jump-to) and switch to chats view.
+  //   ▶  (background) - start the agent, stay on the kanban board.
+  //   ↗  (open)       - start (or jump-to) and switch to chats view.
   // Both go through the shared `launchCardChat` so the persistence /
   // provider-bridge wiring stays in one place.
   const startCardBackground = useCallback(
@@ -245,7 +245,7 @@ export function KanbanView(): React.ReactElement {
           style={primaryBtnStyle}
           title={
             !newCardDefaultPath
-              ? 'No projects in scope yet — open a project from the sidebar first'
+              ? 'No projects in scope yet - open a project from the sidebar first'
               : newCardOptions.length > 1
                 ? 'Create card (you’ll pick the project in the modal)'
                 : `Create card in ${newCardDefaultPath.split('/').pop()}`
@@ -486,7 +486,7 @@ function CardTilePresentation({
                     onMouseDown={(e) => e.stopPropagation()}
                     onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onStart() }}
-                    title="Start (background) — kicks off the agent without leaving the board"
+                    title="Start (background) - kicks off the agent without leaving the board"
                     style={startBtnStyle}
                   >
                     ▶

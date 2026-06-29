@@ -15,7 +15,7 @@ function formatTokens(tokens: number | null): string {
 
 /**
  * Circular SVG meter showing context window usage.
- * Modeled after T3 Code's ContextWindowMeter — renders as a small ring
+ * Modeled after T3 Code's ContextWindowMeter - renders as a small ring
  * with percentage in the center. Hover shows detailed tooltip.
  */
 export const ContextWindowMeter = memo(function ContextWindowMeter({
@@ -46,7 +46,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
       style={{ position: 'relative', display: 'inline-flex' }}
       title={
         percentage !== null
-          ? `Context: ${Math.round(percentage)}% — ${formatTokens(usage.usedTokens)}/${formatTokens(usage.maxTokens)} tokens`
+          ? `Context: ${Math.round(percentage)}% - ${formatTokens(usage.usedTokens)}/${formatTokens(usage.maxTokens)} tokens`
           : `${formatTokens(usage.usedTokens)} tokens used`
       }
     >

@@ -1,7 +1,7 @@
 /**
  * Downscale a pasted/dropped image to keep DB rows small without making
  * it visibly pixel-y. Strategy:
- *   • cap the longest edge at `maxEdge` (default 1920px — hidpi laptop screen)
+ *   • cap the longest edge at `maxEdge` (default 1920px - hidpi laptop screen)
  *   • encode JPEG q=0.85 for opaque sources, keep PNG for sources with
  *     transparency so we don't fringe the alpha channel
  *   • skip work entirely if the image is already small (no upscale, no recompress)
@@ -63,7 +63,7 @@ export async function downscaleImage(
   const img = await loadImage(sourceUrl)
   const target = computeTargetSize(img.naturalWidth, img.naturalHeight, maxEdge)
 
-  // Already small enough — emit the original bytes untouched.
+  // Already small enough - emit the original bytes untouched.
   if (!target.scaled) {
     return { dataUrl: sourceUrl, width: target.width, height: target.height, passthrough: true }
   }

@@ -1,5 +1,5 @@
 /**
- * Presentational pill chip — pure visual, no Lexical / store deps.
+ * Presentational pill chip - pure visual, no Lexical / store deps.
  * Used by both `PillNode` (live editor decorator) and `MessagePillChip`
  * (read-only chip in sent message bubbles), so the chip never visually
  * drifts between compose and sent views.
@@ -18,7 +18,7 @@ interface PillChipVisualProps {
   kind: DraftPillKind
   /** Editor variant disables text selection; bubble variant allows copy. */
   selectable?: boolean
-  /** Optional trailing slot — used by the editor for the × remove button. */
+  /** Optional trailing slot - used by the editor for the × remove button. */
   trailing?: ReactNode
   /** Forwarded to the root span (data-pill-chip, data-pill-id, contentEditable). */
   rootProps?: Record<string, string | boolean | undefined>

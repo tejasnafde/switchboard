@@ -1,10 +1,10 @@
 # Switchboard
 
-**Terminals, AI coding agents, and project context — in one window.**
+**Terminals, AI coding agents, and project context - in one window.**
 
 Switchboard is an Electron desktop app that multiplexes shells and AI agent
 chats (Claude Code, Codex, OpenCode) over a shared, tmux-style pane tree.
-One workspace, every project, every agent — no more juggling iTerm tabs and
+One workspace, every project, every agent - no more juggling iTerm tabs and
 three browser windows.
 
 > Status: pre-1.0. macOS arm64 + Windows x64 builds ship via GitHub Releases
@@ -15,11 +15,11 @@ three browser windows.
 ## Feature tour
 
 The eleven clips from the app's first-run tour, in order. Clips marked
-*(coming soon)* are rendered in `videos/dist/` but not yet embedded here —
+*(coming soon)* are rendered in `videos/dist/` but not yet embedded here -
 see the maintainer note below.
 
 > **Embedding note for maintainers:** GitHub only autoplays MP4s that were
-> uploaded via the web editor (drag-and-drop into a markdown field — GitHub
+> uploaded via the web editor (drag-and-drop into a markdown field - GitHub
 > rehosts them on `user-images.githubusercontent.com`). Raw `<video
 > src="videos/dist/...">` tags pointing at the repo are stripped by the
 > renderer. After cloning, open this file in the GitHub web UI, drag each
@@ -28,13 +28,13 @@ see the maintainer note below.
 
 ### 1. Welcome
 Terminals, AI agents, and project context in one window. Add a folder from
-the sidebar to get started — everything else flows from there.
+the sidebar to get started - everything else flows from there.
 
 https://github.com/user-attachments/assets/08a8056c-6497-4ffc-9dec-95664c8006ee
 
 ### 2. Two modes: Chats & Board
 Toggle the whole app between engineering view (chats + terminals + files)
-and a workspace-scoped kanban board with ⌘⇧K. Cards double as chats — hit ▶
+and a workspace-scoped kanban board with ⌘⇧K. Cards double as chats - hit ▶
 to start a conversation rooted in the card's own git worktree.
 
 <!-- maintainer: drag videos/dist/kanban-view.mp4 here in the GitHub web editor --> *(coming soon)*
@@ -54,7 +54,7 @@ denial pill in chat.
 https://github.com/user-attachments/assets/173b404f-0e12-489f-ae4f-484abf3bb22f
 
 ### 5. Multi-pane terminals & chat
-Split any pane horizontally or vertically — terminals and chats live in the
+Split any pane horizontally or vertically - terminals and chats live in the
 same tmux-style tree. Drag the handle to resize, ⌘W closes the focused pane.
 
 https://github.com/user-attachments/assets/2cc1312e-4f2a-4b29-b232-b5797f650dff
@@ -79,20 +79,20 @@ startup commands, so a workspace boots the same way every time.
 <!-- maintainer: drag videos/dist/workspace-config.mp4 here in the GitHub web editor --> *(coming soon)*
 
 ### 9. Switch agents per chat
-Pick Claude Code, Codex, or OpenCode for any chat from the agent dropdown —
+Pick Claude Code, Codex, or OpenCode for any chat from the agent dropdown -
 the status bar and model picker update to match. Switching starts a fresh
 context with the new agent.
 
 https://github.com/user-attachments/assets/aa42e86a-e986-46e2-9e58-5efd2547a048
 
 ### 10. Session resume & full-text search
-Past sessions live in the sidebar — click to resume any thread. ⌘⇧F searches
+Past sessions live in the sidebar - click to resume any thread. ⌘⇧F searches
 every message across every project; click a result to jump straight to it.
 
 https://github.com/user-attachments/assets/86c50159-f723-40d6-9315-0836ac48f302
 
 ### 11. Sidebar workspaces
-Group projects under named, color-tagged workspaces — Work, Personal, side
+Group projects under named, color-tagged workspaces - Work, Personal, side
 quests. Filter the tree by chat title; collapse state persists across launches.
 
 <!-- maintainer: drag videos/dist/workspaces.mp4 here in the GitHub web editor --> *(coming soon)*
@@ -101,38 +101,38 @@ quests. Filter the tree by chat title; collapse state persists across launches.
 
 ## What's in the box
 
-- **Multi-agent chat** — Claude Code, Codex, and OpenCode side-by-side. Each
+- **Multi-agent chat** - Claude Code, Codex, and OpenCode side-by-side. Each
   pane has its own runtime mode (plan / sandbox / accept-edits / full).
-- **Real terminals** — `node-pty` + xterm.js. zsh on macOS, PowerShell /
+- **Real terminals** - `node-pty` + xterm.js. zsh on macOS, PowerShell /
   cmd on Windows. ⌘F in-pane search, ⌘L to bridge selection into chat.
-- **Slash commands** — `/plan`, `/archive`, `/clear`, plus every skill the
+- **Slash commands** - `/plan`, `/archive`, `/clear`, plus every skill the
   agent itself advertises (Claude SDK, Codex). Type `/` to fuzzy-find.
-- **Image pipeline** — drag-drop or paste screenshots straight into chat;
+- **Image pipeline** - drag-drop or paste screenshots straight into chat;
   routed through whichever vision-capable model the agent supports.
-- **Dual chat** — split a chat pane to run two agents on the same prompt
+- **Dual chat** - split a chat pane to run two agents on the same prompt
   and compare answers.
-- **Context bridge (⌘L)** — selected terminal output becomes a quoted block
+- **Context bridge (⌘L)** - selected terminal output becomes a quoted block
   in the focused chat with one keystroke.
-- **Quick prompt (⌘K)** — global launcher; route a prompt to any chat
+- **Quick prompt (⌘K)** - global launcher; route a prompt to any chat
   without leaving the keyboard.
-- **Full-text search (⌘⇧F)** — across every message in every project.
-- **Code editor (⌘⇧E)** — CodeMirror with multi-tab, syntax highlighting, a
+- **Full-text search (⌘⇧F)** - across every message in every project.
+- **Code editor (⌘⇧E)** - CodeMirror with multi-tab, syntax highlighting, a
   git diff gutter, and ⌘-click jump-to-definition (TypeScript + Python LSP).
   ⌘P fuzzy-opens any file in the repo.
-- **Kanban board (⌘⇧K)** — a workspace-scoped board where each card launches
+- **Kanban board (⌘⇧K)** - a workspace-scoped board where each card launches
   an agent in its own git worktree, so parallel work stays isolated.
-- **Conversation forking** — right-click any message to branch the chat from
+- **Conversation forking** - right-click any message to branch the chat from
   that point (Claude resumes real context); optionally fork into a worktree.
-- **In-chat diff review** — after each agent turn, changed files surface as
+- **In-chat diff review** - after each agent turn, changed files surface as
   Cursor-style diff cards with per-hunk accept/reject buttons directly in
   chat.
-- **Multi-account providers** — store named credential sets per agent
+- **Multi-account providers** - store named credential sets per agent
   (e.g. work / personal) and switch between them from the model picker.
-- **Rich chat input** — inline file/terminal/chat pill chips and `@`-mention
+- **Rich chat input** - inline file/terminal/chat pill chips and `@`-mention
   file autocomplete.
-- **Session archive + auto-title** — chats title themselves from the first
+- **Session archive + auto-title** - chats title themselves from the first
   meaningful turn; old sessions move to Archived without losing history.
-- **Auto-update** — `electron-updater` polls GitHub Releases on launch and
+- **Auto-update** - `electron-updater` polls GitHub Releases on launch and
   on demand from Settings → About.
 
 ---
@@ -143,9 +143,9 @@ Grab the latest build from the [Releases page](https://github.com/tejasnafde/swi
 
 ### macOS (Apple Silicon)
 
-Download `Switchboard-X.Y.Z-arm64-mac.zip` (not a `.dmg` — see
+Download `Switchboard-X.Y.Z-arm64-mac.zip` (not a `.dmg` - see
 [`docs/releasing.md`](docs/releasing.md) for why). The build is
-**unsigned** — we don't have an Apple Developer cert — so Gatekeeper will
+**unsigned** - we don't have an Apple Developer cert - so Gatekeeper will
 refuse the first launch with "developer cannot be verified."
 
 ```bash
@@ -162,7 +162,7 @@ Intel Macs are not currently built. Open an issue if you need x64.
 ### Windows (x64)
 
 Download `Switchboard Setup X.Y.Z.exe`. SmartScreen will pop "Windows
-protected your PC" — click **More info → Run anyway**. First-launch only;
+protected your PC" - click **More info → Run anyway**. First-launch only;
 auto-update is silent.
 
 A `.zip` portable build is also published for users who'd rather not run
@@ -193,18 +193,18 @@ npm run dist:win   # local NSIS exe (Windows host only)
 `@anthropic-ai/claude-agent-sdk-*` package ships per-platform native
 binaries via `optionalDependencies`; cross-compiling skips the right
 binary and the packaged app crashes at SDK init. Cross-platform builds
-happen on tag push via the Actions matrix — see
+happen on tag push via the Actions matrix - see
 [`docs/releasing.md`](docs/releasing.md).
 
 ### Architecture
 
-- [`docs/concept.md`](docs/concept.md) — the product thesis.
-- [`docs/plan.md`](docs/plan.md) — phased build plan, current status.
-- [`docs/architecture/`](docs/architecture/) — deeper dives on IPC,
+- [`docs/concept.md`](docs/concept.md) - the product thesis.
+- [`docs/plan.md`](docs/plan.md) - phased build plan, current status.
+- [`docs/architecture/`](docs/architecture/) - deeper dives on IPC,
   session storage, agent adapters, and the pane tree.
-- [`docs/releasing.md`](docs/releasing.md) — operator's guide for cutting
+- [`docs/releasing.md`](docs/releasing.md) - operator's guide for cutting
   a release.
-- [`CLAUDE.md`](CLAUDE.md) — repo conventions read by Claude Code when
+- [`CLAUDE.md`](CLAUDE.md) - repo conventions read by Claude Code when
   working in-tree.
 
 ---

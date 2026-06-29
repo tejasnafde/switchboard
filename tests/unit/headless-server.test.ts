@@ -1,6 +1,6 @@
 /**
  * Integration proof for the headless backend: a real WsHost serving the real
- * registerFilesHandlers over a real ws server, driven by a real WsTransport —
+ * registerFilesHandlers over a real ws server, driven by a real WsTransport -
  * the exact path src/server/index.ts uses, end to end, with no Electron and no
  * native modules. (DB/PTY-backed handlers need node-ABI natives and are covered
  * by the bundle build + unit tests instead.)

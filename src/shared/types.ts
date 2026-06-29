@@ -59,8 +59,8 @@ export function defaultInstanceId(kind: AgentType): string {
 
 /**
  * Human-readable label for an agent type. Use everywhere the UI needs to
- * display the agent's name — status bar, message-bubble author, notifications,
- * export headers — so we never drift to hardcoded "Claude" strings.
+ * display the agent's name - status bar, message-bubble author, notifications,
+ * export headers - so we never drift to hardcoded "Claude" strings.
  */
 export function agentLabel(type: AgentType | undefined): string {
   if (type === 'codex') return 'Codex'
@@ -81,7 +81,7 @@ export type AgentStatus = 'idle' | 'running' | 'thinking' | 'error' | 'exited'
 
 /**
  * A slash command/skill exposed by an agent runtime (Claude Code's
- * `/commit`, Codex's project skills, etc.) — surfaced in the chat input's
+ * `/commit`, Codex's project skills, etc.) - surfaced in the chat input's
  * slash menu alongside Switchboard's built-ins so the user can fire them
  * directly without switching context.
  *
@@ -90,7 +90,7 @@ export type AgentStatus = 'idle' | 'running' | 'thinking' | 'error' | 'exited'
  *     prompt and dispatches its own `SlashCommand` handler).
  *   - `codex`: prefix `$<name> ` (Codex's app-server uses `$skill`
  *     invocations in user input).
- *   - `switchboard`: built-in client-side action, no agent prefix —
+ *   - `switchboard`: built-in client-side action, no agent prefix -
  *     handled by `SlashCommand.run()` instead.
  */
 export interface ProviderSkill {
@@ -103,7 +103,7 @@ export interface ProviderSkill {
 /**
  * A named credential set for an agent kind. Multiple instances per kind
  * are supported (e.g. `claude-work`, `claude-personal`). The renderer
- * receives this redacted shape — secret values stay in main, never
+ * receives this redacted shape - secret values stay in main, never
  * cross IPC. `envKeys` lists which env vars are configured so the
  * Settings UI can show "ANTHROPIC_API_KEY ●●●" without leaking it.
  */
@@ -189,7 +189,7 @@ export interface QuestionAttachment {
  * lets the user keep or revert all-or-part of it.
  */
 export interface FileDiffAttachment {
-  /** `${turnId}:${relPath}` — stable id used to coalesce re-edits in a turn. */
+  /** `${turnId}:${relPath}` - stable id used to coalesce re-edits in a turn. */
   fileEditId: string
   /** Absolute repo root for write-back via files:write-file. */
   repoRoot: string
@@ -200,10 +200,10 @@ export interface FileDiffAttachment {
   /** Content the agent wrote (current disk). Empty for a delete. */
   newContent: string
   /**
-   * pending  — awaiting user decision
-   * accepted — kept as-is (disk already holds newContent)
-   * rejected — reverted to oldContent on disk
-   * partial  — user kept a subset of hunks; disk holds the resolved content
+   * pending  - awaiting user decision
+   * accepted - kept as-is (disk already holds newContent)
+   * rejected - reverted to oldContent on disk
+   * partial  - user kept a subset of hunks; disk holds the resolved content
    */
   status: 'pending' | 'accepted' | 'rejected' | 'partial'
 }
@@ -216,7 +216,7 @@ export interface ChatMessage {
   images?: MessageImage[]
   timestamp: number
   context?: TerminalContext[]
-  /** For approval requests — shows Accept/Reject UI */
+  /** For approval requests - shows Accept/Reject UI */
   approval?: {
     toolName: string
     detail: string
@@ -301,7 +301,7 @@ export interface SessionSummary {
    */
   worktreePath?: string | null
   worktreeBranch?: string | null
-  /** Populated from DB — lets the renderer skip JSONL load for terminal sessions. */
+  /** Populated from DB - lets the renderer skip JSONL load for terminal sessions. */
   agentType?: string | null
 }
 
@@ -314,7 +314,7 @@ export interface Project {
 }
 
 /**
- * Sidebar workspace — the outer grouping above projects. Users assign
+ * Sidebar workspace - the outer grouping above projects. Users assign
  * projects to a workspace; projects with `workspaceId == null` render
  * under the implicit "Ungrouped" pseudo-workspace at the bottom.
  */

@@ -1,6 +1,6 @@
 /**
  * Plan B "new session in worktree mode" entry point. Builds on the
- * deterministic path scheme (worktreePaths.ts) — the test confirms it
+ * deterministic path scheme (worktreePaths.ts) - the test confirms it
  * issues `git worktree add -b <branch> <deterministic path> <baseRef>`
  * with the right argv to the right cwd.
  *

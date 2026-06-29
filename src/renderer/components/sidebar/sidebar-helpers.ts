@@ -14,7 +14,7 @@ export interface WorkspaceGroup {
  * Partition projects into workspace groups. Workspaces are emitted in
  * `sortOrder` order, then "Ungrouped" last (only if it has any projects).
  * A project whose `workspaceId` doesn't match any known workspace is
- * treated as ungrouped — defensive against stale references after a
+ * treated as ungrouped - defensive against stale references after a
  * workspace was deleted between the renderer's last fetch and now.
  */
 export function groupProjectsByWorkspace(
@@ -46,7 +46,7 @@ export function groupProjectsByWorkspace(
 }
 
 /**
- * Stable color-token index for a workspace — picks one of `--workspace-color-1..6`
+ * Stable color-token index for a workspace - picks one of `--workspace-color-1..6`
  * deterministically from the workspace id when no explicit color is set.
  * Used so a freshly-created workspace gets a sensible default tag without
  * forcing the user to pick a color.
@@ -75,7 +75,7 @@ export interface FilteredTree {
  * of ancestors that should be force-expanded so the matches are visible.
  *
  * Empty / whitespace-only query returns the original tree unchanged with
- * empty expand sets — caller should restore previous collapse state.
+ * empty expand sets - caller should restore previous collapse state.
  */
 export function applySidebarFilter(query: string, groups: WorkspaceGroup[]): FilteredTree {
   const q = query.trim().toLowerCase()

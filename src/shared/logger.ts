@@ -1,6 +1,6 @@
 /**
  * Structured logger. Works in both main and renderer.
- * Prefix format: [SB:scope] — grep for "SB:" to filter switchboard logs.
+ * Prefix format: [SB:scope] - grep for "SB:" to filter switchboard logs.
  */
 
 export function createLogger(scope: string) {

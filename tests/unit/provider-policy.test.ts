@@ -7,7 +7,7 @@ import {
 } from '../../src/main/provider/policy'
 
 /**
- * Shared provider policy — applies to both Claude and Codex adapters.
+ * Shared provider policy - applies to both Claude and Codex adapters.
  * Extracted from claude-adapter.ts in B1a so Codex reuses the exact same
  * gate. These tests are provider-agnostic.
  */
@@ -43,7 +43,7 @@ describe('decidePermission (shared)', () => {
       expect(decidePermission('plan', 'shell')).toBe('deny')
     })
 
-    it('never prompts — every decision is allow or deny', () => {
+    it('never prompts - every decision is allow or deny', () => {
       for (const t of ['Read', 'Write', 'Bash', 'unknown_tool', 'mcp__x__y']) {
         expect(decidePermission('plan', t)).not.toBe('prompt')
       }

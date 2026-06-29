@@ -3,7 +3,7 @@
  * IPC. It:
  *   - sniffs the existing file's EOL (`\r\n` vs `\n`) and preserves it
  *   - writes atomically (`<path>.tmp` + `rename`)
- *   - detects mtime drift — if the on-disk file changed since the
+ *   - detects mtime drift - if the on-disk file changed since the
  *     editor opened it, save fails with a `conflict` flag so the
  *     renderer can show "Reload from disk?" UX
  *   - creates the file if it doesn't exist (no expectedMtime needed)
@@ -39,7 +39,7 @@ describe('deleteFileSafe', () => {
   })
 })
 
-describe('writeFileSafe — basic write', () => {
+describe('writeFileSafe - basic write', () => {
   it('creates a new file when it does not exist', async () => {
     const abs = join(tmp, 'new.txt')
     const res = await writeFileSafe(abs, 'hello')
@@ -67,11 +67,11 @@ describe('writeFileSafe — basic write', () => {
   })
 })
 
-describe('writeFileSafe — mtime conflict detection', () => {
+describe('writeFileSafe - mtime conflict detection', () => {
   it('rejects with conflict=true when the on-disk mtime drifts past expectedMtime', async () => {
     const abs = join(tmp, 'a.txt')
     writeFileSync(abs, 'v1')
-    const oldMtime = 1000 // arbitrarily small — actual stat will be much larger
+    const oldMtime = 1000 // arbitrarily small - actual stat will be much larger
     const res = await writeFileSafe(abs, 'v2', { expectedMtimeMs: oldMtime })
     expect(res.ok).toBe(false)
     if (!res.ok) {
@@ -90,7 +90,7 @@ describe('writeFileSafe — mtime conflict detection', () => {
   })
 })
 
-describe('writeFileSafe — EOL preservation', () => {
+describe('writeFileSafe - EOL preservation', () => {
   it('preserves \\r\\n line endings when the existing file uses CRLF', async () => {
     const abs = join(tmp, 'crlf.txt')
     writeFileSync(abs, 'a\r\nb\r\nc')

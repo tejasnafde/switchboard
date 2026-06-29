@@ -8,14 +8,14 @@ export type JsonlSource = 'claude-code' | 'codex'
  * Supports two wire formats:
  *
  * - **Claude Code** (default): `{ type: 'assistant' | 'user' | 'result',
- *   message: { content: [...] } }` — one object per line.
+ *   message: { content: [...] } }` - one object per line.
  *
  * - **Codex** (opt-in via `source: 'codex'`): `{ type: 'response_item',
  *   payload: { type: 'message', role: 'user'|'assistant'|'developer',
  *   content: [{ type: 'input_text'|'output_text', text: '...' }] } }`.
  *
  * Without the source param, Codex session files produced zero messages
- * because none of their event types matched — imported sessions appeared
+ * because none of their event types matched - imported sessions appeared
  * empty in the sidebar. Pass `source: 'codex'` when loading a Codex file.
  */
 export class JsonlParser {
@@ -56,7 +56,7 @@ export class JsonlParser {
     try {
       parsed = JSON.parse(line)
     } catch {
-      // Not valid JSON — skip (could be raw TUI output)
+      // Not valid JSON - skip (could be raw TUI output)
       return
     }
 
@@ -101,7 +101,7 @@ export class JsonlParser {
         const content = extractContent(event.message)
         const images = extractImages(event.message)
         // Skip user messages that only contain tool_result blocks (internal protocol)
-        // — but keep messages that have images even without text content, so
+        // - but keep messages that have images even without text content, so
         // historical image-only user messages reappear after reload.
         if (!content && images.length === 0 && hasOnlyToolResults(event.message)) return null
         return {
@@ -152,7 +152,7 @@ function extractContent(message: unknown): string {
  *   { type: 'image', source: { type: 'base64', media_type, data } }
  *
  * Without this extraction, images attached to a user message (from
- * Switchboard) would vanish on reload — only the text would come back.
+ * Switchboard) would vanish on reload - only the text would come back.
  */
 function extractImages(message: unknown): MessageImage[] {
   if (!message || typeof message !== 'object') return []
@@ -222,7 +222,7 @@ function generateId(): string {
  *       role: 'user' | 'assistant' | 'developer' | 'system',
  *       content: [{ type: 'input_text'|'output_text', text: '...' }]
  *   } }
- * Plus metadata events: session_meta, turn_context, event_msg — all skipped.
+ * Plus metadata events: session_meta, turn_context, event_msg - all skipped.
  *
  * Extracted as a pure function for unit testing.
  */
@@ -234,7 +234,7 @@ export function normalizeCodexEvent(event: Record<string, unknown>): ChatMessage
   if (!payload || payload.type !== 'message') return null
 
   const role = payload.role as string | undefined
-  // Skip `developer` and `system` — those are prompt-injected context
+  // Skip `developer` and `system` - those are prompt-injected context
   // (permissions preamble, AGENTS.md, etc.), not real conversation turns.
   if (role !== 'user' && role !== 'assistant') return null
 

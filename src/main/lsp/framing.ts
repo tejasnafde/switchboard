@@ -32,7 +32,7 @@ export class LspFramer {
       const headers = this.buf.subarray(0, headerEnd).toString('ascii')
       const m = /Content-Length:\s*(\d+)/i.exec(headers)
       if (!m) {
-        // Malformed — drop everything up through the header terminator
+        // Malformed - drop everything up through the header terminator
         // and try to recover on subsequent chunks.
         log.warn('frame header missing Content-Length; dropping headers', { headers })
         this.buf = this.buf.subarray(headerEnd + 4)

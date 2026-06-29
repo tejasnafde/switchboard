@@ -24,7 +24,7 @@ function ensureZdotdir(): string | null {
     const dir = join(userDataDir(), 'shell')
     mkdirSync(dir, { recursive: true })
     // In dev, `appRootDir()` is the repo root. When packaged, it's
-    // the asar archive — Node can still read files out of it.
+    // the asar archive - Node can still read files out of it.
     const src = join(appRootDir(), 'resources', 'shell', 'switchboard.zshrc')
     if (!existsSync(src)) return null
     const contents = readFileSync(src, 'utf-8')
@@ -57,7 +57,7 @@ interface ManagedPty {
  * Windows PowerShell, then COMSPEC (which the system populates with
  * `cmd.exe` on virtually every install). We can't probe `existsSync`
  * for the bare names because Windows resolves them via PATH at spawn
- * time — node-pty handles this correctly when given the basename.
+ * time - node-pty handles this correctly when given the basename.
  */
 function resolveShell(requested?: string): string {
   if (process.platform === 'win32') {
@@ -85,7 +85,7 @@ function resolveShell(requested?: string): string {
 }
 
 /**
- * Manages PTY lifecycle — create, write, resize, kill.
+ * Manages PTY lifecycle - create, write, resize, kill.
  * Keeps no reference to Electron; IPC layer wires events to the window.
  */
 export class PtyManager {
@@ -99,7 +99,7 @@ export class PtyManager {
   }
 
   async create(opts: TerminalCreateOptions): Promise<void> {
-    // Dynamic import — node-pty is a native module, keep it lazy
+    // Dynamic import - node-pty is a native module, keep it lazy
     const pty = await import('node-pty')
 
     const shell = resolveShell(opts.shell)

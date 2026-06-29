@@ -82,7 +82,7 @@ interface ChatInputProps {
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
 
-// Module-level constant — referential equality across renders so the
+// Module-level constant - referential equality across renders so the
 // `pills` selector doesn't fabricate a new array when a session has
 // no pills yet. Without this, every render produced a fresh `[]` and
 // downstream memos invalidated.
@@ -111,7 +111,7 @@ export function ChatInput({
   onArchive,
   onShowSlashHelp,
 }: ChatInputProps) {
-  // Static fallback list — used for Claude/Codex always, and for OpenCode
+  // Static fallback list - used for Claude/Codex always, and for OpenCode
   // until the dynamic fetch returns. Prevents the dropdown from being empty
   // on first render while we shell out to `opencode models`.
   const staticModels = modelsForAgent(agentType)
@@ -137,7 +137,7 @@ export function ChatInput({
 
   const models = agentType === 'opencode' && opencodeModels ? opencodeModels : staticModels
 
-  // Per-session draft — reads from store, updates on every keystroke
+  // Per-session draft - reads from store, updates on every keystroke
   const draft = useDraftStore((s) => (sessionId ? s.drafts[sessionId] ?? '' : ''))
   const setDraft = useDraftStore((s) => s.setDraft)
   const clearDraft = useDraftStore((s) => s.clearDraft)
@@ -177,7 +177,7 @@ export function ChatInput({
   const atRangeRef = useRef<{ start: number; end: number } | null>(null)
   // Per-instance file-list cache, mirroring QuickOpenModal's per-mount ref.
   // Dies with ChatInput, so a closed-and-reopened chat picks up tree changes
-  // — and we never accumulate entries across visited projects.
+  // - and we never accumulate entries across visited projects.
   const atFilesCacheRef = useRef<{ repoRoot: string; files: string[] } | null>(null)
 
   // Fetch the agent's slash commands/skills (Claude SDK init.commands,
@@ -185,7 +185,7 @@ export function ChatInput({
   // slash menu can surface them alongside our Switchboard built-ins.
   // Re-run when sessionId or agentType changes so a session swap doesn't
   // show stale skills.
-  // Stable fetcher — also called from the slash-trigger path below so the
+  // Stable fetcher - also called from the slash-trigger path below so the
   // menu refreshes the moment the user opens `/`, not just on session
   // mount. Without this, `system/init` (Claude SDK) hadn't fired yet at
   // mount time and skills would stay empty until the user reloaded.
@@ -196,7 +196,7 @@ export function ChatInput({
       if (Array.isArray(skills) && skills.length > 0) {
         setAgentSkills(skills)
       }
-    }).catch(() => { /* keep current — built-ins still work */ })
+    }).catch(() => { /* keep current - built-ins still work */ })
   }, [sessionId, agentType])
 
   useEffect(() => {
@@ -214,7 +214,7 @@ export function ChatInput({
         } else if (attempts++ < 4) {
           setTimeout(tryFetch, 500 * (attempts + 1))
         }
-      }).catch(() => { /* keep [] — built-ins still work */ })
+      }).catch(() => { /* keep [] - built-ins still work */ })
     }
     tryFetch()
     return () => { cancelled = true }
@@ -245,13 +245,13 @@ export function ChatInput({
   const insertedPillsRef = useRef<Set<string>>(new Set())
 
   // Sync local `value` whenever the store's draft changes (either because
-  // the user switched sessions, OR because an external action — slash
-  // command, "forward to" — wrote to the draft). Lexical's HydrationPlugin
+  // the user switched sessions, OR because an external action - slash
+  // command, "forward to" - wrote to the draft). Lexical's HydrationPlugin
   // watches `value` and reconciles the editor when it diverges from the
   // serialized editor state.
   useEffect(() => {
     if (draft !== value) setValue(draft)
-  // `value` intentionally excluded — see textarea-era comment.
+  // `value` intentionally excluded - see textarea-era comment.
   }, [sessionId, draft])
 
   // Map of pill id → metadata, used by the editor to render chips and by
@@ -362,7 +362,7 @@ export function ChatInput({
     atRangeRef.current = null
   }, [])
 
-  // Resolve the repo root for the active session — file listings are scoped
+  // Resolve the repo root for the active session - file listings are scoped
   // to projectPath so the at-menu shows only files from the agent's cwd.
   const sessionsForRepo = useAgentStore((s) => s.sessions)
   const repoRoot = useMemo(
@@ -394,7 +394,7 @@ export function ChatInput({
     const range = atRangeRef.current
     if (!range || !sessionId) { dismissAt(); return }
 
-    // Strip the `@query` text — the chip carries the path now, and the
+    // Strip the `@query` text - the chip carries the path now, and the
     // serialized message body will expand `[[pill:id]]` into `@<path>` on
     // Send (see DraftPill.content below).
     richRef.current?.replaceRange(range.start, range.end, '')
@@ -406,7 +406,7 @@ export function ChatInput({
       id: pillId,
       kind: 'file',
       label: fileName,
-      // Send-time content is just the `@<path>` marker — Claude SDK
+      // Send-time content is just the `@<path>` marker - Claude SDK
       // resolves it natively; Codex / OpenCode treat it as a relative
       // path they can Read on demand.
       content: `@${path}`,
@@ -423,11 +423,11 @@ export function ChatInput({
   //
   // Stable identity matters: this callback is a prop on RichChatTextarea,
   // and unstable props would make the editor's plugins re-register every
-  // render — that's exactly what caused the original infinite-update loop.
+  // render - that's exactly what caused the original infinite-update loop.
   const handleEditorChange = useCallback((next: string) => {
     setValue(next)
     if (sessionId) setDraft(sessionId, next)
-    // Caret may not have been reported yet for this change — fall back to
+    // Caret may not have been reported yet for this change - fall back to
     // end-of-string for slash detection. The follow-up onCaretChange will
     // correct the trigger range if needed.
     const cur = caret ?? next.length
@@ -436,18 +436,18 @@ export function ChatInput({
       setSlashQuery(trigger.query)
       setSlashActiveIdx(0)
       slashRangeRef.current = { start: trigger.rangeStart, end: trigger.rangeEnd }
-      // Refresh agent skills the moment the user opens `/` — handles the
+      // Refresh agent skills the moment the user opens `/` - handles the
       // case where `system/init` arrives after mount.
       if (agentSkills.length === 0) fetchSkills()
     } else if (slashQuery !== null) {
       dismissSlash()
     }
 
-    // @-mention detection — independent of slash; the two triggers can't
+    // @-mention detection - independent of slash; the two triggers can't
     // both fire on the same token.
     const atTrigger = detectAtTrigger(next, cur)
     if (atTrigger) {
-      // Only reset when query text changes — arrow key caret moves leave
+      // Only reset when query text changes - arrow key caret moves leave
       // query identical and must not overwrite handleEditorKeyDown's bump.
       if (atTrigger.query !== atQuery) {
         setAtQuery(atTrigger.query)
@@ -473,7 +473,7 @@ export function ChatInput({
     const source = cmd.source ?? 'switchboard'
 
     // Agent-source commands (Claude/Codex skills): don't fire a local
-    // action — instead, replace the partial `/que` the user typed with
+    // action - instead, replace the partial `/que` the user typed with
     // the canonical `/<name> ` and let them fill in any args before
     // hitting Enter. The agent SDK/CLI parses the leading slash from
     // the sent prompt and runs the corresponding handler.
@@ -701,7 +701,7 @@ export function ChatInput({
         style={{ display: 'none' }}
       />
 
-      {/* Rich text input — Lexical-backed contenteditable that renders
+      {/* Rich text input - Lexical-backed contenteditable that renders
           pill chips inline at the caret position (Cursor-style). The host
           sees a plain string body with `[[pill:id]]` tokens; pillsById
           maps tokens to chip metadata + serialized content. */}
@@ -709,7 +709,7 @@ export function ChatInput({
         style={{ position: 'relative', display: 'flex', gap: '8px', alignItems: 'flex-end' }}
         onKeyDownCapture={handleEditorKeyDown}
       >
-        {/* Slash command popover — positioned above the editor */}
+        {/* Slash command popover - positioned above the editor */}
         {slashQuery !== null && (
           <SlashCommandMenu
             query={slashQuery}
@@ -720,7 +720,7 @@ export function ChatInput({
             commands={mergedCommands}
           />
         )}
-        {/* @-mention popover — same anchor; never simultaneously open. */}
+        {/* @-mention popover - same anchor; never simultaneously open. */}
         {atQuery !== null && (
           <AtMentionMenu
             query={atQuery}
@@ -732,7 +732,7 @@ export function ChatInput({
             onActiveIndexChange={(i) => setAtActiveIdx(i)}
           />
         )}
-        {/* IMPORTANT: this wrapper must NOT use display:flex — Lexical's
+        {/* IMPORTANT: this wrapper must NOT use display:flex - Lexical's
             ContentEditable warns that flex parents cause Chrome focusing
             bugs (caret hiding, click-outside selection drift). Use block
             layout and let the inner ContentEditable size itself. */}
@@ -812,7 +812,7 @@ export function ChatInput({
           fontSize: '11px',
         }}
       >
-        {/* Unified provider/instance/model picker — single drop-up popover
+        {/* Unified provider/instance/model picker - single drop-up popover
             consolidating what used to be three separate footer controls. */}
         {onModelChange && onInstanceChange && (
           <UnifiedProviderPicker
@@ -827,7 +827,7 @@ export function ChatInput({
           />
         )}
 
-        {/* Variant chips (OpenCode ACP only) — surfaced when the agent reports
+        {/* Variant chips (OpenCode ACP only) - surfaced when the agent reports
             `availableVariants` for the currently selected model. Clicking a
             chip rewrites the model id to `<base>/<variant>` (or strips the
             variant if "base" is selected). */}
@@ -835,7 +835,7 @@ export function ChatInput({
           <VariantChips sessionId={sessionId ?? null} model={model ?? ''} onChange={onModelChange} />
         )}
 
-        {/* Reasoning-effort selector — Codex-only, mirrors the desktop app's
+        {/* Reasoning-effort selector - Codex-only, mirrors the desktop app's
             second dropdown next to the model picker. */}
         {agentSupportsReasoningEffort(agentType) && onReasoningEffortChange && (
           <select
@@ -1019,7 +1019,7 @@ export function groupModelsByProvider<T extends { id: string }>(
  * currently selected model. Hidden when the model has no variants.
  *
  * The base model id is the current `model` prop with any trailing variant
- * stripped — variants are the third path segment for OpenCode-style ids
+ * stripped - variants are the third path segment for OpenCode-style ids
  * (`provider/model/<variant>`). When the user clicks a chip, we rewrite the
  * model to `<base>/<variant>` and bubble through `onChange`.
  */

@@ -5,12 +5,12 @@
  *   - byFile:   Map<path, Definition[]>    (per-file outline + cleanup)
  *
  * The actual tree-sitter parse step that *populates* the index lives
- * in `parse.ts` (lazy WASM init) — we keep storage and parsing separate
+ * in `parse.ts` (lazy WASM init) - we keep storage and parsing separate
  * so the storage layer is pure and testable without WASM.
  *
  * Re-index semantics: addDefinitions for an existing path replaces all
  * prior entries for that file. Mirrors how tree-sitter's incremental
- * model treats a file save — one parse run yields the full set of
+ * model treats a file save - one parse run yields the full set of
  * top-level defs for that file.
  */
 export type SymbolKind = 'function' | 'class' | 'method' | 'variable' | 'type' | 'interface'

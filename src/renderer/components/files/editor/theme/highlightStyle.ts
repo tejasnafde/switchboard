@@ -32,7 +32,7 @@ function buildHighlightStyle(c: TokenColors): HighlightStyle {
 }
 
 /**
- * Editor-chrome theme — inherits CSS custom properties from theme-store
+ * Editor-chrome theme - inherits CSS custom properties from theme-store
  * so dark / light / translucent all flow through without rebuilding.
  */
 const chromeTheme = EditorView.theme({
@@ -128,7 +128,7 @@ export function lightTheme(): Extension[] {
 }
 
 export function themeFor(name: 'dark' | 'light' | 'translucent'): Extension[] {
-  // Translucent inherits the dark token palette — same CSS-vars-driven
+  // Translucent inherits the dark token palette - same CSS-vars-driven
   // chrome already handles the vibrancy backdrop.
   return name === 'light' ? lightTheme() : darkTheme()
 }

@@ -19,7 +19,7 @@ const refs: Ref[] = [
   { name: 'origin/feature', sha: 'd', current: false, isRemote: true, worktreePath: null },
 ]
 
-describe('rankAndFilterRefs — ordering', () => {
+describe('rankAndFilterRefs - ordering', () => {
   it('puts the current branch first', () => {
     const out = rankAndFilterRefs(refs, '')
     expect(out[0].name).toBe('main')
@@ -47,10 +47,10 @@ describe('rankAndFilterRefs — ordering', () => {
   })
 })
 
-describe('rankAndFilterRefs — filtering', () => {
+describe('rankAndFilterRefs - filtering', () => {
   it('substring-matches branch names case-insensitively, across locals + remotes', () => {
     // 'FEAT' matches 'feat/bar', 'feat/foo' (locals) AND 'origin/feature'
-    // (remote — contains the substring inside "feature"). The user
+    // (remote - contains the substring inside "feature"). The user
     // explicitly typed a substring; hiding remote matches would be
     // surprising. Ordering still respects the locals-before-remotes rule.
     const out = rankAndFilterRefs(refs, 'FEAT')

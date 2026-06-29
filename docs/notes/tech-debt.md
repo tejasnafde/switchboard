@@ -14,7 +14,7 @@ A pile of new presentational components ship with everything-inline `style={{…
 
 - `Spinner` / `SkeletonRow` (`WorktreeManagerModal.tsx`)
 - `WorkspaceUnreadBadge` (`Sidebar.tsx`)
-- `PillChipVisual` (`chat/lexical/PillChipVisual.tsx`) — extracted to share between editor + bubble
+- `PillChipVisual` (`chat/lexical/PillChipVisual.tsx`) - extracted to share between editor + bubble
 - Various ad-hoc badge/chip styles inside `CardModal`, `MessageBubble`, etc.
 
 Each is fine in isolation. Together they make global theme tweaks (e.g. "tighten chip padding") a multi-file find-and-replace, and they make accessibility / hover / focus states harder to layer in (no `:hover` from inline styles).
@@ -24,6 +24,6 @@ Each is fine in isolation. Together they make global theme tweaks (e.g. "tighten
 1. CSS modules under `src/renderer/styles/` keyed by class names (consistent with `global.css` for sidebar / themes), or
 2. A small `components/ui/` folder with `Chip`, `Badge`, `Spinner`, `Skeleton` primitives.
 
-The win is consistency — today the kanban-tile chip, the workspace-unread badge, and the pill chip use three slightly different padding/radius values and the drift will only widen.
+The win is consistency - today the kanban-tile chip, the workspace-unread badge, and the pill chip use three slightly different padding/radius values and the drift will only widen.
 
-**Cost**: half-day to enumerate all chip-like UI, pick a primitive shape, and migrate. Low risk because it's pure CSS — visual diff only.
+**Cost**: half-day to enumerate all chip-like UI, pick a primitive shape, and migrate. Low risk because it's pure CSS - visual diff only.

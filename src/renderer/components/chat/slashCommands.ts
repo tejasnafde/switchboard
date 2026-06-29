@@ -33,7 +33,7 @@ export interface SlashCommandContext {
   pickImage: () => void
   /** Interrupt the currently running turn. */
   interrupt: () => void
-  /** Current agent status — used to gate commands that only make sense while running. */
+  /** Current agent status - used to gate commands that only make sense while running. */
   status?: AgentStatus
 }
 
@@ -61,13 +61,13 @@ export interface SlashCommand {
   argumentHint?: string
   /**
    * Called when the user selects this command. For agent-source commands
-   * this is omitted — selection just inserts the prefix into the textarea.
+   * this is omitted - selection just inserts the prefix into the textarea.
    */
   run?: (ctx: SlashCommandContext) => void
 }
 
 /**
- * Build SlashCommand entries from agent-provided skills. Pure — easy to
+ * Build SlashCommand entries from agent-provided skills. Pure - easy to
  * unit-test the merge order.
  */
 export function skillsToSlashCommands(skills: ProviderSkill[]): SlashCommand[] {
@@ -97,7 +97,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   },
   {
     name: 'full',
-    description: 'Switch to Full-Access mode (skip all approvals — be careful)',
+    description: 'Switch to Full-Access mode (skip all approvals - be careful)',
     run: (ctx) => ctx.setRuntimeMode('full-access'),
   },
   {
@@ -144,7 +144,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
  *   - `{ query, rangeStart, rangeEnd }` when triggered
  *   - `null` otherwise
  *
- * Exported for unit testing — this is the tightest piece of logic in the
+ * Exported for unit testing - this is the tightest piece of logic in the
  * slash flow and worth locking down.
  */
 export interface SlashTrigger {
@@ -168,7 +168,7 @@ export function detectSlashTrigger(text: string, cursorInput: number): SlashTrig
   }
   if (slashIdx === -1) return null
 
-  // The `/` must be at line/text start, or preceded by whitespace —
+  // The `/` must be at line/text start, or preceded by whitespace -
   // otherwise it's part of a path like `src/foo` or a URL.
   if (slashIdx > 0) {
     const prev = text[slashIdx - 1]
@@ -188,7 +188,7 @@ export function detectSlashTrigger(text: string, cursorInput: number): SlashTrig
  * a leading `/cmd` as a `SkillChip` once the caller has confirmed the
  * name against the session's known-skill set.
  *
- * Pure regex with no membership check — callers gate chip rendering on
+ * Pure regex with no membership check - callers gate chip rendering on
  * a registry lookup so typos like `/halp` don't masquerade as skills.
  */
 export interface LeadingSlash {
@@ -231,7 +231,7 @@ export function parseSlashCommandWrapper(text: string): LeadingSlash | null {
 /**
  * Tokenize a string into alternating text + skill-mention segments.
  * Used by MessageBubble to chipify every `/<known-skill>` reference in
- * a sent message body, not just the leading one — so something like
+ * a sent message body, not just the leading one - so something like
  * `/deslop then /review` round-trips as two chips with the connector
  * text in between.
  *
@@ -288,7 +288,7 @@ export function filterSlashCommands(query: string, commands: SlashCommand[] = SL
  * Merge built-in Switchboard commands with the agent-provided skills.
  * Built-ins come first; agent skills follow in order. If an agent ships
  * a name that collides with a built-in (e.g. `/clear`), the built-in
- * wins — preserves the user's mental model that `/clear` always clears
+ * wins - preserves the user's mental model that `/clear` always clears
  * the chat locally rather than firing some agent-defined action.
  */
 export function mergeWithAgentSkills(

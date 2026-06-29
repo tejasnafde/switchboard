@@ -525,7 +525,7 @@ describe('CodexAdapter', () => {
       const onEvent = vi.fn()
 
       // Attach a catch handler synchronously so the rejection is never
-      // observed as unhandled — we still assert on the value below.
+      // observed as unhandled - we still assert on the value below.
       const startPromise = adapter.startSession({
         threadId: 'thread-1',
         provider: 'codex',
@@ -557,7 +557,7 @@ describe('CodexAdapter', () => {
         status: 'error',
       })
 
-      // Subsequent sendTurn must fail fast with "not found" — the
+      // Subsequent sendTurn must fail fast with "not found" - the
       // half-init session should have been deleted from the registry,
       // not left dangling for stopSession to reject later.
       await expect(adapter.sendTurn('thread-1', 'hi')).rejects.toThrow(/not found/)

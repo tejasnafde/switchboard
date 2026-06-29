@@ -5,7 +5,7 @@
  * remote backend (HybridTransport → WsTransport → WsHost) instead of local IPC.
  *
  * A stub WsHost answers files:list-dir with a sentinel entry the local backend
- * would never return — so seeing it in the renderer proves the call crossed the
+ * would never return - so seeing it in the renderer proves the call crossed the
  * wire. Desktop-only channels still resolve to local IPC (unasserted here; unit
  * tested in hybrid-transport.test.ts).
  *
@@ -19,7 +19,7 @@ import { join } from 'node:path'
 
 const repoRoot = process.cwd()
 if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
-  console.error('✗ out/main/index.js missing — run `npm run build` first')
+  console.error('✗ out/main/index.js missing - run `npm run build` first')
   process.exit(1)
 }
 

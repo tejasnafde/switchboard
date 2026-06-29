@@ -9,7 +9,7 @@
  *   - mtime-conflict detection: if `expectedMtimeMs` is supplied and
  *     the on-disk stat reports a newer mtime, refuse with
  *     `conflict: true` so the renderer can show "External edits
- *     detected — reload?" UX. Mirror's t3code's optimistic-concurrency
+ *     detected - reload?" UX. Mirror's t3code's optimistic-concurrency
  *     pattern.
  *
  * Cross-platform: every path operation goes through `node:path` and
@@ -61,7 +61,7 @@ export async function writeFileSafe(
     exists = stat.isFile()
     currentMtimeMs = stat.mtimeMs
   } catch {
-    // ENOENT — file doesn't exist; create-on-write path is fine.
+    // ENOENT - file doesn't exist; create-on-write path is fine.
   }
 
   if (exists && opts.expectedMtimeMs !== undefined && currentMtimeMs > opts.expectedMtimeMs) {
@@ -90,7 +90,7 @@ export type DeleteResult = { ok: true } | { ok: false; error: string }
 /**
  * Delete a file. Used to truly revert an agent-*added* file from a diff card
  * (writing empty content would leave a stray empty file). A missing file is
- * treated as success — the desired end state (absent) already holds.
+ * treated as success - the desired end state (absent) already holds.
  */
 export async function deleteFileSafe(absPath: string): Promise<DeleteResult> {
   try {

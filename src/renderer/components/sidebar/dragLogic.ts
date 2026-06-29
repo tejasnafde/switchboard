@@ -8,7 +8,7 @@
  *     (rather than wherever it happened to sit in the raw array).
  *
  * Both outcomes carry `oldIndex`/`newIndex` in the *rendered* flat order
- * (the same array passed to `SortableContext.items`) — NOT the raw
+ * (the same array passed to `SortableContext.items`) - NOT the raw
  * `projects` array order. The caller persists by applying `arrayMove`
  * to the rendered order and rebuilding `projects` from that, which keeps
  * raw and rendered axes in lockstep.

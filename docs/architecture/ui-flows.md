@@ -121,7 +121,7 @@ if (!msg.content
     && !msg.plan
     && !msg.images?.length
     && !msg.denial
-) continue  // skip — truly empty
+) continue  // skip - truly empty
 ```
 
 Adding a new attachment type? You must add it here too, or it'll render

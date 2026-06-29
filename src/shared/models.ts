@@ -14,12 +14,12 @@ export const CLAUDE_MODELS: ModelOption[] = [
 ]
 
 /**
- * Codex models — mirrors the Codex desktop app's model picker. The Codex
+ * Codex models - mirrors the Codex desktop app's model picker. The Codex
  * app-server accepts these IDs directly via the `model` param on
  * thread/start / turn/start. Order matches the desktop app's picker (most
  * recent frontier first).
  *
- * Reasoning effort is a SEPARATE selector (`ReasoningEffort` below) — the
+ * Reasoning effort is a SEPARATE selector (`ReasoningEffort` below) - the
  * Codex app surfaces it next to the model dropdown, not as model variants.
  */
 export const CODEX_MODELS: ModelOption[] = [
@@ -34,7 +34,7 @@ export const CODEX_MODELS: ModelOption[] = [
 ]
 
 /**
- * OpenCode models — popular NVIDIA NIM free-tier models + common
+ * OpenCode models - popular NVIDIA NIM free-tier models + common
  * OpenCode-compatible providers. Users can type any model ID supported by
  * their opencode provider config (e.g. "nvidia-nim/deepseek-ai/deepseek-r1").
  *

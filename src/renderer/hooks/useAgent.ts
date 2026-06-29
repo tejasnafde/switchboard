@@ -24,7 +24,7 @@ export function useAgent({ type, cwd }: UseAgentOptions) {
     }
     appendMessage(id, userMessage)
 
-    // invoke is async — agent spawns a process for each message
+    // invoke is async - agent spawns a process for each message
     window.api.agent.send({ id, message }).catch((err: Error) => {
       appendMessage(id, {
         id: `error_${Date.now()}`,

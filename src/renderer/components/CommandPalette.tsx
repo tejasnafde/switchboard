@@ -33,7 +33,7 @@ interface Cmd {
 /**
  * Single source of truth for palette commands.
  *
- * Adding a new shortcut? Add it here — the palette will surface it
+ * Adding a new shortcut? Add it here - the palette will surface it
  * automatically. Don't add inline items; this registry also feeds into
  * the keyboard shortcuts section of Settings in the future.
  */

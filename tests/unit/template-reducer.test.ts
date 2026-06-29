@@ -12,7 +12,7 @@
  *     destroy the existing default).
  *   - `addTemplate` rejects collisions with existing names.
  *   - `renameTemplate` rejects collisions and is a no-op when from===to.
- *   - All actions return a fresh config — the reducer is pure.
+ *   - All actions return a fresh config - the reducer is pure.
  */
 import { describe, it, expect } from 'vitest'
 import { templateListReducer } from '../../src/renderer/services/templateListReducer'
@@ -26,7 +26,7 @@ const seed: WorkspaceConfig = {
   },
 }
 
-describe('templateListReducer — addTemplate', () => {
+describe('templateListReducer - addTemplate', () => {
   it('adds a new empty template', () => {
     const next = templateListReducer(seed, { type: 'addTemplate', name: 'monitoring' })
     expect(next.ok).toBe(true)
@@ -46,7 +46,7 @@ describe('templateListReducer — addTemplate', () => {
   })
 })
 
-describe('templateListReducer — deleteTemplate', () => {
+describe('templateListReducer - deleteTemplate', () => {
   it('removes a non-default template', () => {
     const next = templateListReducer(seed, { type: 'deleteTemplate', name: 'backend' })
     expect(next.ok).toBe(true)
@@ -65,7 +65,7 @@ describe('templateListReducer — deleteTemplate', () => {
   })
 })
 
-describe('templateListReducer — renameTemplate', () => {
+describe('templateListReducer - renameTemplate', () => {
   it('renames a non-default template', () => {
     const next = templateListReducer(seed, { type: 'renameTemplate', from: 'backend', to: 'api' })
     expect(next.ok).toBe(true)
@@ -95,7 +95,7 @@ describe('templateListReducer — renameTemplate', () => {
   })
 })
 
-describe('templateListReducer — replaceTemplateBody', () => {
+describe('templateListReducer - replaceTemplateBody', () => {
   it('replaces a template\'s terminals with a fresh body', () => {
     const next = templateListReducer(seed, {
       type: 'replaceTemplateBody',

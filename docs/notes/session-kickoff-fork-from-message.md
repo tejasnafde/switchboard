@@ -1,4 +1,4 @@
-# Session kickoff — `fork-from-message` (#4)
+# Session kickoff - `fork-from-message` (#4)
 
 Drop this doc into a fresh Claude session as the first turn. It's
 self-contained: nothing here assumes prior conversation context.
@@ -14,7 +14,7 @@ spawns a new conversation that:
 2. Has a copy of every message **up to and including** the selected one
    from the source conversation.
 3. Is wired to the agent's resume mechanism so the new session keeps
-   real context — not just visual continuity. For Claude, that means
+   real context - not just visual continuity. For Claude, that means
    passing `--resume <new-uuid>` against a JSONL we wrote ourselves;
    for Codex, that means seeding the app-server session with the same
    history the user sees.
@@ -35,24 +35,24 @@ files). Always run `npm run typecheck && npm test` before declaring done.
 
 Key files for this work:
 
-- **Schema**: `src/main/db/database.ts:44-64` — `conversations` table
-  (no `parent_conversation_id` yet — you'll add one) and `messages`
+- **Schema**: `src/main/db/database.ts:44-64` - `conversations` table
+  (no `parent_conversation_id` yet - you'll add one) and `messages`
   table at lines ~80-110. There's also a `thread_sessions` table at
   ~447 mapping a threadId to the child Claude session UUIDs we've seen
   for it; relevant for resume behaviour but separate from forks.
 - **Claude JSONL**: Claude Code stores sessions at
   `~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`. Encoder is in
-  `src/main/projects/session-scanner.ts` (`encodeClaudeProjectPath` —
+  `src/main/projects/session-scanner.ts` (`encodeClaudeProjectPath` -
   exported). Each line is a JSON event with a `uuid` field per message
   and `parentUuid` for the parent. Truncating means: copy the file up
   to the matching `uuid` line, fix up the `parentUuid` chain at the
   cut point, write to a new `<new-uuid>.jsonl`.
 - **JSONL parser**: `src/main/agent/jsonl-parser.ts:82-100, 199-201`
   for the read path. Use it as a reference but don't try to invert it
-  — you only need to copy lines up to a marker, not re-emit them.
+  - you only need to copy lines up to a marker, not re-emit them.
 - **Provider registry**: `src/main/provider/provider-registry.ts:89-100`
   is `START_SESSION`. `SessionStartOpts` (`src/main/provider/types.ts:47-56`)
-  already accepts `resumeSessionId` — the Claude adapter wires it to
+  already accepts `resumeSessionId` - the Claude adapter wires it to
   the SDK at `claude-adapter.ts:280-282`. No new IPC plumbing needed
   for the resume side; you just need to give the right UUID.
 - **Codex resume**: app-server JSON-RPC takes a `sessionId` on the
@@ -67,10 +67,10 @@ Key files for this work:
   (concat the prior turns into a system prompt and start a fresh
   session). Document this clearly in code comments.
 - **MessageBubble**: `src/renderer/components/chat/MessageBubble.tsx`.
-  No message-level context menu yet — the only `onContextMenu` is on
+  No message-level context menu yet - the only `onContextMenu` is on
   the image preview overlay (line 425-442). Add a right-click handler
   on the bubble root that opens a small popover (mirror
-  `SlashCommandMenu` styling — `sb-floating-surface` class + the
+  `SlashCommandMenu` styling - `sb-floating-surface` class + the
   `popoverStyle` constant).
 - **Sidebar**: `src/renderer/components/sidebar/Sidebar.tsx`. After
   the new conversation lands in the DB and a new `AgentSession` is
@@ -88,7 +88,7 @@ Key files for this work:
 ### 1. Schema migration
 
 Add `parent_conversation_id TEXT` and `forked_at_message_id TEXT` to
-`conversations`. Both nullable. Migration goes in `database.ts` — copy
+`conversations`. Both nullable. Migration goes in `database.ts` - copy
 the pattern of an earlier `ALTER TABLE` block (search for
 `ALTER TABLE conversations`).
 
@@ -108,7 +108,7 @@ fork(args: {
 > (position-based), not `upToMessageId: string`. Message ids are regenerated
 > by `JsonlParser` on every reload, so id-based lookup never reliably matched.
 > Position-based truncation against the in-memory parsed array is what
-> actually shipped — see `src/main/conversations/fork.ts`.
+> actually shipped - see `src/main/conversations/fork.ts`.
 
 Logic:
 
@@ -117,7 +117,7 @@ Logic:
    = source, `forked_at_message_id` = forkedAtMessageId (optional, for
    display), copy `project_path`, `agent_type`, `title` (suffix " · fork"),
    `created_at = now`.
-3. Truncate using the in-memory messages array at `upToIndex` (not DB rows —
+3. Truncate using the in-memory messages array at `upToIndex` (not DB rows -
    `JsonlParser` is the source of truth for parsed message content).
 4. **Adapter-specific resume prep**:
    - **Claude**: read the source JSONL (path derives from
@@ -146,7 +146,7 @@ Logic:
   messages + `resumeSessionId = resumeHint ?? undefined`. Then
   `setActiveSession(newId)`.
 
-Reuse `SlashCommandMenu` as a styling reference — same floating
+Reuse `SlashCommandMenu` as a styling reference - same floating
 surface, same accent on the active row.
 
 ### 4. Resume verification
@@ -154,7 +154,7 @@ surface, same accent on the active row.
 Smoke test by hand: fork mid-conversation in Claude, send a follow-up
 in the new chat, verify the agent's response references prior turns
 ("As we discussed earlier..." kind of thing). If it doesn't, the JSONL
-truncation is wrong — most likely culprit is `parentUuid` of the cut-
+truncation is wrong - most likely culprit is `parentUuid` of the cut-
 point line not matching anything in the new file.
 
 For Codex: same flow. Use `cat ~/.codex/sessions/<uuid>.jsonl | wc -l`
@@ -165,9 +165,9 @@ before/after to sanity check.
 Pure functions worth unit-testing (place in `tests/unit/`):
 
 - `truncateClaudeJsonl(content, upToUuid) -> { newContent, anchorUuid }`
-  — copy lines up to and including the line whose `uuid` matches.
+  - copy lines up to and including the line whose `uuid` matches.
   Bail if not found. Don't rewrite `parentUuid` of unrelated lines.
-- `truncateCodexJsonl(content, upToEventId)` — same shape.
+- `truncateCodexJsonl(content, upToEventId)` - same shape.
 - DB-level: in-memory sqlite, insert source conversation + 5 messages,
   call `fork` for message #3, assert new conversation has 3 messages
   and `parent_conversation_id` is set.
@@ -180,8 +180,8 @@ Pure functions worth unit-testing (place in `tests/unit/`):
   if subagents write back in parallel. Use `parentUuid` chains, not line
   position, to determine "up to and including".
 - **Image messages**: `messages.images` is a separate JSON column (or
-  blob refs — read the schema). Make sure the copy pulls them through.
-- **Tool call IDs**: don't strip `tool_calls` from copied messages —
+  blob refs - read the schema). Make sure the copy pulls them through.
+- **Tool call IDs**: don't strip `tool_calls` from copied messages -
   the agent's resume needs them to understand what tools have been
   called already.
 - **Concurrency**: don't fork while the source session has a turn in
@@ -189,7 +189,7 @@ Pure functions worth unit-testing (place in `tests/unit/`):
 - **`thread_sessions` table**: this is unrelated to forks. It maps the
   *threadId* (Switchboard's stable id for an open chat) to the *child
   Claude session UUIDs* that the SDK has produced for that thread over
-  successive `--resume` calls. Don't conflate with fork lineage —
+  successive `--resume` calls. Don't conflate with fork lineage -
   forks happen at the conversation level and produce a new threadId.
 - **OpenCode best-effort note**: leave a TODO in the adapter pointing
   to the future ACP `session/load` extension when one exists. Don't
@@ -216,8 +216,8 @@ Pure functions worth unit-testing (place in `tests/unit/`):
 
 ## Out of scope (do these later)
 
-- Worktree on fork (that's #5 — see `session-kickoff-fork-to-worktree.md`).
+- Worktree on fork (that's #5 - see `session-kickoff-fork-to-worktree.md`).
 - Sidebar lineage UI (arrow/indent showing parent → fork).
-- Forking inside a forked session (works structurally — DB column is
-  set — but visual hierarchy depth is a follow-up).
+- Forking inside a forked session (works structurally - DB column is
+  set - but visual hierarchy depth is a follow-up).
 - Bulk fork (fork from this message + open N parallel forks at once).

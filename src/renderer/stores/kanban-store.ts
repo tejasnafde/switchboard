@@ -1,9 +1,9 @@
 /**
- * Kanban store — cards keyed by project path.
+ * Kanban store - cards keyed by project path.
  *
  * Source of truth lives in main (SQLite). This store is a renderer
  * cache: hydrate on project switch, mutate via IPC, then re-hydrate.
- * We deliberately don't try to do optimistic updates yet — kanban
+ * We deliberately don't try to do optimistic updates yet - kanban
  * mutations are infrequent and human-paced; the round-trip cost
  * (~5ms) is invisible and the simpler model is easier to reason about
  * when worktree-creation failures happen mid-mutation.
@@ -77,7 +77,7 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
   },
 
   move: async (id, status) => {
-    // Optimistic so drag-drops feel instant — the local IPC is the
+    // Optimistic so drag-drops feel instant - the local IPC is the
     // only writer, so divergence is negligible and the next hydrate
     // reconciles anyway.
     set((s) => {

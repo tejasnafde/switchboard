@@ -1,5 +1,5 @@
 /**
- * OpenCode ACP adapter — speaks the Agent Client Protocol (Zed-led
+ * OpenCode ACP adapter - speaks the Agent Client Protocol (Zed-led
  * standard) to a long-lived `opencode acp` child over JSON-RPC on stdio.
  *
  * Replaced the legacy shell-out adapter (deleted 2026-05-02), which
@@ -208,7 +208,7 @@ export function mapSessionUpdate(
     }
 
     case 'available_commands_update':
-      // No RuntimeEvent for skill changes — adapter caches and the renderer
+      // No RuntimeEvent for skill changes - adapter caches and the renderer
       // re-fetches via listSkills(). Returning [] signals "consumed".
       break
 
@@ -489,7 +489,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       throw new Error('OpenCode ACP session not initialized')
     }
     if (active.inFlightPrompt) {
-      log.warn(`sendTurn called while turn in progress for ${threadId} — ignoring`)
+      log.warn(`sendTurn called while turn in progress for ${threadId} - ignoring`)
       return
     }
 
@@ -564,7 +564,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       })
       .catch((err: unknown) => {
-        // Cancellation surfaces as `cancelled` stopReason — the SDK still
+        // Cancellation surfaces as `cancelled` stopReason - the SDK still
         // resolves cleanly, so this catch is for hard transport errors.
         const msg = err instanceof RequestError
           ? `${err.code}: ${err.message}`
@@ -664,13 +664,13 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
   /**
    * Surfaces the model catalog captured from `session/new`. Called from
    * the OPENCODE_LIST_MODELS IPC handler. This replaces the legacy
-   * `opencode models` shell-out — the catalog is already in memory.
+   * `opencode models` shell-out - the catalog is already in memory.
    *
    * If no session is active, falls back to an empty list (the renderer
    * will retry once a session exists).
    */
   async listAvailableModels(): Promise<string[]> {
-    // Pick any active session — model catalogs are global to the binary
+    // Pick any active session - model catalogs are global to the binary
     // version, not per-cwd. (If the user has multiple sessions with
     // different models active, all see the same catalog.)
     for (const active of this.sessions.values()) {
@@ -715,7 +715,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         const active = adapter.sessions.get(threadId)
         if (!active) return
 
-        // available_commands_update never produces a RuntimeEvent — handled
+        // available_commands_update never produces a RuntimeEvent - handled
         // adapter-side via the skills cache.
         if (params.update.sessionUpdate === 'available_commands_update') {
           active.skills = mapAvailableCommands(params.update.availableCommands ?? [])
@@ -764,7 +764,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
           return { outcome: { outcome: 'cancelled' } }
         }
 
-        // policy === 'prompt' — bubble up to the user via approval card.
+        // policy === 'prompt' - bubble up to the user via approval card.
         const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
         const detail = JSON.stringify(
           { tool: params.toolCall, options: params.options.map((o) => ({ id: o.optionId, name: o.name, kind: o.kind })) },

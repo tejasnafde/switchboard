@@ -1,7 +1,7 @@
 /** Classify which pane ⌘W should target, by what currently holds focus. */
 export type CloseFocus = 'editor' | 'chat-left' | 'chat-right' | 'terminal' | 'other'
 
-/** Minimal shape of the bits of `Element` we touch — keeps this pure-testable. */
+/** Minimal shape of the bits of `Element` we touch - keeps this pure-testable. */
 export interface ClosestEl {
   closest(selector: string): ClosestEl | null
   getAttribute(name: string): string | null
@@ -17,6 +17,6 @@ export function classifyCloseFocus(active: ClosestEl | null): CloseFocus {
     if (side === 'left') return 'chat-left'
     if (side === 'right') return 'chat-right'
   }
-  // Ambiguous (e.g. <body>) — callers must not treat this as "close a terminal".
+  // Ambiguous (e.g. <body>) - callers must not treat this as "close a terminal".
   return 'other'
 }

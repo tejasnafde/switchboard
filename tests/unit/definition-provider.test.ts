@@ -24,7 +24,7 @@ function makeSources(over: Partial<DefinitionSources>): DefinitionSources {
   }
 }
 
-describe('resolveDefinition — routing', () => {
+describe('resolveDefinition - routing', () => {
   it('routes TypeScript files to LSP first', async () => {
     const sources = makeSources({ lsp: vi.fn().mockResolvedValue([sampleLoc]) })
     const out = await resolveDefinition({

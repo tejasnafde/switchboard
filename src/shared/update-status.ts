@@ -13,5 +13,5 @@ export type UpdateStatus =
   | { kind: 'downloading'; percent: number }
   | { kind: 'downloaded'; version: string }
   | { kind: 'error'; message: string }
-  /** Dev / non-packaged build — updater can't run, surfaced as info. */
+  /** Dev / non-packaged build - updater can't run, surfaced as info. */
   | { kind: 'unsupported'; reason: string }

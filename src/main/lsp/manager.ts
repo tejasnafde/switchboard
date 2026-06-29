@@ -11,7 +11,7 @@
  *
  * Crashes: a server's `exit` event marks the registry entry stale and
  * fails any in-flight requests. The next call lazily spawns a fresh
- * server. We don't gate restart counts yet — if a server is wedged in
+ * server. We don't gate restart counts yet - if a server is wedged in
  * a crash loop the user will notice the toast spam.
  */
 import { appRootDir } from '../runtime'
@@ -46,7 +46,7 @@ function key(workspaceRoot: string, language: LspLanguage): string {
  *   3. PATH (user-installed global)
  *
  * When running the bundled .mjs/.js entrypoint via `process.execPath`, we
- * MUST set `ELECTRON_RUN_AS_NODE=1` — otherwise the spawn launches a
+ * MUST set `ELECTRON_RUN_AS_NODE=1` - otherwise the spawn launches a
  * second Switchboard.app, which the single-instance lock then kills
  * (user-visible as a Dock-icon flash on every file open).
  */

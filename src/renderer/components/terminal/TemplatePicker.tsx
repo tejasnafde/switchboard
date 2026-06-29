@@ -1,14 +1,14 @@
 /**
  * Per-chat workspace-template selector.
  *
- * Renders a small chip in the terminal strip header — current template
+ * Renders a small chip in the terminal strip header - current template
  * name on the left, dropdown arrow on the right. Clicking opens a menu
  * of named templates from this project's `workspace.yaml`. Selecting
  * one tears down the current panes and rehydrates from the chosen
  * template via `applyTemplate` (see `useTerminalLifecycle.ts`).
  *
  * The pinned-template indicator (outline star) marks the template
- * explicitly bound to THIS chat — `session_layouts.template_name`.
+ * explicitly bound to THIS chat - `session_layouts.template_name`.
  * Picking a template auto-pins it; the "Clear pin" footer action
  * reverts to the implicit `default` fallback. Pinning is per-chat,
  * not per-project.
@@ -26,7 +26,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { applyTemplate, clearTemplatePin, saveCurrentLayoutAsTemplate } from '../../hooks/useTerminalLifecycle'
 import { sortTemplatesByRecency } from '../../services/templateUsage'
 
-/** Outline star — fills only when "active" (currently-pinned). */
+/** Outline star - fills only when "active" (currently-pinned). */
 function StarIcon({ filled }: { filled: boolean }) {
   return (
     <svg width="11" height="11" viewBox="0 0 24 24" aria-hidden="true">
@@ -59,7 +59,7 @@ export function TemplatePicker() {
 
   // Refresh the template list whenever the active project changes or
   // workspace.yaml is hot-reloaded. The picker is a passive read on
-  // the YAML — `applyTemplate` is what actually mutates state.
+  // the YAML - `applyTemplate` is what actually mutates state.
   useEffect(() => {
     let cancelled = false
     if (!projectPath) { setTemplateNames([]); return }
@@ -95,7 +95,7 @@ export function TemplatePicker() {
   }, [feedback])
 
   if (!activeSessionId || !projectPath) return null
-  // We DO want to show the picker even with one template — it gates the
+  // We DO want to show the picker even with one template - it gates the
   // "Save current layout" affordance. Only hide when the project has
   // literally zero templates (workspace.yaml absent / empty).
   if (templateNames.length === 0) return null
@@ -116,7 +116,7 @@ export function TemplatePicker() {
 
   const onClearPin = () => {
     clearTemplatePin(activeSessionId)
-    setFeedback({ kind: 'ok', text: 'Pin cleared — falls back to default.' })
+    setFeedback({ kind: 'ok', text: 'Pin cleared - falls back to default.' })
   }
 
   const onSubmitSave = async () => {

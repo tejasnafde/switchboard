@@ -1,5 +1,5 @@
 /**
- * UnifiedProviderPicker — single drop-up popover that consolidates the
+ * UnifiedProviderPicker - single drop-up popover that consolidates the
  * three previously-separate footer controls into one trigger:
  *
  *   1. Agent-kind selector (Claude Code / Codex / OpenCode)
@@ -247,7 +247,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           canChangeAgent={canChangeAgent}
           onAgentTypeChange={(t) => {
             onAgentTypeChange(t)
-            // Don't close — let the user see the instance/model lists swap.
+            // Don't close - let the user see the instance/model lists swap.
           }}
           instances={instances}
           effectiveInstanceId={effectiveInstance?.id}
@@ -313,7 +313,7 @@ interface PopoverProps {
 }
 
 const UnifiedPickerPopover = (() => {
-  // forwardRef without importing — keeps the component definition flat.
+  // forwardRef without importing - keeps the component definition flat.
   return function Inner(props: PopoverProps & { ref?: React.Ref<HTMLDivElement> }) {
     const {
       anchorRect, agentType, canChangeAgent, onAgentTypeChange,
@@ -333,7 +333,7 @@ const UnifiedPickerPopover = (() => {
     }, [agentType])
 
     // Translucent theme makes `var(--bg-elevated)` undefined and the
-    // other surfaces near-transparent — that's wallpaper-on-wallpaper for
+    // other surfaces near-transparent - that's wallpaper-on-wallpaper for
     // the popover. Detect the theme class once and pick a solid-enough
     // background per palette; light-mode keeps near-white, dark/translucent
     // get a near-black surface. Blur layered on top adds the glass feel.
@@ -371,7 +371,7 @@ const UnifiedPickerPopover = (() => {
     }, [filtered])
 
     // Position: drop-UP. Anchor the popover's BOTTOM 6px above the
-    // trigger's top — this way the gap stays constant regardless of how
+    // trigger's top - this way the gap stays constant regardless of how
     // tall the popover content actually is (using `top: anchor - max-h`
     // floats the popover way above the trigger when content is short).
     const POPOVER_WIDTH = 480
@@ -459,7 +459,7 @@ const UnifiedPickerPopover = (() => {
           />
         )}
 
-        {/* Body — split rail (when 2+ instances) + model list */}
+        {/* Body - split rail (when 2+ instances) + model list */}
         <div style={{ display: agentType === 'terminal' ? 'none' : 'flex', flex: 1, minHeight: 0 }}>
           {showRail && (
             <div
@@ -693,7 +693,7 @@ function TerminalTabBody({
         </div>
       </div>
 
-      {/* Account — only shown for claude binary */}
+      {/* Account - only shown for claude binary */}
       {termCommand === 'claude' && claudeInstances.length > 0 && (
         <div style={{ padding: '8px 8px 6px', borderBottom: '1px solid var(--border)', overflowY: 'auto', maxHeight: 140 }}>
           <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.7px', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
@@ -741,7 +741,7 @@ function TerminalTabBody({
           display: 'flex', gap: '7px',
         }}>
           <span style={{ color: 'var(--success)', flexShrink: 0 }}>●</span>
-          Runs <code style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--success)', background: 'rgba(63,185,80,0.1)', padding: '0 4px', borderRadius: '3px' }}>{termCommand}</code> directly — billed from your subscription, not API credits.
+          Runs <code style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--success)', background: 'rgba(63,185,80,0.1)', padding: '0 4px', borderRadius: '3px' }}>{termCommand}</code> directly - billed from your subscription, not API credits.
         </div>
       </div>
 

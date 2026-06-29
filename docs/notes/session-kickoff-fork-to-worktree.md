@@ -1,10 +1,10 @@
-# Session kickoff — `fork-to-worktree` (#5)
+# Session kickoff - `fork-to-worktree` (#5)
 
 Drop this doc into a fresh Claude session as the first turn. It's
 self-contained: nothing here assumes prior conversation context.
 
 **Prerequisite**: `fork-from-message` (#4) ships first. This task
-extends that feature — read `session-kickoff-fork-from-message.md`
+extends that feature - read `session-kickoff-fork-from-message.md`
 alongside this doc; that one owns the conversation cloning and
 adapter-aware resume; this one owns the git worktree side.
 
@@ -17,7 +17,7 @@ When forking a conversation, optionally also branch the working tree:
 1. Create a new git branch off `HEAD` (or off the parent
    conversation's branch if it's already on a feature branch).
 2. `git worktree add` it to a path inside `<repo>/.switchboard/worktrees/`
-   (or wherever feels right — see "Worktree storage" below).
+   (or wherever feels right - see "Worktree storage" below).
 3. The forked conversation's `projectPath` points to the worktree, not
    the original repo. So when the user resumes work in the fork, the
    agent's cwd is the new working tree, terminal panes default to it,
@@ -37,29 +37,29 @@ back later.
 Read `CLAUDE.md` at repo root. Key surfaces:
 
 - **Existing kanban worktree fields**: the `kanban_cards` table
-  already carries `worktreePath` and `worktreeBranch` columns — see
+  already carries `worktreePath` and `worktreeBranch` columns - see
   `src/main/db/database.ts` (search for `kanban_cards`). Worktree
   creation logic for kanban cards already exists somewhere in
-  `src/main/` — find it via `git worktree add` grep. Reuse / share
+  `src/main/` - find it via `git worktree add` grep. Reuse / share
   helpers; do not duplicate.
 - **Project path scoping**: `projectPath` lives on `conversations`
   rows AND on `AgentSession` in
   `src/renderer/stores/agent-store.ts:24-69`. The terminal store
-  defaults pane cwd to the active session's `projectPath` — so once
+  defaults pane cwd to the active session's `projectPath` - so once
   the fork's projectPath is the worktree, terminals + file pane "just
   work" without further wiring.
 - **`assertCwdReadable`** in `src/main/path-access.ts` runs as
   pre-flight on `START_SESSION`. Make sure newly-created worktrees
-  pass it (they should — same physical disk as the parent repo).
+  pass it (they should - same physical disk as the parent repo).
 - **Cheap-model summary**: There's no existing helper for "run a
   one-shot turn for a title". Cheapest path: spawn a quick Claude
   Code SDK query with `maxTurns=1` (we already do this for
-  auto-titles in `src/shared/auto-title.ts` — read it; you can
+  auto-titles in `src/shared/auto-title.ts` - read it; you can
   factor a `summarizeForBranchName` next to `generateTitle`).
 - **Provider registry**: `src/main/provider/provider-registry.ts`
   is where you'd add the IPC `conversations.forkWithWorktree` (or
   add a `withWorktree: boolean` flag to the existing fork IPC from
-  #4 — preferred, less surface area).
+  #4 - preferred, less surface area).
 
 ---
 
@@ -77,13 +77,13 @@ Lower-case, replace whitespace + non-alphanumerics with `-`, collapse
 runs of `-`, trim, cap length at ~40 chars, prefix with `fork/`.
 Example: "Fix Redis timeout in worker pool" → `fork/fix-redis-timeout-in-worker-pool`.
 
-Worth unit-testing — input/output table is straightforward.
+Worth unit-testing - input/output table is straightforward.
 
 ### 2. Branch name from message body
 
 > **Shipped implementation note:** `summarizeForBranchName` via LLM was
 > **deferred**. What shipped (2026-05-04) is a purely deterministic slug
-> derived from the first ~40 chars of the picked message body — the same
+> derived from the first ~40 chars of the picked message body - the same
 > `makeBranchSlug` helper described in step 1. An LLM-powered rename pass
 > was explicitly cut to keep the fork operation synchronous and offline-safe.
 > The `generateTitle` pattern in `src/shared/auto-title.ts` remains the
@@ -98,17 +98,17 @@ to deterministic slug on failure; kick off rename in background.
 
 Decide between:
 
-- **Inside the repo** at `<repo>/.switchboard/worktrees/<slug>/` —
+- **Inside the repo** at `<repo>/.switchboard/worktrees/<slug>/` -
   needs a `.gitignore` entry. Simple, discoverable, doesn't sprawl.
   **Recommended**.
-- Sibling directory at `<repo>/../switchboard-worktrees/<slug>/` —
+- Sibling directory at `<repo>/../switchboard-worktrees/<slug>/` -
   cleaner separation but more code to compute paths and explain to
   users.
 
 Pick one and stick with it. Whatever you pick, make it configurable
 in settings later but ship a sensible default first.
 
-Add `.switchboard/` to `.gitignore` (only if option 1) — but only
+Add `.switchboard/` to `.gitignore` (only if option 1) - but only
 if the user's repo doesn't already ignore it. Read existing
 `.gitignore` first; append if missing; warn-don't-error if the file
 is locked.
@@ -127,7 +127,7 @@ Capture stderr verbatim; surface it on failure. Things that go wrong:
 - Branch name collides with an existing branch (suffix `-2`, `-3`,
   etc., up to a small N before failing).
 - Working tree at the target path already exists (same suffix logic).
-- Repo is shallow / has no commits (rare; user error — bail with a
+- Repo is shallow / has no commits (rare; user error - bail with a
   clear message).
 
 ### 5. Wire into `conversations.fork` (from #4)
@@ -153,7 +153,7 @@ When `withWorktree` is true:
 4. Override the new conversation's `project_path` with the worktree
    path before INSERT.
 5. Persist `worktree_path` + `worktree_branch` on the new conversation
-   row (add columns if not already there from #4 — the kanban table
+   row (add columns if not already there from #4 - the kanban table
    already has them so the pattern's clear).
 
 ### 6. UI: option in the fork menu
@@ -166,7 +166,7 @@ after creation: "Forked to fork/<slug>".
 ### 7. Tests
 
 - `makeBranchSlug` table tests.
-- `createForkWorktree` is integration — gate it behind a `git`-
+- `createForkWorktree` is integration - gate it behind a `git`-
   available check and skip in CI if needed. Use a tmp git repo
   fixture.
 - DB: assert the forked conversation row has both `worktree_path`
@@ -190,15 +190,15 @@ after creation: "Forked to fork/<slug>".
   expect, but call it out in any docs we write for this feature.
 - **Path display in sidebar**: forked conversation's display path
   becomes ugly (e.g. `…/myrepo/.switchboard/worktrees/fork-fix-x/`).
-  Consider showing `<repo> · fork/fix-x` instead — the worktree
+  Consider showing `<repo> · fork/fix-x` instead - the worktree
   branch name is the human-meaningful part. Sidebar lives at
   `src/renderer/components/sidebar/Sidebar.tsx`.
 - **Cleanup**: when a forked conversation is **archived** (existing
-  archive system — see CLAUDE.md "Archive system"), don't auto-delete
+  archive system - see CLAUDE.md "Archive system"), don't auto-delete
   the worktree. The user may have committed work there. Show a
   separate "Delete worktree" action in the conversation context menu
   that does `git worktree remove` and `git branch -D` after a
-  confirm dialog. Out of scope for v1 if you're tight on time —
+  confirm dialog. Out of scope for v1 if you're tight on time -
   document as a follow-up.
 - **`thread_sessions`**: completely unrelated; ignore.
 - **Worktree on Windows**: use `path.join` everywhere; never hardcode
@@ -212,7 +212,7 @@ after creation: "Forked to fork/<slug>".
 
 - `makeBranchSlug` ships with tests.
 - Branch slug is deterministically derived from the picked message body
-  (LLM naming deferred — see step 2 note above).
+  (LLM naming deferred - see step 2 note above).
 - `createForkWorktree` works with collision handling.
 - `conversations.fork` accepts `withWorktree: true`.
 - "Fork to worktree" entry in the message context menu.

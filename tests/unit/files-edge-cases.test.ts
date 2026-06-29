@@ -1,6 +1,6 @@
 /**
  * Edge-case coverage for the file-IO primitives:
- *   - resolveWithinRepo must defeat symlink escapes (E2) — lexical-only
+ *   - resolveWithinRepo must defeat symlink escapes (E2) - lexical-only
  *     checks let a symlink inside the repo point outside it.
  *   - readFileCapped must not slice mid-UTF-8-codepoint at the cap (E4).
  *   - detectEol / applyEol must survive leading bare \n and lone \r (E9/E10).
@@ -76,7 +76,7 @@ describe('readFileCapped (E4 UTF-8 boundary)', () => {
 describe('writeFileSafe EOL handling (E9/E10)', () => {
   it('preserves CRLF for a CRLF-dominant file even with a leading bare \\n', async () => {
     const p = join(repo, 'crlf.txt')
-    // Leading bare LF (idx 0), then CRLF lines — majority is CRLF. The old
+    // Leading bare LF (idx 0), then CRLF lines - majority is CRLF. The old
     // first-newline heuristic wrongly picked LF because idx 0 has no preceding \r.
     await fs.writeFile(p, '\nline1\r\nline2\r\n', 'utf8')
     const stat = await fs.stat(p)
@@ -90,7 +90,7 @@ describe('writeFileSafe EOL handling (E9/E10)', () => {
     const p = join(repo, 'crlf2.txt')
     await fs.writeFile(p, 'x\r\ny\r\n', 'utf8')
     const stat = await fs.stat(p)
-    // Content carries an old-Mac lone \r — must not survive as a stray \r.
+    // Content carries an old-Mac lone \r - must not survive as a stray \r.
     const res = await writeFileSafe(p, 'a\rb\nc\n', { expectedMtimeMs: stat.mtimeMs })
     expect(res.ok).toBe(true)
     const raw = await fs.readFile(p, 'utf8')

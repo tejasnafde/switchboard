@@ -27,7 +27,7 @@ export function useTerminal({ id, sessionId, cwd, initialCommand, waitFor }: Use
     const container = containerRef.current
     if (!container) return
 
-    // Get or create terminal — idempotent, safe for StrictMode
+    // Get or create terminal - idempotent, safe for StrictMode
     getOrCreateTerminal(id, cwd, initialCommand, waitFor)
     attachToContainer(id, container)
 
@@ -47,7 +47,7 @@ export function useTerminal({ id, sessionId, cwd, initialCommand, waitFor }: Use
     return () => {
       resizeObserver.disconnect()
       removeExit()
-      // Do NOT destroy terminal here — it lives in the registry
+      // Do NOT destroy terminal here - it lives in the registry
     }
   }, [id, sessionId, cwd, updatePaneStatus])
 

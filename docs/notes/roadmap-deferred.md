@@ -1,4 +1,4 @@
-# Roadmap — deferred features
+# Roadmap - deferred features
 
 Features that have a clear product shape but are not in the immediate work
 queue. Captured here so they don't get lost when the next conversation
@@ -15,7 +15,7 @@ Last refreshed: 2026-05-04.
 events. When someone mentions `@Switchboard` in any thread:
 
 1. Pull the thread via Slack API.
-2. Run a single cheap-model turn (using whichever provider is configured —
+2. Run a single cheap-model turn (using whichever provider is configured -
    Claude / Codex / OpenCode) that emits structured JSON:
    `{title, description, suggested_project, suggested_runtime_mode}`.
 3. Insert into `kanban_cards` (existing table). Card lands in `Backlog`
@@ -27,10 +27,10 @@ events. When someone mentions `@Switchboard` in any thread:
 **Two-way sync (the differentiator).** When a kanban card transitions to
 `done` (and has a `slack_thread_ts` recorded), post back into the
 original thread:
-> ✅ shipped — PR #123
+> ✅ shipped - PR #123
 
 Closes the loop without copy-paste. Same hook fires on `needs_input`:
-> ⚠️ paused — agent is waiting for your input on `<card title>`
+> ⚠️ paused - agent is waiting for your input on `<card title>`
 
 **Edge cases.**
 - No provider configured → card lands as raw text, no auto-fill.
@@ -84,7 +84,7 @@ sunsetting per their README, but the code is up).
 **Why deferred.** Real scope. Auth model (Switchboard issuing a pairing
 token), wire protocol stability (bumping the protocol breaks every
 mobile version not on the latest), App Store review cycle, the full
-Slack-style cloud-relay-vs-Tailscale decision — all the same
+Slack-style cloud-relay-vs-Tailscale decision - all the same
 architectural calls.
 
 **What unblocks this.**
@@ -127,13 +127,13 @@ including the BYOK plumbing and the project-terminology biasing.
 
 ---
 
-## 4. Provider hot-swap mid-conversation — context preservation
+## 4. Provider hot-swap mid-conversation - context preservation
 
 **Shape.** Switchboard already lets the user swap agent type mid-chat
 via `handleAgentTypeChange` in `ChatPanel.tsx`. Today's behaviour: tear
 down the outgoing provider session, the next `handleSend` calls
 `startSession` on the new provider. The visible message stream persists
-in the zustand store, so the chat *looks* continuous — but the new
+in the zustand store, so the chat *looks* continuous - but the new
 adapter starts with **zero conversation context**. Every prior turn
 might as well not exist as far as the new agent is concerned.
 
@@ -170,7 +170,7 @@ ships first. Adapter changes to accept an `instanceId` at
 
 ---
 
-## 5. Multi-instance provider picker (t3code-style) — ✅ SHIPPED
+## 5. Multi-instance provider picker (t3code-style) - ✅ SHIPPED
 
 > **Update (2026-06-01):** This shipped. `provider_instances` table +
 > `ipc/providerInstances.ts` + `UnifiedProviderPicker` + Settings →
@@ -226,7 +226,7 @@ migrations) + a pass over each adapter to thread `instanceId` through
 `packages/contracts/src/providerInstance.ts`. The cursor adapter from
 vibe-kanban (`/tmp/vibe-kanban/crates/executors/src/executors/cursor.rs`,
 `resolve_cursor_model_name`) is worth yoinking specifically for its
-`(base_model, reasoning) → full_model_id` mapping table — covers ~30
+`(base_model, reasoning) → full_model_id` mapping table - covers ~30
 cursor variants and is the kind of registry we'll want once instances
 multiply.
 

@@ -17,7 +17,7 @@ const gitDir = resolve(repoRoot, '.git')
 
 // Skip silently when not inside a git checkout (e.g. installed as a tarball
 // dependency). `npm install` in CI can also run with the repo already
-// configured — be tolerant.
+// configured - be tolerant.
 if (!existsSync(gitDir)) {
   process.exit(0)
 }

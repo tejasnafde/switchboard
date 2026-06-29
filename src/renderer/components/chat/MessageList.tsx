@@ -25,7 +25,7 @@ interface MessageListProps {
  * Each turn renders under a single role label (You/Claude/System) with a
  * shared timestamp.
  *
- * Exported for unit testing — the filter inside has regressed silently
+ * Exported for unit testing - the filter inside has regressed silently
  * (e.g. forgot to keep messages with only a `question` or `plan` attachment).
  */
 export function groupIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
@@ -34,7 +34,7 @@ export function groupIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
   let currentRole: string | null = null
 
   for (const msg of messages) {
-    // Skip truly empty messages — but keep ones with any kind of attachment
+    // Skip truly empty messages - but keep ones with any kind of attachment
     // (toolCalls / approval / question / plan / fileDiff / images / denial).
     // Missing any of these would hide the corresponding custom UI
     // (QuestionCard, PlanCard, FileDiffCard, DenialPill, etc).
@@ -87,7 +87,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
 
   const turns = useMemo(() => groupIntoTurns(messages), [messages])
 
-  // Skill-name set for the current session — passed to each bubble so
+  // Skill-name set for the current session - passed to each bubble so
   // leading-`/cmd` chips only render for commands that actually exist.
   // Falls back to undefined when the session hasn't published yet, in
   // which case MessageBubble suppresses chip rendering rather than
@@ -99,7 +99,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
   const virtualizer = useVirtualizer({
     count: turns.length,
     getScrollElement: () => containerRef.current,
-    // Rough estimate — the measurer corrects this on mount via the ref.
+    // Rough estimate - the measurer corrects this on mount via the ref.
     // 120px covers a short chat bubble + role label + timestamp.
     estimateSize: () => 120,
     overscan: 6,
@@ -116,7 +116,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
     isScrollLockedRef.current = distanceFromBottom > 50
   }, [])
 
-  // Jump to bottom instantly when switching sessions — UNLESS the session
+  // Jump to bottom instantly when switching sessions - UNLESS the session
   // switch was triggered by a search-result click (pendingScrollToMessage
   // for this same sessionId is set). In that case, the pending-scroll
   // effect below will jump to the right row; we mustn't race it to the
@@ -139,7 +139,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
 
   // Auto-scroll-to-bottom on new messages (only if user hasn't scrolled up).
   // Same guard as above: if a pending search-jump is in flight for this
-  // session, don't auto-scroll-bottom — the smooth animation would fight
+  // session, don't auto-scroll-bottom - the smooth animation would fight
   // the instant scrollToIndex from the pending-scroll effect and "win"
   // because smooth scrolls keep ticking after layout.
   useEffect(() => {
@@ -162,7 +162,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
     if (!pendingScroll) return
     if (pendingScroll.sessionId !== sessionId) return
     // Identify the target message either by id (search results) or by
-    // timestamp (bookmarks — they don't store ids).
+    // timestamp (bookmarks - they don't store ids).
     const matches = (m: { id: string; timestamp: number }): boolean => {
       if (pendingScroll.messageId) return m.id === pendingScroll.messageId
       if (pendingScroll.messageTimestamp != null) return m.timestamp === pendingScroll.messageTimestamp
@@ -170,7 +170,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
     }
     const turnIdx = turns.findIndex((group) => group.some(matches))
     if (turnIdx === -1) {
-      // Message hasn't loaded into the session yet — may still be mid-load.
+      // Message hasn't loaded into the session yet - may still be mid-load.
       // Leave the pending request; the next render after setMessages will
       // re-run this effect and find it.
       return
@@ -198,14 +198,14 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
           if (el) {
             if (query && query.trim()) {
               // Wrap the matched substring with <mark> instead of flashing
-              // the whole bubble — much easier to spot the actual match.
+              // the whole bubble - much easier to spot the actual match.
               const wrapped = wrapSearchMatches(el, query)
               if (wrapped) {
                 // Center the active mark so the user sees the phrase, not
                 // just the bubble.
                 wrapped.scrollIntoView({ block: 'center', behavior: 'auto' })
               } else {
-                // No text-node match (rare — substring may be in markdown
+                // No text-node match (rare - substring may be in markdown
                 // syntax that React already split). Fall back to bubble
                 // pulse.
                 el.classList.add('message-search-highlight')
@@ -260,7 +260,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
         flex: 1,
         overflowY: 'auto',
         padding: '8px 0',
-        // NOTE: deliberately NOT using `contain: strict` — it creates a new
+        // NOTE: deliberately NOT using `contain: strict` - it creates a new
         // containing block for `position: fixed` descendants, which breaks
         // the MessageBubble image lightbox (clips to the scroll container
         // instead of covering the viewport). The virtualizer alone provides
@@ -346,7 +346,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
 // of `query` (case-insensitive) with <mark class="sb-search-mark active">.
 // Returns the wrapping <mark> so the caller can scroll it into view.
 //
-// We deliberately wrap only the FIRST match per bubble — the in-pane
+// We deliberately wrap only the FIRST match per bubble - the in-pane
 // search bar steps through one match at a time (each step scrolls to
 // a different message), so wrapping every occurrence would be visually
 // noisy and steal focus from the active one.

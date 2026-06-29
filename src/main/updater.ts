@@ -19,7 +19,7 @@
  * com.apple.quarantine /Applications/Switchboard.app`) on each new
  * version. We accept this until we have an Apple Developer cert.
  *
- * The module is intentionally tiny — most logic lives inside
+ * The module is intentionally tiny - most logic lives inside
  * electron-updater itself. We just adapt the events to our IPC shape.
  */
 import { app, ipcMain, type BrowserWindow } from 'electron'
@@ -45,13 +45,13 @@ function send(window: BrowserWindow, status: UpdateStatus): void {
 }
 
 export function registerAutoUpdater(window: BrowserWindow): void {
-  // Idempotent — `app.on('activate', ...)` calls this on macOS reopens.
+  // Idempotent - `app.on('activate', ...)` calls this on macOS reopens.
   // Without the guard each window-recreate adds another set of
   // autoUpdater listeners and the renderer would see duplicate events.
   if (registered) return
   registered = true
 
-  // Always register the IPC handler — even in dev — so the Settings
+  // Always register the IPC handler - even in dev - so the Settings
   // button has something to invoke. In dev it returns the
   // "unsupported" status instead of crashing.
   ipcMain.removeHandler(AppChannels.CHECK_FOR_UPDATES)
@@ -81,7 +81,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     }
   })
 
-  // Skip the actual updater in dev — autoUpdater throws or no-ops with
+  // Skip the actual updater in dev - autoUpdater throws or no-ops with
   // confusing messages when there's no `app-update.yml` next to the
   // executable.
   if (!app.isPackaged) {
@@ -90,7 +90,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   }
 
   autoUpdater.autoDownload = true
-  // Don't auto-install on quit — let the user click the prompt so a
+  // Don't auto-install on quit - let the user click the prompt so a
   // long-running terminal pane doesn't die in the middle of work.
   autoUpdater.autoInstallOnAppQuit = false
   // Pipe the library's logger through ours so failures show up in the
@@ -121,7 +121,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     // has been published for this tag yet (common while shipping dev builds
     // via git tag only). Treat it as "up to date" so the UI stays quiet.
     if (msg.includes('latest-mac.yml') || msg.includes('latest.yml')) {
-      log.info('no release artifact found — skipping update check')
+      log.info('no release artifact found - skipping update check')
       send(window, { kind: 'up-to-date', version: app.getVersion() })
       return
     }

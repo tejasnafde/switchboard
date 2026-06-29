@@ -8,7 +8,7 @@
  *
  * The renderer streams MP4s via the `sb-tour://<id>.mp4` custom protocol
  * registered in main (see ipc/app.ts). Missing MP4s degrade gracefully
- * — the modal renders the description without video — so we can ship
+ * - the modal renders the description without video - so we can ship
  * the wiring before every clip is in the can.
  *
  * `tourVersion` bumps trigger auto-open on next launch (compared against
@@ -47,13 +47,13 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     id: 'welcome',
     title: 'Welcome to Switchboard',
     description:
-      'Terminals, AI agents, and project context in one window. Add a folder from the sidebar to get started — everything else flows from there.',
+      'Terminals, AI agents, and project context in one window. Add a folder from the sidebar to get started - everything else flows from there.',
   },
   {
     id: 'kanban-view',
     title: 'Two modes: Chats & Board',
     description:
-      'Toggle the whole app between engineering view (chats + terminals + files) and PM view (a workspace-scoped kanban board). Click the segmented toggle in the title bar, or hit ⌘⇧K. Cards on the board double as chats — click ▶ to start a conversation rooted at the card’s worktree.',
+      'Toggle the whole app between engineering view (chats + terminals + files) and PM view (a workspace-scoped kanban board). Click the segmented toggle in the title bar, or hit ⌘⇧K. Cards on the board double as chats - click ▶ to start a conversation rooted at the card’s worktree.',
   },
   {
     id: 'slash-menu',
@@ -72,7 +72,7 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     id: 'panes',
     title: 'Multi-pane terminals & chat',
     description:
-      'Split any pane horizontally or vertically — terminals and chats live in the same tmux-style tree. Drag the handle to resize, ⌘W closes the focused pane.',
+      'Split any pane horizontally or vertically - terminals and chats live in the same tmux-style tree. Drag the handle to resize, ⌘W closes the focused pane.',
   },
   {
     id: 'file-viewer-context',
@@ -96,19 +96,19 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     id: 'switch-agent',
     title: 'Switch agents per chat',
     description:
-      'Pick Claude Code, Codex, or OpenCode for any chat from the agent dropdown — the status bar and model picker update to match. Switching starts a fresh context with the new agent.',
+      'Pick Claude Code, Codex, or OpenCode for any chat from the agent dropdown - the status bar and model picker update to match. Switching starts a fresh context with the new agent.',
   },
   {
     id: 'resume-search',
     title: 'Session resume & full-text search',
     description:
-      'Past sessions live in the sidebar — click to resume any thread. ⌘⇧F searches every message across every project; click a result to jump straight to it.',
+      'Past sessions live in the sidebar - click to resume any thread. ⌘⇧F searches every message across every project; click a result to jump straight to it.',
     tryIt: { kind: 'open-search' },
   },
   {
     id: 'workspaces',
     title: 'Sidebar workspaces',
     description:
-      'Group projects under named, color-tagged workspaces — Work, Personal, side quests. Filter the whole tree by chat title with the new search input. Collapse state persists across launches.',
+      'Group projects under named, color-tagged workspaces - Work, Personal, side quests. Filter the whole tree by chat title with the new search input. Collapse state persists across launches.',
   },
 ]

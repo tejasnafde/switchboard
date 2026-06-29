@@ -2,7 +2,7 @@
  * Deterministic worktree path scheme for the "new session in worktree
  * mode" flow (Plan B). Mirrors t3code's `worktreesDir/<repo>/<branch>`
  * but lands under switchboard's userData dir instead of inside the
- * project tree — keeps things off TCC-protected paths (~/Desktop, etc.)
+ * project tree - keeps things off TCC-protected paths (~/Desktop, etc.)
  * and avoids polluting users' working dirs.
  *
  * Two pure functions tested here:
@@ -103,7 +103,7 @@ describe('resolveSessionWorktreePath', () => {
 
   it('disambiguates two different repos with the same basename via project hash', () => {
     // Two different absolute paths that happen to share the same trailing
-    // dir name must NOT collide on disk — otherwise two unrelated projects
+    // dir name must NOT collide on disk - otherwise two unrelated projects
     // step on each other's worktrees. Implementation appends a stable
     // hash of the absolute project path so the dirs differ.
     const a = resolveSessionWorktreePath({

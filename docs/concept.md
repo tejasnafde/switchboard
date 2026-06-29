@@ -1,6 +1,6 @@
 # Switchboard
 
-### The unified workspace for developers who run agents, terminals, and chats — not in separate apps, but as one coherent view per project.
+### The unified workspace for developers who run agents, terminals, and chats - not in separate apps, but as one coherent view per project.
 
 ---
 
@@ -8,17 +8,17 @@
 
 Modern AI-assisted development has fractured the developer's attention across at least four disconnected surfaces:
 
-**The IDE** (Cursor, VS Code) — where you read and write code, but whose terminal is an afterthought and whose chat history is locked in a workspace-scoped SQLite DB (`state.vscdb`) with no interop.
+**The IDE** (Cursor, VS Code) - where you read and write code, but whose terminal is an afterthought and whose chat history is locked in a workspace-scoped SQLite DB (`state.vscdb`) with no interop.
 
-**The Agent TUI** (Claude Code, Codex CLI) — powerful coding agents that run in a terminal, maintain rich conversation histories (JSONL in `~/.claude/projects/` and `~/.codex/sessions/`), but have zero awareness of your other running processes. You can't say "look at this error in my frontend terminal" — you have to copy-paste it.
+**The Agent TUI** (Claude Code, Codex CLI) - powerful coding agents that run in a terminal, maintain rich conversation histories (JSONL in `~/.claude/projects/` and `~/.codex/sessions/`), but have zero awareness of your other running processes. You can't say "look at this error in my frontend terminal" - you have to copy-paste it.
 
-**The Terminal Multiplexer** (tmux, cmux) — where your actual services run: frontend dev server, backend, DB tunnels, log tails. tmux is battle-tested but blind to agents. cmux (Fdds agent-aware notifications, vertical tabs, and a socket API, but it's still *just* a terminal — no chat UI, no conversation persistence across sessions, no declarative project layouts.
+**The Terminal Multiplexer** (tmux, cmux) - where your actual services run: frontend dev server, backend, DB tunnels, log tails. tmux is battle-tested but blind to agents. cmux (Fdds agent-aware notifications, vertical tabs, and a socket API, but it's still *just* a terminal - no chat UI, no conversation persistence across sessions, no declarative project layouts.
 
-**The Launch Config** (Warp YAML) — the only tool that lets you declaratively define "for this project, open these tabs with these commands." But it's Warp-only, has no agent/chat integration, and the configs don't travel with the repo.
+**The Launch Config** (Warp YAML) - the only tool that lets you declaratively define "for this project, open these tabs with these commands." But it's Warp-only, has no agent/chat integration, and the configs don't travel with the repo.
 
 The result: you `⌘-Tab` between 3-4 apps constantly. Your agent can't see your terminal output. Your terminal can't see your agent's reasoning. Your conversation history is scattered across `~/.claude/`, `~/.codex/`, and Cursor's SQLite. When you switch repos, you start from scratch. When you resume tomorrow, you reconstruct the layout manually.
 
-**Nobody has built the switchboard** — the single surface that multiplexes terminals *and* agent chats, persists the layout per-project, and lets information flow between panes and the AI.
+**Nobody has built the switchboard** - the single surface that multiplexes terminals *and* agent chats, persists the layout per-project, and lets information flow between panes and the AI.
 
 ---
 
@@ -35,9 +35,9 @@ The result: you `⌘-Tab` between 3-4 apps constantly. Your agent can't see your
 | Per-project workspace persistence | ❌ | Partial (thread per project) | ❌ (session restore) | ✅ |
 | Conversation history browsing | ❌ | Partial | ❌ | ✅ Unified across agents |
 
-**dpcode specifically**: It's a T3 Code fork with 1,129 commits, ~130 stars, single contributor. It adds Claude Code support alongside Codex. But its TODO reveals where it actuallre no terminals, no split panes, no layout persistence, no conversation import. It's a chat GUI wrapper, not a workspace. The delta from dpcode to what we want is enormous — it would need a ground-up rearchitecture to become a multiplexed workspace rather than a chat app.
+**dpcode specifically**: It's a T3 Code fork with 1,129 commits, ~130 stars, single contributor. It adds Claude Code support alongside Codex. But its TODO reveals where it actuallre no terminals, no split panes, no layout persistence, no conversation import. It's a chat GUI wrapper, not a workspace. The delta from dpcode to what we want is enormous - it would need a ground-up rearchitecture to become a multiplexed workspace rather than a chat app.
 
-**cmux specifically**: Closest to the terminal side of the vision. Native macOS (Swift/AppKit + libghostty), socket API for automation, agent notification rings, embedded browser. But it has no chat UI — you see agent TUI output in a terminal pane, not rendered markdown. No conversation import. Layout persistence is manual or via the community `terminals.json` hack, not a first-class feature. It's an *agent-aware terminal*, not an *agent workspace*.
+**cmux specifically**: Closest to the terminal side of the vision. Native macOS (Swift/AppKit + libghostty), socket API for automation, agent notification rings, embedded browser. But it has no chat UI - you see agent TUI output in a terminal pane, not rendered markdown. No conversation import. Layout persistence is manual or via the community `terminals.json` hack, not a first-class feature. It's an *agent-aware terminal*, not an *agent workspace*.
 
 ---
 
@@ -50,7 +50,7 @@ One window. One project. Everything connected.
 │  Switchboa                                            │
 │ Projects │              CHAT (primary surface)              │
 │          │   ┌──────────────────────────────────────────┐   │
-│ geoiq-   │   │ Claude Code — Session: pipeline-fixes    │   │
+│ geoiq-   │   │ Claude Code - Session: pipeline-fixes    │   │
 │ analytics│   │ ─────────────────────────────────────────│   │
 │ ●        │   │ You: The staging promotion failed, here's│   │
 │          │   │ the error from the backend terminal ↗     │   │
@@ -68,18 +68,18 @@ One window. One project. Everything connected.
 │ (import) │                                                  │
 └──────────┴───âhitecture: Building Blocks to Glue Together
 
-### Layer 1 — Terminal Engine
-**libghostty** (or xterm.js for cross-platform). cmux proved libghostty works beautifully for this. The terminal panes are real PTY sessions — they run your dev server, your DB tunnel, your log tail. Each pane has a label, a status indicator, and the ability to capture selected text as structured context.
+### Layer 1 - Terminal Engine
+**libghostty** (or xterm.js for cross-platform). cmux proved libghostty works beautifully for this. The terminal panes are real PTY sessions - they run your dev server, your DB tunnel, your log tail. Each pane has a label, a status indicator, and the ability to capture selected text as structured context.
 
-### Layer 2 — Agent Runtime Bridge
+### Layer 2 - Agent Runtime Bridge
 Don't rebuild Claude Code or Codex. Spawn them as subses in terminal panes, but intercept their I/O via the existing protocols:
 - **Claude Code**: Spawn `claude` CLI. Read conversation state from `~/.claude/projects/{project}/` JSONL files. Use `claude --resume <session-id>` to continue threads. Hook into Claude Code's hook system for status updates.
 - **Codex CLI**: Spawn `codex` CLI. Read from `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`. Use `codex resume --session <id>`. Same hook pattern.
-- **Future agents**: Any CLI agent that writes JSONL transcripts — this is becing the de facto standard.
+- **Future agents**: Any CLI agent that writes JSONL transcripts - this is becing the de facto standard.
 
-The chat UI is a **rendered view** on top of the agent's TUI — parse the JSONL, render markdown, show tool callas collapsible blocks. The raw TUI still exists in the background pane for power users.
+The chat UI is a **rendered view** on top of the agent's TUI - parse the JSONL, render markdown, show tool callas collapsible blocks. The raw TUI still exists in the background pane for power users.
 
-### Layer 3 — Conversation Import & Unified History
+### Layer 3 - Conversation Import & Unified History
 
 This is the killer differentiator. On first launch for a project, Switchboard scans:
 
@@ -91,7 +91,7 @@ This is the killer differentiator. On first launch for a project, Switchboard sc
 
 All three get normalized into a unified conversation format and shown in the sidebar as "Previous Sessions." You can browse, search, and *fork* any past conversation into a new active agent thread. Your history follows you into the new tool.
 
-### Layer 4 — Project Layout Config (the "Switchboard File")
+### Layer 4 - Project Layout Config (the "Switchboard File")
 
  file that lives **in the repo** at `.switchboard/workspace.yaml`:
 
@@ -130,18 +130,18 @@ on_start:
 
 This is the Warp Launch Config concept, but project-portable and agent-aware. Check it into git. New team member clones, runs `switchboard`, gets the full workspace.
 
-### Layer 5 — Context Bridge (the ⌘+L interaction)
+### Layer 5 - Context Bridge (the ⌘+L interaction)
 
 The core UX innovation. When you select text in a terminal pane:
-- `⌘+L` — append to the current chat as context (like Cursor's behavior)
+- `⌘+L` - append to the current chat as context (like Cursor's behavior)
 - `⌘+K` inline quick-prompt with that context
 - The context carries metadata: which pane, what command was running, timestamp
 
 This means the agent can reason about: "The error in your backend pane at 14:32 shows a dbt test failure on `stg_store_metrics`. Looking at your `models/staging/` directory..."
 
-### Layer 6 — Electron/Tauri Shell
+### Layer 6 - Electron/Tauri Shell
 
-Package as a desktop app. Electron is the pragmatic choice (dpcode/t3code already use it, xterm.js is native). Tauri is lighter but would need a Rust terminal implementation. Given the goal is shipping fast, Electron + xterm.js + React is the path — fork from dpcode's shell but gut the internals.
+Package as a desktop app. Electron is the pragmatic choice (dpcode/t3code already use it, xterm.js is native). Tauri is lighter but would need a Rust terminal implementation. Given the goal is shipping fast, Electron + xterm.js + React is the path - fork from dpcode's shell but gut the internals.
 
 ---
 
@@ -149,23 +149,23 @@ Package as a desktop app. Electron is the pragmatic choice (dpcode/t3code alread
 
 **Don't fork dpcode.** It's too far from the target. dpcode is a chat GUI that wraps agent CLIs. Switchboard is a workspace multiplexer that happens ave a chat as its primary surface. The architecture is inverted.
 
-**Do steal from cmux's design language** — vertical tabs, notification rings, status indicators. But implement in Electron, not native Swift, for cross-platform reach and faster iteration.
+**Do steal from cmux's design language** - vertical tabs, notification rings, status indicators. But implement in Electron, not native Swift, for cross-platform reach and faster iteration.
 
-**Do study t3code's agent spawning** — it solved the "wrap Claude Code / Codex as a subprocess and render their output" problem. Extract that pattern.
+**Do study t3code's agent spawning** - it solved the "wrap Claude Code / Codex as a subprocess and render their output" problem. Extract that pattern.
 
 **Build on these exng libraries:**
-- `xterm.js` — terminal rendering
-- `node-pty` — PTY management  
-- `better-sqlite3` — reading Cursor's `state.vscdb`
-- JSONL parsing — for Claude Code + Codex history
-- `marked` / `shiki` — markdown + code rendering in chat
-- Electron IPC — for contetween terminal panes and chat
+- `xterm.js` - terminal rendering
+- `node-pty` - PTY management  
+- `better-sqlite3` - reading Cursor's `state.vscdb`
+- JSONL parsing - for Claude Code + Codex history
+- `marked` / `shiki` - markdown + code rendering in chat
+- Electron IPC - for contetween terminal panes and chat
 
 ---
 
 ## Name
 
-**Switchboard** — a switchboard operator connects any line to any other. That's exactly the metaphor: connecting terminals, agents, and conversations through a single surface. It also evokes "switching context" — which is the pain it enates.
+**Switchboard** - a switchboard operator connects any line to any other. That's exactly the metaphor: connecting terminals, agents, and conversations through a single surface. It also evokes "switching context" - which is the pain it enates.
 
 ---
 
@@ -178,4 +178,4 @@ Package as a desktop app. Electron is the pragmatic choice (dpcode/t3code alread
 5. Read `~/.claude/projects/` to s sessions in the sidebar
 6. Basic `.switchboard/workspace.yaml` parser for layout + commands
 
-That's enough to replace the daily `tmux + Claude Code + ⌘-Tab` loop. Everything else — Codex support, Cursor import, workspace persistence, team configs — layers on top.
+That's enough to replace the daily `tmux + Claude Code + ⌘-Tab` loop. Everything else - Codex support, Cursor import, workspace persistence, team configs - layers on top.

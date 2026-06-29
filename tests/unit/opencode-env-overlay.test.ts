@@ -11,7 +11,7 @@ vi.mock('child_process', () => ({
   execSync: vi.fn(() => ''),
 }))
 
-// Settings DB mock — return a fixed key for OPENAI_API_KEY only.
+// Settings DB mock - return a fixed key for OPENAI_API_KEY only.
 vi.mock('../../src/main/db/database', () => ({
   getSetting: vi.fn((key: string) => {
     if (key === 'opencode.env.OPENAI_API_KEY') return 'settings-openai-key'

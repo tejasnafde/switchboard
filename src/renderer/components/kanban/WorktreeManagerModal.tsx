@@ -1,11 +1,11 @@
 /**
- * WorktreeManagerModal — manual oversight + cleanup for git worktrees.
+ * WorktreeManagerModal - manual oversight + cleanup for git worktrees.
  *
  * Lists every worktree git knows about under the current project, plus a
  * "stale" subset that cleanup will target by default. A worktree is stale
  * when (a) git itself marks it prunable, (b) the directory is missing on
  * disk, or (c) no kanban card references it. The user can also force-
- * remove an in-use worktree from here — useful when a card is wedged.
+ * remove an in-use worktree from here - useful when a card is wedged.
  *
  * We deliberately don't auto-clean on launch: deleting a worktree drops
  * uncommitted work, so the user always pulls the trigger themselves.
@@ -101,7 +101,7 @@ export function WorktreeManagerModal({ projectPath, onClose }: Props): React.Rea
     <div style={overlayStyle} onClick={onClose}>
       <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
         <div style={headerStyle}>
-          <span>Worktrees — {projectPath.split('/').pop()}</span>
+          <span>Worktrees - {projectPath.split('/').pop()}</span>
           <button onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
 

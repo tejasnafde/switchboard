@@ -1,7 +1,7 @@
 /**
  * File-tree pane IPC. Backs the right-pane "Files" mode:
  *   - list-dir: directory listing annotated with isGitignored (renderer
- *     greys them out instead of filtering — VS Code-style)
+ *     greys them out instead of filtering - VS Code-style)
  *   - read-file: capped read (2 MB hard cap) for the viewer
  *   - resolve: existence + abs-path lookup for inline FileChip pills,
  *     batched/debounced on the renderer side
@@ -25,7 +25,7 @@ import { createMainLogger as createLogger } from '../logger'
 const log = createLogger('ipc:files')
 
 const MAX_READ_BYTES = 2 * 1024 * 1024 // 2 MB hard cap for viewer
-const MAX_WRITE_BYTES = 8 * 1024 * 1024 // 8 MB cap on writes — caps a runaway buffer wiping the disk
+const MAX_WRITE_BYTES = 8 * 1024 * 1024 // 8 MB cap on writes - caps a runaway buffer wiping the disk
 
 /** Realpath the nearest existing ancestor (leaf may not exist for a new-file
  *  write) and re-append the tail, so symlinks are resolved for the check below. */
@@ -160,7 +160,7 @@ export function registerFilesHandlers(host: BackendHost): void {
       )
       return { ok: true, hits: parseGitGrep(stdout, symbol) }
     } catch (err) {
-      // git grep exits 1 when nothing matches — that's empty, not an error.
+      // git grep exits 1 when nothing matches - that's empty, not an error.
       if ((err as { code?: number }).code === 1) return { ok: true, hits: [] }
       log.warn('grep-symbol failed', { repoRoot, symbol, err: (err as Error).message })
       return { ok: true, hits: [] }

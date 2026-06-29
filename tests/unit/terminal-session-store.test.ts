@@ -83,7 +83,7 @@ describe('terminal sessions in agent-store', () => {
 
   it('terminal session without terminalPaneId is valid (post-restart idle)', () => {
     // After restart the PTY is gone but the DB record remains. We add the
-    // session as idle without a paneId — the center pane shows nothing.
+    // session as idle without a paneId - the center pane shows nothing.
     useAgentStore.getState().addSession({
       id: 'ts1',
       type: 'terminal',

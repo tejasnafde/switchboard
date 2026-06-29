@@ -48,14 +48,14 @@ describe('RuntimeEventBus', () => {
     expect(b).toEqual(['first', 'second'])
   })
 
-  it('survives a subscriber that throws — siblings still receive', () => {
+  it('survives a subscriber that throws - siblings still receive', () => {
     const bus = new RuntimeEventBus()
     const seen: string[] = []
     bus.subscribe(() => { throw new Error('boom') })
     bus.subscribe((e) => { if (e.type === 'content') seen.push(e.text) })
 
     // EventEmitter rethrows synchronously, so swallow at the publish site
-    // for the test. The registry doesn't currently isolate failures — that
+    // for the test. The registry doesn't currently isolate failures - that
     // would be a follow-up; for now just verify publish-after-throw works.
     expect(() => bus.publish(fakeContent('t1', 'x'))).toThrow('boom')
 

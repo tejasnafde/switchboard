@@ -1,7 +1,7 @@
 # Provider Adapter Architecture
 
 Switchboard abstracts agent backends behind `ProviderAdapter`. There are
-three implementations — Claude Code (via the Anthropic Agent SDK), Codex
+three implementations - Claude Code (via the Anthropic Agent SDK), Codex
 (via `codex app-server` JSON-RPC), and OpenCode (via `opencode acp` over
 the Agent Client Protocol). The renderer never sees provider-specific
 types: every adapter emits normalized `RuntimeEvent`s.
@@ -36,7 +36,7 @@ type RuntimeEvent =
 `durationMs` on `turn.completed` is what powers the "Worked for X.Xs" badge
 in `MessageBubble`. `numTurns` is the cumulative agent turn count from the
 SDK. `file.edited` is emitted once per changed file per turn (sourced from a
-git checkpoint diff — provider-agnostic); drives the Cursor-style in-chat
+git checkpoint diff - provider-agnostic); drives the Cursor-style in-chat
 diff card with per-hunk accept/reject. `model.variants` carries available
 thinking-budget tiers (`low`/`medium`/`high`/`max`) for models that support
 them (emitted by the OpenCode ACP adapter from `_meta.opencode.availableVariants`).
@@ -86,18 +86,18 @@ sendTurn(threadId, msg)
 
 `PromptQueue` implements `AsyncIterable`. The SDK pulls the next prompt
 when the current turn completes. New user messages sent via `sendTurn`
-are just pushed to the queue — the SDK picks them up automatically.
+are just pushed to the queue - the SDK picks them up automatically.
 
 ### canUseTool pipeline (the most important code path)
 
 Every tool call fires `canUseTool(toolName, toolInput)` before execution.
 Our implementation has four branches in order:
 
-1. **`ExitPlanMode`** — extract `toolInput.plan` markdown, emit
+1. **`ExitPlanMode`** - extract `toolInput.plan` markdown, emit
    `plan.proposed` event, **deny** (stops the agent so user can review).
    The agent's next turn (if user clicks "Implement") includes a new user
    message that tells it to proceed.
-2. **`AskUserQuestion`** — parse `toolInput.questions[]`, emit
+2. **`AskUserQuestion`** - parse `toolInput.questions[]`, emit
    `question.asked`, **block on a Promise** until the user answers via
    `answerQuestion(threadId, requestId, answers)`. Return the answers as
    tool output in `updatedInput.__user_answers`.
@@ -120,7 +120,7 @@ only signal was the agent's prose reaction, which was easy to miss.
 ### Suppressed tool.started for custom-UI tools
 
 `CUSTOM_UI_TOOLS = {'AskUserQuestion', 'ExitPlanMode'}`. When a `tool_use`
-block for these arrives, we **skip** emitting `tool.started` — otherwise
+block for these arrives, we **skip** emitting `tool.started` - otherwise
 the raw JSON tool block renders alongside the QuestionCard / PlanCard.
 
 ### Image content blocks
@@ -156,7 +156,7 @@ over stdio. T3 Code is the reference implementation
   client-side
 - **AskUserQuestion**: Codex `item/userInput/request` / `askUserQuestion`
   surface as `question.asked` events (multi-select supported);
-  `answerQuestion` responds back — QuestionCard works across providers
+  `answerQuestion` responds back - QuestionCard works across providers
 - **Plan proposals**: `item/plan/delta` / `turn/plan/updated`
   notifications surface as `plan.proposed`
 
@@ -167,7 +167,7 @@ shell-out was retired 2026-05-02). Speaks the Agent Client Protocol over
 a long-lived `opencode acp` child. Shares env-probing via
 `adapters/opencode/env.ts`.
 
-- **Skill discovery**: implements `listSkills` — the adapter caches the
+- **Skill discovery**: implements `listSkills` - the adapter caches the
   skill list kept fresh by `available_commands_update` ACP push events
   (replaced the earlier `opencode debug skill` shell-out). Slash command
   menu shows OpenCode skills alongside Switchboard built-ins.
@@ -177,7 +177,7 @@ a long-lived `opencode acp` child. Shares env-probing via
 ## Session loading from disk (`JsonlParser`)
 
 When the user clicks a historical session in the sidebar, we don't
-re-start an agent — we stream the existing JSONL file from disk and
+re-start an agent - we stream the existing JSONL file from disk and
 parse it into `ChatMessage[]`. The parser is source-aware:
 
 - `source: 'claude-code'` (default): handles `{type: 'assistant'|'user'|'result'}`
@@ -187,7 +187,7 @@ parse it into `ChatMessage[]`. The parser is source-aware:
   are injected context, not real conversation turns)
 
 Images in historical Claude sessions are reconstructed from `image`
-content blocks back into `MessageImage[]` with data URLs — otherwise
+content blocks back into `MessageImage[]` with data URLs - otherwise
 attached images would vanish on reload.
 
 ## Shared policy across adapters
@@ -205,7 +205,7 @@ Codex equivalents (`read_file`/`list_files`/`search_files`/`fetch`,
 ## Multi-instance credentials
 
 `provider_instances` (settings DB) holds named credential sets per agent
-type — `(id, agent_type, display_name, accent_color, auth_mode,
+type - `(id, agent_type, display_name, accent_color, auth_mode,
 env_encrypted, oauth_dir, config_json, enabled, …)`. `auth_mode` is
 `'env'` (safeStorage-encrypted env overlay) or `'oauth_dir'` (per-instance
 `CLAUDE_CONFIG_DIR` / `CODEX_HOME`). `provider-registry` resolves the

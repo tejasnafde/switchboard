@@ -5,7 +5,7 @@
  *   - The ChatInput surface is about to flip from `<textarea>` to a
  *     contenteditable div so we can render inline pill chips at the
  *     caret position (Cursor-style). Most of the failure modes live in
- *     the *text representation* — pill tokens, caret arithmetic, and
+ *     the *text representation* - pill tokens, caret arithmetic, and
  *     the wire serialization on Send. Keeping those pure means the
  *     contenteditable surface only owns DOM concerns; the data layer
  *     stays unit-testable under the current node-only vitest setup.
@@ -40,7 +40,7 @@ describe('insertPillAtCursor', () => {
 
   it('does NOT add a trailing space when the next char is already whitespace', () => {
     const r = insertPillAtCursor('hi world', 2, 'a')
-    // 'hi' + ' [[pill:a]]' + ' world'  — leading space added, trailing skipped
+    // 'hi' + ' [[pill:a]]' + ' world'  - leading space added, trailing skipped
     expect(r.body).toBe('hi [[pill:a]] world')
     expect(r.caret).toBe('hi [[pill:a]]'.length)
   })
@@ -87,7 +87,7 @@ describe('serializeBodyWithPills', () => {
   })
 
   it('drops tokens whose ids are not in the pill map (treats removed pills as deleted)', () => {
-    // User inserted a pill then clicked × — token lingers in the body but
+    // User inserted a pill then clicked × - token lingers in the body but
     // the pill is gone. We drop the token rather than leaving raw
     // `[[pill:zz]]` syntax for the agent to puzzle over.
     const out = serializeBodyWithPills('hi [[pill:zz]] there', {})
@@ -103,7 +103,7 @@ describe('serializeBodyWithPills', () => {
 
   it('does not infinite-loop when pill content itself contains a token-shaped string', () => {
     // Edge case: pill content has `[[pill:b]]` literal in it. We must NOT
-    // recursively expand — pills are terminal. The replaced text is opaque.
+    // recursively expand - pills are terminal. The replaced text is opaque.
     const out = serializeBodyWithPills('[[pill:a]]', {
       a: { id: 'a', kind: 'file', label: 'A', content: 'literal [[pill:b]] inside' },
       b: { id: 'b', kind: 'file', label: 'B', content: 'SHOULD_NOT_APPEAR' },

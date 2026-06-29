@@ -101,7 +101,7 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
           position: 'relative',
         }}
       >
-        {/* Status / focus dot. Green only on the focused window — that's
+        {/* Status / focus dot. Green only on the focused window - that's
             the visual cue for "this is the pane keystrokes go to". Errors
             still surface red regardless of focus. Inactive windows get
             a muted dim dot so the slot is still discoverable. */}
@@ -324,7 +324,7 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
         )}
       </div>
 
-      {/* Active pane's xterm — all panes live in the registry; only active one mounts DOM */}
+      {/* Active pane's xterm - all panes live in the registry; only active one mounts DOM */}
       <div style={{ flex: '1 1 0%', position: 'relative', minHeight: 0 }}>
         {window.paneIds.map((pid) => {
           const pane = panes[pid]

@@ -1,6 +1,6 @@
 /**
  * Lazy Electron shim so the same modules load under Electron and a headless
- * `node` backend — electron is required only when actually running under it.
+ * `node` backend - electron is required only when actually running under it.
  */
 import { homedir } from 'os'
 import { join } from 'path'

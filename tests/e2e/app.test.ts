@@ -5,7 +5,7 @@ import { join } from 'path'
  * NOTE: Electron 33 removed --remote-debugging-port support.
  * These tests require Electron 32 or Playwright to add --remote-debugging-pipe support.
  * Track: https://github.com/electron/electron/issues/43548
- * Skip for now with test.skip() — will enable once compat is resolved.
+ * Skip for now with test.skip() - will enable once compat is resolved.
  */
 const ELECTRON_LAUNCH_BROKEN = true
 

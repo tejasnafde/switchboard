@@ -5,7 +5,7 @@
  * a different, partially-opaque shape. Rather than normalise three wire
  * formats, we treat *git* as the source of truth: snapshot the working tree
  * at the start of a turn, snapshot it again at the end, and diff the two.
- * This is provider-agnostic and deterministic — it sees exactly the bytes
+ * This is provider-agnostic and deterministic - it sees exactly the bytes
  * that hit disk, no matter who wrote them.
  *
  * A snapshot is taken into a throwaway temp index (`GIT_INDEX_FILE`) so we

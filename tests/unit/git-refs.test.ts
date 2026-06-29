@@ -6,7 +6,7 @@
  *   - parseWorktreeBranchMap: porcelain output -> Map<branchName,path>
  *     (used to annotate each ref with whether it already has a worktree
  *     so the picker can reuse vs. checkout)
- *   - isValidRefName: defense-in-depth for `git checkout <ref>` — reject
+ *   - isValidRefName: defense-in-depth for `git checkout <ref>` - reject
  *     anything that starts with `-`, contains `..`, control chars, or
  *     spaces. Matches a subset of git's own check-ref-format rules.
  *   - listRefs / switchRef / getCurrentBranch: stubbed-runner integration

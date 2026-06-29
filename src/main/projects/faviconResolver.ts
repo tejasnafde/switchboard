@@ -29,7 +29,7 @@ export interface FaviconResult {
 }
 
 /**
- * Static probe list — same paths as t3code's ProjectFaviconResolver.ts:9–31,
+ * Static probe list - same paths as t3code's ProjectFaviconResolver.ts:9–31,
  * stored as path *segments* (not slash-joined strings) so we can `join(...)`
  * them onto the project root and get correct separators on every OS.
  */
@@ -79,7 +79,7 @@ interface CacheEntry {
 }
 const cache = new Map<string, CacheEntry>()
 
-/** Test hook — wipe the module-level cache between tests. */
+/** Test hook - wipe the module-level cache between tests. */
 export function __clearFaviconCacheForTests(): void {
   cache.clear()
 }
@@ -105,7 +105,7 @@ async function probeStaticPaths(projectPath: string): Promise<FaviconResult | nu
 
 export async function resolveProjectFavicon(projectPath: string): Promise<FaviconResult | null> {
   // Stat the project root so we can key the cache on its mtime. If the
-  // project itself doesn't exist or isn't readable, bail out null —
+  // project itself doesn't exist or isn't readable, bail out null -
   // caller will render the fallback folder icon.
   let rootMtimeMs: number
   try {
@@ -121,7 +121,7 @@ export async function resolveProjectFavicon(projectPath: string): Promise<Favico
     return cached.result
   }
 
-  // Static probe first — fast, no I/O beyond a stat per candidate path.
+  // Static probe first - fast, no I/O beyond a stat per candidate path.
   // If nothing matches, fall through to the HTML link-tag scan.
   const result =
     (await probeStaticPaths(projectPath)) ?? (await resolveFaviconViaHtml(projectPath))

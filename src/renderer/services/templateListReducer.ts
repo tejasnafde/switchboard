@@ -11,7 +11,7 @@
  *     deleted, cannot be renamed away, and other templates cannot be
  *     renamed *onto* it (would silently destroy whatever was there).
  *   - All actions return `{ ok: false, error }` on rejection rather
- *     than throwing — the UI surfaces `error` inline.
+ *     than throwing - the UI surfaces `error` inline.
  *   - The reducer is pure: callers receive a fresh config and decide
  *     when to persist.
  *

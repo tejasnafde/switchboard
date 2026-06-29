@@ -6,7 +6,7 @@
  *
  * The theme + read-only flag are wrapped in `Compartment`s so they can
  * be reconfigured (`view.dispatch({ effects: ... })`) without rebuilding
- * the whole state — that's how theme-store / read-only toggles propagate
+ * the whole state - that's how theme-store / read-only toggles propagate
  * to a live editor instance.
  */
 import {
@@ -59,7 +59,7 @@ export const themeCompartment = new Compartment()
 export const readOnlyCompartment = new Compartment()
 export const languageCompartment = new Compartment()
 
-/** Synchronous baseline extensions — no async language pack yet. */
+/** Synchronous baseline extensions - no async language pack yet. */
 export function buildExtensions(args: BuildExtensionsArgs): Extension[] {
   return [
     lineNumbers(),

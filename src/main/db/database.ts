@@ -112,7 +112,7 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'images')) {
       db.exec('ALTER TABLE messages ADD COLUMN images TEXT')
     }
-    // Migration: pill-aware display body for sent user messages — see
+    // Migration: pill-aware display body for sent user messages - see
     // `getDisplayBodyEnrichments` and `enrichMessagesWithDisplayBody`.
     if (!cols.some((c) => c.name === 'display_body')) {
       db.exec('ALTER TABLE messages ADD COLUMN display_body TEXT')
@@ -129,13 +129,13 @@ function migrate(db: Database.Database): void {
       db.exec('ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
     }
     // Migration (2026-05-04): persist the per-conversation runtime mode
-    // (plan / sandbox / accept-edits / full-access) so reopening a chat —
-    // especially via a kanban card click — restores the user's actual
+    // (plan / sandbox / accept-edits / full-access) so reopening a chat -
+    // especially via a kanban card click - restores the user's actual
     // selection instead of falling back to the hardcoded 'sandbox' default.
     if (!cols.some((c) => c.name === 'runtime_mode')) {
       db.exec('ALTER TABLE conversations ADD COLUMN runtime_mode TEXT')
     }
-    // Migration (#4 — fork-from-message): record fork lineage so the
+    // Migration (#4 - fork-from-message): record fork lineage so the
     // sidebar (and future audit tools) can reconstruct parent → child.
     // Both nullable so existing conversations stay valid without a
     // backfill. `forked_at_message_id` references a message in the
@@ -148,7 +148,7 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'forked_at_message_id')) {
       db.exec('ALTER TABLE conversations ADD COLUMN forked_at_message_id TEXT')
     }
-    // Migration (#5 — fork-to-worktree): when the user opts a fork into
+    // Migration (#5 - fork-to-worktree): when the user opts a fork into
     // its own git worktree, persist the worktree path + branch so the
     // sidebar can render a friendly `<repo> · <branch>` label and any
     // future cleanup flow can locate the on-disk checkout. Both are
@@ -177,7 +177,7 @@ function migrate(db: Database.Database): void {
   // A project belongs to at most one workspace via the nullable
   // `workspace_id` FK. ON DELETE SET NULL means deleting a workspace
   // returns its projects to the implicit "Ungrouped" pseudo-bucket
-  // — never destroys data.
+  // - never destroys data.
   db.exec(`
     CREATE TABLE IF NOT EXISTS project_workspaces (
       id          TEXT PRIMARY KEY,
@@ -195,12 +195,12 @@ function migrate(db: Database.Database): void {
   } catch { /* ignore */ }
   db.exec('CREATE INDEX IF NOT EXISTS idx_projects_workspace ON projects(workspace_id);')
 
-  // Thread ancestry — Claude's SDK can reassign `session_id` mid-conversation
+  // Thread ancestry - Claude's SDK can reassign `session_id` mid-conversation
   // (compaction, fork, restart), producing multiple .jsonl files for what the
   // user sees as one chat. This table maps each child session_id to its
   // root thread id (the stable id the user renamed, archived, etc.).
   //
-  // Pattern borrowed from T3 Code's `projection_thread_sessions` spec —
+  // Pattern borrowed from T3 Code's `projection_thread_sessions` spec -
   // "never overload orchestration thread id as Claude thread id."
   db.exec(`
     CREATE TABLE IF NOT EXISTS thread_sessions (
@@ -245,7 +245,7 @@ function migrate(db: Database.Database): void {
       })()
       if (rewrote > 0) log.info(`thread_sessions: flattened ${rewrote} chain row(s) to ultimate roots`)
     }
-  } catch { /* best-effort — flattening can be re-run on next launch */ }
+  } catch { /* best-effort - flattening can be re-run on next launch */ }
 
   // ─── Kanban (v0.1.26) ────────────────────────────────────────────
   // Per-project task cards. `tags` is JSON-encoded (SQLite has no
@@ -337,9 +337,9 @@ function migrate(db: Database.Database): void {
           SELECT rowid, content, conversation_id, role FROM messages WHERE content != '';
       `)
     }
-  } catch { /* FTS rebuild failed — not critical */ }
+  } catch { /* FTS rebuild failed - not critical */ }
 
-  // Editor tabs — per-session list of open files in the right-pane editor.
+  // Editor tabs - per-session list of open files in the right-pane editor.
   // Survives app restart so users come back to the same buffers they
   // were editing. `is_active` is a 0/1 flag rather than a separate column
   // because we want the active tab atomically writable along with the rest.
@@ -578,7 +578,7 @@ export function getConversationById(id: string): ConversationRow | undefined {
 /**
  * Record that `claudeSessionId` belongs to `threadId`.
  *
- * FLATTENS the chain on insert — if `threadId` is itself a child of some
+ * FLATTENS the chain on insert - if `threadId` is itself a child of some
  * deeper root, we resolve to that root first. And if `claudeSessionId`
  * already has descendants, we re-parent them too. Result: the table
  * always stores a two-level relationship (leaf → ultimate root), never
@@ -588,7 +588,7 @@ export function getConversationById(id: string): ConversationRow | undefined {
  * A's direct parent is B, not C.
  */
 export function recordThreadSession(claudeSessionId: string, threadId: string): void {
-  if (claudeSessionId === threadId) return // self-reference — nothing to track
+  if (claudeSessionId === threadId) return // self-reference - nothing to track
   const db = getDb()
   const now = Date.now()
 
@@ -612,7 +612,7 @@ export function recordThreadSession(claudeSessionId: string, threadId: string): 
 
 /**
  * Return the root thread_id for a given claude_session_id. Walks the
- * parent chain until it hits a terminal (no row) — handles legacy rows
+ * parent chain until it hits a terminal (no row) - handles legacy rows
  * from before `recordThreadSession` flattened on insert.
  */
 export function resolveRootThreadId(claudeSessionId: string): string {
@@ -644,7 +644,7 @@ export function listSessionIdsForThread(threadId: string): string[] {
   )
   const result: string[] = [threadId]
   const visited = new Set<string>([threadId])
-  // BFS — each queued id's direct children are added. With flattening
+  // BFS - each queued id's direct children are added. With flattening
   // this is usually a single layer, but the walk handles legacy chains.
   const queue: string[] = [threadId]
   while (queue.length > 0) {
@@ -662,12 +662,12 @@ export function listSessionIdsForThread(threadId: string): string[] {
 
 /**
  * Returns the set of claude_session_ids that are CHILDREN of some other
- * thread — used to hide fragmented .jsonl files from the sidebar scanner.
+ * thread - used to hide fragmented .jsonl files from the sidebar scanner.
  *
  * IMPORTANT: Only hide UUIDs whose parent is ALSO a real UUID (i.e. has
  * its own .jsonl on disk). If the parent is a synthetic `agent_<ts>` ID
  * (Switchboard-native, never written to disk), hiding the UUID would make
- * the whole chat invisible — the synthetic parent has no scanner entry to
+ * the whole chat invisible - the synthetic parent has no scanner entry to
  * stand in for it. So we keep those UUIDs visible and inherit the title
  * from the synthetic parent via `getThreadParentMap()`.
  */
@@ -708,7 +708,7 @@ export function detachSession(claudeSessionId: string): boolean {
 }
 
 /**
- * Dump all ancestry rows — used for debugging via the devtools console.
+ * Dump all ancestry rows - used for debugging via the devtools console.
  * Not called by any UI path; exposed through the `app:list-ancestry` IPC
  * so you can run `window.api.app.listAncestry()` to see the full state.
  */
@@ -825,7 +825,7 @@ export function bulkSaveMessages(
 ): void {
   const db = getDb()
 
-  // Skip silently if the conversation row doesn't exist — same guard as saveMessage
+  // Skip silently if the conversation row doesn't exist - same guard as saveMessage
   const convExists = db.prepare('SELECT 1 FROM conversations WHERE id = ?').get(conversationId)
   if (!convExists) {
     log.warn(`bulkSaveMessages: conversation ${conversationId} not found, skipping`)
@@ -861,7 +861,7 @@ export function saveMessage(
   const now = Date.now()
   const db = getDb()
 
-  // Skip silently if the conversation row doesn't exist — happens when a session
+  // Skip silently if the conversation row doesn't exist - happens when a session
   // was imported (scanned from JSONL) but never persisted to the conversations
   // table. The renderer will call createConversation on session activation, but
   // this guard protects against race/edge cases so we don't throw.
@@ -935,7 +935,7 @@ export function getDisplayBodyEnrichments(
 /**
  * Return persisted system messages (currently used only for the in-band
  * provider-instance-rotation marker) for a conversation. JSONL fragments
- * don't carry these — they're written to SQLite by the renderer when the
+ * don't carry these - they're written to SQLite by the renderer when the
  * user switches instances mid-conversation, and merged back into the
  * load-by-id output so the marker survives reload.
  */
@@ -1032,7 +1032,7 @@ export function searchMessages(query: string, limit = 50): SearchResult[] {
       LIMIT ?
     `).all(sanitized, limit) as SearchResult[]
   } catch {
-    // FTS query syntax error — fall back to LIKE
+    // FTS query syntax error - fall back to LIKE
     return getDb().prepare(`
       SELECT
         id as messageId,
@@ -1077,7 +1077,7 @@ function normalizeRuntimeMode(raw: string | null | undefined): RuntimeMode {
 
 function rowToCard(r: KanbanRow): KanbanCard {
   let tags: string[] = []
-  try { const parsed = JSON.parse(r.tags); if (Array.isArray(parsed)) tags = parsed.map(String) } catch { /* malformed — show as empty */ }
+  try { const parsed = JSON.parse(r.tags); if (Array.isArray(parsed)) tags = parsed.map(String) } catch { /* malformed - show as empty */ }
   return {
     id: r.id,
     projectPath: r.project_path,

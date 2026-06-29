@@ -12,7 +12,7 @@ const TERMINAL_DEFAULT = 400
 export type RightPaneMode = 'terminal' | 'files'
 
 /**
- * Top-level app view. `'chats'` is the default — sidebar + chat pane +
+ * Top-level app view. `'chats'` is the default - sidebar + chat pane +
  * right column (terminal/files). `'kanban'` swaps the chat+right area
  * for a workspace-scoped board; the sidebar stays mounted so workspace
  * + project clicks drive the board's filter (and clicking a session
@@ -119,7 +119,7 @@ interface LayoutStore {
   setChatSplitRatio: (ratio: number) => void
 }
 
-// Persistence keys for sidebar collapse state — kept tight so we don't
+// Persistence keys for sidebar collapse state - kept tight so we don't
 // accidentally collide with the existing `projectOrder` / `theme` keys.
 const COLLAPSE_PROJECTS_KEY = 'sidebar.collapsed.projects'
 const COLLAPSE_WORKSPACES_KEY = 'sidebar.collapsed.workspaces'
@@ -136,7 +136,7 @@ function persistList(key: string, list: string[]): void {
   } catch { /* settings unavailable in tests / early boot */ }
 }
 
-// Panel width + visibility are driven from JSX in App.tsx — do NOT
+// Panel width + visibility are driven from JSX in App.tsx - do NOT
 // imperatively mutate `el.style.*` here on toggle. React's style
 // reconciler skips writes when the JSX string is unchanged, so a
 // hybrid imperative/JSX approach left DOM diverged from state after a
@@ -159,8 +159,8 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ rightPaneMode: mode })
   },
   toggleRightPaneMode: () => {
-    // 2-mode cycle: terminal ↔ files. (Kanban is now a top-level view —
-    // see appView/⌘⇧K — not a right-pane mode.)
+    // 2-mode cycle: terminal ↔ files. (Kanban is now a top-level view -
+    // see appView/⌘⇧K - not a right-pane mode.)
     const cur = get().rightPaneMode
     const next: RightPaneMode = cur === 'terminal' ? 'files' : 'terminal'
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, next) } catch { /* ignore */ }
@@ -181,7 +181,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   kanbanProjectFilter: null,
   setKanbanWorkspaceFilter: (id) => {
     try { void window.api?.settings?.set(KANBAN_WS_FILTER_KEY, id ?? '') } catch { /* ignore */ }
-    // Clearing workspace also clears project filter — a project belongs
+    // Clearing workspace also clears project filter - a project belongs
     // to one workspace, so a stale project filter under a new workspace
     // would silently render zero cards.
     set({ kanbanWorkspaceFilter: id, kanbanProjectFilter: null })
@@ -340,7 +340,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 
 /**
  * Hydrate sidebar collapse state from settings DB. Called once at app boot
- * (App.tsx). Failures are silent — the store keeps its empty defaults.
+ * (App.tsx). Failures are silent - the store keeps its empty defaults.
  */
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
@@ -379,7 +379,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       } catch { return {} }
     }
     // Migrate legacy 'kanban' right-pane setting from the per-session
-    // build — that mode is gone now; fall back to terminal so users
+    // build - that mode is gone now; fall back to terminal so users
     // upgrading don't see a blank pane.
     const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
     const appView: AppView = appViewStr === 'kanban' ? 'kanban' : 'chats'

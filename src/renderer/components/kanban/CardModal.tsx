@@ -1,12 +1,12 @@
 /**
- * CardModal — create / edit a kanban card.
+ * CardModal - create / edit a kanban card.
  *
  * Fields: title, description, tags (comma-separated, normalized on
  * blur), status (column), cost cap (USD, optional), worktree opt-in
  * (create-only) or detach (edit, when one is attached).
  *
  * Esc closes; ⌘Enter submits. We deliberately don't ship a separate
- * "preview" mode — every field is inline-editable and a single Save
+ * "preview" mode - every field is inline-editable and a single Save
  * button commits.
  */
 
@@ -24,7 +24,7 @@ import {
 import type { RuntimeMode } from '@shared/provider-events'
 
 const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; hint: string }> = [
-  { value: 'plan', label: 'Plan', hint: 'Read-only — agent proposes but does not edit' },
+  { value: 'plan', label: 'Plan', hint: 'Read-only - agent proposes but does not edit' },
   { value: 'sandbox', label: 'Sandbox', hint: 'Edits require approval' },
   { value: 'accept-edits', label: 'Accept edits', hint: 'Auto-approves edits (default)' },
   { value: 'full-access', label: 'Full access', hint: 'Auto-approves edits and shell commands' },
@@ -69,7 +69,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     card?.costCapUsd != null ? String(card.costCapUsd) : ''
   )
   const [withWorktree, setWithWorktree] = useState(false)
-  // Initial mode only — once the card has a session, the chat panel's
+  // Initial mode only - once the card has a session, the chat panel's
   // runtime selector is the source of truth, so we render a read-only
   // chip in `edit` mode instead of letting the field drift.
   const [runtimeMode, setRuntimeMode] = useState<RuntimeMode>(
@@ -78,7 +78,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   // Locally-tracked project selection. In `edit` mode the project never
-  // changes — moving cards across projects would invalidate worktrees
+  // changes - moving cards across projects would invalidate worktrees
   // and conversation links, so we lock it. In `create` mode the user
   // can switch when `availableProjects` has > 1 entry.
   const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath)
@@ -92,7 +92,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     if (images.length === 0) return
     const results = await Promise.all(images.map((f) => downscaleImage(f)))
     const snippet = results.map((r) => `![](${r.dataUrl})`).join('\n')
-    // Capture selection synchronously — by the time `setDescription` runs
+    // Capture selection synchronously - by the time `setDescription` runs
     // the textarea's selection may have shifted (focus loss, IME, etc.),
     // so we read it once now and reuse it inside the updater closure.
     const ta = descriptionRef.current
@@ -169,7 +169,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
           withWorktree,
         })
         // Opting into a worktree at create-time signals "I'm starting
-        // this work now" — auto-launch the agent in the background and
+        // this work now" - auto-launch the agent in the background and
         // promote the card to in_progress so the user doesn't have to
         // click ▶ separately. Foreground users who just want a row in
         // the backlog leave `withWorktree` off.
@@ -218,7 +218,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
           <button onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
         <div style={bodyStyle}>
-          {/* Project association — visible up front so the user always
+          {/* Project association - visible up front so the user always
               knows where the card lands. Switches to a dropdown when
               the create scope spans multiple projects. */}
           <label style={labelStyle}>
@@ -305,7 +305,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
             </label>
           </div>
 
-          {/* Picked at create time only — see `runtimeMode` state comment. */}
+          {/* Picked at create time only - see `runtimeMode` state comment. */}
           <label style={labelStyle}>
             Runtime mode
             {mode === 'create' ? (

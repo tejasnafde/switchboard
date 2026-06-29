@@ -22,7 +22,7 @@ interface SlashCommandMenuProps {
  * Inline popover listing matching slash commands.
  *
  * Position: caller absolutely-positions this above/below the textarea. We
- * keep this component layout-agnostic — it only renders the list.
+ * keep this component layout-agnostic - it only renders the list.
  *
  * Keyboard: the parent textarea forwards ↑↓/Enter/Escape via the
  * `activeIndex` + callbacks. That avoids stealing focus from the textarea
@@ -47,12 +47,12 @@ export function SlashCommandMenu({
     // Reset highlight when the matching set changes
     setInternalIdx(0)
     onActiveIndexChange?.(0, commands.length)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [query])
 
   useEffect(() => {
     onActiveIndexChange?.(idx, commands.length)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [idx, commands.length])
 
   // Auto-scroll the active row into view when ↑↓ navigation moves past
@@ -107,7 +107,7 @@ export function SlashCommandMenu({
           // Claude/Codex commands without forcing the user into tabs.
           const prevSource = i > 0 ? (commands[i - 1].source ?? 'switchboard') : null
           const thisSource = cmd.source ?? 'switchboard'
-          // Suppress the very first heading — the popover already has a
+          // Suppress the very first heading - the popover already has a
           // "Commands" header above. Only render headings when the source
           // CHANGES mid-list (e.g. transitioning into Claude Code skills).
           const showHeading = prevSource !== null && prevSource !== thisSource
@@ -130,7 +130,7 @@ export function SlashCommandMenu({
                 ref={(el) => { itemRefs.current[i] = el }}
                 onMouseDown={(e) => {
                   // onMouseDown (not onClick) so we commit BEFORE the textarea
-                  // blurs — onClick would race with the input's blur handler.
+                  // blurs - onClick would race with the input's blur handler.
                   e.preventDefault()
                   onSelect(cmd)
                 }}

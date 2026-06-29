@@ -4,7 +4,7 @@
  * Claude SDK can't resume the session because the JSONL it reads from
  * `<dir>/projects/<encodedCwd>/<sessionId>.jsonl` lives in the *previous*
  * profile. This helper copies the file across so the SDK's UUID-based
- * resume path keeps working — preserving turn-by-turn conversation context
+ * resume path keeps working - preserving turn-by-turn conversation context
  * across credential rotation without re-paying input tokens.
  *
  * Pure I/O. Idempotent. Source is left untouched so rotating back later
@@ -30,7 +30,7 @@ export type MigrateResult =
  * Does `<dir>/projects/<encodedCwd>/<sessionId>.jsonl` exist?
  *
  * Exposed so callers can probe the destination dir before deciding whether
- * to bother running migration — the typical case (no rotation since
+ * to bother running migration - the typical case (no rotation since
  * session creation) is a no-op skip.
  */
 export function claudeSessionExistsIn(dir: string, sessionId: string, cwd: string): boolean {
@@ -41,7 +41,7 @@ export function claudeSessionExistsIn(dir: string, sessionId: string, cwd: strin
 /**
  * Find the first dir from `candidates` that contains the session JSONL,
  * then copy it to `toDir`. Used when the in-memory rotation tracker
- * doesn't know the previous dir (app restart, fresh adapter instance) —
+ * doesn't know the previous dir (app restart, fresh adapter instance) -
  * we scan known oauth_dirs + default to discover the source.
  *
  * Returns `source-missing` if no candidate has the file.

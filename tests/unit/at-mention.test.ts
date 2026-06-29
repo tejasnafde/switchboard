@@ -19,7 +19,7 @@ describe('detectAtTrigger', () => {
   })
 
   it('does NOT fire mid-word (no leading whitespace before @)', () => {
-    // user@example.com style — common false positive we must reject
+    // user@example.com style - common false positive we must reject
     expect(detectAtTrigger('user@example.com', 16)).toBeNull()
     expect(detectAtTrigger('foo@bar', 7)).toBeNull()
   })

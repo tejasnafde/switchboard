@@ -17,7 +17,7 @@ const registry = new Map<string, TerminalInstance>()
 
 /**
  * Per-pane timestamp of the last PTY output byte. Used by the dirty-pane
- * check on `applyTemplate` — if a pane has produced output recently the
+ * check on `applyTemplate` - if a pane has produced output recently the
  * user is about to kill something live (dev server, REPL, ssh session)
  * and we should confirm before tearing it down.
  *
@@ -106,7 +106,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
     // SearchAddon's decoration overlays (match highlights + active-match
     // border) live behind xterm's "proposed API" flag. Without this the
     // SearchAddon constructor throws on first decoration call and findNext
-    // returns false silently — looks like ⌘F can't find anything.
+    // returns false silently - looks like ⌘F can't find anything.
     allowProposedApi: true,
   })
 
@@ -120,7 +120,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
 
   // Wire PTY I/O. We also stamp `lastOutputAt` on every output chunk
   // so the dirty-pane check on template-switch knows which panes are
-  // "live". Cheap — a single Map.set per chunk.
+  // "live". Cheap - a single Map.set per chunk.
   const removeOutput = window.api.terminal.onOutput((ptyId, data) => {
     if (ptyId === id) {
       terminal.write(data)
@@ -132,7 +132,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
   terminal.onData((data) => window.api.terminal.write(id, data))
   terminal.onResize(({ cols, rows }) => window.api.terminal.resize({ id, cols, rows }))
 
-  // ponytail: copy-on-select removed (buggy) — re-add behind a flag if reviving
+  // ponytail: copy-on-select removed (buggy) - re-add behind a flag if reviving
   // Send data directly to PTY (bypass xterm processing)
   const sendToPty = (data: string) => window.api.terminal.write(id, data)
 
@@ -142,7 +142,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
   terminal.attachCustomKeyEventHandler((e: KeyboardEvent) => {
     if (e.type !== 'keydown') return true
 
-    // Cmd combos — use Home/End sequences (not Ctrl+A/E which can echo as ^A/^E)
+    // Cmd combos - use Home/End sequences (not Ctrl+A/E which can echo as ^A/^E)
     if (e.metaKey && !e.altKey && !e.ctrlKey) {
       if (e.key === 'Backspace') {
         sendToPty('\x15') // Ctrl+U: kill whole line
@@ -179,7 +179,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
       }
     }
 
-    // All other keys — let xterm handle natively
+    // All other keys - let xterm handle natively
     return true
   })
 

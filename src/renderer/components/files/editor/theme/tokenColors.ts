@@ -5,7 +5,7 @@
  * drift if anyone tweaks them in isolation.
  *
  * Token keys follow CM6 / Lezer highlight-tag families, NOT TextMate
- * scopes — we map TextMate → tag at this seam (e.g. Shiki's
+ * scopes - we map TextMate → tag at this seam (e.g. Shiki's
  * `entity.name.function` becomes `function` here, then bound to
  * `tags.function(tags.variableName)` in `highlightStyle.ts`).
  */

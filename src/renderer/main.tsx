@@ -5,7 +5,7 @@ import './styles/global.css'
 
 // Suppress the benign "ResizeObserver loop completed" warning that fires
 // when observer callbacks cause layout changes within a single frame.
-// It's a documented browser quirk, not a real error — React + tanstack
+// It's a documented browser quirk, not a real error - React + tanstack
 // virtual + our resizable panes all emit it. Without this, it floods the
 // devtools console and hides real errors.
 // See: https://github.com/WICG/resize-observer/issues/38

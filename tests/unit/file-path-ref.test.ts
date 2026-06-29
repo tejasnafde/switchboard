@@ -8,7 +8,7 @@
  *
  * Heuristic must be cheap (runs over every <code> in every assistant
  * message) and conservative (false positives turn random inline code into
- * broken file pills). The on-disk existence check is done elsewhere — this
+ * broken file pills). The on-disk existence check is done elsewhere - this
  * helper just decides "is this even path-shaped".
  */
 import { describe, it, expect } from 'vitest'
@@ -33,7 +33,7 @@ describe('looksLikeRepoPath', () => {
 
   it('rejects single-token strings without a slash', () => {
     // bare filenames are too easy to confuse with prose ("config.json")
-    // — require at least one slash to count.
+    // - require at least one slash to count.
     expect(looksLikeRepoPath('foo.ts')).toBe(false)
     expect(looksLikeRepoPath('readme')).toBe(false)
   })
@@ -93,7 +93,7 @@ describe('parseFilePathRef', () => {
     // sees the invalid range and leaves :0 as part of the path string.
     expect(parseFilePathRef('src/foo.ts:0')).toEqual({ path: 'src/foo.ts:0' })
     // Negative-looking ranges fail the heuristic (`:-3` isn't `:\d+`),
-    // so the whole input is rejected — better than emitting a bad chip.
+    // so the whole input is rejected - better than emitting a bad chip.
     expect(parseFilePathRef('src/foo.ts:-3')).toBeNull()
   })
 })

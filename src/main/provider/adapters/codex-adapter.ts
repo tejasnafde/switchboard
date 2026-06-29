@@ -30,7 +30,7 @@ import { listSessionIdsForThread } from '../../db/database'
  *   - `on-request`  → ask per tool (our sandbox)
  *   - `untrusted`   → deny non-read tools (our plan)
  *
- * Our policy still gates via decidePermission() for correctness — this
+ * Our policy still gates via decidePermission() for correctness - this
  * mapping is best-effort for Codex to bias its own asking behavior.
  */
 const RUNTIME_MODE_TO_CODEX_POLICY: Record<RuntimeMode, string> = {
@@ -66,7 +66,7 @@ const LOG_PAYLOAD_LIMIT = 4000
 /**
  * Hard ceiling for the `initialize` JSON-RPC. If `codex app-server` is the
  * wrong binary, hung on auth, or otherwise silent, we want the user to see
- * an error in seconds — not when they happen to switch agents and the
+ * an error in seconds - not when they happen to switch agents and the
  * pending RPC gets rejected by stopSession (which historically presented as
  * the cryptic "Init failed: Session stopped" hours after the fact).
  */
@@ -218,7 +218,7 @@ function codexToolOutput(item: Record<string, unknown>): string | undefined {
 /**
  * Normalize Codex's `skills/list` response into ProviderSkill shape.
  * Codex's wire shape (per app-server v2): `{ skills: [{ name, description? }] }`.
- * Be defensive — accept top-level array too in case the schema shifts.
+ * Be defensive - accept top-level array too in case the schema shifts.
  */
 export function parseCodexSkills(input: unknown): ProviderSkill[] {
   const arr = Array.isArray(input)
@@ -417,7 +417,7 @@ export class CodexAdapter implements ProviderAdapter {
 
     // Send initialize RPC, bounded by INIT_TIMEOUT_MS. Without the bound, a
     // hung codex (wrong binary, waiting on stdin auth, etc.) would leave
-    // this promise pending forever — the caller's `await startSession(...)`
+    // this promise pending forever - the caller's `await startSession(...)`
     // would never return, the user would see no error, and a later
     // stopSession would finally reject the RPC with "Session stopped"
     // surfacing as a misleading "Init failed" much later. See CHANGELOG.
@@ -454,7 +454,7 @@ export class CodexAdapter implements ProviderAdapter {
       onEvent({ type: 'error', threadId: opts.threadId, message })
       onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
       // Reject the caller's promise so ChatPanel.handleSend's catch fires
-      // and clears its providerStartedRef — otherwise the ref stays in
+      // and clears its providerStartedRef - otherwise the ref stays in
       // the "started" set and subsequent sends silently no-op on the
       // session-init path.
       throw new Error(message)
@@ -519,7 +519,7 @@ export class CodexAdapter implements ProviderAdapter {
     }
     if (images && images.length > 0) {
       for (const img of images) {
-        // Codex accepts data URLs directly — no need to strip the prefix.
+        // Codex accepts data URLs directly - no need to strip the prefix.
         content.push({ type: 'image', url: img.url })
       }
     }
@@ -850,7 +850,7 @@ export class CodexAdapter implements ProviderAdapter {
       const currentMode = active.session.runtimeMode
       const policy = decidePermission(currentMode, toolName)
 
-      // Fast-path: policy has a definitive answer — respond immediately
+      // Fast-path: policy has a definitive answer - respond immediately
       // without bothering the user. This is how plan mode's hard-deny,
       // accept-edits' auto-allow, and full-access work on the Codex side.
       if (policy === 'allow') {
@@ -878,7 +878,7 @@ export class CodexAdapter implements ProviderAdapter {
         return
       }
 
-      // policy === 'prompt' — bubble the approval UI up to the user.
+      // policy === 'prompt' - bubble the approval UI up to the user.
       const requestId = `req_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       active.pendingApprovals.set(requestId, {
         jsonRpcId: request.id,
@@ -896,7 +896,7 @@ export class CodexAdapter implements ProviderAdapter {
       return
     }
 
-    // AskUserQuestion equivalent — Codex may surface interactive questions
+    // AskUserQuestion equivalent - Codex may surface interactive questions
     // under a different method name. If observed, route through the same
     // question.asked flow so QuestionCard renders for Codex too.
     if (method === 'item/userInput/request' || method === 'askUserQuestion') {

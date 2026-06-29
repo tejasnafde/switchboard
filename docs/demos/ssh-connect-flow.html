@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Switchboard — Connect to Remote (UX demo)</title>
+<title>Switchboard - Connect to Remote (UX demo)</title>
 <style>
   :root{
     --bg:#0c0d10; --panel:#141519; --panel2:#1a1c22; --border:#26282f;
@@ -87,7 +87,7 @@
     <div class="win">
       <div class="titlebar">
         <div class="dots"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span></div>
-        <div class="title">Switchboard — ~/api</div>
+        <div class="title">Switchboard - ~/api</div>
         <div id="badge" class="hostbadge"><span class="pip"></span><span id="badgeText">Local</span></div>
       </div>
       <div class="body">
@@ -126,15 +126,15 @@ const steps = [
     k:"1 · Entry point",
     text:"You're working locally. A <b>Remote</b> section in the sidebar lists SSH hosts; click <b>+ Connect to remote…</b> to attach the whole workspace to another machine.",
     connectPulse:true,
-    main:`<div class="pane-h">▸ zsh — local</div>
+    main:`<div class="pane-h">▸ zsh - local</div>
       <div class="term"><span class="p">~/api $</span> <span class="c">npm run dev</span><br><span class="o"># …runs on your laptop</span></div>
       <div class="statusbar"><span>● api</span><span>local</span><span>1 terminal</span></div>`
   },
   {
     badge:["Local",false],
     k:"2 · Pick a host",
-    text:"Hosts come straight from your <b>~/.ssh/config</b> and <b>known_hosts</b> — no manual entry. Pick one (here, <b>prod-vm</b>). Auth uses your existing SSH keys via the system <code>ssh</code> binary.",
-    main:({sel})=>`<div class="pane-h">▸ zsh — local</div>
+    text:"Hosts come straight from your <b>~/.ssh/config</b> and <b>known_hosts</b> - no manual entry. Pick one (here, <b>prod-vm</b>). Auth uses your existing SSH keys via the system <code>ssh</code> binary.",
+    main:({sel})=>`<div class="pane-h">▸ zsh - local</div>
       <div class="term"><span class="p">~/api $</span> <span class="o">_</span></div>
       <div class="statusbar"><span>● api</span><span>local</span></div>
       <div class="overlay"><div class="modal">
@@ -149,7 +149,7 @@ const steps = [
   {
     badge:["connecting…",false],
     k:"3 · Connecting (under the hood)",
-    text:"Switchboard SSHes in, <b>spawns a small server on the remote</b>, and forwards a local port to it — exactly how VS Code Remote works. No SFTP, no second SSH client. The server is installed once, then reused.",
+    text:"Switchboard SSHes in, <b>spawns a small server on the remote</b>, and forwards a local port to it - exactly how VS Code Remote works. No SFTP, no second SSH client. The server is installed once, then reused.",
     main:()=>`<div class="pane-h">prod-vm</div>
       <div class="checklist">
         <div class="ttl">Connecting to <b>prod-vm</b> <span class="o">(${ADDR})</span></div>
@@ -163,9 +163,9 @@ const steps = [
   },
   {
     badge:[REMOTE,true],
-    k:"4 · Connected — the whole workspace is remote",
-    text:"Same UI, <b>remote backend</b>. This terminal, the file tree, and your agent chats now run <b>on prod-vm</b> — your laptop is just the screen. Open files are prod-vm's files; <code>npm</code>, git, and Claude/Codex run there.",
-    main:()=>`<div class="pane-h">▸ bash — <span style="color:#7aa2f7">prod-vm</span></div>
+    k:"4 · Connected - the whole workspace is remote",
+    text:"Same UI, <b>remote backend</b>. This terminal, the file tree, and your agent chats now run <b>on prod-vm</b> - your laptop is just the screen. Open files are prod-vm's files; <code>npm</code>, git, and Claude/Codex run there.",
+    main:()=>`<div class="pane-h">▸ bash - <span style="color:#7aa2f7">prod-vm</span></div>
       <div class="term">
         <span class="rp">ubuntu@prod-vm:~/api$</span> <span class="c">hostname && nvidia-smi -L</span><br>
         <span class="o">prod-vm</span><br>
@@ -177,9 +177,9 @@ const steps = [
   {
     badge:[REMOTE,true],
     k:"5 · Survives a network blip",
-    text:"If the link drops, the <b>remote server keeps your sessions alive</b>. Switchboard re-opens the SSH tunnel and reattaches — your terminals and agent runs are right where you left them.",
-    main:()=>`<div class="banner warn"><span class="spin">◐</span> Connection dropped — reconnecting to prod-vm…</div>
-      <div class="pane-h">▸ bash — <span style="color:#7aa2f7">prod-vm</span></div>
+    text:"If the link drops, the <b>remote server keeps your sessions alive</b>. Switchboard re-opens the SSH tunnel and reattaches - your terminals and agent runs are right where you left them.",
+    main:()=>`<div class="banner warn"><span class="spin">◐</span> Connection dropped - reconnecting to prod-vm…</div>
+      <div class="pane-h">▸ bash - <span style="color:#7aa2f7">prod-vm</span></div>
       <div class="term"><span class="rp">ubuntu@prod-vm:~/api$</span> <span class="o">long-running-train.py … (still running on remote)</span></div>
       <div class="statusbar"><span style="color:#f0c674">● reconnecting</span><span>${ADDR}</span></div>`
   }

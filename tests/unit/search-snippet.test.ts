@@ -5,7 +5,7 @@ describe('renderSnippetHtml', () => {
   it('wraps a ** pair in a balanced, closed <mark>', () => {
     const html = renderSnippetHtml('see **foo** here')
     expect(html).toContain('foo</mark>')
-    // exactly one open + one close — the old code never closed the tag
+    // exactly one open + one close - the old code never closed the tag
     expect((html.match(/<mark/g) ?? []).length).toBe(1)
     expect((html.match(/<\/mark>/g) ?? []).length).toBe(1)
   })

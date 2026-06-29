@@ -2,7 +2,7 @@
  * Pure scanner that drives MessageBubble's inline-pill DOM walker.
  *
  * We test the *string-level* candidate picker (`pickPillCandidates`) because
- * vitest runs in a node environment without jsdom — exercising the full DOM
+ * vitest runs in a node environment without jsdom - exercising the full DOM
  * walker requires a renderer-side integration. The picker is the
  * decision-making half; if it's correct, the walker (which just calls
  * `parseFilePathRef` per inline `<code>`) is mechanical.
@@ -42,7 +42,7 @@ describe('pickPillCandidates', () => {
 
   it('decodes html entities before applying the path heuristic', () => {
     const html = '<p><code>src&#x2F;foo.ts</code></p>' // marked sometimes encodes /
-    // We don't decode hex entities, only common named — verify the named ones work
+    // We don't decode hex entities, only common named - verify the named ones work
     const html2 = '<p><code>src/foo.ts</code></p>'
     expect(pickPillCandidates(html2)).toHaveLength(1)
     // hex / would not decode, so should fail the slash check

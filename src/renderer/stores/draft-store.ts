@@ -9,7 +9,7 @@ const PILLS_STORAGE_KEY = 'switchboard.draftPills'
  *
  *   - `drafts[sessionId]`: free-form typed text (the textarea contents)
  *   - `pillsBySession[sessionId]`: ordered list of structured pills (file
- *     viewer selections, terminal selections, chat-message quotes) — these
+ *     viewer selections, terminal selections, chat-message quotes) - these
  *     render as Cursor-style chips above the textarea and serialize back
  *     into the message body when the user hits Send.
  */
@@ -40,7 +40,7 @@ function loadDrafts(): Record<string, string> {
 function saveDrafts(drafts: Record<string, string>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts))
-  } catch { /* quota exceeded or similar — ignore */ }
+  } catch { /* quota exceeded or similar - ignore */ }
 }
 
 function loadPills(): Record<string, DraftPill[]> {

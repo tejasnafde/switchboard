@@ -1,6 +1,6 @@
-# HyperFrames spike — onboarding videos
+# HyperFrames spike - onboarding videos
 
-**Status:** ✅ Go — spike ran and passed all criteria. Ten clips now live in
+**Status:** ✅ Go - spike ran and passed all criteria. Ten clips now live in
 `videos/dist/` and served via the `sb-tour://` custom protocol in the
 Feature Tour modal. See decision log below.
 
@@ -13,7 +13,7 @@ short onboarding clips that auto-play after a Switchboard release.
 Source of the lead: HeyGen's announcement on LinkedIn, where the
 launch demo was itself produced with HyperFrames + Claude Code. The
 appeal is that every Switchboard feature already has a working React
-view — if HyperFrames can render that markup faithfully into MP4, we
+view - if HyperFrames can render that markup faithfully into MP4, we
 get release-clip authoring "for free" by pointing an agent at the
 component.
 
@@ -21,7 +21,7 @@ component.
 
 Time-boxed half day. Run in a sandbox repo, not the main tree.
 
-1. `npx skills add heygen-com/hyperframes` — confirm the skill
+1. `npx skills add heygen-com/hyperframes` - confirm the skill
    installs cleanly into a Claude Code session, no root prompts, no
    conflicts with existing skills.
 2. Generate a 5–10s clip of the slash-command menu in action. Use the
@@ -32,9 +32,9 @@ Time-boxed half day. Run in a sandbox repo, not the main tree.
    - Output file size at 1280×720 h264.
    - Visual fidelity vs. an actual `cmd+shift+5` screen recording of
      the same flow (side-by-side compare).
-   - Install footprint — does it pull headless Chromium / ffmpeg in a
+   - Install footprint - does it pull headless Chromium / ffmpeg in a
      way that breaks our existing electron-builder pipeline?
-   - Determinism — re-render twice; binary diff should be tiny or zero.
+   - Determinism - re-render twice; binary diff should be tiny or zero.
 
 ## Go / no-go criteria
 
@@ -64,7 +64,7 @@ In order of preference:
 ## Out of scope for D1
 
 - TTS narration. Even if HyperFrames supports it, that's a Phase D
-  follow-up — silent clips with text overlays are fine for v1, and
+  follow-up - silent clips with text overlays are fine for v1, and
   voice quality + API cost are separate decisions.
 - User-recorded tours (record-your-own-session). Cool but a different
   product surface.
@@ -75,12 +75,12 @@ In order of preference:
 
 Before scheduling the half-day:
 - [x] Decide which feature gets the first clip (likely slash menu
-      or plan-mode pill — both are visually distinctive in <10s).
+      or plan-mode pill - both are visually distinctive in <10s).
 - [x] Mock a standalone Vite entry that mounts the chosen component
       in isolation with a hardcoded prop set. Lives at
       `videos/scenes/<feature>/index.html`. We need this regardless
       of whether HyperFrames or screencaps wins.
-- [x] Confirm `npm run videos` script slot is free (it is — checked
+- [x] Confirm `npm run videos` script slot is free (it is - checked
       `package.json`).
 
 ## Decision log

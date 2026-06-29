@@ -8,7 +8,7 @@
  *                  parallel sessions on the same project don't fight
  *                  over the same checkout
  *
- * The cache pattern mirrors `notifications.ts` — one read on first
+ * The cache pattern mirrors `notifications.ts` - one read on first
  * access, one write to flip; persisted via the existing settings KV.
  */
 export type SessionEnvMode = 'local' | 'worktree'

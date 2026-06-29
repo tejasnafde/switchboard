@@ -1,5 +1,5 @@
 /**
- * Provider registry — manages adapter instances and routes operations.
+ * Provider registry - manages adapter instances and routes operations.
  */
 
 import type { BackendHost } from '../backend/host'
@@ -39,7 +39,7 @@ export class ProviderRegistry {
   private sessionCwd = new Map<string, string>()
 
   /**
-   * Derives per-file diff cards from git checkpoints around each turn —
+   * Derives per-file diff cards from git checkpoints around each turn -
    * provider-agnostic, so Claude / Codex / OpenCode all surface edits the
    * same way in chat.
    */
@@ -92,7 +92,7 @@ export class ProviderRegistry {
     }
     this.bus.publish(event)
 
-    // A turn just ended — diff the start-of-turn checkpoint against the
+    // A turn just ended - diff the start-of-turn checkpoint against the
     // working tree and stream one file.edited event per changed file. Fire
     // and forget; the cards land right after the turn.completed marker.
     if (event.type === 'turn.completed') {
@@ -121,7 +121,7 @@ export class ProviderRegistry {
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
 
       log.info(`startSession ${opts.threadId} provider=${opts.provider} cwd=${opts.cwd} mode=${opts.runtimeMode ?? 'sandbox'} instance=${opts.instanceId ?? '(default)'}`)
-      // Catch macOS TCC denials before the adapter spawns — otherwise the
+      // Catch macOS TCC denials before the adapter spawns - otherwise the
       // SDK fails deep in the stack with cryptic EPERMs.
       await assertCwdReadable(opts.cwd)
 
@@ -155,7 +155,7 @@ export class ProviderRegistry {
     this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
-        log.warn(`sendTurn ${threadId} — no adapter (session not started?)`)
+        log.warn(`sendTurn ${threadId} - no adapter (session not started?)`)
         throw new Error(`No session: ${threadId}`)
       }
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${images?.length ?? 0}`)

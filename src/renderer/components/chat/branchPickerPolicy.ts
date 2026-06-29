@@ -47,13 +47,13 @@ export function rankAndFilterRefs(refs: ReadonlyArray<Ref>, query: string): Ref[
  * Decide what to do when the user picks a ref in the popover. Three
  * possible actions:
  *
- *   - `noop`: nothing to change — picked ref is already checked out
+ *   - `noop`: nothing to change - picked ref is already checked out
  *     in the session's current cwd.
  *   - `checkout`: run `git checkout <refName>` in `cwd`. Used when the
  *     ref has no associated worktree, OR when the ref is remote (in
  *     which case we strip the `<remote>/` prefix so git creates a
  *     local tracking branch instead of leaving us in detached HEAD).
- *   - `swap-cwd`: don't run any git command — the picked branch already
+ *   - `swap-cwd`: don't run any git command - the picked branch already
  *     has a worktree elsewhere on disk; the right move is to point the
  *     session at that worktree.
  */

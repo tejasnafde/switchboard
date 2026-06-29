@@ -258,7 +258,7 @@ describe('parseImageInput', () => {
   })
 
   it('infers mimeType from the data URL even when one is provided', () => {
-    // The data URL is canonical — its embedded mime trumps the prop, since
+    // The data URL is canonical - its embedded mime trumps the prop, since
     // browsers may have re-encoded the image during paste.
     const out = parseImageInput({ url: 'data:image/png;base64,QUJD', mimeType: 'image/jpeg' })
     expect(out.mimeType).toBe('image/png')

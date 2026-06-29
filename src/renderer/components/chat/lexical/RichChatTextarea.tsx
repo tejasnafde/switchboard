@@ -14,7 +14,7 @@
  *   - IME composition, undo/redo, and paste sanitization are framework
  *     concerns we don't need to re-derive.
  *   - PlainTextPlugin disables rich formatting (bold/italic) which we
- *     don't want for chat input — keeps the editor body as a flat
+ *     don't want for chat input - keeps the editor body as a flat
  *     stream of TextNodes + PillNodes + LineBreakNodes.
  *
  * What this component owns:
@@ -23,7 +23,7 @@
  *     other panel" forward).
  *   - Plain-text serialization on every edit (string with `[[pill:id]]`
  *     tokens) so the host's draft-store stays string-shaped.
- *   - Caret offset tracking — used by `detectSlashTrigger` for the
+ *   - Caret offset tracking - used by `detectSlashTrigger` for the
  *     slash menu. We compute the caret as a 0-based offset into the
  *     plain-text representation by walking the editor tree.
  *   - Imperative `insertPill(pill)` via `INSERT_PILL_COMMAND` so ⌘L
@@ -32,9 +32,9 @@
  * What it does NOT own:
  *   - The slash menu UI itself (host renders `<SlashCommandMenu>` over
  *     it). We just emit `onSlashTriggerChange` updates.
- *   - The footer (model picker, mode selector, Send button) — host
+ *   - The footer (model picker, mode selector, Send button) - host
  *     keeps owning those.
- *   - Image paste — clipboardData files bubble to the host via the
+ *   - Image paste - clipboardData files bubble to the host via the
  *     existing `onPaste` prop; we only intercept the *text* portion.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from 'react'
@@ -100,7 +100,7 @@ export const INSERT_PILL_COMMAND: LexicalCommand<DraftPill> = createCommand('INS
  * Splits on `\n` (newline → LineBreakNode), and on `[[pill:id]]` tokens
  * (→ PillNode using the chip metadata from `pillsById`).
  *
- * Tokens whose ids are NOT in `pillsById` are dropped — they belong to
+ * Tokens whose ids are NOT in `pillsById` are dropped - they belong to
  * pills that have been removed; leaving the raw token string in the
  * editor would confuse the user.
  */
@@ -130,7 +130,7 @@ function $populateFromBody(
       } else {
         const meta = pillsById[seg.id]
         if (meta) paragraph.append($createPillNode(meta.id, meta.label, meta.kind))
-        // Drop unknown ids — see header comment.
+        // Drop unknown ids - see header comment.
       }
     }
   }
@@ -185,7 +185,7 @@ function caretOffsetFromSelection(editor: LexicalEditor): number | null {
       if (node === targetNode) {
         // For text nodes, anchor.offset is char offset within the node.
         // For element nodes (e.g. paragraph when caret is between
-        // children), anchor.offset is the child index — sum lengths of
+        // children), anchor.offset is the child index - sum lengths of
         // children before that index.
         if (node.getType() === 'text') {
           acc += anchor.offset
@@ -302,7 +302,7 @@ function PillInsertPlugin(): null {
  * Plugin: hydrate editor from the host's `value` prop on first mount
  * and on EXTERNAL changes (where `value` doesn't match what the editor
  * is currently showing). We compare to the editor's serialized body to
- * detect external writes — a typing-only update will already match.
+ * detect external writes - a typing-only update will already match.
  */
 function HydrationPlugin({
   value,
@@ -320,11 +320,11 @@ function HydrationPlugin({
       $populateFromBody(value, pillsById)
     })
     lastValueRef.current = value
-    // intentionally only on mount — subsequent syncs handled below
+    // intentionally only on mount - subsequent syncs handled below
   }, [])
 
   // External-write sync. If `value` changed AND it doesn't match the
-  // editor's current body, repopulate. Otherwise skip — typing-driven
+  // editor's current body, repopulate. Otherwise skip - typing-driven
   // changes already produced this `value`.
   //
   // Capture the caret BEFORE repopulate and restore it AFTER. Without
@@ -403,7 +403,7 @@ function PasteTextPlugin({
     return editor.registerCommand<ClipboardEvent>(
       PASTE_COMMAND,
       (event) => {
-        // Files take precedence — handled by PasteFilesPlugin.
+        // Files take precedence - handled by PasteFilesPlugin.
         if ((event.clipboardData?.files?.length ?? 0) > 0) return false
         const text = event.clipboardData?.getData('text/plain') ?? ''
         if (!text.includes('[[pill:')) return false
@@ -454,7 +454,7 @@ const ImperativeHandlePlugin = forwardRef<
       replaceRange: (start, end, replacement) => {
         const cur = getValue()
         const next = cur.slice(0, start) + replacement + cur.slice(end)
-        // Do NOT call `setValue(next)` alongside this update — that races
+        // Do NOT call `setValue(next)` alongside this update - that races
         // HydrationPlugin into restoring a stale caret (= 0 for slash
         // commands at the start of an empty input). OnChangePlugin will
         // propagate the new body via onChange after commit; pinned by

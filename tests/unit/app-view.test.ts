@@ -1,7 +1,7 @@
 /**
  * AppView (top-level chats ↔ kanban) lives in layout-store. ⌘⇧K toggles.
  * Workspace + project filters narrow the kanban scope. Tests cover the
- * pure store behavior — App.tsx wires the keybinding separately.
+ * pure store behavior - App.tsx wires the keybinding separately.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { useLayoutStore } from '../../src/renderer/stores/layout-store'
@@ -15,7 +15,7 @@ beforeEach(() => {
 })
 
 describe('layout-store appView', () => {
-  it('defaults to chats — first-launch users see the existing UI', () => {
+  it('defaults to chats - first-launch users see the existing UI', () => {
     expect(useLayoutStore.getState().appView).toBe('chats')
   })
 

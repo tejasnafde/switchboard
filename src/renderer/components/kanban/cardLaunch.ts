@@ -16,15 +16,15 @@ const VALID_MODES: ReadonlySet<RuntimeMode> = new Set([
 
 /**
  * Resolve the runtime mode for a card-launched chat. Order of precedence:
- *   1. Explicit per-card mode (`card.runtimeMode`) — the user's intent
+ *   1. Explicit per-card mode (`card.runtimeMode`) - the user's intent
  *      from the create modal; only honored on NEW launches.
  *   2. Per-conversation persisted mode (from `conversations.runtime_mode`)
- *      — checked for reused launches; reflects any mid-conversation mode
+ *      - checked for reused launches; reflects any mid-conversation mode
  *      changes the user made after the initial launch.
  *   3. The user's last-chosen default this session
  *      (`getStoreDefaultRuntimeMode()`), seeded from settings at boot.
  *   4. `KANBAN_DEFAULT_RUNTIME_MODE` ('accept-edits') as the final
- *      fallback — matches the kanban-create-modal default.
+ *      fallback - matches the kanban-create-modal default.
  *
  * `cardRuntimeMode` is the strongest signal, but we still consult the DB
  * before it on the reuse path so a stored override (e.g. user toggled to
@@ -50,7 +50,7 @@ export async function resolveCardRuntimeMode(
 }
 
 export interface CardLaunchInit {
-  /** Parent project path — used for sidebar grouping (must match a
+  /** Parent project path - used for sidebar grouping (must match a
    *  registered Project.path). Do NOT substitute the worktree here, or
    *  the resulting session won't appear under any project. */
   projectPath: string
@@ -225,7 +225,7 @@ export async function launchCardChat(
     return { sessionId, reused: false }
   }
 
-  // 7. Auto-send the first turn — this is the whole point of "▶". The
+  // 7. Auto-send the first turn - this is the whole point of "▶". The
   //    user already declared intent by clicking play; no draft step.
   api.provider
     .sendTurn(sessionId, firstTurn, runtimeMode)

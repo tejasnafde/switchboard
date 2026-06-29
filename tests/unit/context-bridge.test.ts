@@ -17,7 +17,7 @@ describe('formatTerminalContext', () => {
     })
     expect(out).toContain('[from: backend @')
     expect(out).toContain('ERROR: dbt test failed')
-    // Single-line — no fenced block
+    // Single-line - no fenced block
     expect(out).not.toContain('```')
   })
 
@@ -56,7 +56,7 @@ describe('formatTerminalContext', () => {
   })
 
   it('truncates selections longer than the 50KB cap and notes truncation', () => {
-    // Build a selection well over the 50k cap (was 4k before — bumped so
+    // Build a selection well over the 50k cap (was 4k before - bumped so
     // typical stack traces aren't clipped). 80×800 = 64KB.
     const longLine = 'x'.repeat(80)
     const selection = Array.from({ length: 800 }, () => longLine).join('\n') // ~64KB

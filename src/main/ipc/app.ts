@@ -71,7 +71,7 @@ export function claudeCandidateDirs(): string[] {
   ]))
 }
 
-// Data handlers — transport-agnostic, run on either ElectronIpcHost or WsHost.
+// Data handlers - transport-agnostic, run on either ElectronIpcHost or WsHost.
 // Native-dialog / window / app-lifecycle handlers live in app-desktop.ts.
 export function registerAppHandlers(host: BackendHost): void {
   setWorkspaceEmitter((channel, ...args) => host.emit(channel, ...args))
@@ -85,7 +85,7 @@ export function registerAppHandlers(host: BackendHost): void {
     const dbConversations = getConversationsForProject(projectPath)
     const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
     const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
-    // Worktree pointers per conversation id — stamped onto the
+    // Worktree pointers per conversation id - stamped onto the
     // SessionSummary so the renderer can route the agent's cwd via
     // `worktreePath ?? projectPath`.
     const worktreeMap = new Map(
@@ -95,7 +95,7 @@ export function registerAppHandlers(host: BackendHost): void {
     )
     const scannedIds = new Set(sessions.map((s) => s.id))
     const filtered = sessions
-      // Hide archived chats (global set — across project paths) and child
+      // Hide archived chats (global set - across project paths) and child
       // session_ids produced by Claude SDK rotation (tracked in thread_sessions).
       .filter((s) => !archivedSet.has(s.id) && !childSet.has(s.id))
       .map((s) => {
@@ -129,7 +129,7 @@ export function registerAppHandlers(host: BackendHost): void {
   // Load persisted projects on renderer request
   host.handle(AppChannels.GET_PROJECTS, async () => {
     const rows = getProjects()
-    // Global exclusion sets — archived + session_ids that are children of
+    // Global exclusion sets - archived + session_ids that are children of
     // another thread (fragmented by Claude SDK session-id rotation).
     const archivedSet = getArchivedConversationIds()
     const childSet = getChildSessionIds()
@@ -284,7 +284,7 @@ export function registerAppHandlers(host: BackendHost): void {
             })),
           )
           log.info(`indexed ${messages.length} messages for search`)
-        } catch { /* indexing failed — search won't find these, but load still works */ }
+        } catch { /* indexing failed - search won't find these, but load still works */ }
       }
 
       return messages
@@ -294,7 +294,7 @@ export function registerAppHandlers(host: BackendHost): void {
     }
   })
 
-  // Load a session by conversation id — looks up project_path in the DB,
+  // Load a session by conversation id - looks up project_path in the DB,
   // computes the JSONL file path, and returns the parsed messages.
   //
   // If this thread has child session_ids (Claude SDK rotated session_id
@@ -319,7 +319,7 @@ export function registerAppHandlers(host: BackendHost): void {
       // Scan every known Claude profile dir (every enabled oauth_dir + ~/.claude).
       // Without this, switching instances mid-conversation hides turns that
       // landed in the alternate profile after restart, because the SDK
-      // writes JSONLs under the active CLAUDE_CONFIG_DIR — not ~/.claude.
+      // writes JSONLs under the active CLAUDE_CONFIG_DIR - not ~/.claude.
       const candidateDirs = Array.from(new Set([
         ...listOauthDirsForAgent('claude-code'),
         defaultClaudeDir(),
@@ -341,7 +341,7 @@ export function registerAppHandlers(host: BackendHost): void {
       }
       // Merge in timestamp order so fragments interleave correctly.
       all.sort((a, b) => a.timestamp - b.timestamp)
-      // Deduplicate by message id — later JSONL fragments re-include context
+      // Deduplicate by message id - later JSONL fragments re-include context
       // from earlier ones (same tool_use blocks), causing duplicate React keys.
       const seen = new Set<string>()
       const deduped = all.filter((m) => {
@@ -351,7 +351,7 @@ export function registerAppHandlers(host: BackendHost): void {
       })
       const enriched = enrichMessagesWithDisplayBody(deduped, getDisplayBodyEnrichments(conversationId))
       // Merge in any persisted system markers (currently provider-instance
-      // rotation markers) — these live in SQLite, not JSONL, and need to
+      // rotation markers) - these live in SQLite, not JSONL, and need to
       // appear in chronological order alongside agent turns.
       const markers = getSystemMarkerMessages(conversationId).map((m) => ({
         id: m.id,
@@ -364,7 +364,7 @@ export function registerAppHandlers(host: BackendHost): void {
       return { messages: merged, meta }
     }
 
-    // Codex fallback — scan all sessions for this project, find matching id(s)
+    // Codex fallback - scan all sessions for this project, find matching id(s)
     try {
       const sessions = await scanAllSessions(row.project_path)
       const all: ChatMessage[] = []
@@ -405,7 +405,7 @@ export function registerAppHandlers(host: BackendHost): void {
       params.toolCalls, params.images,
       params.displayBody, params.pillsMeta,
     )
-    // Trace in-band system markers (rotation pill etc.) — they're rare
+    // Trace in-band system markers (rotation pill etc.) - they're rare
     // and worth a one-liner so persistence issues are diagnosable in-log.
     if (params.role === 'system' && params.content.startsWith('[[sb:')) {
       log.info(`saveMessage marker → ${result.ok ? 'ok' : `skipped(${result.reason})`} conv=${params.conversationId} content=${JSON.stringify(params.content)}`)
@@ -414,7 +414,7 @@ export function registerAppHandlers(host: BackendHost): void {
   })
 
   // Read/write the per-conversation runtime mode. The UI calls these so a
-  // kanban card click — or any sidebar reopen — restores the user's last
+  // kanban card click - or any sidebar reopen - restores the user's last
   // selection instead of falling back to 'sandbox'.
   host.handle(AppChannels.GET_CONVERSATION_RUNTIME_MODE, (id: string) => {
     return { mode: getConversationRuntimeMode(id) }
@@ -492,7 +492,7 @@ export function registerAppHandlers(host: BackendHost): void {
     return getArchivedConversations()
   })
 
-  // Remove a row from thread_sessions — un-hides a session from the
+  // Remove a row from thread_sessions - un-hides a session from the
   // sidebar. Used when an automatic ancestry record was wrong, or when
   // the user wants to unmerge.
   host.handle(AppChannels.DETACH_SESSION, (claudeSessionId: string) => {
@@ -504,7 +504,7 @@ export function registerAppHandlers(host: BackendHost): void {
   // Debug: dump all ancestry rows so a user can inspect via devtools.
   host.handle(AppChannels.LIST_ANCESTRY, () => listAllThreadSessions())
 
-  // Manually attach a conversation row as a child of another thread —
+  // Manually attach a conversation row as a child of another thread -
   // lets users stitch pre-ancestry fragments together. After this runs,
   // `fragmentId` disappears from the sidebar and its messages load under
   // `rootThreadId`.
@@ -521,7 +521,7 @@ export function registerAppHandlers(host: BackendHost): void {
     }
   })
 
-  // Fork-from-message — clone a conversation up through the chosen
+  // Fork-from-message - clone a conversation up through the chosen
   // message and wire the new conversation so the agent can resume with
   // real context. See src/main/conversations/fork.ts.
   host.handle(AppChannels.FORK_CONVERSATION, async (args: {

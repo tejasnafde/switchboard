@@ -1,13 +1,13 @@
 # Keybindings
 
-Shortcuts are **scoped by focus** — the same chord does the right thing
+Shortcuts are **scoped by focus** - the same chord does the right thing
 depending on which pane is active, mirroring how VS Code uses `when:` clauses.
 Three contexts:
 
-- **Editor** — bindings live in the CodeMirror keymap; only fire when the code
+- **Editor** - bindings live in the CodeMirror keymap; only fire when the code
   editor has focus.
-- **Terminal** — scoped to the focused terminal pane's subtree.
-- **Global** — app-level actions, handled regardless of focus.
+- **Terminal** - scoped to the focused terminal pane's subtree.
+- **Global** - app-level actions, handled regardless of focus.
 
 `⌘` = Cmd on macOS / Ctrl on Windows·Linux unless noted.
 
@@ -16,7 +16,7 @@ Three contexts:
 | Keys | Action |
 |---|---|
 | `⌘-click` / `F12` | Go to definition (LSP → `git grep` fallback) |
-| `⇧F12` | Go to references — inline peek (1 result auto-jumps; ↑↓·⏎·esc) |
+| `⇧F12` | Go to references - inline peek (1 result auto-jumps; ↑↓·⏎·esc) |
 | `⌘`-hover | Underline the symbol under the cursor (clickable affordance) |
 | `⌘S` | Save (atomic; prompts on external-edit conflict) |
 | `⌘/` | Toggle line comment |

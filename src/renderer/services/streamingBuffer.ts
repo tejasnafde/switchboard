@@ -7,7 +7,7 @@
  * `(threadId, messageId)` pair (content events ship the full
  * accumulated text on every delta, not just the new chars). On
  * `turn.completed`, ChatPanel calls `drainTurn(threadId)` to flush
- * everything for that thread as a single batch — same UX as t3code's
+ * everything for that thread as a single batch - same UX as t3code's
  * server-side `delivery: "buffered"` mode but implemented renderer-side
  * because we don't have an orchestration layer to gate it server-side.
  *

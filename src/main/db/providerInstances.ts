@@ -1,5 +1,5 @@
 /**
- * Provider instances — CRUD + safeStorage encryption.
+ * Provider instances - CRUD + safeStorage encryption.
  *
  * Each "instance" is a named credential set scoped to an agent kind
  * (claude-code / codex / opencode). The user can create multiple
@@ -10,7 +10,7 @@
  * Sensitive env values (API keys, OAuth tokens) are protected by
  * Electron `safeStorage` (Keychain on macOS). When safeStorage is not
  * available (Linux without keyring), we log a warning and write the
- * plaintext JSON into the same BLOB column — the schema still works
+ * plaintext JSON into the same BLOB column - the schema still works
  * and the user is no worse off than the existing `opencode.env.*`
  * settings keys (which are plaintext today).
  */
@@ -27,7 +27,7 @@ import { isAgentType, defaultInstanceId, type AgentType } from '@shared/types'
  * Expand a leading `~` (or `~/`) to the user's home dir. Users routinely
  * type `~/.claude-foo` in the Settings → Providers oauth_dir field, but
  * neither Node's fs nor a spawned child's CLAUDE_CONFIG_DIR / CODEX_HOME
- * env vars do tilde expansion themselves — leaving the SDK to read from a
+ * env vars do tilde expansion themselves - leaving the SDK to read from a
  * literal `~/.claude-foo` directory under cwd, which is never where the
  * user actually `claude login`'d.
  */
@@ -57,7 +57,7 @@ export interface ProviderInstanceRow {
   updatedAt: number
 }
 
-/** Wire shape — no env decrypted, just keys + a `valueRedacted` flag.
+/** Wire shape - no env decrypted, just keys + a `valueRedacted` flag.
  *  Sent to the renderer so the Settings UI can list instances and show
  *  which env vars are set without leaking the actual secrets. */
 export interface ProviderInstanceWire {
@@ -90,8 +90,8 @@ interface DbRow {
 // 4-byte sentinels prefixed to encrypted blobs so we can tell them apart from
 // the plaintext-JSON fallback. Byte 0x00 is invalid in UTF-8 JSON, so any blob
 // starting with one of these headers is definitely not plaintext.
-//   ENC_MAGIC  — Electron safeStorage (desktop, OS keychain)
-//   PASS_MAGIC — passphrase AES-256-GCM (headless backend, SWITCHBOARD_SECRET)
+//   ENC_MAGIC  - Electron safeStorage (desktop, OS keychain)
+//   PASS_MAGIC - passphrase AES-256-GCM (headless backend, SWITCHBOARD_SECRET)
 const ENC_MAGIC = Buffer.from([0x00, 0x53, 0x42, 0x45]) // \0SBE
 const PASS_MAGIC = Buffer.from([0x00, 0x53, 0x42, 0x50]) // \0SBP
 
@@ -151,7 +151,7 @@ export function encryptEnv(env: Record<string, string>): Buffer {
   if (secret) {
     return Buffer.concat([PASS_MAGIC, seal(json, secret)])
   }
-  log.warn('no safeStorage and no SWITCHBOARD_SECRET — storing env vars as plaintext')
+  log.warn('no safeStorage and no SWITCHBOARD_SECRET - storing env vars as plaintext')
   return Buffer.from(json, 'utf-8')
 }
 
@@ -198,7 +198,7 @@ export function listProviderInstances(): ProviderInstanceWire[] {
   return rows.map(rowToWire)
 }
 
-/** Internal — returns the full decrypted row. Used by the registry at
+/** Internal - returns the full decrypted row. Used by the registry at
  *  session-start. NEVER expose this over IPC. */
 export function getProviderInstanceFull(id: string): ProviderInstanceRow | null {
   const row = getDb().prepare(
@@ -290,7 +290,7 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
 
 export function deleteProviderInstance(id: string): boolean {
   // Refuse to delete the default-seeded row of an agent kind that has
-  // no other instances — at least one must always exist so the picker
+  // no other instances - at least one must always exist so the picker
   // has something to fall back to.
   const row = getDb().prepare(
     'SELECT agent_type FROM provider_instances WHERE id = ?'

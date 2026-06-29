@@ -1,10 +1,10 @@
 /**
- * Kanban store — focused tests on the renderer-side cache behaviors that
+ * Kanban store - focused tests on the renderer-side cache behaviors that
  * back the new drag/drop + auto-promote features.
  *
  *   - `findByConversationId` indexes across all projects (the auto-promote
  *     path in ChatPanel doesn't know which project a session belongs to).
- *   - `move` is optimistic so drag-drops feel instant — the cache must
+ *   - `move` is optimistic so drag-drops feel instant - the cache must
  *     reflect the new status synchronously, before the mocked IPC resolves.
  */
 
@@ -34,7 +34,7 @@ function fakeCard(over: Partial<KanbanCard> = {}): KanbanCard {
 }
 
 beforeEach(() => {
-  // Reset the store between tests — Zustand is module-level so leaks
+  // Reset the store between tests - Zustand is module-level so leaks
   // between tests would be subtle.
   useKanbanStore.setState({ byProject: {}, busy: false })
 
@@ -78,12 +78,12 @@ describe('move (optimistic)', () => {
     useKanbanStore.setState({
       byProject: { '/p': [fakeCard({ status: 'in_progress' })] },
     })
-    // Don't await — we want to assert the cache reflects the move *before*
+    // Don't await - we want to assert the cache reflects the move *before*
     // the awaited IPC has had a chance to round-trip.
     const inflight = useKanbanStore.getState().move('card_a', 'done')
     expect(useKanbanStore.getState().byProject['/p'][0].status).toBe('done')
     await inflight
-    // Post-IPC the cache should still be `done` — the IPC echo doesn't
+    // Post-IPC the cache should still be `done` - the IPC echo doesn't
     // regress us.
     expect(useKanbanStore.getState().byProject['/p'][0].status).toBe('done')
   })

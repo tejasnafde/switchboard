@@ -2,7 +2,7 @@
  * Git checkpoint primitives for the in-chat diff-review feature.
  *
  * A "checkpoint" snapshots the full working tree (including untracked files)
- * into a git *tree object* via a throwaway temp index — without touching the
+ * into a git *tree object* via a throwaway temp index - without touching the
  * user's real index or HEAD. Diffing the start-checkpoint tree against an
  * end-checkpoint tree yields exactly the files changed during a turn,
  * regardless of which agent provider made the edits.
@@ -113,7 +113,7 @@ describe('isGitRepo', () => {
 })
 
 /**
- * End-to-end against real `git` — the stub can't catch a wrong flag (e.g.
+ * End-to-end against real `git` - the stub can't catch a wrong flag (e.g.
  * `--name-status`). Verifies a checkpoint on a DIRTY tree isolates only the
  * turn's changes and captures untracked additions + deletions.
  */
@@ -130,7 +130,7 @@ describe('checkpoint against real git', () => {
       await git(['add', '-A'])
       await git(['commit', '-qm', 'init'])
 
-      // Pre-existing uncommitted change BEFORE the turn — must not leak in.
+      // Pre-existing uncommitted change BEFORE the turn - must not leak in.
       await writeFile(join(dir, 'a.txt'), 'l1\nDIRTY\nl2\n')
 
       const start = await createCheckpoint(dir)

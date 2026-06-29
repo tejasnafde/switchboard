@@ -29,7 +29,7 @@ const q = (over: Partial<Question> & { question: string; multiSelect: boolean })
 })
 
 describe('shapeQuestionAnswers', () => {
-  it('keys answers by question text (not header) — matches SDK schema', () => {
+  it('keys answers by question text (not header) - matches SDK schema', () => {
     const questions = [q({ header: 'Scope', question: 'Which features?', multiSelect: false })]
     const out = shapeQuestionAnswers(questions, [['A']])
     // SDK expects question-text keys; previously buggy code used q.header.

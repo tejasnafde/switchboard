@@ -108,7 +108,7 @@ describe('terminal registry lifecycle', () => {
     // StrictMode cleanup
     registry.detach('t1')
 
-    // Second mount — should reuse, not create new
+    // Second mount - should reuse, not create new
     const inst = registry.getOrCreate('t1')
     registry.attach('t1')
 

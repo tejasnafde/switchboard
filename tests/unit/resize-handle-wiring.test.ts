@@ -44,7 +44,7 @@ describe('App.tsx resize handle wiring', () => {
     // The recurring bug: copy-pasting the sidebar handle leaves
     // beforeRef={sidebarRef} on the terminal divider, which causes
     // stale pointerEvents:'none' on the sidebar after an interrupted
-    // drag — both panes become un-resizable. Forbid that exact shape.
+    // drag - both panes become un-resizable. Forbid that exact shape.
     expect(terminal!).not.toContain('sidebarRef')
   })
 
@@ -67,7 +67,7 @@ describe('App.tsx resize handle wiring', () => {
   // re-run on visibility change. The component returns null when hidden
   // WITHOUT unmounting (the parent still renders <ResizeHandle />), so
   // empty-deps `[]` would leave listeners stuck on a detached node and
-  // the freshly-rendered div on re-show would have no listeners — both
+  // the freshly-rendered div on re-show would have no listeners - both
   // handles silently break after a toggle-off → toggle-on cycle.
   it('ResizeHandle: listener effect depends on `visible` so it re-runs on toggle', () => {
     const HANDLE = resolve(__dirname, '../../src/renderer/components/layout/ResizeHandle.tsx')

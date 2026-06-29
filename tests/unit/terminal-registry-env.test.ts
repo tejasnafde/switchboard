@@ -61,7 +61,7 @@ vi.mock('@xterm/addon-search', () => ({
   })),
 }))
 
-// CSS import — no-op in tests
+// CSS import - no-op in tests
 vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 // ─── System under test ────────────────────────────────────────────────────────
@@ -91,7 +91,7 @@ beforeEach(() => {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('getOrCreateTerminal — env forwarding', () => {
+describe('getOrCreateTerminal - env forwarding', () => {
   it('passes env to window.api.terminal.create when provided', () => {
     const { create } = makeApiStub()
     const env = { CLAUDE_CONFIG_DIR: '/home/user/.config/claude-work' }
@@ -111,7 +111,7 @@ describe('getOrCreateTerminal — env forwarding', () => {
 
   it('passes env=undefined when env is an empty object', () => {
     // An empty env object is indistinguishable from no-env at the PTY
-    // level — but it's still what the caller passed, so we forward it.
+    // level - but it's still what the caller passed, so we forward it.
     const { create } = makeApiStub()
     getOrCreateTerminal('env-test-3', '/projects/foo', undefined, undefined, {})
     expect(create).toHaveBeenCalledWith(

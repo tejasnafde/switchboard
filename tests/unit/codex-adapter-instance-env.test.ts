@@ -53,7 +53,7 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') },
 }))
 
-describe('CodexAdapter — provider-instance env overlay', () => {
+describe('CodexAdapter - provider-instance env overlay', () => {
   beforeEach(() => {
     spawnCalls.length = 0
     vi.clearAllMocks()

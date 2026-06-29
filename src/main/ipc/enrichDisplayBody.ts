@@ -1,6 +1,6 @@
 /**
  * Merge persisted pill metadata onto JSONL-parsed messages, keyed by
- * `(role='user', content)` — JSONL ids come from the SDK, DB ids from
+ * `(role='user', content)` - JSONL ids come from the SDK, DB ids from
  * the renderer, so we can't id-join. Identical content sent twice with
  * different pills is unsupported.
  */

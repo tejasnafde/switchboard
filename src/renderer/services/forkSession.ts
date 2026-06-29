@@ -5,7 +5,7 @@
  * `agent-store` with the cloned message list pre-loaded so the user
  * sees an exact copy the moment they land in the new tab. The agent's
  * resume primitive (Claude `--resume`, Codex sessionId) is wired via
- * `resumeSessionId` — the chat panel's existing startSession path picks
+ * `resumeSessionId` - the chat panel's existing startSession path picks
  * it up the first time the user sends a turn.
  */
 import { useAgentStore } from '../stores/agent-store'
@@ -61,7 +61,7 @@ export async function forkAndOpenSession(
   })
   // For non-resumable forks (Codex / OpenCode today), prepend a synthetic
   // system message so the user knows the new agent process is starting
-  // cold and the prior turns are reference-only — without it the fork
+  // cold and the prior turns are reference-only - without it the fork
   // looks identical to a real resume.
   const decorated = resumable
     ? messages
@@ -72,7 +72,7 @@ export async function forkAndOpenSession(
           // Strip both the plain `· fork` and the `· fork/<branch>` suffix
           // (added by #5 for worktree-backed forks) so the synthetic notice
           // names the *parent* conversation, not the fork itself.
-          content: `Forked from "${conversation.title.replace(/ · fork(\/[^·]*)?$/, '')}" — earlier turns are shown for reference, but ${type === 'codex' ? 'Codex' : type === 'opencode' ? 'OpenCode' : 'this agent'} will start without that context.`,
+          content: `Forked from "${conversation.title.replace(/ · fork(\/[^·]*)?$/, '')}" - earlier turns are shown for reference, but ${type === 'codex' ? 'Codex' : type === 'opencode' ? 'OpenCode' : 'this agent'} will start without that context.`,
           timestamp: Date.now(),
         },
         ...messages,

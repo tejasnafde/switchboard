@@ -17,7 +17,7 @@ import { describe, it, expect } from 'vitest'
 import { planTemplateSpawn, resolveTemplateFallback } from '../../src/renderer/services/templatePlanner'
 import type { WorkspaceConfig, WorkspaceTemplate } from '../../src/shared/workspace-config'
 
-describe('planTemplateSpawn — flat terminals', () => {
+describe('planTemplateSpawn - flat terminals', () => {
   it('first terminal becomes addWindow, rest become splitRow (same row)', () => {
     const tpl: WorkspaceTemplate = {
       terminals: [
@@ -56,7 +56,7 @@ describe('planTemplateSpawn — flat terminals', () => {
   })
 })
 
-describe('planTemplateSpawn — rows layout', () => {
+describe('planTemplateSpawn - rows layout', () => {
   it('first pane addWindow, additional panes in row 0 splitRow, new rows splitColumn', () => {
     const tpl: WorkspaceTemplate = {
       terminals: [],
@@ -92,7 +92,7 @@ describe('planTemplateSpawn — rows layout', () => {
   })
 })
 
-describe('resolveTemplateFallback — hot reload edge cases', () => {
+describe('resolveTemplateFallback - hot reload edge cases', () => {
   const config: WorkspaceConfig = {
     terminals: [{ label: 'shell' }],
     templates: {

@@ -2,7 +2,7 @@
  * Right-pane mode (terminal | files) is a single layout-store field that
  * controls what occupies the workspace's right column. ⌘⇧E in App.tsx
  * toggles it. Tests cover:
- *   - default is 'terminal' (matches existing behavior — no surprise after upgrade)
+ *   - default is 'terminal' (matches existing behavior - no surprise after upgrade)
  *   - setRightPaneMode flips state
  *   - toggleRightPaneMode flips between the two values
  *   - hydration parses persisted setting on launch

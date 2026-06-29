@@ -1,5 +1,5 @@
 /**
- * Rainbow indent guides — each indentation level gets a subtly-tinted
+ * Rainbow indent guides - each indentation level gets a subtly-tinted
  * background, cycling through 4 colours. Works with both spaces and tabs.
  * Only the visible viewport is decorated, so large files have no overhead.
  */
@@ -11,7 +11,7 @@ import type { Extension } from '@codemirror/state'
 
 const LEVEL_COUNT = 4
 
-// Pre-built mark decorations — avoids per-line object allocation
+// Pre-built mark decorations - avoids per-line object allocation
 const levelMarks = [
   Decoration.mark({ class: 'cm-rainbowIndent-0' }),
   Decoration.mark({ class: 'cm-rainbowIndent-1' }),
@@ -20,7 +20,7 @@ const levelMarks = [
 ]
 
 // Colours intentionally low-opacity so they don't fight syntax highlighting.
-// Same values on dark and light — at ~0.10 opacity they read fine on both.
+// Same values on dark and light - at ~0.10 opacity they read fine on both.
 const rainbowTheme = EditorView.baseTheme({
   '.cm-rainbowIndent-0': { backgroundColor: 'rgba(255,210,40,0.10)' },
   '.cm-rainbowIndent-1': { backgroundColor: 'rgba(60,210,100,0.10)' },

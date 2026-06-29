@@ -1,5 +1,5 @@
 /**
- * Unit tests for `renderPillBody` — splits a `[[pill:<id>]]`-tokenized
+ * Unit tests for `renderPillBody` - splits a `[[pill:<id>]]`-tokenized
  * body into React nodes (text spans + PillChipVisual chips). Critical
  * because this is what makes a sent user message visually mirror the
  * editor's pill state. We assert on the React element tree directly so

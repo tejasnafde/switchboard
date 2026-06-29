@@ -110,7 +110,7 @@ export class LspClient {
 
   request<T = unknown>(method: string, params: unknown): Promise<T> {
     if (!this.child || this.disposed) return Promise.reject(new Error('LSP client not started'))
-    // Supersede an in-flight request of the same method — $/cancelRequest tells
+    // Supersede an in-flight request of the same method - $/cancelRequest tells
     // the server to stop so it doesn't compute a result nobody will read.
     const prev = this.inFlightByMethod.get(method)
     if (prev !== undefined) this.cancel(prev)

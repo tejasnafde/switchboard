@@ -33,7 +33,7 @@ export class HybridTransport implements Transport {
   on<A extends unknown[]>(channel: string, handler: (...args: A) => void): () => void {
     // Subscribe on both: a push event originates from whichever side owns the
     // channel (local menu/window/updater vs remote backend), and only that side
-    // ever emits it — so there's no double-delivery.
+    // ever emits it - so there's no double-delivery.
     const offLocal = this.local.on(channel, handler)
     const offRemote = this.remote.on(channel, handler)
     return () => {

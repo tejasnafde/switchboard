@@ -7,7 +7,7 @@ import { fuzzyScore } from '../files/fuzzyScore'
  *   - Trigger fires when the most recent `@` before the cursor is preceded
  *     by start-of-text or whitespace.
  *   - The query may contain `/`, `.`, `-`, `_` and other path-shaped chars
- *     — only whitespace closes the trigger window. (Slash mode bails on
+ *     - only whitespace closes the trigger window. (Slash mode bails on
  *     `/` because slash commands are flat names; here `/` is part of the
  *     query so the user can narrow on directory prefixes.)
  *
@@ -19,7 +19,7 @@ import { fuzzyScore } from '../files/fuzzyScore'
  *   "user@example.com"    → does NOT fire (same reason)
  *   "@src/main\nmore"     → does NOT fire if cursor is past the newline
  *
- * Pure — exported for unit tests.
+ * Pure - exported for unit tests.
  */
 export interface AtTrigger {
   query: string
@@ -50,7 +50,7 @@ export function detectAtTrigger(text: string, cursorInput: number): AtTrigger | 
 
 /**
  * Score + sort `files` against `query` using the shared fuzzyScore.
- * Returns up to 50 matches in descending score order. Pure — exported so
+ * Returns up to 50 matches in descending score order. Pure - exported so
  * both the AtMentionMenu and the keyboard-commit path in ChatInput agree
  * on which file the highlighted index refers to.
  */

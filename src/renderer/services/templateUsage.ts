@@ -34,7 +34,7 @@ function write(map: UsageMap): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
   } catch {
-    /* localStorage full / unavailable — silently no-op; sort just falls back to alphabetical */
+    /* localStorage full / unavailable - silently no-op; sort just falls back to alphabetical */
   }
 }
 

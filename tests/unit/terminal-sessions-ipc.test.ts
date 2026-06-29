@@ -1,7 +1,7 @@
 /**
  * Pure helper tests for terminal session injection and agentType stamping.
  *
- * Terminal sessions are DB-only — they have no JSONL file so the file
+ * Terminal sessions are DB-only - they have no JSONL file so the file
  * scanner never finds them. `synthesizeTerminalSessions` builds synthetic
  * SessionSummary entries from conversations rows; `stampAgentTypes` stamps
  * `agentType` onto file-scanned sessions that already have a DB record.

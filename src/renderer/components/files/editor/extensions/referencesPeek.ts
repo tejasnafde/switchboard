@@ -23,7 +23,7 @@ const openPeek = StateEffect.define<{ line: number; refs: ResolvedReference[]; s
 const closePeek = StateEffect.define<null>()
 const movePeek = StateEffect.define<number>()
 
-/** Decide what a references result count should do. Pure — unit-tested. */
+/** Decide what a references result count should do. Pure - unit-tested. */
 export function referenceAction(count: number): 'none' | 'jump' | 'peek' {
   if (count <= 0) return 'none'
   if (count === 1) return 'jump'
@@ -41,7 +41,7 @@ const peekField = StateField.define<PeekState | null>({
         value = { ...value, selected: (value.selected + e.value + n) % n }
       }
     }
-    // A doc edit invalidates the anchored line — drop the panel.
+    // A doc edit invalidates the anchored line - drop the panel.
     if (value && tr.docChanged) value = null
     return value
   },
@@ -144,7 +144,7 @@ export function referencesPeek(): Extension {
   return [peekField, peekDecorations, peekKeymap, peekTheme]
 }
 
-/** ⇧F12 — find references for the symbol under the cursor. */
+/** ⇧F12 - find references for the symbol under the cursor. */
 export function runReferences(
   view: EditorView,
   getPath: () => string | null,

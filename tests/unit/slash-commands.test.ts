@@ -11,7 +11,7 @@ import {
 /**
  * Slash command trigger + registry tests.
  *
- * The trigger is the part most likely to regress silently — someone pastes
+ * The trigger is the part most likely to regress silently - someone pastes
  * a path like `src/foo` into the chat and we don't want the menu to pop up.
  * These tests lock down the exact semantics: slash must be the first
  * non-whitespace char of the *current line*.
@@ -35,19 +35,19 @@ describe('detectSlashTrigger', () => {
   })
 
   it('returns null when caret is mid-word (e.g. pasting `src/foo`)', () => {
-    // `src/foo` — caret after `foo`. Line-prefix is `src/foo`, which does NOT
+    // `src/foo` - caret after `foo`. Line-prefix is `src/foo`, which does NOT
     // match /^\/(\S*)$/ because it doesn't start with `/`.
     expect(detectSlashTrigger('src/foo', 7)).toBeNull()
   })
 
   it('returns null for `/` followed by a space (not a command)', () => {
-    // Line-prefix `/ ` — the space after `/` disqualifies it from the regex
+    // Line-prefix `/ ` - the space after `/` disqualifies it from the regex
     // because we require [^\s/]* after the slash.
     expect(detectSlashTrigger('/ plan', 2)).toBeNull()
   })
 
   it('fires when slash follows whitespace mid-line (so users discover skills mid-message)', () => {
-    // `hi /plan` — `/` is preceded by a space, no slashes between it and the
+    // `hi /plan` - `/` is preceded by a space, no slashes between it and the
     // caret, so the menu opens with query="plan" and range starting at the slash.
     const t = detectSlashTrigger('hi /plan', 8)
     expect(t).not.toBeNull()
@@ -57,13 +57,13 @@ describe('detectSlashTrigger', () => {
   })
 
   it('returns null when slash is glued to a preceding word (path-like)', () => {
-    // `src/foo` — the `/` at idx 3 is preceded by `c`, not whitespace, so
+    // `src/foo` - the `/` at idx 3 is preceded by `c`, not whitespace, so
     // the menu correctly stays closed.
     expect(detectSlashTrigger('src/foo', 7)).toBeNull()
   })
 
   it('fires on second line when that line starts with `/`', () => {
-    // `first line\n/plan` — the current line is `/plan`, so line-prefix is
+    // `first line\n/plan` - the current line is `/plan`, so line-prefix is
     // `/plan` and the trigger should fire with query="plan".
     const text = 'first line\n/plan'
     const t = detectSlashTrigger(text, text.length)
@@ -87,10 +87,10 @@ describe('detectSlashTrigger', () => {
   })
 
   it('does NOT fire on paths embedded elsewhere in the text', () => {
-    // `edit /etc/hosts` — last `/` before cursor is at idx 9 (between etc
+    // `edit /etc/hosts` - last `/` before cursor is at idx 9 (between etc
     // and hosts), preceded by `c` not whitespace → no fire.
     expect(detectSlashTrigger('edit /etc/hosts', 15)).toBeNull()
-    // `~/Library/foo` — `/` at idx 1 preceded by `~`; `/` at idx 9 preceded
+    // `~/Library/foo` - `/` at idx 1 preceded by `~`; `/` at idx 9 preceded
     // by `y`. Neither qualifies.
     expect(detectSlashTrigger('~/Library/foo', 13)).toBeNull()
   })
