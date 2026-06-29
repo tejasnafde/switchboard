@@ -2,6 +2,7 @@ import { contextBridge } from 'electron'
 import { IpcTransport, type Transport } from './transport'
 import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
+import { TransportRouter } from './transport-router'
 import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
@@ -52,10 +53,13 @@ export interface ProviderInstanceUpsertInput {
 // backend; desktop-only channels still resolve to local IPC via HybridTransport.
 // Unset → fully local, as before.
 const backendUrl = process.env.SWITCHBOARD_BACKEND_URL
-const transport: Transport = backendUrl
+const baseTransport: Transport = backendUrl
   ? new HybridTransport(new IpcTransport(), new WsTransport(backendUrl))
   : new IpcTransport()
 if (backendUrl) console.info(`[SB:preload] remote backend: ${backendUrl}`)
+// Router holds 'local' (above) plus a WsTransport per connected remote (M4b 2b).
+// With only 'local' registered and the default resolver, it is a pass-through.
+const transport: Transport = new TransportRouter(baseTransport)
 
 const api = {
   // ─── Terminal ────────────────────────────────────────────────────
