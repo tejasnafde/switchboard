@@ -14,7 +14,7 @@
  * server. We don't gate restart counts yet — if a server is wedged in
  * a crash loop the user will notice the toast spam.
  */
-import { app } from 'electron'
+import { appRootDir } from '../runtime'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -54,7 +54,7 @@ type Locator = { command: string; args: string[]; env?: Record<string, string> }
 
 function locateTsServer(): Locator {
   const candidates = [
-    join(app.getAppPath(), 'node_modules', 'typescript-language-server', 'lib', 'cli.mjs'),
+    join(appRootDir(), 'node_modules', 'typescript-language-server', 'lib', 'cli.mjs'),
     join(process.resourcesPath, 'node_modules', 'typescript-language-server', 'lib', 'cli.mjs'),
   ]
   for (const c of candidates) {
@@ -65,7 +65,7 @@ function locateTsServer(): Locator {
 
 function locatePyright(): Locator {
   const candidates = [
-    join(app.getAppPath(), 'node_modules', 'pyright', 'langserver.index.js'),
+    join(appRootDir(), 'node_modules', 'pyright', 'langserver.index.js'),
     join(process.resourcesPath, 'node_modules', 'pyright', 'langserver.index.js'),
   ]
   for (const c of candidates) {

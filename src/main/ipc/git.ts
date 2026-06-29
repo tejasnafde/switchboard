@@ -10,7 +10,7 @@
  * shape so the renderer never has to wrap calls in try/catch — same
  * convention as the FilesChannels handlers.
  */
-import { app } from 'electron'
+import { userDataDir } from '../runtime'
 import type { BackendHost } from '../backend/host'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -100,7 +100,7 @@ export function registerGitHandlers(host: BackendHost): void {
           projectPath: args.projectPath,
           branchSlug: args.branchSlug,
           baseRef: args.baseRef,
-          userDataDir: app.getPath('userData'),
+          userDataDir: userDataDir(),
         })
         return { ok: true, ...out }
       } catch (err) {

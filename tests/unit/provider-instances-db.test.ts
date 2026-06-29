@@ -13,23 +13,27 @@
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
-// ─── safeStorage mock ──────────────────────────────────────────
+// ─── safeStorage mock (via the runtime shim) ───────────────────
 let safeStorageAvailable = true
 const safeStoragePrefix = Buffer.from([0xAA, 0xBB])
 
-vi.mock('electron', () => ({
-  app: { getPath: () => '/tmp/switchboard-vitest' },
-  safeStorage: {
-    isEncryptionAvailable: () => safeStorageAvailable,
-    encryptString: (s: string) =>
-      Buffer.concat([safeStoragePrefix, Buffer.from(s, 'utf-8')]),
-    decryptString: (buf: Buffer) => {
-      if (!buf.subarray(0, safeStoragePrefix.length).equals(safeStoragePrefix)) {
-        throw new Error('mock safeStorage: bad ciphertext')
-      }
-      return buf.subarray(safeStoragePrefix.length).toString('utf-8')
-    },
-  },
+vi.mock('../../src/main/runtime', () => ({
+  isElectron: false,
+  userDataDir: () => '/tmp/switchboard-vitest',
+  appRootDir: () => '/tmp/switchboard-vitest',
+  getSafeStorage: () =>
+    safeStorageAvailable
+      ? {
+          isEncryptionAvailable: () => true,
+          encryptString: (s: string) => Buffer.concat([safeStoragePrefix, Buffer.from(s, 'utf-8')]),
+          decryptString: (buf: Buffer) => {
+            if (!buf.subarray(0, safeStoragePrefix.length).equals(safeStoragePrefix)) {
+              throw new Error('mock safeStorage: bad ciphertext')
+            }
+            return buf.subarray(safeStoragePrefix.length).toString('utf-8')
+          },
+        }
+      : null,
 }))
 
 // ─── tiny in-memory store ──────────────────────────────────────
@@ -148,6 +152,7 @@ vi.mock('../../src/main/db/database', () => ({
 beforeEach(() => {
   seedDefaults()
   safeStorageAvailable = true
+  delete process.env.SWITCHBOARD_SECRET
 })
 
 async function loadModule() {
@@ -176,6 +181,27 @@ describe('encryptEnv / decryptEnv', () => {
     const { encryptEnv, decryptEnv } = await loadModule()
     const blob = encryptEnv({ K: 'v' })
     safeStorageAvailable = false
+    expect(decryptEnv(blob)).toEqual({})
+  })
+
+  // Headless backend: no keychain, but SWITCHBOARD_SECRET set → passphrase AES.
+  it('round-trips via SWITCHBOARD_SECRET when safeStorage is unavailable', async () => {
+    safeStorageAvailable = false
+    process.env.SWITCHBOARD_SECRET = 'correct horse battery staple'
+    const { encryptEnv, decryptEnv } = await loadModule()
+    const plain = { ANTHROPIC_API_KEY: 'sk-headless' }
+    const blob = encryptEnv(plain)
+    expect(blob[0]).toBe(0x00) // sentinel — not plaintext
+    expect(blob.toString('utf-8')).not.toContain('sk-headless') // actually encrypted
+    expect(decryptEnv(blob)).toEqual(plain)
+  })
+
+  it('returns {} for a passphrase blob when SWITCHBOARD_SECRET is missing', async () => {
+    safeStorageAvailable = false
+    process.env.SWITCHBOARD_SECRET = 'a-secret'
+    const { encryptEnv, decryptEnv } = await loadModule()
+    const blob = encryptEnv({ K: 'v' })
+    delete process.env.SWITCHBOARD_SECRET
     expect(decryptEnv(blob)).toEqual({})
   })
 

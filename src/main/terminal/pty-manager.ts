@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
-import { app } from 'electron'
+import { userDataDir, appRootDir } from '../runtime'
 import type { IPty } from 'node-pty'
 import type { TerminalCreateOptions } from '@shared/types'
 import { createMainLogger as createLogger } from '../logger'
@@ -21,11 +21,11 @@ function ensureZdotdir(): string | null {
   if (cachedZdotdir) return cachedZdotdir
   try {
     // Stage the zshrc in userData so zsh has a writable, stable path.
-    const dir = join(app.getPath('userData'), 'shell')
+    const dir = join(userDataDir(), 'shell')
     mkdirSync(dir, { recursive: true })
-    // In dev, `app.getAppPath()` is the repo root. When packaged, it's
+    // In dev, `appRootDir()` is the repo root. When packaged, it's
     // the asar archive — Node can still read files out of it.
-    const src = join(app.getAppPath(), 'resources', 'shell', 'switchboard.zshrc')
+    const src = join(appRootDir(), 'resources', 'shell', 'switchboard.zshrc')
     if (!existsSync(src)) return null
     const contents = readFileSync(src, 'utf-8')
     writeFileSync(join(dir, '.zshrc'), contents)

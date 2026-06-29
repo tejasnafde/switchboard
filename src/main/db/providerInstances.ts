@@ -15,7 +15,8 @@
  * settings keys (which are plaintext today).
  */
 
-import { safeStorage } from 'electron'
+import { getSafeStorage } from '../runtime'
+import { seal, unseal } from '../crypto/secret-box'
 import { homedir } from 'os'
 import { join } from 'path'
 import { getDb } from './database'
@@ -86,46 +87,71 @@ interface DbRow {
   updated_at: number
 }
 
-// 4-byte sentinel prefixed to safeStorage-encrypted blobs so we can
-// distinguish them from the plaintext-JSON fallback unambiguously.
-// Byte 0x00 is invalid in UTF-8 JSON, so any blob starting with this
-// header is definitely not plaintext.
+// 4-byte sentinels prefixed to encrypted blobs so we can tell them apart from
+// the plaintext-JSON fallback. Byte 0x00 is invalid in UTF-8 JSON, so any blob
+// starting with one of these headers is definitely not plaintext.
+//   ENC_MAGIC  — Electron safeStorage (desktop, OS keychain)
+//   PASS_MAGIC — passphrase AES-256-GCM (headless backend, SWITCHBOARD_SECRET)
 const ENC_MAGIC = Buffer.from([0x00, 0x53, 0x42, 0x45]) // \0SBE
+const PASS_MAGIC = Buffer.from([0x00, 0x53, 0x42, 0x50]) // \0SBP
 
-function hasEncMagic(blob: Buffer): boolean {
-  return blob.length >= ENC_MAGIC.length && blob.subarray(0, ENC_MAGIC.length).equals(ENC_MAGIC)
+function hasMagic(blob: Buffer, magic: Buffer): boolean {
+  return blob.length >= magic.length && blob.subarray(0, magic.length).equals(magic)
 }
 
 export function decryptEnv(blob: Buffer | null): Record<string, string> {
   if (!blob || blob.length === 0) return {}
-  if (hasEncMagic(blob)) {
-    if (!safeStorage.isEncryptionAvailable()) {
-      log.warn('encrypted env blob found but safeStorage is unavailable')
+  if (hasMagic(blob, ENC_MAGIC)) {
+    const safeStorage = getSafeStorage()
+    if (!safeStorage?.isEncryptionAvailable()) {
+      log.warn('safeStorage-encrypted env blob found but safeStorage is unavailable (wrong host?)')
       return {}
     }
     try {
-      const decoded = safeStorage.decryptString(blob.subarray(ENC_MAGIC.length))
-      const parsed = JSON.parse(decoded)
-      if (parsed && typeof parsed === 'object') return parsed as Record<string, string>
+      return parseEnv(safeStorage.decryptString(blob.subarray(ENC_MAGIC.length)))
     } catch (err) {
       log.warn(`failed to decrypt env: ${err instanceof Error ? err.message : String(err)}`)
+      return {}
     }
-    return {}
   }
-  // Plaintext-JSON fallback (Linux without keyring).
+  if (hasMagic(blob, PASS_MAGIC)) {
+    const secret = process.env.SWITCHBOARD_SECRET
+    if (!secret) {
+      log.warn('passphrase-encrypted env blob found but SWITCHBOARD_SECRET is unset')
+      return {}
+    }
+    try {
+      return parseEnv(unseal(blob.subarray(PASS_MAGIC.length), secret))
+    } catch (err) {
+      log.warn(`failed to decrypt env: ${err instanceof Error ? err.message : String(err)}`)
+      return {}
+    }
+  }
+  // Plaintext-JSON fallback (no keychain and no SWITCHBOARD_SECRET).
+  return parseEnv(blob.toString('utf-8'))
+}
+
+function parseEnv(json: string): Record<string, string> {
   try {
-    const parsed = JSON.parse(blob.toString('utf-8'))
+    const parsed = JSON.parse(json)
     if (parsed && typeof parsed === 'object') return parsed as Record<string, string>
-  } catch {}
+  } catch {
+    /* malformed blob → empty env */
+  }
   return {}
 }
 
 export function encryptEnv(env: Record<string, string>): Buffer {
   const json = JSON.stringify(env ?? {})
-  if (safeStorage.isEncryptionAvailable()) {
+  const safeStorage = getSafeStorage()
+  if (safeStorage?.isEncryptionAvailable()) {
     return Buffer.concat([ENC_MAGIC, safeStorage.encryptString(json)])
   }
-  log.warn('safeStorage unavailable — falling back to plaintext storage for env vars')
+  const secret = process.env.SWITCHBOARD_SECRET
+  if (secret) {
+    return Buffer.concat([PASS_MAGIC, seal(json, secret)])
+  }
+  log.warn('no safeStorage and no SWITCHBOARD_SECRET — storing env vars as plaintext')
   return Buffer.from(json, 'utf-8')
 }
 
