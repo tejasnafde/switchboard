@@ -23,7 +23,7 @@ export function registerMachineHandlers(host: BackendHost): void {
     waitForHealth,
     remotePort: REMOTE_PORT,
     remoteCommand: REMOTE_COMMAND,
-    onStatus: (machineId, status) => host.emit(MachineChannels.STATUS, machineId, status),
+    onStatus: (machineId, status, url) => host.emit(MachineChannels.STATUS, machineId, status, url),
   })
 
   host.handle(MachineChannels.LIST, () => listMachines())
