@@ -355,6 +355,19 @@ function migrate(db: Database.Database): void {
       PRIMARY KEY (session_id, path)
     );
     CREATE INDEX IF NOT EXISTS idx_editor_tabs_session ON editor_tabs(session_id, idx);
+
+    CREATE TABLE IF NOT EXISTS machines (
+      id          TEXT PRIMARY KEY,
+      name        TEXT NOT NULL,
+      ssh_alias   TEXT,
+      ssh_host    TEXT NOT NULL,
+      ssh_user    TEXT,
+      ssh_port    INTEGER NOT NULL DEFAULT 22,
+      sort_order  INTEGER NOT NULL DEFAULT 0,
+      created_at  INTEGER NOT NULL,
+      updated_at  INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_machines_sort ON machines(sort_order);
   `)
 
   log.info('database migrated')

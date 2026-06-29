@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, vi } from 'vitest'
 import { HybridTransport } from '../../src/preload/hybrid-transport'
-import { AppChannels, ProviderChannels } from '../../src/shared/ipc-channels'
+import { AppChannels, ProviderChannels, MachineChannels } from '../../src/shared/ipc-channels'
 import type { Transport } from '../../src/shared/transport'
 
 function fake(tag: string) {
@@ -33,6 +33,7 @@ describe('HybridTransport', () => {
 
     expect(await h.invoke(AppChannels.OPEN_FOLDER)).toBe('local')
     expect(await h.invoke(AppChannels.CHECK_FOR_UPDATES)).toBe('local')
+    expect(await h.invoke(MachineChannels.LIST)).toBe('local')
     expect(await h.invoke(ProviderChannels.START_SESSION)).toBe('remote')
     h.send(AppChannels.SET_VIBRANCY, true)
     h.send(ProviderChannels.SEND_TURN, 't1', 'hi')
@@ -40,6 +41,7 @@ describe('HybridTransport', () => {
     expect(local.calls).toEqual([
       `local:invoke:${AppChannels.OPEN_FOLDER}`,
       `local:invoke:${AppChannels.CHECK_FOR_UPDATES}`,
+      `local:invoke:${MachineChannels.LIST}`,
       `local:send:${AppChannels.SET_VIBRANCY}`,
     ])
     expect(remote.calls).toEqual([

@@ -21,6 +21,7 @@ import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerAppDesktopHandlers } from './ipc/app-desktop'
+import { registerMachineHandlers } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
@@ -350,6 +351,7 @@ app.whenReady().then(() => {
   registerLspHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
+  registerMachineHandlers(backendHost)
   // Auto-update - silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what
   // version to compare against. See `src/main/updater.ts`.
@@ -370,6 +372,7 @@ app.whenReady().then(() => {
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
       registerKanbanHandlers(reactivatedHost)
+      registerMachineHandlers(reactivatedHost)
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(reactivatedHost)
