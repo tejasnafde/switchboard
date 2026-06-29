@@ -1,18 +1,8 @@
-/**
- * Renderer↔backend seam: window.api.* goes through a Transport, not
- * ipcRenderer directly, so the backend can later be local (IpcTransport) or
- * remote-over-WebSocket without the renderer changing. invoke = req/resp,
- * send = fire-and-forget, on = push subscription (returns an unsubscribe fn).
- */
+/** In-process Transport impl: the backend runs in this Electron main process. */
 import { ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { Transport } from '@shared/transport'
 
-export interface Transport {
-  // any default mirrors Electron's Promise<any> wire; callers annotate to infer T.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  invoke<T = any>(channel: string, ...args: unknown[]): Promise<T>
-  send(channel: string, ...args: unknown[]): void
-  on<A extends unknown[] = unknown[]>(channel: string, handler: (...args: A) => void): () => void
-}
+export type { Transport }
 
 /** In-process transport: the backend runs in this Electron main process. */
 export class IpcTransport implements Transport {
