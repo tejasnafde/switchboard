@@ -108,7 +108,7 @@ import type { Project, SessionSummary, Bookmark } from '@shared/types'
 
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
-  onNewChat?: (projectPath: string) => void
+  onNewChat?: (projectPath: string, machineId?: string) => void
 }
 
 // ── Sortable project wrapper ─────────────────────────────────────
@@ -744,6 +744,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         <MachineLayer
           onAddMachine={() => setAddMachineOpen(true)}
           onOpenRemoteSession={(machineId, projectPath, session) => onSessionSelect?.(session, projectPath, machineId)}
+          onNewRemoteChat={(machineId, projectPath) => onNewChat?.(projectPath, machineId)}
         >
         <DndContext
           sensors={sensors}

@@ -321,10 +321,14 @@ export function App() {
   // stays the parent repo so the sidebar groups correctly. A failed
   // worktree create falls back to local mode with a console warn.
   const handleNewChat = useCallback(
-    async (projectPath: string) => {
+    async (projectPath: string, machineId: string = 'local') => {
       useLayoutStore.getState().setAppView('chats')
       const id = `agent_${Date.now()}`
       const title = 'New conversation'
+
+      // Route every backend call for this chat (worktree, createConversation,
+      // startSession) to its machine before the first one fires.
+      window.api.routing.bind(id, machineId)
 
       let worktreePath: string | null = null
       let worktreeBranch: string | null = null
@@ -334,6 +338,7 @@ export function App() {
         const res = await window.api.git.createSessionWorktree({
           projectPath,
           branchSlug,
+          machineId,
         })
         if (res.ok) {
           worktreePath = res.path
@@ -348,6 +353,7 @@ export function App() {
         type: 'claude-code',
         status: 'idle',
         projectPath,
+        machineId,
         worktreePath,
         worktreeBranch,
         title,
@@ -365,14 +371,13 @@ export function App() {
         worktreeBranch,
       }).catch(() => {})
 
-      // Notify sidebar so it shows this new chat immediately
-      emitSessionCreated({
-        id,
-        projectPath,
-        title,
-        startedAt: Date.now(),
-        source: 'switchboard',
-      })
+      // Local chats show in the workspace tree via the sidebar event; remote
+      // chats live in their machine's tree, so re-sync that snapshot instead.
+      if (machineId === 'local') {
+        emitSessionCreated({ id, projectPath, title, startedAt: Date.now(), source: 'switchboard' })
+      } else {
+        void useMachineStore.getState().syncMachine(machineId)
+      }
     },
     [addSession, setActiveSession],
   )

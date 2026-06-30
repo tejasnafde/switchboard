@@ -49,10 +49,12 @@ export function MachineLayer({
   children,
   onAddMachine,
   onOpenRemoteSession,
+  onNewRemoteChat,
 }: {
   children: ReactNode
   onAddMachine: () => void
   onOpenRemoteSession?: (machineId: string, projectPath: string, session: SessionSummary) => void
+  onNewRemoteChat?: (machineId: string, projectPath: string) => void
 }) {
   const remotes = useMachineStore((s) => s.remotes)
   const connections = useMachineStore((s) => s.connections)
@@ -110,7 +112,18 @@ export function MachineLayer({
         ) : (
           projects.map((p) => (
             <div key={p.path} className="cached-project">
-              <div className="cached-project-name">{p.name}</div>
+              <div className="cached-project-name">
+                {p.name}
+                {node.status === 'connected' && onNewRemoteChat && (
+                  <button
+                    className="cached-new-chat"
+                    title="New chat on this machine"
+                    onClick={() => onNewRemoteChat(node.id, p.path)}
+                  >
+                    +
+                  </button>
+                )}
+              </div>
               {p.sessions.map((s) => {
                 const openable = node.status === 'connected' && !!onOpenRemoteSession
                 return (

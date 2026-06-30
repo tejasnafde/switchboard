@@ -1323,10 +1323,25 @@ mark.sb-search-mark.active {
   padding: 2px 0;
 }
 .cached-project-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--text-secondary);
   padding: 3px 12px 3px 24px;
   font-style: italic;
+}
+.cached-new-chat {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+}
+.cached-new-chat:hover {
+  color: var(--accent);
 }
 .cached-chat {
   font-size: 12px;
