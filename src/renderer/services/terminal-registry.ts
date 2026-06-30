@@ -93,9 +93,12 @@ function getXtermTheme(): Record<string, string> {
   }
 }
 
-export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: string, waitFor?: string, env?: Record<string, string>): TerminalInstance {
+export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: string, waitFor?: string, env?: Record<string, string>, machineId?: string): TerminalInstance {
   const existing = registry.get(id)
   if (existing) return existing
+
+  // Route the PTY (and subsequent write/resize/kill, keyed by id) to its machine.
+  if (machineId && machineId !== 'local') window.api.routing.bind(id, machineId)
 
   const terminal = new Terminal({
     fontSize: 13,
@@ -196,7 +199,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
   registry.set(id, instance)
 
   // Create PTY in main process
-  window.api.terminal.create({ id, cols: 80, rows: 24, cwd, initialCommand, waitFor, env })
+  window.api.terminal.create({ id, cols: 80, rows: 24, cwd, initialCommand, waitFor, env, machineId })
 
   return instance
 }
