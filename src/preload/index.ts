@@ -353,6 +353,8 @@ const api = {
       projectPath: string
       branchSlug: string
       baseRef?: string
+      /** Routes the call to this machine's backend (default local). */
+      machineId?: string
     }): Promise<
       { ok: true; path: string; branch: string } | { ok: false; error: string }
     > => transport.invoke(GitChannels.CREATE_SESSION_WORKTREE, args),
