@@ -52,17 +52,16 @@ backend. Proven in `tests/unit/provider-switch-ws.test.ts`.
 - **M3** `machineSnapshot.ts` (`syncedAgoLabel` / `cachedProjects`),
   `machine_snapshots` table + `saveMachineSnapshot` / `getMachineSnapshots`,
   `machines:get-snapshots`. Offline remotes with a snapshot render a greyed
-  read-only tree. NOT YET POPULATED (M4b writes it on connect).
+  read-only tree. Populated on connect by `syncMachine` (M4b step 3).
 - **M4a** `src/main/machines/sshTunnel.ts` (`buildTunnelCommand`),
   `src/main/machines/connectionStatus.ts` (`nextConnectionStatus` reducer).
   `MachineStatus` gained `'error'` + a red pip.
 - **M4b step 1 (spawn + health)** `src/main/machines/connectionManager.ts`
   (`ConnectionManager` - DI lifecycle, unit-tested) +
   `src/main/machines/connectDeps.ts` (node impls: `allocatePort`, `spawnTunnel`,
-  `waitForHealth`; deploy contract = `switchboard-server` on the remote PATH).
-  `machines:connect` / `machines:disconnect` / `machines:status` channels, store
-  actions + status subscription, and a live Connect/Disconnect button in
-  `MachineLayer`. Connecting flips the pip; it does NOT yet route data (step 2).
+  `waitForHealth`). `machines:connect` / `machines:disconnect` /
+  `machines:status` channels, store actions + status subscription, and a live
+  Connect/Disconnect button in `MachineLayer`.
 - **M4b step 2 (per-session routing)** chosen model: ONE window live-mixes local
   + multiple remotes, each call routed to its session's backend.
   - **2a** `src/preload/transport-router.ts` (`TransportRouter`): holds one
@@ -89,23 +88,60 @@ backend. Proven in `tests/unit/provider-switch-ws.test.ts`.
   creds exist there). NOT e2e-verified locally (native-ABI caveat); unit-tested
   pieces only.
 
-## What's left: M4b
+### Auto-provisioning (VS Code-style; no manual install)
+Connecting to a host now installs the server itself. The VM only needs node +
+npm + key-based ssh; no compiler for common triples (prebuilt binaries).
+- **P1** `remoteProbe.parseProbeOutput`, `provisionPlan.planProvision`
+  (`ready`/`install`/`upgrade`/`no-node`), `provisionCommands.buildProbeCommand`
+  + `buildRemoteShellCommand`. `sshHostArgs` factored out of `buildTunnelCommand`.
+- **P2** `provisionSetup.ts`: `remotePackageJson` (better-sqlite3 pinned;
+  `node-pty` aliased to `@homebridge/node-pty-prebuilt-multiarch` for the linux
+  prebuilds upstream lacks) + `remoteInstallScript` (npm install, version marker
+  written last). npm's own prebuild-install / bundled prebuilds fetch binaries.
+- **P3** `provisioner.ts`: `provisionRemote(machine, inputs, ProcRunner)` -
+  probe -> plan -> on install/upgrade: mkdir, `cat >` bundle + package.json, run
+  install. DI'd runner, unit-tested.
+- **P4** `provisionDeps.ts`: real `child_process` runner + `readServerBundle`
+  (from `out/server/index.cjs`, shipped via `out/**`). `ConnectionManager` runs
+  `provision` before the tunnel (`no-node`/throw -> error, no tunnel).
+  `REMOTE_COMMAND` = `PORT=8765 node $HOME/.switchboard-server/index.cjs`.
+  `build` / `build:fast` now run `build:server`. Deploy doc:
+  `docs/deploy/remote-backend.md`.
 
-1. **OAuth on the VM**: providers log in on the remote (oauth dirs are not
-   forwarded), consistent with t3code. Env-mode creds use `SWITCHBOARD_SECRET`.
-   This is a deploy/ops task, verifiable only against a real VM.
-2. **Remote terminals + new-chat-on-remote**: the launch path covers opening an
-   existing remote chat. Starting a brand-new chat on a remote project and remote
-   PTY creation (bind the terminal id at `terminal:create`) are not wired yet.
-3. **E2E on a real VM**: stand up `switchboard-server` on a box, validate
-   connect -> snapshot -> open remote chat -> provider switch end to end.
+## What's left (pick up here)
+
+None of the remote/provisioning flow is e2e-verified - the dev tree is
+Electron-ABI so the headless server can't run locally (native-ABI wall). Order:
+
+1. **E2E on a real VM (do this first - unblocks the rest).** Add a linux box to
+   `~/.ssh/config`, Add machine in the sidebar, click Connect. Validate: probe ->
+   provision (npm install, prebuilts, no compiler) -> tunnel -> health ->
+   `syncMachine` populates the tree -> open a remote chat -> provider/instance
+   switch. Most likely break points: (a) node-pty fork version - `REMOTE_NODE_PTY`
+   in `provisionSetup.ts` is pinned `^0.12.0`; confirm it installs + is
+   API-compatible with `pty-manager.ts`'s spawn/onData/onExit/write/resize/kill,
+   bump if not; (b) `SWITCHBOARD_DATA_DIR`/`SWITCHBOARD_SECRET` are read from the
+   remote process env - `REMOTE_COMMAND` only sets `PORT`, so set the rest in the
+   VM shell profile or extend the launch command.
+2. **New-chat-on-remote + remote PTY.** Launch path covers OPENING an existing
+   remote chat. Starting a NEW chat on a remote project (sidebar new-chat under a
+   remote node -> `createConversation` routed to the machine + `routing.bind`) and
+   remote terminals (bind the terminal id at `terminal:create`; `TerminalCreateOptions`
+   already accepts `machineId` via the routing resolver) are not wired.
+3. **OAuth on the VM.** `claude` / `codex login` / `opencode auth login` in the
+   VM's home (oauth dirs are not forwarded). Env-mode creds use
+   `SWITCHBOARD_SECRET`. Deploy/ops, validated on the box.
+4. **Tunnel reconnect/backoff.** A dropped tunnel -> `error`; reconnect is manual
+   (click Connect). `ConnectionManager` is the place; `nextConnectionStatus`
+   already has the states.
 
 ## Testing
 
-- Unit: `npm test` (959). Machine bits: `ssh-config`, `machines-db`,
+- Unit: `npm test` (1015). Machine bits: `ssh-config`, `machines-db`,
   `machine-list`, `machine-store`, `machine-snapshot`, `ssh-tunnel`,
-  `connection-status`, `hybrid-transport`, `provider-switch-ws`, `secret-box`,
-  `ws-transport`, `headless-server`.
+  `connection-status`, `connection-manager`, `transport-router`, `routing-table`,
+  `provision-plan`, `provision-setup`, `provisioner`, `hybrid-transport`,
+  `provider-switch-ws`, `secret-box`, `ws-transport`, `headless-server`.
 - E2E (need `npm run build` first, macOS desktop or xvfb):
   - `npm run test:e2e` - BackendHost over local IPC (13 checks).
   - `npm run test:e2e:remote` - real app + `SWITCHBOARD_BACKEND_URL` -> stub
