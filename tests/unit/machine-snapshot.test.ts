@@ -41,7 +41,13 @@ describe('projectsToSnapshot', () => {
     const snap = projectsToSnapshot(projects, 1234)
     expect(snap.syncedAt).toBe(1234)
     expect(snap.projects).toEqual([
-      { path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 'fix bug' }, { id: 's2', title: 'refactor' }] },
+      {
+        path: '/r/api', name: 'api',
+        sessions: [
+          { id: 's1', title: 'fix bug', agentType: 'claude-code' },
+          { id: 's2', title: 'refactor', agentType: 'codex' },
+        ],
+      },
     ])
   })
 })

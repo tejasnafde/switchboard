@@ -95,7 +95,7 @@ describe('machine-store', () => {
     expect(invokeOn).toHaveBeenCalledWith('m1', 'app:get-projects')
     expect(saveSnapshot).toHaveBeenCalled()
     const snap = useMachineStore.getState().snapshots.m1
-    expect(snap.projects).toEqual([{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1' }] }])
+    expect(snap.projects).toEqual([{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', agentType: 'codex' }] }])
   })
 
   it('subscribeStatus does not register a transport while still connecting', () => {

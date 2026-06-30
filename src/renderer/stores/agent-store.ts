@@ -32,6 +32,12 @@ interface AgentSession {
   conversationId?: string
   projectPath?: string
   /**
+   * The machine this session runs on. Undefined / 'local' = this laptop's
+   * backend; a remote machine id routes the session's provider + terminal
+   * calls to that machine's WsTransport (see preload routing table).
+   */
+  machineId?: string
+  /**
    * Absolute path to the git worktree backing this session, if it was
    * created with worktree mode. When present, this - not `projectPath` -
    * is the cwd handed to the agent adapter at start. `projectPath`

@@ -381,8 +381,13 @@ export function App() {
   // in kanban view, drop back to chats so the user actually sees the
   // session they just clicked.
   const handleSessionSelect = useCallback(
-    async (session: SessionSummary, projectPath: string) => {
+    async (session: SessionSummary, projectPath: string, machineId: string = 'local') => {
       useLayoutStore.getState().setAppView('chats')
+
+      // Route every backend call for this session (load, createConversation,
+      // startSession, sendTurn) to its machine before the first one fires.
+      // Keyed by session.id, which is arg0 of all those calls.
+      window.api.routing.bind(session.id, machineId)
 
       // Evict messages from the current idle session before switching.
       // Running sessions keep their messages so in-flight streaming isn't lost.
@@ -411,7 +416,7 @@ export function App() {
 
       // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
       if (session.agentType === 'terminal') {
-        addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title })
+        addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title, machineId })
         setActiveSession(session.id)
         return
       }
@@ -425,6 +430,7 @@ export function App() {
         type: (session.source === 'codex' ? 'codex' : 'claude-code'),
         status: 'idle',
         projectPath,
+        machineId,
         worktreePath: session.worktreePath ?? null,
         worktreeBranch: session.worktreeBranch ?? null,
         resumeSessionId: session.id,

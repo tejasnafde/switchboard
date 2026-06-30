@@ -107,7 +107,7 @@ function WorkspaceUnreadBadge({ sessionIds, expanded }: { sessionIds: string[]; 
 import type { Project, SessionSummary, Bookmark } from '@shared/types'
 
 interface SidebarProps {
-  onSessionSelect?: (session: SessionSummary, projectPath: string) => void
+  onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
   onNewChat?: (projectPath: string) => void
 }
 
@@ -741,7 +741,10 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           </section>
         )}
 
-        <MachineLayer onAddMachine={() => setAddMachineOpen(true)}>
+        <MachineLayer
+          onAddMachine={() => setAddMachineOpen(true)}
+          onOpenRemoteSession={(machineId, projectPath, session) => onSessionSelect?.(session, projectPath, machineId)}
+        >
         <DndContext
           sensors={sensors}
           modifiers={[restrictToVerticalAxis]}

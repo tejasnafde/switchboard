@@ -1337,3 +1337,12 @@ mark.sb-search-mark.active {
   white-space: nowrap;
   font-style: italic;
 }
+.cached-chat[data-openable] {
+  color: var(--text-secondary);
+  font-style: normal;
+  cursor: pointer;
+}
+.cached-chat[data-openable]:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
