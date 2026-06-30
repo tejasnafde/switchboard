@@ -108,39 +108,47 @@ npm + key-based ssh; no compiler for common triples (prebuilt binaries).
   `build` / `build:fast` now run `build:server`. Deploy doc:
   `docs/deploy/remote-backend.md`.
 
+### Remote session features
+- **New-chat-on-remote** `App.handleNewChat(projectPath, machineId)` binds the
+  new id, routes worktree + `createConversation` to the machine, re-syncs the
+  tree. `MachineLayer` has a per-project "+ new chat" button (connected only).
+- **Remote PTY** `getOrCreateTerminal(..., machineId)` binds the terminal id so
+  create/write/resize/kill route to the machine (`TerminalCreateOptions.machineId`).
+  `useTerminal` resolves it from the session.
+- **Tunnel reconnect** `reconnectBackoff.reconnectDelay` + `ConnectionManager`:
+  a dropped established tunnel auto-reconnects with exponential backoff up to
+  `maxReconnects` (5); a deliberate disconnect does not.
+
 ## What's left (pick up here)
 
-None of the remote/provisioning flow is e2e-verified - the dev tree is
-Electron-ABI so the headless server can't run locally (native-ABI wall). Order:
+The renderer-side remote flow is fully wired but **e2e-unverified** - the dev
+tree is Electron-ABI so the headless server can't run locally (native-ABI wall).
 
-1. **E2E on a real VM (do this first - unblocks the rest).** Add a linux box to
+1. **E2E on a real VM (do this first - unblocks everything).** Add a linux box to
    `~/.ssh/config`, Add machine in the sidebar, click Connect. Validate: probe ->
    provision (npm install, prebuilts, no compiler) -> tunnel -> health ->
-   `syncMachine` populates the tree -> open a remote chat -> provider/instance
-   switch. Most likely break points: (a) node-pty fork version - `REMOTE_NODE_PTY`
-   in `provisionSetup.ts` is pinned `^0.12.0`; confirm it installs + is
-   API-compatible with `pty-manager.ts`'s spawn/onData/onExit/write/resize/kill,
-   bump if not; (b) `SWITCHBOARD_DATA_DIR`/`SWITCHBOARD_SECRET` are read from the
-   remote process env - `REMOTE_COMMAND` only sets `PORT`, so set the rest in the
-   VM shell profile or extend the launch command.
-2. **New-chat-on-remote + remote PTY.** Launch path covers OPENING an existing
-   remote chat. Starting a NEW chat on a remote project (sidebar new-chat under a
-   remote node -> `createConversation` routed to the machine + `routing.bind`) and
-   remote terminals (bind the terminal id at `terminal:create`; `TerminalCreateOptions`
-   already accepts `machineId` via the routing resolver) are not wired.
-3. **OAuth on the VM.** `claude` / `codex login` / `opencode auth login` in the
+   `syncMachine` populates the tree -> open AND new remote chat -> remote terminal
+   -> provider/instance switch -> drop the tunnel and watch it reconnect. Most
+   likely break points: (a) node-pty fork version - `REMOTE_NODE_PTY` in
+   `provisionSetup.ts` is pinned `^0.12.0`; confirm it installs + is API-compatible
+   with `pty-manager.ts`'s spawn/onData/onExit/write/resize/kill, bump if not;
+   (b) `SWITCHBOARD_DATA_DIR`/`SWITCHBOARD_SECRET` are read from the remote process
+   env - `REMOTE_COMMAND` only sets `PORT`, so set the rest in the VM shell profile
+   or extend the launch command.
+2. **OAuth on the VM.** `claude` / `codex login` / `opencode auth login` in the
    VM's home (oauth dirs are not forwarded). Env-mode creds use
    `SWITCHBOARD_SECRET`. Deploy/ops, validated on the box.
-4. **Tunnel reconnect/backoff.** A dropped tunnel -> `error`; reconnect is manual
-   (click Connect). `ConnectionManager` is the place; `nextConnectionStatus`
-   already has the states.
+3. **Polish after e2e:** surface a reconnecting state distinctly in the pip (it
+   currently flickers error -> connecting), and handle provider-instance creation
+   on the remote registry from Settings while connected.
 
 ## Testing
 
-- Unit: `npm test` (1015). Machine bits: `ssh-config`, `machines-db`,
+- Unit: `npm test` (1021). Machine bits: `ssh-config`, `machines-db`,
   `machine-list`, `machine-store`, `machine-snapshot`, `ssh-tunnel`,
   `connection-status`, `connection-manager`, `transport-router`, `routing-table`,
-  `provision-plan`, `provision-setup`, `provisioner`, `hybrid-transport`,
+  `provision-plan`, `provision-setup`, `provisioner`, `reconnect-backoff`,
+  `hybrid-transport`,
   `provider-switch-ws`, `secret-box`, `ws-transport`, `headless-server`.
 - E2E (need `npm run build` first, macOS desktop or xvfb):
   - `npm run test:e2e` - BackendHost over local IPC (13 checks).
