@@ -14,21 +14,27 @@ export interface TunnelOpts {
   remoteCommand: string
 }
 
+/**
+ * The ssh argv that selects the host: the ~/.ssh/config alias when set (ssh
+ * resolves user/port/key), else `-p port` + `user@host`. Shared by the tunnel
+ * and the provisioning probe.
+ */
+export function sshHostArgs(machine: Machine): string[] {
+  if (machine.sshAlias) return [machine.sshAlias]
+  const args: string[] = []
+  if (machine.sshPort && machine.sshPort !== 22) args.push('-p', String(machine.sshPort))
+  args.push(machine.sshUser ? `${machine.sshUser}@${machine.sshHost}` : machine.sshHost)
+  return args
+}
+
 export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { command: string; args: string[] } {
   const args = [
     '-o', 'BatchMode=yes',
     '-o', 'ServerAliveInterval=30',
     '-o', 'ExitOnForwardFailure=yes',
     '-L', `${opts.localPort}:127.0.0.1:${opts.remotePort}`,
+    ...sshHostArgs(machine),
+    opts.remoteCommand,
   ]
-
-  if (machine.sshAlias) {
-    args.push(machine.sshAlias)
-  } else {
-    if (machine.sshPort && machine.sshPort !== 22) args.push('-p', String(machine.sshPort))
-    args.push(machine.sshUser ? `${machine.sshUser}@${machine.sshHost}` : machine.sshHost)
-  }
-
-  args.push(opts.remoteCommand)
   return { command: 'ssh', args }
 }
