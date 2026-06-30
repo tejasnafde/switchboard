@@ -23,12 +23,14 @@ export interface ConnectionManagerDeps {
   remoteCommand: string
   /** url is the local ws:// to dial when connected, null otherwise. */
   onStatus: (machineId: string, status: ConnectionStatus, url: string | null) => void
+  /** Install/upgrade the remote backend before the tunnel. 'no-node' aborts. */
+  provision?: (machine: Machine) => Promise<{ action: string }>
 }
 
 interface Conn {
   status: ConnectionStatus
   url: string
-  proc: TunnelProcess
+  proc: TunnelProcess | null
 }
 
 export class ConnectionManager {
@@ -52,6 +54,19 @@ export class ConnectionManager {
 
     const port = await this.deps.allocatePort()
     const url = `ws://127.0.0.1:${port}`
+    this.conns.set(machine.id, { status: 'offline', url, proc: null })
+    this.transition(machine.id, 'connect')
+
+    if (this.deps.provision) {
+      try {
+        const res = await this.deps.provision(machine)
+        if (res.action === 'no-node') return void this.transition(machine.id, 'fail')
+      } catch {
+        return void this.transition(machine.id, 'fail')
+      }
+      if (this.statusOf(machine.id) !== 'connecting') return // disconnected mid-provision
+    }
+
     const { command, args } = buildTunnelCommand(machine, {
       localPort: port,
       remotePort: this.deps.remotePort,
@@ -59,9 +74,8 @@ export class ConnectionManager {
     })
     const proc = this.deps.spawnTunnel(command, args)
     proc.onExit(() => this.transition(machine.id, 'fail'))
-
-    this.conns.set(machine.id, { status: 'offline', url, proc })
-    this.transition(machine.id, 'connect')
+    const conn = this.conns.get(machine.id)
+    if (conn) conn.proc = proc
 
     const healthy = await this.deps.waitForHealth(url)
     if (healthy) {
@@ -75,7 +89,7 @@ export class ConnectionManager {
   async disconnect(machineId: string): Promise<void> {
     const conn = this.conns.get(machineId)
     if (!conn) return
-    conn.proc.kill()
+    conn.proc?.kill()
     this.transition(machineId, 'disconnect')
   }
 

@@ -27,3 +27,8 @@ export function appRootDir(): string {
 export function getSafeStorage(): SafeStorage | null {
   return isElectron ? electron().safeStorage : null
 }
+
+export function appVersion(): string {
+  if (isElectron) return electron().app.getVersion()
+  return process.env.npm_package_version ?? '0.0.0'
+}

@@ -5,51 +5,33 @@ machine and drive it from your laptop over an ssh tunnel. This is the deploy
 side of the M4 "machine layer". The app handles connecting; this doc covers what
 has to exist on the VM.
 
-## The deploy contract
+## What you provide on the VM
 
-When you click Connect on a remote machine, the app:
+Provisioning is automatic, so the VM only needs:
 
-1. allocates a free local port,
-2. opens `ssh -L <localPort>:127.0.0.1:8765 <host> "PORT=8765 switchboard-server"`,
-3. polls `ws://127.0.0.1:<localPort>` until the backend answers.
+- **node + npm** on the ssh-login PATH (no compiler needed for common triples -
+  prebuilt binaries are used; see below).
+- **non-interactive ssh** (key auth; the app uses `BatchMode=yes`). An entry in
+  `~/.ssh/config` is the easy path - add the machine by its alias and ssh
+  resolves user/port/key.
 
-So two things must be true on the VM:
+## What Connect does (auto-provisioning)
 
-- **`switchboard-server` is on the ssh-login PATH** and boots the headless
-  backend bound to `$PORT` (default 8765). See `REMOTE_COMMAND` /
-  `REMOTE_PORT` in `src/main/machines/connectDeps.ts`.
-- **ssh works non-interactively** (key auth; the tunnel uses `BatchMode=yes`).
-  An entry in `~/.ssh/config` is the easy path - add the machine in Switchboard
-  by its config alias and ssh resolves user/port/key.
+On Connect the app:
 
-## Building and installing the server
+1. ssh-probes the remote for node + an installed server version marker
+   (`~/.switchboard-server/version`).
+2. if missing or stale, uploads the server bundle + a generated `package.json`
+   and runs `npm install` there. `better-sqlite3` pulls a prebuilt via
+   prebuild-install; `node-pty` is aliased to
+   `@homebridge/node-pty-prebuilt-multiarch` (ships the linux prebuilds upstream
+   node-pty lacks). So no build toolchain is required for common triples.
+3. opens `ssh -L <localPort>:127.0.0.1:8765 <host> "PORT=8765 node $HOME/.switchboard-server/index.cjs"`
+   and polls `ws://127.0.0.1:<localPort>` until the backend answers.
 
-The server bundle is Electron-free JavaScript:
-
-```
-npm run build:server        # -> out/server/index.cjs
-```
-
-Copy `out/server/index.cjs` to the VM. Its native deps (`better-sqlite3`,
-`node-pty`) are **not** bundled and must be built for the VM's **Node** ABI (the
-dev tree is built for Electron's ABI, which is why full server end-to-end can't
-run on the dev laptop). On the VM:
-
-```
-mkdir -p ~/switchboard && cd ~/switchboard
-# copy index.cjs here, then:
-npm init -y
-npm install better-sqlite3 node-pty
-```
-
-Then put a `switchboard-server` launcher on PATH, e.g. `/usr/local/bin/switchboard-server`:
-
-```sh
-#!/bin/sh
-exec node "$HOME/switchboard/index.cjs"
-```
-
-`chmod +x` it. `PORT` is read from the environment (the tunnel command sets it).
+Relevant code: `src/main/machines/provisioner.ts`, `provisionSetup.ts`,
+`provisionDeps.ts`, `connectDeps.ts`. The server bundle ships inside the app
+(built by `npm run build:server`, included via `out/**`).
 
 ## Environment
 

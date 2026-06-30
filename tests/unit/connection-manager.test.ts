@@ -95,4 +95,32 @@ describe('ConnectionManager', () => {
     await mgr.connect(machine())
     expect(spawnTunnel).toHaveBeenCalledTimes(1)
   })
+
+  it('provisions before spawning the tunnel', async () => {
+    const order: string[] = []
+    const provision = vi.fn(async () => { order.push('provision'); return { action: 'install' as const, reason: '' } })
+    const spawnTunnel = vi.fn(() => { order.push('spawn'); return fakeProc() })
+    const mgr = new ConnectionManager(deps({ provision, spawnTunnel }))
+    await mgr.connect(machine())
+    expect(order).toEqual(['provision', 'spawn'])
+    expect(mgr.statusOf('m1')).toBe('connected')
+  })
+
+  it('fails without spawning a tunnel when the remote has no node', async () => {
+    const spawnTunnel = vi.fn(() => fakeProc())
+    const provision = vi.fn(async () => ({ action: 'no-node' as const, reason: 'no node' }))
+    const mgr = new ConnectionManager(deps({ provision, spawnTunnel }))
+    await mgr.connect(machine())
+    expect(mgr.statusOf('m1')).toBe('error')
+    expect(spawnTunnel).not.toHaveBeenCalled()
+  })
+
+  it('fails without spawning a tunnel when provisioning throws', async () => {
+    const spawnTunnel = vi.fn(() => fakeProc())
+    const provision = vi.fn(async () => { throw new Error('upload failed') })
+    const mgr = new ConnectionManager(deps({ provision, spawnTunnel }))
+    await mgr.connect(machine())
+    expect(mgr.statusOf('m1')).toBe('error')
+    expect(spawnTunnel).not.toHaveBeenCalled()
+  })
 })
