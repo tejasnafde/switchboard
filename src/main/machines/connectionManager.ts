@@ -1,13 +1,15 @@
 /**
  * Drives the connect/disconnect lifecycle for a remote machine: allocate a
- * local port, open an ssh tunnel that boots the remote backend, probe it for
- * health, and track the resulting `ws://127.0.0.1:<port>` URL that per-machine
- * transport routing (M4b step 2) dials. All side effects (port alloc, spawn,
- * health probe) are injected so the orchestration is unit-tested without ssh.
+ * local port, optionally provision, open an ssh tunnel, probe for health, and
+ * track the resulting `ws://127.0.0.1:<port>` URL that per-session routing
+ * dials. An established tunnel that drops auto-reconnects with backoff up to
+ * `maxReconnects`. All side effects are injected so the orchestration is
+ * unit-tested without ssh.
  */
 import type { Machine } from '@shared/machines'
 import { buildTunnelCommand } from './sshTunnel'
 import { nextConnectionStatus, type ConnectionStatus } from './connectionStatus'
+import { reconnectDelay } from './reconnectBackoff'
 
 export interface TunnelProcess {
   kill: () => void
@@ -25,12 +27,19 @@ export interface ConnectionManagerDeps {
   onStatus: (machineId: string, status: ConnectionStatus, url: string | null) => void
   /** Install/upgrade the remote backend before the tunnel. 'no-node' aborts. */
   provision?: (machine: Machine) => Promise<{ action: string }>
+  /** Auto-reconnect a dropped tunnel this many times before giving up (default 0). */
+  maxReconnects?: number
+  reconnectDelayMs?: (attempt: number) => number
+  setTimer?: (fn: () => void | Promise<void>, ms: number) => void
 }
 
 interface Conn {
   status: ConnectionStatus
   url: string
   proc: TunnelProcess | null
+  attempts: number
+  intentional: boolean
+  epoch: number
 }
 
 export class ConnectionManager {
@@ -42,19 +51,46 @@ export class ConnectionManager {
     return this.conns.get(machineId)?.status ?? 'offline'
   }
 
-  /** The local WS URL to dial for a connected machine, or null if not connected. */
   urlOf(machineId: string): string | null {
     const conn = this.conns.get(machineId)
     return conn?.status === 'connected' ? conn.url : null
   }
 
+  /** User-initiated connect: clears the reconnect budget, then attempts. */
   async connect(machine: Machine): Promise<void> {
-    const existing = this.statusOf(machine.id)
-    if (existing === 'connecting' || existing === 'connected') return
+    const conn = this.conns.get(machine.id)
+    if (conn) {
+      conn.attempts = 0
+      conn.intentional = false
+    }
+    await this.attempt(machine)
+  }
+
+  async disconnect(machineId: string): Promise<void> {
+    const conn = this.conns.get(machineId)
+    if (!conn) return
+    conn.intentional = true
+    conn.epoch++ // invalidate any in-flight attempt + pending reconnect
+    conn.proc?.kill()
+    this.transition(machineId, 'disconnect')
+  }
+
+  private async attempt(machine: Machine): Promise<void> {
+    const prev = this.conns.get(machine.id)
+    if (prev?.intentional) return
+    if (prev && (prev.status === 'connecting' || prev.status === 'connected')) return
 
     const port = await this.deps.allocatePort()
     const url = `ws://127.0.0.1:${port}`
-    this.conns.set(machine.id, { status: 'offline', url, proc: null })
+    const epoch = (prev?.epoch ?? 0) + 1
+    this.conns.set(machine.id, {
+      status: prev?.status ?? 'offline',
+      url,
+      proc: null,
+      attempts: prev?.attempts ?? 0,
+      intentional: false,
+      epoch,
+    })
     this.transition(machine.id, 'connect')
 
     if (this.deps.provision) {
@@ -64,7 +100,7 @@ export class ConnectionManager {
       } catch {
         return void this.transition(machine.id, 'fail')
       }
-      if (this.statusOf(machine.id) !== 'connecting') return // disconnected mid-provision
+      if (this.conns.get(machine.id)?.epoch !== epoch) return
     }
 
     const { command, args } = buildTunnelCommand(machine, {
@@ -73,24 +109,38 @@ export class ConnectionManager {
       remoteCommand: this.deps.remoteCommand,
     })
     const proc = this.deps.spawnTunnel(command, args)
-    proc.onExit(() => this.transition(machine.id, 'fail'))
+    proc.onExit(() => this.onFailure(machine, epoch))
     const conn = this.conns.get(machine.id)
-    if (conn) conn.proc = proc
+    if (!conn || conn.epoch !== epoch) return
+    conn.proc = proc
 
     const healthy = await this.deps.waitForHealth(url)
+    if (this.conns.get(machine.id)?.epoch !== epoch) return
     if (healthy) {
+      conn.attempts = 0
       this.transition(machine.id, 'healthy')
     } else {
-      proc.kill()
-      this.transition(machine.id, 'fail')
+      this.onFailure(machine, epoch)
     }
   }
 
-  async disconnect(machineId: string): Promise<void> {
-    const conn = this.conns.get(machineId)
-    if (!conn) return
+  /** A failed/dropped attempt: reconnect with backoff if budget remains, else error. */
+  private onFailure(machine: Machine, epoch: number): void {
+    const conn = this.conns.get(machine.id)
+    if (!conn || conn.intentional || conn.epoch !== epoch) return
+    conn.epoch++ // any later callback from this attempt is now stale
     conn.proc?.kill()
-    this.transition(machineId, 'disconnect')
+    conn.proc = null
+
+    const max = this.deps.maxReconnects ?? 0
+    if (conn.attempts < max) {
+      conn.attempts++
+      this.transition(machine.id, 'fail')
+      const delay = (this.deps.reconnectDelayMs ?? ((n) => reconnectDelay(n, { baseMs: 1000, capMs: 30_000 })))(conn.attempts)
+      ;(this.deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms)))(() => this.attempt(machine), delay)
+    } else {
+      this.transition(machine.id, 'fail')
+    }
   }
 
   private transition(machineId: string, event: 'connect' | 'healthy' | 'fail' | 'disconnect'): void {

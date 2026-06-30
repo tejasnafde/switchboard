@@ -26,6 +26,7 @@ export function registerMachineHandlers(host: BackendHost): void {
     remotePort: REMOTE_PORT,
     remoteCommand: REMOTE_COMMAND,
     provision: makeProvision((msg) => log.info(msg)),
+    maxReconnects: 5,
     onStatus: (machineId, status, url) => host.emit(MachineChannels.STATUS, machineId, status, url),
   })
 

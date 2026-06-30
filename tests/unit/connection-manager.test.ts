@@ -123,4 +123,45 @@ describe('ConnectionManager', () => {
     expect(mgr.statusOf('m1')).toBe('error')
     expect(spawnTunnel).not.toHaveBeenCalled()
   })
+
+  it('reconnects after an established tunnel drops', async () => {
+    const procs: Array<ReturnType<typeof fakeProc>> = []
+    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const timers: Array<() => void> = []
+    const mgr = new ConnectionManager(deps({ spawnTunnel, maxReconnects: 2, setTimer: (fn) => timers.push(fn) }))
+    await mgr.connect(machine())
+    expect(mgr.statusOf('m1')).toBe('connected')
+
+    procs[0].fireExit()
+    expect(timers).toHaveLength(1)
+    await timers[0]()
+    expect(spawnTunnel).toHaveBeenCalledTimes(2)
+    expect(mgr.statusOf('m1')).toBe('connected')
+  })
+
+  it('gives up and stays in error after maxReconnects failed retries', async () => {
+    const procs: Array<ReturnType<typeof fakeProc>> = []
+    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const waitForHealth = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false)
+    const timers: Array<() => void> = []
+    const mgr = new ConnectionManager(deps({ spawnTunnel, waitForHealth, maxReconnects: 1, setTimer: (fn) => timers.push(fn) }))
+    await mgr.connect(machine())
+
+    procs[0].fireExit()
+    await timers[0]() // reconnect attempt: health fails this time
+    expect(mgr.statusOf('m1')).toBe('error')
+    expect(timers).toHaveLength(1) // no further retry past the cap
+  })
+
+  it('does not reconnect after a deliberate disconnect', async () => {
+    const procs: Array<ReturnType<typeof fakeProc>> = []
+    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const timers: Array<() => void> = []
+    const mgr = new ConnectionManager(deps({ spawnTunnel, maxReconnects: 2, setTimer: (fn) => timers.push(fn) }))
+    await mgr.connect(machine())
+    await mgr.disconnect('m1')
+    procs[0].fireExit() // the kill's exit event arrives
+    expect(timers).toHaveLength(0)
+    expect(mgr.statusOf('m1')).toBe('offline')
+  })
 })
