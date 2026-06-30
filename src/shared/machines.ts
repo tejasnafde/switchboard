@@ -34,7 +34,7 @@ export interface SshHost {
 export interface CachedProject {
   path: string
   name: string
-  sessions: Array<{ id: string; title: string }>
+  sessions: Array<{ id: string; title: string; agentType?: string | null }>
 }
 
 export interface MachineSnapshot {

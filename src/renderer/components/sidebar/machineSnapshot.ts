@@ -12,7 +12,7 @@ export function projectsToSnapshot(projects: Project[], syncedAt: number): Machi
     projects: projects.map((p) => ({
       path: p.path,
       name: p.name,
-      sessions: p.sessions.map((s) => ({ id: s.id, title: s.title })),
+      sessions: p.sessions.map((s) => ({ id: s.id, title: s.title, agentType: s.agentType ?? s.source })),
     })),
   }
 }

@@ -79,18 +79,26 @@ backend. Proven in `tests/unit/provider-switch-ws.test.ts`.
   `machines:save-snapshot`, `machine-store.syncMachine` - on connect the store
   invokes `app:get-projects` ON the remote, trims to `CachedProject[]`, persists
   via `saveMachineSnapshot`, and updates the live tree.
+- **M4b step 4 (launch path)** `AgentSession.machineId`; `App.handleSessionSelect`
+  takes a `machineId` and `routing.bind(session.id, machineId)`s before any
+  backend call (all keyed by `session.id`), so load/createConversation/
+  startSession/sendTurn route to the remote; `ChatPanel` re-binds before
+  `startSession`. The connected remote tree renders clickable chats
+  (`MachineLayer` -> `Sidebar.onSessionSelect` -> `handleSessionSelect`). Provider
+  instance + model resolve on the remote's registry (so the plan-hop works once
+  creds exist there). NOT e2e-verified locally (native-ABI caveat); unit-tested
+  pieces only.
 
 ## What's left: M4b
 
-1. **Launch path (lights up per-session routing end to end)**: clicking a remote
-   project/chat must (a) `routing.bind(threadId, machineId)` before
-   `provider.startSession`, (b) create/scan the conversation ON the remote
-   (`routing.invokeOn` or a bound call), (c) bind terminal ids likewise. The
-   plumbing (2a/2b/3) is done; this is wiring the sidebar remote tree + chat
-   launch to use it. Provider-instance switching must resolve on the remote
-   (the daily plan-hop constraint).
-2. **OAuth on the VM**: providers log in on the remote (oauth dirs are not
+1. **OAuth on the VM**: providers log in on the remote (oauth dirs are not
    forwarded), consistent with t3code. Env-mode creds use `SWITCHBOARD_SECRET`.
+   This is a deploy/ops task, verifiable only against a real VM.
+2. **Remote terminals + new-chat-on-remote**: the launch path covers opening an
+   existing remote chat. Starting a brand-new chat on a remote project and remote
+   PTY creation (bind the terminal id at `terminal:create`) are not wired yet.
+3. **E2E on a real VM**: stand up `switchboard-server` on a box, validate
+   connect -> snapshot -> open remote chat -> provider switch end to end.
 
 ## Testing
 

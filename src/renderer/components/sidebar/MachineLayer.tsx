@@ -5,6 +5,7 @@
  * show offline and an empty body. Add/remove/reorder of remotes is live.
  */
 import type { ReactNode } from 'react'
+import type { SessionSummary } from '@shared/types'
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
@@ -44,7 +45,15 @@ function SortableMachine({
   )
 }
 
-export function MachineLayer({ children, onAddMachine }: { children: ReactNode; onAddMachine: () => void }) {
+export function MachineLayer({
+  children,
+  onAddMachine,
+  onOpenRemoteSession,
+}: {
+  children: ReactNode
+  onAddMachine: () => void
+  onOpenRemoteSession?: (machineId: string, projectPath: string, session: SessionSummary) => void
+}) {
   const remotes = useMachineStore((s) => s.remotes)
   const connections = useMachineStore((s) => s.connections)
   const collapsed = useMachineStore((s) => s.collapsed)
@@ -102,9 +111,32 @@ export function MachineLayer({ children, onAddMachine }: { children: ReactNode; 
           projects.map((p) => (
             <div key={p.path} className="cached-project">
               <div className="cached-project-name">{p.name}</div>
-              {p.sessions.map((s) => (
-                <div key={s.id} className="cached-chat">{s.title}</div>
-              ))}
+              {p.sessions.map((s) => {
+                const openable = node.status === 'connected' && !!onOpenRemoteSession
+                return (
+                  <div
+                    key={s.id}
+                    className="cached-chat"
+                    data-openable={openable || undefined}
+                    onClick={
+                      openable
+                        ? () =>
+                            onOpenRemoteSession!(node.id, p.path, {
+                              id: s.id,
+                              title: s.title,
+                              source: s.agentType === 'codex' ? 'codex' : 'claude-code',
+                              agentType: s.agentType ?? null,
+                              startedAt: 0,
+                              messageCount: 0,
+                              filePath: '',
+                            })
+                        : undefined
+                    }
+                  >
+                    {s.title}
+                  </div>
+                )
+              })}
             </div>
           ))
         )}

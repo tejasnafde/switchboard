@@ -688,6 +688,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           const sessionForCwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
           const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
           const cwd = sessionForCwd?.worktreePath ?? linkedCard?.worktreePath ?? projectPath ?? '.'
+          // Route this session's provider calls to its machine before the first
+          // call. Local sessions stay on IPC (bind to 'local' is a no-op clear).
+          window.api.routing.bind(sessionId, sessionForCwd?.machineId ?? 'local')
           await providerApi.startSession({
             threadId: sessionId,
             provider: providerKind,
