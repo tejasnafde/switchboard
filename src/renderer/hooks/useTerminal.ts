@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { useTerminalStore } from '../stores/terminal-store'
+import { useAgentStore } from '../stores/agent-store'
 import {
   getOrCreateTerminal,
   attachToContainer,
@@ -27,8 +28,10 @@ export function useTerminal({ id, sessionId, cwd, initialCommand, waitFor }: Use
     const container = containerRef.current
     if (!container) return
 
-    // Get or create terminal - idempotent, safe for StrictMode
-    getOrCreateTerminal(id, cwd, initialCommand, waitFor)
+    // Get or create terminal - idempotent, safe for StrictMode. Route the PTY
+    // to the session's machine so remote sessions spawn a remote shell.
+    const machineId = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId
+    getOrCreateTerminal(id, cwd, initialCommand, waitFor, undefined, machineId)
     attachToContainer(id, container)
 
     // Listen for PTY exit

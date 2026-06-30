@@ -13,6 +13,8 @@ export interface TerminalCreateOptions {
   initialCommand?: string
   /** Wait for this string in ANY terminal's output before running initialCommand */
   waitFor?: string
+  /** Routes PTY creation to this machine's backend (default local). */
+  machineId?: string
 }
 
 export interface TerminalResizePayload {

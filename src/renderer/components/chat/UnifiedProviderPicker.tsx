@@ -267,16 +267,18 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           termInstanceId={termInstanceId}
           setTermInstanceId={setTermInstanceId}
           onTermStart={() => {
-            const projectPath = useAgentStore.getState().getActiveSession()?.projectPath ?? '.'
+            const active = useAgentStore.getState().getActiveSession()
+            const projectPath = active?.projectPath ?? '.'
+            const machineId = active?.machineId
             const paneId = `term_${Date.now()}`
             const sessionId = `agent_${Date.now()}`
             const inst = allInstances.find((i) => i.id === termInstanceId)
             const env: Record<string, string> = {}
             if (inst?.oauthDir) env['CLAUDE_CONFIG_DIR'] = inst.oauthDir
-            getOrCreateTerminal(paneId, projectPath, termCommand, undefined, env)
+            getOrCreateTerminal(paneId, projectPath, termCommand, undefined, env, machineId)
             useAgentStore.getState().addSession({
               id: sessionId, type: 'terminal', status: 'idle',
-              projectPath, terminalPaneId: paneId,
+              projectPath, terminalPaneId: paneId, machineId,
               title: termCommand, instanceId: termInstanceId,
             })
             useAgentStore.getState().setActiveSession(sessionId)
