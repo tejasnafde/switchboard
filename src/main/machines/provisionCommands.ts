@@ -25,3 +25,11 @@ export function buildProbeCommand(machine: Machine): { command: string; args: st
     ],
   }
 }
+
+/** ssh that runs an arbitrary remote shell command (stdin is forwarded). */
+export function buildRemoteShellCommand(machine: Machine, remoteCommand: string): { command: string; args: string[] } {
+  return {
+    command: 'ssh',
+    args: ['-o', 'BatchMode=yes', ...sshHostArgs(machine), remoteCommand],
+  }
+}
