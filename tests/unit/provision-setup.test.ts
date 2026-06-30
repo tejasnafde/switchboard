@@ -1,9 +1,4 @@
-/**
- * Remote setup payload (pure): the package.json we write on the VM and the
- * install script we run there. npm's own prebuilt mechanisms (prebuild-install
- * for better-sqlite3, bundled prebuilds for the node-pty multiarch fork) fetch
- * binaries without build tools, so there are no URLs to hand-resolve.
- */
+/** Remote setup payload: the package.json + install script we drop on a VM. */
 import { describe, it, expect } from 'vitest'
 import { remotePackageJson, remoteInstallScript, REMOTE_SERVER_DIR } from '../../src/main/machines/provisionSetup'
 
