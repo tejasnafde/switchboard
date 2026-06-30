@@ -8,9 +8,9 @@
   "scripts": {
     "dev": "unset ELECTRON_RUN_AS_NODE && electron-vite dev",
     "prebuild": "npm run typecheck && npm test",
-    "build": "electron-vite build",
+    "build": "electron-vite build && npm run build:server",
     "postbuild": "node scripts/smoke-test.mjs",
-    "build:fast": "electron-vite build",
+    "build:fast": "electron-vite build && npm run build:server",
     "preview": "unset ELECTRON_RUN_AS_NODE && electron-vite preview",
     "typecheck:main": "tsc --noEmit -p tsconfig.main.json",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.renderer.json",

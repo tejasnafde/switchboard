@@ -12,7 +12,8 @@ import WebSocket from 'ws'
 import type { TunnelProcess } from './connectionManager'
 
 export const REMOTE_PORT = 8765
-export const REMOTE_COMMAND = `PORT=${REMOTE_PORT} switchboard-server`
+// Runs the bundle the provisioner installs under ~/.switchboard-server.
+export const REMOTE_COMMAND = `PORT=${REMOTE_PORT} node $HOME/.switchboard-server/index.cjs`
 
 export function allocatePort(): Promise<number> {
   return new Promise((resolve, reject) => {

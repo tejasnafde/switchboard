@@ -14,6 +14,7 @@ import type { MachineSnapshot } from '@shared/machines'
 import { parseSshConfig } from '../machines/sshConfig'
 import { ConnectionManager } from '../machines/connectionManager'
 import { allocatePort, spawnTunnel, waitForHealth, REMOTE_PORT, REMOTE_COMMAND } from '../machines/connectDeps'
+import { makeProvision } from '../machines/provisionDeps'
 
 const log = createMainLogger('ipc:machines')
 
@@ -24,6 +25,7 @@ export function registerMachineHandlers(host: BackendHost): void {
     waitForHealth,
     remotePort: REMOTE_PORT,
     remoteCommand: REMOTE_COMMAND,
+    provision: makeProvision((msg) => log.info(msg)),
     onStatus: (machineId, status, url) => host.emit(MachineChannels.STATUS, machineId, status, url),
   })
 
