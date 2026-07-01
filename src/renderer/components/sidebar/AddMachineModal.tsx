@@ -14,9 +14,12 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
   const [host, setHost] = useState('')
   const [user, setUser] = useState('')
   const [port, setPort] = useState('22')
+  const [remoteUser, setRemoteUser] = useState('')
+
+  const runAs = () => remoteUser.trim() || null
 
   const addFromSsh = async (h: SshHost) => {
-    await add({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port })
+    await add({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
     onClose()
   }
 
@@ -27,6 +30,7 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
       sshHost: host.trim(),
       sshUser: user.trim() || null,
       sshPort: Number(port) || 22,
+      remoteUser: runAs(),
     })
     onClose()
   }
@@ -35,6 +39,16 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
     <div className="machine-modal-overlay" onClick={onClose}>
       <div className="machine-modal" onClick={(e) => e.stopPropagation()}>
         <div className="machine-modal-title">Add machine</div>
+
+        <div className="machine-modal-section">
+          <div className="machine-modal-label">Run as user (sudo, optional)</div>
+          <input
+            className="machine-modal-input"
+            placeholder="e.g. ubuntu - leave blank to use the login user"
+            value={remoteUser}
+            onChange={(e) => setRemoteUser(e.target.value)}
+          />
+        </div>
 
         {sshHosts.length > 0 && (
           <div className="machine-modal-section">

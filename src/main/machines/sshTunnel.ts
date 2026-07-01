@@ -7,6 +7,7 @@
  * config); fall back to user@host + -p port otherwise.
  */
 import type { Machine } from '@shared/machines'
+import { asUserScript } from './remoteExec'
 
 export interface TunnelOpts {
   localPort: number
@@ -34,7 +35,7 @@ export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { comman
     '-o', 'ExitOnForwardFailure=yes',
     '-L', `${opts.localPort}:127.0.0.1:${opts.remotePort}`,
     ...sshHostArgs(machine),
-    opts.remoteCommand,
+    asUserScript(machine.remoteUser, opts.remoteCommand),
   ]
   return { command: 'ssh', args }
 }

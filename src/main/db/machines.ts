@@ -16,6 +16,7 @@ interface DbRow {
   ssh_host: string
   ssh_user: string | null
   ssh_port: number
+  remote_user: string | null
   sort_order: number
   created_at: number
   updated_at: number
@@ -29,6 +30,7 @@ function toRow(r: DbRow): Machine {
     sshHost: r.ssh_host,
     sshUser: r.ssh_user,
     sshPort: r.ssh_port,
+    remoteUser: r.remote_user,
     sortOrder: r.sort_order,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -48,8 +50,8 @@ export function createMachine(input: MachineInput, now: number): Machine {
     (getDb().prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM machines').get() as { m: number }).m + 1
   getDb()
     .prepare(
-      `INSERT INTO machines (id, name, ssh_alias, ssh_host, ssh_user, ssh_port, sort_order, created_at, updated_at)
-       VALUES (@id, @name, @sshAlias, @sshHost, @sshUser, @sshPort, @sortOrder, @createdAt, @updatedAt)`,
+      `INSERT INTO machines (id, name, ssh_alias, ssh_host, ssh_user, ssh_port, remote_user, sort_order, created_at, updated_at)
+       VALUES (@id, @name, @sshAlias, @sshHost, @sshUser, @sshPort, @remoteUser, @sortOrder, @createdAt, @updatedAt)`,
     )
     .run({
       id,
@@ -58,6 +60,7 @@ export function createMachine(input: MachineInput, now: number): Machine {
       sshHost: input.sshHost,
       sshUser: input.sshUser ?? null,
       sshPort: input.sshPort ?? 22,
+      remoteUser: input.remoteUser ?? null,
       sortOrder: nextOrder,
       createdAt: now,
       updatedAt: now,
@@ -74,10 +77,11 @@ export function updateMachine(id: string, patch: Partial<MachineInput>, now: num
   if (patch.sshHost !== undefined) merged.sshHost = patch.sshHost
   if (patch.sshUser !== undefined) merged.sshUser = patch.sshUser
   if (patch.sshPort !== undefined) merged.sshPort = patch.sshPort
+  if (patch.remoteUser !== undefined) merged.remoteUser = patch.remoteUser
   getDb()
     .prepare(
       `UPDATE machines SET name=@name, ssh_alias=@sshAlias, ssh_host=@sshHost,
-       ssh_user=@sshUser, ssh_port=@sshPort, updated_at=@updatedAt WHERE id=@id`,
+       ssh_user=@sshUser, ssh_port=@sshPort, remote_user=@remoteUser, updated_at=@updatedAt WHERE id=@id`,
     )
     .run({
       id,
@@ -86,6 +90,7 @@ export function updateMachine(id: string, patch: Partial<MachineInput>, now: num
       sshHost: merged.sshHost,
       sshUser: merged.sshUser,
       sshPort: merged.sshPort,
+      remoteUser: merged.remoteUser,
       updatedAt: now,
     })
   return toRow(getDb().prepare('SELECT * FROM machines WHERE id = ?').get(id) as DbRow)
