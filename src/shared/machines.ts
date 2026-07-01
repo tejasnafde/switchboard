@@ -7,6 +7,8 @@ export interface Machine {
   sshHost: string
   sshUser: string | null
   sshPort: number
+  /** Run remote work as this user via sudo (e.g. 'ubuntu'); null = the ssh login user. */
+  remoteUser: string | null
   sortOrder: number
   createdAt: number
   updatedAt: number
@@ -19,6 +21,7 @@ export interface MachineInput {
   sshHost: string
   sshUser?: string | null
   sshPort?: number
+  remoteUser?: string | null
 }
 
 /** A host candidate parsed from ~/.ssh/config for the "Add machine" picker. */

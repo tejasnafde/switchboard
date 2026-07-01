@@ -363,6 +363,7 @@ function migrate(db: Database.Database): void {
       ssh_host    TEXT NOT NULL,
       ssh_user    TEXT,
       ssh_port    INTEGER NOT NULL DEFAULT 22,
+      remote_user TEXT,
       sort_order  INTEGER NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
@@ -375,6 +376,11 @@ function migrate(db: Database.Database): void {
       synced_at  INTEGER NOT NULL
     );
   `)
+
+  const machineCols = db.prepare('PRAGMA table_info(machines)').all() as Array<{ name: string }>
+  if (!machineCols.some((c) => c.name === 'remote_user')) {
+    db.exec('ALTER TABLE machines ADD COLUMN remote_user TEXT')
+  }
 
   log.info('database migrated')
 }

@@ -4,6 +4,7 @@ import { buildProbeCommand, buildRemoteShellCommand, REMOTE_SERVER_DIR } from '.
 import { parseProbeOutput } from './remoteProbe'
 import { planProvision, type ProvisionAction } from './provisionPlan'
 import { remotePackageJson, remoteInstallScript } from './provisionSetup'
+import { asUserScript, asUserUpload } from './remoteExec'
 
 export interface ProcRunner {
   exec: (command: string, args: string[], stdin?: string) => Promise<{ code: number; stdout: string; stderr: string }>
@@ -39,13 +40,14 @@ export async function provisionRemote(
     if (res.code !== 0) throw new Error(`remote step failed (${res.code}): ${res.stderr || remoteCommand}`)
   }
 
-  await run(`mkdir -p ${REMOTE_SERVER_DIR}`)
-  await run(`cat > ${REMOTE_SERVER_DIR}/index.cjs`, inputs.bundle)
+  const u = machine.remoteUser
+  await run(asUserScript(u, `mkdir -p ${REMOTE_SERVER_DIR}`))
+  await run(asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), inputs.bundle)
   await run(
-    `cat > ${REMOTE_SERVER_DIR}/package.json`,
+    asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/package.json`),
     JSON.stringify(remotePackageJson(inputs.appVersion, inputs.betterSqliteVersion), null, 2),
   )
-  await run(remoteInstallScript(inputs.appVersion))
+  await run(asUserScript(u, remoteInstallScript(inputs.appVersion)))
 
   return plan
 }

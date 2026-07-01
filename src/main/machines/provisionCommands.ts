@@ -6,6 +6,7 @@
  */
 import type { Machine } from '@shared/machines'
 import { sshHostArgs } from './sshTunnel'
+import { asUserScript } from './remoteExec'
 
 /** Where the provisioned server + its version marker live on the remote. */
 export const REMOTE_SERVER_DIR = '$HOME/.switchboard-server'
@@ -21,7 +22,7 @@ export function buildProbeCommand(machine: Machine): { command: string; args: st
     args: [
       '-o', 'BatchMode=yes',
       ...sshHostArgs(machine),
-      `node -e "${PROBE_SOURCE}" 2>/dev/null || true`,
+      asUserScript(machine.remoteUser, `node -e "${PROBE_SOURCE}" 2>/dev/null || true`),
     ],
   }
 }
