@@ -27,7 +27,18 @@ export function registerMachineHandlers(host: BackendHost): void {
     remoteCommand: REMOTE_COMMAND,
     provision: makeProvision((msg) => log.info(msg)),
     maxReconnects: 5,
-    onStatus: (machineId, status, url) => host.emit(MachineChannels.STATUS, machineId, status, url),
+    onStatus: (machineId, status, url) => {
+      log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}`)
+      host.emit(MachineChannels.STATUS, machineId, status, url)
+    },
+  })
+
+  host.handle(MachineChannels.CONNECT, (id: string) => {
+    log.info(`connect requested: ${id}`)
+    const machine = listMachines().find((m) => m.id === id)
+    if (!machine) return { ok: false as const, error: 'unknown machine' }
+    void connections.connect(machine)
+    return { ok: true as const }
   })
 
   host.handle(MachineChannels.LIST, () => listMachines())
@@ -55,13 +66,6 @@ export function registerMachineHandlers(host: BackendHost): void {
     return { ok: true as const }
   })
 
-  host.handle(MachineChannels.CONNECT, (id: string) => {
-    const machine = listMachines().find((m) => m.id === id)
-    if (!machine) return { ok: false as const, error: 'unknown machine' }
-    // Fire and forget: status flows to the renderer via MachineChannels.STATUS.
-    void connections.connect(machine)
-    return { ok: true as const }
-  })
 
   host.handle(MachineChannels.DISCONNECT, async (id: string) => {
     await connections.disconnect(id)
