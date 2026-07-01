@@ -1,11 +1,14 @@
 /**
  * Bundle the headless backend (src/server/index.ts → out/server/index.cjs).
- * All node_modules stay external (resolved at runtime, like electron-vite's
- * main build) - native deps (better-sqlite3, node-pty) and electron included.
- * A clean bundle also proves the whole import graph is Electron-free.
+ * Everything is bundled EXCEPT the native modules (which ship a .node binary
+ * that can't be bundled) and electron (never loaded headless - the runtime shim
+ * keeps it out of the graph). So a provisioned VM only needs `better-sqlite3` +
+ * `node-pty` installed; all pure-JS deps (ws, SDKs, js-yaml, ...) are inlined.
  */
 import { build } from 'esbuild'
 import { resolve } from 'node:path'
+
+export const REMOTE_NATIVE_DEPS = ['better-sqlite3', 'node-pty']
 
 await build({
   entryPoints: ['src/server/index.ts'],
@@ -14,7 +17,7 @@ await build({
   platform: 'node',
   target: 'node20',
   format: 'cjs',
-  packages: 'external',
+  external: [...REMOTE_NATIVE_DEPS, 'electron'],
   alias: { '@shared': resolve('src/shared') },
   logLevel: 'info',
 })
