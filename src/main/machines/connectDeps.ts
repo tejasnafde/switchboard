@@ -3,16 +3,18 @@
  * a WebSocket health probe over the tunnel. Kept out of connectionManager.ts so
  * the lifecycle stays unit-testable without sockets or child processes.
  *
- * Deploy contract: the remote must expose `switchboard-server` on PATH, which
- * boots the headless backend (see src/server/index.ts) on REMOTE_PORT.
+ * The provisioner installs the server under ~/.switchboard-server; the tunnel
+ * boots it via REMOTE_COMMAND (wrapped to run as the machine's remoteUser).
  */
 import { createServer } from 'node:net'
 import { spawn } from 'node:child_process'
 import WebSocket from 'ws'
+import { createMainLogger } from '../logger'
 import type { TunnelProcess } from './connectionManager'
 
+const log = createMainLogger('machines:tunnel')
+
 export const REMOTE_PORT = 8765
-// Runs the bundle the provisioner installs under ~/.switchboard-server.
 export const REMOTE_COMMAND = `PORT=${REMOTE_PORT} node $HOME/.switchboard-server/index.cjs`
 
 export function allocatePort(): Promise<number> {
@@ -28,7 +30,14 @@ export function allocatePort(): Promise<number> {
 }
 
 export function spawnTunnel(command: string, args: string[]): TunnelProcess {
-  const child = spawn(command, args, { stdio: 'ignore' })
+  log.info('spawn tunnel', { command, args })
+  const child = spawn(command, args)
+  // Surface ssh + remote-server output: this is where a crashed server, an
+  // EADDRINUSE from a lingering server, or an ssh/forward error shows up.
+  child.stdout.on('data', (d) => log.info(`tunnel stdout: ${String(d).trimEnd()}`))
+  child.stderr.on('data', (d) => log.warn(`tunnel stderr: ${String(d).trimEnd()}`))
+  child.on('exit', (code, signal) => log.info('tunnel exited', { code, signal }))
+  child.on('error', (err) => log.warn('tunnel spawn error', err))
   return {
     kill: () => child.kill(),
     onExit: (cb) => child.once('exit', cb),
@@ -42,12 +51,19 @@ export function waitForHealth(url: string, attempts = 30, intervalMs = 1000): Pr
     const tick = () => {
       const ws = new WebSocket(url)
       ws.once('open', () => {
+        log.info(`health ok after ${tries + 1} attempt(s)`, { url })
         ws.close()
         resolve(true)
       })
-      ws.once('error', () => {
-        if (++tries >= attempts) resolve(false)
-        else setTimeout(tick, intervalMs)
+      ws.once('error', (err) => {
+        tries++
+        if (tries === 1 || tries % 5 === 0) log.warn(`health attempt ${tries}/${attempts} failed`, { url, err: err.message })
+        if (tries >= attempts) {
+          log.warn(`health gave up after ${attempts} attempts`, { url })
+          resolve(false)
+        } else {
+          setTimeout(tick, intervalMs)
+        }
       })
     }
     tick()

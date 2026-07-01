@@ -34,20 +34,23 @@ export async function provisionRemote(
 
   if (plan.action === 'ready' || plan.action === 'no-node') return plan
 
-  const run = async (remoteCommand: string, stdin?: string) => {
+  const run = async (label: string, remoteCommand: string, stdin?: string) => {
+    log?.(`provision ${machine.id}: ${label}`)
     const c = buildRemoteShellCommand(machine, remoteCommand)
     const res = await runner.exec(c.command, c.args, stdin)
-    if (res.code !== 0) throw new Error(`remote step failed (${res.code}): ${res.stderr || remoteCommand}`)
+    if (res.code !== 0) throw new Error(`${label} failed (${res.code}): ${res.stderr || remoteCommand}`)
   }
 
   const u = machine.remoteUser
-  await run(asUserScript(u, `mkdir -p ${REMOTE_SERVER_DIR}`))
-  await run(asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), inputs.bundle)
+  await run('mkdir server dir', asUserScript(u, `mkdir -p ${REMOTE_SERVER_DIR}`))
+  await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), inputs.bundle)
   await run(
+    'upload package.json',
     asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/package.json`),
     JSON.stringify(remotePackageJson(inputs.appVersion, inputs.betterSqliteVersion), null, 2),
   )
-  await run(asUserScript(u, remoteInstallScript(inputs.appVersion)))
+  await run('npm install (this can take a minute)', asUserScript(u, remoteInstallScript(inputs.appVersion)))
+  log?.(`provision ${machine.id}: install complete`)
 
   return plan
 }
