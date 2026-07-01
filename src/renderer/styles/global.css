@@ -1186,11 +1186,25 @@ mark.sb-search-mark.active {
 .machine-modal {
   width: 380px;
   max-width: 92vw;
+  max-height: 80vh;
+  overflow-y: auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 16px;
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+}
+.machine-modal-hostlist {
+  max-height: 30vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.machine-modal-empty {
+  padding: 8px 4px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 .machine-modal-title {
   font-size: 14px;

@@ -4,6 +4,7 @@
  */
 import { useState } from 'react'
 import { useMachineStore } from '../../stores/machine-store'
+import { filterSshHosts } from './sshHostFilter'
 import type { SshHost } from '@shared/machines'
 
 export function AddMachineModal({ onClose }: { onClose: () => void }) {
@@ -15,6 +16,9 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
   const [user, setUser] = useState('')
   const [port, setPort] = useState('22')
   const [remoteUser, setRemoteUser] = useState('')
+  const [search, setSearch] = useState('')
+
+  const filteredHosts = filterSshHosts(sshHosts, search)
 
   const runAs = () => remoteUser.trim() || null
 
@@ -53,16 +57,26 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
         {sshHosts.length > 0 && (
           <div className="machine-modal-section">
             <div className="machine-modal-label">From ~/.ssh/config</div>
-            {sshHosts.map((h) => (
-              <button key={h.alias} className="machine-modal-host" onClick={() => void addFromSsh(h)}>
-                <span className="machine-modal-host-alias">{h.alias}</span>
-                <span className="machine-modal-host-addr">
-                  {h.user ? `${h.user}@` : ''}
-                  {h.hostName}
-                  {h.port !== 22 ? `:${h.port}` : ''}
-                </span>
-              </button>
-            ))}
+            <input
+              className="machine-modal-input"
+              placeholder={`Search ${sshHosts.length} hosts...`}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              autoFocus
+            />
+            <div className="machine-modal-hostlist">
+              {filteredHosts.map((h) => (
+                <button key={h.alias} className="machine-modal-host" onClick={() => void addFromSsh(h)}>
+                  <span className="machine-modal-host-alias">{h.alias}</span>
+                  <span className="machine-modal-host-addr">
+                    {h.user ? `${h.user}@` : ''}
+                    {h.hostName}
+                    {h.port !== 22 ? `:${h.port}` : ''}
+                  </span>
+                </button>
+              ))}
+              {filteredHosts.length === 0 && <div className="machine-modal-empty">No matching hosts</div>}
+            </div>
           </div>
         )}
 
