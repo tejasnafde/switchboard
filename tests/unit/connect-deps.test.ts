@@ -91,7 +91,7 @@ describe('waitForHealth', () => {
     expect(FakeWebSocket.instances[0].opts?.handshakeTimeout).toBe(1000)
     FakeWebSocket.instances[0].emitOpen()
     FakeWebSocket.instances[0].emitMessage({ k: 'res', id: 1, ok: true, result: LOCAL_VERSION })
-    expect(await promise).toBe(true)
+    expect(await promise).toEqual({ ok: true })
   })
 
   it('sends a server:version request once the socket opens', async () => {
@@ -106,7 +106,7 @@ describe('waitForHealth', () => {
       args: [],
     })
     FakeWebSocket.instances[0].emitMessage({ k: 'res', id: 1, ok: true, result: LOCAL_VERSION })
-    expect(await promise).toBe(true)
+    expect(await promise).toEqual({ ok: true })
   })
 
   it('a tick that never fires open or error still counts as a failed attempt via the fallback timer, and eventually gives up', async () => {
@@ -122,7 +122,7 @@ describe('waitForHealth', () => {
 
     expect(FakeWebSocket.instances).toHaveLength(3) // capped at `attempts`
     expect(FakeWebSocket.instances.every((ws) => ws.terminated)).toBe(true)
-    expect(await promise).toBe(false)
+    expect(await promise).toEqual({ ok: false, reason: 'handshake stalled' })
   })
 
   it('open with no version response ever arriving still counts as a failed attempt (silence is not healthy)', async () => {
@@ -137,7 +137,9 @@ describe('waitForHealth', () => {
     await vi.advanceTimersByTimeAsync(3000)
 
     expect(FakeWebSocket.instances).toHaveLength(2) // capped at `attempts`
-    expect(await promise).toBe(false)
+    // Attempt 1's version response times out; attempt 2's socket never opens,
+    // so the last recorded reason is its handshake stall.
+    expect(await promise).toEqual({ ok: false, reason: 'handshake stalled' })
   })
 
   it('a version mismatch counts as a failed attempt, not healthy', async () => {
@@ -150,7 +152,7 @@ describe('waitForHealth', () => {
     expect(FakeWebSocket.instances).toHaveLength(2)
     FakeWebSocket.instances[1].emitOpen()
     FakeWebSocket.instances[1].emitMessage({ k: 'res', id: 1, ok: true, result: LOCAL_VERSION })
-    expect(await promise).toBe(true)
+    expect(await promise).toEqual({ ok: true })
   })
 
   it('an error response (old server with no handler for the channel) counts as a failed attempt', async () => {
@@ -158,7 +160,7 @@ describe('waitForHealth', () => {
     await vi.advanceTimersByTimeAsync(0)
     FakeWebSocket.instances[0].emitOpen()
     FakeWebSocket.instances[0].emitMessage({ k: 'res', id: 1, ok: false, error: 'no handler: server:version' })
-    expect(await promise).toBe(false)
+    expect(await promise).toEqual({ ok: false, reason: `server version mismatch (local ${LOCAL_VERSION}, remote error: no handler: server:version)` })
   })
 
   it('open followed by a matching version response resolves healthy and does not double count as a failure', async () => {
@@ -166,7 +168,7 @@ describe('waitForHealth', () => {
     await vi.advanceTimersByTimeAsync(0)
     FakeWebSocket.instances[0].emitOpen()
     FakeWebSocket.instances[0].emitMessage({ k: 'res', id: 1, ok: true, result: LOCAL_VERSION })
-    expect(await promise).toBe(true)
+    expect(await promise).toEqual({ ok: true })
 
     // Advancing past the fallback window must not spawn another tick or
     // otherwise touch the already-resolved promise.
@@ -178,7 +180,7 @@ describe('waitForHealth', () => {
     const promise = waitForHealth('ws://127.0.0.1:1', 1, 1000)
     await vi.advanceTimersByTimeAsync(0)
     FakeWebSocket.instances[0].emitError(new Error('ECONNREFUSED'))
-    expect(await promise).toBe(false)
+    expect(await promise).toEqual({ ok: false, reason: 'ECONNREFUSED' })
     expect(FakeWebSocket.instances).toHaveLength(1) // attempts budget of 1, no extra tick
   })
 })
@@ -186,7 +188,12 @@ describe('waitForHealth', () => {
 describe('REMOTE_COMMAND', () => {
   it('kills a lingering server tracked by pidfile before launching a fresh one', () => {
     expect(REMOTE_COMMAND).toContain('server.pid')
-    expect(REMOTE_COMMAND).toMatch(/kill\s+"\$\(cat/)
+    expect(REMOTE_COMMAND).toMatch(/kill\s+"\$P"/)
     expect(REMOTE_COMMAND).toContain('node $D/index.cjs')
+  })
+
+  it('only kills the pid when it is actually our server (guards against a recycled pid)', () => {
+    expect(REMOTE_COMMAND).toContain('/proc/$P/cmdline')
+    expect(REMOTE_COMMAND).toContain('grep -qsa index.cjs')
   })
 })

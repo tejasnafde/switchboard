@@ -24,6 +24,10 @@ export function AddRemoteProjectModal({ machineId, onClose }: { machineId: strin
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Mirrors `path` so an in-flight loadSuggestions can tell if the input moved on.
+  const pathRef = useRef(path)
+  pathRef.current = path
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Cache the last listed parent dir so re-listing only happens when the
   // typed path's dir actually changes, not on every keystroke of the partial.
@@ -43,6 +47,9 @@ export function AddRemoteProjectModal({ machineId, onClose }: { machineId: strin
       let entries = cacheRef.current?.dir === dir ? cacheRef.current.entries : null
       if (!entries) {
         const res = await window.api.routing.invokeOn<ListDirResult>(machineId, FilesChannels.LIST_DIR, dir, '')
+        // The input may have moved to a different dir while this round-trip was
+        // in flight - a slow earlier response must not clobber a newer one.
+        if (splitPath(pathRef.current).dir !== dir) return
         if (!res.ok) {
           setSuggestions([])
           return

@@ -177,6 +177,7 @@ export function registerAppHandlers(host: BackendHost): void {
     try {
       stats = await stat(dirPath)
     } catch (err) {
+      log.warn('add-project-path stat failed', { dirPath, err: err instanceof Error ? err.message : String(err) })
       return { ok: false, error: err instanceof Error ? err.message : 'Path not found' }
     }
     if (!stats.isDirectory()) {

@@ -5,7 +5,7 @@
  */
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { writeFileSync, unlinkSync } from 'node:fs'
+import { writeFileSync, unlinkSync, readFileSync } from 'node:fs'
 import { WebSocketServer } from 'ws'
 import { WsHost } from '../main/backend/ws-host'
 import { registerAppHandlers } from '../main/ipc/app'
@@ -65,7 +65,9 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     log.info(`${sig} - shutting down`)
     try {
-      unlinkSync(PID_FILE)
+      // Only remove the pidfile if it still points at us - a takeover may have
+      // already replaced it with a newer server's pid we must not clobber.
+      if (readFileSync(PID_FILE, 'utf8').trim() === String(process.pid)) unlinkSync(PID_FILE)
     } catch (err) {
       log.warn('failed to remove pid file', err)
     }

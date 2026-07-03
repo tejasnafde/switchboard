@@ -12,6 +12,7 @@ import WebSocket from 'ws'
 import { encodeFrame, decodeFrame } from '@shared/ws-protocol'
 import { createMainLogger } from '../logger'
 import { appVersion } from '../runtime'
+import { REMOTE_SERVER_DIR } from './provisionCommands'
 import type { TunnelProcess } from './connectionManager'
 
 const log = createMainLogger('machines:tunnel')
@@ -26,8 +27,13 @@ export const SERVER_VERSION_CHANNEL = 'server:version'
 // Kill any lingering server (pidfile written by the server on boot) before
 // launching - a stale process holding the port would EADDRINUSE the new one
 // while ssh's -L forward keeps reaching the old, possibly out-of-protocol server.
-const D = '$HOME/.switchboard-server'
-export const REMOTE_COMMAND = `D=${D}; [ -f "$D/server.pid" ] && kill "$(cat "$D/server.pid")" 2>/dev/null && sleep 1; PORT=${REMOTE_PORT} node $D/index.cjs`
+// Guard the kill on the pid actually being our server (its /proc cmdline names
+// index.cjs) so a crashed server whose pid got recycled to an unrelated process
+// is never signalled.
+export const REMOTE_COMMAND =
+  `D=${REMOTE_SERVER_DIR}; P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
+  `if [ -n "$P" ] && grep -qsa index.cjs "/proc/$P/cmdline"; then kill "$P" 2>/dev/null; sleep 1; fi; ` +
+  `PORT=${REMOTE_PORT} node $D/index.cjs`
 
 export function allocatePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -70,16 +76,22 @@ export function spawnTunnel(command: string, args: string[]): TunnelProcess {
  * timer alone can leave a tick with no terminal event, which would otherwise
  * hang the whole probe forever.
  */
-export function waitForHealth(url: string, attempts = 30, intervalMs = 1000): Promise<boolean> {
+export function waitForHealth(
+  url: string,
+  attempts = 30,
+  intervalMs = 1000,
+): Promise<{ ok: boolean; reason?: string }> {
   const expectedVersion = appVersion()
   return new Promise((resolve) => {
     let tries = 0
+    let lastReason: string | undefined
     const recordFailure = (err: Error) => {
       tries++
+      lastReason = err.message
       if (tries === 1 || tries % 5 === 0) log.warn(`health attempt ${tries}/${attempts} failed`, { url, err: err.message })
       if (tries >= attempts) {
         log.warn(`health gave up after ${attempts} attempts`, { url })
-        resolve(false)
+        resolve({ ok: false, reason: lastReason })
       } else {
         setTimeout(tick, intervalMs)
       }
@@ -104,7 +116,7 @@ export function waitForHealth(url: string, attempts = 30, intervalMs = 1000): Pr
         clearTimeout(fallback)
         log.info(`health ok after ${tries + 1} attempt(s)`, { url })
         ws.close()
-        resolve(true)
+        resolve({ ok: true })
       }
       armFallback('handshake stalled')
       ws.once('open', () => {

@@ -120,8 +120,10 @@ interface AgentStore {
   removeSession: (id: string) => void
   setActiveSession: (id: string) => void
   updateStatus: (id: string, status: AgentStatus) => void
-  /** After a machine reconnect the fresh server has no live sessions - reset
-   *  that machine's 'running' sessions to 'idle' (messages untouched). */
+  /** When a machine's tunnel drops the remote server dies with it - reset that
+   *  machine's in-flight sessions ('running' or 'thinking') to 'idle' so they
+   *  don't spin forever waiting for a turn.completed that will never come
+   *  (messages untouched). */
   resetRunningSessionsForMachine: (machineId: string) => void
   appendMessage: (sessionId: string, message: ChatMessage) => void
   updateMessage: (sessionId: string, messageId: string, updates: Partial<ChatMessage>) => void
@@ -231,7 +233,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   resetRunningSessionsForMachine: (machineId) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.machineId === machineId && s.status === 'running' ? { ...s, status: 'idle' } : s
+        s.machineId === machineId && (s.status === 'running' || s.status === 'thinking')
+          ? { ...s, status: 'idle' }
+          : s,
       ),
     })),
 

@@ -91,26 +91,29 @@ describe('onProviderEvent', () => {
 })
 
 describe('decideMachineTransition', () => {
-  it('a fresh drop into error is "lost"', () => {
-    expect(decideMachineTransition('connected', 'error')).toBe('lost')
-    expect(decideMachineTransition(undefined, 'error')).toBe('lost')
+  it('leaving connected is "lost" (a drop into error or a manual disconnect into offline)', () => {
+    expect(decideMachineTransition('connected', 'error', false)).toBe('lost')
+    expect(decideMachineTransition('connected', 'offline', false)).toBe('lost')
+  })
+
+  it('a machine that never connected has nothing to lose', () => {
+    expect(decideMachineTransition(undefined, 'error', false)).toBe(null)
+    expect(decideMachineTransition('connecting', 'error', false)).toBe(null)
   })
 
   it('staying in error is not reported again', () => {
-    expect(decideMachineTransition('error', 'error')).toBe(null)
+    expect(decideMachineTransition('error', 'error', true)).toBe(null)
   })
 
-  it('error -> connected is a reconnect (stale server resync)', () => {
-    expect(decideMachineTransition('error', 'connected')).toBe('reconnected')
+  it('coming back to connected after a loss is a reconnect (even through the connecting intermediate)', () => {
+    expect(decideMachineTransition('connecting', 'connected', true)).toBe('reconnected')
+    expect(decideMachineTransition('error', 'connected', true)).toBe('reconnected')
   })
 
-  it('offline -> connected (initial connect) triggers no resync', () => {
-    expect(decideMachineTransition('offline', 'connected')).toBe(null)
-  })
-
-  it('connecting -> connected (initial connect) triggers no resync', () => {
-    expect(decideMachineTransition('connecting', 'connected')).toBe(null)
-    expect(decideMachineTransition(undefined, 'connected')).toBe(null)
+  it('an initial connect (no prior loss) triggers no resync', () => {
+    expect(decideMachineTransition('offline', 'connected', false)).toBe(null)
+    expect(decideMachineTransition('connecting', 'connected', false)).toBe(null)
+    expect(decideMachineTransition(undefined, 'connected', false)).toBe(null)
   })
 })
 
@@ -136,26 +139,41 @@ describe('initMachineReconnectResync', () => {
     return { emit: (machineId: string, status: string) => handler?.(machineId, status), onStatus }
   }
 
-  it('writes a lost-connection notice when a machine transitions into error', () => {
+  it('resets in-flight sessions and notices panes the moment the tunnel drops', () => {
+    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'running', machineId: 'm1' })
+    useAgentStore.getState().addSession({ id: 't2', type: 'claude-code', status: 'thinking', machineId: 'm1' })
     const { emit } = stubOnStatus()
     initMachineReconnectResync()
     emit('m1', 'connected')
     emit('m1', 'error')
+
+    expect(useAgentStore.getState().sessions.find((s) => s.id === 't1')?.status).toBe('idle')
+    expect(useAgentStore.getState().sessions.find((s) => s.id === 't2')?.status).toBe('idle')
     expect(writeMachineNotice).toHaveBeenCalledWith('m1', expect.stringContaining('connection to m1 lost'))
   })
 
-  it('resets running sessions and notices panes on error -> connected (reconnect)', () => {
+  it('resets in-flight sessions on a manual disconnect (connected -> offline) too', () => {
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'running', machineId: 'm1' })
     const { emit } = stubOnStatus()
     initMachineReconnectResync()
-    emit('m1', 'error')
     emit('m1', 'connected')
+    emit('m1', 'offline')
 
     expect(useAgentStore.getState().sessions.find((s) => s.id === 't1')?.status).toBe('idle')
+  })
+
+  it('notices a reconnect after a loss, through the connecting intermediate', () => {
+    const { emit } = stubOnStatus()
+    initMachineReconnectResync()
+    emit('m1', 'connected')
+    emit('m1', 'error')
+    emit('m1', 'connecting')
+    emit('m1', 'connected')
+
     expect(writeMachineNotice).toHaveBeenCalledWith('m1', expect.stringContaining('machine reconnected'))
   })
 
-  it('does not resync on an initial connect (no prior error)', () => {
+  it('does not resync on an initial connect (no prior loss)', () => {
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'running', machineId: 'm1' })
     const { emit } = stubOnStatus()
     initMachineReconnectResync()

@@ -19,8 +19,8 @@ export interface TunnelProcess {
 export interface ConnectionManagerDeps {
   allocatePort: () => Promise<number>
   spawnTunnel: (command: string, args: string[]) => TunnelProcess
-  /** Resolves true once the remote backend answers over the tunnel, false on timeout. */
-  waitForHealth: (url: string) => Promise<boolean>
+  /** Resolves ok once the remote backend answers over the tunnel; reason carries the last failure (version mismatch, timeout). */
+  waitForHealth: (url: string) => Promise<{ ok: boolean; reason?: string }>
   remotePort: number
   remoteCommand: string
   /** url is the local ws:// to dial when connected, null otherwise. reason is set on error/fail transitions. */
@@ -133,13 +133,13 @@ export class ConnectionManager {
       if (!conn || conn.epoch !== epoch) return
       conn.proc = proc
 
-      const healthy = await this.deps.waitForHealth(url)
+      const health = await this.deps.waitForHealth(url)
       if (this.conns.get(machine.id)?.epoch !== epoch) return
-      if (healthy) {
+      if (health.ok) {
         conn.attempts = 0
         this.transition(machine.id, 'healthy')
       } else {
-        this.onFailure(machine, epoch, 'health check failed (timeout)')
+        this.onFailure(machine, epoch, health.reason ?? 'health check failed')
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)

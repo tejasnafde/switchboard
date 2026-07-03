@@ -26,7 +26,7 @@ function deps(over: Partial<ConnectionManagerDeps> = {}): ConnectionManagerDeps 
   return {
     allocatePort: async () => 7681,
     spawnTunnel: () => fakeProc(),
-    waitForHealth: async () => true,
+    waitForHealth: async () => ({ ok: true }),
     remotePort: 8765,
     remoteCommand: 'switchboard-server',
     onStatus: (id, status) => statuses.push([id, status]),
@@ -64,7 +64,7 @@ describe('ConnectionManager', () => {
 
   it('goes to error and kills the tunnel when health never passes', async () => {
     const proc = fakeProc()
-    const d = deps({ spawnTunnel: () => proc, waitForHealth: async () => false })
+    const d = deps({ spawnTunnel: () => proc, waitForHealth: async () => ({ ok: false, reason: "health check failed" }) })
     const mgr = new ConnectionManager(d)
     await mgr.connect(machine())
     expect(mgr.statusOf('m1')).toBe('error')
@@ -145,7 +145,7 @@ describe('ConnectionManager', () => {
   it('gives up and stays in error after maxReconnects failed retries', async () => {
     const procs: Array<ReturnType<typeof fakeProc>> = []
     const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
-    const waitForHealth = vi.fn().mockResolvedValueOnce(true).mockResolvedValue(false)
+    const waitForHealth = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValue({ ok: false, reason: "health check failed" })
     const timers: Array<() => void> = []
     const mgr = new ConnectionManager(deps({ spawnTunnel, waitForHealth, maxReconnects: 1, setTimer: (fn) => timers.push(fn) }))
     await mgr.connect(machine())
@@ -253,13 +253,23 @@ describe('ConnectionManager', () => {
     expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe('no node runtime found on the remote')
   })
 
-  it('emits a timeout reason when the health check never passes', async () => {
+  it('surfaces the health failure reason (e.g. version mismatch) on the error transition', async () => {
     const statuses: Array<[string, string, string | null, string | undefined]> = []
     const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
       statuses.push([id, status, url, reason])
-    const mgr = new ConnectionManager(deps({ waitForHealth: async () => false, onStatus }))
+    const reason = 'server version mismatch (local 1.2.3, remote 0.0.1)'
+    const mgr = new ConnectionManager(deps({ waitForHealth: async () => ({ ok: false, reason }), onStatus }))
     await mgr.connect(machine())
-    expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe('health check failed (timeout)')
+    expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe(reason)
+  })
+
+  it('falls back to a generic reason when the health check gives none', async () => {
+    const statuses: Array<[string, string, string | null, string | undefined]> = []
+    const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
+      statuses.push([id, status, url, reason])
+    const mgr = new ConnectionManager(deps({ waitForHealth: async () => ({ ok: false }), onStatus }))
+    await mgr.connect(machine())
+    expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe('health check failed')
   })
 
   it('emits no reason on a successful connect/healthy transition', async () => {

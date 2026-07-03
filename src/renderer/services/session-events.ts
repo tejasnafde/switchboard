@@ -96,20 +96,25 @@ type MachineConnStatus = 'connecting' | 'connected' | 'error' | 'offline'
 export type MachineTransition = 'lost' | 'reconnected' | null
 
 /**
- * Entering 'error' -> 'lost'; 'error' -> 'connected' -> 'reconnected' (the old
- * server died, a fresh one replaced it). A first-time or intentional connect
- * has nothing stale to clean up. Pure so the matrix is unit-testable.
+ * Leaving 'connected' (a drop -> error, or a manual disconnect -> offline) means
+ * the remote server - a child of the ssh tunnel - just died, so its sessions are
+ * stale: 'lost'. Coming back to 'connected' after a loss is 'reconnected'.
+ * `wasLost` is threaded in (not derived from prevStatus) because auto-reconnect
+ * passes through 'connecting', so the direct error->connected edge never occurs.
+ * Pure so the matrix is unit-testable.
  */
 export function decideMachineTransition(
   prevStatus: MachineConnStatus | undefined,
   nextStatus: MachineConnStatus,
+  wasLost: boolean,
 ): MachineTransition {
-  if (nextStatus === 'error' && prevStatus !== 'error') return 'lost'
-  if (nextStatus === 'connected' && prevStatus === 'error') return 'reconnected'
+  if ((nextStatus === 'error' || nextStatus === 'offline') && prevStatus === 'connected') return 'lost'
+  if (nextStatus === 'connected' && wasLost) return 'reconnected'
   return null
 }
 
 const prevMachineStatus = new Map<string, MachineConnStatus>()
+const lostMachines = new Set<string>()
 let reconnectResyncStarted = false
 
 function isMachineConnStatus(status: string): status is MachineConnStatus {
@@ -127,13 +132,17 @@ export function initMachineReconnectResync(): () => void {
 
   return window.api.machines.onStatus((machineId, status) => {
     if (!isMachineConnStatus(status)) return
-    const transition = decideMachineTransition(prevMachineStatus.get(machineId), status)
+    const transition = decideMachineTransition(prevMachineStatus.get(machineId), status, lostMachines.has(machineId))
     prevMachineStatus.set(machineId, status)
 
     if (transition === 'lost') {
+      lostMachines.add(machineId)
+      // The remote server is gone - reset its in-flight sessions now, not on a
+      // later reconnect that may never come, so nothing spins forever.
+      useAgentStore.getState().resetRunningSessionsForMachine(machineId)
       writeMachineNotice(machineId, `[connection to ${machineId} lost]`)
     } else if (transition === 'reconnected') {
-      useAgentStore.getState().resetRunningSessionsForMachine(machineId)
+      lostMachines.delete(machineId)
       writeMachineNotice(machineId, "[machine reconnected - this terminal's remote shell is gone, open a new one]")
     }
   })
@@ -143,6 +152,7 @@ export function initMachineReconnectResync(): () => void {
 export function __resetMachineReconnectResyncForTests(): void {
   reconnectResyncStarted = false
   prevMachineStatus.clear()
+  lostMachines.clear()
 }
 
 // This module is imported early (App.tsx, Sidebar, ChatPanel), so subscribing
