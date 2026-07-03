@@ -56,7 +56,10 @@ describe('ConnectionManager', () => {
     const [command, args] = spawnTunnel.mock.calls[0]
     expect(command).toBe('ssh')
     expect(args).toContain('7681:127.0.0.1:8765')
-    expect(args[args.length - 1]).toBe('switchboard-server')
+    // The remote command is wrapped (base64 + nvm preamble) by buildTunnelCommand.
+    const last = args[args.length - 1] as string
+    const b64 = /printf %s '([^']+)' \| base64 -d \| bash/.exec(last)?.[1] ?? ''
+    expect(Buffer.from(b64, 'base64').toString('utf8')).toContain('switchboard-server')
   })
 
   it('goes to error and kills the tunnel when health never passes', async () => {
@@ -163,5 +166,87 @@ describe('ConnectionManager', () => {
     procs[0].fireExit() // the kill's exit event arrives
     expect(timers).toHaveLength(0)
     expect(mgr.statusOf('m1')).toBe('offline')
+  })
+
+  it('two rapid connect() calls on the same machine only spawn one tunnel', async () => {
+    let resolvePort: (n: number) => void = () => {}
+    const portPromise = new Promise<number>((resolve) => { resolvePort = resolve })
+    const spawnTunnel = vi.fn(() => fakeProc())
+    const mgr = new ConnectionManager(deps({ spawnTunnel, allocatePort: () => portPromise }))
+
+    const p1 = mgr.connect(machine())
+    const p2 = mgr.connect(machine()) // fires while p1 is still awaiting allocatePort()
+    resolvePort(7681)
+    await Promise.all([p1, p2])
+
+    expect(spawnTunnel).toHaveBeenCalledTimes(1)
+    expect(mgr.statusOf('m1')).toBe('connected')
+  })
+
+  it('a stale reconnect timer from a superseded attempt does not fire an interleaved retry', async () => {
+    const procs: Array<ReturnType<typeof fakeProc>> = []
+    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const timers: Array<() => void | Promise<void>> = []
+    const mgr = new ConnectionManager(deps({ spawnTunnel, maxReconnects: 5, setTimer: (fn) => timers.push(fn) }))
+
+    await mgr.connect(machine())
+    expect(mgr.statusOf('m1')).toBe('connected')
+
+    procs[0].fireExit() // first failure schedules timers[0]
+    expect(timers).toHaveLength(1)
+
+    // Manual reconnect lands before the backoff timer fires.
+    await mgr.connect(machine())
+    expect(mgr.statusOf('m1')).toBe('connected')
+    expect(spawnTunnel).toHaveBeenCalledTimes(2)
+
+    procs[1].fireExit() // second failure schedules timers[1] for the new epoch
+    expect(timers).toHaveLength(2)
+
+    // The stale timer from the first failure must be a no-op now.
+    await timers[0]()
+    expect(spawnTunnel).toHaveBeenCalledTimes(2)
+    expect(mgr.statusOf('m1')).toBe('error')
+
+    // The current timer still drives a real retry.
+    await timers[1]()
+    expect(spawnTunnel).toHaveBeenCalledTimes(3)
+    expect(mgr.statusOf('m1')).toBe('connected')
+  })
+
+  it('logs the provisioner error via onLog instead of swallowing it', async () => {
+    const onLog = vi.fn()
+    const provision = vi.fn(async () => { throw new Error('npm install failed: EACCES') })
+    const mgr = new ConnectionManager(deps({ provision, onLog }))
+    await mgr.connect(machine())
+    expect(mgr.statusOf('m1')).toBe('error')
+    expect(onLog).toHaveBeenCalledWith(expect.stringContaining('npm install failed: EACCES'))
+  })
+
+  it('a rejecting allocatePort transitions to error instead of hanging in connecting', async () => {
+    const onLog = vi.fn()
+    const mgr = new ConnectionManager(
+      deps({ allocatePort: async () => { throw new Error('EMFILE: no free ports') }, onLog }),
+    )
+    await mgr.connect(machine())
+    expect(mgr.statusOf('m1')).toBe('error')
+    expect(onLog).toHaveBeenCalledWith(expect.stringContaining('EMFILE: no free ports'))
+  })
+
+  it('disconnectAll kills every tracked tunnel', async () => {
+    const procA = fakeProc()
+    const procB = fakeProc()
+    let calls = 0
+    const spawnTunnel = vi.fn(() => (calls++ === 0 ? procA : procB))
+    const mgr = new ConnectionManager(deps({ spawnTunnel }))
+    await mgr.connect(machine({ id: 'a' }))
+    await mgr.connect(machine({ id: 'b' }))
+
+    await mgr.disconnectAll()
+
+    expect(procA.kill).toHaveBeenCalled()
+    expect(procB.kill).toHaveBeenCalled()
+    expect(mgr.statusOf('a')).toBe('offline')
+    expect(mgr.statusOf('b')).toBe('offline')
   })
 })

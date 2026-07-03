@@ -5,10 +5,12 @@
 import { useState } from 'react'
 import { useMachineStore } from '../../stores/machine-store'
 import { filterSshHosts } from './sshHostFilter'
+import { isDuplicateMachine, parsePort } from './addMachineValidation'
 import type { SshHost } from '@shared/machines'
 
 export function AddMachineModal({ onClose }: { onClose: () => void }) {
   const sshHosts = useMachineStore((s) => s.sshHosts)
+  const remotes = useMachineStore((s) => s.remotes)
   const add = useMachineStore((s) => s.add)
 
   const [name, setName] = useState('')
@@ -17,26 +19,41 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
   const [port, setPort] = useState('22')
   const [remoteUser, setRemoteUser] = useState('')
   const [search, setSearch] = useState('')
+  // Guards against a double-click firing two CREATE calls before the first
+  // one's re-hydrate lands (which would add the same host twice).
+  const [adding, setAdding] = useState(false)
 
   const filteredHosts = filterSshHosts(sshHosts, search)
+  const parsedPort = parsePort(port)
 
   const runAs = () => remoteUser.trim() || null
 
   const addFromSsh = async (h: SshHost) => {
-    await add({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
-    onClose()
+    if (adding || isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })) return
+    setAdding(true)
+    try {
+      const created = await add({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
+      if (created) onClose()
+    } finally {
+      setAdding(false)
+    }
   }
 
   const addManual = async () => {
-    if (!host.trim()) return
-    await add({
-      name: name.trim() || host.trim(),
-      sshHost: host.trim(),
-      sshUser: user.trim() || null,
-      sshPort: Number(port) || 22,
-      remoteUser: runAs(),
-    })
-    onClose()
+    if (!host.trim() || adding || parsedPort === null) return
+    setAdding(true)
+    try {
+      const created = await add({
+        name: name.trim() || host.trim(),
+        sshHost: host.trim(),
+        sshUser: user.trim() || null,
+        sshPort: parsedPort,
+        remoteUser: runAs(),
+      })
+      if (created) onClose()
+    } finally {
+      setAdding(false)
+    }
   }
 
   return (
@@ -65,16 +82,28 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
               autoFocus
             />
             <div className="machine-modal-hostlist">
-              {filteredHosts.map((h) => (
-                <button key={h.alias} className="machine-modal-host" onClick={() => void addFromSsh(h)}>
-                  <span className="machine-modal-host-alias">{h.alias}</span>
-                  <span className="machine-modal-host-addr">
-                    {h.user ? `${h.user}@` : ''}
-                    {h.hostName}
-                    {h.port !== 22 ? `:${h.port}` : ''}
-                  </span>
-                </button>
-              ))}
+              {filteredHosts.map((h) => {
+                const isDup = isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })
+                return (
+                  <button
+                    key={h.alias}
+                    className="machine-modal-host"
+                    onClick={() => void addFromSsh(h)}
+                    disabled={adding || isDup}
+                    title={isDup ? 'Already added' : undefined}
+                  >
+                    <span className="machine-modal-host-alias">
+                      {h.alias}
+                      {isDup ? ' (already added)' : ''}
+                    </span>
+                    <span className="machine-modal-host-addr">
+                      {h.user ? `${h.user}@` : ''}
+                      {h.hostName}
+                      {h.port !== 22 ? `:${h.port}` : ''}
+                    </span>
+                  </button>
+                )
+              })}
               {filteredHosts.length === 0 && <div className="machine-modal-empty">No matching hosts</div>}
             </div>
           </div>
@@ -86,13 +115,22 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
           <input className="machine-modal-input" placeholder="Host (e.g. 10.0.0.4)" value={host} onChange={(e) => setHost(e.target.value)} />
           <div className="machine-modal-row">
             <input className="machine-modal-input" placeholder="User" value={user} onChange={(e) => setUser(e.target.value)} />
-            <input className="machine-modal-input" style={{ width: '70px' }} placeholder="Port" value={port} onChange={(e) => setPort(e.target.value)} />
+            <input
+              className="machine-modal-input"
+              style={{ width: '70px' }}
+              placeholder="Port"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+            />
           </div>
+          {port.trim() !== '' && parsedPort === null && (
+            <div className="machine-modal-empty">Port must be an integer between 1 and 65535</div>
+          )}
         </div>
 
         <div className="machine-modal-actions">
           <button className="machine-modal-cancel" onClick={onClose}>Cancel</button>
-          <button className="machine-modal-add" onClick={() => void addManual()} disabled={!host.trim()}>Add</button>
+          <button className="machine-modal-add" onClick={() => void addManual()} disabled={!host.trim() || adding || parsedPort === null}>Add</button>
         </div>
       </div>
     </div>

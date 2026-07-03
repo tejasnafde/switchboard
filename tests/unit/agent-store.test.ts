@@ -134,6 +134,35 @@ describe('agent-store', () => {
     expect(useAgentStore.getState().sessions).toHaveLength(0)
   })
 
+  it('removeSession unbinds the session id from the routing table', () => {
+    // Without this, a stale routing-table entry keeps pointing a closed
+    // session's id at whatever machine backed it - a future reuse of the
+    // same id (or a stale lookup) would silently route to that machine
+    // instead of falling back to local.
+    const stopSession = vi.fn(() => Promise.resolve())
+    const unbind = vi.fn()
+    ;(globalThis as unknown as { window: { api: { provider: { stopSession: typeof stopSession }; routing: { unbind: typeof unbind } } } }).window = {
+      api: { provider: { stopSession }, routing: { unbind } },
+    }
+
+    const { addSession, removeSession } = useAgentStore.getState()
+    addSession({ id: 'remote-1', type: 'claude-code', status: 'idle', machineId: 'm1' })
+    removeSession('remote-1')
+
+    expect(unbind).toHaveBeenCalledWith('remote-1')
+  })
+
+  it('removeSession tolerates a missing routing API (e.g. older preload)', () => {
+    const stopSession = vi.fn(() => Promise.resolve())
+    ;(globalThis as unknown as { window: { api: { provider: { stopSession: typeof stopSession } } } }).window = {
+      api: { provider: { stopSession } },
+    }
+
+    const { addSession, removeSession } = useAgentStore.getState()
+    addSession({ id: 'leaky-2', type: 'claude-code', status: 'idle' })
+    expect(() => removeSession('leaky-2')).not.toThrow()
+  })
+
   it('setTokenUsage stores per-session usage so switching sessions shows the right meter', () => {
     // Regression: contextUsage used to live as ChatPanel-local useState, so
     // hopping between sessions briefly showed the previous session's value

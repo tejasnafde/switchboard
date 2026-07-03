@@ -16,6 +16,9 @@ export const execProc: ProcRunner['exec'] = (command, args, stdin) =>
     child.on('error', (err) => resolve({ code: 1, stdout, stderr: err.message }))
     child.on('close', (code) => resolve({ code: code ?? 1, stdout, stderr }))
     if (stdin !== undefined) {
+      // ssh exiting mid-write raises EPIPE; swallow it here - the 'close'
+      // handler above still reports the real exit code + stderr.
+      child.stdin.on('error', () => {})
       child.stdin.write(stdin)
       child.stdin.end()
     }

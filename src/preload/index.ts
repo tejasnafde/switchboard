@@ -426,9 +426,15 @@ const api = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     invokeOn: <T = any>(machineId: string, channel: string, ...args: unknown[]): Promise<T> =>
       router.invokeOn<T>(machineId, channel, ...args),
-    /** Register a connected remote's WS backend so calls bound to it can dial it. */
+    /** Register a connected remote's WS backend. A reconnect gets a new tunnel
+     *  port, so any stale transport is torn down first (not pinned forever). */
     connectMachine: (machineId: string, url: string): void => {
-      if (remoteTransports.has(machineId)) return
+      const existing = remoteTransports.get(machineId)
+      if (existing) {
+        router.unregister(machineId)
+        existing.close()
+        remoteTransports.delete(machineId)
+      }
       const ws = new WsTransport(url)
       remoteTransports.set(machineId, ws)
       router.register(machineId, ws)

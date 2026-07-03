@@ -50,6 +50,23 @@ describe('HybridTransport', () => {
     ])
   })
 
+  it('routes desktop-only channels not in AppChannels to local (bare ipcMain listeners)', async () => {
+    const local = fake('local')
+    const remote = fake('remote')
+    const h = new HybridTransport(local.t, remote.t)
+
+    expect(await h.invoke('app:close-window')).toBe('local')
+    expect(await h.invoke('app:quit-and-install')).toBe('local')
+    expect(await h.invoke('app:get-log-paths')).toBe('local')
+
+    expect(local.calls).toEqual([
+      'local:invoke:app:close-window',
+      'local:invoke:app:quit-and-install',
+      'local:invoke:app:get-log-paths',
+    ])
+    expect(remote.calls).toEqual([])
+  })
+
   it('on subscribes both sides and unsubscribes both', () => {
     const local = fake('local')
     const remote = fake('remote')

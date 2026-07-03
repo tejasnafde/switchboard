@@ -48,17 +48,28 @@ export class TransportRouter implements Transport {
 
   private pick(channel: string, args: unknown[]): Transport {
     const id = this.resolve(channel, args)
-    return this.transports.get(id) ?? this.transports.get('local')!
+    const t = this.transports.get(id)
+    if (t) return t
+    if (id !== 'local') throw new Error('machine not connected: ' + id)
+    return this.transports.get('local')!
   }
 
   invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
-    return this.pick(channel, args).invoke<T>(channel, ...args)
+    // pick() can throw synchronously (unregistered machine); invoke's contract
+    // is a Promise, so surface that as a rejection rather than a thrown error.
+    try {
+      return this.pick(channel, args).invoke<T>(channel, ...args)
+    } catch (err) {
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)))
+    }
   }
 
   /** Invoke on a named machine directly, bypassing the resolver (e.g. to scan a remote on connect). */
   invokeOn<T>(machineId: string, channel: string, ...args: unknown[]): Promise<T> {
-    const t = this.transports.get(machineId) ?? this.transports.get('local')!
-    return t.invoke<T>(channel, ...args)
+    const t = this.transports.get(machineId)
+    if (t) return t.invoke<T>(channel, ...args)
+    if (machineId !== 'local') return Promise.reject(new Error('machine not connected: ' + machineId))
+    return this.transports.get('local')!.invoke<T>(channel, ...args)
   }
 
   send(channel: string, ...args: unknown[]): void {

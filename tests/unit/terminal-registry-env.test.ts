@@ -66,7 +66,7 @@ vi.mock('@xterm/xterm/css/xterm.css', () => ({}))
 
 // ─── System under test ────────────────────────────────────────────────────────
 
-import { getOrCreateTerminal } from '../../src/renderer/services/terminal-registry'
+import { getOrCreateTerminal, destroyTerminal } from '../../src/renderer/services/terminal-registry'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -75,12 +75,15 @@ function makeApiStub() {
   const onOutput = vi.fn(() => () => {})
   const write = vi.fn()
   const resize = vi.fn()
+  const kill = vi.fn()
+  const unbind = vi.fn()
   ;(globalThis as unknown as { window: unknown }).window = {
     api: {
-      terminal: { create, onOutput, write, resize },
+      terminal: { create, onOutput, write, resize, kill },
+      routing: { unbind },
     },
   }
-  return { create }
+  return { create, kill, unbind }
 }
 
 beforeEach(() => {
@@ -143,5 +146,20 @@ describe('getOrCreateTerminal - env forwarding', () => {
         env: { CODEX_HOME: '/home/user/.codex-work' },
       }),
     )
+  })
+})
+
+describe('destroyTerminal - routing cleanup', () => {
+  it('unbinds the pane id from the routing table on teardown', () => {
+    const { unbind } = makeApiStub()
+    getOrCreateTerminal('destroy-test-1', '/projects/foo')
+    destroyTerminal('destroy-test-1')
+    expect(unbind).toHaveBeenCalledWith('destroy-test-1')
+  })
+
+  it('is a no-op for an id that was never registered', () => {
+    const { unbind } = makeApiStub()
+    expect(() => destroyTerminal('never-created')).not.toThrow()
+    expect(unbind).not.toHaveBeenCalled()
   })
 })

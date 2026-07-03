@@ -24,6 +24,9 @@ function prepare(sql: string) {
   if (sql.startsWith('INSERT INTO machine_snapshots')) {
     return { run: (id: string, data: string, syncedAt: number) => snapStore.set(id, { data, synced_at: syncedAt }) }
   }
+  if (sql.startsWith('DELETE FROM machine_snapshots')) {
+    return { run: (id: string) => snapStore.delete(id) }
+  }
   if (sql.includes('FROM machine_snapshots')) {
     return { all: () => [...snapStore.entries()].map(([machine_id, v]) => ({ machine_id, ...v })) }
   }
@@ -139,6 +142,14 @@ describe('machines CRUD', () => {
     const m = createMachine({ name: 'gone', sshHost: 'h' }, 1)
     deleteMachine(m.id)
     expect(listMachines()).toEqual([])
+  })
+
+  it('deleteMachine also removes the machine_snapshots row (no FK to enforce it)', () => {
+    const m = createMachine({ name: 'gone', sshHost: 'h' }, 1)
+    saveMachineSnapshot(m.id, { syncedAt: 100, projects: [] })
+    expect(getMachineSnapshots()[m.id]).toBeDefined()
+    deleteMachine(m.id)
+    expect(getMachineSnapshots()[m.id]).toBeUndefined()
   })
 
   it('saveMachineSnapshot upserts and getMachineSnapshots round-trips', () => {

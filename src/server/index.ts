@@ -19,7 +19,8 @@ import { createMainLogger as createLogger } from '../main/logger'
 const log = createLogger('server')
 
 const port = Number(process.env.PORT ?? 8765)
-const wss = new WebSocketServer({ port })
+const bindHost = process.env.HOST ?? '127.0.0.1'
+const wss = new WebSocketServer({ port, host: bindHost })
 const host = new WsHost(wss)
 
 registerAppHandlers(host)
@@ -34,7 +35,7 @@ registerAgentHandlers(host)
 const registry = new ProviderRegistry(host)
 registry.registerIpcHandlers()
 
-wss.on('listening', () => log.info(`switchboard backend listening on :${port}`))
+wss.on('listening', () => log.info(`switchboard backend listening on ${bindHost}:${port}`))
 wss.on('error', (err) => log.error('server error', err))
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

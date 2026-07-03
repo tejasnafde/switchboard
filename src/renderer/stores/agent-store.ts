@@ -197,6 +197,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     window.api.provider?.stopSession?.(id).catch((err: unknown) => {
       log.warn(`stopSession(${id}) failed:`, err)
     })
+    // Drop the routing-table entry so a stale id can't keep routing to its old machine.
+    window.api.routing?.unbind?.(id)
     set((state) => {
       const remaining = state.sessions.filter((s) => s.id !== id)
       return {

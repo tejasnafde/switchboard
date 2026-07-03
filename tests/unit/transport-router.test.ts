@@ -50,11 +50,11 @@ describe('TransportRouter', () => {
     expect(local.invoked).toEqual([['provider:send', ['on-local']]])
   })
 
-  it('falls back to local when the resolver names an unregistered machine', async () => {
+  it('throws instead of silently falling back to local when the resolver names an unregistered machine', async () => {
     const local = fake('local')
     const router = new TransportRouter(local, () => 'ghost')
-    expect(await router.invoke('app:x')).toBe('local')
-    expect(local.invoked).toHaveLength(1)
+    await expect(router.invoke('app:x')).rejects.toThrow('machine not connected: ghost')
+    expect(local.invoked).toHaveLength(0)
   })
 
   it('fans out on() to every registered transport', () => {
@@ -80,7 +80,7 @@ describe('TransportRouter', () => {
     expect(seen).toEqual(['late'])
   })
 
-  it('unregister detaches subscriptions and stops routing to the machine', async () => {
+  it('unregister detaches subscriptions and throws on subsequent routing to the machine', async () => {
     const local = fake('local')
     const remote = fake('remote')
     const router = new TransportRouter(local, () => 'm1')
@@ -90,8 +90,9 @@ describe('TransportRouter', () => {
     router.unregister('m1')
     remote.emit('e', 'gone')
     expect(seen).toEqual([])
-    await router.invoke('x') // m1 gone -> falls back to local
-    expect(local.invoked).toEqual([['x', []]])
+    // m1 is gone - must not silently execute the call on the Mac instead.
+    await expect(router.invoke('x')).rejects.toThrow('machine not connected: m1')
+    expect(local.invoked).toEqual([])
   })
 
   it('refuses to unregister local', async () => {
@@ -110,10 +111,11 @@ describe('TransportRouter', () => {
     expect(remote.invoked).toEqual([['app:get-projects', []]])
   })
 
-  it('invokeOn falls back to local for an unregistered machine', async () => {
+  it('invokeOn throws instead of falling back to local for an unregistered machine', async () => {
     const local = fake('local')
     const router = new TransportRouter(local)
-    expect(await router.invokeOn('ghost', 'app:get-projects')).toBe('local')
+    await expect(router.invokeOn('ghost', 'app:get-projects')).rejects.toThrow('machine not connected: ghost')
+    expect(local.invoked).toHaveLength(0)
   })
 
   it('unsubscribe detaches from all transports', () => {

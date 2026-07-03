@@ -21,6 +21,21 @@ export interface ProvisionResult {
   reason: string
 }
 
+/** The server bundle targets node20 (scripts/build-server.mjs) and
+ *  better-sqlite3@12 needs node >= 20; anything older passes the "has node"
+ *  check but crashes at launch behind a generic health-check timeout. */
+const MIN_NODE_MAJOR = 20
+
+function assertSupportedNode(version: string | null): void {
+  if (!version) return
+  const match = version.match(/^v?(\d+)/)
+  const major = match ? Number(match[1]) : NaN
+  if (!Number.isFinite(major)) return
+  if (major < MIN_NODE_MAJOR) {
+    throw new Error(`remote node ${version} is too old, need >= ${MIN_NODE_MAJOR}`)
+  }
+}
+
 export async function provisionRemote(
   machine: Machine,
   inputs: ProvisionInputs,
@@ -29,7 +44,12 @@ export async function provisionRemote(
 ): Promise<ProvisionResult> {
   const probeCmd = buildProbeCommand(machine)
   const probeOut = await runner.exec(probeCmd.command, probeCmd.args)
-  const plan = planProvision(parseProbeOutput(probeOut.stdout), inputs.appVersion)
+  if (probeOut.code !== 0) {
+    throw new Error(`ssh probe failed (${probeOut.code}): ${probeOut.stderr.trim()}`)
+  }
+  const probe = parseProbeOutput(probeOut.stdout)
+  assertSupportedNode(probe.node)
+  const plan = planProvision(probe, inputs.appVersion)
   log?.(`provision ${machine.id}: ${plan.action} (${plan.reason})`)
 
   if (plan.action === 'ready' || plan.action === 'no-node') return plan

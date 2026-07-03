@@ -62,21 +62,33 @@ describe('planProvision', () => {
 describe('buildProbeCommand', () => {
   const mk = (over: Partial<Machine> = {}): Machine => ({
     id: 'm1', name: 'prod', sshAlias: null, sshHost: 'h.dev', sshUser: 'ubuntu',
-    sshPort: 22, sortOrder: 0, createdAt: 0, updatedAt: 0, ...over,
+    sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0, ...over,
   })
+
+  // The remote command is wrapped through `printf %s '<b64>' | base64 -d | bash`
+  // (asUserScript), including the login-user passthrough case, so decode it to
+  // inspect the actual probe script.
+  const decode = (remote: string): string => {
+    const m = remote.match(/printf %s '([A-Za-z0-9+/=]+)'/)
+    return m ? Buffer.from(m[1], 'base64').toString('utf8') : remote
+  }
 
   it('runs a node probe over ssh, batch-mode, on the resolved host', () => {
     const { command, args } = buildProbeCommand(mk({ sshAlias: 'prod-vm' }))
     expect(command).toBe('ssh')
     expect(args).toEqual(expect.arrayContaining(['-o', 'BatchMode=yes']))
     expect(args).toContain('prod-vm')
-    expect(args[args.length - 1]).toMatch(/^node -e/)
+    expect(decode(args[args.length - 1])).toMatch(/node -e/)
   })
 
   it('the probe source has no double quotes (survives the remote shell)', () => {
     const { args } = buildProbeCommand(mk())
-    const remoteCmd = args.at(-1) as string
-    const inner = remoteCmd.slice(remoteCmd.indexOf('"') + 1, remoteCmd.lastIndexOf('"'))
+    const remoteCmd = decode(args.at(-1) as string)
+    // Isolate the `node -e "..."` argument specifically - the wrapper script
+    // around it (NVM_PREAMBLE) legitimately uses double quotes of its own.
+    const nodeEMarker = 'node -e "'
+    const start = remoteCmd.indexOf(nodeEMarker) + nodeEMarker.length
+    const inner = remoteCmd.slice(start, remoteCmd.lastIndexOf('"'))
     expect(inner).not.toContain('"')
     expect(args).toContain('ubuntu@h.dev')
   })

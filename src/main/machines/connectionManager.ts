@@ -31,6 +31,8 @@ export interface ConnectionManagerDeps {
   maxReconnects?: number
   reconnectDelayMs?: (attempt: number) => number
   setTimer?: (fn: () => void | Promise<void>, ms: number) => void
+  /** Optional log sink - this module is DI-pure and takes no logger dependency directly. */
+  onLog?: (msg: string) => void
 }
 
 interface Conn {
@@ -75,17 +77,22 @@ export class ConnectionManager {
     this.transition(machineId, 'disconnect')
   }
 
+  /** Kill every tracked tunnel (app quit) so ssh doesn't reparent to launchd. */
+  async disconnectAll(): Promise<void> {
+    await Promise.all([...this.conns.keys()].map((id) => this.disconnect(id)))
+  }
+
   private async attempt(machine: Machine): Promise<void> {
     const prev = this.conns.get(machine.id)
     if (prev?.intentional) return
     if (prev && (prev.status === 'connecting' || prev.status === 'connected')) return
 
-    const port = await this.deps.allocatePort()
-    const url = `ws://127.0.0.1:${port}`
+    // Claim the slot synchronously, before the first await - otherwise two rapid
+    // connect() calls both pass the guard above and each spawns its own tunnel.
     const epoch = (prev?.epoch ?? 0) + 1
     this.conns.set(machine.id, {
       status: prev?.status ?? 'offline',
-      url,
+      url: prev?.url ?? '',
       proc: null,
       attempts: prev?.attempts ?? 0,
       intentional: false,
@@ -93,34 +100,51 @@ export class ConnectionManager {
     })
     this.transition(machine.id, 'connect')
 
-    if (this.deps.provision) {
-      try {
-        const res = await this.deps.provision(machine)
+    try {
+      const port = await this.deps.allocatePort()
+      const claimed = this.conns.get(machine.id)
+      if (!claimed || claimed.epoch !== epoch) return
+      const url = `ws://127.0.0.1:${port}`
+      claimed.url = url
+
+      if (this.deps.provision) {
+        let res: { action: string }
+        try {
+          res = await this.deps.provision(machine)
+        } catch (err) {
+          this.deps.onLog?.(
+            `provision failed for ${machine.name}: ${err instanceof Error ? err.message : String(err)}`,
+          )
+          return void this.transition(machine.id, 'fail')
+        }
         if (res.action === 'no-node') return void this.transition(machine.id, 'fail')
-      } catch {
-        return void this.transition(machine.id, 'fail')
+        if (this.conns.get(machine.id)?.epoch !== epoch) return
       }
+
+      const { command, args } = buildTunnelCommand(machine, {
+        localPort: port,
+        remotePort: this.deps.remotePort,
+        remoteCommand: this.deps.remoteCommand,
+      })
+      const proc = this.deps.spawnTunnel(command, args)
+      proc.onExit(() => this.onFailure(machine, epoch))
+      const conn = this.conns.get(machine.id)
+      if (!conn || conn.epoch !== epoch) return
+      conn.proc = proc
+
+      const healthy = await this.deps.waitForHealth(url)
       if (this.conns.get(machine.id)?.epoch !== epoch) return
-    }
-
-    const { command, args } = buildTunnelCommand(machine, {
-      localPort: port,
-      remotePort: this.deps.remotePort,
-      remoteCommand: this.deps.remoteCommand,
-    })
-    const proc = this.deps.spawnTunnel(command, args)
-    proc.onExit(() => this.onFailure(machine, epoch))
-    const conn = this.conns.get(machine.id)
-    if (!conn || conn.epoch !== epoch) return
-    conn.proc = proc
-
-    const healthy = await this.deps.waitForHealth(url)
-    if (this.conns.get(machine.id)?.epoch !== epoch) return
-    if (healthy) {
-      conn.attempts = 0
-      this.transition(machine.id, 'healthy')
-    } else {
-      this.onFailure(machine, epoch)
+      if (healthy) {
+        conn.attempts = 0
+        this.transition(machine.id, 'healthy')
+      } else {
+        this.onFailure(machine, epoch)
+      }
+    } catch (err) {
+      this.deps.onLog?.(
+        `connect attempt failed for ${machine.name}: ${err instanceof Error ? err.message : String(err)}`,
+      )
+      if (this.conns.get(machine.id)?.epoch === epoch) this.transition(machine.id, 'fail')
     }
   }
 
@@ -137,7 +161,15 @@ export class ConnectionManager {
       conn.attempts++
       this.transition(machine.id, 'fail')
       const delay = (this.deps.reconnectDelayMs ?? ((n) => reconnectDelay(n, { baseMs: 1000, capMs: 30_000 })))(conn.attempts)
-      ;(this.deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms)))(() => this.attempt(machine), delay)
+      // A manual connect/disconnect in the meantime bumps the epoch (or flips
+      // status); this timer must then no-op instead of firing an interleaved attempt.
+      const scheduledEpoch = conn.epoch
+      ;(this.deps.setTimer ?? ((fn, ms) => setTimeout(fn, ms)))(() => {
+        const current = this.conns.get(machine.id)
+        if (!current || current.epoch !== scheduledEpoch) return
+        if (current.status === 'connecting' || current.status === 'connected') return
+        return this.attempt(machine)
+      }, delay)
     } else {
       this.transition(machine.id, 'fail')
     }
