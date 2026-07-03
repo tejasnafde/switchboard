@@ -233,6 +233,44 @@ describe('ConnectionManager', () => {
     expect(onLog).toHaveBeenCalledWith(expect.stringContaining('EMFILE: no free ports'))
   })
 
+  it('emits the provisioner error message as the reason on a provision throw', async () => {
+    const statuses: Array<[string, string, string | null, string | undefined]> = []
+    const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
+      statuses.push([id, status, url, reason])
+    const provision = vi.fn(async () => { throw new Error('upload failed') })
+    const mgr = new ConnectionManager(deps({ provision, onStatus }))
+    await mgr.connect(machine())
+    expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe('upload failed')
+  })
+
+  it('emits a fixed reason when provisioning reports no node runtime', async () => {
+    const statuses: Array<[string, string, string | null, string | undefined]> = []
+    const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
+      statuses.push([id, status, url, reason])
+    const provision = vi.fn(async () => ({ action: 'no-node' as const, reason: 'no node' }))
+    const mgr = new ConnectionManager(deps({ provision, onStatus }))
+    await mgr.connect(machine())
+    expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe('no node runtime found on the remote')
+  })
+
+  it('emits a timeout reason when the health check never passes', async () => {
+    const statuses: Array<[string, string, string | null, string | undefined]> = []
+    const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
+      statuses.push([id, status, url, reason])
+    const mgr = new ConnectionManager(deps({ waitForHealth: async () => false, onStatus }))
+    await mgr.connect(machine())
+    expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe('health check failed (timeout)')
+  })
+
+  it('emits no reason on a successful connect/healthy transition', async () => {
+    const statuses: Array<[string, string, string | null, string | undefined]> = []
+    const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
+      statuses.push([id, status, url, reason])
+    const mgr = new ConnectionManager(deps({ onStatus }))
+    await mgr.connect(machine())
+    expect(statuses.every((s) => s[3] === undefined)).toBe(true)
+  })
+
   it('disconnectAll kills every tracked tunnel', async () => {
     const procA = fakeProc()
     const procB = fakeProc()

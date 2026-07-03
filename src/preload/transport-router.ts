@@ -16,7 +16,8 @@ export type MachineResolver = (channel: string, args: unknown[]) => string
 
 interface Fanout {
   channel: string
-  handler: (...args: unknown[]) => void
+  /** Source-aware handler - always takes the emitting machine id first. */
+  handler: (machineId: string, ...args: unknown[]) => void
   offs: Map<string, () => void>
 }
 
@@ -34,7 +35,9 @@ export class TransportRouter implements Transport {
   register(machineId: string, transport: Transport): void {
     if (this.transports.has(machineId)) return
     this.transports.set(machineId, transport)
-    for (const f of this.fanouts) f.offs.set(machineId, transport.on(f.channel, f.handler))
+    for (const f of this.fanouts) {
+      f.offs.set(machineId, transport.on(f.channel, (...args: unknown[]) => f.handler(machineId, ...args)))
+    }
   }
 
   unregister(machineId: string): void {
@@ -77,9 +80,20 @@ export class TransportRouter implements Transport {
   }
 
   on<A extends unknown[]>(channel: string, handler: (...args: A) => void): () => void {
-    const h = handler as (...args: unknown[]) => void
+    return this.onWithSource<A>(channel, (_machineId, ...args) => handler(...args))
+  }
+
+  /** Like on(), but the handler also receives the emitting machine's id
+   *  ('local' or a remote's) - two machines can emit the same threadId. */
+  onWithSource<A extends unknown[]>(
+    channel: string,
+    handler: (machineId: string, ...args: A) => void,
+  ): () => void {
+    const h = handler as (machineId: string, ...args: unknown[]) => void
     const offs = new Map<string, () => void>()
-    for (const [id, t] of this.transports) offs.set(id, t.on(channel, h))
+    for (const [id, t] of this.transports) {
+      offs.set(id, t.on(channel, (...args: unknown[]) => h(id, ...args)))
+    }
     const fanout: Fanout = { channel, handler: h, offs }
     this.fanouts.add(fanout)
     return () => {

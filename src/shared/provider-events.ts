@@ -25,7 +25,7 @@ export type ProviderKind = 'claude' | 'codex' | 'opencode'
 
 // ─── Event union ───────────────────────────────────────────────
 
-export type RuntimeEvent =
+export type RuntimeEvent = (
   | RuntimeContentEvent
   | RuntimeToolStartedEvent
   | RuntimeToolCompletedEvent
@@ -42,6 +42,12 @@ export type RuntimeEvent =
   | RuntimeQuestionAskedEvent
   | RuntimeQuestionAnsweredEvent
   | RuntimeFileEditedEvent
+) & {
+  /** Which machine emitted this event ('local' or a remote's id). Stamped by
+   *  preload's provider.onEvent, not the adapter - used to reject cross-machine
+   *  bleed when two machines emit the same threadId. */
+  machineId?: string
+}
 
 export interface RuntimeContentEvent {
   type: 'content'

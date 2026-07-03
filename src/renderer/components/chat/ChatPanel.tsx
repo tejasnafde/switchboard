@@ -8,7 +8,7 @@ import { ChatInput } from './ChatInput'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
 import { generateTitle } from '@shared/auto-title'
-import { onSessionRename, emitSessionRename } from '../../services/session-events'
+import { onSessionRename, emitSessionRename, onProviderEvent } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
 import { isAssistantStreamingEnabled } from '../../services/streamingPref'
 import { createRendererLogger } from '../../logger'
@@ -207,7 +207,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       return
     }
 
-    const removeProvider = window.api.provider.onEvent((event) => {
+    // onProviderEvent drops cross-machine bleed (same threadId on two machines).
+    const removeProvider = onProviderEvent((event) => {
       const tid = event.threadId
       if (!tid) return
 

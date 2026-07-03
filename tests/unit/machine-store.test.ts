@@ -23,7 +23,7 @@ const del = vi.fn(async (id: string) => {
 })
 const disconnect = vi.fn(async () => ({ ok: true as const }))
 const reorder = vi.fn(async () => ({ ok: true as const }))
-let statusCb: ((id: string, status: string, url: string | null) => void) | null = null
+let statusCb: ((id: string, status: string, url: string | null, reason?: string) => void) | null = null
 const connectMachine = vi.fn()
 const disconnectMachine = vi.fn()
 const bind = vi.fn()
@@ -52,7 +52,7 @@ beforeEach(() => {
       routing: { connectMachine, disconnectMachine, invokeOn, bind },
     },
   }
-  useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [], snapshots: {} })
+  useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [], snapshots: {}, lastError: {} })
   vi.clearAllMocks()
 })
 
@@ -159,6 +159,25 @@ describe('machine-store', () => {
     }))
     await useMachineStore.getState().hydrate()
     expect(bind).toHaveBeenCalledWith('/r/api', 'm1')
+  })
+
+  it('subscribeStatus records the reason in lastError on an error transition', () => {
+    useMachineStore.getState().subscribeStatus()
+    statusCb!('m1', 'error', null, 'no node runtime found on the remote')
+    expect(useMachineStore.getState().lastError.m1).toBe('no node runtime found on the remote')
+  })
+
+  it('subscribeStatus clears lastError on connecting and connected', () => {
+    useMachineStore.getState().subscribeStatus()
+    statusCb!('m1', 'error', null, 'health check failed (timeout)')
+    expect(useMachineStore.getState().lastError.m1).toBe('health check failed (timeout)')
+
+    statusCb!('m1', 'connecting', null)
+    expect(useMachineStore.getState().lastError.m1).toBeNull()
+
+    statusCb!('m1', 'error', null, 'boom')
+    statusCb!('m1', 'connected', 'ws://127.0.0.1:7681')
+    expect(useMachineStore.getState().lastError.m1).toBeNull()
   })
 
   it('toggleCollapsed flips membership', () => {

@@ -23,8 +23,8 @@ export interface ConnectionManagerDeps {
   waitForHealth: (url: string) => Promise<boolean>
   remotePort: number
   remoteCommand: string
-  /** url is the local ws:// to dial when connected, null otherwise. */
-  onStatus: (machineId: string, status: ConnectionStatus, url: string | null) => void
+  /** url is the local ws:// to dial when connected, null otherwise. reason is set on error/fail transitions. */
+  onStatus: (machineId: string, status: ConnectionStatus, url: string | null, reason?: string) => void
   /** Install/upgrade the remote backend before the tunnel. 'no-node' aborts. */
   provision?: (machine: Machine) => Promise<{ action: string }>
   /** Auto-reconnect a dropped tunnel this many times before giving up (default 0). */
@@ -112,12 +112,13 @@ export class ConnectionManager {
         try {
           res = await this.deps.provision(machine)
         } catch (err) {
-          this.deps.onLog?.(
-            `provision failed for ${machine.name}: ${err instanceof Error ? err.message : String(err)}`,
-          )
-          return void this.transition(machine.id, 'fail')
+          const message = err instanceof Error ? err.message : String(err)
+          this.deps.onLog?.(`provision failed for ${machine.name}: ${message}`)
+          return void this.transition(machine.id, 'fail', message)
         }
-        if (res.action === 'no-node') return void this.transition(machine.id, 'fail')
+        if (res.action === 'no-node') {
+          return void this.transition(machine.id, 'fail', 'no node runtime found on the remote')
+        }
         if (this.conns.get(machine.id)?.epoch !== epoch) return
       }
 
@@ -138,18 +139,17 @@ export class ConnectionManager {
         conn.attempts = 0
         this.transition(machine.id, 'healthy')
       } else {
-        this.onFailure(machine, epoch)
+        this.onFailure(machine, epoch, 'health check failed (timeout)')
       }
     } catch (err) {
-      this.deps.onLog?.(
-        `connect attempt failed for ${machine.name}: ${err instanceof Error ? err.message : String(err)}`,
-      )
-      if (this.conns.get(machine.id)?.epoch === epoch) this.transition(machine.id, 'fail')
+      const message = err instanceof Error ? err.message : String(err)
+      this.deps.onLog?.(`connect attempt failed for ${machine.name}: ${message}`)
+      if (this.conns.get(machine.id)?.epoch === epoch) this.transition(machine.id, 'fail', message)
     }
   }
 
   /** A failed/dropped attempt: reconnect with backoff if budget remains, else error. */
-  private onFailure(machine: Machine, epoch: number): void {
+  private onFailure(machine: Machine, epoch: number, reason?: string): void {
     const conn = this.conns.get(machine.id)
     if (!conn || conn.intentional || conn.epoch !== epoch) return
     conn.epoch++ // any later callback from this attempt is now stale
@@ -159,7 +159,7 @@ export class ConnectionManager {
     const max = this.deps.maxReconnects ?? 0
     if (conn.attempts < max) {
       conn.attempts++
-      this.transition(machine.id, 'fail')
+      this.transition(machine.id, 'fail', reason)
       const delay = (this.deps.reconnectDelayMs ?? ((n) => reconnectDelay(n, { baseMs: 1000, capMs: 30_000 })))(conn.attempts)
       // A manual connect/disconnect in the meantime bumps the epoch (or flips
       // status); this timer must then no-op instead of firing an interleaved attempt.
@@ -171,16 +171,20 @@ export class ConnectionManager {
         return this.attempt(machine)
       }, delay)
     } else {
-      this.transition(machine.id, 'fail')
+      this.transition(machine.id, 'fail', reason)
     }
   }
 
-  private transition(machineId: string, event: 'connect' | 'healthy' | 'fail' | 'disconnect'): void {
+  private transition(
+    machineId: string,
+    event: 'connect' | 'healthy' | 'fail' | 'disconnect',
+    reason?: string,
+  ): void {
     const conn = this.conns.get(machineId)
     if (!conn) return
     const next = nextConnectionStatus(conn.status, event)
     if (next === conn.status) return
     conn.status = next
-    this.deps.onStatus(machineId, next, this.urlOf(machineId))
+    this.deps.onStatus(machineId, next, this.urlOf(machineId), reason)
   }
 }

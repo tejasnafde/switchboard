@@ -410,9 +410,9 @@ const api = {
       transport.invoke(MachineChannels.SAVE_SNAPSHOT, id, snapshot),
     connect: (id: string): Promise<{ ok: boolean; error?: string }> => transport.invoke(MachineChannels.CONNECT, id),
     disconnect: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DISCONNECT, id),
-    onStatus: (callback: (machineId: string, status: string, url: string | null) => void): (() => void) =>
-      transport.on<[string, string, string | null]>(MachineChannels.STATUS, (machineId, status, url) =>
-        callback(machineId, status, url ?? null),
+    onStatus: (callback: (machineId: string, status: string, url: string | null, reason?: string) => void): (() => void) =>
+      transport.on<[string, string, string | null, string | undefined]>(MachineChannels.STATUS, (machineId, status, url, reason) =>
+        callback(machineId, status, url ?? null, reason),
       ),
   },
 
@@ -538,8 +538,13 @@ const api = {
     isAvailable: (provider: 'claude' | 'codex') =>
       transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
 
+    // Stamp the emitting transport's machineId so two machines emitting the
+    // same threadId don't merge into one chat downstream.
     onEvent: (callback: (event: RuntimeEvent) => void): (() => void) =>
-      transport.on<[RuntimeEvent]>(ProviderChannels.EVENT, (event) => callback(event)),
+      router.onWithSource<[RuntimeEvent]>(ProviderChannels.EVENT, (machineId, event) => {
+        event.machineId = machineId
+        callback(event)
+      }),
   },
 
   // ─── Bookmarks ─────────────────────────────────────────────────

@@ -3,6 +3,12 @@
  * Used to keep Sidebar's local projects state in sync with ChatPanel
  * edits and vice versa - without hoisting state or pulling in a store.
  */
+import type { RuntimeEvent } from '@shared/provider-events'
+import { useAgentStore } from '../stores/agent-store'
+import { writeMachineNotice } from './terminal-registry'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:session-events')
 
 type RenameListener = (sessionId: string, title: string) => void
 
@@ -43,4 +49,104 @@ export function emitSessionCreated(session: NewSession): void {
   for (const listener of createdListeners) {
     try { listener(session) } catch { /* ignore */ }
   }
+}
+
+// ─── Machine-tagged provider events ────────────────────────────────
+//
+// Two machines can emit the same threadId (a cloned repo yields identical
+// Claude session UUIDs); events whose machineId disagrees with the target
+// session's bound machine are dropped so the streams don't merge.
+
+/** Pure predicate - exported for unit testing without touching the store. */
+export function shouldDeliverProviderEvent(
+  session: { machineId?: string } | undefined,
+  eventMachineId: string | undefined,
+): boolean {
+  if (!session?.machineId || !eventMachineId) return true
+  return session.machineId === eventMachineId
+}
+
+/** window.api.provider.onEvent with cross-machine bleed filtered out. */
+export function onProviderEvent(callback: (event: RuntimeEvent) => void): () => void {
+  return window.api.provider.onEvent((event) => {
+    if (event.threadId) {
+      const session = useAgentStore.getState().sessions.find((s) => s.id === event.threadId)
+      if (!shouldDeliverProviderEvent(session, event.machineId)) {
+        log.debug('dropping cross-machine event', {
+          threadId: event.threadId,
+          sessionMachine: session?.machineId,
+          eventMachine: event.machineId,
+        })
+        return
+      }
+    }
+    callback(event)
+  })
+}
+
+// ─── Reconnect resync ───────────────────────────────────────────────
+//
+// A remote machine's server process is a child of the ssh tunnel command -
+// a tunnel drop kills it. Auto-reconnect gets a fresh server with no live
+// sessions, so anything that was 'running' on that machine is now stale and
+// any machine-bound terminal pane's remote shell is gone.
+
+type MachineConnStatus = 'connecting' | 'connected' | 'error' | 'offline'
+
+export type MachineTransition = 'lost' | 'reconnected' | null
+
+/**
+ * Entering 'error' -> 'lost'; 'error' -> 'connected' -> 'reconnected' (the old
+ * server died, a fresh one replaced it). A first-time or intentional connect
+ * has nothing stale to clean up. Pure so the matrix is unit-testable.
+ */
+export function decideMachineTransition(
+  prevStatus: MachineConnStatus | undefined,
+  nextStatus: MachineConnStatus,
+): MachineTransition {
+  if (nextStatus === 'error' && prevStatus !== 'error') return 'lost'
+  if (nextStatus === 'connected' && prevStatus === 'error') return 'reconnected'
+  return null
+}
+
+const prevMachineStatus = new Map<string, MachineConnStatus>()
+let reconnectResyncStarted = false
+
+function isMachineConnStatus(status: string): status is MachineConnStatus {
+  return status === 'connecting' || status === 'connected' || status === 'error' || status === 'offline'
+}
+
+/**
+ * Applies the reconnect-resync side effects (terminal notices + resetting
+ * stale 'running' sessions) on machine status transitions. Idempotent -
+ * only the first call subscribes.
+ */
+export function initMachineReconnectResync(): () => void {
+  if (reconnectResyncStarted) return () => {}
+  reconnectResyncStarted = true
+
+  return window.api.machines.onStatus((machineId, status) => {
+    if (!isMachineConnStatus(status)) return
+    const transition = decideMachineTransition(prevMachineStatus.get(machineId), status)
+    prevMachineStatus.set(machineId, status)
+
+    if (transition === 'lost') {
+      writeMachineNotice(machineId, `[connection to ${machineId} lost]`)
+    } else if (transition === 'reconnected') {
+      useAgentStore.getState().resetRunningSessionsForMachine(machineId)
+      writeMachineNotice(machineId, "[machine reconnected - this terminal's remote shell is gone, open a new one]")
+    }
+  })
+}
+
+/** Test-only: clears the singleton guard + transition memory between test cases. */
+export function __resetMachineReconnectResyncForTests(): void {
+  reconnectResyncStarted = false
+  prevMachineStatus.clear()
+}
+
+// This module is imported early (App.tsx, Sidebar, ChatPanel), so subscribing
+// at load time needs no dedicated call site. Guarded for vitest's node env.
+if (typeof window !== 'undefined' && window.api?.machines) {
+  initMachineReconnectResync()
 }
