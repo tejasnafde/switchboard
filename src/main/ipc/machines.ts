@@ -18,26 +18,39 @@ import { makeProvision } from '../machines/provisionDeps'
 
 const log = createMainLogger('ipc:machines')
 
+// Hoisted to module scope: registerMachineHandlers runs again on macOS
+// 'activate' (window reopened after all windows closed), and a fresh
+// ConnectionManager per call would strand any live tunnels held by the old
+// instance. `currentHost` is kept mutable so the singleton's onStatus always
+// emits on whichever host is current.
+let connections: ConnectionManager | null = null
+let currentHost: BackendHost | null = null
+
 export function registerMachineHandlers(host: BackendHost): void {
-  const connections = new ConnectionManager({
-    allocatePort,
-    spawnTunnel,
-    waitForHealth,
-    remotePort: REMOTE_PORT,
-    remoteCommand: REMOTE_COMMAND,
-    provision: makeProvision((msg) => log.info(msg)),
-    maxReconnects: 5,
-    onStatus: (machineId, status, url) => {
-      log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}`)
-      host.emit(MachineChannels.STATUS, machineId, status, url)
-    },
-  })
+  currentHost = host
+  if (!connections) {
+    connections = new ConnectionManager({
+      allocatePort,
+      spawnTunnel,
+      waitForHealth,
+      remotePort: REMOTE_PORT,
+      remoteCommand: REMOTE_COMMAND,
+      provision: makeProvision((msg) => log.info(msg)),
+      maxReconnects: 5,
+      onLog: (msg) => log.error(msg),
+      onStatus: (machineId, status, url) => {
+        log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}`)
+        currentHost?.emit(MachineChannels.STATUS, machineId, status, url)
+      },
+    })
+  }
+  const mgr = connections
 
   host.handle(MachineChannels.CONNECT, (id: string) => {
     log.info(`connect requested: ${id}`)
     const machine = listMachines().find((m) => m.id === id)
     if (!machine) return { ok: false as const, error: 'unknown machine' }
-    void connections.connect(machine)
+    void mgr.connect(machine)
     return { ok: true as const }
   })
 
@@ -49,7 +62,9 @@ export function registerMachineHandlers(host: BackendHost): void {
     updateMachine(id, patch, Date.now()),
   )
 
-  host.handle(MachineChannels.DELETE, (id: string) => {
+  host.handle(MachineChannels.DELETE, async (id: string) => {
+    // Kill any live tunnel first, or it keeps auto-reconnecting a deleted machine.
+    await mgr.disconnect(id)
     deleteMachine(id)
     return { ok: true }
   })
@@ -68,7 +83,7 @@ export function registerMachineHandlers(host: BackendHost): void {
 
 
   host.handle(MachineChannels.DISCONNECT, async (id: string) => {
-    await connections.disconnect(id)
+    await mgr.disconnect(id)
     return { ok: true as const }
   })
 
@@ -82,4 +97,13 @@ export function registerMachineHandlers(host: BackendHost): void {
       return []
     }
   })
+}
+
+/**
+ * Kill every live tunnel. Call from `before-quit` - without this, ssh
+ * reparents to launchd on app exit and both the tunnel and the remote server
+ * it forwards to outlive Switchboard.
+ */
+export function stopAllMachineConnections(): Promise<void> {
+  return connections?.disconnectAll() ?? Promise.resolve()
 }

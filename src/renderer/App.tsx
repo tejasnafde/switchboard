@@ -35,6 +35,13 @@ import { createRendererLogger } from './logger'
 
 const log = createRendererLogger('app')
 
+/** Map a SessionSummary's provider `source` to the agent-store's `AgentType`. */
+function agentTypeForSource(source: SessionSummary['source']): 'claude-code' | 'codex' | 'opencode' {
+  if (source === 'codex') return 'codex'
+  if (source === 'opencode') return 'opencode'
+  return 'claude-code'
+}
+
 /**
  * Root layout - flat flex row, no nesting.
  * All panels always mounted. Toggles use visibility:hidden + width:0.
@@ -389,21 +396,24 @@ export function App() {
     async (session: SessionSummary, projectPath: string, machineId: string = 'local') => {
       useLayoutStore.getState().setAppView('chats')
 
+      // Callers that don't track the machine (e.g. bookmarks) default to 'local';
+      // prefer the machine the store already knows so we don't clobber a remote binding.
+      const storeState = useAgentStore.getState()
+      const existing = storeState.sessions.find((s) => s.id === session.id)
+      const effectiveMachineId = existing?.machineId ?? machineId
+
       // Route every backend call for this session (load, createConversation,
       // startSession, sendTurn) to its machine before the first one fires.
       // Keyed by session.id, which is arg0 of all those calls.
-      window.api.routing.bind(session.id, machineId)
+      window.api.routing.bind(session.id, effectiveMachineId)
 
       // Evict messages from the current idle session before switching.
       // Running sessions keep their messages so in-flight streaming isn't lost.
-      const storeState = useAgentStore.getState()
       const current = storeState.sessions.find((s) => s.id === storeState.activeSessionId)
       if (current && shouldEvictMessages(current)) {
         clearMessages(current.id)
       }
 
-      // Check if session already in store (previously opened this run).
-      const existing = storeState.sessions.find((s) => s.id === session.id)
       if (existing) {
         setActiveSession(session.id)
         // Messages may have been evicted - reload from disk if so.
@@ -421,7 +431,7 @@ export function App() {
 
       // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
       if (session.agentType === 'terminal') {
-        addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title, machineId })
+        addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title, machineId: effectiveMachineId })
         setActiveSession(session.id)
         return
       }
@@ -432,10 +442,10 @@ export function App() {
       // mode resumes in its worktree, not the parent repo.
       addSession({
         id: session.id,
-        type: (session.source === 'codex' ? 'codex' : 'claude-code'),
+        type: agentTypeForSource(session.source),
         status: 'idle',
         projectPath,
-        machineId,
+        machineId: effectiveMachineId,
         worktreePath: session.worktreePath ?? null,
         worktreeBranch: session.worktreeBranch ?? null,
         resumeSessionId: session.id,
@@ -448,7 +458,7 @@ export function App() {
       await window.api.app.createConversation({
         id: session.id,
         projectPath,
-        agentType: (session.source === 'codex' ? 'codex' : 'claude-code'),
+        agentType: agentTypeForSource(session.source),
         title: session.title,
       }).catch(() => {})
 

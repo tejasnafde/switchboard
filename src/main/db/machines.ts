@@ -97,7 +97,11 @@ export function updateMachine(id: string, patch: Partial<MachineInput>, now: num
 }
 
 export function deleteMachine(id: string): void {
-  getDb().prepare('DELETE FROM machines WHERE id = ?').run(id)
+  const db = getDb()
+  db.prepare('DELETE FROM machines WHERE id = ?').run(id)
+  // No FK on machine_snapshots - clean it up explicitly so a deleted machine
+  // doesn't leave an orphaned snapshot row behind.
+  db.prepare('DELETE FROM machine_snapshots WHERE machine_id = ?').run(id)
 }
 
 export function reorderMachines(ids: string[], now: number): void {

@@ -137,7 +137,12 @@ export function MachineLayer({
                             onOpenRemoteSession!(node.id, p.path, {
                               id: s.id,
                               title: s.title,
-                              source: s.agentType === 'codex' ? 'codex' : 'claude-code',
+                              source:
+                                s.agentType === 'codex'
+                                  ? 'codex'
+                                  : s.agentType === 'opencode'
+                                    ? 'opencode'
+                                    : 'claude-code',
                               agentType: s.agentType ?? null,
                               startedAt: 0,
                               messageCount: 0,

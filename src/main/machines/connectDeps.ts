@@ -44,26 +44,48 @@ export function spawnTunnel(command: string, args: string[]): TunnelProcess {
   }
 }
 
-/** Poll the tunnel until the remote backend's WS accepts a connection, or give up. */
+/**
+ * Poll the tunnel until the remote backend's WS accepts a connection, or give
+ * up. Guards against a stalled handshake (TCP connects but the WS upgrade
+ * never completes) via `handshakeTimeout` plus a per-tick fallback timer -
+ * either alone can leave a tick with no 'open' and no 'error', which would
+ * otherwise hang the whole probe forever.
+ */
 export function waitForHealth(url: string, attempts = 30, intervalMs = 1000): Promise<boolean> {
   return new Promise((resolve) => {
     let tries = 0
+    const recordFailure = (err: Error) => {
+      tries++
+      if (tries === 1 || tries % 5 === 0) log.warn(`health attempt ${tries}/${attempts} failed`, { url, err: err.message })
+      if (tries >= attempts) {
+        log.warn(`health gave up after ${attempts} attempts`, { url })
+        resolve(false)
+      } else {
+        setTimeout(tick, intervalMs)
+      }
+    }
     const tick = () => {
-      const ws = new WebSocket(url)
+      let settled = false
+      const ws = new WebSocket(url, { handshakeTimeout: intervalMs })
+      const fallback = setTimeout(() => {
+        if (settled) return
+        settled = true
+        ws.terminate()
+        recordFailure(new Error('handshake stalled'))
+      }, intervalMs)
       ws.once('open', () => {
+        if (settled) return
+        settled = true
+        clearTimeout(fallback)
         log.info(`health ok after ${tries + 1} attempt(s)`, { url })
         ws.close()
         resolve(true)
       })
       ws.once('error', (err) => {
-        tries++
-        if (tries === 1 || tries % 5 === 0) log.warn(`health attempt ${tries}/${attempts} failed`, { url, err: err.message })
-        if (tries >= attempts) {
-          log.warn(`health gave up after ${attempts} attempts`, { url })
-          resolve(false)
-        } else {
-          setTimeout(tick, intervalMs)
-        }
+        if (settled) return
+        settled = true
+        clearTimeout(fallback)
+        recordFailure(err)
       })
     }
     tick()

@@ -14,6 +14,11 @@ const LOCAL_CHANNELS = new Set<string>([
   AppChannels.RELAUNCH,
   AppChannels.SET_VIBRANCY,
   AppChannels.CHECK_FOR_UPDATES,
+  // Desktop-only, handled by bare ipcMain listeners in main/index.ts - no
+  // AppChannels entry because they're not part of the ProviderAdapter-facing API.
+  'app:close-window',
+  'app:quit-and-install',
+  'app:get-log-paths',
   // The machine registry is this laptop's list of remotes, not the VM's.
   ...Object.values(MachineChannels),
 ])

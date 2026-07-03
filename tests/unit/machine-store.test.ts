@@ -21,10 +21,12 @@ const del = vi.fn(async (id: string) => {
   stored = stored.filter((m) => m.id !== id)
   return { ok: true as const }
 })
+const disconnect = vi.fn(async () => ({ ok: true as const }))
 const reorder = vi.fn(async () => ({ ok: true as const }))
 let statusCb: ((id: string, status: string, url: string | null) => void) | null = null
 const connectMachine = vi.fn()
 const disconnectMachine = vi.fn()
+const bind = vi.fn()
 const invokeOn = vi.fn(async () => [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', source: 'codex', startedAt: 0, messageCount: 1, filePath: '/x' }] }])
 const saveSnapshot = vi.fn(async () => ({ ok: true as const }))
 
@@ -38,6 +40,7 @@ beforeEach(() => {
         create,
         update: vi.fn(async () => null),
         delete: del,
+        disconnect,
         reorder,
         listSshHosts: vi.fn(async () => []),
         saveSnapshot,
@@ -46,10 +49,10 @@ beforeEach(() => {
           return () => {}
         }),
       },
-      routing: { connectMachine, disconnectMachine, invokeOn },
+      routing: { connectMachine, disconnectMachine, invokeOn, bind },
     },
   }
-  useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [] })
+  useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [], snapshots: {} })
   vi.clearAllMocks()
 })
 
@@ -59,10 +62,14 @@ describe('machine-store', () => {
     expect(useMachineStore.getState().remotes.map((m) => m.id)).toEqual(['a', 'b', 'c'])
   })
 
-  it('reorder applies the new order optimistically and persists', async () => {
+  it('reorder applies the new order optimistically, rewrites sortOrder, and persists', async () => {
     await useMachineStore.getState().hydrate()
     await useMachineStore.getState().reorder(['c', 'a', 'b'])
-    expect(useMachineStore.getState().remotes.map((m) => m.id)).toEqual(['c', 'a', 'b'])
+    const remotes = useMachineStore.getState().remotes
+    expect(remotes.map((m) => m.id)).toEqual(['c', 'a', 'b'])
+    // Without rewriting sortOrder, buildMachineList (which sorts by it) would
+    // snap the list back to the original order on the next hydrate/render.
+    expect(remotes.map((m) => m.sortOrder)).toEqual([0, 1, 2])
     expect(reorder).toHaveBeenCalledWith(['c', 'a', 'b'])
   })
 
@@ -72,6 +79,12 @@ describe('machine-store', () => {
     expect(useMachineStore.getState().remotes.some((m) => m.id === 'd')).toBe(true)
   })
 
+  it('add catches a rejected create instead of throwing', async () => {
+    create.mockRejectedValueOnce(new Error('tunnel down'))
+    const result = await useMachineStore.getState().add({ name: 'd', sshHost: 'd.host' })
+    expect(result).toBeNull()
+  })
+
   it('remove deletes then re-hydrates', async () => {
     await useMachineStore.getState().hydrate()
     await useMachineStore.getState().remove('b')
@@ -79,23 +92,57 @@ describe('machine-store', () => {
     expect(useMachineStore.getState().remotes.map((m) => m.id)).toEqual(['a', 'c'])
   })
 
-  it('subscribeStatus registers a remote transport on connect and tears it down on drop', () => {
+  it('remove disconnects a live machine first, then prunes its cached state', async () => {
+    await useMachineStore.getState().hydrate()
+    useMachineStore.setState((s) => ({
+      connections: { ...s.connections, b: 'connected' },
+      snapshots: { ...s.snapshots, b: { syncedAt: 0, projects: [] } },
+    }))
+    await useMachineStore.getState().remove('b')
+    expect(disconnect).toHaveBeenCalledWith('b')
+    expect(del).toHaveBeenCalledWith('b')
+    expect(useMachineStore.getState().connections.b).toBeUndefined()
+    expect(useMachineStore.getState().snapshots.b).toBeUndefined()
+  })
+
+  it('remove does not disconnect an already-offline machine', async () => {
+    await useMachineStore.getState().hydrate()
+    await useMachineStore.getState().remove('a')
+    expect(disconnect).not.toHaveBeenCalled()
+  })
+
+  it('subscribeStatus registers a remote transport on connect and tears it down on an intentional disconnect', () => {
     useMachineStore.getState().subscribeStatus()
     statusCb!('m1', 'connected', 'ws://127.0.0.1:7681')
     expect(connectMachine).toHaveBeenCalledWith('m1', 'ws://127.0.0.1:7681')
     expect(useMachineStore.getState().connections.m1).toBe('connected')
 
-    statusCb!('m1', 'error', null)
+    statusCb!('m1', 'offline', null)
     expect(disconnectMachine).toHaveBeenCalledWith('m1')
+    expect(useMachineStore.getState().connections.m1).toBe('offline')
+  })
+
+  it('subscribeStatus does NOT tear down bindings on a transient error - the transport can reconnect', () => {
+    useMachineStore.getState().subscribeStatus()
+    statusCb!('m1', 'connected', 'ws://127.0.0.1:7681')
+    statusCb!('m1', 'error', null)
+    expect(disconnectMachine).not.toHaveBeenCalled()
     expect(useMachineStore.getState().connections.m1).toBe('error')
   })
 
-  it('syncMachine scans the remote, persists, and caches the snapshot', async () => {
+  it('subscribeStatus falls back to offline for an unrecognized status', () => {
+    useMachineStore.getState().subscribeStatus()
+    statusCb!('m1', 'weird-future-status', null)
+    expect(useMachineStore.getState().connections.m1).toBe('offline')
+  })
+
+  it('syncMachine scans the remote, persists, caches the snapshot, and binds its project paths', async () => {
     await useMachineStore.getState().syncMachine('m1')
     expect(invokeOn).toHaveBeenCalledWith('m1', 'app:get-projects')
     expect(saveSnapshot).toHaveBeenCalled()
     const snap = useMachineStore.getState().snapshots.m1
     expect(snap.projects).toEqual([{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', agentType: 'codex' }] }])
+    expect(bind).toHaveBeenCalledWith('/r/api', 'm1')
   })
 
   it('subscribeStatus does not register a transport while still connecting', () => {
@@ -103,6 +150,15 @@ describe('machine-store', () => {
     statusCb!('m1', 'connecting', null)
     expect(connectMachine).not.toHaveBeenCalled()
     expect(disconnectMachine).not.toHaveBeenCalled()
+  })
+
+  it('hydrate rebinds project paths for machines that are already connected', async () => {
+    useMachineStore.setState((s) => ({
+      connections: { ...s.connections, m1: 'connected' },
+      snapshots: { ...s.snapshots, m1: { syncedAt: 0, projects: [{ path: '/r/api', name: 'api', sessions: [] }] } },
+    }))
+    await useMachineStore.getState().hydrate()
+    expect(bind).toHaveBeenCalledWith('/r/api', 'm1')
   })
 
   it('toggleCollapsed flips membership', () => {

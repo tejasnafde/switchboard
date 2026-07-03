@@ -17,6 +17,24 @@ import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:machines')
 
+const MACHINE_STATUSES: readonly MachineStatus[] = ['connected', 'connecting', 'offline', 'error']
+function toMachineStatus(status: string): MachineStatus {
+  return (MACHINE_STATUSES as readonly string[]).includes(status) ? (status as MachineStatus) : 'offline'
+}
+
+/**
+ * Bind every cached project path in a snapshot to its machine, so path-keyed
+ * IPC (files/git/kanban/workspace) routes to the remote instead of local.
+ * Known ceiling: two machines with the same absolute project path collide -
+ * the last bind wins.
+ */
+function bindSnapshotPaths(machineId: string, snapshot: MachineSnapshot | undefined): void {
+  if (!snapshot) return
+  for (const project of snapshot.projects) {
+    window.api.routing.bind(project.path, machineId)
+  }
+}
+
 interface MachineStore {
   remotes: Machine[]
   /** machineId -> live connection status (absent = offline). */
@@ -62,13 +80,26 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       set({ remotes: await api.list() })
     } catch (err) {
       log.warn('hydrate failed', err)
+      return
+    }
+    // Machines that reconnected before this hydrate resolved already have a
+    // 'connected' status and a cached snapshot - rebind their project paths
+    // so path-keyed IPC doesn't silently fall back to local after a reload.
+    const { connections, snapshots } = get()
+    for (const [machineId, status] of Object.entries(connections)) {
+      if (status === 'connected') bindSnapshotPaths(machineId, snapshots[machineId])
     }
   },
 
   add: async (input) => {
-    const created = await window.api.machines.create(input)
-    await get().hydrate()
-    return created
+    try {
+      const created = await window.api.machines.create(input)
+      await get().hydrate()
+      return created
+    } catch (err) {
+      log.warn('add failed', err)
+      return null
+    }
   },
 
   update: async (id, patch) => {
@@ -77,14 +108,33 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   },
 
   remove: async (id) => {
+    // Disconnect first - deleting a live machine would leave its transport and bindings registered.
+    if ((get().connections[id] ?? 'offline') !== 'offline') {
+      await get().disconnect(id)
+    }
     await window.api.machines.delete(id)
     await get().hydrate()
+    set((s) => {
+      const connections = { ...s.connections }
+      const snapshots = { ...s.snapshots }
+      delete connections[id]
+      delete snapshots[id]
+      return { connections, snapshots }
+    })
   },
 
   reorder: async (ids) => {
-    // Optimistic: apply the new order locally, then persist.
+    // Optimistic: apply the new order locally and rewrite sortOrder
+    // sequentially, then persist. buildMachineList re-sorts by sortOrder,
+    // so leaving the old values in place made the UI snap back to the
+    // previous order until the next hydrate.
     const byId = new Map(get().remotes.map((m) => [m.id, m]))
-    set({ remotes: ids.map((id) => byId.get(id)).filter((m): m is Machine => !!m) })
+    set({
+      remotes: ids
+        .map((id) => byId.get(id))
+        .filter((m): m is Machine => !!m)
+        .map((m, i) => ({ ...m, sortOrder: i })),
+    })
     await window.api.machines.reorder(ids)
   },
 
@@ -110,6 +160,9 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       const snapshot = projectsToSnapshot(projects, Date.now())
       await window.api.machines.saveSnapshot(id, snapshot)
       set((s) => ({ snapshots: { ...s.snapshots, [id]: snapshot } }))
+      // Route path-keyed IPC (files/git/kanban/workspace) for every project
+      // on this machine to it, not just the id-keyed session/terminal calls.
+      bindSnapshotPaths(id, snapshot)
     } catch (err) {
       log.warn('syncMachine failed', err)
     }
@@ -141,12 +194,15 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   subscribeStatus: () =>
     window.api.machines.onStatus((id, status, url) => {
       if (status === 'connected' && url) {
+        // connectMachine() replaces a stale transport in place, covering reconnect-after-error.
         window.api.routing.connectMachine(id, url)
         void get().syncMachine(id)
-      } else if (status === 'offline' || status === 'error') {
+      } else if (status === 'offline') {
+        // Only intentional disconnects wipe bindings. 'error' is often a transient
+        // tunnel blip that auto-reconnects; forgetting bindings would orphan live sessions.
         window.api.routing.disconnectMachine(id)
       }
-      set((s) => ({ connections: { ...s.connections, [id]: status as MachineStatus } }))
+      set((s) => ({ connections: { ...s.connections, [id]: toMachineStatus(status) } }))
     }),
 
   setActive: (id) => set({ activeMachineId: id }),

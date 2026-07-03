@@ -4,7 +4,7 @@
  * ephemeral port. Proves invoke/send/emit round-trip end to end - the contract
  * a future server.js relies on - with no Electron in the loop.
  */
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, afterEach, vi } from 'vitest'
 import { WebSocketServer, type AddressInfo } from 'ws'
 import { WsHost } from '../../src/main/backend/ws-host'
 import { WsTransport } from '../../src/shared/ws-transport'
@@ -75,5 +75,100 @@ describe('WsTransport ↔ WsHost loopback', () => {
     host.emit('evt:x', 'hi')
     await tick()
     expect(seen).toEqual(['hi'])
+  })
+})
+
+/**
+ * Fake-socket unit tests: a minimal stand-in for the browser WebSocket that
+ * lets us fire 'open'/'close' and inspect exactly what was sent, without a
+ * real server or waiting out real timeouts.
+ */
+class FakeSocket {
+  static instances: FakeSocket[] = []
+  private readonly listeners: Record<string, Array<(ev?: unknown) => void>> = {}
+  readonly sent: string[] = []
+  constructor(public url: string) {
+    FakeSocket.instances.push(this)
+  }
+  addEventListener(ev: string, cb: (ev?: unknown) => void): void {
+    ;(this.listeners[ev] ??= []).push(cb)
+  }
+  send(data: string): void {
+    this.sent.push(data)
+  }
+  close(): void {
+    this.fire('close')
+  }
+  fire(ev: string, arg?: unknown): void {
+    for (const cb of this.listeners[ev] ?? []) cb(arg)
+  }
+}
+
+describe('WsTransport (fake socket)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.useRealTimers()
+    FakeSocket.instances.length = 0
+  })
+
+  function makeOpenTransport(): { t: WsTransport; sock: FakeSocket } {
+    vi.stubGlobal('WebSocket', FakeSocket)
+    const t = new WsTransport('ws://fake')
+    const sock = FakeSocket.instances.at(-1)!
+    sock.fire('open')
+    return { t, sock }
+  }
+
+  it('strips trailing undefined args before serializing (JSON would otherwise turn them into null)', () => {
+    const { t, sock } = makeOpenTransport()
+    t.send('files:write-file', 'repo', 'sub', 'content', undefined)
+    const frame = JSON.parse(sock.sent[0])
+    expect(frame.args).toEqual(['repo', 'sub', 'content'])
+  })
+
+  it('only strips trailing undefined, leaving interior undefined as null like structured clone would not', () => {
+    const { t, sock } = makeOpenTransport()
+    t.send('ch', 'a', undefined, 'b')
+    const frame = JSON.parse(sock.sent[0])
+    expect(frame.args).toEqual(['a', null, 'b'])
+  })
+
+  it('gives provider:* channels a longer timeout than the 30s default', async () => {
+    vi.useFakeTimers()
+    const { t } = makeOpenTransport()
+
+    const rejected = vi.fn()
+    t.invoke('provider:start-session').catch(rejected)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(rejected).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(170_001)
+    expect(rejected).toHaveBeenCalled()
+  })
+
+  it('keeps the 30s default timeout for non-provider channels', async () => {
+    vi.useFakeTimers()
+    const { t } = makeOpenTransport()
+
+    const rejected = vi.fn()
+    t.invoke('files:read-file').catch(rejected)
+    await vi.advanceTimersByTimeAsync(30_001)
+    expect(rejected).toHaveBeenCalled()
+  })
+
+  it('rejects in-flight invokes and rejects new invokes immediately on close (no 30s hang)', async () => {
+    const { t, sock } = makeOpenTransport()
+    const pending = t.invoke('ch')
+    sock.fire('close')
+    await expect(pending).rejects.toThrow('WebSocket closed')
+    await expect(t.invoke('ch2')).rejects.toThrow('transport closed')
+  })
+
+  it('drops send() after close instead of queuing it into the outbox', () => {
+    const { t, sock } = makeOpenTransport()
+    sock.fire('close')
+    const sentBefore = sock.sent.length
+    t.send('ch')
+    expect(sock.sent.length).toBe(sentBefore)
   })
 })

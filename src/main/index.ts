@@ -21,7 +21,7 @@ import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerAppDesktopHandlers } from './ipc/app-desktop'
-import { registerMachineHandlers } from './ipc/machines'
+import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
@@ -389,5 +389,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   providerRegistry?.stopAll()
+  void stopAllMachineConnections()
   closeDb()
 })

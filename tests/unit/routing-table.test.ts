@@ -17,10 +17,26 @@ describe('routingKey', () => {
   it('reads id off a payload object (terminal write({id,data}))', () => {
     expect(routingKey([{ id: 'term_3', data: 'ls' }])).toBe('term_3')
   })
+  it('reads conversationId off a payload object (app.saveMessage({id, conversationId}))', () => {
+    expect(routingKey([{ id: 'msg_1', conversationId: 'conv_1' }])).toBe('conv_1')
+  })
+  it('prefers threadId over conversationId over id when several are present', () => {
+    expect(routingKey([{ threadId: 't1', conversationId: 'c1', id: 'i1' }])).toBe('t1')
+    expect(routingKey([{ conversationId: 'c1', id: 'i1' }])).toBe('c1')
+  })
+  it('falls back to path-shaped keys (repoRoot / projectPath / workspaceRoot / cwd)', () => {
+    expect(routingKey([{ repoRoot: '/repo' }])).toBe('/repo')
+    expect(routingKey([{ projectPath: '/proj' }])).toBe('/proj')
+    expect(routingKey([{ workspaceRoot: '/ws' }])).toBe('/ws')
+    expect(routingKey([{ cwd: '/x' }])).toBe('/x')
+  })
+  it('prefers id-shaped keys over path-shaped keys when both are present', () => {
+    expect(routingKey([{ id: 'i1', cwd: '/x' }])).toBe('i1')
+  })
   it('returns null when there is no usable key', () => {
     expect(routingKey([])).toBeNull()
     expect(routingKey([42])).toBeNull()
-    expect(routingKey([{ cwd: '/x' }])).toBeNull()
+    expect(routingKey([{ foo: 'bar' }])).toBeNull()
   })
 })
 

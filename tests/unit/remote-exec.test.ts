@@ -1,7 +1,7 @@
 /**
  * Wrapping remote commands to run as another user (sudo) with nvm loaded, so a
  * VM whose node lives under the target user's nvm is reachable non-interactively.
- * No remoteUser -> passthrough (the login user runs it directly).
+ * No remoteUser -> the login user runs it, still through the same nvm wrapper.
  */
 import { describe, it, expect } from 'vitest'
 import { asUserScript, asUserUpload } from '../../src/main/machines/remoteExec'
@@ -12,9 +12,14 @@ const b64 = (cmd: string) => {
 }
 
 describe('asUserScript', () => {
-  it('passes through when no user is set', () => {
-    expect(asUserScript(null, 'node -v')).toBe('node -v')
-    expect(asUserScript(undefined, 'node -v')).toBe('node -v')
+  it('wraps through base64 + bash (no sudo) when no user is set', () => {
+    const out = asUserScript(null, 'node -v')
+    expect(out).toBe(asUserScript(undefined, 'node -v'))
+    expect(out).not.toContain('sudo')
+    expect(out).toMatch(/\| base64 -d \| bash$/)
+    const decoded = b64(out)
+    expect(decoded).toContain('NVM_DIR')
+    expect(decoded?.endsWith('node -v')).toBe(true)
   })
 
   it('runs the script as the user via non-interactive sudo bash', () => {
@@ -36,6 +41,17 @@ describe('asUserScript', () => {
     expect(out).not.toContain(`console.log('hi')`)
     expect(b64(out)).toContain(`console.log('hi')`)
   })
+
+  it('rejects a remoteUser that is not a plausible unix username', () => {
+    expect(() => asUserScript('ubuntu; rm -rf ~', 'node -v')).toThrow(/invalid remoteUser/)
+    expect(() => asUserScript('ubuntu ', 'node -v')).toThrow(/invalid remoteUser/)
+    expect(() => asUserScript('-x', 'node -v')).toThrow(/invalid remoteUser/)
+  })
+
+  it('accepts common username shapes', () => {
+    expect(() => asUserScript('ubuntu', 'node -v')).not.toThrow()
+    expect(() => asUserScript('deploy-user_1.x', 'node -v')).not.toThrow()
+  })
 })
 
 describe('asUserUpload', () => {
@@ -48,5 +64,10 @@ describe('asUserUpload', () => {
     const out = asUserUpload('ubuntu', 'cat > "$HOME/x"')
     expect(out).toBe(`sudo -n -H -u ubuntu bash -c 'cat > "$HOME/x"'`)
     expect(out).not.toContain('base64')
+  })
+
+  it('rejects a remoteUser that is not a plausible unix username', () => {
+    expect(() => asUserUpload('ubuntu; rm -rf ~', 'cat > f')).toThrow(/invalid remoteUser/)
+    expect(() => asUserUpload('ubuntu\n', 'cat > f')).toThrow(/invalid remoteUser/)
   })
 })

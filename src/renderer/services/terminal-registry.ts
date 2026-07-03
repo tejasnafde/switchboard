@@ -245,6 +245,8 @@ export function destroyTerminal(id: string): void {
   for (const fn of inst.cleanupFns) fn()
   inst.terminal.dispose()
   window.api.terminal.kill(id)
+  // Drop the routing-table entry so a stale pane id can't keep routing to its old machine.
+  window.api.routing?.unbind?.(id)
   registry.delete(id)
   lastOutputAt.delete(id)
 }

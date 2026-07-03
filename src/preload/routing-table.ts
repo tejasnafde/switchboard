@@ -8,14 +8,23 @@
  * `machineId` on the payload. Anything unbound or unknown stays local.
  */
 
+/**
+ * Priority when args[0] is an object: `threadId` and `conversationId` name a
+ * chat session, `id` a generic resource (terminal, etc), and the path-shaped
+ * keys (repoRoot / projectPath / workspaceRoot / cwd) let files/git/lsp/kanban
+ * calls route by the project path a machine is bound to.
+ */
+const OBJECT_KEY_PRIORITY = ['threadId', 'conversationId', 'id', 'repoRoot', 'projectPath', 'workspaceRoot', 'cwd'] as const
+
 /** Extract the routing key (resource id) from a call's args, or null. */
 export function routingKey(args: unknown[]): string | null {
   const first = args[0]
   if (typeof first === 'string') return first
   if (first && typeof first === 'object') {
     const o = first as Record<string, unknown>
-    if (typeof o.threadId === 'string') return o.threadId
-    if (typeof o.id === 'string') return o.id
+    for (const key of OBJECT_KEY_PRIORITY) {
+      if (typeof o[key] === 'string') return o[key] as string
+    }
   }
   return null
 }
