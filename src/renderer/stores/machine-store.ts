@@ -47,6 +47,8 @@ interface MachineStore {
   sshHosts: SshHost[]
   /** machineId -> cached tree snapshot for offline read-only browse. */
   snapshots: Record<string, MachineSnapshot>
+  /** machineId -> human-readable reason for the last 'error' status (null once cleared). */
+  lastError: Record<string, string | null>
 
   hydrate: () => Promise<void>
   add: (input: MachineInput) => Promise<Machine | null>
@@ -72,6 +74,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   collapsed: new Set(),
   sshHosts: [],
   snapshots: {},
+  lastError: {},
 
   hydrate: async () => {
     const api = window.api?.machines
@@ -192,7 +195,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   },
 
   subscribeStatus: () =>
-    window.api.machines.onStatus((id, status, url) => {
+    window.api.machines.onStatus((id, status, url, reason) => {
       if (status === 'connected' && url) {
         // connectMachine() replaces a stale transport in place, covering reconnect-after-error.
         window.api.routing.connectMachine(id, url)
@@ -202,7 +205,12 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
         // tunnel blip that auto-reconnects; forgetting bindings would orphan live sessions.
         window.api.routing.disconnectMachine(id)
       }
-      set((s) => ({ connections: { ...s.connections, [id]: toMachineStatus(status) } }))
+      set((s) => {
+        const lastError = { ...s.lastError }
+        if (status === 'error') lastError[id] = reason ?? null
+        else if (status === 'connecting' || status === 'connected') lastError[id] = null
+        return { connections: { ...s.connections, [id]: toMachineStatus(status) }, lastError }
+      })
     }),
 
   setActive: (id) => set({ activeMachineId: id }),

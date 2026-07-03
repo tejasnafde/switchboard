@@ -7,8 +7,11 @@
  */
 import { build } from 'esbuild'
 import { resolve } from 'node:path'
+import { readFileSync } from 'node:fs'
 
 export const REMOTE_NATIVE_DEPS = ['better-sqlite3', 'node-pty']
+
+const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'))
 
 await build({
   entryPoints: ['src/server/index.ts'],
@@ -19,5 +22,9 @@ await build({
   format: 'cjs',
   external: [...REMOTE_NATIVE_DEPS, 'electron'],
   alias: { '@shared': resolve('src/shared') },
+  // Lets the running server report its own version so the client's health
+  // probe (connectDeps.ts waitForHealth) can detect a stale/lingering
+  // process that survived past a fresh deploy.
+  define: { __SERVER_VERSION__: JSON.stringify(pkg.version) },
   logLevel: 'info',
 })

@@ -1287,6 +1287,10 @@ mark.sb-search-mark.active {
   opacity: 0.4;
   cursor: not-allowed;
 }
+.machine-modal-host.is-selected {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
 
 .machine-grip {
   flex: none;
@@ -1332,6 +1336,13 @@ mark.sb-search-mark.active {
 }
 .cached-label {
   color: var(--text-muted);
+}
+.machine-error-reason {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--error);
+  opacity: 0.8;
 }
 .cached-project {
   padding: 2px 0;

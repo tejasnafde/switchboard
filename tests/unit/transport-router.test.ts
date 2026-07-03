@@ -118,6 +118,54 @@ describe('TransportRouter', () => {
     expect(local.invoked).toHaveLength(0)
   })
 
+  it('onWithSource tags each event with the machine id that emitted it', () => {
+    const local = fake('local')
+    const remote = fake('remote')
+    const router = new TransportRouter(local)
+    router.register('m1', remote)
+    const seen: Array<[string, string]> = []
+    router.onWithSource<[string]>('provider:event', (machineId, e) => seen.push([machineId, e]))
+    local.emit('provider:event', 'from-local')
+    remote.emit('provider:event', 'from-remote')
+    expect(seen).toEqual([['local', 'from-local'], ['m1', 'from-remote']])
+  })
+
+  it('onWithSource tags events from a transport registered after subscribing', () => {
+    const local = fake('local')
+    const router = new TransportRouter(local)
+    const seen: Array<[string, string]> = []
+    router.onWithSource<[string]>('provider:event', (machineId, e) => seen.push([machineId, e]))
+    const remote = fake('remote')
+    router.register('m1', remote)
+    remote.emit('provider:event', 'late')
+    expect(seen).toEqual([['m1', 'late']])
+  })
+
+  it('on() delegates to onWithSource but drops the machine id from the handler', () => {
+    const local = fake('local')
+    const remote = fake('remote')
+    const router = new TransportRouter(local)
+    router.register('m1', remote)
+    const seen: string[] = []
+    router.on<[string]>('provider:event', (e) => seen.push(e))
+    local.emit('provider:event', 'from-local')
+    remote.emit('provider:event', 'from-remote')
+    expect(seen).toEqual(['from-local', 'from-remote'])
+  })
+
+  it('unsubscribing an onWithSource fanout detaches from every transport', () => {
+    const local = fake('local')
+    const remote = fake('remote')
+    const router = new TransportRouter(local)
+    router.register('m1', remote)
+    const seen: string[] = []
+    const off = router.onWithSource<[string]>('e', (_machineId, x) => seen.push(x))
+    off()
+    local.emit('e', 'a')
+    remote.emit('e', 'b')
+    expect(seen).toEqual([])
+  })
+
   it('unsubscribe detaches from all transports', () => {
     const local = fake('local')
     const remote = fake('remote')

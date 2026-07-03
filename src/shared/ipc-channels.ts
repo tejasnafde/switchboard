@@ -62,6 +62,8 @@ export const AppChannels = {
    * that already has a worktree on disk.
    */
   SET_CONVERSATION_WORKTREE: 'app:set-conversation-worktree',
+  /** Add a project from an absolute directory path (remote add-project flow). */
+  ADD_PROJECT_PATH: 'app:add-project-path',
 } as const
 
 export const MachineChannels = {
@@ -80,7 +82,7 @@ export const MachineChannels = {
   CONNECT: 'machines:connect',
   /** Tear down a remote's tunnel. */
   DISCONNECT: 'machines:disconnect',
-  /** Main -> renderer: per-machine connection status changed. */
+  /** Main -> renderer: per-machine connection status changed, optionally with a human-readable reason. */
   STATUS: 'machines:status',
 } as const
 

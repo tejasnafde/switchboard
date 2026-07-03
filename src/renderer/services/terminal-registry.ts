@@ -11,6 +11,8 @@ export interface TerminalInstance {
   ptyId: string
   opened: boolean
   cleanupFns: (() => void)[]
+  /** Machine this pane's PTY runs on ('local' or a remote machine id, matching what was passed to getOrCreateTerminal). */
+  machineId?: string
 }
 
 const registry = new Map<string, TerminalInstance>()
@@ -194,6 +196,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
     ptyId: id,
     opened: false,
     cleanupFns,
+    machineId,
   }
 
   registry.set(id, instance)
@@ -263,6 +266,19 @@ export function updateAllTerminalThemes(): void {
 
 export function hasTerminal(id: string): boolean {
   return registry.has(id)
+}
+
+/**
+ * Write an inline notice into every terminal pane bound to `machineId`.
+ * Used on connection-lost / reconnected transitions so a machine-bound pane
+ * doesn't sit there looking alive when its remote shell is actually dead.
+ */
+export function writeMachineNotice(machineId: string, text: string): void {
+  for (const inst of registry.values()) {
+    if (inst.machineId === machineId) {
+      inst.terminal.write(`\r\n${text}\r\n`)
+    }
+  }
 }
 
 export function focusTerminal(id: string): void {

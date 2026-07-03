@@ -163,6 +163,20 @@ describe('agent-store', () => {
     expect(() => removeSession('leaky-2')).not.toThrow()
   })
 
+  it('resetRunningSessionsForMachine idles only in-flight (running/thinking) sessions on that machine', () => {
+    const { addSession, resetRunningSessionsForMachine } = useAgentStore.getState()
+    addSession({ id: 'a', type: 'claude-code', status: 'running', machineId: 'm1' })
+    addSession({ id: 'b', type: 'claude-code', status: 'thinking', machineId: 'm1' })
+    addSession({ id: 'c', type: 'claude-code', status: 'idle', machineId: 'm1' })
+    addSession({ id: 'd', type: 'claude-code', status: 'running', machineId: 'm2' })
+    addSession({ id: 'e', type: 'claude-code', status: 'running' }) // local, no machineId
+
+    resetRunningSessionsForMachine('m1')
+
+    const byId = Object.fromEntries(useAgentStore.getState().sessions.map((s) => [s.id, s.status]))
+    expect(byId).toEqual({ a: 'idle', b: 'idle', c: 'idle', d: 'running', e: 'running' })
+  })
+
   it('setTokenUsage stores per-session usage so switching sessions shows the right meter', () => {
     // Regression: contextUsage used to live as ChatPanel-local useState, so
     // hopping between sessions briefly showed the previous session's value

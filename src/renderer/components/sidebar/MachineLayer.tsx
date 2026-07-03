@@ -4,7 +4,7 @@
  * rows below it, drag-reorderable. Connecting is not wired yet (M4) - remotes
  * show offline and an empty body. Add/remove/reorder of remotes is live.
  */
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { SessionSummary } from '@shared/types'
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
@@ -13,6 +13,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useMachineStore } from '../../stores/machine-store'
 import { buildMachineList, type MachineNode, type MachineStatus } from './machineList'
 import { syncedAgoLabel, cachedProjects } from './machineSnapshot'
+import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 
 const PIP_COLOR: Record<MachineStatus, string> = {
   connected: 'var(--success)',
@@ -65,6 +66,8 @@ export function MachineLayer({
   const snapshots = useMachineStore((s) => s.snapshots)
   const connect = useMachineStore((s) => s.connect)
   const disconnect = useMachineStore((s) => s.disconnect)
+  const lastError = useMachineStore((s) => s.lastError)
+  const [addProjectFor, setAddProjectFor] = useState<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const nodes = buildMachineList(remotes, { localName: 'This Mac', connections })
@@ -91,13 +94,23 @@ export function MachineLayer({
           {node.status === 'connecting' ? (
             <span>Connecting…</span>
           ) : node.status === 'connected' ? (
-            <button className="machine-connect" onClick={() => void disconnect(node.id)}>
-              Disconnect
-            </button>
+            <>
+              <button className="machine-connect" onClick={() => void disconnect(node.id)}>
+                Disconnect
+              </button>
+              <button className="machine-connect" onClick={() => setAddProjectFor(node.id)}>
+                + Add project
+              </button>
+            </>
           ) : (
             <button className="machine-connect" onClick={() => void connect(node.id)}>
               {node.status === 'error' ? 'Retry connect' : 'Connect'}
             </button>
+          )}
+          {node.status === 'error' && lastError[node.id] && (
+            <span className="machine-error-reason" title={lastError[node.id] ?? undefined}>
+              {lastError[node.id]}
+            </span>
           )}
           {offline && projects.length > 0 && (
             <span className="cached-label">{syncedAgoLabel(snap?.syncedAt, Date.now())} · read-only</span>
@@ -220,6 +233,9 @@ export function MachineLayer({
       <button className="sidebar-add-machine" onClick={onAddMachine}>
         <span style={{ fontSize: '13px', lineHeight: 1 }}>+</span> Add machine
       </button>
+      {addProjectFor && (
+        <AddRemoteProjectModal machineId={addProjectFor} onClose={() => setAddProjectFor(null)} />
+      )}
     </>
   )
 }

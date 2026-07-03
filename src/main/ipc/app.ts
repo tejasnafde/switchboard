@@ -1,11 +1,11 @@
 import type { BackendHost } from '../backend/host'
-import { readFile } from 'fs/promises'
+import { readFile, stat } from 'fs/promises'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
 import { synthesizeTerminalSessions, stampAgentTypes } from './terminal-sessions'
 import { homedir } from 'os'
-import { join as joinPath } from 'path'
+import { basename, join as joinPath } from 'path'
 import {
   addProject,
   getProjects,
@@ -166,6 +166,33 @@ export function registerAppHandlers(host: BackendHost): void {
       projects.push({ path: row.path, name: row.name, sessions: [...filtered, ...terminalSessions], workspaceId: row.workspace_id ?? null })
     }
     return projects
+  })
+
+  // Add a project from an absolute directory path - the transport-agnostic
+  // twin of app-desktop.ts's OPEN_FOLDER dialog handler, used by the remote
+  // add-project flow where there's no native dialog to show.
+  host.handle(AppChannels.ADD_PROJECT_PATH, async (dirPath: string): Promise<Project | { ok: false; error: string }> => {
+    log.info(`add-project-path: ${dirPath}`)
+    let stats
+    try {
+      stats = await stat(dirPath)
+    } catch (err) {
+      log.warn('add-project-path stat failed', { dirPath, err: err instanceof Error ? err.message : String(err) })
+      return { ok: false, error: err instanceof Error ? err.message : 'Path not found' }
+    }
+    if (!stats.isDirectory()) {
+      return { ok: false, error: 'Not a directory' }
+    }
+
+    const name = basename(dirPath)
+    addProject(dirPath, name)
+
+    const rawSessions = await scanAllSessions(dirPath, claudeCandidateDirs())
+    const archivedSet = getArchivedConversationIds()
+    const sessions = rawSessions.filter((s) => !archivedSet.has(s.id))
+    log.info(`add-project-path: found ${sessions.length} sessions for ${dirPath} (${rawSessions.length - sessions.length} archived)`)
+
+    return { path: dirPath, name, sessions, workspaceId: null }
   })
 
   // ─── Workspaces (sidebar grouping) ─────────────────────────────
