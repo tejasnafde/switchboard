@@ -9,6 +9,7 @@
  */
 
 import { execSync } from 'child_process'
+import { join, sep } from 'path'
 import { createMainLogger as createLogger } from '../../logger'
 import { recordThreadSession, listSessionIdsForThread } from '../../db/database'
 
@@ -119,9 +120,45 @@ export function findClaudeBin(): string | undefined {
     try { execSync(`test -x "${p}"`, { timeout: 2000 }); cachedClaudeBin = p; return p } catch {}
   }
   try {
-    cachedClaudeBin = execSync('which claude 2>/dev/null', { encoding: 'utf-8', timeout: 5000 }).trim().split('\n')[0] || undefined
-    return cachedClaudeBin
-  } catch { return undefined }
+    const which = execSync('which claude 2>/dev/null', { encoding: 'utf-8', timeout: 5000 }).trim().split('\n')[0]
+    if (which) { cachedClaudeBin = which; return which }
+  } catch { /* no global claude - fall through to the SDK-bundled binary */ }
+  // Remote VMs have no global `claude`; the SDK ships its CLI as a per-platform
+  // package. Resolve it ourselves and prefer the glibc variant - node's
+  // detect-libc misfires to musl on some builds (e.g. a node whose process
+  // report omits glibcVersionRuntime), so the SDK's own self-resolution picks
+  // the wrong binary. Passing this as pathToClaudeCodeExecutable skips that.
+  const sdkBin = findSdkClaudeBin()
+  if (sdkBin) { cachedClaudeBin = sdkBin; return sdkBin }
+  return undefined
+}
+
+/** Locate the SDK's bundled `claude` binary for this platform/arch (glibc-first on linux). */
+function findSdkClaudeBin(): string | undefined {
+  const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+  const bin = process.platform === 'win32' ? 'claude.exe' : 'claude'
+  const variants = process.platform === 'linux' ? [`linux-${arch}`, `linux-${arch}-musl`] : [`${process.platform}-${arch}`]
+  // Candidate `@anthropic-ai` dirs: the bundled server's index.cjs sits next to
+  // node_modules on the VM (__dirname); plus wherever the SDK main resolves from
+  // (the SDK's exports map blocks resolving ./package.json, so use the main entry).
+  const bases = [join(__dirname, 'node_modules', '@anthropic-ai')]
+  try {
+    const main = require.resolve('@anthropic-ai/claude-agent-sdk')
+    const marker = `${sep}@anthropic-ai${sep}`
+    const i = main.lastIndexOf(marker)
+    if (i >= 0) bases.push(main.slice(0, i + marker.length - 1))
+  } catch { /* not resolvable - the __dirname base still covers the VM */ }
+  for (const base of bases) {
+    for (const v of variants) {
+      const p = join(base, `claude-agent-sdk-${v}`, bin)
+      try {
+        execSync(`test -f "${p}"`, { timeout: 2000 })
+        try { execSync(`chmod +x "${p}"`, { timeout: 2000 }) } catch { /* may already be +x */ }
+        return p
+      } catch { /* variant not installed - try next */ }
+    }
+  }
+  return undefined
 }
 
 const RUNTIME_MODE_TO_PERMISSION: Record<RuntimeMode, PermissionMode> = {
