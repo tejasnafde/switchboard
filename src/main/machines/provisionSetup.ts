@@ -27,9 +27,8 @@ export function remotePackageJson(
     dependencies: {
       'better-sqlite3': betterSqliteVersion,
       'node-pty': REMOTE_NODE_PTY,
-      // Kept out of the bundle (self-locates its CLI via import.meta.url), so
-      // it has to be a real install on the VM; npm pulls the matching
-      // platform CLI package via its optionalDependencies.
+      // Externalized from the bundle, so it must install on the VM; npm pulls
+      // the matching platform CLI via its optionalDependencies.
       '@anthropic-ai/claude-agent-sdk': claudeSdkVersion,
     },
   }

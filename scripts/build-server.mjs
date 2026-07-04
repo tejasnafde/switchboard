@@ -12,8 +12,7 @@ import { resolve } from 'node:path'
 import { readFileSync } from 'node:fs'
 
 export const REMOTE_NATIVE_DEPS = ['better-sqlite3', 'node-pty']
-// Pure-JS but kept external because it resolves its own CLI relative to its
-// module path, which only works when it's a real file on disk (not inlined).
+// Pure-JS but external (see header): must stay an on-disk module on the VM.
 export const REMOTE_NPM_DEPS = ['@anthropic-ai/claude-agent-sdk']
 
 const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf8'))
