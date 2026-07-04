@@ -7,7 +7,7 @@ const machine: Machine = {
   id: 'm1', name: 'prod', sshAlias: 'prod-vm', sshHost: 'h', sshUser: 'u',
   sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0,
 }
-const inputs = { appVersion: '0.4.16', betterSqliteVersion: '12.9.0', bundle: 'BUNDLE_BYTES' }
+const inputs = { appVersion: '0.4.16', betterSqliteVersion: '12.9.0', claudeSdkVersion: '0.2.114', bundlePath: '/fake/out/server/index.cjs' }
 
 // Every remote command (probe or step) is now wrapped through
 // `printf %s '<b64>' | base64 -d | bash`, since asUserScript wraps the
@@ -19,8 +19,8 @@ const decode = (remote: string): string => {
 }
 
 function runner(probe: Record<string, unknown>) {
-  const calls: Array<{ args: string[]; stdin?: string }> = []
-  const exec = vi.fn(async (_cmd: string, args: string[], stdin?: string) => {
+  const calls: Array<{ args: string[]; stdin?: string | { file: string } }> = []
+  const exec = vi.fn(async (_cmd: string, args: string[], stdin?: string | { file: string }) => {
     calls.push({ args, stdin })
     const remote = decode(args[args.length - 1])
     if (remote.includes('node -e')) return { code: 0, stdout: JSON.stringify(probe), stderr: '' }
@@ -56,7 +56,7 @@ describe('provisionRemote', () => {
     expect(remotes[2]).toMatch(/cat > .*index\.cjs/)
     expect(remotes[3]).toMatch(/cat > .*package\.json/)
     expect(remotes[4]).toMatch(/npm install/)
-    expect(r.calls[2].stdin).toBe('BUNDLE_BYTES')
+    expect(r.calls[2].stdin).toEqual({ file: '/fake/out/server/index.cjs' })
     expect(r.calls[3].stdin).toContain('better-sqlite3')
   })
 

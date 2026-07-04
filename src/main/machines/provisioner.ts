@@ -5,15 +5,19 @@ import { parseProbeOutput } from './remoteProbe'
 import { planProvision, type ProvisionAction } from './provisionPlan'
 import { remotePackageJson, remoteInstallScript } from './provisionSetup'
 import { asUserScript, asUserUpload } from './remoteExec'
+import { summarizeSshError } from './sshError'
 
 export interface ProcRunner {
-  exec: (command: string, args: string[], stdin?: string) => Promise<{ code: number; stdout: string; stderr: string }>
+  // stdin is either an inline string (small payloads like package.json) or a
+  // file to stream in (the server bundle, which is too large to buffer).
+  exec: (command: string, args: string[], stdin?: string | { file: string }) => Promise<{ code: number; stdout: string; stderr: string }>
 }
 
 export interface ProvisionInputs {
   appVersion: string
   betterSqliteVersion: string
-  bundle: string
+  claudeSdkVersion: string
+  bundlePath: string
 }
 
 export interface ProvisionResult {
@@ -45,7 +49,7 @@ export async function provisionRemote(
   const probeCmd = buildProbeCommand(machine)
   const probeOut = await runner.exec(probeCmd.command, probeCmd.args)
   if (probeOut.code !== 0) {
-    throw new Error(`ssh probe failed (${probeOut.code}): ${probeOut.stderr.trim()}`)
+    throw new Error(`ssh probe failed (${probeOut.code}): ${summarizeSshError(probeOut.stderr)}`)
   }
   const probe = parseProbeOutput(probeOut.stdout)
   assertSupportedNode(probe.node)
@@ -54,20 +58,20 @@ export async function provisionRemote(
 
   if (plan.action === 'ready' || plan.action === 'no-node') return plan
 
-  const run = async (label: string, remoteCommand: string, stdin?: string) => {
+  const run = async (label: string, remoteCommand: string, stdin?: string | { file: string }) => {
     log?.(`provision ${machine.id}: ${label}`)
     const c = buildRemoteShellCommand(machine, remoteCommand)
     const res = await runner.exec(c.command, c.args, stdin)
-    if (res.code !== 0) throw new Error(`${label} failed (${res.code}): ${res.stderr || remoteCommand}`)
+    if (res.code !== 0) throw new Error(`${label} failed (${res.code}): ${summarizeSshError(res.stderr) || remoteCommand}`)
   }
 
   const u = machine.remoteUser
   await run('mkdir server dir', asUserScript(u, `mkdir -p ${REMOTE_SERVER_DIR}`))
-  await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), inputs.bundle)
+  await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), { file: inputs.bundlePath })
   await run(
     'upload package.json',
     asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/package.json`),
-    JSON.stringify(remotePackageJson(inputs.appVersion, inputs.betterSqliteVersion), null, 2),
+    JSON.stringify(remotePackageJson(inputs.appVersion, inputs.betterSqliteVersion, inputs.claudeSdkVersion), null, 2),
   )
   await run('npm install (this can take a minute)', asUserScript(u, remoteInstallScript(inputs.appVersion)))
   log?.(`provision ${machine.id}: install complete`)

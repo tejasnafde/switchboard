@@ -2,6 +2,11 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-04 - Provisioning upload OOM fix
+
+### Fixed
+- **Remote provisioning OOM'd (heap grew to ~2GB) during "upload server bundle"** for a ~985KB bundle. `execProc` accumulated child stdout/stderr into unbounded strings and wrote the whole bundle to stdin as one buffered string. Captured output is now capped at 1MB, and the bundle is streamed from disk into stdin via `createReadStream().pipe()`. A read error kills the child so a truncated upload fails loudly instead of falsely reporting success.
+
 ## 2026-06-26 — Editor focus sweep
 
 ### Fixed

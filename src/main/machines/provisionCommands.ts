@@ -5,7 +5,7 @@
  * quotes so it survives the remote shell inside the double-quoted `-e` arg.
  */
 import type { Machine } from '@shared/machines'
-import { sshHostArgs } from './sshTunnel'
+import { sshHostArgs, SSH_COMMON_OPTS } from './sshTunnel'
 import { asUserScript } from './remoteExec'
 
 /** Where the provisioned server + its version marker live on the remote. */
@@ -20,7 +20,7 @@ export function buildProbeCommand(machine: Machine): { command: string; args: st
   return {
     command: 'ssh',
     args: [
-      '-o', 'BatchMode=yes',
+      ...SSH_COMMON_OPTS,
       ...sshHostArgs(machine),
       asUserScript(machine.remoteUser, `node -e "${PROBE_SOURCE}" 2>/dev/null || true`),
     ],
@@ -31,6 +31,6 @@ export function buildProbeCommand(machine: Machine): { command: string; args: st
 export function buildRemoteShellCommand(machine: Machine, remoteCommand: string): { command: string; args: string[] } {
   return {
     command: 'ssh',
-    args: ['-o', 'BatchMode=yes', ...sshHostArgs(machine), remoteCommand],
+    args: [...SSH_COMMON_OPTS, ...sshHostArgs(machine), remoteCommand],
   }
 }

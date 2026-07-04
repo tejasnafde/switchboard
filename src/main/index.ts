@@ -28,6 +28,9 @@ import { registerGitHandlers } from './ipc/git'
 import { registerLspHandlers } from './ipc/lsp'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
+import { readForwardableOauthCreds } from './provider/remote-gate'
+import { ProviderInstanceChannels } from '@shared/ipc-channels'
+import type { AgentType } from '@shared/types'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
 import { getDb, closeDb, getSetting, getProjects } from './db/database'
@@ -351,6 +354,13 @@ app.whenReady().then(() => {
   registerLspHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
+  // LOCAL-ONLY: reads an oauth_dir instance's cred files off this desktop so a
+  // remote Claude session can be authenticated. Deliberately NOT part of
+  // registerProviderInstanceHandlers (that also runs on the remote WsHost).
+  backendHost.handle(
+    ProviderInstanceChannels.RESOLVE_OAUTH_CREDS,
+    (agentType: AgentType, instanceId?: string) => readForwardableOauthCreds(agentType, instanceId),
+  )
   registerMachineHandlers(backendHost)
   // Auto-update - silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what

@@ -31,6 +31,9 @@ export interface StartSessionOpts {
   reasoningEffort?: 'low' | 'medium' | 'high'
   /** Provider instance id (named credential set). Falls back to default. */
   instanceId?: string
+  /** Claude oauth creds forwarded to a remote VM. Attached by preload for
+   *  remote-routed Claude sessions; not set by callers. */
+  forwardedOauthCreds?: Record<string, string>
 }
 
 export interface ProviderInstanceUpsertInput {
@@ -491,6 +494,13 @@ const api = {
       transport.invoke(ProviderInstanceChannels.TEST, id),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
       transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
+    /** Read an oauth_dir instance's essential cred files off THIS desktop
+     *  (forced local) - used to forward Claude creds to a remote session. */
+    resolveOauthCreds: (
+      agentType: 'claude-code' | 'codex' | 'opencode',
+      instanceId?: string,
+    ): Promise<Record<string, string>> =>
+      router.invokeOn('local', ProviderInstanceChannels.RESOLVE_OAUTH_CREDS, agentType, instanceId),
   },
 
   // ─── Provider (new agent bridge) ──────────────────────────────
@@ -498,8 +508,29 @@ const api = {
   // on event.type without casts. Methods mirror the main-process
   // ProviderAdapter interface.
   provider: {
-    startSession: (opts: StartSessionOpts) =>
-      transport.invoke(ProviderChannels.START_SESSION, opts),
+    startSession: async (opts: StartSessionOpts) => {
+      // A remote-routed Claude session gets no creds on the VM unless we
+      // forward them. Resolve the desktop instance's oauth cred files here
+      // (locally) and attach them, in-memory only, before dispatching.
+      const machineId = routingTable.resolve(ProviderChannels.START_SESSION, [opts])
+      let outgoing = opts
+      if (machineId !== 'local' && opts.provider === 'claude') {
+        try {
+          const creds = await router.invokeOn<Record<string, string>>(
+            'local',
+            ProviderInstanceChannels.RESOLVE_OAUTH_CREDS,
+            'claude-code',
+            opts.instanceId,
+          )
+          if (creds && Object.keys(creds).length > 0) {
+            outgoing = { ...opts, forwardedOauthCreds: creds }
+          }
+        } catch (err) {
+          console.warn('[SB:preload] failed to resolve oauth creds for remote session', err)
+        }
+      }
+      return transport.invoke(ProviderChannels.START_SESSION, outgoing)
+    },
 
     sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) =>
       transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images),

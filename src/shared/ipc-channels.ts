@@ -174,6 +174,12 @@ export const ProviderInstanceChannels = {
    *  login check, opencode models). Returns `{ ok, message }`. */
   TEST: 'provider-instances:test',
   CREATE_OAUTH_DIR: 'provider-instances:create-oauth-dir',
+  /**
+   * LOCAL-ONLY: read an oauth_dir instance's essential credential files off
+   * the desktop so a remote Claude session can be authenticated. Never
+   * registered on the remote WsHost. See `readForwardableOauthCreds`.
+   */
+  RESOLVE_OAUTH_CREDS: 'provider-instances:resolve-oauth-creds',
 } as const
 
 export const ProviderChannels = {

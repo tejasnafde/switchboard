@@ -11,6 +11,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } 
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { useMachineStore } from '../../stores/machine-store'
+import { useAgentStore } from '../../stores/agent-store'
 import { buildMachineList, type MachineNode, type MachineStatus } from './machineList'
 import { syncedAgoLabel, cachedProjects } from './machineSnapshot'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
@@ -67,6 +68,7 @@ export function MachineLayer({
   const connect = useMachineStore((s) => s.connect)
   const disconnect = useMachineStore((s) => s.disconnect)
   const lastError = useMachineStore((s) => s.lastError)
+  const activeSessionId = useAgentStore((s) => s.activeSessionId)
   const [addProjectFor, setAddProjectFor] = useState<string | null>(null)
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
@@ -142,7 +144,7 @@ export function MachineLayer({
                 return (
                   <div
                     key={s.id}
-                    className="cached-chat"
+                    className={`cached-chat${s.id === activeSessionId ? ' sidebar-thread-active' : ''}`}
                     data-openable={openable || undefined}
                     onClick={
                       openable
@@ -180,10 +182,14 @@ export function MachineLayer({
     return (
       <section className="sidebar-machine">
         <header className="sidebar-machine-header" onClick={() => toggleCollapsed(node.id)}>
-          {dragHandleProps && (
+          {/* Always render the grip slot so local + remote headers align; only
+              remotes (drag-reorderable) get the actual handle. */}
+          {dragHandleProps ? (
             <span className="machine-grip" onClick={(e) => e.stopPropagation()} {...dragHandleProps}>
               ⠿
             </span>
+          ) : (
+            <span className="machine-grip" aria-hidden />
           )}
           <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
           <span className="machine-pip" style={{ background: PIP_COLOR[node.status] }} />

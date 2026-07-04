@@ -379,11 +379,12 @@ export function App() {
       }).catch(() => {})
 
       // Local chats show in the workspace tree via the sidebar event; remote
-      // chats live in their machine's tree, so re-sync that snapshot instead.
+      // chats live in their machine's tree. Inject the row optimistically - a
+      // rescan (syncMachine) can't see a brand-new empty conversation yet.
       if (machineId === 'local') {
         emitSessionCreated({ id, projectPath, title, startedAt: Date.now(), source: 'switchboard' })
       } else {
-        void useMachineStore.getState().syncMachine(machineId)
+        useMachineStore.getState().addSnapshotSession(machineId, projectPath, { id, title, agentType: 'claude-code' })
       }
     },
     [addSession, setActiveSession],

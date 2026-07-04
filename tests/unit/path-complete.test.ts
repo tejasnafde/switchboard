@@ -22,17 +22,39 @@ describe('splitPath', () => {
 })
 
 describe('pathCompletions', () => {
-  it('suggests matching directories as full paths, ignoring files', () => {
-    expect(pathCompletions('/home/g', entries)).toEqual(['/home/geoiq', '/home/gadget'])
+  it('suggests matching directories as full paths, ignoring files (alphabetical)', () => {
+    expect(pathCompletions('/home/g', entries)).toEqual(['/home/gadget', '/home/geoiq'])
   })
-  it('lists all dirs when the partial is empty', () => {
-    expect(pathCompletions('/home/', entries)).toEqual(['/home/ubuntu', '/home/geoiq', '/home/gadget'])
+  it('lists all dirs alphabetically when the partial is empty', () => {
+    expect(pathCompletions('/home/', entries)).toEqual(['/home/gadget', '/home/geoiq', '/home/ubuntu'])
   })
   it('is case-insensitive', () => {
     expect(pathCompletions('/home/GE', entries)).toEqual(['/home/geoiq'])
   })
   it('completes under root', () => {
     expect(pathCompletions('/u', entries)).toEqual(['/ubuntu'])
+  })
+  it('sorts dot-folders last so they do not crowd out visible ones', () => {
+    const withDots = [
+      { name: '.cache', isDir: true },
+      { name: '.config', isDir: true },
+      { name: 'projects', isDir: true },
+      { name: 'downloads', isDir: true },
+    ]
+    expect(pathCompletions('/home/', withDots)).toEqual([
+      '/home/downloads',
+      '/home/projects',
+      '/home/.cache',
+      '/home/.config',
+    ])
+  })
+  it('still narrows to dot-folders when the user types a leading dot', () => {
+    const withDots = [
+      { name: '.cache', isDir: true },
+      { name: '.config', isDir: true },
+      { name: 'projects', isDir: true },
+    ]
+    expect(pathCompletions('/home/.c', withDots)).toEqual(['/home/.cache', '/home/.config'])
   })
 })
 
