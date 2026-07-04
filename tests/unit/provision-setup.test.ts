@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest'
 import { remotePackageJson, remoteInstallScript, REMOTE_SERVER_DIR } from '../../src/main/machines/provisionSetup'
 
 describe('remotePackageJson', () => {
-  const pkg = remotePackageJson('0.4.16', '12.9.0')
+  const pkg = remotePackageJson('0.4.16', '12.9.0', '0.2.114')
 
   it('stamps the app version and is private', () => {
     expect(pkg.version).toBe('0.4.16')
@@ -12,6 +12,10 @@ describe('remotePackageJson', () => {
 
   it('pins better-sqlite3 to the app build version', () => {
     expect(pkg.dependencies['better-sqlite3']).toBe('12.9.0')
+  })
+
+  it('installs the Claude SDK as a real dep (it self-locates its CLI, cannot be bundled)', () => {
+    expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBe('0.2.114')
   })
 
   it('aliases node-pty to the multiarch fork (ships linux prebuilds)', () => {

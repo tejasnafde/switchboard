@@ -59,6 +59,9 @@ interface MachineStore {
   loadSnapshots: () => Promise<void>
   /** Scan a connected remote's projects and cache them for offline browse. */
   syncMachine: (id: string) => Promise<void>
+  /** Optimistically add a just-created chat to a machine's snapshot so its row
+   *  appears immediately (a rescan can't see an empty conversation yet). */
+  addSnapshotSession: (machineId: string, projectPath: string, session: { id: string; title: string; agentType?: string | null }) => void
   connect: (id: string) => Promise<void>
   disconnect: (id: string) => Promise<void>
   /** Subscribe to main's per-machine status events. Returns an unsubscribe fn. */
@@ -170,6 +173,18 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       log.warn('syncMachine failed', err)
     }
   },
+
+  addSnapshotSession: (machineId, projectPath, session) =>
+    set((s) => {
+      const snap = s.snapshots[machineId]
+      if (!snap) return {}
+      const projects = snap.projects.map((p) =>
+        p.path === projectPath && !p.sessions.some((x) => x.id === session.id)
+          ? { ...p, sessions: [{ id: session.id, title: session.title, agentType: session.agentType ?? null }, ...p.sessions] }
+          : p,
+      )
+      return { snapshots: { ...s.snapshots, [machineId]: { ...snap, projects } } }
+    }),
 
   connect: async (id) => {
     set((s) => ({ connections: { ...s.connections, [id]: 'connecting' } }))

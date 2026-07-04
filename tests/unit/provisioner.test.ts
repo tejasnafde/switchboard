@@ -7,7 +7,7 @@ const machine: Machine = {
   id: 'm1', name: 'prod', sshAlias: 'prod-vm', sshHost: 'h', sshUser: 'u',
   sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0,
 }
-const inputs = { appVersion: '0.4.16', betterSqliteVersion: '12.9.0', bundle: 'BUNDLE_BYTES' }
+const inputs = { appVersion: '0.4.16', betterSqliteVersion: '12.9.0', claudeSdkVersion: '0.2.114', bundle: 'BUNDLE_BYTES' }
 
 // Every remote command (probe or step) is now wrapped through
 // `printf %s '<b64>' | base64 -d | bash`, since asUserScript wraps the

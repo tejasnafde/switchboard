@@ -14,6 +14,15 @@ export function pathCompletions(typed: string, entries: Array<{ name: string; is
   const p = partial.toLowerCase()
   return entries
     .filter((e) => e.isDir && e.name.toLowerCase().startsWith(p))
+    // Visible folders before dot-folders - otherwise dot-folders (which sort
+    // first) fill the suggestion cap and hide the ones the user usually wants.
+    // Typing a leading '.' still narrows to dot-folders via the filter above.
+    .sort((a, b) => {
+      const ad = a.name.startsWith('.')
+      const bd = b.name.startsWith('.')
+      if (ad !== bd) return ad ? 1 : -1
+      return a.name.localeCompare(b.name)
+    })
     .map((e) => `${base}/${e.name}`)
 }
 

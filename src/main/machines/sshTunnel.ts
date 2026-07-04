@@ -31,6 +31,25 @@ function assertSafeSshArg(field: string, value: string): void {
 }
 
 /**
+ * Options every ssh invocation shares.
+ *
+ * `StrictHostKeyChecking=accept-new` is required alongside `BatchMode=yes`:
+ * BatchMode disables all prompts, so a first-time host (or an IAP/ProxyCommand
+ * tunnel whose key isn't in known_hosts yet) would otherwise fail outright with
+ * "Host key verification failed" instead of being trusted-on-first-use.
+ * `accept-new` records the key for a brand-new host but still REFUSES a host
+ * whose key has *changed* - so the MITM protection that plain StrictHostKeyChecking
+ * gives is preserved; only the interactive first-connect prompt is removed.
+ *
+ * These are constant flags (never user input), so the UNSAFE_SSH_ARG guard in
+ * sshHostArgs is unaffected - that guard only vets the alias/host/user values.
+ */
+export const SSH_COMMON_OPTS = [
+  '-o', 'BatchMode=yes',
+  '-o', 'StrictHostKeyChecking=accept-new',
+]
+
+/**
  * The ssh argv that selects the host: the ~/.ssh/config alias when set (ssh
  * resolves user/port/key), else `-p port` + `user@host`. Shared by the tunnel
  * and the provisioning probe.
@@ -50,7 +69,7 @@ export function sshHostArgs(machine: Machine): string[] {
 
 export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { command: string; args: string[] } {
   const args = [
-    '-o', 'BatchMode=yes',
+    ...SSH_COMMON_OPTS,
     '-o', 'ServerAliveInterval=30',
     '-o', 'ExitOnForwardFailure=yes',
     '-L', `${opts.localPort}:127.0.0.1:${opts.remotePort}`,

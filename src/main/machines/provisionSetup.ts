@@ -14,7 +14,11 @@ export interface RemotePackageJson {
   dependencies: Record<string, string>
 }
 
-export function remotePackageJson(appVersion: string, betterSqliteVersion: string): RemotePackageJson {
+export function remotePackageJson(
+  appVersion: string,
+  betterSqliteVersion: string,
+  claudeSdkVersion: string,
+): RemotePackageJson {
   return {
     name: 'switchboard-server',
     version: appVersion,
@@ -23,6 +27,10 @@ export function remotePackageJson(appVersion: string, betterSqliteVersion: strin
     dependencies: {
       'better-sqlite3': betterSqliteVersion,
       'node-pty': REMOTE_NODE_PTY,
+      // Kept out of the bundle (self-locates its CLI via import.meta.url), so
+      // it has to be a real install on the VM; npm pulls the matching
+      // platform CLI package via its optionalDependencies.
+      '@anthropic-ai/claude-agent-sdk': claudeSdkVersion,
     },
   }
 }

@@ -42,7 +42,12 @@ export function makeProvision(log?: (msg: string) => void) {
   return (machine: Machine) =>
     provisionRemote(
       machine,
-      { appVersion: appVersion(), betterSqliteVersion: depVersion('better-sqlite3'), bundle: readServerBundle() },
+      {
+        appVersion: appVersion(),
+        betterSqliteVersion: depVersion('better-sqlite3'),
+        claudeSdkVersion: depVersion('@anthropic-ai/claude-agent-sdk'),
+        bundle: readServerBundle(),
+      },
       { exec: execProc },
       log,
     )
