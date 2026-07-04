@@ -47,7 +47,11 @@ jobs:
         # `claude-agent-sdk-darwin-arm64` optional dependency natively;
         # cross-installing for arm64 from an Intel runner is unreliable
         # and the SDK won't load in the packaged app.
-        os: [macos-14, windows-latest]
+        # windows-2022 (not windows-latest): the windows-latest image moved to
+        # windows-2025, which no longer ships the VC++ build toolchain node-gyp
+        # needs, so native rebuilds (node-pty) fail with "Could not find any
+        # Visual Studio installation to use". 2022 has the full toolchain.
+        os: [macos-14, windows-2022]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
