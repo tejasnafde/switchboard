@@ -8,14 +8,16 @@ import { asUserScript, asUserUpload } from './remoteExec'
 import { summarizeSshError } from './sshError'
 
 export interface ProcRunner {
-  exec: (command: string, args: string[], stdin?: string) => Promise<{ code: number; stdout: string; stderr: string }>
+  // stdin is either an inline string (small payloads like package.json) or a
+  // file to stream in (the server bundle, which is too large to buffer).
+  exec: (command: string, args: string[], stdin?: string | { file: string }) => Promise<{ code: number; stdout: string; stderr: string }>
 }
 
 export interface ProvisionInputs {
   appVersion: string
   betterSqliteVersion: string
   claudeSdkVersion: string
-  bundle: string
+  bundlePath: string
 }
 
 export interface ProvisionResult {
@@ -56,7 +58,7 @@ export async function provisionRemote(
 
   if (plan.action === 'ready' || plan.action === 'no-node') return plan
 
-  const run = async (label: string, remoteCommand: string, stdin?: string) => {
+  const run = async (label: string, remoteCommand: string, stdin?: string | { file: string }) => {
     log?.(`provision ${machine.id}: ${label}`)
     const c = buildRemoteShellCommand(machine, remoteCommand)
     const res = await runner.exec(c.command, c.args, stdin)
@@ -65,7 +67,7 @@ export async function provisionRemote(
 
   const u = machine.remoteUser
   await run('mkdir server dir', asUserScript(u, `mkdir -p ${REMOTE_SERVER_DIR}`))
-  await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), inputs.bundle)
+  await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), { file: inputs.bundlePath })
   await run(
     'upload package.json',
     asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/package.json`),
