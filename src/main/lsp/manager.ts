@@ -162,10 +162,16 @@ export function languageForPath(path: string): LspLanguage | null {
   return null
 }
 
-/** Test-only: clear the registry between integration tests. */
-export function __resetLspManagerForTests(): void {
+/** Shut down every spawned language server. Call on app quit so tsserver /
+ *  pyright processes (100s of MB each) don't outlive the app. */
+export function disposeAllLspServers(): void {
   for (const e of servers.values()) {
     void e.client.dispose()
   }
   servers.clear()
+}
+
+/** Test-only: clear the registry between integration tests. */
+export function __resetLspManagerForTests(): void {
+  disposeAllLspServers()
 }

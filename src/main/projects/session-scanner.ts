@@ -59,85 +59,74 @@ async function scanClaudeProjectsDir(
   sessions: SessionSummary[],
   seenIds: Set<string>,
 ): Promise<void> {
+  // The match is exact (encodeClaudeProjectPath), so target that one directory
+  // directly instead of readdir-ing the whole projects folder and scanning
+  // every entry once per project.
+  const projectDir = join(claudeDir, encodeClaudeProjectPath(projectPath))
+  const dirStat = await stat(projectDir).catch(() => null)
+  if (!dirStat?.isDirectory()) return
+
+  // Look for sessions index
+  const indexPath = join(projectDir, 'sessions-index.json')
   try {
-    const dirs = await readdir(claudeDir)
+    const indexContent = await readFile(indexPath, 'utf-8')
+    const index = JSON.parse(indexContent)
 
-    for (const dir of dirs) {
-      // Exact match only - previously used `dir.includes(encoded)` which caused
-      // parent projects (e.g. /Users/foo/ssg) to incorrectly pick up sessions
-      // from child projects (e.g. /Users/foo/ssg/submodule), since the child
-      // dir name begins with the parent's encoded string.
-      if (!isClaudeDirForProject(dir, projectPath)) continue
-
-      const projectDir = join(claudeDir, dir)
-      const dirStat = await stat(projectDir).catch(() => null)
-      if (!dirStat?.isDirectory()) continue
-
-      // Look for sessions index
-      const indexPath = join(projectDir, 'sessions-index.json')
-      try {
-        const indexContent = await readFile(indexPath, 'utf-8')
-        const index = JSON.parse(indexContent)
-
-        if (Array.isArray(index)) {
-          for (const entry of index) {
-            const id: string = entry.id ?? entry.sessionId ?? basename(entry.path ?? '')
-            if (seenIds.has(id)) continue
-            seenIds.add(id)
-            sessions.push({
-              id,
-              source: 'claude-code',
-              title: entry.title ?? entry.summary ?? `Session ${sessions.length + 1}`,
-              startedAt: entry.startedAt ?? entry.timestamp ?? Date.now(),
-              messageCount: entry.messageCount ?? 0,
-              filePath: join(projectDir, entry.path ?? `${entry.id}.jsonl`),
-            })
-          }
-        }
-      } catch {
-        // No index file - scan for .jsonl files directly
-        const files = await readdir(projectDir).catch(() => [])
-        for (const file of files) {
-          if (!file.endsWith('.jsonl')) continue
-          const id = file.replace('.jsonl', '')
-          if (seenIds.has(id)) continue
-          seenIds.add(id)
-          const filePath = join(projectDir, file)
-          const fileStat = await stat(filePath).catch(() => null)
-
-          // Try to extract title from first user message
-          let title = `Session ${sessions.length + 1}`
-          try {
-            const head = await readFile(filePath, 'utf-8').then((c) => c.slice(0, 5000))
-            const firstUserMsg = head.split('\n').find((line) => {
-              try {
-                const obj = JSON.parse(line)
-                return obj.type === 'human' || (obj.type === 'user' && obj.message?.content)
-              } catch { return false }
-            })
-            if (firstUserMsg) {
-              const obj = JSON.parse(firstUserMsg)
-              const content = obj.message?.content
-              const text = typeof content === 'string' ? content
-                : Array.isArray(content) ? content.find((b: { type?: string; text?: string }) => b.type === 'text')?.text ?? ''
-                : ''
-              if (text) title = generateTitle(text)
-            }
-          } catch { /* title extraction failed - use default */ }
-
-          sessions.push({
-            id,
-            source: 'claude-code',
-            title,
-            startedAt: fileStat?.mtimeMs ?? Date.now(),
-            messageCount: 0,
-            filePath,
-          })
-        }
+    if (Array.isArray(index)) {
+      for (const entry of index) {
+        const id: string = entry.id ?? entry.sessionId ?? basename(entry.path ?? '')
+        if (seenIds.has(id)) continue
+        seenIds.add(id)
+        sessions.push({
+          id,
+          source: 'claude-code',
+          title: entry.title ?? entry.summary ?? `Session ${sessions.length + 1}`,
+          startedAt: entry.startedAt ?? entry.timestamp ?? Date.now(),
+          messageCount: entry.messageCount ?? 0,
+          filePath: join(projectDir, entry.path ?? `${entry.id}.jsonl`),
+        })
       }
     }
   } catch {
-    // projects dir doesn't exist for this base - skip
+    // No index file - scan for .jsonl files directly
+    const files = await readdir(projectDir).catch(() => [])
+    for (const file of files) {
+      if (!file.endsWith('.jsonl')) continue
+      const id = file.replace('.jsonl', '')
+      if (seenIds.has(id)) continue
+      seenIds.add(id)
+      const filePath = join(projectDir, file)
+      const fileStat = await stat(filePath).catch(() => null)
+
+      // Try to extract title from first user message
+      let title = `Session ${sessions.length + 1}`
+      try {
+        const head = await readFile(filePath, 'utf-8').then((c) => c.slice(0, 5000))
+        const firstUserMsg = head.split('\n').find((line) => {
+          try {
+            const obj = JSON.parse(line)
+            return obj.type === 'human' || (obj.type === 'user' && obj.message?.content)
+          } catch { return false }
+        })
+        if (firstUserMsg) {
+          const obj = JSON.parse(firstUserMsg)
+          const content = obj.message?.content
+          const text = typeof content === 'string' ? content
+            : Array.isArray(content) ? content.find((b: { type?: string; text?: string }) => b.type === 'text')?.text ?? ''
+            : ''
+          if (text) title = generateTitle(text)
+        }
+      } catch { /* title extraction failed - use default */ }
+
+      sessions.push({
+        id,
+        source: 'claude-code',
+        title,
+        startedAt: fileStat?.mtimeMs ?? Date.now(),
+        messageCount: 0,
+        filePath,
+      })
+    }
   }
 }
 
@@ -158,6 +147,13 @@ export async function scanCodexSessions(projectPath: string): Promise<SessionSum
   return sessions.sort((a, b) => b.startedAt - a.startedAt)
 }
 
+// Cache the 2 KB head of each rollout file, keyed by path and validated by
+// mtime, so the ever-growing Codex history isn't re-read on every scan (this
+// runs once per project on GET_PROJECTS, and again on every SCAN_SESSIONS).
+// Bounded by the total number of rollout files; add an LRU cap only if a user's
+// history ever makes this footprint matter.
+const codexHeadCache = new Map<string, { mtimeMs: number; head: string }>()
+
 async function scanCodexDir(
   dir: string,
   projectPath: string,
@@ -172,14 +168,20 @@ async function scanCodexDir(
     } else if (entry.name.endsWith('.jsonl')) {
       // Quick check: read first few lines to see if CWD matches
       try {
-        const head = await readFile(fullPath, 'utf-8').then((c) => c.slice(0, 2000))
-        if (head.includes(projectPath)) {
-          const fileStat = await stat(fullPath).catch(() => null)
+        const fileStat = await stat(fullPath).catch(() => null)
+        if (!fileStat) continue
+        let cached = codexHeadCache.get(fullPath)
+        if (!cached || cached.mtimeMs !== fileStat.mtimeMs) {
+          const head = await readFile(fullPath, 'utf-8').then((c) => c.slice(0, 2000))
+          cached = { mtimeMs: fileStat.mtimeMs, head }
+          codexHeadCache.set(fullPath, cached)
+        }
+        if (cached.head.includes(projectPath)) {
           sessions.push({
             id: entry.name.replace('.jsonl', ''),
             source: 'codex',
             title: `Codex ${sessions.length + 1}`,
-            startedAt: fileStat?.mtimeMs ?? Date.now(),
+            startedAt: fileStat.mtimeMs,
             messageCount: 0,
             filePath: fullPath,
           })

@@ -43,19 +43,20 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     const resolvedId = sessionIdOverride ?? s.activeSessionId
     return s.sessions.find((sess) => sess.id === resolvedId)
   })
-  const {
-    appendMessage,
-    updateMessage,
-    updateStatus,
-    setTitle,
-    setRuntimeMode: storeSetRuntimeMode,
-    setModel: storeSetModel,
-    setReasoningEffort: storeSetReasoningEffort,
-    setAgentType: storeSetAgentType,
-    setInstanceId: storeSetInstanceId,
-    clearMessages,
-    removeSession,
-  } = useAgentStore()
+  // Per-action selectors (stable identities) instead of a bare useAgentStore(),
+  // which subscribed ChatPanel to the whole store and re-rendered it on every
+  // token of *other* sessions (e.g. the other dual-chat panel).
+  const appendMessage = useAgentStore((s) => s.appendMessage)
+  const updateMessage = useAgentStore((s) => s.updateMessage)
+  const updateStatus = useAgentStore((s) => s.updateStatus)
+  const setTitle = useAgentStore((s) => s.setTitle)
+  const storeSetRuntimeMode = useAgentStore((s) => s.setRuntimeMode)
+  const storeSetModel = useAgentStore((s) => s.setModel)
+  const storeSetReasoningEffort = useAgentStore((s) => s.setReasoningEffort)
+  const storeSetAgentType = useAgentStore((s) => s.setAgentType)
+  const storeSetInstanceId = useAgentStore((s) => s.setInstanceId)
+  const clearMessages = useAgentStore((s) => s.clearMessages)
+  const removeSession = useAgentStore((s) => s.removeSession)
   const providerStartedRef = useRef<Set<string>>(new Set())
   const pendingNoteRef = useRef<{ sessionId: string; text: string } | null>(null)
   const agentStartedRef = useRef<Set<string>>(new Set())
@@ -73,6 +74,13 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   const messages = activeSession?.messages ?? []
   const status = activeSession?.status ?? 'idle'
   const hasSession = activeSession !== undefined
+  // Fallback token estimate only when the adapter hasn't reported real usage.
+  // Memoized so it isn't an O(n) sum over all messages on every render (which,
+  // because ChatPanel re-renders per token, was O(n^2) across a turn).
+  const estimatedTokens = useMemo(
+    () => Math.round(messages.reduce((acc, m) => acc + (m.content?.length ?? 0), 0) / 4),
+    [messages],
+  )
   const sessionId = activeSession?.id ?? null
   const projectPath = activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
@@ -1093,8 +1101,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         onReasoningEffortChange={handleReasoningEffortChange}
         contextUsage={hasSession ? {
           // Rough approximation: ~4 chars per token. Real data arrives via turn.completed events.
-          usedTokens: activeSession?.tokenUsage?.usedTokens
-            || Math.round(messages.reduce((acc, m) => acc + (m.content?.length ?? 0), 0) / 4),
+          usedTokens: activeSession?.tokenUsage?.usedTokens || estimatedTokens,
           maxTokens: activeSession?.tokenUsage?.maxTokens ?? 200000,
         } : undefined}
         isRunning={status === 'running' || status === 'thinking'}

@@ -26,6 +26,7 @@ import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
 import { registerLspHandlers } from './ipc/lsp'
+import { disposeAllLspServers } from './lsp/manager'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { readForwardableOauthCreds } from './provider/remote-gate'
@@ -400,5 +401,6 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   providerRegistry?.stopAll()
   void stopAllMachineConnections()
+  disposeAllLspServers()
   closeDb()
 })
