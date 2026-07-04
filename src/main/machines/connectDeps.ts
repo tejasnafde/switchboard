@@ -33,7 +33,7 @@ export const SERVER_VERSION_CHANNEL = 'server:version'
 export const REMOTE_COMMAND =
   `D=${REMOTE_SERVER_DIR}; P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
   `if [ -n "$P" ] && grep -qsa index.cjs "/proc/$P/cmdline"; then kill "$P" 2>/dev/null; sleep 1; fi; ` +
-  `PORT=${REMOTE_PORT} node $D/index.cjs`
+  `SWITCHBOARD_REMOTE=1 PORT=${REMOTE_PORT} node $D/index.cjs`
 
 export function allocatePort(): Promise<number> {
   return new Promise((resolve, reject) => {

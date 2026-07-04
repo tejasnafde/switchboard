@@ -67,6 +67,13 @@ export interface SessionStartOpts {
    * cold (e.g. after an app restart).
    */
   candidateOauthDirs?: string[]
+  /**
+   * Claude oauth creds (filename -> contents) forwarded from the desktop to a
+   * remote VM at session start. Set by preload only for remote-routed Claude
+   * sessions; the registry writes them into a per-session 0700 dir on the VM
+   * and points CLAUDE_CONFIG_DIR at it. In-memory only, never persisted.
+   */
+  forwardedOauthCreds?: Record<string, string>
 }
 
 export interface ProviderSession {
