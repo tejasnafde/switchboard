@@ -18,6 +18,9 @@ on:
   push:
     tags:
       - 'v*'
+  # Manual trigger to validate the packaged build (esp. the Windows native
+  # rebuild) on a branch without cutting a tag. Builds only, never publishes.
+  workflow_dispatch:
 
 # Cancel an in-flight run for the same tag if a re-tag happens. Avoids
 # two parallel publishes racing to upload assets.
@@ -44,7 +47,11 @@ jobs:
         # `claude-agent-sdk-darwin-arm64` optional dependency natively;
         # cross-installing for arm64 from an Intel runner is unreliable
         # and the SDK won't load in the packaged app.
-        os: [macos-14, windows-latest]
+        # windows-2022 (not windows-latest): the windows-latest image moved to
+        # windows-2025, which no longer ships the VC++ build toolchain node-gyp
+        # needs, so native rebuilds (node-pty) fail with "Could not find any
+        # Visual Studio installation to use". 2022 has the full toolchain.
+        os: [macos-14, windows-2022]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,8 +91,10 @@ jobs:
       # both jobs in parallel; both target the same Release and
       # electron-builder is safe to call concurrently — it uploads with
       # name-based dedup. GH_TOKEN is needed to write to the Release.
+      # Tag push publishes to the Release; a manual dispatch only builds
+      # (validation), so it never uploads assets to any Release.
       - name: Build & publish
-        run: npx electron-builder --publish always
+        run: npx electron-builder --publish ${{ github.event_name == 'workflow_dispatch' && 'never' || 'always' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Disable electron-builder's notarize step explicitly. Without
