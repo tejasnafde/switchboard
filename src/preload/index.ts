@@ -16,6 +16,9 @@ import type {
   SaveMessageParams,
 } from '@shared/types'
 import type { RuntimeEvent, RuntimeMode, ApprovalDecision } from '@shared/provider-events'
+import { createRendererLogger } from '../renderer/logger'
+
+const log = createRendererLogger('preload:provider')
 
 /**
  * Options passed to `provider.startSession`. Duplicated from main's
@@ -31,9 +34,9 @@ export interface StartSessionOpts {
   reasoningEffort?: 'low' | 'medium' | 'high'
   /** Provider instance id (named credential set). Falls back to default. */
   instanceId?: string
-  /** Claude oauth creds forwarded to a remote VM. Attached by preload for
-   *  remote-routed Claude sessions; not set by callers. */
-  forwardedOauthCreds?: Record<string, string>
+  /** Remote-only: oauth_dir basename, attached by startSession below (not the
+   *  renderer) so a remote Claude session mirrors the per-instance config dir. */
+  remoteConfigDir?: string
 }
 
 export interface ProviderInstanceUpsertInput {
@@ -494,13 +497,6 @@ const api = {
       transport.invoke(ProviderInstanceChannels.TEST, id),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
       transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
-    /** Read an oauth_dir instance's essential cred files off THIS desktop
-     *  (forced local) - used to forward Claude creds to a remote session. */
-    resolveOauthCreds: (
-      agentType: 'claude-code' | 'codex' | 'opencode',
-      instanceId?: string,
-    ): Promise<Record<string, string>> =>
-      router.invokeOn('local', ProviderInstanceChannels.RESOLVE_OAUTH_CREDS, agentType, instanceId),
   },
 
   // ─── Provider (new agent bridge) ──────────────────────────────
@@ -509,27 +505,26 @@ const api = {
   // ProviderAdapter interface.
   provider: {
     startSession: async (opts: StartSessionOpts) => {
-      // A remote-routed Claude session gets no creds on the VM unless we
-      // forward them. Resolve the desktop instance's oauth cred files here
-      // (locally) and attach them, in-memory only, before dispatching.
-      const machineId = routingTable.resolve(ProviderChannels.START_SESSION, [opts])
-      let outgoing = opts
-      if (machineId !== 'local' && opts.provider === 'claude') {
+      // When a Claude session routes to a remote VM, forward the local
+      // instance's oauth_dir basename (a path segment like `.claude-akshaya`,
+      // not a credential) so the remote mirrors the per-instance config dir
+      // under its own $HOME. The VM's DB has no instances, so it can't derive
+      // this itself. Local sessions dispatch unchanged.
+      const target = routingTable.resolve(ProviderChannels.START_SESSION, [opts])
+      if (target !== 'local' && opts.provider === 'claude') {
         try {
-          const creds = await router.invokeOn<Record<string, string>>(
+          const seg = await router.invokeOn<string | null>(
             'local',
-            ProviderInstanceChannels.RESOLVE_OAUTH_CREDS,
+            ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
             'claude-code',
             opts.instanceId,
           )
-          if (creds && Object.keys(creds).length > 0) {
-            outgoing = { ...opts, forwardedOauthCreds: creds }
-          }
+          if (seg) opts = { ...opts, remoteConfigDir: seg }
         } catch (err) {
-          console.warn('[SB:preload] failed to resolve oauth creds for remote session', err)
+          log.warn('resolveOauthDir failed; remote falls back to ~/.claude', err)
         }
       }
-      return transport.invoke(ProviderChannels.START_SESSION, outgoing)
+      return transport.invoke(ProviderChannels.START_SESSION, opts)
     },
 
     sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) =>

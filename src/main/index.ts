@@ -16,7 +16,7 @@ process.on('unhandledRejection', (reason) => {
 })
 
 import { app, BrowserWindow, shell, nativeImage, ipcMain, Menu, protocol, net } from 'electron'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
@@ -28,9 +28,7 @@ import { registerGitHandlers } from './ipc/git'
 import { registerLspHandlers } from './ipc/lsp'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
-import { readForwardableOauthCreds } from './provider/remote-gate'
-import { ProviderInstanceChannels } from '@shared/ipc-channels'
-import type { AgentType } from '@shared/types'
+import { resolveProviderInstance } from './db/providerInstances'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
 import { getDb, closeDb, getSetting, getProjects } from './db/database'
@@ -38,7 +36,8 @@ import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
 
 const log = createMainLogger('tour')
-import { AppChannels } from '@shared/ipc-channels'
+import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import type { AgentType } from '@shared/types'
 
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
@@ -354,12 +353,17 @@ app.whenReady().then(() => {
   registerLspHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
-  // LOCAL-ONLY: reads an oauth_dir instance's cred files off this desktop so a
-  // remote Claude session can be authenticated. Deliberately NOT part of
-  // registerProviderInstanceHandlers (that also runs on the remote WsHost).
+  // Local-only resolver: hand preload an instance's oauth_dir BASENAME (a path
+  // segment, not a secret) so it can forward it to a remote at session start.
+  // basename() runs on the desktop's OS, so a Windows path's backslashes are
+  // handled correctly. Registered here (not in registerProviderInstanceHandlers,
+  // which also runs on the remote WsHost) so it only serves the local DB.
   backendHost.handle(
-    ProviderInstanceChannels.RESOLVE_OAUTH_CREDS,
-    (agentType: AgentType, instanceId?: string) => readForwardableOauthCreds(agentType, instanceId),
+    ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
+    (agentType: AgentType, instanceId: string | undefined) => {
+      const dir = resolveProviderInstance(agentType, instanceId)?.oauthDir
+      return dir ? basename(dir) : null
+    },
   )
   registerMachineHandlers(backendHost)
   // Auto-update - silent check on launch when packaged. No-op in dev
