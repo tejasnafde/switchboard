@@ -16,7 +16,7 @@ process.on('unhandledRejection', (reason) => {
 })
 
 import { app, BrowserWindow, shell, nativeImage, ipcMain, Menu, protocol, net } from 'electron'
-import { join } from 'path'
+import { join, basename } from 'path'
 import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
@@ -353,14 +353,17 @@ app.whenReady().then(() => {
   registerLspHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
-  // Local-only resolver: hand the renderer an instance's oauth_dir absolute
-  // path (a path, not a secret) so it can forward the dir NAME to a remote at
-  // session start. Registered here (not in registerProviderInstanceHandlers,
+  // Local-only resolver: hand preload an instance's oauth_dir BASENAME (a path
+  // segment, not a secret) so it can forward it to a remote at session start.
+  // basename() runs on the desktop's OS, so a Windows path's backslashes are
+  // handled correctly. Registered here (not in registerProviderInstanceHandlers,
   // which also runs on the remote WsHost) so it only serves the local DB.
   backendHost.handle(
     ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
-    (agentType: AgentType, instanceId: string | undefined) =>
-      resolveProviderInstance(agentType, instanceId)?.oauthDir ?? null,
+    (agentType: AgentType, instanceId: string | undefined) => {
+      const dir = resolveProviderInstance(agentType, instanceId)?.oauthDir
+      return dir ? basename(dir) : null
+    },
   )
   registerMachineHandlers(backendHost)
   // Auto-update - silent check on launch when packaged. No-op in dev

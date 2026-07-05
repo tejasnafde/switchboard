@@ -497,14 +497,6 @@ const api = {
       transport.invoke(ProviderInstanceChannels.TEST, id),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
       transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
-    /** Local-only: resolve an instance's oauth_dir absolute path (or null).
-     *  Not a secret - just a path. Forced to the local backend since the DB
-     *  with the instance rows lives there, not on the remote VM. */
-    resolveOauthDir: (
-      agentType: 'claude-code' | 'codex' | 'opencode',
-      instanceId: string | undefined,
-    ): Promise<string | null> =>
-      router.invokeOn('local', ProviderInstanceChannels.RESOLVE_OAUTH_DIR, agentType, instanceId),
   },
 
   // ─── Provider (new agent bridge) ──────────────────────────────
@@ -514,20 +506,19 @@ const api = {
   provider: {
     startSession: async (opts: StartSessionOpts) => {
       // When a Claude session routes to a remote VM, forward the local
-      // instance's oauth_dir NAME (a basename like `.claude-akshaya`, not a
-      // credential) so the remote mirrors the per-instance config dir under
-      // its own $HOME. The VM's DB has no instances, so it can't derive this
-      // itself. Local sessions dispatch unchanged.
+      // instance's oauth_dir basename (a path segment like `.claude-akshaya`,
+      // not a credential) so the remote mirrors the per-instance config dir
+      // under its own $HOME. The VM's DB has no instances, so it can't derive
+      // this itself. Local sessions dispatch unchanged.
       const target = routingTable.resolve(ProviderChannels.START_SESSION, [opts])
       if (target !== 'local' && opts.provider === 'claude') {
         try {
-          const oauthDir = await router.invokeOn<string | null>(
+          const seg = await router.invokeOn<string | null>(
             'local',
             ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
             'claude-code',
             opts.instanceId,
           )
-          const seg = oauthDir?.split('/').filter(Boolean).pop()
           if (seg) opts = { ...opts, remoteConfigDir: seg }
         } catch (err) {
           log.warn('resolveOauthDir failed; remote falls back to ~/.claude', err)

@@ -8,7 +8,7 @@
  *      and building the actionable per-device-login prompt shown in chat.
  */
 
-import { existsSync } from 'node:fs'
+import { statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { oauthLoginCommand } from '@shared/provider-auth-format'
@@ -35,15 +35,25 @@ export function formatRemoteClaudeLoginPrompt(cmd: string): string {
   return `This machine is not logged in to Claude. Open a terminal on it and run:\n\n    ${command}\n\nThen send your message again.`
 }
 
+/** True if the dir holds a NON-EMPTY .credentials.json (an interrupted or
+ *  touched login can leave a zero-byte file that would falsely read as ready). */
+function hasCredentials(configDir: string): boolean {
+  try {
+    return statSync(join(configDir, '.credentials.json')).size > 0
+  } catch {
+    return false
+  }
+}
+
 /**
  * Decide whether a remote Claude session can authenticate from `configDir`.
- * Returns null when it's logged in (a `.credentials.json` file exists in the
- * dir, or `ANTHROPIC_API_KEY` is set); otherwise returns the actionable
+ * Returns null when it's logged in (a non-empty `.credentials.json` exists in
+ * the dir, or `ANTHROPIC_API_KEY` is set); otherwise returns the actionable
  * per-device-login message to surface in chat.
  */
 export function remoteClaudeLoginPrompt(configDir: string): string | null {
   if (process.env.ANTHROPIC_API_KEY) return null
-  if (existsSync(join(configDir, '.credentials.json'))) return null
+  if (hasCredentials(configDir)) return null
   const cmd = oauthLoginCommand('claude-code', configDir)
   return formatRemoteClaudeLoginPrompt(cmd)
 }

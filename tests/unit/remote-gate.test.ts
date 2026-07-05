@@ -58,11 +58,18 @@ describe('remoteClaudeLoginPrompt', () => {
     expect(msg).toContain('claude auth login')
   })
 
-  it('returns null when a .credentials.json exists in the dir', () => {
+  it('returns null when a non-empty .credentials.json exists in the dir', () => {
     delete process.env.ANTHROPIC_API_KEY
     const dir = tmpDir()
     writeFileSync(join(dir, '.credentials.json'), '{"t":1}')
     expect(remoteClaudeLoginPrompt(dir)).toBeNull()
+  })
+
+  it('prompts when .credentials.json exists but is empty (interrupted login)', () => {
+    delete process.env.ANTHROPIC_API_KEY
+    const dir = tmpDir()
+    writeFileSync(join(dir, '.credentials.json'), '')
+    expect(remoteClaudeLoginPrompt(dir)).not.toBeNull()
   })
 
   it('returns null when ANTHROPIC_API_KEY is set', () => {
