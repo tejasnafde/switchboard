@@ -405,6 +405,12 @@ export class CodexAdapter implements ProviderAdapter {
       log.info(`codex process exited: code=${code}`)
       active.child = null
       active.session.status = code === 0 ? 'stopped' : 'error'
+      // Reject any in-flight RPCs so their awaiting callers don't hang forever
+      // (and their promise/closure entries don't leak). Mirrors stopSession.
+      for (const [, pending] of active.pendingRpcs) {
+        pending.reject(new Error('Codex process exited'))
+      }
+      active.pendingRpcs.clear()
       onEvent({ type: 'status', threadId: opts.threadId, status: active.session.status })
     })
 
@@ -1020,6 +1026,12 @@ export class CodexAdapter implements ProviderAdapter {
         })
         active.onEvent({ type: 'status', threadId, status: 'idle' })
       }
+      // Per-turn accumulators - all content is flushed to the renderer by now,
+      // so drop it instead of growing these maps for the whole session (mirrors
+      // the Claude/OpenCode adapters).
+      active.assistantMessageText.clear()
+      active.toolOutputText.clear()
+      active.startedSyntheticTools.clear()
     } else if (method === 'turn/started') {
       active.session.status = 'running'
       if (active.turnStartedAt == null) active.turnStartedAt = Date.now()
