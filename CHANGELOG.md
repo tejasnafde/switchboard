@@ -2,6 +2,13 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-05 - Performance audit
+
+### Fixed
+- **App tree re-rendered on every streamed token.** `App`, `ChatPanel`, `FileTreePane`, and the sidebar unread badge subscribed to the whole agent store, so each streamed token re-rendered large subtrees (and in dual-chat, each panel re-rendered on the other's tokens). Switched to per-action / primitive Zustand selectors; the forward-menu now subscribes to `sessions` only while open, and the context-usage estimate is memoized.
+- **`GET_PROJECTS` re-scanned the whole session filesystem serially per project.** Now scans projects concurrently, mtime-caches Codex rollout heads, and targets the exact Claude project dir instead of listing the whole folder - removing the repeated full-tree walk on every sidebar/settings/kanban refresh.
+- **Memory: LSP servers, Codex accumulators, and in-flight RPCs leaked.** Language servers are now disposed on quit; the Codex adapter clears per-turn maps on `turn/completed` and rejects pending RPCs when the process exits.
+
 ## 2026-07-04 - Provisioning upload OOM fix
 
 ### Fixed
