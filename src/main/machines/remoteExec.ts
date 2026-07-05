@@ -4,8 +4,13 @@
  * would not have on PATH. No user -> the ssh login user runs it directly, but
  * still through the nvm-sourcing wrapper below (that user's own nvm may also
  * be off PATH in a non-interactive shell).
+ *
+ * `cd "$HOME"` first: sudo -H swaps HOME to the target user's but keeps the
+ * ssh login user's cwd, which the target user may not even be able to read.
+ * Every script should start from its own home, same as an interactive
+ * `sudo su <user>; cd`.
  */
-const NVM_PREAMBLE = 'export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
+const NVM_PREAMBLE = 'cd "$HOME" 2>/dev/null || true; export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
 
 /**
  * remoteUser is user-typed and DB-stored, then interpolated unquoted into a

@@ -17,7 +17,9 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
   const [host, setHost] = useState('')
   const [user, setUser] = useState('')
   const [port, setPort] = useState('22')
-  const [remoteUser, setRemoteUser] = useState('')
+  // Default to ubuntu: our VMs all run the agent as the ubuntu user (the ssh
+  // login user varies per machine). Clear the field to run as the login user.
+  const [remoteUser, setRemoteUser] = useState('ubuntu')
   const [search, setSearch] = useState('')
   // Guards against a double-click firing two CREATE calls before the first
   // one's re-hydrate lands (which would add the same host twice).
