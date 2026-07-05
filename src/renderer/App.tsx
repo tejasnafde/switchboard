@@ -72,7 +72,13 @@ export function App() {
     appView,
   } = useLayoutStore()
 
-  const { addSession, setActiveSession, setMessages, clearMessages } = useAgentStore()
+  // Select actions individually (stable identities) so App does NOT subscribe
+  // to the whole agent store - a bare useAgentStore() re-renders the entire
+  // app tree on every streamed token of any session.
+  const addSession = useAgentStore((s) => s.addSession)
+  const setActiveSession = useAgentStore((s) => s.setActiveSession)
+  const setMessages = useAgentStore((s) => s.setMessages)
+  const clearMessages = useAgentStore((s) => s.clearMessages)
   const { loadSavedTheme } = useThemeStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -507,7 +513,13 @@ export function App() {
 
   // Sync terminal store's activeSession with agent store
   const activeAgentSessionId = useAgentStore((s) => s.activeSessionId)
-  const activeSession = useAgentStore((s) => s.getActiveSession())
+  // Narrow to the one primitive we render below (terminal pane id). Selecting
+  // the whole session object returned a fresh reference every token and forced
+  // a per-token App re-render.
+  const activeTerminalPaneId = useAgentStore((s) => {
+    const a = s.sessions.find((x) => x.id === s.activeSessionId)
+    return a?.type === 'terminal' ? (a.terminalPaneId ?? null) : null
+  })
   const termSetActiveSession = useTerminalStore((s) => s.setActiveSession)
 
   useEffect(() => {
@@ -875,8 +887,8 @@ export function App() {
               ChatPanels side-by-side with a draggable divider.
               Ratio lives in refs during drag for perf; on release we commit
               to the store so it persists on layout changes / remount. */}
-          {activeSession?.type === 'terminal' && activeSession.terminalPaneId ? (
-            <TerminalSessionPane paneId={activeSession.terminalPaneId} />
+          {activeTerminalPaneId ? (
+            <TerminalSessionPane paneId={activeTerminalPaneId} />
           ) : dualChat && rightSessionId ? (
             <DualChatPanels rightSessionId={rightSessionId} />
           ) : (

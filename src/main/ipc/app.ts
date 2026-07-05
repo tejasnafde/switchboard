@@ -134,9 +134,11 @@ export function registerAppHandlers(host: BackendHost): void {
     const archivedSet = getArchivedConversationIds()
     const childSet = getChildSessionIds()
     const syntheticParents = getSyntheticParentMap()
-    const projects: Project[] = []
     const candidateDirs = claudeCandidateDirs()
-    for (const row of rows) {
+    // Scan projects concurrently - each scanAllSessions is independent I/O and
+    // was previously awaited one project at a time, serializing every sidebar/
+    // settings/kanban refresh over the full session filesystem.
+    const projects: Project[] = await Promise.all(rows.map(async (row) => {
       const sessions = await scanAllSessions(row.path, candidateDirs)
       const dbConversations = getConversationsForProject(row.path)
       const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
@@ -163,8 +165,8 @@ export function registerAppHandlers(host: BackendHost): void {
           return withAgentType
         })
       const terminalSessions = synthesizeTerminalSessions(dbConversations, archivedSet, scannedIds)
-      projects.push({ path: row.path, name: row.name, sessions: [...filtered, ...terminalSessions], workspaceId: row.workspace_id ?? null })
-    }
+      return { path: row.path, name: row.name, sessions: [...filtered, ...terminalSessions], workspaceId: row.workspace_id ?? null }
+    }))
     return projects
   })
 

@@ -63,15 +63,16 @@ function UnreadBadge({ sessionId }: { sessionId: string }) {
 /** Sum of unread counts across a workspace group - surfaces activity when the
  *  workspace is collapsed and per-session badges are hidden. */
 function useGroupUnreadCount(sessionIds: string[]): number {
-  // Select the sessions array (stable reference) once, then reduce with a
-  // local Map. Cheaper than `find` per id when many groups call this hook.
-  const sessions = useAgentStore((s) => s.sessions)
-  return useMemo(() => {
-    const byId = new Map(sessions.map((s) => [s.id, s.unreadCount ?? 0]))
+  // Return a primitive from the selector so this only triggers a re-render when
+  // the summed count actually changes - not on every streamed token (which is
+  // what subscribing to the whole `sessions` array + rebuilding a Map did).
+  return useAgentStore((s) => {
     let total = 0
-    for (const id of sessionIds) total += byId.get(id) ?? 0
+    for (const id of sessionIds) {
+      total += s.sessions.find((x) => x.id === id)?.unreadCount ?? 0
+    }
     return total
-  }, [sessions, sessionIds])
+  })
 }
 
 /** Aggregated unread badge on workspace headers. Only rendered while

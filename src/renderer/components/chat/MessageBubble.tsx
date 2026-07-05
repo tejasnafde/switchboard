@@ -720,7 +720,10 @@ function ForwardMenu({ content }: { content: string }) {
   // so it stays anchored to the button after portalling to document.body.
   const [popoverPos, setPopoverPos] = useState<{ top: number; right: number } | null>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
-  const sessions = useAgentStore((s) => s.sessions)
+  // Only subscribe to the sessions array while the menu is open. Every visible
+  // bubble mounts a ForwardMenu; subscribing unconditionally re-rendered them
+  // all (and recomputed `others`) on every streamed token.
+  const sessions = useAgentStore((s) => (open ? s.sessions : null))
   const appendDraft = useDraftStore((s) => s.appendDraft)
   const openRightPanel = useLayoutStore((s) => s.openRightPanel)
   const setActiveSession = useAgentStore((s) => s.setActiveSession)
@@ -772,7 +775,7 @@ function ForwardMenu({ content }: { content: string }) {
     }
   }, [open])
 
-  const others = sessions.filter((s) => s.id !== activeSessionId)
+  const others = (sessions ?? []).filter((s) => s.id !== activeSessionId)
 
   // Used to be `if (others.length === 0) return null` - that hid the
   // button entirely for single-session users and made the feature
@@ -780,7 +783,8 @@ function ForwardMenu({ content }: { content: string }) {
   // targets, the popover shows an empty-state.
 
   const handleForward = (targetId: string, targetTitle: string | undefined) => {
-    const sourceTitle = sessions.find((s) => s.id === activeSessionId)?.title ?? 'chat'
+    const sourceTitle =
+      useAgentStore.getState().sessions.find((s) => s.id === activeSessionId)?.title ?? 'chat'
     const quoted = content
       .split('\n')
       .slice(0, 40) // cap forwarded context

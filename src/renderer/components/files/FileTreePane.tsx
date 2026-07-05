@@ -169,11 +169,12 @@ const DirNode = memo(function DirNode({ repoRoot, subPath, name, isGitignored, d
 })
 
 export function FileTreePane(): React.ReactElement | null {
-  const sessions = useAgentStore((s) => s.sessions)
-  const activeSessionId = useAgentStore((s) => s.activeSessionId)
-  const session = sessions.find((s) => s.id === activeSessionId)
-  // Worktree-aware, matching the viewer/editor.
-  const repoRoot = session?.worktreePath ?? session?.projectPath
+  // Select only the repo root (worktree-aware) rather than the whole sessions
+  // array - otherwise the file tree re-rendered on every chat token.
+  const repoRoot = useAgentStore((s) => {
+    const session = s.sessions.find((x) => x.id === s.activeSessionId)
+    return session?.worktreePath ?? session?.projectPath
+  })
   if (!repoRoot) {
     return (
       <div style={{ padding: 12, fontSize: 12, opacity: 0.6 }}>
