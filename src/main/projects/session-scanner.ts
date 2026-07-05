@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'fs/promises'
+import { readdir, readFile, stat, open } from 'fs/promises'
 import { join, basename } from 'path'
 import { homedir } from 'os'
 import { generateTitle } from '@shared/auto-title'
@@ -101,7 +101,7 @@ async function scanClaudeProjectsDir(
       // Try to extract title from first user message
       let title = `Session ${sessions.length + 1}`
       try {
-        const head = await readFile(filePath, 'utf-8').then((c) => c.slice(0, 5000))
+        const head = await readHead(filePath, 5000)
         const firstUserMsg = head.split('\n').find((line) => {
           try {
             const obj = JSON.parse(line)
@@ -147,12 +147,37 @@ export async function scanCodexSessions(projectPath: string): Promise<SessionSum
   return sessions.sort((a, b) => b.startedAt - a.startedAt)
 }
 
-// Cache the 2 KB head of each rollout file, keyed by path and validated by
-// mtime, so the ever-growing Codex history isn't re-read on every scan (this
-// runs once per project on GET_PROJECTS, and again on every SCAN_SESSIONS).
-// Bounded by the total number of rollout files; add an LRU cap only if a user's
-// history ever makes this footprint matter.
-const codexHeadCache = new Map<string, { mtimeMs: number; head: string }>()
+// Cache the 2 KB head of each rollout file, keyed by path, so the
+// ever-growing Codex history isn't re-read on every scan. Holds the in-flight
+// Promise (not the resolved value) so the concurrent per-project scans from
+// GET_PROJECTS share one read instead of stampeding the same file N times -
+// that stampede OOM'd v0.5.3 on real-world Codex histories. Headers are
+// immutable once written, so no mtime invalidation is needed.
+const codexHeadCache = new Map<string, Promise<string>>()
+
+const HEAD_BYTES = 2000
+
+// Session files run to tens of MB; read only the head bytes instead of
+// readFile-ing the whole file to inspect the first few lines.
+async function readHead(fullPath: string, maxBytes: number): Promise<string> {
+  const fh = await open(fullPath, 'r')
+  try {
+    const buf = Buffer.alloc(maxBytes)
+    const { bytesRead } = await fh.read(buf, 0, maxBytes, 0)
+    return buf.toString('utf-8', 0, bytesRead)
+  } finally {
+    await fh.close()
+  }
+}
+
+function getCachedCodexHead(fullPath: string): Promise<string> {
+  let head = codexHeadCache.get(fullPath)
+  if (!head) {
+    head = readHead(fullPath, HEAD_BYTES)
+    codexHeadCache.set(fullPath, head)
+  }
+  return head
+}
 
 async function scanCodexDir(
   dir: string,
@@ -168,25 +193,20 @@ async function scanCodexDir(
     } else if (entry.name.endsWith('.jsonl')) {
       // Quick check: read first few lines to see if CWD matches
       try {
+        const head = await getCachedCodexHead(fullPath)
+        if (!head.includes(projectPath)) continue
         const fileStat = await stat(fullPath).catch(() => null)
         if (!fileStat) continue
-        let cached = codexHeadCache.get(fullPath)
-        if (!cached || cached.mtimeMs !== fileStat.mtimeMs) {
-          const head = await readFile(fullPath, 'utf-8').then((c) => c.slice(0, 2000))
-          cached = { mtimeMs: fileStat.mtimeMs, head }
-          codexHeadCache.set(fullPath, cached)
-        }
-        if (cached.head.includes(projectPath)) {
-          sessions.push({
-            id: entry.name.replace('.jsonl', ''),
-            source: 'codex',
-            title: `Codex ${sessions.length + 1}`,
-            startedAt: fileStat.mtimeMs,
-            messageCount: 0,
-            filePath: fullPath,
-          })
-        }
+        sessions.push({
+          id: entry.name.replace('.jsonl', ''),
+          source: 'codex',
+          title: `Codex ${sessions.length + 1}`,
+          startedAt: fileStat.mtimeMs,
+          messageCount: 0,
+          filePath: fullPath,
+        })
       } catch {
+        codexHeadCache.delete(fullPath)
         // Skip unreadable files
       }
     }

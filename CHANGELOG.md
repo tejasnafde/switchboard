@@ -2,6 +2,12 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-05 - v0.5.3 startup OOM fix
+
+### Fixed
+- **v0.5.3 crashed on startup with a JS heap OOM** for anyone with a sizeable Codex history. The previous "Performance audit" entry parallelized `GET_PROJECTS` to scan every project concurrently, but `scanCodexDir`'s Codex-rollout-head cache only de-duplicated *sequential* reads (`Map.get`/`Map.set` with an `await` in between) - it did nothing to stop N concurrent scans from all cold-missing the same file and reading it in parallel. With 35 projects racing over the same `~/.codex/sessions` tree, a handful of large rollout files (10-20MB+) got fully read into memory up to 35 times simultaneously, blowing the heap. Fixed by caching the in-flight `Promise` itself (single-flight), so concurrent scans share one read instead of stampeding.
+- **Sidebar/kanban/settings project refresh was slow.** Root cause of the above bug's severity: `scanCodexDir` used `readFile(path, 'utf-8')` to load each *entire* rollout file into memory just to check the first 2000 characters for a path match. Rollout files can run into the tens of MB; a Codex history of ~160MB across ~60 files meant every refresh re-read all of it from disk. Switched to a bounded partial read (`open` + `read` for the first 2000 bytes) so only the bytes actually needed are read.
+
 ## 2026-07-05 - Performance audit
 
 ### Fixed
