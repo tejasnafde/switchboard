@@ -28,9 +28,7 @@ import { registerGitHandlers } from './ipc/git'
 import { registerLspHandlers } from './ipc/lsp'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
-import { readForwardableOauthCreds } from './provider/remote-gate'
-import { ProviderInstanceChannels } from '@shared/ipc-channels'
-import type { AgentType } from '@shared/types'
+import { resolveProviderInstance } from './db/providerInstances'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
 import { getDb, closeDb, getSetting, getProjects } from './db/database'
@@ -38,7 +36,8 @@ import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
 
 const log = createMainLogger('tour')
-import { AppChannels } from '@shared/ipc-channels'
+import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import type { AgentType } from '@shared/types'
 
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
@@ -354,12 +353,14 @@ app.whenReady().then(() => {
   registerLspHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
-  // LOCAL-ONLY: reads an oauth_dir instance's cred files off this desktop so a
-  // remote Claude session can be authenticated. Deliberately NOT part of
-  // registerProviderInstanceHandlers (that also runs on the remote WsHost).
+  // Local-only resolver: hand the renderer an instance's oauth_dir absolute
+  // path (a path, not a secret) so it can forward the dir NAME to a remote at
+  // session start. Registered here (not in registerProviderInstanceHandlers,
+  // which also runs on the remote WsHost) so it only serves the local DB.
   backendHost.handle(
-    ProviderInstanceChannels.RESOLVE_OAUTH_CREDS,
-    (agentType: AgentType, instanceId?: string) => readForwardableOauthCreds(agentType, instanceId),
+    ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
+    (agentType: AgentType, instanceId: string | undefined) =>
+      resolveProviderInstance(agentType, instanceId)?.oauthDir ?? null,
   )
   registerMachineHandlers(backendHost)
   // Auto-update - silent check on launch when packaged. No-op in dev

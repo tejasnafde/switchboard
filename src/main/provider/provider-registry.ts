@@ -14,10 +14,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
 import { recordThreadSession, updateConversationSessionId } from '../db/database'
 import { defaultClaudeDir } from './claude-session-migrate'
-import { sanitizeThreadId, remoteBlockedProviderLabel } from './remote-gate'
-import { mkdir, writeFile, chmod, rm } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir } from './remote-gate'
 import type { AgentType } from '@shared/types'
 import type {
   ProviderAdapter,
@@ -41,8 +38,6 @@ export class ProviderRegistry {
   private sessionAdapters = new Map<string, ProviderAdapter>()
   /** Working-tree root per session, captured at startSession for checkpointing. */
   private sessionCwd = new Map<string, string>()
-  /** Per-session forwarded-oauth dir on the VM, removed on stop. */
-  private sessionOauthDirs = new Map<string, string>()
 
   /**
    * Derives per-file diff cards from git checkpoints around each turn -
@@ -130,10 +125,18 @@ export class ProviderRegistry {
 
       // On a remote VM only Claude Code runs. Reject Codex / OpenCode with a
       // readable message the chat surfaces instead of a deep adapter failure.
+      let remoteClaudeConfig: string | null = null
       if (process.env.SWITCHBOARD_REMOTE) {
         const blocked = remoteBlockedProviderLabel(opts.provider)
         if (blocked) {
           throw new Error(`${blocked} is not available on remote machines yet - only Claude Code runs on remote VMs.`)
+        }
+        // Per-device login: resolve this VM's per-instance config dir and, if
+        // it has no creds, fail with the login command instead of a raw 401.
+        if (opts.provider === 'claude') {
+          remoteClaudeConfig = remoteClaudeConfigDir(opts.remoteConfigDir)
+          const prompt = remoteClaudeLoginPrompt(remoteClaudeConfig)
+          if (prompt) throw new Error(prompt)
         }
       }
 
@@ -160,16 +163,9 @@ export class ProviderRegistry {
         resolvedOauthDir: instance?.oauthDir ?? null,
         candidateOauthDirs,
       }
-      log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${instance?.oauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
-
-      // Desktop forwarded Claude oauth creds for this remote session - write
-      // them to a per-session 0700 dir on the VM and point the adapter's
-      // CLAUDE_CONFIG_DIR at it. Never persisted, removed on stop.
-      if (opts.forwardedOauthCreds && Object.keys(opts.forwardedOauthCreds).length > 0) {
-        const dir = await this.writeForwardedOauthCreds(opts.threadId, opts.forwardedOauthCreds)
-        enrichedOpts.resolvedOauthDir = dir
-        enrichedOpts.candidateOauthDirs = Array.from(new Set([dir, ...candidateOauthDirs]))
-      }
+      // Remote: point CLAUDE_CONFIG_DIR at the per-instance dir under this VM's $HOME.
+      if (remoteClaudeConfig) enrichedOpts.resolvedOauthDir = remoteClaudeConfig
+      log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${enrichedOpts.resolvedOauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
 
       const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))
       if (instance) session.instanceId = instance.id
@@ -248,41 +244,9 @@ export class ProviderRegistry {
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
       this.checkpoints.clear(threadId)
-      await this.cleanupOauthDir(threadId)
     })
 
     log.info('IPC handlers registered')
-  }
-
-  /**
-   * Write desktop-forwarded Claude oauth creds into a per-session dir on the
-   * VM (0700 dir, 0600 files) and return its path. Never logs cred contents.
-   */
-  private async writeForwardedOauthCreds(threadId: string, creds: Record<string, string>): Promise<string> {
-    const dir = join(homedir(), '.switchboard-server', 'oauth', sanitizeThreadId(threadId))
-    await mkdir(dir, { recursive: true, mode: 0o700 })
-    // mkdir's mode is masked by umask; enforce 0700 explicitly.
-    await chmod(dir, 0o700)
-    for (const [name, content] of Object.entries(creds)) {
-      const p = join(dir, name)
-      await writeFile(p, content, { mode: 0o600 })
-      await chmod(p, 0o600)
-    }
-    this.sessionOauthDirs.set(threadId, dir)
-    log.info(`wrote ${Object.keys(creds).length} forwarded oauth cred file(s) for ${threadId}`)
-    return dir
-  }
-
-  /** Best-effort removal of a session's forwarded-oauth dir. */
-  private async cleanupOauthDir(threadId: string): Promise<void> {
-    const dir = this.sessionOauthDirs.get(threadId)
-    if (!dir) return
-    this.sessionOauthDirs.delete(threadId)
-    try {
-      await rm(dir, { recursive: true, force: true })
-    } catch (err) {
-      log.warn(`failed to remove oauth dir for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
-    }
   }
 
   async stopAll(): Promise<void> {
@@ -290,7 +254,6 @@ export class ProviderRegistry {
       await adapter.stopSession(threadId).catch((err) => {
         log.warn(`stopSession failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
       })
-      await this.cleanupOauthDir(threadId)
     }
     this.sessionAdapters.clear()
     this.sessionCwd.clear()

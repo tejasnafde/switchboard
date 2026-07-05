@@ -61,19 +61,20 @@ export interface SessionStartOpts {
   /** Per-instance config dir → CLAUDE_CONFIG_DIR (claude) or CODEX_HOME (codex). */
   resolvedOauthDir?: string | null
   /**
+   * Remote-only: the basename of the local instance's oauth_dir (e.g.
+   * `.claude-akshaya`), forwarded from the desktop so a remote Claude session
+   * mirrors the local per-instance config dir under the VM's `$HOME`. Safe
+   * metadata (a single path segment, not a credential); sanitized on the
+   * remote before use. Unset → the remote falls back to `~/.claude`.
+   */
+  remoteConfigDir?: string
+  /**
    * All known config dirs for this agent kind (every enabled instance's
    * resolved oauth_dir, plus the default). Used by adapters to find a
    * resumeable JSONL across profiles when in-memory rotation tracking is
    * cold (e.g. after an app restart).
    */
   candidateOauthDirs?: string[]
-  /**
-   * Claude oauth creds (filename -> contents) forwarded from the desktop to a
-   * remote VM at session start. Set by preload only for remote-routed Claude
-   * sessions; the registry writes them into a per-session 0700 dir on the VM
-   * and points CLAUDE_CONFIG_DIR at it. In-memory only, never persisted.
-   */
-  forwardedOauthCreds?: Record<string, string>
 }
 
 export interface ProviderSession {
