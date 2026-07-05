@@ -10,7 +10,7 @@
  * Every script should start from its own home, same as an interactive
  * `sudo su <user>; cd`.
  */
-const NVM_PREAMBLE = 'cd "$HOME" 2>/dev/null || true; export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
+const NVM_PREAMBLE = 'cd "$HOME" 2>/dev/null; export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"; '
 
 /**
  * remoteUser is user-typed and DB-stored, then interpolated unquoted into a

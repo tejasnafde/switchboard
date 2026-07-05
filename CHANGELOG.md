@@ -2,6 +2,14 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-05 - Remote session fixes (v0.5.5)
+
+### Fixed
+- **Chat stuck on "Working..." when a session failed to start.** ChatPanel set an optimistic `running` status before `startSession`, but the failure path (e.g. the remote per-device-login guard refusing an unauthenticated VM) never cleared it, and Stop was a no-op because the registry silently ignores interrupts for threads with no live adapter session. Status now resets to idle on start/send failure, and Stop clears the local status directly when no provider session exists.
+
+### Changed
+- **Remote machines default to running as the `ubuntu` user.** The Add-machine form pre-fills "Run as user" with `ubuntu` (clearable), and every remote script now starts from the target user's `$HOME` - `sudo -H` swaps HOME but keeps the ssh login user's cwd, so scripts previously ran from a directory the target user might not read. Matches the manual `sudo su ubuntu; cd` workflow.
+
 ## 2026-07-05 - v0.5.3 startup OOM fix
 
 ### Fixed

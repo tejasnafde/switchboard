@@ -719,7 +719,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           })
           providerStartedRef.current.delete(sessionId)
           // Clear the optimistic 'running' set above - no session exists, so
-          // no provider event will ever end the turn (stuck "Working..." bug).
+          // no provider event will ever end the turn.
           updateStatus(sessionId, 'idle')
           return
         }
