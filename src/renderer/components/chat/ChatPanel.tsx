@@ -718,6 +718,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             timestamp: Date.now(),
           })
           providerStartedRef.current.delete(sessionId)
+          // Clear the optimistic 'running' set above - no session exists, so
+          // no provider event will ever end the turn (stuck "Working..." bug).
+          updateStatus(sessionId, 'idle')
           return
         }
       }
@@ -729,6 +732,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           content: `Failed to send: ${err.message}`,
           timestamp: Date.now(),
         })
+        updateStatus(sessionId, 'idle')
       })
     },
     // `instanceId`, `model`, `reasoningEffort` matter on the FIRST send
@@ -1106,9 +1110,15 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         } : undefined}
         isRunning={status === 'running' || status === 'thinking'}
         onInterrupt={() => {
-          if (sessionId) {
-            window.api.provider?.interrupt?.(sessionId).catch(() => {})
+          if (!sessionId) return
+          // No provider session was ever started (e.g. startSession failed) -
+          // there is nothing in main to interrupt and no event will ever
+          // arrive, so clear the stuck status locally instead of no-oping.
+          if (!providerStartedRef.current.has(sessionId)) {
+            updateStatus(sessionId, 'idle')
+            return
           }
+          window.api.provider?.interrupt?.(sessionId).catch(() => {})
         }}
         onClearMessages={() => {
           if (sessionId) clearMessages(sessionId)
