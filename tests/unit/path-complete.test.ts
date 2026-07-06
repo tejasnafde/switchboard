@@ -4,7 +4,7 @@ import { splitPath, pathCompletions, moveSelection, acceptSuggestion } from '../
 
 const entries = [
   { name: 'ubuntu', isDir: true },
-  { name: 'geoiq', isDir: true },
+  { name: 'gecko', isDir: true },
   { name: 'gadget', isDir: true },
   { name: 'notes.txt', isDir: false },
 ]
@@ -23,13 +23,13 @@ describe('splitPath', () => {
 
 describe('pathCompletions', () => {
   it('suggests matching directories as full paths, ignoring files (alphabetical)', () => {
-    expect(pathCompletions('/home/g', entries)).toEqual(['/home/gadget', '/home/geoiq'])
+    expect(pathCompletions('/home/g', entries)).toEqual(['/home/gadget', '/home/gecko'])
   })
   it('lists all dirs alphabetically when the partial is empty', () => {
-    expect(pathCompletions('/home/', entries)).toEqual(['/home/gadget', '/home/geoiq', '/home/ubuntu'])
+    expect(pathCompletions('/home/', entries)).toEqual(['/home/gadget', '/home/gecko', '/home/ubuntu'])
   })
   it('is case-insensitive', () => {
-    expect(pathCompletions('/home/GE', entries)).toEqual(['/home/geoiq'])
+    expect(pathCompletions('/home/GE', entries)).toEqual(['/home/gecko'])
   })
   it('completes under root', () => {
     expect(pathCompletions('/u', entries)).toEqual(['/ubuntu'])
@@ -76,9 +76,9 @@ describe('moveSelection', () => {
 
 describe('acceptSuggestion', () => {
   it('appends a trailing slash so the user can keep typing the next segment', () => {
-    expect(acceptSuggestion('/home/geoiq')).toBe('/home/geoiq/')
+    expect(acceptSuggestion('/home/gecko')).toBe('/home/gecko/')
   })
   it('leaves an already-trailing-slash path alone', () => {
-    expect(acceptSuggestion('/home/geoiq/')).toBe('/home/geoiq/')
+    expect(acceptSuggestion('/home/gecko/')).toBe('/home/gecko/')
   })
 })

@@ -12,14 +12,14 @@ describe('provider auth formatting', () => {
       loggedIn: true,
       authMethod: 'claude.ai',
       apiProvider: 'firstParty',
-      email: 'ai@geoiq.io',
-      orgName: "ai@geoiq.io's Organization",
+      email: 'dev@example.com',
+      orgName: "dev@example.com's Organization",
       subscriptionType: 'max',
     }))
 
     expect(status).toEqual({
       ok: true,
-      message: "Account: ai@geoiq.io | Org: ai@geoiq.io's Organization | Plan: max | Auth: claude.ai / firstParty",
+      message: "Account: dev@example.com | Org: dev@example.com's Organization | Plan: max | Auth: claude.ai / firstParty",
     })
   })
 

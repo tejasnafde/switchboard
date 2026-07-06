@@ -24,7 +24,7 @@
  *    code requirement(s)."
  *
  *    Fix: pass an explicit DR that uses only the bundle identifier:
- *      =designated => identifier "io.geoiq.switchboard"
+ *      =designated => identifier "com.tejasnafde.switchboard"
  *    Any future build with the same CFBundleIdentifier now satisfies
  *    the requirement.
  *
@@ -46,7 +46,7 @@ exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return
 
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
-  const bundleId = context.packager.appInfo.id // io.geoiq.switchboard
+  const bundleId = context.packager.appInfo.id // com.tejasnafde.switchboard
   // `=designated => identifier "..."` overrides the implicit DR. Without
   // this, codesign synthesizes a DR that includes cdhash + anchor, which
   // pins the requirement to one specific build.

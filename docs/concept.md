@@ -50,12 +50,12 @@ One window. One project. Everything connected.
 │  Switchboa                                            │
 │ Projects │              CHAT (primary surface)              │
 │          │   ┌──────────────────────────────────────────┐   │
-│ geoiq-   │   │ Claude Code - Session: pipeline-fixes    │   │
+│ acme-    │   │ Claude Code - Session: pipeline-fixes    │   │
 │ analytics│   │ ─────────────────────────────────────────│   │
 │ ●        │   │ You: The staging promotion failed, here's│   │
 │          │   │ the error from the backend terminal ↗     │   │
-│ ssg-     │   │                                          │   │
-│ saathi   │   │ Claude: Looking at the dbt test output   │   │
+│ side-    │   │                                          │   │
+│ quests   │   │ Claude: Looking at the dbt test output   │   │
 │          │   │ you attached from pane [backend]...       │   │
 │ celliq   │   │                                          │   │
 │          │   └──────────────running   │ │ ▶ running   │ │ ▶ conn.   │ │
@@ -96,7 +96,7 @@ All three get normalized into a unified conversation format and shown in the sid
  file that lives **in the repo** at `.switchboard/workspace.yaml`:
 
 ```yaml
-name: geoiq-analytics
+name: acme-analytics
 agent: claude-code  # or codex, or auto-detect
 
 terminals:

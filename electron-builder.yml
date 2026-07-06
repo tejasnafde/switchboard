@@ -1,11 +1,10 @@
 # electron-builder configuration.
 #
-# Unsigned local builds for now — no Apple Developer certificate yet.
-# Output is a DMG in `release/`. Coworkers need to allow the unsigned
-# app through Gatekeeper on first launch (instructions live alongside
-# the DMG — see docs/releasing.md).
+# Unsigned local builds for now - no Apple Developer certificate yet.
+# Output is a zip in `release/`. Users need to allow the unsigned app
+# through Gatekeeper on first launch (see docs/releasing.md).
 
-appId: io.geoiq.switchboard
+appId: com.tejasnafde.switchboard
 productName: Switchboard
 copyright: Copyright © 2026 Tejas
 directories:
