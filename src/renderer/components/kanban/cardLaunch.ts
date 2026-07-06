@@ -4,11 +4,14 @@
  * doesn't drift between the background "▶" path, the foreground
  * "▶ + open" path, and the auto-kickoff on `withWorktree=true` create.
  */
+import { createRendererLogger } from '../../logger'
 import type { KanbanCard } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { useAgentStore, getStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { emitSessionCreated } from '../../services/session-events'
 import { generateTitle } from '@shared/auto-title'
+
+const launchLog = createRendererLogger('kanban:launch')
 
 const VALID_MODES: ReadonlySet<RuntimeMode> = new Set([
   'plan', 'sandbox', 'accept-edits', 'full-access',
@@ -103,10 +106,7 @@ export async function launchCardChat(
   opts: LaunchOptions,
 ): Promise<LaunchResult> {
   const log = (msg: string, data?: Record<string, unknown>) => {
-    // Renderer log: structured prefix so a future log-shipper can split
-    // these out. Currently goes to devtools console; main-side logs in
-    // app.ts cover the IPC half of the journey.
-    console.info(`[kanban:launch] ${msg}`, data ?? {})
+    launchLog.info(msg, data ?? {})
   }
 
   // 1. Reuse existing session if the card is already linked. Done-column

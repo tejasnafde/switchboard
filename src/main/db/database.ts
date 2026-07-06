@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
 import { userDataDir } from '../runtime'
 import { join } from 'path'
-import { mkdirSync } from 'fs'
+import { existsSync, mkdirSync, renameSync } from 'fs'
 import { createMainLogger as createLogger } from '../logger'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
@@ -25,12 +25,49 @@ export function getDb(): Database.Database {
   const dbPath = getDbPath()
   log.info(`opening database: ${dbPath}`)
 
-  db = new Database(dbPath)
-  db.pragma('journal_mode = WAL')
-  db.pragma('foreign_keys = ON')
-
-  migrate(db)
+  try {
+    db = openAndMigrate(dbPath)
+  } catch (err) {
+    // A corrupt/unopenable DB used to throw uncaught here, leaving the app
+    // running with no window and no explanation. Move the bad file aside
+    // (preserved for manual recovery), start fresh, and tell the user.
+    // Agent-side history (Claude/Codex JSONL) is unaffected by a reset.
+    log.error(`database open failed, moving aside and recreating: ${dbPath}`, err)
+    const backup = `${dbPath}.corrupt-${Date.now()}`
+    for (const suffix of ['', '-wal', '-shm']) {
+      try {
+        if (existsSync(dbPath + suffix)) renameSync(dbPath + suffix, backup + suffix)
+      } catch (moveErr) {
+        log.warn(`could not move aside ${dbPath}${suffix}`, moveErr)
+      }
+    }
+    // If even a fresh DB fails (disk full, dir unwritable) this throws -
+    // genuinely fatal, surfaced by the caller.
+    db = openAndMigrate(dbPath)
+    notifyDbReset(backup)
+  }
   return db
+}
+
+function openAndMigrate(dbPath: string): Database.Database {
+  const d = new Database(dbPath)
+  d.pragma('journal_mode = WAL')
+  d.pragma('foreign_keys = ON')
+  migrate(d)
+  return d
+}
+
+function notifyDbReset(backupPath: string): void {
+  try {
+    // Lazy require - unit tests import this module outside Electron.
+    const { dialog } = require('electron') as typeof import('electron')
+    dialog.showErrorBox(
+      'Switchboard database was reset',
+      `The local database could not be opened, so it was moved to:\n${backupPath}\n\nA fresh database was created. Agent chat history (Claude/Codex session files) is stored separately and will be re-scanned.`,
+    )
+  } catch (dialogErr) {
+    log.warn('could not show DB-reset dialog', dialogErr)
+  }
 }
 
 function migrate(db: Database.Database): void {

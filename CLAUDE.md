@@ -21,7 +21,7 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 ## Commands
 
 - `npm run dev` - launches Electron (auto-unsets `ELECTRON_RUN_AS_NODE`)
-- `npm test` - vitest (~790 tests across 86 files)
+- `npm test` - vitest (~1150 tests across 133 files)
 - `npm run test:watch` - vitest in watch mode
 - `npm run typecheck` - main + renderer tsc
 - `npm run build` - **gated build**: `prebuild` runs typecheck + test before the actual build fires; `postbuild` runs `scripts/smoke-test.mjs`
@@ -213,7 +213,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - **System notifications** on `turn.completed` for non-active sessions (`src/renderer/services/notifications.ts`)
 - **Export conversation as markdown** (`exportMarkdown.ts` + Sidebar right-click)
 - **`⌘F` in-pane search** for terminals (xterm SearchAddon with decoration overlays - requires `allowProposedApi: true`) and individual chat panes (DOM TreeWalker wraps first match in `<mark.sb-search-mark>`); shared `InPaneSearchBar` component, document-level keydown listeners scoped to focused pane via `[data-terminal-pane]` / `[data-chat-panel]` attrs
-- **Feature Tour modal** (`FeatureTourModal.tsx` + `featureRegistry.ts` in `src/renderer/components/onboarding/`) - auto-opens on first launch and after `TOUR_VERSION` bumps; replayable from Settings → Tour. MP4 clips streamed via `sb-tour://<id>.mp4` custom protocol (resolves to `videos/dist/`, served via `net.fetch('file://...')` for byte-range support). 10 clips currently rendered in `videos/dist/`.
+- **Feature Tour modal** (`FeatureTourModal.tsx` + `featureRegistry.ts` in `src/renderer/components/onboarding/`) - auto-opens on first launch and after `TOUR_VERSION` bumps; replayable from Settings → Tour. MP4 clips streamed via `sb-tour://<id>.mp4` custom protocol (resolves to `videos/dist/`, served via `net.fetch('file://...')` for byte-range support). 11 clips currently rendered in `videos/dist/`.
 - **Agent-aware UI labels**: `agentLabel()` / `agentShortLabel()` helpers in `shared/types.ts` so StatusBar / MessageBubble / etc. all reflect Claude Code / Codex / OpenCode correctly
 - **Multi-instance provider picker** (shipped): named credentials per agent type (env or oauth_dir), `UnifiedProviderPicker` + Settings → Providers, env overlay + session migration at spawn - see Provider instances section above
 - **CodeMirror code editor** with save, ⌘-click jump-to-def, git gutter, multi-tab, ⌘P Quick Open - see Code editor section
@@ -249,7 +249,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
 
-## Test suite (~790 tests across 86 files)
+## Test suite (~1150 tests across 133 files)
 
 Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
@@ -332,7 +332,7 @@ src/
 │   └── stores/                        # agent · terminal · layout · theme · draft · editor · kanban · provider-instance · skill · bookmark
 ├── shared/
 │   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · filePathRef.ts
-└── tests/unit/                        # ~790 tests across 86 files
+└── tests/unit/                        # ~1150 tests across 133 files
 ```
 
 ## Logging conventions

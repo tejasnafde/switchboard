@@ -104,7 +104,7 @@ update prompt appears within ~30 seconds. If it doesn't:
 ## Local builds (without publishing)
 
 ```bash
-npm run dist:mac   # → release/Switchboard-X.Y.Z-arm64.dmg
+npm run dist:mac   # → release/Switchboard-X.Y.Z-arm64-mac.zip
 npm run dist:win   # → release/Switchboard Setup X.Y.Z.exe (Windows host only)
 ```
 

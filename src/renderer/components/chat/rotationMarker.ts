@@ -11,18 +11,30 @@
  */
 export const ROTATION_MARKER_PREFIX = '[[sb:instance-rotated]]'
 
+/**
+ * Same wire shape for "user switched agent kind mid-conversation"
+ * (Claude ↔ Codex ↔ OpenCode). Unlike an instance rotation, an agent
+ * swap starts the next turn with zero context, so the pill warns too.
+ */
+export const AGENT_SWITCH_MARKER_PREFIX = '[[sb:agent-switched]]'
+
 export interface RotationMarker {
+  kind: 'instance' | 'agent'
   fromName: string
   toName: string
 }
 
 export function parseRotationMarker(content: string): RotationMarker | null {
-  if (!content.startsWith(ROTATION_MARKER_PREFIX)) return null
-  const rest = content.slice(ROTATION_MARKER_PREFIX.length).trim()
+  const kind = content.startsWith(ROTATION_MARKER_PREFIX)
+    ? ('instance' as const)
+    : content.startsWith(AGENT_SWITCH_MARKER_PREFIX) ? ('agent' as const) : null
+  if (!kind) return null
+  const prefix = kind === 'instance' ? ROTATION_MARKER_PREFIX : AGENT_SWITCH_MARKER_PREFIX
+  const rest = content.slice(prefix.length).trim()
   // Tolerate either '→' (default) or '->' for hand-edited cases.
   const arrow = rest.includes('→') ? '→' : (rest.includes('->') ? '->' : null)
   if (!arrow) return null
   const [fromName, toName] = rest.split(arrow).map((s) => s.trim())
   if (!fromName || !toName) return null
-  return { fromName, toName }
+  return { kind, fromName, toName }
 }

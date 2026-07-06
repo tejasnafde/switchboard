@@ -9,6 +9,8 @@
  */
 
 import { execSync } from 'child_process'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
 import { join, sep } from 'path'
 import { createMainLogger as createLogger } from '../../logger'
 import { recordThreadSession, listSessionIdsForThread } from '../../db/database'
@@ -83,6 +85,34 @@ export function buildClaudeQueryEnv(
     env.CLAUDE_CONFIG_DIR = instanceOauthDir
   }
   return env
+}
+
+/**
+ * Enrich an opaque "exited with code N" spawn failure with a sign-in hint.
+ * Pure - the caller decides whether credentials are known-present (env API
+ * key or an OAuth credentials file). When they are, the raw message stands:
+ * a wrong hint ("not signed in") on a logged-in user's unrelated failure
+ * would be worse than an opaque one. macOS Keychain-stored OAuth can't be
+ * detected cheaply, hence the hedged "if you haven't signed in" phrasing.
+ */
+export function formatClaudeStartFailure(raw: string, credsKnownPresent: boolean): string {
+  if (credsKnownPresent || !/exited with code/i.test(raw)) return raw
+  return `${raw}. If you haven't signed in to Claude Code yet, run \`claude login\` in a terminal (or set ANTHROPIC_API_KEY on the provider instance), then retry.`
+}
+
+/**
+ * True when credentials are provably present: an API key in the resolved
+ * env, or an OAuth credentials file in the config dir. False means
+ * "unknown" (macOS Keychain OAuth is invisible here), not "absent".
+ */
+function claudeCredsKnownPresent(env: Record<string, string>): boolean {
+  if (env.ANTHROPIC_API_KEY) return true
+  const configDir = env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+  try {
+    return existsSync(join(configDir, '.credentials.json'))
+  } catch {
+    return false
+  }
 }
 
 /** Build a clean env for Claude CLI/SDK (Electron strips PATH) */
@@ -729,7 +759,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           active.onEvent({
             type: 'error',
             threadId,
-            message: re?.message ?? 'Unknown error',
+            message: formatClaudeStartFailure(re?.message ?? 'Unknown error', claudeCredsKnownPresent(env)),
           })
           active.onEvent({ type: 'status', threadId, status: 'error' })
         }
@@ -741,7 +771,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.onEvent({
           type: 'error',
           threadId,
-          message: e?.message ?? 'Unknown error',
+          message: formatClaudeStartFailure(e?.message ?? 'Unknown error', claudeCredsKnownPresent(env)),
         })
         active.onEvent({ type: 'status', threadId, status: 'error' })
       }

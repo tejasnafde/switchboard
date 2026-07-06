@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=1280, height=720" />
+<title>Switchboard - Remote machines</title>
+<!-- Copy of ../_shared/theme.css: hyperframes >=0.7 serves the scene dir as
+     the project root, so parent-relative asset paths fail lint/render.
+     Re-copy if the shared theme changes. -->
+<link rel="stylesheet" href="theme.css" />
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+<style>
+  /* Recreates the app chrome at 1280x720: titlebar, sidebar with the
+     machine layer, and a main area that crossfades from the empty state
+     to a remote-rooted chat. Storyboard: + Add machine → ssh-config
+     picker → remote row → Connect (helper install + tunnel) → + Add
+     project (path autocomplete) → chat running on the remote. */
+  .stage {
+    width: 1280px; height: 720px; position: relative;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    font-family: var(--font-sans);
+  }
+
+  /* Titlebar */
+  .titlebar {
+    height: 32px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    font-size: 11px; color: var(--text-muted);
+  }
+  .titlebar .wordmark { font-weight: 500; letter-spacing: 0.3px; }
+  .titlebar .right {
+    position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .toggle {
+    display: inline-flex;
+    border: 1px solid var(--border);
+    border-radius: 6px; padding: 2px; gap: 2px;
+  }
+  .toggle button {
+    background: none; border: none;
+    padding: 3px 10px; font-size: 11px; font-weight: 500;
+    color: var(--text-muted); border-radius: 4px;
+    font-family: inherit;
+  }
+  .toggle button.active { background: var(--bg-secondary); color: var(--text-primary); }
+
+  /* Body row */
+  .body { flex: 1 1 auto; display: flex; min-height: 0; position: relative; }
+
+  /* Sidebar with machine layer */
+  .sidebar {
+    width: 250px; flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    background: var(--bg-secondary);
+    padding: 10px; overflow: hidden;
+    font-size: 12px;
+    display: flex; flex-direction: column;
+  }
+  .machine-header {
+    height: 24px; display: flex; align-items: center; gap: 5px;
+    color: var(--text-primary); font-size: 12px;
+  }
+  .machine-grip { width: 10px; color: var(--text-muted); font-size: 9px; }
+  .machine-chevron { color: var(--text-muted); font-size: 8px; }
+  .machine-pip { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .machine-name { font-weight: 500; }
+  .machine-tag {
+    font-size: 9px; color: var(--text-muted);
+    border: 1px solid var(--border); border-radius: 3px;
+    padding: 0 4px;
+  }
+  .machine-host {
+    font-family: var(--font-mono); font-size: 9.5px;
+    color: var(--text-muted);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .machine-remove { margin-left: auto; color: var(--text-muted); font-size: 11px; background: none; border: none; }
+  .machine-body { padding-left: 8px; }
+  .sb-project {
+    height: 22px; display: flex; align-items: center; gap: 6px;
+    color: var(--text-secondary); padding: 0 6px; border-radius: 4px;
+  }
+  .sb-project .swatch { width: 6px; height: 6px; border-radius: 50%; }
+  .sb-chat {
+    height: 20px; display: flex; align-items: center;
+    padding: 0 6px 0 18px; border-radius: 4px;
+    color: var(--text-muted); font-size: 11px;
+  }
+  .sb-chat.active { background: var(--bg-hover); color: var(--text-primary); }
+
+  /* Remote machine section - hidden until the modal adds it */
+  .remote-section { margin-top: 10px; opacity: 0; }
+  .m-states { position: relative; height: 100px; margin-top: 4px; }
+  .m-state { position: absolute; inset: 0; opacity: 0; padding-left: 8px; }
+  .m-state.visible { opacity: 1; }
+  .m-banner { height: 22px; display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .machine-connect {
+    height: 22px; padding: 0 10px;
+    font-size: 11px; font-weight: 500; font-family: inherit;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-strong); border-radius: 4px;
+  }
+  .connecting-label { font-size: 11px; color: var(--warn); }
+  .machine-empty { font-size: 10.5px; color: var(--text-muted); line-height: 1.4; padding-right: 6px; }
+
+  /* + Add machine pinned to the sidebar bottom */
+  .add-machine {
+    margin-top: auto; height: 26px;
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-size: 11px; font-weight: 500; font-family: inherit;
+    color: var(--text-secondary);
+    background: none;
+    border: 1px dashed var(--border-strong); border-radius: 5px;
+  }
+
+  /* Main area */
+  .main { flex: 1 1 0%; position: relative; overflow: hidden; }
+  .empty-state {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted); font-size: 13px;
+  }
+
+  /* Chat view (appears once the remote project chat starts) */
+  .chat-view { position: absolute; inset: 0; display: flex; flex-direction: column; opacity: 0; }
+  .chat-header {
+    height: 36px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 16px;
+    font-size: 11.5px; color: var(--text-secondary); font-family: var(--font-mono);
+  }
+  .chat-header .live { color: var(--success); }
+  .chat-body { flex: 1; display: flex; min-height: 0; }
+  .chat-col {
+    flex: 1 1 0%; padding: 16px 18px; min-width: 0;
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .msg {
+    border-radius: 6px; padding: 8px 10px;
+    font-size: 12px; line-height: 1.5;
+    max-width: 90%;
+  }
+  .msg.user { background: var(--bg-tertiary); color: var(--text-primary); align-self: flex-end; }
+  .msg.assistant { color: var(--text-secondary); }
+  .msg.assistant code {
+    background: var(--bg-tertiary); padding: 1px 4px;
+    border-radius: 3px; font-family: var(--font-mono); font-size: 11px;
+  }
+  .terminal-col {
+    width: 320px; flex-shrink: 0;
+    background: var(--bg);
+    padding: 14px;
+    font-family: var(--font-mono); font-size: 11px;
+  }
+  .terminal-col .label {
+    font-size: 10px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.6px;
+    margin-bottom: 8px;
+  }
+  .terminal-col pre { margin: 0; line-height: 1.55; white-space: pre-wrap; color: var(--text-secondary); }
+
+  /* Toast (helper install + tunnel log) */
+  .toast {
+    position: absolute; right: 20px; bottom: 46px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 12px;
+    font-family: var(--font-mono); font-size: 10.5px;
+    color: var(--text-secondary); line-height: 1.6;
+    opacity: 0; z-index: 15;
+  }
+  .toast .ok { color: var(--success); }
+  .toast div { opacity: 0; }
+
+  /* Modals - absolutely positioned so cursor targets are stable */
+  .machine-modal {
+    position: absolute; left: 420px; width: 440px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-strong); border-radius: 8px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+    padding: 16px;
+    opacity: 0; z-index: 30;
+  }
+  #modalMachine { top: 110px; }
+  #modalProject { top: 200px; }
+  .mm-title { height: 20px; font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  .mm-section { margin-bottom: 14px; }
+  .mm-label {
+    height: 16px; font-size: 10.5px; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.6px;
+    margin-bottom: 6px;
+  }
+  .mm-input {
+    height: 30px; display: flex; align-items: center;
+    padding: 0 10px;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 5px;
+    font-size: 12px; color: var(--text-primary);
+    position: relative;
+  }
+  .mm-input .placeholder { color: var(--text-muted); }
+  .mm-input.mono { font-family: var(--font-mono); font-size: 11.5px; }
+  .mm-row { display: flex; gap: 8px; margin-top: 8px; }
+  .mm-row .mm-input { flex: 1; }
+  .mm-row .mm-input.port { flex: 0 0 70px; }
+  .mm-hostlist { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+  .mm-host {
+    height: 40px; display: flex; flex-direction: column; justify-content: center;
+    padding: 0 10px; border-radius: 5px;
+    background: var(--bg); border: 1px solid var(--border);
+    text-align: left;
+  }
+  .mm-host-alias { font-size: 12px; color: var(--text-primary); font-weight: 500; }
+  .mm-host-addr { font-size: 10.5px; color: var(--text-muted); font-family: var(--font-mono); }
+  .mm-suggestion {
+    height: 36px; display: flex; align-items: center;
+    padding: 0 10px; border-radius: 5px;
+    background: var(--bg); border: 1px solid var(--border);
+    font-size: 11.5px; font-family: var(--font-mono); color: var(--text-primary);
+  }
+  .mm-actions { height: 30px; display: flex; justify-content: flex-end; gap: 8px; }
+  .mm-cancel {
+    height: 30px; padding: 0 14px;
+    background: none; border: 1px solid var(--border); border-radius: 5px;
+    font-size: 12px; color: var(--text-secondary); font-family: inherit;
+  }
+  .mm-add {
+    height: 30px; padding: 0 16px;
+    background: var(--accent); border: none; border-radius: 5px;
+    font-size: 12px; font-weight: 600; color: #0a0c10; font-family: inherit;
+  }
+  .mm-add.disabled { opacity: 0.45; }
+  /* Stacked path values inside the add-project input */
+  .path-value { position: absolute; left: 10px; }
+
+  /* Cursor + ripple */
+  .cursor {
+    position: absolute; width: 18px; height: 18px;
+    left: 0; top: 0; z-index: 50; pointer-events: none;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+  }
+  .ripple {
+    position: absolute; width: 30px; height: 30px;
+    left: 0; top: 0;
+    border-radius: 50%; border: 2px solid var(--accent);
+    opacity: 0; z-index: 45; pointer-events: none;
+  }
+
+  /* Caption strip - bottom of the main area */
+  .caption {
+    position: absolute; left: 50%; bottom: 22px;
+    transform: translateX(-50%);
+    background: rgba(14, 15, 18, 0.85);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 7px 16px;
+    font-size: 13px; color: var(--text-primary);
+    backdrop-filter: blur(6px);
+    z-index: 20;
+    opacity: 0;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div id="root" data-composition-id="remote-machines" data-start="0" data-duration="14" data-width="1280" data-height="720">
+  <div class="stage">
+    <!-- Titlebar -->
+    <div class="titlebar">
+      <span class="wordmark">Switchboard</span>
+      <span class="right">
+        <span class="toggle">
+          <button class="active">Chats</button>
+          <button>Board</button>
+        </span>
+      </span>
+    </div>
+
+    <!-- Body -->
+    <div class="body">
+      <!-- Sidebar with machine layer -->
+      <div class="sidebar">
+        <!-- Local machine, pinned first -->
+        <div class="machine-header">
+          <span class="machine-grip" aria-hidden></span>
+          <span class="machine-chevron">▼</span>
+          <span class="machine-pip" style="background: var(--success)"></span>
+          <span class="machine-name">This Mac</span>
+          <span class="machine-tag">local</span>
+        </div>
+        <div class="machine-body">
+          <div class="sb-project"><span class="swatch" style="background:#8ab4ff"></span>my-app</div>
+          <div class="sb-chat">fix flaky auth tests</div>
+          <div class="sb-chat">onboarding copy pass</div>
+        </div>
+
+        <!-- Remote machine, added by the modal -->
+        <div class="remote-section" id="remoteSec">
+          <div class="machine-header">
+            <span class="machine-grip">⠿</span>
+            <span class="machine-chevron">▼</span>
+            <span class="machine-pip" id="remotePip" style="background:#6b7280"></span>
+            <span class="machine-name">gpu-box</span>
+            <span class="machine-host">ubuntu@10.0.4.12</span>
+            <button class="machine-remove">×</button>
+          </div>
+          <div class="m-states">
+            <!-- offline -->
+            <div class="m-state visible" id="stateOffline">
+              <div class="m-banner"><button class="machine-connect">Connect</button></div>
+              <div class="machine-empty">Not connected. Connect to browse this machine.</div>
+            </div>
+            <!-- connecting -->
+            <div class="m-state" id="stateConnecting">
+              <div class="m-banner"><span class="connecting-label">Connecting…</span></div>
+              <div class="machine-empty">Not connected. Connect to browse this machine.</div>
+            </div>
+            <!-- connected, no projects -->
+            <div class="m-state" id="stateConnected">
+              <div class="m-banner">
+                <button class="machine-connect">Disconnect</button>
+                <button class="machine-connect">+ Add project</button>
+              </div>
+              <div class="machine-empty">No projects on this machine yet.</div>
+            </div>
+            <!-- connected, project + chat -->
+            <div class="m-state" id="stateProject">
+              <div class="m-banner">
+                <button class="machine-connect">Disconnect</button>
+                <button class="machine-connect">+ Add project</button>
+              </div>
+              <div class="sb-project"><span class="swatch" style="background:#7bd88f"></span>api-server</div>
+              <div class="sb-chat active">profile the ingest batcher</div>
+            </div>
+          </div>
+        </div>
+
+        <button class="add-machine"><span style="font-size: 13px; line-height: 1">+</span> Add machine</button>
+      </div>
+
+      <!-- Main area -->
+      <div class="main">
+        <!-- Modals deliberately overlay this while open. -->
+        <div class="empty-state" id="emptyState" data-layout-allow-occlusion>No chat selected</div>
+
+        <div class="chat-view" id="chatView">
+          <div class="chat-header">
+            <span class="live">●</span>
+            <span>gpu-box · /home/ubuntu/api-server · Claude Code</span>
+          </div>
+          <div class="chat-body">
+            <div class="chat-col">
+              <div class="msg user" id="msg1">profile the ingest batcher - p95 is 480ms on prod</div>
+              <div class="msg assistant" id="msg2">
+                Running on <code>gpu-box</code> - the agent and this terminal both execute
+                on the remote over the SSH tunnel. The hot loop was re-serializing every
+                row in <code>ingest/batcher.py</code>. Batched the writes and re-ran the
+                bench - p95 is down to 210ms.
+              </div>
+            </div>
+            <div class="terminal-col">
+              <div class="label">● Terminal · gpu-box</div>
+              <pre id="termText">ubuntu@gpu-box:~/api-server$ python bench.py
+warming batcher… ok
+p50 92ms · p95 210ms (was 480ms)</pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Helper install + tunnel toast -->
+        <div class="toast" id="toast">
+          <div id="toastL1">installing helper on remote…</div>
+          <div id="toastL2"><span class="ok">✓</span> tunnel open · agent ready</div>
+        </div>
+
+        <!-- Captions -->
+        <div id="cap1" class="caption">Add a machine straight from ~/.ssh/config</div>
+        <div id="cap2" class="caption">First connect installs a helper and opens the tunnel</div>
+        <div id="cap3" class="caption">Chats and terminals under gpu-box run on gpu-box</div>
+      </div>
+    </div>
+
+    <!-- Add machine modal -->
+    <div class="machine-modal" id="modalMachine">
+      <div class="mm-title">Add machine</div>
+      <div class="mm-section">
+        <div class="mm-label">Run as user (sudo, optional)</div>
+        <div class="mm-input">ubuntu</div>
+      </div>
+      <div class="mm-section">
+        <div class="mm-label">From ~/.ssh/config</div>
+        <div class="mm-input"><span class="placeholder">Search 3 hosts...</span></div>
+        <div class="mm-hostlist">
+          <div class="mm-host" id="hostGpu">
+            <span class="mm-host-alias">gpu-box</span>
+            <span class="mm-host-addr">ubuntu@10.0.4.12</span>
+          </div>
+          <div class="mm-host">
+            <span class="mm-host-alias">staging</span>
+            <span class="mm-host-addr">ubuntu@10.0.7.3</span>
+          </div>
+          <div class="mm-host">
+            <span class="mm-host-alias">pi-lab</span>
+            <span class="mm-host-addr">pi@192.168.1.40:2202</span>
+          </div>
+        </div>
+      </div>
+      <div class="mm-section">
+        <div class="mm-label">Manual</div>
+        <div class="mm-input"><span class="placeholder">Name (optional)</span></div>
+        <div class="mm-row" style="margin-top: 8px">
+          <div class="mm-input" style="flex: 1"><span class="placeholder">Host (e.g. 10.0.0.4)</span></div>
+        </div>
+        <div class="mm-row">
+          <div class="mm-input"><span class="placeholder">User</span></div>
+          <div class="mm-input port">22</div>
+        </div>
+      </div>
+      <div class="mm-actions">
+        <button class="mm-cancel">Cancel</button>
+        <button class="mm-add disabled">Add</button>
+      </div>
+    </div>
+
+    <!-- Add project modal -->
+    <div class="machine-modal" id="modalProject">
+      <div class="mm-title">Add project</div>
+      <div class="mm-section">
+        <div class="mm-label">Absolute path on remote</div>
+        <div class="mm-input mono">
+          <span class="path-value" id="pathTyped">/home/ubuntu/</span>
+          <span class="path-value" id="pathFull" style="opacity: 0">/home/ubuntu/api-server</span>
+        </div>
+        <div class="mm-hostlist" id="sugList">
+          <div class="mm-suggestion" id="sugApi">/home/ubuntu/api-server</div>
+          <div class="mm-suggestion">/home/ubuntu/data-pipeline</div>
+          <div class="mm-suggestion">/home/ubuntu/notebooks</div>
+        </div>
+      </div>
+      <div class="mm-actions">
+        <button class="mm-cancel">Cancel</button>
+        <button class="mm-add" id="btnAddProject">Add</button>
+      </div>
+    </div>
+
+    <!-- Cursor + ripple sit above everything -->
+    <svg id="cursor" class="cursor" viewBox="0 0 16 16">
+      <path d="M1 1 L1 13 L4.5 10 L7 15 L9.5 14 L7 9 L11.5 9 Z"
+            fill="#fff" stroke="#0a0c10" stroke-width="0.8" stroke-linejoin="round"/>
+    </svg>
+    <div id="ripple" class="ripple"></div>
+  </div>
+</div>
+
+<script>
+  window.__timelines = window.__timelines || {};
+
+  gsap.set('#cursor', { x: 620, y: 430 });
+  gsap.set('#remoteSec', { y: 6 });
+  gsap.set(['#modalMachine', '#modalProject'], { scale: 0.97, transformOrigin: '50% 40%' });
+  gsap.set(['#msg1', '#msg2'], { opacity: 0, y: 8 });
+  gsap.set('#termText', { opacity: 0 });
+  gsap.set('#toast', { y: 8 });
+
+  const tl = gsap.timeline({ paused: true });
+
+  // Click ripple helper - centers the 30px ring on (x, y).
+  function click(t, x, y) {
+    tl.set('#ripple', { x: x - 15, y: y - 15 }, t);
+    tl.fromTo('#ripple',
+      { opacity: 0.9, scale: 0.4 },
+      { opacity: 0, scale: 1.6, duration: 0.5, ease: 'power2.out' }, t);
+  }
+
+  // Beat sheet (14s total):
+  //   0.3s   caption 1 in
+  //   0.8s   cursor → "+ Add machine" at the sidebar bottom
+  //   1.7s   click, Add machine modal opens
+  //   2.6s   cursor → gpu-box row in the ssh-config list
+  //   3.7s   click, modal closes, remote row appears in the sidebar
+  //   4.6s   cursor → Connect
+  //   5.45s  click, "Connecting…" + amber pip; helper/tunnel toast
+  //   7.6s   pip green, banner flips to Disconnect / + Add project
+  //   8.2s   cursor → "+ Add project", Add project modal opens
+  //   9.8s   cursor → path suggestion, click completes the path
+  //   11.0s  cursor → Add, modal closes, project + chat land in sidebar
+  //   12.0s  main area crossfades to the remote chat; caption 3
+  tl.to('#cap1', { opacity: 1, duration: 0.5, ease: 'power2.out' }, 0.3);
+
+  // + Add machine
+  tl.to('#cursor', { x: 120, y: 692, duration: 0.9, ease: 'power3.inOut' }, 0.8);
+  click(1.7, 125, 696);
+  tl.to('#modalMachine', { opacity: 1, scale: 1, duration: 0.3, ease: 'power2.out' }, 1.85);
+
+  // Pick gpu-box from ~/.ssh/config
+  tl.to('#cursor', { x: 630, y: 302, duration: 0.8, ease: 'power2.inOut' }, 2.6);
+  tl.set('#hostGpu', { backgroundColor: '#2a2e38' }, 3.45);
+  click(3.7, 640, 304);
+  tl.to('#modalMachine', { opacity: 0, scale: 0.98, duration: 0.25, ease: 'power2.in' }, 3.95);
+  tl.to('#cap1', { opacity: 0, duration: 0.3, ease: 'power2.in' }, 4.0);
+  tl.to('#remoteSec', { opacity: 1, y: 0, duration: 0.45, ease: 'expo.out' }, 4.15);
+
+  // Connect
+  tl.to('#cursor', { x: 45, y: 176, duration: 0.7, ease: 'power3.inOut' }, 4.6);
+  click(5.45, 50, 179);
+  tl.set('#stateOffline',    { opacity: 0 }, 5.5);
+  tl.set('#stateConnecting', { opacity: 1 }, 5.5);
+  tl.set('#remotePip', { backgroundColor: '#ffd28a' }, 5.5);
+  tl.to('#cap2', { opacity: 1, duration: 0.5, ease: 'power2.out' }, 5.8);
+  tl.to('#toast', { opacity: 1, y: 0, duration: 0.4, ease: 'power2.out' }, 6.0);
+  tl.to('#toastL1', { opacity: 1, duration: 0.3 }, 6.1);
+  tl.to('#toastL2', { opacity: 1, duration: 0.3 }, 7.0);
+  tl.set('#stateConnecting', { opacity: 0 }, 7.6);
+  tl.set('#stateConnected',  { opacity: 1 }, 7.6);
+  tl.set('#remotePip', { backgroundColor: '#7bd88f' }, 7.6);
+  tl.to('#toast', { opacity: 0, duration: 0.4, ease: 'power2.in' }, 8.6);
+
+  // + Add project
+  tl.to('#cursor', { x: 140, y: 176, duration: 0.7, ease: 'power2.inOut' }, 8.2);
+  click(9.0, 145, 179);
+  tl.to('#modalProject', { opacity: 1, scale: 1, duration: 0.3, ease: 'power2.out' }, 9.15);
+  tl.to('#cap2', { opacity: 0, duration: 0.3, ease: 'power2.in' }, 9.2);
+
+  // Path autocomplete
+  tl.to('#cursor', { x: 630, y: 324, duration: 0.6, ease: 'power3.inOut' }, 9.8);
+  tl.set('#sugApi', { backgroundColor: '#2a2e38' }, 10.4);
+  click(10.6, 640, 326);
+  tl.set('#pathTyped', { opacity: 0 }, 10.7);
+  tl.set('#pathFull',  { opacity: 1 }, 10.7);
+  tl.to('#sugList', { opacity: 0, duration: 0.2 }, 10.75);
+
+  // Add → project + chat on the remote
+  tl.to('#cursor', { x: 810, y: 450, duration: 0.5, ease: 'power2.inOut' }, 11.0);
+  click(11.6, 816, 453);
+  tl.to('#modalProject', { opacity: 0, scale: 0.98, duration: 0.25, ease: 'power2.in' }, 11.75);
+  tl.set('#stateConnected', { opacity: 0 }, 11.9);
+  tl.set('#stateProject',   { opacity: 1 }, 11.9);
+  tl.to('#emptyState', { opacity: 0, duration: 0.4, ease: 'power2.inOut' }, 12.0);
+  tl.to('#chatView',   { opacity: 1, duration: 0.45, ease: 'power2.inOut' }, 12.05);
+  tl.to('#cursor', { x: 700, y: 420, duration: 0.8, ease: 'power2.inOut' }, 12.0);
+  tl.to('#msg1', { opacity: 1, y: 0, duration: 0.4, ease: 'expo.out' }, 12.2);
+  tl.to('#msg2', { opacity: 1, y: 0, duration: 0.4, ease: 'expo.out' }, 12.5);
+  tl.to('#termText', { opacity: 1, duration: 0.4 }, 12.7);
+  tl.to('#cap3', { opacity: 1, duration: 0.5, ease: 'power2.out' }, 12.4);
+
+  window.__timelines["remote-machines"] = tl;
+
+  // Browser preview shim - auto-play if no external driver.
+  setTimeout(() => { if (tl.time() === 0 && !tl.isActive()) tl.play(); }, 50);
+</script>
+</body>
+</html>

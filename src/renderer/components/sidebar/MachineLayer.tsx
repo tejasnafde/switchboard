@@ -1,8 +1,8 @@
 /**
  * Top sidebar layer: machines wrap the workspace tree. The local machine is
  * pinned first and renders the existing tree (passed as children); remotes are
- * rows below it, drag-reorderable. Connecting is not wired yet (M4) - remotes
- * show offline and an empty body. Add/remove/reorder of remotes is live.
+ * rows below it, drag-reorderable. Connect/provision/tunnel is live (see
+ * src/main/machines/); offline remotes show a cached read-only snapshot.
  */
 import { useState, type ReactNode } from 'react'
 import type { SessionSummary } from '@shared/types'

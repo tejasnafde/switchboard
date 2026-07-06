@@ -14,7 +14,7 @@ three browser windows.
 
 ## Feature tour
 
-The eleven clips from the app's first-run tour, in order. Clips marked
+The twelve clips from the app's first-run tour, in order. Clips marked
 *(coming soon)* are rendered in `videos/dist/` but not yet embedded here -
 see the maintainer note below.
 
@@ -67,8 +67,9 @@ the chat draft.
 <!-- maintainer: drag videos/dist/file-viewer-context.mp4 here in the GitHub web editor --> *(coming soon)*
 
 ### 7. Named terminal templates
-Save a terminal layout as a named template, star a favorite, and apply it to
-any new chat. Templates live in `workspace.yaml`.
+Save a terminal layout as a named template and apply it to any new chat -
+the last-applied template stays pinned per chat. Templates live in
+`workspace.yaml`.
 
 <!-- maintainer: drag videos/dist/terminal-templates.mp4 here in the GitHub web editor --> *(coming soon)*
 
@@ -91,7 +92,14 @@ every message across every project; click a result to jump straight to it.
 
 https://github.com/user-attachments/assets/86c50159-f723-40d6-9315-0836ac48f302
 
-### 11. Sidebar workspaces
+### 11. Remote machines (experimental)
+Run agents and terminals on another computer over SSH. Add a machine from
+the sidebar - Switchboard uses your existing SSH config, installs a small
+helper on first connect, and tunnels everything.
+
+<!-- maintainer: drag videos/dist/remote-machines.mp4 here in the GitHub web editor --> *(coming soon)*
+
+### 12. Sidebar workspaces
 Group projects under named, color-tagged workspaces - Work, Personal, side
 quests. Filter the tree by chat title; collapse state persists across launches.
 
@@ -134,6 +142,59 @@ quests. Filter the tree by chat title; collapse state persists across launches.
   meaningful turn; old sessions move to Archived without losing history.
 - **Auto-update** - `electron-updater` polls GitHub Releases on launch and
   on demand from Settings → About.
+
+---
+
+## Remote machines (experimental)
+
+Switchboard can run agents and terminals on a remote host over SSH, so
+heavy work happens on a server while the app stays on your laptop.
+
+- **Add a machine** from the sidebar: pick a host from your `~/.ssh/config`
+  or enter host, user, and port. Optionally set "Run as user" if the remote
+  should run work as another account via passwordless sudo - leave it blank
+  to use your login user.
+- **Auth is your normal SSH setup** (keys and agent). Switchboard never
+  stores a password or key; it shells out to `ssh` with `BatchMode=yes`.
+- **First connect provisions a small helper** into `~/.switchboard-server`
+  on the remote and opens an SSH tunnel. The remote backend binds to
+  localhost only - all access goes through the tunnel.
+- **Then it's just Switchboard, remotely**: add a project by absolute path
+  (with live autocomplete) and start a chat - the agent, terminals, git,
+  and file access all run on the remote. Recent projects stay browsable
+  read-only while you're offline.
+
+Remote requirements: a Linux host reachable over SSH with Node.js 20+
+already installed for the target user.
+
+---
+
+## Under the hood
+
+The parts that were genuinely hard, for the technically curious:
+
+- **One adapter interface, three wire protocols.** Claude Code speaks the
+  Agent SDK (streaming input mode, `canUseTool` interception), Codex speaks
+  JSON-RPC 2.0 over stdio to `codex app-server`, OpenCode speaks the Agent
+  Client Protocol. All three normalize into a single discriminated-union
+  event stream (`src/shared/provider-events.ts`) so the renderer never knows
+  which agent it's talking to.
+- **Permission policy enforced app-side.** Plan mode doesn't trust the SDK's
+  own plan flag - a pure, unit-tested policy module
+  (`src/main/provider/policy.ts`) hard-denies non-read-only tools for all
+  three agents and renders the denial in chat.
+- **Git as the source of truth for edits.** A checkpoint is taken at turn
+  start; the diff against it drives per-hunk accept/reject cards in chat,
+  regardless of what the agent claims it edited. Kanban cards run their
+  agents in isolated git worktrees so parallel work can't collide.
+- **Real infrastructure, not wrappers**: `node-pty` + xterm.js terminals,
+  CodeMirror 6 editor with LSP jump-to-def (tsserver + pyright spawned per
+  workspace/language), SQLite + FTS5 for cross-project message search,
+  `safeStorage`-encrypted multi-account credentials.
+- **1100+ unit tests** and a gated build: `npm run build` fails if typecheck
+  or tests fail.
+
+Deeper dives live in [`docs/architecture/`](docs/architecture/).
 
 ---
 
@@ -185,7 +246,7 @@ Other scripts:
 npm test           # vitest
 npm run typecheck  # tsc --noEmit across main / preload / renderer / shared
 npm run build      # bundle main + renderer (no packaging)
-npm run dist:mac   # local DMG (Apple Silicon host only)
+npm run dist:mac   # local zip build (Apple Silicon host only)
 npm run dist:win   # local NSIS exe (Windows host only)
 ```
 

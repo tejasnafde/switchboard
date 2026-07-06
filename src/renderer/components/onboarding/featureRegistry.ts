@@ -40,7 +40,7 @@ export type TryItAction =
  * Bump when the tour list changes meaningfully. Auto-open fires on the
  * next launch for any user whose `tour.lastSeenVersion` is older.
  */
-export const TOUR_VERSION = '2026-05-02'
+export const TOUR_VERSION = '2026-07-06'
 
 export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   {
@@ -84,7 +84,7 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     id: 'terminal-templates',
     title: 'Named terminal templates',
     description:
-      'Save the current terminal layout as a template, star your favorite, and apply it to any new chat. Templates live in workspace.yaml so they sync across machines via git.',
+      'Save the current terminal layout as a named template and apply it to any new chat - the last-applied template stays pinned per chat. Templates live in workspace.yaml so they sync across machines via git.',
   },
   {
     id: 'workspace-config',
@@ -104,6 +104,12 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     description:
       'Past sessions live in the sidebar - click to resume any thread. ⌘⇧F searches every message across every project; click a result to jump straight to it.',
     tryIt: { kind: 'open-search' },
+  },
+  {
+    id: 'remote-machines',
+    title: 'Remote machines (experimental)',
+    description:
+      'Run agents and terminals on another computer over SSH. Add a machine from the sidebar - Switchboard uses your existing SSH config, installs a small helper on first connect, and tunnels everything. Chats and terminals started under that machine run there; your local files stay untouched.',
   },
   {
     id: 'workspaces',

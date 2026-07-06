@@ -15,7 +15,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', msg)
 })
 
-import { app, BrowserWindow, shell, nativeImage, ipcMain, Menu, protocol, net } from 'electron'
+import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, protocol, net } from 'electron'
 import { join, basename } from 'path'
 import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
@@ -283,8 +283,20 @@ if (process.argv.includes('--smoke-test')) {
 
 app.whenReady().then(() => {
   if (process.argv.includes('--smoke-test')) return
-  // Initialize database
-  getDb()
+  // Initialize database. getDb() self-heals a corrupt file (moves it aside,
+  // recreates); if it still throws the disk itself is broken - tell the
+  // user and quit instead of idling forever with no window.
+  try {
+    getDb()
+  } catch (err) {
+    console.error('[main] fatal: database unavailable', err)
+    dialog.showErrorBox(
+      'Switchboard could not start',
+      `The local database could not be created:\n${err instanceof Error ? err.message : String(err)}\n\nCheck free disk space and permissions on the app data folder, then relaunch.`,
+    )
+    app.quit()
+    return
+  }
   registerTourProtocol()
   // Pull the known-projects list at request time (not registration time)
   // so newly added projects become servable without an app restart.

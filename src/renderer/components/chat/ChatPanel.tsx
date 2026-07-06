@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
-import { ROTATION_MARKER_PREFIX } from './rotationMarker'
+import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX } from './rotationMarker'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { ContextWindowMeter } from './ContextWindowMeter'
@@ -20,7 +20,7 @@ import {
   drainTurn,
 } from '../../services/streamingBuffer'
 import { InPaneSearchBar } from '../InPaneSearchBar'
-import { defaultInstanceId, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
+import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
 
 interface ChatPanelProps {
   /**
@@ -135,8 +135,28 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
    * first turn because the ref never clears.
    */
   const handleAgentTypeChange = useCallback(async (t: AgentType) => {
+    const prevType = agentType
     setAgentType(t)
     if (!sessionId) return
+    // Persisted in-chat marker: an agent swap silently drops all context
+    // (the new adapter starts cold), so make the switch - and its cost -
+    // visible and auditable, mirroring the instance-rotation marker below.
+    const hasPriorMessages = (activeSession?.messages?.length ?? 0) > 0
+    if (hasPriorMessages && prevType !== t) {
+      const marker: ChatMessage = {
+        id: `agentswap_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        role: 'system',
+        content: `${AGENT_SWITCH_MARKER_PREFIX} ${agentLabel(prevType)} → ${agentLabel(t)}`,
+        timestamp: Date.now(),
+      }
+      appendMessage(sessionId, marker)
+      window.api.app.saveMessage({
+        id: marker.id,
+        conversationId: sessionId,
+        role: marker.role,
+        content: marker.content,
+      }).catch(() => {})
+    }
     // Write-through to the store so other consumers (StatusBar, sidebar
     // session badges, command-palette filters) see the new agent type
     // immediately. setAgentType also clears the stored `model` - a model
@@ -152,7 +172,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     providerStartedRef.current.delete(sessionId)
     agentStartedRef.current.delete(sessionId)
     await window.api.provider?.stopSession?.(sessionId).catch(() => {})
-  }, [sessionId, storeSetAgentType])
+  }, [sessionId, storeSetAgentType, agentType, activeSession?.messages?.length, appendMessage])
 
   // New instance → tear down the current session so the next send
   // respawns with the new env / OAuth dir. When the conversation already

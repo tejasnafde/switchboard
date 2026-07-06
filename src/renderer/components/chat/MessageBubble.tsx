@@ -198,7 +198,11 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           fontFamily: '-apple-system, system-ui, sans-serif',
         }}>
           <span aria-hidden style={{ fontSize: 10 }}>⇄</span>
-          <span>Switched profile: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong></span>
+          {rotation.kind === 'agent' ? (
+            <span>Switched agent: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · new agent starts with fresh context</span>
+          ) : (
+            <span>Switched profile: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong></span>
+          )}
         </div>
       </div>
     )

@@ -1,0 +1,42 @@
+/*
+ * Shared Switchboard dark-theme tokens for tour scenes.
+ *
+ * Scenes inline-link this for consistency. HyperFrames renders each
+ * scene as its own headless page, so the file is read at scene-load
+ * time — no bundling required.
+ */
+:root {
+  --bg: #0e0f12;
+  --bg-secondary: #16181d;
+  --bg-tertiary: #1d2027;
+  --bg-hover: #2a2e38;
+  --border: #2a2e36;
+  --border-strong: #3a3f49;
+  --text-primary: #e6e8ec;
+  --text-secondary: #a8adb6;
+  --text-muted: #6b7280;
+  --accent: #8ab4ff;
+  --success: #7bd88f;
+  --warn: #ffd28a;
+  --danger: #ff8a8a;
+  --radius: 6px;
+  --font-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: -apple-system, "SF Pro Text", "Helvetica Neue", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; padding: 0; width: 1280px; height: 720px;
+  background: var(--bg); color: var(--text-primary);
+  font-family: var(--font-sans); overflow: hidden;
+}
+
+kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
