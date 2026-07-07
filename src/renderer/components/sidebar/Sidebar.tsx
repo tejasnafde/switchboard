@@ -1269,7 +1269,8 @@ function formatRelativeTime(timestamp: number): string {
   const days = Math.floor(hours / 24)
   if (days < 7) return `${days}d`
   const weeks = Math.floor(days / 7)
-  if (weeks < 4) return `${weeks}w`
   const months = Math.floor(days / 30)
+  // 28-30 days: already "4w" but not yet a full month - keep weeks, never "0mo".
+  if (months < 1) return `${weeks}w`
   return `${months}mo`
 }
