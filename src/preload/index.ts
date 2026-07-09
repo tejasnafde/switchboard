@@ -416,9 +416,14 @@ const api = {
       transport.invoke(MachineChannels.SAVE_SNAPSHOT, id, snapshot),
     connect: (id: string): Promise<{ ok: boolean; error?: string }> => transport.invoke(MachineChannels.CONNECT, id),
     disconnect: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DISCONNECT, id),
-    onStatus: (callback: (machineId: string, status: string, url: string | null, reason?: string) => void): (() => void) =>
-      transport.on<[string, string, string | null, string | undefined]>(MachineChannels.STATUS, (machineId, status, url, reason) =>
-        callback(machineId, status, url ?? null, reason),
+    getStatuses: (): Promise<Record<string, { status: string; url: string | null }>> =>
+      transport.invoke(MachineChannels.GET_STATUSES),
+    onStatus: (
+      callback: (machineId: string, status: string, url: string | null, reason?: string, willRetry?: boolean) => void,
+    ): (() => void) =>
+      transport.on<[string, string, string | null, string | undefined, boolean | undefined]>(
+        MachineChannels.STATUS,
+        (machineId, status, url, reason, willRetry) => callback(machineId, status, url ?? null, reason, willRetry),
       ),
   },
 
