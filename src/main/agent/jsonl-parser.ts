@@ -84,6 +84,9 @@ export class JsonlParser {
 
     switch (type) {
       case 'assistant': {
+        // Skip the CLI's synthetic API-error messages (rate limit etc.) - they
+        // duplicate the persisted system error card on reload.
+        if (event.isApiErrorMessage === true) return null
         const content = extractContent(event.message)
         const toolCalls = extractToolCalls(event.message)
         // Skip assistant messages with no visible content (e.g., thinking-only)

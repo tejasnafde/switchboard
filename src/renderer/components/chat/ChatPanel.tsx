@@ -483,12 +483,21 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
         case 'error': {
-          appendMessage(tid, {
+          const errMsg: ChatMessage = {
             id: `error_${Date.now()}`,
             role: 'system',
             content: `Error: ${event.message}`,
             timestamp: Date.now(),
-          })
+          }
+          appendMessage(tid, errMsg)
+          // Persist like the rotation marker does - error cards were
+          // renderer-state-only and vanished on restart.
+          window.api.app.saveMessage({
+            id: errMsg.id,
+            conversationId: tid,
+            role: errMsg.role,
+            content: errMsg.content,
+          }).catch(() => {})
           break
         }
         case 'status': {

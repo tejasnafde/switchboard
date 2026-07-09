@@ -38,6 +38,24 @@ describe('JsonlParser', () => {
     })
   })
 
+  it('skips the CLI synthetic API-error assistant message (rate limit bubble)', () => {
+    const messages: unknown[] = []
+    const parser = new JsonlParser((msg) => messages.push(msg))
+
+    parser.feed(JSON.stringify({
+      type: 'assistant',
+      isApiErrorMessage: true,
+      message: {
+        model: '<synthetic>',
+        content: [{ type: 'text', text: "You've hit your session limit · resets 5:10am (Asia/Calcutta)" }],
+      },
+    }) + '\n')
+
+    // The persisted system error card already covers this; rendering the
+    // synthetic bubble too duplicated the error in chat.
+    expect(messages).toHaveLength(0)
+  })
+
   it('extracts tool calls from assistant messages', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))
