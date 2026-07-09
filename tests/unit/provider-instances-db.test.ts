@@ -44,6 +44,7 @@ interface Row {
   accent_color: string | null
   auth_mode: string
   env_encrypted: Buffer | null
+  env_keys: string | null
   oauth_dir: string | null
   config_json: string | null
   enabled: number
@@ -64,6 +65,7 @@ function seedDefaults() {
       accent_color: null,
       auth_mode: 'env',
       env_encrypted: null,
+      env_keys: null,
       oauth_dir: null,
       config_json: null,
       enabled: 1,
@@ -111,16 +113,16 @@ function prepare(sql: string) {
       if (norm.startsWith('INSERT INTO provider_instances')) {
         const [
           id, agent_type, display_name, accent_color, auth_mode,
-          env_encrypted, oauth_dir, config_json, enabled, created_at, updated_at,
-        ] = args as [string, string, string, string | null, string, Buffer | null, string | null, string | null, number, number, number]
+          env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at,
+        ] = args as [string, string, string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, number]
         store.set(id, {
           id, agent_type, display_name, accent_color, auth_mode,
-          env_encrypted, oauth_dir, config_json, enabled, created_at, updated_at,
+          env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at,
         })
         return { changes: 1 }
       }
       if (norm.startsWith('UPDATE provider_instances SET display_name')) {
-        const [name, accent, auth, env, oauthDir, config, enabled, updated, id] = args as [string, string | null, string, Buffer | null, string | null, string | null, number, number, string]
+        const [name, accent, auth, env, envKeys, oauthDir, config, enabled, updated, id] = args as [string, string | null, string, Buffer | null, string | null, string | null, string | null, number, number, string]
         const r = store.get(id)
         if (!r) return { changes: 0 }
         Object.assign(r, {
@@ -128,6 +130,7 @@ function prepare(sql: string) {
           accent_color: accent,
           auth_mode: auth,
           env_encrypted: env,
+          env_keys: envKeys,
           oauth_dir: oauthDir,
           config_json: config,
           enabled,
@@ -235,6 +238,21 @@ describe('upsertProviderInstance', () => {
     expect('env' in wire).toBe(false)
     const full = getProviderInstanceFull(wire.id)
     expect(full?.env).toEqual({ CODEX_TOKEN: 'secret-789' })
+  })
+
+  it('LIST returns envKeys without touching decryption (keychain-free boot path)', async () => {
+    const { upsertProviderInstance, listProviderInstances } = await loadModule()
+    upsertProviderInstance({
+      agentType: 'codex',
+      displayName: 'Work',
+      env: { CODEX_TOKEN: 'secret-789', OPENAI_API_KEY: 'sk-x' },
+    })
+    // Simulate the unsigned-build scenario: safeStorage gone at read time.
+    // Before the env_keys column, LIST decrypted every row and this returned []
+    // (and on real macOS, prompted for the login password at every launch).
+    safeStorageAvailable = false
+    const listed = listProviderInstances().find((i) => i.displayName === 'Work')
+    expect(listed?.envKeys).toEqual(['CODEX_TOKEN', 'OPENAI_API_KEY'])
   })
 })
 

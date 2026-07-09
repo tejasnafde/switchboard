@@ -13,6 +13,7 @@ import { encodeFrame, decodeFrame } from '@shared/ws-protocol'
 import { createMainLogger } from '../logger'
 import { appVersion } from '../runtime'
 import { REMOTE_SERVER_DIR } from './provisionCommands'
+import { summarizeSshError } from './sshError'
 import type { TunnelProcess } from './connectionManager'
 
 const log = createMainLogger('machines:tunnel')
@@ -50,15 +51,28 @@ export function allocatePort(): Promise<number> {
 export function spawnTunnel(command: string, args: string[]): TunnelProcess {
   log.info('spawn tunnel', { command, args })
   const child = spawn(command, args)
+  // Keep the tail of stderr so a dying tunnel can report WHY it died
+  // ("Permission denied", "Connection refused") instead of a bare error pip.
+  let stderrTail = ''
   // Surface ssh + remote-server output: this is where a crashed server, an
   // EADDRINUSE from a lingering server, or an ssh/forward error shows up.
   child.stdout.on('data', (d) => log.info(`tunnel stdout: ${String(d).trimEnd()}`))
-  child.stderr.on('data', (d) => log.warn(`tunnel stderr: ${String(d).trimEnd()}`))
+  child.stderr.on('data', (d) => {
+    log.warn(`tunnel stderr: ${String(d).trimEnd()}`)
+    stderrTail = (stderrTail + String(d)).slice(-4096)
+  })
   child.on('exit', (code, signal) => log.info('tunnel exited', { code, signal }))
-  child.on('error', (err) => log.warn('tunnel spawn error', err))
+  child.on('error', (err) => {
+    log.warn('tunnel spawn error', err)
+    stderrTail = (stderrTail + err.message).slice(-4096)
+  })
   return {
     kill: () => child.kill(),
     onExit: (cb) => child.once('exit', cb),
+    exitReason: () => {
+      const summary = summarizeSshError(stderrTail)
+      return summary ? `tunnel closed: ${summary}` : undefined
+    },
   }
 }
 

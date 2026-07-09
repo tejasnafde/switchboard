@@ -352,9 +352,14 @@ const api = {
       transport.invoke(MachineChannels.SAVE_SNAPSHOT, id, snapshot),
     connect: (id: string): Promise<{ ok: boolean; error?: string }> => transport.invoke(MachineChannels.CONNECT, id),
     disconnect: (id: string): Promise<{ ok: true }> => transport.invoke(MachineChannels.DISCONNECT, id),
-    onStatus: (callback: (machineId: string, status: string, url: string | null, reason?: string) => void): (() => void) =>
-      transport.on<[string, string, string | null, string | undefined]>(MachineChannels.STATUS, (machineId, status, url, reason) =>
-        callback(machineId, status, url ?? null, reason),
+    getStatuses: (): Promise<Record<string, { status: string; url: string | null }>> =>
+      transport.invoke(MachineChannels.GET_STATUSES),
+    onStatus: (
+      callback: (machineId: string, status: string, url: string | null, reason?: string, willRetry?: boolean) => void,
+    ): (() => void) =>
+      transport.on<[string, string, string | null, string | undefined, boolean | undefined]>(
+        MachineChannels.STATUS,
+        (machineId, status, url, reason, willRetry) => callback(machineId, status, url ?? null, reason, willRetry),
       ),
   },
 
@@ -478,6 +483,14 @@ const api = {
     /** Dynamically fetch `opencode models` output. Returns provider/model IDs. */
     listOpencodeModels: (): Promise<string[]> =>
       transport.invoke(ProviderChannels.OPENCODE_LIST_MODELS),
+
+    /**
+     * Fetch the session adapter's live model list (Claude SDK's
+     * `supportedModels()`). Returns `null` when the adapter doesn't support
+     * it and `[]` before the session has fully initialized.
+     */
+    listModels: (threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null> =>
+      transport.invoke(ProviderChannels.LIST_MODELS, threadId),
 
     /**
      * Fetch the agent-defined slash commands/skills for a session

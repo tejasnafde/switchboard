@@ -51,6 +51,11 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged }: TriggerP
 
   useEffect(() => {
     refresh()
+    // External checkouts (e.g. `git switch` in a terminal pane) emit no event,
+    // so poll while visible. ponytail: 5s subprocess poll per visible chip -
+    // a main-side .git/HEAD watcher is the upgrade if this ever shows up in profiles.
+    const timer = setInterval(() => { if (!document.hidden) refresh() }, 5000)
+    return () => clearInterval(timer)
   }, [refresh])
 
   if (!cwd || !isGitRepo) return null

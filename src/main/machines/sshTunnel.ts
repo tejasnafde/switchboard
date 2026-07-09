@@ -47,6 +47,9 @@ function assertSafeSshArg(field: string, value: string): void {
 export const SSH_COMMON_OPTS = [
   '-o', 'BatchMode=yes',
   '-o', 'StrictHostKeyChecking=accept-new',
+  // Fail a dead/black-holed host in 10s instead of the OS TCP timeout (~75s);
+  // applies to the tunnel, the probe, and every provisioning command.
+  '-o', 'ConnectTimeout=10',
 ]
 
 /**
@@ -70,7 +73,10 @@ export function sshHostArgs(machine: Machine): string[] {
 export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { command: string; args: string[] } {
   const args = [
     ...SSH_COMMON_OPTS,
-    '-o', 'ServerAliveInterval=30',
+    // 15s x 2 missed keepalives = a dead tunnel is noticed in ~30s, not the
+    // OpenSSH default 30s x 3 = 90s.
+    '-o', 'ServerAliveInterval=15',
+    '-o', 'ServerAliveCountMax=2',
     '-o', 'ExitOnForwardFailure=yes',
     '-L', `${opts.localPort}:127.0.0.1:${opts.remotePort}`,
     ...sshHostArgs(machine),

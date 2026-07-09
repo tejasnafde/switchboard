@@ -29,6 +29,8 @@ const disconnectMachine = vi.fn()
 const bind = vi.fn()
 const invokeOn = vi.fn(async () => [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', source: 'codex', startedAt: 0, messageCount: 1, filePath: '/x' }] }])
 const saveSnapshot = vi.fn(async () => ({ ok: true as const }))
+let liveStatuses: Record<string, { status: string; url: string | null }> = {}
+const getStatuses = vi.fn(async () => liveStatuses)
 
 beforeEach(() => {
   stored = [mk('a', 0), mk('b', 1), mk('c', 2)]
@@ -44,6 +46,7 @@ beforeEach(() => {
         reorder,
         listSshHosts: vi.fn(async () => []),
         saveSnapshot,
+        getStatuses,
         onStatus: vi.fn((cb) => {
           statusCb = cb
           return () => {}
@@ -52,7 +55,8 @@ beforeEach(() => {
       routing: { connectMachine, disconnectMachine, invokeOn, bind },
     },
   }
-  useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [], snapshots: {}, lastError: {} })
+  liveStatuses = {}
+  useMachineStore.setState({ remotes: [], connections: {}, activeMachineId: 'local', collapsed: new Set(), sshHosts: [], snapshots: {}, lastError: {}, progress: {}, reconnecting: {} })
   vi.clearAllMocks()
 })
 
@@ -152,13 +156,52 @@ describe('machine-store', () => {
     expect(disconnectMachine).not.toHaveBeenCalled()
   })
 
-  it('hydrate rebinds project paths for machines that are already connected', async () => {
+  it('hydrate re-dials and rebinds machines main reports as connected (renderer-reload resync)', async () => {
+    // Simulates a renderer reload: main still holds a live tunnel, but the
+    // preload transports and store connections were wiped with the page.
+    liveStatuses = { m1: { status: 'connected', url: 'ws://127.0.0.1:7681' } }
     useMachineStore.setState((s) => ({
-      connections: { ...s.connections, m1: 'connected' },
       snapshots: { ...s.snapshots, m1: { syncedAt: 0, projects: [{ path: '/r/api', name: 'api', sessions: [] }] } },
     }))
     await useMachineStore.getState().hydrate()
+    expect(connectMachine).toHaveBeenCalledWith('m1', 'ws://127.0.0.1:7681')
     expect(bind).toHaveBeenCalledWith('/r/api', 'm1')
+    expect(useMachineStore.getState().connections.m1).toBe('connected')
+  })
+
+  it('hydrate does NOT re-dial a machine the store already knows is connected (add/update/remove path)', async () => {
+    liveStatuses = { m1: { status: 'connected', url: 'ws://127.0.0.1:7681' } }
+    useMachineStore.setState((s) => ({ connections: { ...s.connections, m1: 'connected' } }))
+    await useMachineStore.getState().hydrate()
+    // Re-dialing tears down the live transport and rejects in-flight invokes.
+    expect(connectMachine).not.toHaveBeenCalled()
+  })
+
+  it('hydrate survives a missing getStatuses handler (older main)', async () => {
+    getStatuses.mockRejectedValueOnce(new Error('no handler'))
+    await useMachineStore.getState().hydrate()
+    expect(useMachineStore.getState().remotes.map((m) => m.id)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('subscribeStatus stores progress detail on connecting and reconnecting on a will-retry error', () => {
+    useMachineStore.getState().subscribeStatus()
+    statusCb!('m1', 'connecting', null, 'npm install (this can take a minute)')
+    expect(useMachineStore.getState().progress.m1).toBe('npm install (this can take a minute)')
+
+    statusCb!('m1', 'error', null, 'tunnel closed: Connection refused', true)
+    expect(useMachineStore.getState().reconnecting.m1).toBe(true)
+    expect(useMachineStore.getState().progress.m1).toBeNull()
+
+    statusCb!('m1', 'error', null, 'gave up')
+    expect(useMachineStore.getState().reconnecting.m1).toBe(false)
+  })
+
+  it('connect records the rejection reason in lastError instead of a bare error pip', async () => {
+    ;(window as unknown as { api: { machines: { connect: unknown } } }).api.machines.connect =
+      vi.fn(async () => ({ ok: false, error: 'unknown machine' }))
+    await useMachineStore.getState().connect('m1')
+    expect(useMachineStore.getState().connections.m1).toBe('error')
+    expect(useMachineStore.getState().lastError.m1).toBe('unknown machine')
   })
 
   it('subscribeStatus records the reason in lastError on an error transition', () => {

@@ -82,6 +82,8 @@ export const MachineChannels = {
   DISCONNECT: 'machines:disconnect',
   /** Main -> renderer: per-machine connection status changed, optionally with a human-readable reason. */
   STATUS: 'machines:status',
+  /** Current status + tunnel URL for every machine, so a reloaded renderer can re-dial live connections. */
+  GET_STATUSES: 'machines:get-statuses',
 } as const
 
 export const KanbanChannels = {
@@ -182,6 +184,7 @@ export const ProviderChannels = {
   SET_RUNTIME_MODE: 'provider:set-runtime-mode',
   SET_MODEL: 'provider:set-model',
   OPENCODE_LIST_MODELS: 'provider:opencode-list-models',
+  LIST_MODELS: 'provider:list-models',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   EVENT: 'provider:event',

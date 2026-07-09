@@ -12,9 +12,18 @@ import { provisionRemote, type ProcRunner } from './provisioner'
 // is far more than enough to surface any real error message.
 const MAX_CAPTURE = 1024 * 1024
 
+// Backstop for a post-connect hang (npm stall, sudo waiting on a password
+// despite -n): ssh's ConnectTimeout only covers connection setup. Generous
+// because npm install on a slow VM legitimately takes minutes.
+const EXEC_TIMEOUT_MS = 10 * 60 * 1000
+
 export const execProc: ProcRunner['exec'] = (command, args, stdin) =>
   new Promise((resolve) => {
     const child = spawn(command, args)
+    const timer = setTimeout(() => {
+      child.kill()
+      finish(1, `command timed out after ${EXEC_TIMEOUT_MS / 60_000} minutes`)
+    }, EXEC_TIMEOUT_MS)
     const out: Buffer[] = []
     const err: Buffer[] = []
     let outLen = 0
@@ -25,12 +34,17 @@ export const execProc: ProcRunner['exec'] = (command, args, stdin) =>
     child.stderr.on('data', (d: Buffer) => {
       if (errLen < MAX_CAPTURE) { err.push(d); errLen += d.length }
     })
-    const finish = (code: number, stderrOverride?: string) =>
+    let done = false
+    const finish = (code: number, stderrOverride?: string) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
       resolve({
         code,
         stdout: Buffer.concat(out).toString('utf-8'),
         stderr: stderrOverride ?? Buffer.concat(err).toString('utf-8'),
       })
+    }
     child.on('error', (e) => finish(1, e.message))
     child.on('close', (code) => finish(code ?? 1))
     if (stdin !== undefined) {
@@ -71,7 +85,7 @@ function depVersion(name: string): string {
 
 /** Bundle the real deps into the ConnectionManager `provision` hook. */
 export function makeProvision(log?: (msg: string) => void) {
-  return (machine: Machine) =>
+  return (machine: Machine, onStep?: (label: string) => void) =>
     provisionRemote(
       machine,
       {
@@ -82,5 +96,6 @@ export function makeProvision(log?: (msg: string) => void) {
       },
       { exec: execProc },
       log,
+      onStep,
     )
 }

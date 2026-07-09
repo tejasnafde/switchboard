@@ -15,7 +15,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', msg)
 })
 
-import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, protocol, net } from 'electron'
+import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, protocol, net, screen } from 'electron'
 import { join, basename } from 'path'
 import { registerTerminalHandlers } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
@@ -31,7 +31,7 @@ import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { resolveProviderInstance } from './db/providerInstances'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
-import { getDb, closeDb, getSetting, getProjects } from './db/database'
+import { getDb, closeDb, getSetting, setSetting, getProjects } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
 
@@ -111,17 +111,43 @@ if (!gotTheLock) {
   })
 }
 
+interface SavedBounds { x?: number; y?: number; width: number; height: number; maximized?: boolean }
+
+function loadWindowBounds(): SavedBounds | null {
+  try {
+    const raw = getSetting('windowBounds')
+    if (!raw) return null
+    const b = JSON.parse(raw) as SavedBounds
+    if (typeof b.width !== 'number' || typeof b.height !== 'number') return null
+    // Drop the position if it is no longer on any display (monitor unplugged).
+    if (typeof b.x === 'number' && typeof b.y === 'number') {
+      const visible = screen.getAllDisplays().some((d) =>
+        b.x! >= d.bounds.x && b.x! < d.bounds.x + d.bounds.width &&
+        b.y! >= d.bounds.y && b.y! < d.bounds.y + d.bounds.height)
+      if (!visible) { delete b.x; delete b.y }
+    }
+    return b
+  } catch (err) {
+    log.warn('failed to load saved window bounds', err)
+    return null
+  }
+}
+
 function createWindow(): BrowserWindow {
   const iconPath = join(app.getAppPath(), 'resources/icons/switchboard-logo-1024.png')
 
   // Check saved theme so we can set vibrancy BEFORE window shows
   let savedTheme: string | null = null
-  try { savedTheme = getSetting('theme') } catch { /* db not ready yet on first call */ }
+  try { savedTheme = getSetting('theme') } catch (err) { log.warn('theme read failed at window creation', err) }
   const isTranslucent = savedTheme === 'translucent'
 
+  const saved = loadWindowBounds()
+
   const window = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    width: saved?.width ?? 1400,
+    height: saved?.height ?? 900,
+    x: saved?.x,
+    y: saved?.y,
     minWidth: 800,
     minHeight: 600,
     title: 'Switchboard',
@@ -139,6 +165,22 @@ function createWindow(): BrowserWindow {
       webviewTag: true,
     },
   })
+
+  // macOS quirk: a window created with `transparent: true` + vibrancy does
+  // not composite the NSVisualEffectView until the frame is invalidated -
+  // the translucent theme rendered as a dark void until the user resized or
+  // zoomed the window. Nudge a re-composite once the first paint is in.
+  if (process.platform === 'darwin' && isTranslucent) {
+    window.webContents.once('did-finish-load', () => {
+      if (window.isDestroyed()) return
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- null clears vibrancy (Electron types lag)
+      window.setVibrancy(null as any)
+      window.setVibrancy('sidebar')
+      const b = window.getBounds()
+      window.setBounds({ ...b, height: b.height + 1 })
+      window.setBounds(b)
+    })
+  }
 
   // macOS fullscreen + translucent: transparent windows show a black void in
   // fullscreen because macOS doesn't support window transparency in that mode.
@@ -183,6 +225,16 @@ function createWindow(): BrowserWindow {
     if ((input.meta || input.control) && input.key.toLowerCase() === 'w' && input.type === 'keyDown') {
       event.preventDefault()
       window.webContents.send('app:close-pane-or-window', { shift: input.shift })
+    }
+  })
+
+  // Restore maximized state and remember bounds for next launch.
+  if (saved?.maximized) window.maximize()
+  window.on('close', () => {
+    try {
+      setSetting('windowBounds', JSON.stringify({ ...window.getNormalBounds(), maximized: window.isMaximized() }))
+    } catch (err) {
+      log.warn('failed to persist window bounds', err)
     }
   })
 

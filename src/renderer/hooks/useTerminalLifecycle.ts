@@ -46,7 +46,9 @@ export function useTerminalLifecycle() {
     const session = useAgentStore.getState().sessions.find((s) => s.id === activeSessionId)
     if (!session) return
 
-    spawnTerminalsForSession(activeSessionId, session.projectPath)
+    // Worktree-backed sessions get terminals in the worktree, matching the
+    // agent's cwd - not the shared parent checkout.
+    spawnTerminalsForSession(activeSessionId, session.worktreePath ?? session.projectPath)
   }, [activeSessionId])
 
   // Watch for workspace.yaml changes to hot-reload

@@ -68,6 +68,8 @@ export function MachineLayer({
   const connect = useMachineStore((s) => s.connect)
   const disconnect = useMachineStore((s) => s.disconnect)
   const lastError = useMachineStore((s) => s.lastError)
+  const progress = useMachineStore((s) => s.progress)
+  const reconnecting = useMachineStore((s) => s.reconnecting)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
   const [addProjectFor, setAddProjectFor] = useState<string | null>(null)
 
@@ -89,12 +91,21 @@ export function MachineLayer({
   const renderRemoteBody = (node: MachineNode) => {
     const snap = snapshots[node.id]
     const projects = cachedProjects(snap)
+    const isReconnecting = node.status === 'error' && reconnecting[node.id]
     const offline = node.status === 'offline' || node.status === 'error'
     return (
-      <div className="sidebar-machine-cached">
+      <div className="sidebar-machine-cached" data-offline={offline || undefined}>
         <div className="cached-banner">
-          {node.status === 'connecting' ? (
-            <span>Connecting…</span>
+          {node.status === 'connecting' || isReconnecting ? (
+            <>
+              <span className="machine-spinner" aria-hidden />
+              <span className="machine-progress">
+                {isReconnecting ? 'Reconnecting…' : (progress[node.id] ?? 'Connecting…')}
+              </span>
+              <button className="machine-connect" onClick={() => void disconnect(node.id)}>
+                Cancel
+              </button>
+            </>
           ) : node.status === 'connected' ? (
             <>
               <button className="machine-connect" onClick={() => void disconnect(node.id)}>
@@ -109,15 +120,13 @@ export function MachineLayer({
               {node.status === 'error' ? 'Retry connect' : 'Connect'}
             </button>
           )}
-          {node.status === 'error' && lastError[node.id] && (
-            <span className="machine-error-reason" title={lastError[node.id] ?? undefined}>
-              {lastError[node.id]}
-            </span>
-          )}
           {offline && projects.length > 0 && (
             <span className="cached-label">{syncedAgoLabel(snap?.syncedAt, Date.now())} · read-only</span>
           )}
         </div>
+        {node.status === 'error' && !isReconnecting && lastError[node.id] && (
+          <div className="machine-error-reason">{lastError[node.id]}</div>
+        )}
         {projects.length === 0 ? (
           <div className="sidebar-machine-empty">
             {node.status === 'connected'
@@ -146,6 +155,7 @@ export function MachineLayer({
                     key={s.id}
                     className={`cached-chat${s.id === activeSessionId ? ' sidebar-thread-active' : ''}`}
                     data-openable={openable || undefined}
+                    title={openable ? undefined : 'Connect to this machine to open'}
                     onClick={
                       openable
                         ? () =>
@@ -182,17 +192,19 @@ export function MachineLayer({
     return (
       <section className="sidebar-machine">
         <header className="sidebar-machine-header" onClick={() => toggleCollapsed(node.id)}>
-          {/* Always render the grip slot so local + remote headers align; only
-              remotes (drag-reorderable) get the actual handle. */}
-          {dragHandleProps ? (
+          {/* Grip is an absolute overlay in the left padding gutter, so local +
+              remote headers align without reserving layout width. */}
+          {dragHandleProps && (
             <span className="machine-grip" onClick={(e) => e.stopPropagation()} {...dragHandleProps}>
               ⠿
             </span>
-          ) : (
-            <span className="machine-grip" aria-hidden />
           )}
           <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
-          <span className="machine-pip" style={{ background: PIP_COLOR[node.status] }} />
+          {/* An auto-reconnecting error shows the amber connecting pip, not red - it's in progress, not dead. */}
+          <span
+            className="machine-pip"
+            style={{ background: PIP_COLOR[node.status === 'error' && reconnecting[node.id] ? 'connecting' : node.status] }}
+          />
           <span className="sidebar-machine-name">{node.name}</span>
           {node.kind === 'local' ? (
             <span className="machine-tag">local</span>
@@ -208,7 +220,8 @@ export function MachineLayer({
               title="Remove machine"
               onClick={(e) => {
                 e.stopPropagation()
-                void remove(node.id)
+                // Deleting also drops the offline snapshot; not undoable.
+                if (window.confirm(`Remove machine "${node.name}"?`)) void remove(node.id)
               }}
             >
               ×

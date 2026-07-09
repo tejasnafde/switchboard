@@ -28,4 +28,12 @@ Host key verification failed.`
   it('returns empty for empty stderr', () => {
     expect(summarizeSshError('   \n  ')).toBe('')
   })
+
+  it('does not surface the IAP bandwidth advisory as the cause of a killed tunnel (live-captured)', () => {
+    // Real teardown stderr from a gcloud-IAP tunnel killed mid-session: the
+    // advisory is the only non-empty content, and it is not a failure cause.
+    const stderr = `To increase the performance of the tunnel, consider installing NumPy. For instructions,
+please see https://cloud.google.com/iap/docs/using-tcp-forwarding#increasing_the_tcp_upload_bandwidth`
+    expect(summarizeSshError(stderr)).not.toContain('cloud.google.com')
+  })
 })

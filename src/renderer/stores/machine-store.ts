@@ -49,6 +49,10 @@ interface MachineStore {
   snapshots: Record<string, MachineSnapshot>
   /** machineId -> human-readable reason for the last 'error' status (null once cleared). */
   lastError: Record<string, string | null>
+  /** machineId -> current connect-phase detail ("npm install…"), only while connecting. */
+  progress: Record<string, string | null>
+  /** machineId -> true while an errored connection is auto-reconnecting. */
+  reconnecting: Record<string, boolean>
 
   hydrate: () => Promise<void>
   add: (input: MachineInput) => Promise<Machine | null>
@@ -78,6 +82,8 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   sshHosts: [],
   snapshots: {},
   lastError: {},
+  progress: {},
+  reconnecting: {},
 
   hydrate: async () => {
     const api = window.api?.machines
@@ -88,12 +94,27 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       log.warn('hydrate failed', err)
       return
     }
-    // Machines that reconnected before this hydrate resolved already have a
-    // 'connected' status and a cached snapshot - rebind their project paths
-    // so path-keyed IPC doesn't silently fall back to local after a reload.
-    const { connections, snapshots } = get()
-    for (const [machineId, status] of Object.entries(connections)) {
-      if (status === 'connected') bindSnapshotPaths(machineId, snapshots[machineId])
+    // Resync from main's live connection state: after a renderer reload the
+    // preload transports are gone even though main's tunnels are still up.
+    // Re-dial connected machines and rebind their project paths, or id-keyed
+    // routing resolves to a machine with no registered transport.
+    try {
+      const statuses = await api.getStatuses()
+      const connections = { ...get().connections }
+      for (const [machineId, { status, url }] of Object.entries(statuses)) {
+        // Only dial when the store didn't know about the connection (i.e. a
+        // reload wiped the transports). hydrate() also runs after add/update/
+        // remove, and connectMachine tears down + replaces the socket - doing
+        // that to a healthy transport rejects its in-flight invokes.
+        if (status === 'connected' && url && connections[machineId] !== 'connected') {
+          window.api.routing.connectMachine(machineId, url)
+          bindSnapshotPaths(machineId, get().snapshots[machineId])
+        }
+        connections[machineId] = toMachineStatus(status)
+      }
+      set({ connections })
+    } catch (err) {
+      log.warn('status resync failed', err)
     }
   },
 
@@ -187,15 +208,23 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     }),
 
   connect: async (id) => {
-    set((s) => ({ connections: { ...s.connections, [id]: 'connecting' } }))
+    const failLocal = (reason: string) =>
+      set((s) => ({
+        connections: { ...s.connections, [id]: 'error' },
+        lastError: { ...s.lastError, [id]: reason },
+      }))
+    set((s) => ({
+      connections: { ...s.connections, [id]: 'connecting' },
+      progress: { ...s.progress, [id]: null },
+    }))
     try {
       const res = await window.api.machines.connect(id)
       if (!res.ok) {
-        set((s) => ({ connections: { ...s.connections, [id]: 'error' } }))
+        failLocal(res.error ?? 'connect rejected')
         log.warn('connect rejected', res.error)
       }
     } catch (err) {
-      set((s) => ({ connections: { ...s.connections, [id]: 'error' } }))
+      failLocal(err instanceof Error ? err.message : String(err))
       log.warn('connect failed', err)
     }
   },
@@ -210,7 +239,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   },
 
   subscribeStatus: () =>
-    window.api.machines.onStatus((id, status, url, reason) => {
+    window.api.machines.onStatus((id, status, url, reason, willRetry) => {
       if (status === 'connected' && url) {
         // connectMachine() replaces a stale transport in place, covering reconnect-after-error.
         window.api.routing.connectMachine(id, url)
@@ -222,9 +251,25 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       }
       set((s) => {
         const lastError = { ...s.lastError }
-        if (status === 'error') lastError[id] = reason ?? null
-        else if (status === 'connecting' || status === 'connected') lastError[id] = null
-        return { connections: { ...s.connections, [id]: toMachineStatus(status) }, lastError }
+        const progress = { ...s.progress }
+        const reconnecting = { ...s.reconnecting }
+        if (status === 'error') {
+          lastError[id] = reason ?? null
+          progress[id] = null
+          reconnecting[id] = !!willRetry
+        } else if (status === 'connecting') {
+          lastError[id] = null
+          // reason doubles as progress detail on repeated connecting emissions
+          progress[id] = reason ?? progress[id] ?? null
+          reconnecting[id] = false
+        } else {
+          // connected clears the error; offline keeps it (a deliberate
+          // disconnect after a failure shouldn't erase why it failed)
+          if (status === 'connected') lastError[id] = null
+          progress[id] = null
+          reconnecting[id] = false
+        }
+        return { connections: { ...s.connections, [id]: toMachineStatus(status) }, lastError, progress, reconnecting }
       })
     }),
 

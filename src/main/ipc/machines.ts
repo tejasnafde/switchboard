@@ -38,9 +38,9 @@ export function registerMachineHandlers(host: BackendHost): void {
       provision: makeProvision((msg) => log.info(msg)),
       maxReconnects: 5,
       onLog: (msg) => log.error(msg),
-      onStatus: (machineId, status, url, reason) => {
-        log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}`)
-        currentHost?.emit(MachineChannels.STATUS, machineId, status, url, reason)
+      onStatus: (machineId, status, url, reason, willRetry) => {
+        log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}${willRetry ? ' (will retry)' : ''}`)
+        currentHost?.emit(MachineChannels.STATUS, machineId, status, url, reason, willRetry)
       },
     })
   }
@@ -73,6 +73,8 @@ export function registerMachineHandlers(host: BackendHost): void {
     reorderMachines(ids, Date.now())
     return { ok: true }
   })
+
+  host.handle(MachineChannels.GET_STATUSES, () => mgr.statuses())
 
   host.handle(MachineChannels.GET_SNAPSHOTS, () => getMachineSnapshots())
 

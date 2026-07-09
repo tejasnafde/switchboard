@@ -1085,10 +1085,13 @@ mark.sb-search-mark.active {
   border-bottom: 1px solid var(--border);
 }
 .sidebar-machine-header {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 7px 12px 7px 10px;
+  /* padding-left 12px keeps the machine chevron just left of the project
+     chevrons (14px), so parents read as outer level, not inner */
+  padding: 7px 12px;
   cursor: pointer;
   user-select: none;
   font-size: 12px;
@@ -1150,18 +1153,23 @@ mark.sb-search-mark.active {
   opacity: 1 !important;
 }
 .sidebar-machine-empty {
-  padding: 8px 12px 10px 24px;
+  padding: 8px 12px 10px 14px;
   font-size: 11px;
   color: var(--text-muted);
 }
 .sidebar-add-machine {
+  /* Sticky: the button renders below the whole tree, which scrolls it
+     off-screen in any real workspace. Pin it to the scroll container bottom. */
+  position: sticky;
+  bottom: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
   padding: 7px 12px;
-  background: none;
+  background: var(--bg-secondary);
   border: none;
+  border-top: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 12px;
   cursor: pointer;
@@ -1291,9 +1299,24 @@ mark.sb-search-mark.active {
   background: var(--accent-subtle);
   border-color: var(--accent);
 }
+.machine-modal-advanced summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+.machine-modal-advanced[open] summary {
+  margin-bottom: 8px;
+}
+.machine-modal-error {
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--error);
+}
 
 .machine-grip {
-  flex: none;
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 10px;
   color: var(--text-muted);
   font-size: 11px;
@@ -1305,10 +1328,12 @@ mark.sb-search-mark.active {
   opacity: 0.5;
 }
 
-/* Offline cached tree (read-only browse of a remote) */
+/* Remote machine body; ghosted only when offline (cached snapshot) */
 .sidebar-machine-cached {
-  opacity: 0.6;
   padding: 2px 0 6px;
+}
+.sidebar-machine-cached[data-offline] {
+  opacity: 0.6;
 }
 .cached-banner {
   display: flex;
@@ -1318,7 +1343,7 @@ mark.sb-search-mark.active {
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--text-muted);
-  padding: 3px 12px 5px 24px;
+  padding: 3px 12px 5px 14px;
   font-family: var(--mono, monospace);
 }
 .machine-connect {
@@ -1338,11 +1363,32 @@ mark.sb-search-mark.active {
   color: var(--text-muted);
 }
 .machine-error-reason {
+  /* Own wrapping, selectable line - a truncated one-word reason is useless. */
+  padding: 0 12px 5px 14px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--error);
+  opacity: 0.8;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: text;
+}
+.machine-progress {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--error);
-  opacity: 0.8;
+}
+.machine-spinner {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--text-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: machine-spin 0.8s linear infinite;
+}
+@keyframes machine-spin {
+  to { transform: rotate(360deg); }
 }
 .cached-project {
   padding: 2px 0;
@@ -1353,7 +1399,10 @@ mark.sb-search-mark.active {
   gap: 6px;
   font-size: 12px;
   color: var(--text-secondary);
-  padding: 3px 12px 3px 24px;
+  /* 14px left aligns remote projects with local project headers */
+  padding: 3px 12px 3px 14px;
+}
+.sidebar-machine-cached[data-offline] .cached-project-name {
   font-style: italic;
 }
 .cached-new-chat {
@@ -1371,7 +1420,8 @@ mark.sb-search-mark.active {
 .cached-chat {
   font-size: 12px;
   color: var(--text-muted);
-  padding: 2px 12px 2px 38px;
+  /* one step in from the project name, mirroring local thread rows */
+  padding: 2px 12px 2px 24px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
