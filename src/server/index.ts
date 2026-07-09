@@ -11,7 +11,6 @@ import { WsHost } from '../main/backend/ws-host'
 import { registerAppHandlers } from '../main/ipc/app'
 import { registerFilesHandlers } from '../main/ipc/files'
 import { registerGitHandlers } from '../main/ipc/git'
-import { registerLspHandlers } from '../main/ipc/lsp'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
 import { registerProviderInstanceHandlers } from '../main/ipc/providerInstances'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
@@ -48,7 +47,6 @@ const host = new WsHost(wss)
 registerAppHandlers(host)
 registerFilesHandlers(host)
 registerGitHandlers(host)
-registerLspHandlers(host)
 registerKanbanHandlers(host)
 registerProviderInstanceHandlers(host)
 registerTerminalHandlers(host)

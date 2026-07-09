@@ -26,5 +26,15 @@
         "when": "editorTextFocus"
       }
     ]
-  }
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "Only opens files at the host request and forwards editor selections."
+    },
+    "virtualWorkspaces": false
+  },
+  "extensionKind": [
+    "workspace"
+  ]
 }

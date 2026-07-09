@@ -54,7 +54,9 @@ function parseInbound(raw: string): InboundMessage | null {
     return null
   }
   if (typeof msg !== 'object' || msg === null || Array.isArray(msg)) return null
-  if (msg.type === 'hello' && isStr(msg.folder)) return msg as unknown as HelloMessage
+  if (msg.type === 'hello' && isStr(msg.folder)) {
+    return { type: 'hello', folder: msg.folder }
+  }
   if (
     msg.type === 'selection' &&
     isStr(msg.path) &&
@@ -62,7 +64,7 @@ function parseInbound(raw: string): InboundMessage | null {
     isNum(msg.endLine) &&
     typeof msg.text === 'string'
   ) {
-    return msg as unknown as SelectionMessage
+    return { type: 'selection', path: msg.path, startLine: msg.startLine, endLine: msg.endLine, text: msg.text }
   }
   return null
 }

@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
-import { seedBridgeExtension } from '../../src/main/ide/code-server-manager'
+import { seedBridgeExtension, BRIDGE_EXTENSION_DIRNAME } from '../../src/main/ide/code-server-manager'
 
 describe('seedBridgeExtension', () => {
   let root: string
@@ -29,9 +29,9 @@ describe('seedBridgeExtension', () => {
     rmSync(root, { recursive: true, force: true })
   })
 
-  it('copies the bundled extension into <extensionsDir>/sb-bridge, creating the dir', () => {
+  it('copies the bundled extension into the conventionally-named folder, creating the dir', () => {
     seedBridgeExtension(bundledDir, extensionsDir)
-    const dest = join(extensionsDir, 'sb-bridge')
+    const dest = join(extensionsDir, BRIDGE_EXTENSION_DIRNAME)
     expect(readFileSync(join(dest, 'package.json'), 'utf8')).toContain('sb-bridge')
     expect(existsSync(join(dest, 'extension.js'))).toBe(true)
     expect(existsSync(join(dest, 'protocol.js'))).toBe(true)
@@ -50,7 +50,7 @@ describe('seedBridgeExtension', () => {
     seedBridgeExtension(bundledDir, extensionsDir)
     writeFileSync(join(bundledDir, 'extension.js'), '// updated glue')
     seedBridgeExtension(bundledDir, extensionsDir)
-    expect(readFileSync(join(extensionsDir, 'sb-bridge', 'extension.js'), 'utf8')).toBe('// updated glue')
+    expect(readFileSync(join(extensionsDir, BRIDGE_EXTENSION_DIRNAME, 'extension.js'), 'utf8')).toBe('// updated glue')
   })
 
   it('does not delete other installed extension folders', () => {

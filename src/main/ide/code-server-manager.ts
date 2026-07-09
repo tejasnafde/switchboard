@@ -6,6 +6,9 @@
 import { cpSync, mkdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
+/** Folder name follows VS Code's <publisher>.<name>-<version> install convention. */
+export const BRIDGE_EXTENSION_DIRNAME = 'switchboard.sb-bridge-0.0.1'
+
 /**
  * Copy the bundled sb-bridge extension into code-server's --extensions-dir.
  * A stale extensions.json (or .obsolete) left by a previous server run marks
@@ -14,7 +17,7 @@ import { join } from 'node:path'
  */
 export function seedBridgeExtension(bundledDir: string, extensionsDir: string): void {
   mkdirSync(extensionsDir, { recursive: true })
-  cpSync(bundledDir, join(extensionsDir, 'sb-bridge'), { recursive: true, force: true })
+  cpSync(bundledDir, join(extensionsDir, BRIDGE_EXTENSION_DIRNAME), { recursive: true, force: true })
   rmSync(join(extensionsDir, 'extensions.json'), { force: true })
   rmSync(join(extensionsDir, '.obsolete'), { force: true })
 }
