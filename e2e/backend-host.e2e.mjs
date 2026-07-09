@@ -49,9 +49,7 @@ try {
       listDir: await api.files.listDir(repo, ''),
       listAll: await api.files.listAll(repo),
       resolve: await api.files.resolve(repo, 'package.json'),
-      grep: await api.files.grepSymbol(repo, 'registerFilesHandlers'),
       branch: await api.git.currentBranch(repo),
-      lsp: await api.lsp.definition({ workspaceRoot: repo, absPath: `${repo}/README.md`, position: { line: 0, character: 0 } }),
       kanban: await api.kanban.list(repo),
       providers: await api.providerInstances.list(),
       // app.ts-migrated channels: settings round-trip + projects list
@@ -65,11 +63,8 @@ try {
   check(r.listDir?.ok && Array.isArray(r.listDir.entries) && r.listDir.entries.length > 0, 'files:list-dir returns entries')
   check(r.listAll?.ok && r.listAll.files.includes('package.json'), 'files:list-all includes package.json')
   check(r.resolve?.ok && r.resolve.exists === true, 'files:resolve finds package.json')
-  check(r.grep?.ok && r.grep.hits.some((h) => h.relPath.includes('ipc/files.ts')), 'files:grep-symbol locates registerFilesHandlers')
   // git
   check(r.branch?.ok && typeof r.branch.branch === 'string', 'git:current-branch returns a branch')
-  // lsp (README.md is not LSP-backed → supported:false, no server spawn)
-  check(r.lsp?.ok && r.lsp.supported === false, 'lsp:definition routes + reports unsupported for .md')
   // kanban + provider-instances
   check(Array.isArray(r.kanban), 'kanban:list returns an array')
   check(Array.isArray(r.providers), 'provider-instances:list returns an array')

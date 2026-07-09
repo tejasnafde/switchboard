@@ -54,8 +54,6 @@ export const AppChannels = {
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
   FORK_CONVERSATION: 'app:fork-conversation',
   // Editor tabs persistence - open files survive app restart per session.
-  EDITOR_TABS_LOAD: 'app:editor-tabs-load',
-  EDITOR_TABS_SAVE: 'app:editor-tabs-save',
   /**
    * Update the worktree pointer on an existing conversation. Fired from
    * the branch picker's swap-cwd action when the user picks a branch
@@ -104,14 +102,12 @@ export const KanbanChannels = {
 } as const
 
 export const FilesChannels = {
+  /** Lean directory listing (name/isDir) - remote add-project path autocomplete. */
   LIST_DIR: 'files:list-dir',
-  READ_FILE: 'files:read-file',
   WRITE_FILE: 'files:write-file',
   DELETE_FILE: 'files:delete-file',
-  READ_BATCH: 'files:read-batch',
   RESOLVE: 'files:resolve',
   LIST_ALL: 'files:list-all',
-  GREP_SYMBOL: 'files:grep-symbol',
 } as const
 
 /**
@@ -124,8 +120,6 @@ export const GitChannels = {
   LIST_REFS: 'git:list-refs',
   SWITCH_REF: 'git:switch-ref',
   CURRENT_BRANCH: 'git:current-branch',
-  /** Editor gutter - hunks for a single file, computed against HEAD. */
-  FILE_DIFF: 'git:file-diff',
   /**
    * Create a deterministic-path worktree under userData/worktrees for a
    * new chat session and return its absolute path + the branch we
@@ -133,21 +127,6 @@ export const GitChannels = {
    * so START_SESSION uses it as cwd.
    */
   CREATE_SESSION_WORKTREE: 'git:create-session-worktree',
-} as const
-
-/**
- * LSP bridge - main-process spawns typescript-language-server / pyright
- * per workspace; renderer sends document lifecycle + queries via these
- * channels and gets typed results / diagnostics back.
- */
-export const LspChannels = {
-  OPEN: 'lsp:open',
-  CHANGE: 'lsp:change',
-  CLOSE: 'lsp:close',
-  DEFINITION: 'lsp:definition',
-  REFERENCES: 'lsp:references',
-  HOVER: 'lsp:hover',
-  DOCUMENT_SYMBOLS: 'lsp:document-symbols',
 } as const
 
 /**

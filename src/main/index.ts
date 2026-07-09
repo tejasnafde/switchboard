@@ -26,8 +26,6 @@ import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
 import { registerIdeHandlers } from './ipc/ide'
-import { registerLspHandlers } from './ipc/lsp'
-import { disposeAllLspServers } from './lsp/manager'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { resolveProviderInstance } from './db/providerInstances'
@@ -405,7 +403,6 @@ app.whenReady().then(() => {
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
   registerIdeHandlers(backendHost)
-  registerLspHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
   // Local-only resolver: hand preload an instance's oauth_dir BASENAME (a path
@@ -460,6 +457,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   providerRegistry?.stopAll()
   void stopAllMachineConnections()
-  disposeAllLspServers()
   closeDb()
 })

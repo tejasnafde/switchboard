@@ -23,11 +23,13 @@ describe('registerFilesHandlers via BackendHost', () => {
     expect([...host.handlers.keys()].sort()).toEqual(Object.values(FilesChannels).sort())
   })
 
-  it('handlers run without Electron - grep-symbol rejects a non-identifier', async () => {
+  it('handlers run without Electron - list-dir rejects a path escaping the root', async () => {
     const host = new FakeHost()
     registerFilesHandlers(host)
-    const grep = host.handlers.get(FilesChannels.GREP_SYMBOL)!
-    expect(await grep('/repo', 'not a symbol!!')).toEqual({ ok: true, hits: [] })
+    const listDir = host.handlers.get(FilesChannels.LIST_DIR)!
+    const res = (await listDir('/repo', '../../etc')) as { ok: boolean; entries: unknown[] }
+    expect(res.ok).toBe(false)
+    expect(res.entries).toEqual([])
   })
 
   it('resolve reports a missing path as not-existing', async () => {

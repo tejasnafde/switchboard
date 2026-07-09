@@ -14,8 +14,6 @@ import {
   removeSetting,
   createConversation,
   setConversationWorktree,
-  loadEditorTabs,
-  saveEditorTabs,
   saveBookmark,
   removeBookmark,
   listBookmarks,
@@ -222,39 +220,6 @@ export function registerAppHandlers(host: BackendHost): void {
   host.handle(AppChannels.ASSIGN_PROJECT_WORKSPACE, (projectPath: string, workspaceId: string | null) => {
     setProjectWorkspace(projectPath, workspaceId); return { ok: true }
   })
-
-  // Create a new conversation in the database
-  host.handle(AppChannels.EDITOR_TABS_LOAD, (sessionId: string) => {
-    try {
-      const rows = loadEditorTabs(sessionId)
-      return {
-        ok: true,
-        tabs: rows.map((r) => ({
-          path: r.path,
-          cursorLine: r.cursor_line,
-          cursorCol: r.cursor_col,
-          scrollTop: r.scroll_top,
-          isActive: !!r.is_active,
-        })),
-      }
-    } catch (err) {
-      return { ok: false, error: (err as Error).message, tabs: [] }
-    }
-  })
-
-  host.handle(
-    AppChannels.EDITOR_TABS_SAVE,
-    (sessionId: string,
-      tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
-    ) => {
-      try {
-        saveEditorTabs(sessionId, tabs)
-        return { ok: true }
-      } catch (err) {
-        return { ok: false, error: (err as Error).message }
-      }
-    },
-  )
 
   host.handle(
     AppChannels.SET_CONVERSATION_WORKTREE,
