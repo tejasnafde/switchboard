@@ -80,6 +80,7 @@ interface DbRow {
   accent_color: string | null
   auth_mode: string
   env_encrypted: Buffer | null
+  env_keys: string | null
   oauth_dir: string | null
   config_json: string | null
   enabled: number
@@ -175,15 +176,31 @@ function rowToFull(r: DbRow): ProviderInstanceRow {
   }
 }
 
+/** Key NAMES for the wire shape without touching env_encrypted - decrypting
+ *  on LIST hit the macOS Keychain at every boot (password prompt on unsigned
+ *  builds). Uses the plaintext env_keys column; legacy rows parse the blob
+ *  only when it is plaintext, encrypted ones show [] until their next save. */
+function envKeysNoDecrypt(r: DbRow): string[] {
+  if (r.env_keys) {
+    try {
+      const parsed = JSON.parse(r.env_keys)
+      if (Array.isArray(parsed)) return parsed.filter((k): k is string => typeof k === 'string')
+    } catch { log.warn(`malformed env_keys for instance ${r.id}`) }
+  }
+  const blob = r.env_encrypted
+  if (!blob || blob.length === 0) return []
+  if (hasMagic(blob, ENC_MAGIC) || hasMagic(blob, PASS_MAGIC)) return []
+  return Object.keys(parseEnv(blob.toString('utf-8'))).sort()
+}
+
 function rowToWire(r: DbRow): ProviderInstanceWire {
-  const env = decryptEnv(r.env_encrypted)
   return {
     id: r.id,
     agentType: r.agent_type as AgentType,
     displayName: r.display_name,
     accentColor: r.accent_color,
     authMode: r.auth_mode === 'oauth_dir' ? 'oauth_dir' : 'env',
-    envKeys: Object.keys(env).sort(),
+    envKeys: envKeysNoDecrypt(r),
     oauthDir: r.oauth_dir,  // wire keeps the literal so the user sees what they typed
     enabled: r.enabled === 1,
     createdAt: r.created_at,
@@ -243,9 +260,11 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
 
   if (existing) {
     // Update path. `env: null` keeps existing encrypted blob untouched.
-    const newEnv = input.env === null || input.env === undefined
-      ? existing.env_encrypted
-      : encryptEnv(input.env)
+    const envUntouched = input.env === null || input.env === undefined
+    const newEnv = envUntouched ? existing.env_encrypted : encryptEnv(input.env!)
+    const newEnvKeys = envUntouched
+      ? existing.env_keys
+      : JSON.stringify(Object.keys(input.env!).sort())
     const newAuth = input.authMode ?? existing.auth_mode
     const newName = input.displayName
     const newAccent = input.accentColor === undefined ? existing.accent_color : input.accentColor
@@ -257,10 +276,10 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
     db.prepare(
       `UPDATE provider_instances
           SET display_name = ?, accent_color = ?, auth_mode = ?,
-              env_encrypted = ?, oauth_dir = ?, config_json = ?,
+              env_encrypted = ?, env_keys = ?, oauth_dir = ?, config_json = ?,
               enabled = ?, updated_at = ?
         WHERE id = ?`
-    ).run(newName, newAccent, newAuth, newEnv, newOauthDir, newConfig, newEnabled, now, existing.id)
+    ).run(newName, newAccent, newAuth, newEnv, newEnvKeys, newOauthDir, newConfig, newEnabled, now, existing.id)
     return rowToWire(db.prepare('SELECT * FROM provider_instances WHERE id = ?').get(existing.id) as DbRow)
   }
 
@@ -273,13 +292,14 @@ export function upsertProviderInstance(input: ProviderInstanceUpsertInput): Prov
   db.prepare(
     `INSERT INTO provider_instances
        (id, agent_type, display_name, accent_color, auth_mode,
-        env_encrypted, oauth_dir, config_json, enabled, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        env_encrypted, env_keys, oauth_dir, config_json, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, input.agentType, input.displayName,
     input.accentColor ?? null,
     input.authMode ?? 'env',
     env,
+    input.env ? JSON.stringify(Object.keys(input.env).sort()) : null,
     input.oauthDir ?? null,
     config,
     input.enabled === false ? 0 : 1,

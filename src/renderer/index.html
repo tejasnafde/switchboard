@@ -7,6 +7,12 @@
     <link rel="icon" type="image/png" sizes="16x16" href="../../resources/icons/switchboard-favicon-16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="../../resources/icons/switchboard-favicon-32.png" />
     <title>Switchboard</title>
+    <!-- Pre-paint theme from the localStorage mirror (theme-store writes it);
+         the settings-DB read lands after mount, too late for the first frame. -->
+    <script>
+      var t = localStorage.getItem('sb-theme')
+      if (t === 'light' || t === 'translucent') document.documentElement.className = 'theme-' + t
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -229,6 +229,17 @@ export class ProviderRegistry {
       }
     })
 
+    this.host.handle(ProviderChannels.LIST_MODELS, async (threadId: string) => {
+      const adapter = this.sessionAdapters.get(threadId)
+      if (!adapter?.listModels) return null
+      try {
+        return await adapter.listModels(threadId)
+      } catch (err) {
+        log.warn(`listModels failed for ${threadId}: ${err}`)
+        return null
+      }
+    })
+
     this.host.handle(ProviderChannels.OPENCODE_LIST_MODELS, async () => {
       try {
         return await this.opencodeAcp.listAvailableModels()

@@ -75,11 +75,11 @@ function useGroupUnreadCount(sessionIds: string[]): number {
   })
 }
 
-/** Aggregated unread badge on workspace headers. Only rendered while
- *  the workspace is collapsed - when expanded, the per-session pills
- *  inside cover the same information and the workspace pill becomes
+/** Aggregated unread badge on workspace and project headers. Only rendered
+ *  while the group is collapsed - when expanded, the per-session pills
+ *  inside cover the same information and the group pill becomes
  *  redundant noise. */
-function WorkspaceUnreadBadge({ sessionIds, expanded }: { sessionIds: string[]; expanded?: boolean }) {
+function GroupUnreadBadge({ sessionIds, expanded }: { sessionIds: string[]; expanded?: boolean }) {
   const count = useGroupUnreadCount(sessionIds)
   if (count === 0 || expanded) return null
   return (
@@ -543,6 +543,10 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           <span className="sidebar-project-name">
             {project.name}
           </span>
+          <GroupUnreadBadge
+            sessionIds={project.sessions.map((s) => s.id)}
+            expanded={!isCollapsed}
+          />
           <span className="sidebar-project-count">
             {project.sessions.length || ''}
           </span>
@@ -783,7 +787,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
                     <span className="sidebar-workspace-name">
                       {group.workspace?.name ?? 'Ungrouped'}
                     </span>
-                    <WorkspaceUnreadBadge
+                    <GroupUnreadBadge
                       sessionIds={group.projects.flatMap((p) => p.sessions.map((s) => s.id))}
                       expanded={!wsCollapsed}
                     />

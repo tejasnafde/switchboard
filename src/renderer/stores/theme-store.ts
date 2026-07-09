@@ -15,6 +15,9 @@ function resolve(theme: ThemeName): 'dark' | 'light' | 'translucent' {
 function apply(theme: ThemeName) {
   const resolved = resolve(theme)
   document.documentElement.className = `theme-${resolved}`
+  // Mirror for the pre-paint script in index.html (kills the dark first-frame
+  // flash before the async settings-DB read lands).
+  try { localStorage.setItem('sb-theme', resolved) } catch { /* quota / private mode - flash is cosmetic */ }
   updateAllTerminalThemes()
   window.api?.app?.setVibrancy?.(resolved === 'translucent').catch(() => {})
 }
