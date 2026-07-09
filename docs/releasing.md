@@ -61,8 +61,7 @@ a real `.zip` / `.exe`.
   electron-builder will refuse to publish if the version doesn't match
   the git tag (sans `v` prefix).
 - Make sure no secrets are about to land - `git diff` for any
-  `ANTHROPIC_API_KEY`, `GH_TOKEN`, `.env*`, `*.pem`, `*.key` etc. The
-  `.gitignore` covers the common cases but a manual scan never hurts.
+  `ANTHROPIC_API_KEY`, `GH_TOKEN`, `.env*`, `*.pem`, `*.key` etc.
 
 ### 2. Cut the version
 
@@ -128,8 +127,7 @@ unsigned. Users will see one of two prompts:
 - **After every auto-update**: macOS Gatekeeper re-quarantines the
   replaced app bundle. Users have to right-click → Open again, **or**
   run `xattr -d com.apple.quarantine /Applications/Switchboard.app`
-  in a terminal. There is no way around this without paying $99/year
-  for the Apple Developer Program; document loudly.
+  in a terminal. The only real fix is a $99/year Apple Developer cert.
 
 The auto-update flow itself works fine - the updater downloads the
 new version and replaces the app bundle. It's purely the post-replace

@@ -43,6 +43,34 @@ import type { AgentType } from '@shared/types'
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
 
+// ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
+// a stray reload kills terminal panes and in-flight agent turns.
+const menuLog = createMainLogger('app:menu')
+let reloadDialogOpen = false
+async function confirmReload(force: boolean): Promise<void> {
+  const win = BrowserWindow.getFocusedWindow() ?? mainWindow
+  if (!win || win.isDestroyed() || reloadDialogOpen) return
+  reloadDialogOpen = true
+  try {
+    const { response } = await dialog.showMessageBox(win, {
+      type: 'warning',
+      buttons: [force ? 'Force Reload' : 'Reload', 'Cancel'],
+      defaultId: 0,
+      cancelId: 1, // Escape lands here
+      message: force ? 'Force reload Switchboard?' : 'Reload Switchboard?',
+      detail:
+        'This restarts the renderer. Terminal panes, in-flight agent turns, and unsent drafts in this window will be reset.',
+    })
+    if (response === 0) {
+      menuLog.info('renderer reload confirmed', { force })
+      if (force) win.webContents.reloadIgnoringCache()
+      else win.webContents.reload()
+    }
+  } finally {
+    reloadDialogOpen = false
+  }
+}
+
 // Custom protocol for onboarding tour videos. Must be registered as
 // privileged BEFORE app.whenReady so the renderer can use it in
 // <video src="sb-tour://...">. Maps `sb-tour://<id>.mp4` to
@@ -342,7 +370,17 @@ app.whenReady().then(() => {
     {
       label: 'View',
       submenu: [
-        { role: 'reload' }, { role: 'forceReload' }, { role: 'toggleDevTools' },
+        {
+          label: 'Reload',
+          accelerator: 'CmdOrCtrl+R',
+          click: () => { void confirmReload(false) },
+        },
+        {
+          label: 'Force Reload',
+          accelerator: 'Shift+CmdOrCtrl+R',
+          click: () => { void confirmReload(true) },
+        },
+        { role: 'toggleDevTools' },
         { type: 'separator' },
         { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' },
         { type: 'separator' }, { role: 'togglefullscreen' },
