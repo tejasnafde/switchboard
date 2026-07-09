@@ -1,0 +1,30 @@
+{
+  "name": "sb-bridge",
+  "displayName": "Switchboard Bridge",
+  "description": "Connects the embedded code-server workbench to Switchboard (open-at-line, cmd+l selection capture).",
+  "version": "0.0.1",
+  "publisher": "switchboard",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "switchboard.sendSelection",
+        "title": "Switchboard: Send Selection to Chat"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "switchboard.sendSelection",
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "when": "editorTextFocus"
+      }
+    ]
+  }
+}
