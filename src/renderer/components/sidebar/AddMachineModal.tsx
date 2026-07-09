@@ -73,14 +73,15 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement
     if (e.key === 'Escape') {
       e.stopPropagation()
       onClose()
-    } else if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+    } else if (e.key === 'Enter' && target.tagName === 'INPUT') {
       // Enter in the ssh-config search picks the top match; Enter anywhere
       // else submits the manual form. Without the split, Enter while
       // searching would submit a half-abandoned manual entry.
-      if ((e.target as HTMLElement).dataset.sshSearch) {
+      if (target.dataset.sshSearch) {
         if (filteredHosts.length > 0) addFromSsh(filteredHosts[0])
       } else {
         addManual()

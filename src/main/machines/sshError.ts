@@ -25,8 +25,7 @@ const NOISE = [
   /^starting.*tunnel/i,
   /^listening on port/i,
   /^testing if tunnel/i,
-  // gcloud IAP prints an upload-bandwidth advisory on teardown; it is never
-  // the cause of a failure (seen live: it became the "reason" for a killed tunnel).
+  // gcloud IAP prints an upload-bandwidth advisory on teardown; never a failure cause.
   /^please see https:/i,
   /increasing the tcp upload bandwidth/i,
 ]
