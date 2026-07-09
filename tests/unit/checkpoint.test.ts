@@ -121,7 +121,11 @@ describe('checkpoint against real git', () => {
   it('isolates turn changes on a dirty repo, including untracked + deleted', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sb-ckpt-real-'))
     try {
-      const git = (args: string[]) => execFileP('git', args, { cwd: dir })
+      // Scrub GIT_* vars: when this suite runs inside a pre-commit hook, git
+      // exports GIT_DIR/GIT_INDEX_FILE, which would make this nested git
+      // operate on the OUTER repo (and recursively fire its hooks).
+      const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')))
+      const git = (args: string[]) => execFileP('git', args, { cwd: dir, env })
       await git(['init', '-q'])
       await git(['config', 'user.email', 't@t.io'])
       await git(['config', 'user.name', 't'])

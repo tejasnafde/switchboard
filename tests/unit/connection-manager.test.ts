@@ -36,11 +36,15 @@ function deps(over: Partial<ConnectionManagerDeps> = {}): ConnectionManagerDeps 
 }
 
 describe('ConnectionManager', () => {
+  /** Progress detail re-emits 'connecting'; collapse those for sequence checks. */
+  const transitions = (statuses: Array<[string, string]>) =>
+    statuses.map((s) => s[1]).filter((s, i, arr) => s !== arr[i - 1])
+
   it('connect goes connecting then connected when health passes', async () => {
     const d = deps()
     const mgr = new ConnectionManager(d)
     await mgr.connect(machine())
-    expect(d.statuses).toEqual([['m1', 'connecting'], ['m1', 'connected']])
+    expect(transitions(d.statuses)).toEqual(['connecting', 'connected'])
     expect(mgr.statusOf('m1')).toBe('connected')
   })
 
@@ -69,7 +73,7 @@ describe('ConnectionManager', () => {
     await mgr.connect(machine())
     expect(mgr.statusOf('m1')).toBe('error')
     expect(proc.kill).toHaveBeenCalled()
-    expect(d.statuses.map((s) => s[1])).toEqual(['connecting', 'error'])
+    expect(transitions(d.statuses)).toEqual(['connecting', 'error'])
   })
 
   it('disconnect kills the tunnel and returns to offline', async () => {
@@ -272,13 +276,78 @@ describe('ConnectionManager', () => {
     expect(statuses.find((s) => s[1] === 'error')?.[3]).toBe('health check failed')
   })
 
-  it('emits no reason on a successful connect/healthy transition', async () => {
+  it('emits no reason on terminal transitions of a successful connect', async () => {
     const statuses: Array<[string, string, string | null, string | undefined]> = []
     const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
       statuses.push([id, status, url, reason])
     const mgr = new ConnectionManager(deps({ onStatus }))
     await mgr.connect(machine())
-    expect(statuses.every((s) => s[3] === undefined)).toBe(true)
+    // 'connecting' re-emissions carry progress detail in the reason slot; only
+    // terminal statuses must be reason-free on success.
+    expect(statuses.filter((s) => s[1] !== 'connecting').every((s) => s[3] === undefined)).toBe(true)
+  })
+
+  it('emits progress detail as repeated connecting statuses (tunnel + health + provision steps)', async () => {
+    const statuses: Array<[string, string, string | null, string | undefined]> = []
+    const onStatus = (id: string, status: string, url: string | null, reason?: string) =>
+      statuses.push([id, status, url, reason])
+    const provision = async (_m: Machine, onStep?: (label: string) => void) => {
+      onStep?.('npm install (this can take a minute)')
+      return { action: 'install' }
+    }
+    const mgr = new ConnectionManager(deps({ onStatus, provision }))
+    await mgr.connect(machine())
+    const details = statuses.filter((s) => s[1] === 'connecting').map((s) => s[3])
+    expect(details).toContain('npm install (this can take a minute)')
+    expect(details).toContain('opening ssh tunnel')
+    expect(details).toContain('waiting for the remote server')
+  })
+
+  it('marks an auto-reconnecting error with willRetry, and the final give-up without it', async () => {
+    const emissions: Array<{ status: string; willRetry?: boolean }> = []
+    const onStatus = (_id: string, status: string, _url: string | null, _reason?: string, willRetry?: boolean) =>
+      emissions.push({ status, willRetry })
+    const procs: Array<ReturnType<typeof fakeProc>> = []
+    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const waitForHealth = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValue({ ok: false, reason: 'down' })
+    const timers: Array<() => void | Promise<void>> = []
+    const mgr = new ConnectionManager(deps({ onStatus, spawnTunnel, waitForHealth, maxReconnects: 1, setTimer: (fn) => timers.push(fn) }))
+    await mgr.connect(machine())
+
+    procs[0].fireExit() // drop: schedules the one allowed retry
+    expect(emissions.filter((e) => e.status === 'error').at(-1)?.willRetry).toBe(true)
+
+    await timers[0]() // retry fails health, budget exhausted
+    expect(mgr.statusOf('m1')).toBe('error')
+    expect(emissions.filter((e) => e.status === 'error').at(-1)?.willRetry).toBeUndefined()
+  })
+
+  it('reuses the same local port across reconnects so the tunnel url stays stable', async () => {
+    const allocatePort = vi.fn(async () => 7681)
+    const procs: Array<ReturnType<typeof fakeProc>> = []
+    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    const timers: Array<() => void | Promise<void>> = []
+    const mgr = new ConnectionManager(deps({ allocatePort, spawnTunnel, maxReconnects: 2, setTimer: (fn) => timers.push(fn) }))
+    await mgr.connect(machine())
+    const firstUrl = mgr.urlOf('m1')
+
+    procs[0].fireExit()
+    await timers[0]()
+    expect(mgr.statusOf('m1')).toBe('connected')
+    expect(mgr.urlOf('m1')).toBe(firstUrl)
+    expect(allocatePort).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces the tunnel exitReason on a drop-to-error transition', async () => {
+    const reasons: Array<string | undefined> = []
+    const onStatus = (_id: string, status: string, _url: string | null, reason?: string) => {
+      if (status === 'error') reasons.push(reason)
+    }
+    const proc = { ...fakeProc(), exitReason: () => 'tunnel closed: Permission denied (publickey).' }
+    const mgr = new ConnectionManager(deps({ onStatus, spawnTunnel: () => proc }))
+    await mgr.connect(machine())
+    proc.fireExit()
+    expect(reasons).toEqual(['tunnel closed: Permission denied (publickey).'])
   })
 
   it('disconnectAll kills every tracked tunnel', async () => {

@@ -1,17 +1,20 @@
 /**
  * Add-machine picker: pick a host from ~/.ssh/config, or type one manually.
- * Selecting/submitting creates a remote machine row via the machine store.
+ * Selecting/submitting creates a remote machine row via the machine store and
+ * immediately kicks off its first connect.
  */
 import { useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { useMachineStore } from '../../stores/machine-store'
 import { filterSshHosts } from './sshHostFilter'
 import { isDuplicateMachine, parsePort } from './addMachineValidation'
-import type { SshHost } from '@shared/machines'
+import type { SshHost, MachineInput } from '@shared/machines'
 
 export function AddMachineModal({ onClose }: { onClose: () => void }) {
   const sshHosts = useMachineStore((s) => s.sshHosts)
   const remotes = useMachineStore((s) => s.remotes)
   const add = useMachineStore((s) => s.add)
+  const connect = useMachineStore((s) => s.connect)
 
   const [name, setName] = useState('')
   const [host, setHost] = useState('')
@@ -24,54 +27,64 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
   // Guards against a double-click firing two CREATE calls before the first
   // one's re-hydrate lands (which would add the same host twice).
   const [adding, setAdding] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const filteredHosts = filterSshHosts(sshHosts, search)
   const parsedPort = parsePort(port)
 
   const runAs = () => remoteUser.trim() || null
 
-  const addFromSsh = async (h: SshHost) => {
-    if (adding || isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })) return
+  // Add, auto-connect, close. A null result (create threw) keeps the modal
+  // open with an inline error instead of failing silently.
+  const submit = async (input: MachineInput) => {
     setAdding(true)
+    setError(null)
     try {
-      const created = await add({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
-      if (created) onClose()
+      const created = await add(input)
+      if (created) {
+        void connect(created.id)
+        onClose()
+      } else {
+        setError('Could not add machine. Check the app log for details.')
+      }
     } finally {
       setAdding(false)
     }
   }
 
-  const addManual = async () => {
-    if (!host.trim() || adding || parsedPort === null) return
-    setAdding(true)
-    try {
-      const created = await add({
-        name: name.trim() || host.trim(),
-        sshHost: host.trim(),
-        sshUser: user.trim() || null,
-        sshPort: parsedPort,
-        remoteUser: runAs(),
-      })
-      if (created) onClose()
-    } finally {
-      setAdding(false)
+  const addFromSsh = (h: SshHost) => {
+    if (adding || isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })) return
+    void submit({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
+  }
+
+  const manualDup =
+    !!host.trim() && isDuplicateMachine(remotes, { sshHost: host.trim(), sshUser: user.trim() || null })
+  const manualReady = !!host.trim() && parsedPort !== null && !manualDup && !adding
+
+  const addManual = () => {
+    if (!manualReady) return
+    void submit({
+      name: name.trim() || host.trim(),
+      sshHost: host.trim(),
+      sshUser: user.trim() || null,
+      sshPort: parsedPort!,
+      remoteUser: runAs(),
+    })
+  }
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation()
+      onClose()
+    } else if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+      addManual()
     }
   }
 
   return (
     <div className="machine-modal-overlay" onClick={onClose}>
-      <div className="machine-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="machine-modal" onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
         <div className="machine-modal-title">Add machine</div>
-
-        <div className="machine-modal-section">
-          <div className="machine-modal-label">Run as user (sudo, optional)</div>
-          <input
-            className="machine-modal-input"
-            placeholder="e.g. ubuntu - leave blank to use the login user"
-            value={remoteUser}
-            onChange={(e) => setRemoteUser(e.target.value)}
-          />
-        </div>
 
         {sshHosts.length > 0 && (
           <div className="machine-modal-section">
@@ -90,7 +103,7 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
                   <button
                     key={h.alias}
                     className="machine-modal-host"
-                    onClick={() => void addFromSsh(h)}
+                    onClick={() => addFromSsh(h)}
                     disabled={adding || isDup}
                     title={isDup ? 'Already added' : undefined}
                   >
@@ -112,8 +125,14 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="machine-modal-section">
-          <div className="machine-modal-label">Manual</div>
-          <input className="machine-modal-input" placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+          <div className="machine-modal-label">{sshHosts.length > 0 ? 'Manual' : 'Host'}</div>
+          <input
+            className="machine-modal-input"
+            placeholder="Name (optional)"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus={sshHosts.length === 0}
+          />
           <input className="machine-modal-input" placeholder="Host (e.g. 10.0.0.4)" value={host} onChange={(e) => setHost(e.target.value)} />
           <div className="machine-modal-row">
             <input className="machine-modal-input" placeholder="User" value={user} onChange={(e) => setUser(e.target.value)} />
@@ -128,11 +147,27 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
           {port.trim() !== '' && parsedPort === null && (
             <div className="machine-modal-empty">Port must be an integer between 1 and 65535</div>
           )}
+          {manualDup && <div className="machine-modal-empty">This host is already added</div>}
         </div>
+
+        <details className="machine-modal-section machine-modal-advanced">
+          <summary className="machine-modal-label">Advanced</summary>
+          <div className="machine-modal-label">Run as user (sudo, optional)</div>
+          <input
+            className="machine-modal-input"
+            placeholder="e.g. ubuntu - leave blank to use the login user"
+            value={remoteUser}
+            onChange={(e) => setRemoteUser(e.target.value)}
+          />
+        </details>
+
+        {error && <div className="machine-modal-error">{error}</div>}
 
         <div className="machine-modal-actions">
           <button className="machine-modal-cancel" onClick={onClose}>Cancel</button>
-          <button className="machine-modal-add" onClick={() => void addManual()} disabled={!host.trim() || adding || parsedPort === null}>Add</button>
+          <button className="machine-modal-add" onClick={addManual} disabled={!manualReady}>
+            {adding ? 'Adding…' : 'Add + connect'}
+          </button>
         </div>
       </div>
     </div>

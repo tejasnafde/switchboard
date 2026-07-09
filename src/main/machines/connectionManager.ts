@@ -14,6 +14,8 @@ import { reconnectDelay } from './reconnectBackoff'
 export interface TunnelProcess {
   kill: () => void
   onExit: (cb: () => void) => void
+  /** Human-readable cause of an exit (summarized ssh stderr), if any was captured. */
+  exitReason?: () => string | undefined
 }
 
 export interface ConnectionManagerDeps {
@@ -23,10 +25,16 @@ export interface ConnectionManagerDeps {
   waitForHealth: (url: string) => Promise<{ ok: boolean; reason?: string }>
   remotePort: number
   remoteCommand: string
-  /** url is the local ws:// to dial when connected, null otherwise. reason is set on error/fail transitions. */
-  onStatus: (machineId: string, status: ConnectionStatus, url: string | null, reason?: string) => void
-  /** Install/upgrade the remote backend before the tunnel. 'no-node' aborts. */
-  provision?: (machine: Machine) => Promise<{ action: string }>
+  /**
+   * url is the local ws:// to dial when connected, null otherwise. reason is
+   * set on error/fail transitions, and carries progress detail ("npm install…")
+   * on repeated 'connecting' emissions. willRetry marks an error that an
+   * auto-reconnect is about to retry, so the UI can show "reconnecting" instead
+   * of a dead-end failure.
+   */
+  onStatus: (machineId: string, status: ConnectionStatus, url: string | null, reason?: string, willRetry?: boolean) => void
+  /** Install/upgrade the remote backend before the tunnel. 'no-node' aborts. onStep reports progress labels. */
+  provision?: (machine: Machine, onStep?: (label: string) => void) => Promise<{ action: string }>
   /** Auto-reconnect a dropped tunnel this many times before giving up (default 0). */
   maxReconnects?: number
   reconnectDelayMs?: (attempt: number) => number
@@ -38,6 +46,11 @@ export interface ConnectionManagerDeps {
 interface Conn {
   status: ConnectionStatus
   url: string
+  /* ponytail: the port is reused across reconnects so the tunnel URL stays
+     stable and the renderer's transport swap is seamless. Another process
+     could grab the freed port between attempts - the next attempt then fails
+     and re-allocates. */
+  port: number | null
   proc: TunnelProcess | null
   attempts: number
   intentional: boolean
@@ -56,6 +69,13 @@ export class ConnectionManager {
   urlOf(machineId: string): string | null {
     const conn = this.conns.get(machineId)
     return conn?.status === 'connected' ? conn.url : null
+  }
+
+  /** Snapshot of every tracked connection, for a reloaded renderer to resync from. */
+  statuses(): Record<string, { status: ConnectionStatus; url: string | null }> {
+    const out: Record<string, { status: ConnectionStatus; url: string | null }> = {}
+    for (const [id, conn] of this.conns) out[id] = { status: conn.status, url: this.urlOf(id) }
+    return out
   }
 
   /** User-initiated connect: clears the reconnect budget, then attempts. */
@@ -93,6 +113,7 @@ export class ConnectionManager {
     this.conns.set(machine.id, {
       status: prev?.status ?? 'offline',
       url: prev?.url ?? '',
+      port: prev?.port ?? null,
       proc: null,
       attempts: prev?.attempts ?? 0,
       intentional: false,
@@ -101,16 +122,17 @@ export class ConnectionManager {
     this.transition(machine.id, 'connect')
 
     try {
-      const port = await this.deps.allocatePort()
+      const port = this.conns.get(machine.id)?.port ?? (await this.deps.allocatePort())
       const claimed = this.conns.get(machine.id)
       if (!claimed || claimed.epoch !== epoch) return
       const url = `ws://127.0.0.1:${port}`
+      claimed.port = port
       claimed.url = url
 
       if (this.deps.provision) {
         let res: { action: string }
         try {
-          res = await this.deps.provision(machine)
+          res = await this.deps.provision(machine, (label) => this.progress(machine.id, epoch, label))
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           this.deps.onLog?.(`provision failed for ${machine.name}: ${message}`)
@@ -122,17 +144,19 @@ export class ConnectionManager {
         if (this.conns.get(machine.id)?.epoch !== epoch) return
       }
 
+      this.progress(machine.id, epoch, 'opening ssh tunnel')
       const { command, args } = buildTunnelCommand(machine, {
         localPort: port,
         remotePort: this.deps.remotePort,
         remoteCommand: this.deps.remoteCommand,
       })
       const proc = this.deps.spawnTunnel(command, args)
-      proc.onExit(() => this.onFailure(machine, epoch))
+      proc.onExit(() => this.onFailure(machine, epoch, proc.exitReason?.()))
       const conn = this.conns.get(machine.id)
       if (!conn || conn.epoch !== epoch) return
       conn.proc = proc
 
+      this.progress(machine.id, epoch, 'waiting for the remote server')
       const health = await this.deps.waitForHealth(url)
       if (this.conns.get(machine.id)?.epoch !== epoch) return
       if (health.ok) {
@@ -159,7 +183,7 @@ export class ConnectionManager {
     const max = this.deps.maxReconnects ?? 0
     if (conn.attempts < max) {
       conn.attempts++
-      this.transition(machine.id, 'fail', reason)
+      this.transition(machine.id, 'fail', reason, true)
       const delay = (this.deps.reconnectDelayMs ?? ((n) => reconnectDelay(n, { baseMs: 1000, capMs: 30_000 })))(conn.attempts)
       // A manual connect/disconnect in the meantime bumps the epoch (or flips
       // status); this timer must then no-op instead of firing an interleaved attempt.
@@ -175,16 +199,24 @@ export class ConnectionManager {
     }
   }
 
+  /** Cosmetic progress detail while an attempt is in flight, re-emitted as 'connecting'. */
+  private progress(machineId: string, epoch: number, detail: string): void {
+    const conn = this.conns.get(machineId)
+    if (!conn || conn.epoch !== epoch || conn.status !== 'connecting') return
+    this.deps.onStatus(machineId, 'connecting', null, detail)
+  }
+
   private transition(
     machineId: string,
     event: 'connect' | 'healthy' | 'fail' | 'disconnect',
     reason?: string,
+    willRetry?: boolean,
   ): void {
     const conn = this.conns.get(machineId)
     if (!conn) return
     const next = nextConnectionStatus(conn.status, event)
     if (next === conn.status) return
     conn.status = next
-    this.deps.onStatus(machineId, next, this.urlOf(machineId), reason)
+    this.deps.onStatus(machineId, next, this.urlOf(machineId), reason, willRetry)
   }
 }

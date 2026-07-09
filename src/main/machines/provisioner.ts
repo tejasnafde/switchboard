@@ -45,7 +45,9 @@ export async function provisionRemote(
   inputs: ProvisionInputs,
   runner: ProcRunner,
   log?: (msg: string) => void,
+  onStep?: (label: string) => void,
 ): Promise<ProvisionResult> {
+  onStep?.('checking remote')
   const probeCmd = buildProbeCommand(machine)
   const probeOut = await runner.exec(probeCmd.command, probeCmd.args)
   if (probeOut.code !== 0) {
@@ -60,6 +62,7 @@ export async function provisionRemote(
 
   const run = async (label: string, remoteCommand: string, stdin?: string | { file: string }) => {
     log?.(`provision ${machine.id}: ${label}`)
+    onStep?.(label)
     const c = buildRemoteShellCommand(machine, remoteCommand)
     const res = await runner.exec(c.command, c.args, stdin)
     if (res.code !== 0) throw new Error(`${label} failed (${res.code}): ${summarizeSshError(res.stderr) || remoteCommand}`)
