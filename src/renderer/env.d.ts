@@ -16,4 +16,18 @@ declare module 'react' {
     WebkitAppRegion?: 'drag' | 'no-drag'
     appRegion?: 'drag' | 'no-drag'
   }
+
+  // Electron <webview> tag (webviewTag: true) - hosts the embedded IDE.
+  namespace JSX {
+    interface IntrinsicElements {
+      webview: React.DetailedHTMLProps<
+        React.HTMLAttributes<HTMLElement> & {
+          src?: string
+          partition?: string
+          allowpopups?: string
+        },
+        HTMLElement
+      >
+    }
+  }
 }

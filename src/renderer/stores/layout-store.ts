@@ -213,6 +213,23 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
       viewerStateBySession: map,
     })
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
+    // Route the open to the embedded IDE workbench serving this session's
+    // repo. Fire-and-forget: if the ext host isn't connected yet (workbench
+    // still booting), the click simply focuses the pane.
+    if (activeId) {
+      try {
+        const session = useAgentStore.getState().sessions.find((s) => s.id === activeId)
+        const folder = session?.worktreePath ?? session?.projectPath
+        if (folder) {
+          void window.api?.ide?.open({
+            folder,
+            path,
+            line: lineRange?.start,
+            endLine: lineRange?.end,
+          })
+        }
+      } catch { /* test env */ }
+    }
     // Single seat for nav history; back/forward replays pass recordHistory:false
     // so they don't truncate the forward stack.
     if (activeId && opts.recordHistory !== false) {

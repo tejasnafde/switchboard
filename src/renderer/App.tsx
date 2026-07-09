@@ -14,7 +14,7 @@ import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatPanel } from './components/chat/ChatPanel'
 import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
-import { FilesPane } from './components/files/FilesPane'
+import { IdePane } from './components/ide/IdePane'
 import { KanbanView } from './components/kanban/KanbanView'
 import { SettingsModal } from './components/SettingsModal'
 import { CommandPalette } from './components/CommandPalette'
@@ -25,7 +25,7 @@ import { QuickPromptModal } from './components/QuickPromptModal'
 import { QuickOpenModal } from './components/files/QuickOpenModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
-import { appendTerminalSelectionToDraft, captureSelection } from './services/contextBridge'
+import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated } from './services/session-events'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
@@ -106,6 +106,9 @@ export function App() {
   // `tour.lastSeenVersion` is missing or older than TOUR_VERSION, unless
   // the user has switched off `tour.autoplay`. Settings tab provides a
   // manual replay path either way.
+  // cmd+l inside the embedded IDE workbench: sb-bridge -> main -> here.
+  useEffect(() => window.api.ide.onSelection(appendIdeSelectionToDraft), [])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -942,7 +945,7 @@ export function App() {
                 display: rightPaneMode === 'files' ? 'flex' : 'none',
               }}
             >
-              <FilesPane />
+              <IdePane />
             </div>
           </div>
         </div>

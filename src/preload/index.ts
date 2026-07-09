@@ -4,7 +4,7 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, LspChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
@@ -571,6 +571,32 @@ const api = {
         event.machineId = machineId
         callback(event)
       }),
+  },
+
+  // ─── Embedded IDE (code-server webview) ────────────────────────
+  ide: {
+    /** Boot the per-app server (first call may download the binary) and serve `folder`. */
+    ensure: (folder: string): Promise<{ ok: true; port: number } | { ok: false; error: string }> =>
+      transport.invoke(IdeChannels.ENSURE, folder),
+    /** Route an open-at-line to the workbench serving `folder`. */
+    open: (args: { folder: string; path: string; line?: number; endLine?: number }): Promise<{ ok: boolean }> =>
+      transport.invoke(IdeChannels.OPEN, args),
+    /** Idle shutdown - kill the server, renderer blanks the webview. */
+    stop: (): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.STOP),
+    onStatus: (
+      callback: (payload: { status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number }) => void,
+    ): (() => void) =>
+      transport.on<[{ status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number }]>(
+        IdeChannels.STATUS,
+        (payload) => callback(payload),
+      ),
+    onSelection: (
+      callback: (msg: { path: string; startLine: number; endLine: number; text: string }) => void,
+    ): (() => void) =>
+      transport.on<[{ path: string; startLine: number; endLine: number; text: string }]>(
+        IdeChannels.SELECTION,
+        (msg) => callback(msg),
+      ),
   },
 
   // ─── Bookmarks ─────────────────────────────────────────────────

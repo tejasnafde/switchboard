@@ -25,6 +25,7 @@ import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machin
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
+import { registerIdeHandlers } from './ipc/ide'
 import { registerLspHandlers } from './ipc/lsp'
 import { disposeAllLspServers } from './lsp/manager'
 import { registerKanbanHandlers } from './ipc/kanban'
@@ -136,6 +137,8 @@ function createWindow(): BrowserWindow {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
+      // Embedded IDE: the code-server workbench renders in a <webview>.
+      webviewTag: true,
     },
   })
 
@@ -401,6 +404,7 @@ app.whenReady().then(() => {
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
+  registerIdeHandlers(backendHost)
   registerLspHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
@@ -436,6 +440,7 @@ app.whenReady().then(() => {
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
+      registerIdeHandlers(reactivatedHost)
       registerKanbanHandlers(reactivatedHost)
       registerMachineHandlers(reactivatedHost)
       registerAutoUpdater(mainWindow)

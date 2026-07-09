@@ -346,3 +346,42 @@ export async function sendQuickPrompt(
     return false
   }
 }
+
+/**
+ * cmd+l inside the embedded IDE: the sb-bridge extension captures the editor
+ * selection and the main process forwards it here (IdeChannels.SELECTION).
+ * Same draft/pill path as the old file-viewer branch of captureSelection().
+ * Absolute paths are relativized against the active session's repo root so
+ * pills read like repo paths.
+ */
+export function appendIdeSelectionToDraft(msg: {
+  path: string
+  startLine: number
+  endLine: number
+  text: string
+}): boolean {
+  const state = useAgentStore.getState()
+  const sid = state.activeSessionId
+  if (!sid || !msg.text.trim()) return false
+  const session = state.sessions.find((s) => s.id === sid)
+  const root = session?.worktreePath ?? session?.projectPath
+  const path = root && msg.path.startsWith(root + '/') ? msg.path.slice(root.length + 1) : msg.path
+
+  const content = formatFileViewerContext({
+    path,
+    startLine: msg.startLine,
+    endLine: msg.endLine,
+    content: msg.text.slice(0, MAX_SELECTION_CHARS),
+  })
+  const fileName = path.split('/').pop() ?? path
+  const range = msg.startLine === msg.endLine ? `${msg.startLine}` : `${msg.startLine}-${msg.endLine}`
+  const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  useDraftStore.getState().addPill(sid, {
+    id: pillId,
+    kind: 'file',
+    label: `${fileName} (${range})`,
+    content,
+  })
+  window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))
+  return true
+}

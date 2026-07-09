@@ -150,6 +150,21 @@ export const LspChannels = {
   DOCUMENT_SYMBOLS: 'lsp:document-symbols',
 } as const
 
+/**
+ * Embedded IDE (code-server in a webview). ENSURE boots the per-app server
+ * (first call pays the one-time binary download) and serves `folder`; STATUS
+ * pushes lifecycle updates; OPEN routes open-at-line to the extension host
+ * serving the folder; SELECTION carries cmd+l captures from the workbench;
+ * STOP is the idle shutdown (hidden pane reclaims the server's RAM).
+ */
+export const IdeChannels = {
+  ENSURE: 'ide:ensure',
+  STATUS: 'ide:status',
+  OPEN: 'ide:open',
+  SELECTION: 'ide:selection',
+  STOP: 'ide:stop',
+} as const
+
 export const BookmarkChannels = {
   SAVE: 'bookmark:save',
   REMOVE: 'bookmark:remove',
