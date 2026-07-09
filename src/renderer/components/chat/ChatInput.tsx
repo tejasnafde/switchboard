@@ -111,31 +111,48 @@ export function ChatInput({
   onArchive,
   onShowSlashHelp,
 }: ChatInputProps) {
-  // Static fallback list - used for Claude/Codex always, and for OpenCode
-  // until the dynamic fetch returns. Prevents the dropdown from being empty
-  // on first render while we shell out to `opencode models`.
+  // Static fallback list - used until a dynamic fetch returns (OpenCode
+  // shells out to `opencode models`; Claude asks the live SDK query).
+  // Prevents the dropdown from being empty on first render.
   const staticModels = modelsForAgent(agentType)
-  const [opencodeModels, setOpencodeModels] = useState<typeof staticModels | null>(null)
+  const [dynamicModels, setDynamicModels] = useState<typeof staticModels | null>(null)
 
-  // Dynamically fetch the full opencode model list so the dropdown reflects
+  // Dynamically fetch the model list. OpenCode: the dropdown reflects
   // whatever providers the user has configured in ~/.config/opencode.json,
-  // plus opencode's own built-in free tier (opencode/* models). Re-fetched
-  // when the user switches to the OpenCode agent.
+  // plus opencode's own built-in free tier (opencode/* models). Claude:
+  // the adapter's live query reports the account's actual availability;
+  // retried while empty because the query only exists once the first turn
+  // starts.
   useEffect(() => {
-    if (agentType !== 'opencode') return
     let cancelled = false
-    ;window.api.provider.listOpencodeModels?.().then((ids: string[]) => {
-      if (cancelled || !ids || ids.length === 0) return
-      setOpencodeModels(ids.map((id) => ({
-        id,
-        label: formatOpencodeModelLabel(id),
-        tier: inferTierFromId(id),
-      })))
-    }).catch(() => { /* keep fallback list */ })
+    setDynamicModels(null)
+    if (agentType === 'opencode') {
+      ;window.api.provider.listOpencodeModels?.().then((ids: string[]) => {
+        if (cancelled || !ids || ids.length === 0) return
+        setDynamicModels(ids.map((id) => ({
+          id,
+          label: formatOpencodeModelLabel(id),
+          tier: inferTierFromId(id),
+        })))
+      }).catch(() => { /* keep fallback list */ })
+    } else if (agentType === 'claude-code' && sessionId) {
+      let attempts = 0
+      const tryFetch = () => {
+        ;window.api.provider.listModels?.(sessionId).then((models) => {
+          if (cancelled) return
+          if (models && models.length > 0) {
+            setDynamicModels(models)
+          } else if (attempts++ < 4) {
+            setTimeout(tryFetch, 500 * (attempts + 1))
+          }
+        }).catch(() => { /* keep fallback list */ })
+      }
+      tryFetch()
+    }
     return () => { cancelled = true }
-  }, [agentType])
+  }, [agentType, sessionId])
 
-  const models = agentType === 'opencode' && opencodeModels ? opencodeModels : staticModels
+  const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
 
   // Per-session draft - reads from store, updates on every keystroke
   const draft = useDraftStore((s) => (sessionId ? s.drafts[sessionId] ?? '' : ''))
@@ -362,13 +379,14 @@ export function ChatInput({
     atRangeRef.current = null
   }, [])
 
-  // Resolve the repo root for the active session - file listings are scoped
-  // to projectPath so the at-menu shows only files from the agent's cwd.
+  // Resolve the agent's real cwd (worktree over parent checkout) - scopes the
+  // at-menu file listing AND the BranchPicker, so a worktree session's branch
+  // switch can't flip HEAD in the shared parent repo.
   const sessionsForRepo = useAgentStore((s) => s.sessions)
-  const repoRoot = useMemo(
-    () => sessionsForRepo.find((s) => s.id === sessionId)?.projectPath ?? null,
-    [sessionsForRepo, sessionId],
-  )
+  const repoRoot = useMemo(() => {
+    const s = sessionsForRepo.find((sess) => sess.id === sessionId)
+    return s?.worktreePath ?? s?.projectPath ?? null
+  }, [sessionsForRepo, sessionId])
 
   // Lazy-load the file list the first time the user opens `@`. Cached on
   // a per-mount ref so reopening this chat refreshes the listing.
@@ -823,7 +841,7 @@ export function ChatInput({
             onInstanceChange={onInstanceChange}
             model={model ?? ''}
             onModelChange={onModelChange}
-            dynamicModels={agentType === 'opencode' ? opencodeModels : null}
+            dynamicModels={dynamicModels}
           />
         )}
 

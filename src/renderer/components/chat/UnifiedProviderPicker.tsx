@@ -49,7 +49,7 @@ interface UnifiedProviderPickerProps {
   onInstanceChange: (id: string | undefined) => void
   model: string
   onModelChange: (model: string) => void
-  /** Dynamic OpenCode model list (overrides static when provided). */
+  /** Dynamic model list (OpenCode CLI / Claude SDK; overrides static when provided). */
   dynamicModels?: ModelOption[] | null
 }
 
@@ -114,7 +114,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   }, [instances, instanceId, agentType])
 
   const staticModels = modelsForAgent(agentType)
-  const models = agentType === 'opencode' && dynamicModels && dynamicModels.length > 0
+  const models = dynamicModels && dynamicModels.length > 0
     ? dynamicModels
     : staticModels
 

@@ -549,6 +549,14 @@ const api = {
       transport.invoke(ProviderChannels.OPENCODE_LIST_MODELS),
 
     /**
+     * Fetch the session adapter's live model list (Claude SDK's
+     * `supportedModels()`). Returns `null` when the adapter doesn't support
+     * it and `[]` before the session has fully initialized.
+     */
+    listModels: (threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null> =>
+      transport.invoke(ProviderChannels.LIST_MODELS, threadId),
+
+    /**
      * Fetch the agent-defined slash commands/skills for a session
      * (Claude SDK's `init.commands`, Codex's `skills/list`). Returns `[]`
      * for providers without a skill registry (OpenCode) or before the

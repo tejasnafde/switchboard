@@ -307,6 +307,17 @@ export function parseClaudeSlashCommands(input: unknown): ProviderSkill[] {
   })
 }
 
+/**
+ * Infer a picker tier from a Claude model id. Pure - exported for tests.
+ * Unknown families default to 'balanced' so new models still render.
+ */
+export function inferTier(modelId: string): 'fast' | 'balanced' | 'max' {
+  const id = modelId.toLowerCase()
+  if (id.includes('haiku') || id.includes('mini')) return 'fast'
+  if (id.includes('opus') || id.includes('fable')) return 'max'
+  return 'balanced'
+}
+
 // ─── Pending approval + session state ───────────────────────────────
 
 interface PendingApproval {
@@ -346,6 +357,12 @@ interface ActiveSession {
    * Claude-defined commands (`/commit`, `/explain`, user-defined `.claude/commands/*`).
    */
   skills: ProviderSkill[]
+  /**
+   * Models the SDK reports as available - fetched from the live query's
+   * `supportedModels()` in `listModels()` and cached here so callers get
+   * the last-known list even while no query is running.
+   */
+  models: Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>
   /** Per-instance env overlay resolved by the registry, merged on top of `buildClaudeCliEnv()`. */
   instanceEnv: Record<string, string>
   /** Per-instance CLAUDE_CONFIG_DIR (set when auth_mode='oauth_dir'). */
@@ -463,6 +480,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       partialMessageText: new Map(),
       draining: false,
       skills: [],
+      models: [],
       turnStartedAt: null,
       instanceEnv: opts.resolvedEnv ?? {},
       instanceOauthDir: opts.resolvedOauthDir ?? null,
@@ -805,6 +823,31 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     }
     return active.skills
+  }
+
+  async listModels(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>> {
+    const active = this.sessions.get(threadId)
+    if (!active) return []
+    // Prefer the live SDK source-of-truth - `supportedModels()` reflects the
+    // account's actual model availability. If the query hasn't started yet,
+    // fall back to whatever we cached from a previous call (or empty).
+    if (active.query) {
+      try {
+        const models = await active.query.supportedModels()
+        const mapped = models.map((m) => ({
+          id: m.value,
+          label: m.displayName,
+          tier: inferTier(m.value),
+        }))
+        if (mapped.length > 0) {
+          active.models = mapped
+          return mapped
+        }
+      } catch (err) {
+        log.warn(`supportedModels() failed, using cached: ${err}`)
+      }
+    }
+    return active.models
   }
 
   async interruptTurn(threadId: string): Promise<void> {

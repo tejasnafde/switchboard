@@ -171,6 +171,15 @@ export interface ProviderAdapter {
    * Optional - providers without a skill registry (OpenCode) can omit it.
    */
   listSkills?(threadId: string): Promise<import('@shared/types').ProviderSkill[]>
+
+  /**
+   * List the models the provider reports as available for this session
+   * (Claude SDK's `supportedModels()`). Returns `[]` before the session's
+   * live query exists; the renderer falls back to the static list.
+   *
+   * Optional - providers without a live model registry can omit it.
+   */
+  listModels?(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>>
 }
 
 // Re-export Effect for internal adapter use (avoids extra imports elsewhere)

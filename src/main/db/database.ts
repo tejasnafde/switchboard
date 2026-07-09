@@ -342,6 +342,16 @@ function migrate(db: Database.Database): void {
       ON provider_instances(agent_type);
   `)
 
+  // Migration (2026-07-10): plaintext env key NAMES (JSON array) so LIST can
+  // show which vars an instance sets WITHOUT decrypting env_encrypted.
+  // Decrypting on LIST hit the macOS Keychain at every app boot, and on an
+  // unsigned build that means a password prompt on every launch. Key names
+  // are not secrets; values stay encrypted. Backfilled on next upsert.
+  const piCols = db.prepare("PRAGMA table_info(provider_instances)").all() as Array<{ name: string }>
+  if (!piCols.some((c) => c.name === 'env_keys')) {
+    db.exec('ALTER TABLE provider_instances ADD COLUMN env_keys TEXT')
+  }
+
   // Seed one default instance per agent kind (idempotent via OR IGNORE).
   const seed = db.prepare(
     `INSERT OR IGNORE INTO provider_instances
