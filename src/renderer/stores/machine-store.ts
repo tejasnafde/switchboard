@@ -102,11 +102,15 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       const statuses = await api.getStatuses()
       const connections = { ...get().connections }
       for (const [machineId, { status, url }] of Object.entries(statuses)) {
-        connections[machineId] = toMachineStatus(status)
-        if (status === 'connected' && url) {
+        // Only dial when the store didn't know about the connection (i.e. a
+        // reload wiped the transports). hydrate() also runs after add/update/
+        // remove, and connectMachine tears down + replaces the socket - doing
+        // that to a healthy transport rejects its in-flight invokes.
+        if (status === 'connected' && url && connections[machineId] !== 'connected') {
           window.api.routing.connectMachine(machineId, url)
           bindSnapshotPaths(machineId, get().snapshots[machineId])
         }
+        connections[machineId] = toMachineStatus(status)
       }
       set({ connections })
     } catch (err) {

@@ -77,7 +77,14 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
       e.stopPropagation()
       onClose()
     } else if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
-      addManual()
+      // Enter in the ssh-config search picks the top match; Enter anywhere
+      // else submits the manual form. Without the split, Enter while
+      // searching would submit a half-abandoned manual entry.
+      if ((e.target as HTMLElement).dataset.sshSearch) {
+        if (filteredHosts.length > 0) addFromSsh(filteredHosts[0])
+      } else {
+        addManual()
+      }
     }
   }
 
@@ -94,6 +101,7 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
               placeholder={`Search ${sshHosts.length} hosts...`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              data-ssh-search="true"
               autoFocus
             />
             <div className="machine-modal-hostlist">

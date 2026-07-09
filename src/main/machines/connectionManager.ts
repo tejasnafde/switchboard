@@ -46,10 +46,10 @@ export interface ConnectionManagerDeps {
 interface Conn {
   status: ConnectionStatus
   url: string
-  /** Reused across reconnects so the tunnel URL stays stable and the
+  /** Reused across auto-reconnects so the tunnel URL stays stable and the
    *  renderer's transport swap is seamless. Known ceiling: another process
-   *  can grab the freed port between attempts - that attempt then fails and
-   *  the retry re-allocates. */
+   *  can grab the freed port between attempts, burning the retry budget;
+   *  a manual connect() clears it and re-allocates. */
   port: number | null
   proc: TunnelProcess | null
   attempts: number
@@ -84,6 +84,9 @@ export class ConnectionManager {
     if (conn) {
       conn.attempts = 0
       conn.intentional = false
+      // Drop the remembered port: if it was stolen while we were down, every
+      // auto-reconnect failed on it - a manual retry must not inherit that fate.
+      conn.port = null
     }
     await this.attempt(machine)
   }
@@ -136,7 +139,10 @@ export class ConnectionManager {
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err)
           this.deps.onLog?.(`provision failed for ${machine.name}: ${message}`)
-          return void this.transition(machine.id, 'fail', message)
+          // Through onFailure, not a terminal fail: during an auto-reconnect
+          // the probe rides the same network that just dropped, and a terminal
+          // error here would collapse the whole retry budget to one attempt.
+          return void this.onFailure(machine, epoch, message)
         }
         if (res.action === 'no-node') {
           return void this.transition(machine.id, 'fail', 'no node runtime found on the remote')

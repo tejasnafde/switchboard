@@ -169,6 +169,14 @@ describe('machine-store', () => {
     expect(useMachineStore.getState().connections.m1).toBe('connected')
   })
 
+  it('hydrate does NOT re-dial a machine the store already knows is connected (add/update/remove path)', async () => {
+    liveStatuses = { m1: { status: 'connected', url: 'ws://127.0.0.1:7681' } }
+    useMachineStore.setState((s) => ({ connections: { ...s.connections, m1: 'connected' } }))
+    await useMachineStore.getState().hydrate()
+    // Re-dialing tears down the live transport and rejects in-flight invokes.
+    expect(connectMachine).not.toHaveBeenCalled()
+  })
+
   it('hydrate survives a missing getStatuses handler (older main)', async () => {
     getStatuses.mockRejectedValueOnce(new Error('no handler'))
     await useMachineStore.getState().hydrate()

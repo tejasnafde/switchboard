@@ -338,6 +338,44 @@ describe('ConnectionManager', () => {
     expect(allocatePort).toHaveBeenCalledTimes(1)
   })
 
+  it('a manual connect after failures re-allocates the port instead of looping on a stolen one', async () => {
+    let nextPort = 7681
+    const allocatePort = vi.fn(async () => nextPort++)
+    const waitForHealth = vi.fn().mockResolvedValueOnce({ ok: false, reason: 'down' }).mockResolvedValue({ ok: true })
+    const mgr = new ConnectionManager(deps({ allocatePort, waitForHealth }))
+    await mgr.connect(machine()) // fails, no retry budget (maxReconnects 0)
+    expect(mgr.statusOf('m1')).toBe('error')
+
+    await mgr.connect(machine()) // manual retry must not inherit the old port
+    expect(allocatePort).toHaveBeenCalledTimes(2)
+    expect(mgr.urlOf('m1')).toBe('ws://127.0.0.1:7682')
+  })
+
+  it('a provision failure during auto-reconnect consumes the retry budget instead of dying terminally', async () => {
+    const emissions: Array<{ status: string; willRetry?: boolean }> = []
+    const onStatus = (_id: string, status: string, _url: string | null, _reason?: string, willRetry?: boolean) =>
+      emissions.push({ status, willRetry })
+    const procs: Array<ReturnType<typeof fakeProc>> = []
+    const spawnTunnel = vi.fn(() => { const p = fakeProc(); procs.push(p); return p })
+    // Provision succeeds on the first connect, then throws (network down) on the reconnect.
+    const provision = vi.fn()
+      .mockResolvedValueOnce({ action: 'ready' })
+      .mockRejectedValueOnce(new Error('ssh probe failed (255)'))
+      .mockResolvedValue({ action: 'ready' })
+    const timers: Array<() => void | Promise<void>> = []
+    const mgr = new ConnectionManager(deps({ onStatus, spawnTunnel, provision, maxReconnects: 3, setTimer: (fn) => timers.push(fn) }))
+    await mgr.connect(machine())
+    expect(mgr.statusOf('m1')).toBe('connected')
+
+    procs[0].fireExit() // drop -> schedules retry 1
+    await timers[0]()   // retry 1: provision throws -> must schedule retry 2, not die
+    expect(emissions.filter((e) => e.status === 'error').at(-1)?.willRetry).toBe(true)
+    expect(timers).toHaveLength(2)
+
+    await timers[1]()   // retry 2: provision ready again -> reconnects
+    expect(mgr.statusOf('m1')).toBe('connected')
+  })
+
   it('surfaces the tunnel exitReason on a drop-to-error transition', async () => {
     const reasons: Array<string | undefined> = []
     const onStatus = (_id: string, status: string, _url: string | null, reason?: string) => {

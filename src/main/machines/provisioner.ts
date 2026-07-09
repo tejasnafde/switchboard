@@ -51,7 +51,8 @@ export async function provisionRemote(
   const probeCmd = buildProbeCommand(machine)
   const probeOut = await runner.exec(probeCmd.command, probeCmd.args)
   if (probeOut.code !== 0) {
-    throw new Error(`ssh probe failed (${probeOut.code}): ${summarizeSshError(probeOut.stderr)}`)
+    const cause = summarizeSshError(probeOut.stderr)
+    throw new Error(`ssh probe failed (${probeOut.code})${cause ? `: ${cause}` : ''}`)
   }
   const probe = parseProbeOutput(probeOut.stdout)
   assertSupportedNode(probe.node)
