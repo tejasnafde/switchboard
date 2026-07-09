@@ -77,7 +77,7 @@ describe('viewer state per session', () => {
 
 describe('fuzzyScore', () => {
   it('matches consecutive characters higher than scattered ones', async () => {
-    const { fuzzyScore } = await import('../../src/renderer/components/files/fuzzyScore')
+    const { fuzzyScore } = await import('../../src/renderer/services/fuzzyScore')
     const a = fuzzyScore('foo', 'foo.ts')
     const b = fuzzyScore('foo', 'fXoXo.ts')
     expect(a).not.toBeNull()
@@ -85,11 +85,11 @@ describe('fuzzyScore', () => {
     expect(a!).toBeGreaterThan(b!)
   })
   it('returns null for non-matches', async () => {
-    const { fuzzyScore } = await import('../../src/renderer/components/files/fuzzyScore')
+    const { fuzzyScore } = await import('../../src/renderer/services/fuzzyScore')
     expect(fuzzyScore('zzz', 'foo.ts')).toBeNull()
   })
   it('boosts basename matches', async () => {
-    const { fuzzyScore } = await import('../../src/renderer/components/files/fuzzyScore')
+    const { fuzzyScore } = await import('../../src/renderer/services/fuzzyScore')
     const inBase = fuzzyScore('app', 'src/app.tsx')
     const inDir = fuzzyScore('app', 'app/foo/bar.tsx')
     expect(inBase).not.toBeNull()

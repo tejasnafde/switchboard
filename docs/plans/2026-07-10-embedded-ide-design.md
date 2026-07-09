@@ -82,7 +82,28 @@ Opt-in probe: `e2e/code-server.e2e.mjs` (sibling of the existing `e2e/*.e2e.mjs`
 
 Port/token logic reuses `allocatePort()`; no new port test needed beyond token shape.
 
+## Performance budget (RAM is P0, CPU next, bundle P1)
+
+RAM policy - as conservative as possible:
+
+- ONE code-server process per app, ever (validated: serves any folder). Never per-project.
+- ONE `<webview>` total, reused across projects: switching projects navigates the same webview to the new `?folder=` instead of keeping N workbench renderer processes alive. Each workbench webview is a full renderer process (hundreds of MB); this is the single biggest RAM decision. Cost: a workbench reload (~1-2s) on project switch; layout persists via the `persist:ide` partition + code-server workspace state.
+- Single webview implies a single extension host process (they are per-connection).
+- Idle shutdown: if the IDE pane has been hidden for 15 minutes, kill the code-server process and blank the webview (`about:blank` releases the renderer). Cold respawn is ~0.35s (measured), so reclaiming the memory is nearly free.
+- Nothing spawns at app launch. First IDE-pane open pays the (one-time) download and the spawn.
+- Offset: deleting the in-house LSP manager removes per-(workspace, language) `typescript-language-server` and `pyright` children - pyright alone routinely exceeds 200MB. code-server's TS server replaces, not adds to, that footprint, and only while the IDE is open.
+
+CPU policy:
+
+- Event-driven everywhere: no polling loops in manager or bridge. `/healthz` is only polled during boot, capped retries.
+- Webview `backgroundThrottling` stays on (default) so a hidden workbench drops to background cadence.
+- The bridge WS is idle unless a message flows.
+
+Bundle (P1): binary downloaded on demand to userData, never in the dmg. sb-bridge is two small JS files. Net bundle change from this feature is negative once CodeMirror/LSP deps are dropped from the renderer build.
+
+Audit (required, post-implementation): measure per-process RSS via `app.getAppMetrics()` (covers webview renderer) + `ps` on the code-server child tree, in three states - baseline (no IDE), IDE open, after idle shutdown - plus idle CPU% over 60s in each. Numbers get appended to this doc. Regressions against baseline outside the IDE-open state are bugs.
+
 ## Out of scope (deliberate)
 
 - Remote machines: same webview can later point at a server on the remote host. Not v1.
-- Open VSX marketplace curation, settings sync, idle server shutdown: YAGNI until felt.
+- Open VSX marketplace curation, settings sync: YAGNI until felt. (Idle server shutdown moved IN scope by the performance budget.)

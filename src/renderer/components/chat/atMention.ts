@@ -1,4 +1,4 @@
-import { fuzzyScore } from '../files/fuzzyScore'
+import { fuzzyScore } from '../../services/fuzzyScore'
 
 /**
  * `@`-mention file autocomplete trigger detection.

@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { useLayoutStore } from '../../stores/layout-store'
-import { fuzzyScore } from './fuzzyScore'
+import { fuzzyScore } from '../../services/fuzzyScore'
 
 interface QuickOpenModalProps {
   open: boolean
