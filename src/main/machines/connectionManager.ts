@@ -46,10 +46,10 @@ export interface ConnectionManagerDeps {
 interface Conn {
   status: ConnectionStatus
   url: string
-  /* ponytail: the port is reused across reconnects so the tunnel URL stays
-     stable and the renderer's transport swap is seamless. Another process
-     could grab the freed port between attempts - the next attempt then fails
-     and re-allocates. */
+  /** Reused across reconnects so the tunnel URL stays stable and the
+   *  renderer's transport swap is seamless. Known ceiling: another process
+   *  can grab the freed port between attempts - that attempt then fails and
+   *  the retry re-allocates. */
   port: number | null
   proc: TunnelProcess | null
   attempts: number

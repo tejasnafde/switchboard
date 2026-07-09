@@ -62,12 +62,12 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
   const manualReady = !!host.trim() && parsedPort !== null && !manualDup && !adding
 
   const addManual = () => {
-    if (!manualReady) return
+    if (!manualReady || parsedPort === null) return
     void submit({
       name: name.trim() || host.trim(),
       sshHost: host.trim(),
       sshUser: user.trim() || null,
-      sshPort: parsedPort!,
+      sshPort: parsedPort,
       remoteUser: runAs(),
     })
   }

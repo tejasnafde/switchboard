@@ -259,7 +259,9 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
           progress[id] = reason ?? progress[id] ?? null
           reconnecting[id] = false
         } else {
-          lastError[id] = status === 'connected' ? null : lastError[id]
+          // connected clears the error; offline keeps it (a deliberate
+          // disconnect after a failure shouldn't erase why it failed)
+          if (status === 'connected') lastError[id] = null
           progress[id] = null
           reconnecting[id] = false
         }
