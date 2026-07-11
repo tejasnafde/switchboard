@@ -45,11 +45,6 @@ const CAUSES = [
   /command not found/i,
 ]
 
-/** True for progress/informational chatter that is never the cause of a failure. */
-export function isNoiseLine(line: string): boolean {
-  return NOISE.some((n) => n.test(line))
-}
-
 export function summarizeSshError(stderr: string): string {
   const lines = stderr
     .split('\n')

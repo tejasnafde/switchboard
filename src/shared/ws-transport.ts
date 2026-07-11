@@ -136,10 +136,14 @@ export class WsTransport implements Transport {
       this.reconnectStartedAt = Date.now()
       log.warn('socket closed unexpectedly, reconnecting', this.url)
     }
-    if (Date.now() - this.reconnectStartedAt >= this.reconnectBudgetMs) {
-      log.error(`reconnect budget (${this.reconnectBudgetMs}ms) exhausted, closing for good`, this.url)
-      this.shutdown()
-      return
+    // Never terminally give up on our own: the connection manager owns
+    // liveness and close()s us on real disconnects. A self-shutdown here
+    // wedged permanently - the manager can sit at 'connected' (tunnel up,
+    // server crash-looping) so no status edge would ever replace a transport
+    // that closed itself. Keep re-dialing at the cap; log past the budget so
+    // a long outage is visible.
+    if (Date.now() - this.reconnectStartedAt >= this.reconnectBudgetMs && this.reconnectAttempt % 10 === 0) {
+      log.error(`still reconnecting after ${Math.round((Date.now() - this.reconnectStartedAt) / 1000)}s`, this.url)
     }
     this.reconnectAttempt++
     const delay = Math.min(this.reconnectBaseMs * 2 ** (this.reconnectAttempt - 1), this.reconnectCapMs)
@@ -212,6 +216,11 @@ export class WsTransport implements Transport {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id)
+        // Purge a queued-but-unsent frame too: the re-dial flush would still
+        // send it, making the remote execute a request the caller already saw
+        // fail (double side effect for non-idempotent calls).
+        const qi = this.outbox.findIndex((f) => f.id === id)
+        if (qi >= 0) this.outbox.splice(qi, 1)
         reject(new Error(`invoke timed out: ${channel}`))
       }, timeoutMs)
       this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer, sent: false })

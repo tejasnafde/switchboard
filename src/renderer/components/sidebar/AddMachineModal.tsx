@@ -94,8 +94,18 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
       sshPort: parsedPort,
       remoteUser: runAs(),
     }
-    if (editing) void saveEdit(fields)
-    else void submit(fields)
+    if (editing) {
+      // An ssh-config alias shadows host/user/port entirely (sshHostArgs
+      // returns just the alias) - once the user edits any connection field,
+      // drop the alias so the edited fields actually take effect.
+      const connectionChanged =
+        fields.sshHost !== editMachine!.sshHost ||
+        fields.sshUser !== editMachine!.sshUser ||
+        fields.sshPort !== editMachine!.sshPort
+      void saveEdit(connectionChanged ? { ...fields, sshAlias: null } : fields)
+    } else {
+      void submit(fields)
+    }
   }
 
   const onKeyDown = (e: KeyboardEvent) => {

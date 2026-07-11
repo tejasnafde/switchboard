@@ -116,29 +116,6 @@ describe('decideMachineTransition', () => {
     expect(decideMachineTransition(undefined, 'connected', false)).toBe(null)
   })
 
-  it('connected -> reconnecting is a loss (the tunnel + remote server already died)', () => {
-    expect(decideMachineTransition('connected', 'reconnecting', false)).toBe('lost')
-  })
-
-  it('a reconnecting machine that never connected has nothing to lose', () => {
-    expect(decideMachineTransition('connecting', 'reconnecting', false)).toBe(null)
-    expect(decideMachineTransition('provisioning', 'reconnecting', false)).toBe(null)
-    expect(decideMachineTransition(undefined, 'reconnecting', false)).toBe(null)
-  })
-
-  it('staying in reconnecting (backoff retries) is not reported again', () => {
-    expect(decideMachineTransition('reconnecting', 'reconnecting', true)).toBe(null)
-  })
-
-  it('coming back to connected from reconnecting after a loss is a reconnect', () => {
-    expect(decideMachineTransition('reconnecting', 'connected', true)).toBe('reconnected')
-  })
-
-  it('provisioning is a pre-connected phase like connecting - never a loss', () => {
-    expect(decideMachineTransition('offline', 'provisioning', false)).toBe(null)
-    expect(decideMachineTransition('connecting', 'provisioning', false)).toBe(null)
-    expect(decideMachineTransition('provisioning', 'connected', false)).toBe(null)
-  })
 })
 
 describe('initMachineReconnectResync', () => {
@@ -233,49 +210,16 @@ describe('initMachineReconnectResync', () => {
     expect(bind).not.toHaveBeenCalled()
   })
 
-  it('resets in-flight sessions the moment an established connection drops to reconnecting', () => {
-    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'running', machineId: 'm1' })
-    const { emit } = stubOnStatus()
-    initMachineReconnectResync()
-    emit('m1', 'connected')
-    emit('m1', 'reconnecting')
-
-    expect(useAgentStore.getState().sessions.find((s) => s.id === 't1')?.status).toBe('idle')
-    expect(writeMachineNotice).toHaveBeenCalledWith('m1', expect.stringContaining('connection to m1 lost'))
-  })
-
-  it('notices a reconnect after a loss, through the reconnecting intermediate', () => {
-    const { emit } = stubOnStatus()
-    initMachineReconnectResync()
-    emit('m1', 'connected')
-    emit('m1', 'reconnecting')
-    emit('m1', 'connected')
-
-    expect(writeMachineNotice).toHaveBeenCalledWith('m1', expect.stringContaining('machine reconnected'))
-  })
-
-  it('rebinds session ids on the connected that follows a reconnecting self-heal', () => {
+  it('rebinds session ids on the connected that follows an error self-heal', () => {
     useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle', machineId: 'm1' })
     const { emit, bind } = stubOnStatus()
     initMachineReconnectResync()
     emit('m1', 'connected')
     bind.mockClear()
-    emit('m1', 'reconnecting')
+    emit('m1', 'error')
     expect(bind).not.toHaveBeenCalled()
     emit('m1', 'connected')
     expect(bind).toHaveBeenCalledWith('t1', 'm1')
-  })
-
-  it('provisioning triggers no resync side effects', () => {
-    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'running', machineId: 'm1' })
-    const { emit, bind } = stubOnStatus()
-    initMachineReconnectResync()
-    emit('m1', 'connecting')
-    emit('m1', 'provisioning')
-
-    expect(useAgentStore.getState().sessions.find((s) => s.id === 't1')?.status).toBe('running')
-    expect(writeMachineNotice).not.toHaveBeenCalled()
-    expect(bind).not.toHaveBeenCalled()
   })
 
   it('is idempotent - a second call does not double-subscribe', () => {

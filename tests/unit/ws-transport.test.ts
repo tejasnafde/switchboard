@@ -150,19 +150,24 @@ describe('WsTransport re-dial (real server)', () => {
     await expect(client.invoke('echo', 2)).rejects.toThrow('transport closed')
   })
 
-  it('gives up for good after the reconnect budget and rejects queued invokes', async () => {
-    const { host, url } = await setup()
+  it('keeps re-dialing past the budget (never self-terminates) and heals on a late restart', async () => {
+    const { host, url, port } = await setup()
     host.handle('echo', (x: number) => x)
     client = new WsTransport(url, 30_000, { baseMs: 20, capMs: 40, budgetMs: 150 })
     expect(await client.invoke('echo', 1)).toBe(1)
 
-    await killServer() // and never restart
+    await killServer()
     await tick()
+    // Well past the budget: still alive, still re-dialing. Only the connection
+    // manager may terminally close a transport (a self-shutdown wedged
+    // permanently when the manager stayed 'connected' through the outage).
+    await new Promise((r) => setTimeout(r, 300))
+    expect(client.isAlive()).toBe(true)
+
     const queued = client.invoke('echo', 2)
-    await expect(queued).rejects.toThrow('transport closed')
-    expect(client.isAlive()).toBe(false)
-    // Terminally closed: new invokes reject immediately, no more dial attempts.
-    await expect(client.invoke('echo', 3)).rejects.toThrow('transport closed')
+    const again = await setup(port)
+    again.host.handle('echo', (x: number) => x)
+    expect(await queued).toBe(2)
   })
 })
 

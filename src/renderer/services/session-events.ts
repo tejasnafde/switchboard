@@ -91,32 +91,24 @@ export function onProviderEvent(callback: (event: RuntimeEvent) => void): () => 
 // sessions, so anything that was 'running' on that machine is now stale and
 // any machine-bound terminal pane's remote shell is gone.
 
-type MachineConnStatus = 'connecting' | 'provisioning' | 'reconnecting' | 'connected' | 'error' | 'offline'
+type MachineConnStatus = 'connecting' | 'connected' | 'error' | 'offline'
 
 export type MachineTransition = 'lost' | 'reconnected' | null
 
 /**
- * Leaving 'connected' (a drop -> error/reconnecting, or a manual disconnect ->
- * offline) means the remote server - a child of the ssh tunnel - just died, so
- * its sessions are stale: 'lost'. 'reconnecting' counts because the tunnel (and
- * the server with it) is already gone while the backoff runs. Coming back to
- * 'connected' after a loss is 'reconnected'. 'provisioning' is a pre-connected
- * phase like 'connecting' - never a loss. `wasLost` is threaded in (not derived
- * from prevStatus) because auto-reconnect passes through intermediate states,
- * so the direct error->connected edge never occurs. Pure so the matrix is
- * unit-testable.
+ * Leaving 'connected' (a drop -> error, or a manual disconnect -> offline)
+ * means the remote server - a child of the ssh tunnel - just died, so its
+ * sessions are stale: 'lost'. Coming back to 'connected' after a loss is
+ * 'reconnected'. `wasLost` is threaded in (not derived from prevStatus)
+ * because auto-reconnect passes through 'connecting', so the direct
+ * error->connected edge never occurs. Pure so the matrix is unit-testable.
  */
 export function decideMachineTransition(
   prevStatus: MachineConnStatus | undefined,
   nextStatus: MachineConnStatus,
   wasLost: boolean,
 ): MachineTransition {
-  if (
-    (nextStatus === 'error' || nextStatus === 'offline' || nextStatus === 'reconnecting') &&
-    prevStatus === 'connected'
-  ) {
-    return 'lost'
-  }
+  if ((nextStatus === 'error' || nextStatus === 'offline') && prevStatus === 'connected') return 'lost'
   if (nextStatus === 'connected' && wasLost) return 'reconnected'
   return null
 }
@@ -126,14 +118,7 @@ const lostMachines = new Set<string>()
 let reconnectResyncStarted = false
 
 function isMachineConnStatus(status: string): status is MachineConnStatus {
-  return (
-    status === 'connecting' ||
-    status === 'provisioning' ||
-    status === 'reconnecting' ||
-    status === 'connected' ||
-    status === 'error' ||
-    status === 'offline'
-  )
+  return status === 'connecting' || status === 'connected' || status === 'error' || status === 'offline'
 }
 
 /**

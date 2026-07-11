@@ -38,33 +38,3 @@ export function parsePort(input: string): number | null {
   return n
 }
 
-/** Raw manual-form field values as typed (untrimmed). */
-export interface ManualMachineDraft {
-  name: string
-  host: string
-  user: string
-  port: string
-}
-
-export type ManualMachineValidation =
-  | { ok: true; input: { name: string; sshHost: string; sshUser: string | null; sshPort: number } }
-  | { ok: false; reason: 'empty-host' | 'invalid-port' | 'duplicate' }
-
-/**
- * Full manual-form validation: host present, port parseable, and not a dupe
- * of an already-added remote (the same check the ssh-pick path runs). When
- * editing an existing machine, pass `remotes` with that machine filtered out
- * so it doesn't collide with itself.
- */
-export function validateManualMachine(
-  remotes: Machine[],
-  draft: ManualMachineDraft,
-): ManualMachineValidation {
-  const host = draft.host.trim()
-  if (!host) return { ok: false, reason: 'empty-host' }
-  const sshPort = parsePort(draft.port)
-  if (sshPort === null) return { ok: false, reason: 'invalid-port' }
-  const sshUser = draft.user.trim() || null
-  if (isDuplicateMachine(remotes, { sshHost: host, sshUser })) return { ok: false, reason: 'duplicate' }
-  return { ok: true, input: { name: draft.name.trim() || host, sshHost: host, sshUser, sshPort } }
-}

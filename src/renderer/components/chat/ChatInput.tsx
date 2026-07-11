@@ -118,17 +118,21 @@ export function ChatInput({
   const staticModels = modelsForAgent(agentType)
   const [dynamicModels, setDynamicModels] = useState<typeof staticModels | null>(null)
 
-  const persistDynamicModels = useCallback((agent: AgentType, models: ModelOption[]) => {
+  // Claude model availability is per account, so the cache key includes the
+  // instance - instance A's list must not hydrate instance B's picker.
+  const modelsCacheKey = `models.dynamic.${agentType}${instanceId ? `.${instanceId}` : ''}`
+
+  const persistDynamicModels = useCallback((models: ModelOption[]) => {
     setDynamicModels(models)
-    void window.api.settings?.set?.(`models.dynamic.${agent}`, JSON.stringify(models))
-  }, [])
+    void window.api.settings?.set?.(modelsCacheKey, JSON.stringify(models))
+  }, [modelsCacheKey])
 
   // Stale-while-revalidate: hydrate the last-known dynamic list from the
   // settings cache instantly; live fetches overwrite it when they land.
   useEffect(() => {
     let cancelled = false
     setDynamicModels(null)
-    ;window.api.settings?.get?.(`models.dynamic.${agentType}`).then((raw: string | null) => {
+    ;window.api.settings?.get?.(modelsCacheKey).then((raw: string | null) => {
       if (cancelled || !raw) return
       try {
         const parsed = JSON.parse(raw) as ModelOption[]
@@ -136,13 +140,15 @@ export function ChatInput({
           // prev ?? parsed: never clobber a live fetch that beat the cache read.
           setDynamicModels((prev) => prev ?? parsed)
         }
-      } catch { /* corrupt cache - the next successful fetch rewrites it */ }
+      } catch (err) {
+        log.warn('corrupt dynamic-model cache, awaiting live fetch', { key: modelsCacheKey, err })
+      }
     }).catch(() => { /* no cache yet */ })
 
     if (agentType === 'opencode') {
       ;window.api.provider.listOpencodeModels?.().then((ids: string[]) => {
         if (cancelled || !ids || ids.length === 0) return
-        persistDynamicModels(agentType, ids.map((id) => ({
+        persistDynamicModels(ids.map((id) => ({
           id,
           label: formatOpencodeModelLabel(id),
           tier: inferTierFromId(id),
@@ -167,7 +173,7 @@ export function ChatInput({
       ;window.api.provider.listModels?.(sessionId).then((models) => {
         if (cancelled) return
         if (models && models.length > 0) {
-          persistDynamicModels(agentType, models)
+          persistDynamicModels(models)
         } else if (attempts++ < 4) {
           setTimeout(tryFetch, 500 * (attempts + 1))
         }

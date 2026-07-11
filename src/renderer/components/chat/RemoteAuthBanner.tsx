@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
+import { useMachineStore } from '../../stores/machine-store'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:remote-auth')
@@ -91,6 +92,10 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
   const successTimerRef = useRef<number | null>(null)
 
   const isRemoteClaude = Boolean(sessionId) && Boolean(machineId) && machineId !== 'local' && agentType === 'claude-code'
+  // While the machine is disconnected its session-id bindings are wiped, so a
+  // probe would silently route to the LOCAL backend and cache a false
+  // "logged in". Only probe while connected.
+  const machineConnected = useMachineStore((s) => (machineId ? s.connections[machineId] === 'connected' : false))
 
   // Probe on session open / switch / instance change. Cached verdicts are
   // reused so flipping between tabs doesn't re-hit the machine.
@@ -98,7 +103,7 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
     setResult(null)
     setRecheckState('idle')
     setCopied(false)
-    if (!sessionId || !machineId || !isRemoteClaude) return
+    if (!sessionId || !machineId || !isRemoteClaude || !machineConnected) return
     let cancelled = false
     ;(async () => {
       try {
@@ -121,7 +126,7 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
     return () => {
       cancelled = true
     }
-  }, [sessionId, machineId, instanceId, isRemoteClaude])
+  }, [sessionId, machineId, instanceId, isRemoteClaude, machineConnected])
 
   // Clear feedback timers on unmount so a dead component never sets state.
   useEffect(() => () => {
@@ -143,7 +148,7 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
   }, [result?.loginCommand])
 
   const handleRecheck = useCallback(async () => {
-    if (!sessionId || !machineId || recheckState === 'checking') return
+    if (!sessionId || !machineId || !machineConnected || recheckState === 'checking') return
     setRecheckState('checking')
     try {
       const seg = await resolveConfigSegment(instanceId)
@@ -167,7 +172,7 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
       log.warn('remote auth re-check failed', { sessionId, machineId, err })
       setRecheckState('idle')
     }
-  }, [sessionId, machineId, instanceId, recheckState])
+  }, [sessionId, machineId, instanceId, recheckState, machineConnected])
 
   if (!shouldShowRemoteAuthBanner({ machineId, agentType }, result)) return null
 

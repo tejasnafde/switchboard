@@ -10,9 +10,12 @@
 
 import { readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { oauthInteractiveLoginCommand } from '@shared/provider-auth-format'
+import { createMainLogger } from '../logger'
 import type { ProviderKind } from './types'
+
+const log = createMainLogger('provider:remote-gate')
 
 /**
  * Human label for a provider that isn't available on remote machines yet, or
@@ -99,21 +102,49 @@ export function sanitizeConfigSegment(name: string | undefined): string {
   return cleaned
 }
 
+let remoteDirsCache: { at: number; dirs: string[] } | null = null
+const REMOTE_DIRS_TTL_MS = 10_000
+
+/** Test-only: drop the memoized dir list between cases. */
+export function __resetRemoteClaudeConfigDirCacheForTests(): void {
+  remoteDirsCache = null
+}
+
 /**
- * List every `~/.claude*` dir on a remote VM. Sessions run under forwarded
+ * List every Claude config dir on a remote VM. Sessions run under forwarded
  * per-instance config dirs the VM's provider_instances table doesn't know
  * about; forwarded dirs are always single segments under $HOME (see
- * sanitizeConfigSegment), so a shallow readdir covers every candidate.
+ * sanitizeConfigSegment) but their NAME is free text from the desktop's
+ * oauth_dir setting - `.claude*` is only a convention. So a dir qualifies by
+ * either the naming convention or the `projects/` subdir the CLI creates.
+ * Memoized briefly - this feeds hot paths (session scans, history loads).
  */
 export function listRemoteClaudeConfigDirs(home: string = homedir()): string[] {
-  try {
-    return readdirSync(home, { withFileTypes: true })
-      .filter((e) => e.name.startsWith('.claude') && (e.isDirectory() || e.isSymbolicLink()))
-      .map((e) => join(home, e.name))
-      .filter((p) => { try { return statSync(p).isDirectory() } catch { return false } })
-  } catch {
-    return []
+  const cacheable = home === homedir()
+  if (cacheable && remoteDirsCache && Date.now() - remoteDirsCache.at < REMOTE_DIRS_TTL_MS) {
+    return remoteDirsCache.dirs
   }
+  let dirs: string[]
+  try {
+    dirs = readdirSync(home, { withFileTypes: true })
+      .filter((e) => e.isDirectory() || e.isSymbolicLink())
+      .map((e) => join(home, e.name))
+      .filter((p) => {
+        try {
+          if (!statSync(p).isDirectory()) return false
+          if (basename(p).startsWith('.claude')) return true
+          return statSync(join(p, 'projects')).isDirectory()
+        } catch {
+          // Missing projects/ subdir or a dangling symlink - not a config dir.
+          return false
+        }
+      })
+  } catch (err) {
+    log.warn('config-dir scan of home failed', err)
+    dirs = []
+  }
+  if (cacheable) remoteDirsCache = { at: Date.now(), dirs }
+  return dirs
 }
 
 /**

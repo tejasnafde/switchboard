@@ -197,6 +197,14 @@ describe('listRemoteClaudeConfigDirs', () => {
     expect(found.sort()).toEqual([join(home, '.claude'), join(home, '.claude-tech-team')])
   })
 
+  it('includes a free-text config dir (non-.claude oauth_dir name) via its projects/ marker', () => {
+    const home = tmpHome()
+    mkdirSync(join(home, 'work-profile', 'projects'), { recursive: true })
+    mkdirSync(join(home, 'some-repo'))
+    const found = listRemoteClaudeConfigDirs(home)
+    expect(found).toEqual([join(home, 'work-profile')])
+  })
+
   it('returns empty for a missing or empty home', () => {
     expect(listRemoteClaudeConfigDirs('/nonexistent-sb-home')).toEqual([])
     expect(listRemoteClaudeConfigDirs(tmpHome())).toEqual([])

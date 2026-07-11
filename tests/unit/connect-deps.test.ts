@@ -13,7 +13,6 @@
  * ungraceful tunnel drop can't keep holding the port.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createServer, type AddressInfo } from 'node:net'
 
 interface Listeners {
   open: Array<() => void>

@@ -4,7 +4,7 @@
  * coercing it to 22.
  */
 import { describe, it, expect } from 'vitest'
-import { isDuplicateMachine, parsePort, validateManualMachine } from '../../src/renderer/components/sidebar/addMachineValidation'
+import { isDuplicateMachine, parsePort } from '../../src/renderer/components/sidebar/addMachineValidation'
 import type { Machine } from '@shared/machines'
 
 const mk = (over: Partial<Machine>): Machine => ({
@@ -53,45 +53,5 @@ describe('parsePort', () => {
     expect(parsePort('22.5')).toBeNull()
     expect(parsePort('')).toBeNull()
     expect(parsePort('22px')).toBeNull()
-  })
-})
-
-describe('validateManualMachine', () => {
-  it('rejects an empty or whitespace-only host', () => {
-    expect(validateManualMachine([], { name: 'x', host: '', user: '', port: '22' }))
-      .toEqual({ ok: false, reason: 'empty-host' })
-    expect(validateManualMachine([], { name: 'x', host: '   ', user: '', port: '22' }))
-      .toEqual({ ok: false, reason: 'empty-host' })
-  })
-
-  it('rejects an unparseable port', () => {
-    expect(validateManualMachine([], { name: '', host: '10.0.0.9', user: '', port: 'abc' }))
-      .toEqual({ ok: false, reason: 'invalid-port' })
-  })
-
-  it('flags a duplicate of an already-added remote - same check as the ssh-pick path', () => {
-    const remotes = [mk({ sshAlias: null, sshHost: 'box.example.com', sshUser: 'ubuntu' })]
-    expect(validateManualMachine(remotes, { name: '', host: ' BOX.example.com ', user: 'ubuntu', port: '22' }))
-      .toEqual({ ok: false, reason: 'duplicate' })
-  })
-
-  it('passes a valid draft through, trimming and defaulting name to host', () => {
-    expect(validateManualMachine([], { name: '  ', host: ' 10.0.0.9 ', user: '  ', port: ' 2222 ' })).toEqual({
-      ok: true,
-      input: { name: '10.0.0.9', sshHost: '10.0.0.9', sshUser: null, sshPort: 2222 },
-    })
-    expect(validateManualMachine([], { name: ' prod ', host: 'h.dev', user: ' deploy ', port: '22' })).toEqual({
-      ok: true,
-      input: { name: 'prod', sshHost: 'h.dev', sshUser: 'deploy', sshPort: 22 },
-    })
-  })
-
-  it('lets an edited machine keep its own host when the caller filters it out of remotes', () => {
-    const self = mk({ id: 'm-self', sshHost: 'h.dev', sshUser: 'deploy' })
-    const others = [self, mk({ id: 'm-other', sshHost: 'other.dev' })]
-    // Unfiltered: collides with itself.
-    expect(validateManualMachine(others, { name: '', host: 'h.dev', user: 'deploy', port: '22' }).ok).toBe(false)
-    // Filtered (edit mode): valid.
-    expect(validateManualMachine(others.filter((m) => m.id !== 'm-self'), { name: '', host: 'h.dev', user: 'deploy', port: '22' }).ok).toBe(true)
   })
 })
