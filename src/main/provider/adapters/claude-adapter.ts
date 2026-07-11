@@ -1067,6 +1067,12 @@ export class ClaudeAdapter implements ProviderAdapter {
 
       case 'assistant': {
         type ContentBlock = { type: string; text?: string; id?: string; name?: string; input?: unknown; thinking?: string }
+        const errMsg = msg as SDKMessage & { error?: string; message?: { model?: string; content?: ContentBlock[] } }
+        // The CLI injects a synthetic assistant message on API errors (e.g.
+        // "You've hit your session limit") alongside the rate_limit_event we
+        // already surface as a system error card - rendering both duplicates
+        // the error in chat.
+        if (errMsg.error || errMsg.message?.model === '<synthetic>') break
         const content = (msg as SDKMessage & { message?: { content?: ContentBlock[] } }).message?.content
         if (!content || !Array.isArray(content)) break
 

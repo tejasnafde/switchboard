@@ -56,6 +56,20 @@ describe('migrateClaudeSession', () => {
     expect(result).toEqual({ ok: false, reason: 'source-missing' })
   })
 
+  it('finds a transcript the CLI re-rooted into a worktree project dir (live-captured failure)', () => {
+    // The agent entered a worktree mid-conversation, so the CLI moved the
+    // transcript under encode(<worktree path>) instead of encode(cwd).
+    const worktreeEncoded = encodeClaudeProjectPath(`${CWD}/.claude/worktrees/dev-env-integration`)
+    const dir = join(fromDir, 'projects', worktreeEncoded)
+    mkdirSync(dir, { recursive: true })
+    writeFileSync(join(dir, `${SESSION_ID}.jsonl`), '{"type":"user"}\n')
+
+    const result = migrateClaudeSession({ sessionId: SESSION_ID, cwd: CWD, fromDir, toDir })
+    expect(result).toEqual({ ok: true, copied: true })
+    // Destination is still encode(cwd) - that is where the SDK resume looks.
+    expect(existsSync(join(toDir, 'projects', ENCODED, `${SESSION_ID}.jsonl`))).toBe(true)
+  })
+
   it('copies the JSONL into <toDir>/projects/<encodedCwd>/<id>.jsonl', () => {
     const content = '{"type":"user","content":"hello"}\n{"type":"assistant","content":"hi"}\n'
     seedSource(content)

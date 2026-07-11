@@ -12,7 +12,7 @@
  */
 import { homedir } from 'os'
 import { join } from 'path'
-import { existsSync, mkdirSync, copyFileSync } from 'fs'
+import { existsSync, mkdirSync, copyFileSync, readdirSync } from 'fs'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
 import { createMainLogger as createLogger } from '../logger'
 
@@ -27,15 +27,35 @@ export type MigrateResult =
   | { ok: false; reason: 'source-missing' | 'io-error'; detail?: string }
 
 /**
- * Does `<dir>/projects/<encodedCwd>/<sessionId>.jsonl` exist?
+ * Locate `<sessionId>.jsonl` under `<dir>/projects/`. Tries the encoded cwd
+ * first, then scans every project subdir: the Claude CLI re-roots a
+ * transcript into the encoded dir of whatever cwd the session ends up in
+ * (e.g. the agent entering a worktree mid-conversation), so the exact-path
+ * lookup alone reported real sessions as missing. Session ids are UUIDs, so
+ * a filename match anywhere under projects/ is unambiguous.
+ */
+export function findClaudeSessionFile(dir: string, sessionId: string, cwd: string): string | null {
+  const file = `${sessionId}.jsonl`
+  const exact = join(dir, 'projects', encodeClaudeProjectPath(cwd), file)
+  if (existsSync(exact)) return exact
+  const projects = join(dir, 'projects')
+  if (!existsSync(projects)) return null
+  for (const sub of readdirSync(projects)) {
+    const candidate = join(projects, sub, file)
+    if (existsSync(candidate)) return candidate
+  }
+  return null
+}
+
+/**
+ * Does the session JSONL exist anywhere under `<dir>/projects/`?
  *
  * Exposed so callers can probe the destination dir before deciding whether
  * to bother running migration - the typical case (no rotation since
  * session creation) is a no-op skip.
  */
 export function claudeSessionExistsIn(dir: string, sessionId: string, cwd: string): boolean {
-  const encoded = encodeClaudeProjectPath(cwd)
-  return existsSync(join(dir, 'projects', encoded, `${sessionId}.jsonl`))
+  return findClaudeSessionFile(dir, sessionId, cwd) !== null
 }
 
 /**
@@ -88,13 +108,15 @@ export function migrateClaudeSession(opts: MigrateOpts): MigrateResult {
 
   const encoded = encodeClaudeProjectPath(opts.cwd)
   const file = `${opts.sessionId}.jsonl`
-  const srcDir = join(opts.fromDir, 'projects', encoded)
-  const srcPath = join(srcDir, file)
+  // Destination stays the encoded startSession cwd - that is where the SDK's
+  // resume looks. Source may live under a different encoded dir (worktree
+  // re-rooting), hence the scan.
+  const srcPath = findClaudeSessionFile(opts.fromDir, opts.sessionId, opts.cwd)
   const dstDir = join(opts.toDir, 'projects', encoded)
   const dstPath = join(dstDir, file)
 
-  if (!existsSync(srcPath)) {
-    log.warn(`source missing: ${srcPath}`)
+  if (!srcPath) {
+    log.warn(`source missing under ${join(opts.fromDir, 'projects')} for session ${opts.sessionId}`)
     return { ok: false, reason: 'source-missing' }
   }
 
