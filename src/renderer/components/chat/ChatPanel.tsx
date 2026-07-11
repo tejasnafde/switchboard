@@ -487,6 +487,15 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           }
           break
         }
+        case 'worktree.drift': {
+          // Suggestion only - swapping the pointer is the user's call (three
+          // agents in three worktrees would ping-pong an auto-swap).
+          useAgentStore.getState().setDriftSuggestion(tid, {
+            worktreePath: event.worktreePath,
+            branch: event.branch,
+          })
+          break
+        }
         case 'error': {
           const errMsg: ChatMessage = {
             id: `error_${Date.now()}`,

@@ -10,6 +10,9 @@ import { CodexAdapter } from './adapters/codex-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
+import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-drift'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { CheckpointTracker } from './checkpoint-tracker'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
 import { recordThreadSession, updateConversationSessionId } from '../db/database'
@@ -38,6 +41,9 @@ export class ProviderRegistry {
   private sessionAdapters = new Map<string, ProviderAdapter>()
   /** Working-tree root per session, captured at startSession for checkpointing. */
   private sessionCwd = new Map<string, string>()
+  /** Worktree list cache per repo folder (10s TTL); drift dedupe lives in the watcher. */
+  private worktreeCache = new Map<string, { at: number; refs: WorktreeRef[] }>()
+  private driftWatcher = new DriftWatcher((folder) => this.listWorktrees(folder))
 
   /**
    * Derives per-file diff cards from git checkpoints around each turn -
@@ -99,6 +105,39 @@ export class ProviderRegistry {
     if (event.type === 'turn.completed') {
       void this.emitFileEdits(event.threadId)
     }
+
+    // Provider-agnostic worktree-drift detection: all three adapters emit
+    // tool.started through here, so one subscription covers claude, codex,
+    // and opencode alike. Worktrees may live anywhere (nested under
+    // .switchboard/, /tmp, userData) - `git worktree list` names them all.
+    if (event.type === 'tool.started') {
+      void this.maybeEmitDrift(event.threadId, event.toolName, event.input)
+    }
+  }
+
+  private async maybeEmitDrift(threadId: string, toolName: string, input: unknown): Promise<void> {
+    try {
+      const cwd = this.sessionCwd.get(threadId)
+      if (!cwd) return
+      const event = await this.driftWatcher.onToolStarted(threadId, cwd, toolName, input)
+      if (!event) return
+      log.info('worktree drift detected', { threadId, worktree: event.worktreePath, branch: event.branch })
+      this.bus.publish(event)
+    } catch (err) {
+      log.warn(`worktree drift detection failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  private async listWorktrees(repoFolder: string): Promise<WorktreeRef[]> {
+    const cached = this.worktreeCache.get(repoFolder)
+    if (cached && Date.now() - cached.at < 10_000) return cached.refs
+    const { stdout } = await promisify(execFile)('git', ['worktree', 'list', '--porcelain'], {
+      cwd: repoFolder,
+      timeout: 5_000,
+    })
+    const refs = parseWorktreeList(stdout)
+    this.worktreeCache.set(repoFolder, { at: Date.now(), refs })
+    return refs
   }
 
   private async emitFileEdits(threadId: string): Promise<void> {

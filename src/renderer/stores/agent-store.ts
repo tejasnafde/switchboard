@@ -45,6 +45,8 @@ interface AgentSession {
    * by project.
    */
   worktreePath?: string | null
+  /** Agent wrote into a different worktree - offer to follow (worktree.drift). */
+  driftSuggestion?: { worktreePath: string; branch: string } | null
   /** Branch name in `worktreePath` (e.g. `sb/thread-abc123`). */
   worktreeBranch?: string | null
   /** Claude CLI session ID for --resume (from imported JSONL sessions) */
@@ -160,6 +162,7 @@ interface AgentStore {
    * app restart) and to anything that reads `worktreePath` reactively
    * (sidebar tags, future cwd badges).
    */
+  setDriftSuggestion: (sessionId: string, suggestion: { worktreePath: string; branch: string } | null) => void
   setWorktree: (
     sessionId: string,
     worktreePath: string | null,
@@ -395,7 +398,15 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setWorktree: (sessionId, worktreePath, worktreeBranch) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, worktreePath, worktreeBranch } : s,
+        // Following a worktree also resolves any pending drift suggestion.
+        s.id === sessionId ? { ...s, worktreePath, worktreeBranch, driftSuggestion: null } : s,
+      ),
+    })),
+
+  setDriftSuggestion: (sessionId, suggestion) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, driftSuggestion: suggestion } : s,
       ),
     })),
 

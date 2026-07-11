@@ -25,6 +25,20 @@ export type ProviderKind = 'claude' | 'codex' | 'opencode'
 
 // ─── Event union ───────────────────────────────────────────────
 
+/**
+ * The session's agent wrote into a git worktree other than the session's
+ * folder. Surfaced as a follow affordance: accepting swaps the conversation's
+ * worktree pointer, which the branch chip, IDE pane, terminals, and diff
+ * review all derive from. Detection feeds on the session's OWN tool stream,
+ * so parallel agents in sibling worktrees never cross-contaminate.
+ */
+export interface RuntimeWorktreeDriftEvent {
+  type: 'worktree.drift'
+  threadId: string
+  worktreePath: string
+  branch: string
+}
+
 export type RuntimeEvent = (
   | RuntimeContentEvent
   | RuntimeToolStartedEvent
@@ -42,6 +56,7 @@ export type RuntimeEvent = (
   | RuntimeQuestionAskedEvent
   | RuntimeQuestionAnsweredEvent
   | RuntimeFileEditedEvent
+  | RuntimeWorktreeDriftEvent
 ) & {
   /** Which machine emitted this event ('local' or a remote's id). Stamped by
    *  preload's provider.onEvent, not the adapter - used to reject cross-machine

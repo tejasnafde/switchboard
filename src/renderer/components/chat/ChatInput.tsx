@@ -414,6 +414,21 @@ export function ChatInput({
   // at-menu file listing AND the BranchPicker, so a worktree session's branch
   // switch can't flip HEAD in the shared parent repo.
   const sessionsForRepo = useAgentStore((s) => s.sessions)
+  const driftSuggestion = useAgentStore((st) =>
+    st.sessions.find((x) => x.id === sessionId)?.driftSuggestion ?? null,
+  )
+  const followDrift = () => {
+    if (!sessionId || !driftSuggestion) return
+    // Same pointer swap the branch picker uses - chip, IDE pane, terminals,
+    // and diff review all derive from it.
+    useAgentStore.getState().setWorktree(sessionId, driftSuggestion.worktreePath, driftSuggestion.branch)
+    const conversationId = useAgentStore.getState().sessions.find((x) => x.id === sessionId)?.conversationId
+      ?? sessionId
+    window.api.app
+      .setConversationWorktree(conversationId, driftSuggestion.worktreePath, driftSuggestion.branch)
+      .catch((err: unknown) => log.warn('persist worktree failed:', err))
+  }
+
   const repoRoot = useMemo(() => {
     const s = sessionsForRepo.find((sess) => sess.id === sessionId)
     return s?.worktreePath ?? s?.projectPath ?? null
@@ -906,6 +921,40 @@ export function ChatInput({
               <option key={r.id} value={r.id}>{r.label}</option>
             ))}
           </select>
+        )}
+
+        {driftSuggestion && (
+          <span
+            data-drift-banner
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              color: 'var(--text-secondary)',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              padding: '3px 8px',
+            }}
+          >
+            Agent is working in <strong>{driftSuggestion.branch}</strong>
+            <button
+              type="button"
+              onClick={followDrift}
+              style={{ cursor: 'pointer', border: 'none', background: 'var(--accent, #4a7dff)', color: '#fff', borderRadius: 3, padding: '2px 8px', fontSize: 11 }}
+            >
+              Follow
+            </button>
+            <button
+              type="button"
+              title="Dismiss"
+              onClick={() => sessionId && useAgentStore.getState().setDriftSuggestion(sessionId, null)}
+              style={{ cursor: 'pointer', border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: 12 }}
+            >
+              ×
+            </button>
+          </span>
         )}
 
         {/* Per-thread branch picker. On `swap-cwd` (picked branch already
