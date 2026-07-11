@@ -72,15 +72,18 @@ export function extractCommandPaths(toolName: string, input: unknown, baseCwd?: 
   if (typeof input !== 'object' || input === null) return none
   const obj = input as Record<string, unknown>
   const out: string[] = []
-  if (typeof obj.cwd === 'string' && obj.cwd.startsWith('/')) out.push(obj.cwd)
+  const isAbs = (p: string): boolean => p.startsWith('/') || /^[A-Za-z]:[\\/]/.test(p)
+  if (typeof obj.cwd === 'string' && isAbs(obj.cwd)) out.push(obj.cwd)
   const command = typeof obj.command === 'string' ? obj.command : ''
   if (command) {
-    for (const m of command.matchAll(/["']((?:\/|\.{1,2}\/)[^"']+)["']/g)) out.push(m[1])
-    for (const m of command.matchAll(/(?:^|[\s=;|&(<>])((?:\/|\.{1,2}\/)[A-Za-z0-9._~/-]+)/g)) out.push(m[1])
+    // Quoted (may contain spaces), then bare tokens; both accept unix and
+    // drive-letter absolutes plus ./ ../ relatives.
+    for (const m of command.matchAll(/["']((?:\/|[A-Za-z]:[\\/]|\.{1,2}\/)[^"']+)["']/g)) out.push(m[1])
+    for (const m of command.matchAll(/(?:^|[\s=;|&(<>])((?:\/|[A-Za-z]:[\\/]|\.{1,2}\/)[A-Za-z0-9._~\\/-]+)/g)) out.push(m[1])
   }
   const resolved = out
     .map((p) => {
-      if (p.startsWith('/')) return p
+      if (isAbs(p)) return toPosix(p)
       if (!baseCwd) return null
       const stack = toPosix(baseCwd).split('/')
       for (const seg of toPosix(p).split('/')) {

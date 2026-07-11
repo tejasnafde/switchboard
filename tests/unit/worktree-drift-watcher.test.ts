@@ -12,9 +12,10 @@ import { promisify } from 'node:util'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-// Drift events carry posix-normalized paths (Windows fs APIs emit backslashes,
-// git porcelain emits forward slashes - the watcher unifies them).
-const posix = (p: string): string => p.replace(/\\/g, '/')
+// Drift events carry posix-normalized, 8.3-expanded paths (Windows tmpdir
+// emits RUNNER~1 short names and backslashes; git porcelain emits long names
+// and forward slashes - the watcher unifies both).
+const posix = (p: string): string => realpathSync.native(p).replace(/\\/g, '/')
 import { DriftWatcher, parseWorktreeList } from '../../src/main/provider/worktree-drift'
 import { realpathOrAncestor } from '../../src/main/ipc/files'
 import { scrubGitEnv } from '../../src/main/git/checkpoint'
@@ -70,7 +71,7 @@ describe('DriftWatcher against a real repo', () => {
     expect(ev).toEqual({
       type: 'worktree.drift',
       threadId: 't1',
-      worktreePath: posix(realpathSync(nestedWt)),
+      worktreePath: posix(nestedWt),
       branch: 'fork/feat-x',
     })
     expect(await watcher.onToolStarted('t1', repo, 'Edit', { file_path: join(nestedWt, 'other.ts') })).toBeNull()
@@ -87,7 +88,7 @@ describe('DriftWatcher against a real repo', () => {
     const ev = await watcher.onToolStarted('t2', repo, 'Edit', {
       changes: [{ path: join(tmpWt, 'b.ts'), kind: 'add' }],
     })
-    expect(ev?.worktreePath).toBe(posix(realpathSync(tmpWt)))
+    expect(ev?.worktreePath).toBe(posix(tmpWt))
     expect(ev?.branch).toBe('fork/tmp-y')
   })
 
@@ -142,14 +143,14 @@ describe('DriftWatcher against a real repo', () => {
 
   it('sessions rooted IN a worktree treat the main repo as foreign', async () => {
     const ev = await watcher.onToolStarted('t6', nestedWt, 'Write', { file_path: join(repo, 'main-side.ts') })
-    expect(ev?.worktreePath).toBe(posix(realpathSync(repo)))
+    expect(ev?.worktreePath).toBe(posix(repo))
   })
 
   it('onSessionMoved re-baselines: after following into the worktree, main becomes the foreign side', async () => {
     await watcher.onToolStarted('t10', repo, 'Write', { file_path: join(nestedWt, 'x.ts') })
     watcher.onSessionMoved('t10')
     const ev = await watcher.onToolStarted('t10', nestedWt, 'Write', { file_path: join(repo, 'reverse.ts') })
-    expect(ev?.worktreePath).toBe(posix(realpathSync(repo)))
+    expect(ev?.worktreePath).toBe(posix(repo))
   })
 
   it('stopped sessions drop all state', async () => {

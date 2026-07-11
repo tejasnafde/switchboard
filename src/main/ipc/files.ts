@@ -10,7 +10,13 @@
  */
 import type { BackendHost } from '../backend/host'
 import { basename, dirname, isAbsolute, normalize, relative, resolve } from 'node:path'
-import { promises as fs } from 'node:fs'
+import { promises as fs, realpath as realpathCb } from 'node:fs'
+import { promisify } from 'node:util'
+
+// fs.promises has no .native variant; promisify the callback one.
+// .native expands Windows 8.3 short names (RUNNER~1 -> runneradmin); git
+// porcelain reports long names, so prefix checks mismatch without it.
+const realpathNative = promisify(realpathCb.native)
 import { FilesChannels } from '@shared/ipc-channels'
 import { listAllFiles, listDirEntries } from '../files/listing'
 import { writeFileSafe, deleteFileSafe } from '../files/writing'
@@ -27,7 +33,7 @@ export async function realpathOrAncestor(p: string): Promise<string> {
   const tail: string[] = []
   for (;;) {
     try {
-      const real = await fs.realpath(dir)
+      const real = await realpathNative(dir)
       return tail.length ? resolve(real, ...tail.reverse()) : real
     } catch {
       const parent = dirname(dir)
