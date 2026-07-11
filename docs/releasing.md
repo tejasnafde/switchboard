@@ -7,6 +7,9 @@ install instructions live in `README.md`.
 
 ```bash
 # 1. Bump version in package.json (must match the tag without `v`)
+# Convention: `patch` for iterative work INCLUDING feature batches
+# (0.6.3 shipped the SSH day-2 batch); reserve `minor` for headline
+# surface changes (0.7.0 = the embedded IDE replaced the editor).
 npm version patch          # or minor / major
 git push && git push --tags
 
