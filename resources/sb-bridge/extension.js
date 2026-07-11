@@ -101,20 +101,25 @@ function sendSelection(intent) {
   )
 }
 
-let terminalNoticeShown = false
+function requestSwitchboardTerminal() {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'terminal' }))
+  }
+}
 
 function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('switchboard.sendSelection', () => sendSelection()),
     vscode.commands.registerCommand('switchboard.quickEdit', () => sendSelection('edit')),
-    // Terminals live in Switchboard (cmd+j), not in the workbench - dispose
-    // any that open so the two terminal systems never fork.
+    vscode.commands.registerCommand('switchboard.openTerminal', requestSwitchboardTerminal),
+    // Terminals live in Switchboard, not in the workbench - dispose any that
+    // open and flip Switchboard's right pane to its terminal strip instead.
     vscode.window.onDidOpenTerminal((terminal) => {
       terminal.dispose()
-      if (!terminalNoticeShown) {
-        terminalNoticeShown = true
-        void vscode.window.showInformationMessage('Terminals live in Switchboard - press cmd+j.')
-      }
+      // Close the panel too: left open with zero terminals, the workbench
+      // auto-creates a new one on next show - an intent loop.
+      void vscode.commands.executeCommand('workbench.action.closePanel')
+      requestSwitchboardTerminal()
     })
   )
   connect()

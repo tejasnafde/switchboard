@@ -20,6 +20,10 @@
       {
         "command": "switchboard.quickEdit",
         "title": "Switchboard: Quick Edit Selection"
+      },
+      {
+        "command": "switchboard.openTerminal",
+        "title": "Switchboard: Open Terminal"
       }
     ],
     "keybindings": [
@@ -34,6 +38,16 @@
         "key": "ctrl+k",
         "mac": "cmd+k",
         "when": "editorTextFocus"
+      },
+      {
+        "command": "switchboard.openTerminal",
+        "key": "ctrl+j",
+        "mac": "cmd+j"
+      },
+      {
+        "command": "switchboard.openTerminal",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e"
       }
     ]
   },

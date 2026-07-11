@@ -26,6 +26,7 @@ describe('BridgeServer', () => {
   let wss: EventEmitter
   let server: BridgeServer
   let selections: SelectionMessage[]
+  let terminalRequests = 0
 
   function connect(url: string): FakeSocket {
     const socket = new FakeSocket()
@@ -42,7 +43,13 @@ describe('BridgeServer', () => {
   beforeEach(() => {
     wss = new EventEmitter()
     selections = []
-    server = new BridgeServer(wss, TOKEN, { onSelection: (m) => selections.push(m) })
+    terminalRequests = 0
+    server = new BridgeServer(wss, TOKEN, {
+      onSelection: (m) => selections.push(m),
+      onTerminalRequest: () => {
+        terminalRequests++
+      },
+    })
   })
 
   it('closes connections that present a wrong or missing token', () => {
@@ -102,6 +109,12 @@ describe('BridgeServer', () => {
     server.openFile('/p', '/p/a.ts')
     expect(stale.sent).toHaveLength(0)
     expect(fresh.sent).toHaveLength(1)
+  })
+
+  it('routes terminal frames to onTerminalRequest', () => {
+    const socket = connectAndHello('/p')
+    socket.emit('message', Buffer.from('{"type":"terminal"}'))
+    expect(terminalRequests).toBe(1)
   })
 
   it('broadcastConfig sends a config frame to every registered workbench', () => {

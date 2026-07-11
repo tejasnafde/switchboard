@@ -9,7 +9,7 @@ export interface ClosestEl {
 
 export function classifyCloseFocus(active: ClosestEl | null): CloseFocus {
   if (!active) return 'other'
-  if (active.closest('[data-context-source="file-viewer"], [data-files-pane]')) return 'editor'
+  if (active.closest('[data-ide-pane]')) return 'editor'
   if (active.closest('[data-terminal-pane]')) return 'terminal'
   const panel = active.closest('[data-chat-panel]')
   if (panel) {

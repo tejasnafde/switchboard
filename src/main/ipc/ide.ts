@@ -82,6 +82,10 @@ export function registerIdeHandlers(host: BackendHost): void {
     const wss = new WebSocketServer({ host: '127.0.0.1', port: bridgePort })
     const bridge = new BridgeServer(wss, bridgeToken, {
       onSelection: (msg) => host.emit(IdeChannels.SELECTION, msg),
+      onTerminalRequest: () => {
+        log.info('workbench terminal intent forwarded')
+        host.emit(IdeChannels.TERMINAL_REQUEST)
+      },
     })
 
     const manager = new CodeServerManager(

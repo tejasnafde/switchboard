@@ -9,6 +9,7 @@
  *   main -> ext  {type:'config', settings}  - live vscode settings to apply
  *   ext -> main  {type:'selection', path, startLine, endLine, text, intent?}
  *                intent 'edit' opens the quick-edit prompt instead of a draft pill
+ *   ext -> main  {type:'terminal'} - user wants a terminal; Switchboard's pane opens
  */
 'use strict'
 
@@ -30,6 +31,7 @@ const isSettingsObj = (v) => typeof v === 'object' && v !== null && !Array.isArr
 
 const VALIDATORS = {
   hello: (m) => isStr(m.folder),
+  terminal: () => true,
   config: (m) => isSettingsObj(m.settings),
   open: (m) => isStr(m.path) && (m.line === undefined || isNum(m.line)) && (m.endLine === undefined || isNum(m.endLine)),
   selection: (m) =>

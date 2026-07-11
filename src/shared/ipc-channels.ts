@@ -145,6 +145,8 @@ export const IdeChannels = {
   STATUS: 'ide:status',
   OPEN: 'ide:open',
   SELECTION: 'ide:selection',
+  /** Workbench terminal intercepted (ctrl+` / cmd+j) - renderer opens Switchboard's terminal pane. */
+  TERMINAL_REQUEST: 'ide:terminal-request',
   STOP: 'ide:stop',
 } as const
 

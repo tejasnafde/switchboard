@@ -532,6 +532,9 @@ const api = {
       transport.invoke(IdeChannels.OPEN, args),
     /** Idle shutdown - kill the server, renderer blanks the webview. */
     stop: (): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.STOP),
+    /** ctrl+` or cmd+j inside the workbench - open Switchboard's terminal pane instead. */
+    onTerminalRequest: (callback: () => void): (() => void) =>
+      transport.on(IdeChannels.TERMINAL_REQUEST, () => callback()),
     /** Follow the app theme - written into the workbench settings, applied live. */
     setTheme: (theme: string): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.SET_THEME, theme),
     onStatus: (

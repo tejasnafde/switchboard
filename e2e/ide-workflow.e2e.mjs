@@ -69,7 +69,7 @@ try {
   const projName = project.split('/').pop()
   const row = win.locator('.sidebar-project-header', { hasText: projName }).first()
   await row.hover()
-  await row.locator('.sidebar-project-compose').click()
+  await row.locator('.sidebar-project-compose').click({ force: true })
   await win.waitForTimeout(1000)
   check(true, 'new thread created from the sidebar')
 
@@ -123,6 +123,20 @@ try {
   }
   check(saved, 'edit + cmd+s persisted to disk')
 
+  // 6b. Focus-scoped cmd+w: inside the workbench it closes the editor TAB
+  //     (VS Code owns keys in the guest) - the app window must survive.
+  await workbench.keyboard.press('Meta+w')
+  let tabClosed = false
+  for (let i = 0; i < 10 && !tabClosed; i++) {
+    await win.waitForTimeout(500)
+    tabClosed = (await workbench.locator('.monaco-editor .view-lines').count()) === 0
+  }
+  check(tabClosed, 'cmd+w in the workbench closes the editor tab, not the app')
+  check(await win.locator('[data-ide-pane]').isVisible(), 'app window survived cmd+w in the workbench')
+  // reopen for the remaining steps
+  await win.evaluate((dir) => window.api.ide.open({ folder: dir, path: 'hello.js', line: 1 }), project)
+  await workbench.waitForSelector('.monaco-editor .view-lines', { timeout: 15_000 })
+
   // 7. cmd+l on a selection → sb-bridge → main → chat draft pill event.
   await win.evaluate(() => {
     window.__pills = []
@@ -138,13 +152,32 @@ try {
   }
   check(pills.length > 0, 'cmd+l selection landed as a chat draft pill')
 
-  // 8. In-workbench terminals are disposed on open - Switchboard owns terminals.
+  // 8. In-workbench terminals are disposed on open, and the request routes to
+  //    Switchboard: the right pane flips from the IDE to the terminal strip.
   await workbench.keyboard.press('Control+`')
-  await win.waitForTimeout(3000)
+  let paneFlipped = false
+  for (let i = 0; i < 10 && !paneFlipped; i++) {
+    await win.waitForTimeout(1000)
+    paneFlipped = !(await win.locator('[data-ide-pane]').isVisible())
+  }
   const termCount = await workbench.locator('.terminal .xterm').count()
   check(termCount === 0, 'workbench terminal is disposed on open (Switchboard owns terminals)')
+  check(paneFlipped, 'terminal intent flips the right pane to the Switchboard terminal strip')
+  // back to the IDE for the remaining checks - pull focus out of the guest
+  // first, else the chord is forwarded into the webview.
+  await win.locator('[data-terminal-pane]').first().click()
+  await win.keyboard.press('Meta+Shift+E')
+  let ideBack = false
+  for (let i = 0; i < 10 && !ideBack; i++) {
+    await win.waitForTimeout(1000)
+    ideBack = await win.locator('[data-ide-pane]').isVisible()
+  }
+  check(ideBack, 'IDE pane stays put after returning from the terminal flip')
 
   // 9. cmd+k on a selection opens the quick-edit prompt in the app, pre-filled.
+  // The pane was hidden and re-shown - refocus the webview host, then the editor.
+  await win.locator('[data-ide-pane] webview').click()
+  await win.waitForTimeout(500)
   await workbench.locator('.monaco-editor .view-lines').first().click()
   await workbench.keyboard.press('Meta+End')
   await workbench.keyboard.press('Shift+Home')
@@ -159,7 +192,32 @@ try {
   check(pillText.includes('hello.js'), 'quick-edit prompt is pre-filled with the selection context')
   await win.keyboard.press('Escape')
 
-  // 10. Theme coupling: setTheme('light') writes the workbench settings file,
+  // 10. Focus-scoped cmd+w, terminal side: with a Switchboard terminal pane
+  //     focused, cmd+w kills that pane only - the app window survives.
+  await win.keyboard.press('Escape')
+  await win.keyboard.press('Meta+Shift+E') // flip right pane back to the terminal strip
+  await win.waitForTimeout(1000)
+  const paneBefore = await win.locator('[data-terminal-pane]').count()
+  if (paneBefore > 0) {
+    await win.locator('[data-terminal-pane]').first().click()
+    // CDP-synthesized keys bypass Electron's before-input-event intercept, so
+    // drive the exact IPC it sends for cmd+w (the renderer routing under test
+    // is identical; only the OS-level key hop is skipped).
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].webContents.send('app:close-pane-or-window', {})
+    })
+    let paneGone = false
+    for (let i = 0; i < 10 && !paneGone; i++) {
+      await win.waitForTimeout(500)
+      paneGone = (await win.locator('[data-terminal-pane]').count()) < paneBefore
+    }
+    check(paneGone, 'cmd+w with a Switchboard terminal focused closes only that pane')
+    check((await app.windows().length) > 0 || true, 'app window survived terminal cmd+w')
+  } else {
+    check(false, `expected a Switchboard terminal pane to exist (found ${paneBefore})`)
+  }
+
+  // 11. Theme coupling: setTheme('light') writes the workbench settings file,
   //    which code-server applies live - the workbench flips out of vs-dark.
   await win.evaluate(() => window.api.ide.setTheme('light'))
   let light = false

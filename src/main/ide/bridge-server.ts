@@ -26,7 +26,11 @@ export interface SelectionMessage {
   intent?: 'edit'
 }
 
-type InboundMessage = HelloMessage | SelectionMessage
+interface TerminalRequestMessage {
+  type: 'terminal'
+}
+
+type InboundMessage = HelloMessage | SelectionMessage | TerminalRequestMessage
 
 /** Minimal socket surface: real ws.WebSocket satisfies it, tests fake it. */
 export interface BridgeSocket {
@@ -42,6 +46,8 @@ export interface BridgeWssLike {
 
 export interface BridgeCallbacks {
   onSelection(msg: SelectionMessage): void
+  /** The user asked for a terminal inside the workbench - open Switchboard's. */
+  onTerminalRequest(): void
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0
@@ -59,6 +65,7 @@ function parseInbound(raw: string): InboundMessage | null {
   if (msg.type === 'hello' && isStr(msg.folder)) {
     return { type: 'hello', folder: msg.folder }
   }
+  if (msg.type === 'terminal') return { type: 'terminal' }
   if (
     msg.type === 'selection' &&
     isStr(msg.path) &&
@@ -127,6 +134,8 @@ export class BridgeServer {
         folder = msg.folder
         this.byFolder.set(msg.folder, socket)
         log.info('bridge hello', { folder: msg.folder })
+      } else if (msg.type === 'terminal') {
+        this.callbacks.onTerminalRequest()
       } else {
         this.callbacks.onSelection(msg)
       }

@@ -101,6 +101,16 @@ export function App() {
   // `tour.lastSeenVersion` is missing or older than TOUR_VERSION, unless
   // the user has switched off `tour.autoplay`. Settings tab provides a
   // manual replay path either way.
+  // Terminal intent inside the workbench (ctrl+` or cmd+j): the webview
+  // swallows Switchboard's global keys, so the bridge forwards it - flip the
+  // right pane to the terminal strip.
+  useEffect(() =>
+    window.api.ide.onTerminalRequest(() => {
+      const layout = useLayoutStore.getState()
+      layout.setRightPaneMode('terminal')
+      if (!layout.terminalVisible) layout.toggleTerminal()
+    }), [])
+
   // Workbench selections: cmd+l appends a draft pill; cmd+k (intent 'edit')
   // opens the quick prompt pre-filled with the selection - Cursor-style, but
   // the edit runs through the active agent + in-chat diff review.

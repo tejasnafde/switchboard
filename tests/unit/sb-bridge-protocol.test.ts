@@ -70,6 +70,12 @@ describe('selection intent (cmd+k quick edit)', () => {
   })
 })
 
+describe('terminal request (workbench terminal -> Switchboard terminal pane)', () => {
+  it('accepts the bare terminal frame', () => {
+    expect(parseMessage('{"type":"terminal"}')).toEqual({ type: 'terminal' })
+  })
+})
+
 describe('config messages (main -> ext live settings)', () => {
   it('accepts a config message with a settings object', () => {
     expect(parseMessage('{"type":"config","settings":{"workbench.colorTheme":"Default Light Modern"}}')).toEqual({
