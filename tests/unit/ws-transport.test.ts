@@ -212,6 +212,46 @@ describe('WsTransport (fake socket)', () => {
     return { t, sock }
   }
 
+  it("re-arms the re-dial when a failed dial fires only 'error' (Node 22 undici never fires 'close' on a refused connect)", async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('WebSocket', FakeSocket)
+    const t = new WsTransport('ws://fake', 30_000, { baseMs: 10, capMs: 20, budgetMs: 1_000 })
+    const first = FakeSocket.instances.at(-1)!
+    first.fire('open')
+    first.fire('close') // server drops - re-dial chain starts
+
+    await vi.advanceTimersByTimeAsync(15)
+    const second = FakeSocket.instances.at(-1)!
+    expect(second).not.toBe(first)
+    second.fire('error') // refused connect: error WITHOUT close
+
+    await vi.advanceTimersByTimeAsync(25)
+    expect(FakeSocket.instances.at(-1)).not.toBe(second) // a third dial happened
+    t.close()
+    vi.useRealTimers()
+  })
+
+  it("does not double-schedule when an implementation fires BOTH 'error' and 'close' for one failed dial", async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('WebSocket', FakeSocket)
+    const t = new WsTransport('ws://fake', 30_000, { baseMs: 10, capMs: 20, budgetMs: 1_000 })
+    const first = FakeSocket.instances.at(-1)!
+    first.fire('open')
+    first.fire('close')
+
+    await vi.advanceTimersByTimeAsync(15)
+    const second = FakeSocket.instances.at(-1)!
+    const countBefore = FakeSocket.instances.length
+    second.fire('error')
+    second.fire('close') // spec-compliant impls fire both
+
+    await vi.advanceTimersByTimeAsync(50)
+    // exactly ONE new dial chain, not two racing ones
+    expect(FakeSocket.instances.length).toBe(countBefore + 1)
+    t.close()
+    vi.useRealTimers()
+  })
+
   it('strips trailing undefined args before serializing (JSON would otherwise turn them into null)', () => {
     const { t, sock } = makeOpenTransport()
     t.send('files:write-file', 'repo', 'sub', 'content', undefined)

@@ -115,8 +115,14 @@ export class WsTransport implements Transport {
       const frame = decodeFrame(typeof ev.data === 'string' ? ev.data : String(ev.data))
       if (frame) this.dispatch(frame)
     })
-    sock.addEventListener('close', () => {
-      if (sock !== this.ws || this.closed) return
+    // 'close' and 'error' both funnel here. A refused connect fires only
+    // 'error' on some WebSocket impls (Node 22's undici) - without this, the
+    // first failed dial silently killed the whole re-dial chain. Spec-compliant
+    // impls fire both for one failure, hence the settled guard.
+    let settled = false
+    const onDead = (): void => {
+      if (settled || sock !== this.ws || this.closed) return
+      settled = true
       this.open = false
       // In-flight invokes are genuinely lost - their responses died with the
       // socket. Queued (unsent) ones stay pending and flush after the re-dial.
@@ -127,7 +133,9 @@ export class WsTransport implements Transport {
         this.pending.delete(id)
       }
       this.scheduleRedial()
-    })
+    }
+    sock.addEventListener('close', onDead)
+    sock.addEventListener('error', onDead)
   }
 
   private scheduleRedial(): void {
