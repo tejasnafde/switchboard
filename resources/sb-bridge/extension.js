@@ -37,7 +37,7 @@ async function handleOpen(msg) {
       editor.revealRange(range, vscode.TextEditorRevealType.InCenter)
     }
   } catch (err) {
-    log(`open failed for ${msg.path}: ${err && err.message}`)
+    console.error(`[sb-bridge] open failed for ${msg.path}: ${err && err.message}`)
   }
 }
 
@@ -47,7 +47,7 @@ async function handleConfig(msg) {
     try {
       await config.update(key, value, vscode.ConfigurationTarget.Global)
     } catch (err) {
-      log(`config update failed for ${key}: ${err && err.message}`)
+      console.error(`[sb-bridge] config update failed for ${key}: ${err && err.message}`)
     }
   }
 }
@@ -111,16 +111,11 @@ function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('switchboard.sendSelection', () => sendSelection()),
     vscode.commands.registerCommand('switchboard.quickEdit', () => sendSelection('edit')),
-    vscode.commands.registerCommand('switchboard.openTerminal', requestSwitchboardTerminal),
-    // Terminals live in Switchboard, not in the workbench - dispose any that
-    // open and flip Switchboard's right pane to its terminal strip instead.
-    vscode.window.onDidOpenTerminal((terminal) => {
-      terminal.dispose()
-      // Close the panel too: left open with zero terminals, the workbench
-      // auto-creates a new one on next show - an intent loop.
-      void vscode.commands.executeCommand('workbench.action.closePanel')
-      requestSwitchboardTerminal()
-    })
+    // Terminal INTENT routes to Switchboard via keybindings (ctrl+backtick,
+    // cmd+j, cmd+shift+e in package.json). Terminals opened programmatically
+    // (tasks, debug, extensions) are left alone - disposing them killed task
+    // runs mid-flight.
+    vscode.commands.registerCommand('switchboard.openTerminal', requestSwitchboardTerminal)
   )
   connect()
 }

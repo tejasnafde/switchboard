@@ -48,6 +48,8 @@ export interface BridgeCallbacks {
   onSelection(msg: SelectionMessage): void
   /** The user asked for a terminal inside the workbench - open Switchboard's. */
   onTerminalRequest(): void
+  /** A workbench ext host registered for `folder` (used to flush queued opens). */
+  onHello?(folder: string): void
 }
 
 const isStr = (v: unknown): v is string => typeof v === 'string' && v.length > 0
@@ -134,6 +136,7 @@ export class BridgeServer {
         folder = msg.folder
         this.byFolder.set(msg.folder, socket)
         log.info('bridge hello', { folder: msg.folder })
+        this.callbacks.onHello?.(msg.folder)
       } else if (msg.type === 'terminal') {
         this.callbacks.onTerminalRequest()
       } else {

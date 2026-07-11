@@ -33,12 +33,18 @@ export function IdePane(): React.ReactElement {
   const [retryNonce, setRetryNonce] = useState(0)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Reflect main-pushed status while ENSURE is in flight (binary download).
+  // Reflect main-pushed status: download progress while ENSURE is in flight,
+  // and crash-after-ready (server died under a live webview - without this
+  // the pane keeps pointing at a dead port with no retry affordance).
   useEffect(() => {
     return window.api.ide.onStatus(({ status, pct }) => {
       if (status === 'downloading') {
         const suffix = pct !== undefined ? ` ${pct}%` : ''
         setState({ kind: 'booting', label: `Downloading VS Code workbench (one-time)…${suffix}` })
+      } else if (status === 'stopped') {
+        setState((prev) =>
+          prev.kind === 'ready' ? { kind: 'error', message: 'IDE server stopped unexpectedly.' } : prev
+        )
       }
     })
   }, [])

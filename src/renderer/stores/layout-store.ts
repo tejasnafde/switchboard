@@ -1,5 +1,8 @@
 import { create } from 'zustand'
+import { createRendererLogger } from '../logger'
 import { useAgentStore } from './agent-store'
+
+const log = createRendererLogger('store:layout')
 
 const SIDEBAR_MIN = 140
 const SIDEBAR_MAX = 500
@@ -188,7 +191,9 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
           endLine: lineRange?.end,
         })
       }
-    } catch { /* test env */ }
+    } catch (err) {
+      log.warn('openInViewer routing failed', err)
+    }
   },
 
   sidebarCollapsedProjects: [],

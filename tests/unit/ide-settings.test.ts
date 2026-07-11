@@ -34,9 +34,8 @@ describe('mergeUserSettings', () => {
     expect(out['workbench.colorTheme']).toBe('Default Dark Modern')
   })
 
-  it('survives malformed existing JSON by starting from defaults', () => {
-    const out = JSON.parse(mergeUserSettings('{nope', { 'workbench.colorTheme': 'Default Dark Modern' }))
-    expect(out['workbench.colorTheme']).toBe('Default Dark Modern')
-    expect(out['files.autoSave']).toBe(SEEDED_DEFAULTS['files.autoSave'])
+  it('returns null (do not write) when the existing file is unparseable - VS Code settings are JSONC and users hand-edit comments in; clobbering them with defaults is data loss', () => {
+    expect(mergeUserSettings('// work laptop\n{ "editor.fontSize": 18 }', { 'workbench.colorTheme': 'Default Dark Modern' })).toBeNull()
+    expect(mergeUserSettings('{nope', {})).toBeNull()
   })
 })

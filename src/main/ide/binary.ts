@@ -32,7 +32,9 @@ async function pathBinary(): Promise<string | null> {
     const { stdout } = await execFileP('which', ['code-server'])
     const p = stdout.trim()
     return p.length > 0 ? p : null
-  } catch {
+  } catch (err) {
+    // Exit 1 = not on PATH (the expected negative). Anything else is worth a trace.
+    if ((err as { code?: number }).code !== 1) log.warn('PATH probe for code-server failed', err)
     return null
   }
 }

@@ -7,7 +7,7 @@
 import { app } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { WebSocketServer } from 'ws'
@@ -19,6 +19,7 @@ import { ensureBinary } from '../ide/binary'
 import { BridgeServer } from '../ide/bridge-server'
 import { allocatePort } from '../machines/connectDeps'
 import { assertCwdReadable } from '../path-access'
+import { writeFileSafe } from '../files/writing'
 import { createMainLogger } from '../logger'
 
 const log = createMainLogger('ipc:ide')
@@ -44,6 +45,8 @@ function bundledExtensionDir(): string {
 export function registerIdeHandlers(host: BackendHost): void {
   let runtime: IdeRuntime | null = null
   let booting: Promise<IdeRuntime> | null = null
+  /** Latest unrouted open per folder - flushed on that workbench's hello. */
+  const pendingOpens = new Map<string, { path: string; line?: number; endLine?: number }>()
 
   const pushStatus = (status: IdePublicStatus, port?: number, pct?: number): void => {
     host.emit(IdeChannels.STATUS, { status, port, pct })
@@ -59,10 +62,22 @@ export function registerIdeHandlers(host: BackendHost): void {
     let existing: string | null = null
     try {
       existing = readFileSync(p, 'utf8')
-    } catch {
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('settings read failed', err)
       existing = null
     }
-    writeFileSync(p, mergeUserSettings(existing, patch))
+    const merged = mergeUserSettings(existing, patch)
+    if (merged === null) {
+      // Unparseable (JSONC hand edits) - never clobber; the bridge push still
+      // applies live changes through the workbench's own config service.
+      log.warn('settings.json unparseable - skipping file write', { path: p })
+      return
+    }
+    // Atomic temp-then-rename: code-server live-watches this file and must
+    // never see a torn write.
+    void writeFileSafe(p, merged, {}).then((res) => {
+      if (!res.ok) log.warn('settings write failed', res.error)
+    })
   }
 
   async function boot(): Promise<IdeRuntime> {
@@ -85,6 +100,15 @@ export function registerIdeHandlers(host: BackendHost): void {
       onTerminalRequest: () => {
         log.info('workbench terminal intent forwarded')
         host.emit(IdeChannels.TERMINAL_REQUEST)
+      },
+      // Pill clicks while the workbench is still booting are stashed and
+      // flushed when its extension host dials home.
+      onHello: (folder) => {
+        const pending = pendingOpens.get(folder)
+        if (pending) {
+          pendingOpens.delete(folder)
+          bridge.openFile(folder, pending.path, pending.line, pending.endLine)
+        }
       },
     })
 
@@ -113,6 +137,9 @@ export function registerIdeHandlers(host: BackendHost): void {
         extensionsDir,
         userDataDir: join(userDataRoot, 'code-server', 'data'),
         env: { SB_BRIDGE_PORT: String(bridgePort), SB_BRIDGE_TOKEN: bridgeToken },
+        // Crash after ready must reach the renderer - a webview pointed at a
+        // dead port with no retry affordance is the worst failure mode.
+        onExit: () => pushStatus('stopped'),
       }
     )
     return { manager, bridge }
@@ -147,7 +174,11 @@ export function registerIdeHandlers(host: BackendHost): void {
     async ({ folder, path, line, endLine }) => {
       const absPath = isAbsolute(path) ? path : resolve(folder, path)
       const routed = runtime?.bridge.openFile(folder, absPath, line, endLine) ?? false
-      if (!routed) log.warn('ide open not routed - no extension host for folder', { folder })
+      if (!routed) {
+        // Workbench cold or booting: remember the intent, flush on hello.
+        pendingOpens.set(folder, { path: absPath, line, endLine })
+        log.info('ide open queued - workbench not connected yet', { folder })
+      }
       return { ok: routed }
     }
   )
@@ -155,10 +186,12 @@ export function registerIdeHandlers(host: BackendHost): void {
   host.handle<[string]>(IdeChannels.SET_THEME, async (theme: string) => {
     try {
       const patch = { 'workbench.colorTheme': themeToColorTheme(theme) }
-      // File write covers the next boot; the bridge push applies it to any
-      // live workbench immediately (the file watcher alone is unreliable).
-      patchUserSettings(patch)
-      runtime?.bridge.broadcastConfig(patch)
+      // Prefer the bridge push: the extension's config.update persists to the
+      // same settings.json through the workbench's own writer (JSONC-safe, no
+      // second-writer race). Fall back to the file only when no workbench is
+      // connected to carry it.
+      const delivered = runtime?.bridge.broadcastConfig(patch) ?? 0
+      if (delivered === 0) patchUserSettings(patch)
       return { ok: true }
     } catch (err) {
       log.warn('set-theme failed', err)

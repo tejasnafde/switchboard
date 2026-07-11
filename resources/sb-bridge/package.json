@@ -48,6 +48,10 @@
         "command": "switchboard.openTerminal",
         "key": "ctrl+shift+e",
         "mac": "cmd+shift+e"
+      },
+      {
+        "command": "switchboard.openTerminal",
+        "key": "ctrl+`"
       }
     ]
   },

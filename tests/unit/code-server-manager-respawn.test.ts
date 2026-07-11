@@ -28,6 +28,7 @@ interface Harness {
   ports: number[]
   healthResults: boolean[]
   healthProbes: string[]
+  exits: number
 }
 
 function makeHarness(overrides: { healthResults?: boolean[]; failFirstSpawn?: boolean } = {}): Harness {
@@ -37,6 +38,7 @@ function makeHarness(overrides: { healthResults?: boolean[]; failFirstSpawn?: bo
   const healthResults = overrides.healthResults ?? [true]
   let healthIdx = 0
   const healthProbes: string[] = []
+  const harness = { exits: 0 }
   const manager = new CodeServerManager(
     {
       spawn: (_binary, args) => {
@@ -60,9 +62,12 @@ function makeHarness(overrides: { healthResults?: boolean[]; failFirstSpawn?: bo
       extensionsDir: '/fake/ext',
       userDataDir: '/fake/data',
       env: { SB_BRIDGE_PORT: '9999', SB_BRIDGE_TOKEN: 'tok' },
+      onExit: () => {
+        harness.exits++
+      },
     }
   )
-  return { manager, spawned, ports, healthResults, healthProbes }
+  return { manager, spawned, ports, healthResults, healthProbes, get exits() { return harness.exits } }
 }
 
 describe('CodeServerManager', () => {
@@ -114,6 +119,7 @@ describe('CodeServerManager', () => {
     await h.manager.ensureStarted()
     h.spawned[0].child.emitExit(1)
     expect(h.manager.status).toBe('stopped')
+    expect(h.exits).toBe(1) // crash-after-ready must notify (renderer shows retry)
     const port = await h.manager.ensureStarted()
     expect(h.spawned).toHaveLength(2)
     expect(port).toBe(40002)
@@ -124,6 +130,7 @@ describe('CodeServerManager', () => {
     h.manager.stop()
     expect(h.spawned[0].child.killed).toBe(true)
     expect(h.manager.status).toBe('stopped')
+    expect(h.exits).toBe(0) // deliberate stop is not a crash - no notification
   })
 
   it('passes the bridge env through to spawn', async () => {

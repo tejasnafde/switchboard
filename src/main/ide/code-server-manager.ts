@@ -88,6 +88,9 @@ export interface ManagerConfig {
   extensionsDir: string
   userDataDir: string
   env: NodeJS.ProcessEnv
+  /** Fired when a READY server exits on its own (not via stop()) - the
+   *  renderer must learn the webview now points at a dead port. */
+  onExit?: () => void
 }
 
 const HEALTH_RETRIES = 30
@@ -141,6 +144,7 @@ export class CodeServerManager {
           this.child = null
           this.port = null
           this.status = 'stopped'
+          this.cfg.onExit?.()
         }
       })
       try {

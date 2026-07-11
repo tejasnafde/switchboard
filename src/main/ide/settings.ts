@@ -22,16 +22,23 @@ export function themeToColorTheme(theme: string): string {
   return theme === 'light' ? 'Default Light Modern' : 'Default Dark Modern'
 }
 
-/** Merge `patch` into the existing settings JSON (defaults only when starting fresh). */
-export function mergeUserSettings(existingJson: string | null, patch: Record<string, unknown>): string {
+/**
+ * Merge `patch` into the existing settings JSON (defaults only when starting
+ * fresh). Returns null when the existing file is present but unparseable:
+ * VS Code settings are JSONC and users hand-edit comments in, so replacing an
+ * unreadable file with defaults would destroy their settings. Callers skip
+ * the write (live changes still land via the bridge config push).
+ */
+export function mergeUserSettings(existingJson: string | null, patch: Record<string, unknown>): string | null {
   let existing: Record<string, unknown> | null = null
   if (existingJson !== null) {
     try {
       existing = JSON.parse(existingJson)
     } catch {
-      existing = null
+      return null
     }
+    if (!existing || typeof existing !== 'object') return null
   }
-  const base = existing && typeof existing === 'object' ? existing : { ...SEEDED_DEFAULTS }
+  const base = existing ?? { ...SEEDED_DEFAULTS }
   return JSON.stringify({ ...base, ...patch }, null, 2)
 }
