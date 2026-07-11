@@ -414,10 +414,30 @@ export function ChatInput({
   // at-menu file listing AND the BranchPicker, so a worktree session's branch
   // switch can't flip HEAD in the shared parent repo.
   const sessionsForRepo = useAgentStore((s) => s.sessions)
-  const repoRoot = useMemo(() => {
+  // The ONE pointer swap: chip, IDE pane, terminals, and diff review all
+  // derive from it. Shared by the branch picker and the drift Follow button
+  // so future swap side effects cannot diverge between the two.
+  const swapWorktreePointer = (newCwd: string, branch: string) => {
+    if (!sessionId) return
+    useAgentStore.getState().setWorktree(sessionId, newCwd, branch)
+    const conversationId = useAgentStore.getState().sessions.find((x) => x.id === sessionId)?.conversationId
+      ?? sessionId
+    window.api.app
+      .setConversationWorktree(conversationId, newCwd, branch)
+      .catch((err: unknown) => log.warn('persist worktree failed:', err))
+  }
+
+  const { repoRoot, driftSuggestion } = useMemo(() => {
     const s = sessionsForRepo.find((sess) => sess.id === sessionId)
-    return s?.worktreePath ?? s?.projectPath ?? null
+    return {
+      repoRoot: s?.worktreePath ?? s?.projectPath ?? null,
+      driftSuggestion: s?.driftSuggestion ?? null,
+    }
   }, [sessionsForRepo, sessionId])
+
+  const followDrift = () => {
+    if (driftSuggestion) swapWorktreePointer(driftSuggestion.worktreePath, driftSuggestion.branch)
+  }
 
   // Lazy-load the file list the first time the user opens `@`. Cached on
   // a per-mount ref so reopening this chat refreshes the listing.
@@ -908,21 +928,47 @@ export function ChatInput({
           </select>
         )}
 
+        {driftSuggestion && (
+          <span
+            data-drift-banner
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontSize: 11,
+              color: 'var(--text-secondary)',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid var(--border)',
+              borderRadius: 4,
+              padding: '3px 8px',
+            }}
+          >
+            Agent is working in <strong>{driftSuggestion.branch}</strong>
+            <button
+              type="button"
+              onClick={followDrift}
+              style={{ cursor: 'pointer', border: 'none', background: 'var(--accent, #4a7dff)', color: '#fff', borderRadius: 3, padding: '2px 8px', fontSize: 11 }}
+            >
+              Follow
+            </button>
+            <button
+              type="button"
+              title="Dismiss"
+              onClick={() => sessionId && useAgentStore.getState().setDriftSuggestion(sessionId, null)}
+              style={{ cursor: 'pointer', border: 'none', background: 'transparent', color: 'var(--text-secondary)', fontSize: 12 }}
+            >
+              ×
+            </button>
+          </span>
+        )}
+
         {/* Per-thread branch picker. On `swap-cwd` (picked branch already
             has a worktree elsewhere) we update the store + persist to the
             conversations row; the running adapter keeps its old cwd until
             session restart, then picks up the new pointer. */}
         <BranchPickerTrigger
           cwd={repoRoot}
-          onSwapWorktree={(newCwd, branch) => {
-            if (!sessionId) return
-            useAgentStore.getState().setWorktree(sessionId, newCwd, branch)
-            const conversationId = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.conversationId
-              ?? sessionId
-            window.api.app
-              .setConversationWorktree(conversationId, newCwd, branch)
-              .catch((err: unknown) => log.warn('persist worktree failed:', err))
-          }}
+          onSwapWorktree={swapWorktreePointer}
         />
 
         {/* Runtime mode selector (per-session) */}

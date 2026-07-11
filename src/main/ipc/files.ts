@@ -22,7 +22,7 @@ const MAX_WRITE_BYTES = 8 * 1024 * 1024 // 8 MB cap on writes - caps a runaway b
 
 /** Realpath the nearest existing ancestor (leaf may not exist for a new-file
  *  write) and re-append the tail, so symlinks are resolved for the check below. */
-async function realpathOrAncestor(p: string): Promise<string> {
+export async function realpathOrAncestor(p: string): Promise<string> {
   let dir = p
   const tail: string[] = []
   for (;;) {
