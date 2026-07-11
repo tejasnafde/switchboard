@@ -192,21 +192,21 @@ describe('spawnTunnel', () => {
   // Real child processes: their exit events are plain IO, so the fake timers
   // installed by beforeEach are irrelevant here - but switch back anyway so a
   // slow spawn can never interleave with a queued fake-timer tick.
-  it('passes the summarized ssh stderr through the exit callback as the failure reason', async () => {
+  it('summarizes the ssh stderr tail into exitReason after the process dies', async () => {
     vi.useRealTimers()
     const proc = spawnTunnel('sh', [
       '-c',
       'echo "Warning: Permanently added host" >&2; echo "Permission denied (publickey)." >&2; exit 255',
     ])
-    const reason = await new Promise<string | undefined>((resolve) => proc.onExit(resolve))
-    expect(reason).toBe('Permission denied (publickey).')
+    await new Promise<void>((resolve) => proc.onExit(() => resolve()))
+    expect(proc.exitReason?.()).toContain('Permission denied (publickey).')
   })
 
   it('reports no reason when the process exits with a silent stderr', async () => {
     vi.useRealTimers()
     const proc = spawnTunnel('sh', ['-c', 'exit 0'])
-    const reason = await new Promise<string | undefined>((resolve) => proc.onExit(resolve))
-    expect(reason).toBeUndefined()
+    await new Promise<void>((resolve) => proc.onExit(() => resolve()))
+    expect(proc.exitReason?.()).toBeUndefined()
   })
 
   it('drops known-noise stderr lines so chatter alone yields no bogus reason', async () => {
@@ -215,8 +215,8 @@ describe('spawnTunnel', () => {
       '-c',
       'echo "WARNING: To increase the performance of the tunnel, consider installing NumPy" >&2; exit 1',
     ])
-    const reason = await new Promise<string | undefined>((resolve) => proc.onExit(resolve))
-    expect(reason).toBeUndefined()
+    await new Promise<void>((resolve) => proc.onExit(() => resolve()))
+    expect(proc.exitReason?.()).toBeUndefined()
   })
 })
 
@@ -236,26 +236,9 @@ describe('REMOTE_COMMAND', () => {
 describe('allocatePort', () => {
   // Real socket binds - the file-level fake timers don't gate net I/O, but
   // switch to real timers anyway so nothing here depends on the fake clock.
-  it('reuses a free preferred port so a reconnect keeps its ws url', async () => {
+  it('allocates a free ephemeral port', async () => {
     vi.useRealTimers()
     const first = await allocatePort()
     expect(first).toBeGreaterThan(0)
-    expect(await allocatePort(first)).toBe(first)
-  })
-
-  it('falls back to a fresh port when the preferred one is already taken', async () => {
-    vi.useRealTimers()
-    const srv = createServer()
-    const taken = await new Promise<number>((resolve, reject) => {
-      srv.once('error', reject)
-      srv.listen(0, '127.0.0.1', () => resolve((srv.address() as AddressInfo).port))
-    })
-    try {
-      const port = await allocatePort(taken)
-      expect(port).toBeGreaterThan(0)
-      expect(port).not.toBe(taken)
-    } finally {
-      await new Promise<void>((resolve) => srv.close(() => resolve()))
-    }
   })
 })

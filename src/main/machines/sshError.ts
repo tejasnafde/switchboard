@@ -25,6 +25,9 @@ const NOISE = [
   /^starting.*tunnel/i,
   /^listening on port/i,
   /^testing if tunnel/i,
+  // gcloud IAP prints an upload-bandwidth advisory on teardown; never a failure cause.
+  /^please see https:/i,
+  /increasing the tcp upload bandwidth/i,
 ]
 
 /** Recognised ssh failure lines, most-specific cause first. */
@@ -63,6 +66,9 @@ export function summarizeSshError(stderr: string): string {
   }
 
   // No recognised cause: ssh prints the fatal line last, so prefer the last
-  // non-noise line; if everything was noise, fall back to the raw last line.
-  return signal.length > 0 ? signal[signal.length - 1] : lines[lines.length - 1]
+  // non-noise line. If EVERYTHING was noise there is no cause to report -
+  // return empty rather than leaking an advisory (seen live: a killed IAP
+  // tunnel's only stderr was the NumPy/bandwidth notice, which then rendered
+  // as the machine's error reason).
+  return signal.length > 0 ? signal[signal.length - 1] : ''
 }

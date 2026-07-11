@@ -4,13 +4,13 @@
  * rows below it, drag-reorderable. Connect/provision/tunnel is live (see
  * src/main/machines/); offline remotes show a cached read-only snapshot.
  */
-import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import type { SessionSummary } from '@shared/types'
+import type { Machine } from '@shared/machines'
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
-import type { Machine } from '@shared/machines'
 import { useMachineStore } from '../../stores/machine-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { buildMachineList, type MachineNode, type MachineStatus } from './machineList'
@@ -20,55 +20,8 @@ import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 const PIP_COLOR: Record<MachineStatus, string> = {
   connected: 'var(--success)',
   connecting: 'var(--warning)',
-  provisioning: 'var(--warning)',
-  // Self-healing backoff, deliberately not error-red - see connectionStatus.ts.
-  reconnecting: 'var(--warning)',
   offline: 'var(--text-muted)',
   error: 'var(--error)',
-}
-
-/** Connect-in-flight statuses that render the spinner banner. */
-const BUSY_STATUSES: readonly MachineStatus[] = ['connecting', 'provisioning', 'reconnecting']
-
-/** Quick connects should not flash a counter - show elapsed only past this. */
-const ELAPSED_VISIBLE_AFTER_S = 3
-
-/**
- * Spinner + phase label + elapsed seconds + Cancel, shown while a connect
- * attempt is in flight. The 1s tick lives here so only busy machines re-render.
- */
-function MachineBusyBanner({
-  status,
-  detail,
-  startedAt,
-  onCancel,
-}: {
-  status: MachineStatus
-  detail: string | null
-  startedAt: number | null
-  onCancel: () => void
-}) {
-  const [now, setNow] = useState(() => Date.now())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-  const elapsedS = startedAt !== null ? Math.floor((now - startedAt) / 1000) : null
-  const label = detail ?? (status === 'reconnecting' ? 'Reconnecting…' : 'Connecting…')
-  return (
-    <>
-      <span className="machine-spinner" aria-hidden />
-      <span className="machine-busy-label" title={label}>
-        {label}
-      </span>
-      {elapsedS !== null && elapsedS >= ELAPSED_VISIBLE_AFTER_S && (
-        <span className="machine-elapsed">{elapsedS}s</span>
-      )}
-      <button className="machine-connect" onClick={onCancel}>
-        Cancel
-      </button>
-    </>
-  )
 }
 
 function SortableMachine({
@@ -120,8 +73,8 @@ export function MachineLayer({
   const connect = useMachineStore((s) => s.connect)
   const disconnect = useMachineStore((s) => s.disconnect)
   const lastError = useMachineStore((s) => s.lastError)
-  const connectionDetail = useMachineStore((s) => s.connectionDetail)
-  const connectStartedAt = useMachineStore((s) => s.connectStartedAt)
+  const progress = useMachineStore((s) => s.progress)
+  const reconnecting = useMachineStore((s) => s.reconnecting)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
   const [addProjectFor, setAddProjectFor] = useState<string | null>(null)
 
@@ -143,17 +96,21 @@ export function MachineLayer({
   const renderRemoteBody = (node: MachineNode) => {
     const snap = snapshots[node.id]
     const projects = cachedProjects(snap)
+    const isReconnecting = node.status === 'error' && reconnecting[node.id]
     const offline = node.status === 'offline' || node.status === 'error'
     return (
-      <div className="sidebar-machine-cached">
+      <div className="sidebar-machine-cached" data-offline={offline || undefined}>
         <div className="cached-banner">
-          {BUSY_STATUSES.includes(node.status) ? (
-            <MachineBusyBanner
-              status={node.status}
-              detail={connectionDetail[node.id] ?? null}
-              startedAt={connectStartedAt[node.id] ?? null}
-              onCancel={() => void disconnect(node.id)}
-            />
+          {node.status === 'connecting' || isReconnecting ? (
+            <>
+              <span className="machine-spinner" aria-hidden />
+              <span className="machine-progress">
+                {isReconnecting ? 'Reconnecting…' : (progress[node.id] ?? 'Connecting…')}
+              </span>
+              <button className="machine-connect" onClick={() => void disconnect(node.id)}>
+                Cancel
+              </button>
+            </>
           ) : node.status === 'connected' ? (
             <>
               <button className="machine-connect" onClick={() => void disconnect(node.id)}>
@@ -168,15 +125,13 @@ export function MachineLayer({
               {node.status === 'error' ? 'Retry connect' : 'Connect'}
             </button>
           )}
-          {node.status === 'error' && lastError[node.id] && (
-            <span className="machine-error-reason" title={lastError[node.id] ?? undefined}>
-              {lastError[node.id]}
-            </span>
-          )}
           {offline && projects.length > 0 && (
             <span className="cached-label">{syncedAgoLabel(snap?.syncedAt, Date.now())} · read-only</span>
           )}
         </div>
+        {node.status === 'error' && !isReconnecting && lastError[node.id] && (
+          <div className="machine-error-reason">{lastError[node.id]}</div>
+        )}
         {projects.length === 0 ? (
           <div className="sidebar-machine-empty">
             {node.status === 'connected'
@@ -220,7 +175,7 @@ export function MachineLayer({
                     key={s.id}
                     className={`cached-chat${s.id === activeSessionId ? ' sidebar-thread-active' : ''}`}
                     data-openable={openable || undefined}
-                    title={openable ? undefined : 'Connect to open this chat'}
+                    title={openable ? undefined : 'Connect to this machine to open'}
                     onClick={openable ? () => onOpenRemoteSession!(node.id, p.path, summary) : undefined}
                     onContextMenu={
                       // Menu actions route to the machine - connected only.
@@ -249,17 +204,19 @@ export function MachineLayer({
     return (
       <section className="sidebar-machine">
         <header className="sidebar-machine-header" onClick={() => toggleCollapsed(node.id)}>
-          {/* Always render the grip slot so local + remote headers align; only
-              remotes (drag-reorderable) get the actual handle. */}
-          {dragHandleProps ? (
+          {/* Grip is an absolute overlay in the left padding gutter, so local +
+              remote headers align without reserving layout width. */}
+          {dragHandleProps && (
             <span className="machine-grip" onClick={(e) => e.stopPropagation()} {...dragHandleProps}>
               ⠿
             </span>
-          ) : (
-            <span className="machine-grip" aria-hidden />
           )}
           <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
-          <span className="machine-pip" style={{ background: PIP_COLOR[node.status] }} />
+          {/* An auto-reconnecting error shows the amber connecting pip, not red - it's in progress, not dead. */}
+          <span
+            className="machine-pip"
+            style={{ background: PIP_COLOR[node.status === 'error' && reconnecting[node.id] ? 'connecting' : node.status] }}
+          />
           <span className="sidebar-machine-name">{node.name}</span>
           {node.kind === 'local' ? (
             <span className="machine-tag">local</span>
@@ -279,9 +236,7 @@ export function MachineLayer({
                 if (machine) onEditMachine(machine)
               }}
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-              </svg>
+              ✎
             </button>
           )}
           {node.kind === 'remote' && (
@@ -290,8 +245,8 @@ export function MachineLayer({
               title="Remove machine"
               onClick={(e) => {
                 e.stopPropagation()
-                if (!window.confirm(`Remove ${node.name}? Its cached snapshot is deleted too.`)) return
-                void remove(node.id)
+                // Deleting also drops the offline snapshot; not undoable.
+                if (window.confirm(`Remove machine "${node.name}"?`)) void remove(node.id)
               }}
             >
               ×
@@ -309,14 +264,6 @@ export function MachineLayer({
 
   return (
     <>
-      {/* Always-visible header - keeps "+ Add machine" reachable without
-          scrolling past the local tree and every remote. */}
-      <div className="machine-layer-header">
-        <span className="machine-layer-title">Machines</span>
-        <button className="sidebar-add-machine" onClick={onAddMachine}>
-          <span style={{ fontSize: '13px', lineHeight: 1 }}>+</span> Add machine
-        </button>
-      </div>
       {renderNode(local)}
       <DndContext sensors={sensors} modifiers={[restrictToVerticalAxis]} onDragEnd={handleDragEnd}>
         <SortableContext items={remoteNodes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
@@ -327,6 +274,9 @@ export function MachineLayer({
           ))}
         </SortableContext>
       </DndContext>
+      <button className="sidebar-add-machine" onClick={onAddMachine}>
+        <span style={{ fontSize: '13px', lineHeight: 1 }}>+</span> Add machine
+      </button>
       {addProjectFor && (
         <AddRemoteProjectModal machineId={addProjectFor} onClose={() => setAddProjectFor(null)} />
       )}

@@ -13,7 +13,7 @@ import { encodeFrame, decodeFrame } from '@shared/ws-protocol'
 import { createMainLogger } from '../logger'
 import { appVersion } from '../runtime'
 import { REMOTE_SERVER_DIR } from './provisionCommands'
-import { isNoiseLine, summarizeSshError } from './sshError'
+import { summarizeSshError } from './sshError'
 import type { TunnelProcess } from './connectionManager'
 
 const log = createMainLogger('machines:tunnel')
@@ -36,64 +36,43 @@ export const REMOTE_COMMAND =
   `if [ -n "$P" ] && grep -qsa index.cjs "/proc/$P/cmdline"; then kill "$P" 2>/dev/null; sleep 1; fi; ` +
   `SWITCHBOARD_REMOTE=1 PORT=${REMOTE_PORT} node $D/index.cjs`
 
-function bindPort(port: number): Promise<number> {
+export function allocatePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = createServer()
     srv.once('error', reject)
-    srv.listen(port, '127.0.0.1', () => {
+    srv.listen(0, '127.0.0.1', () => {
       const addr = srv.address()
-      const bound = typeof addr === 'object' && addr ? addr.port : 0
-      srv.close(() => (bound ? resolve(bound) : reject(new Error('failed to allocate a local port'))))
+      const port = typeof addr === 'object' && addr ? addr.port : 0
+      srv.close(() => (port ? resolve(port) : reject(new Error('failed to allocate a local port'))))
     })
   })
 }
 
-/**
- * Allocate a free local port. When `preferred` is given (a reconnect reusing
- * its previous tunnel port so the ws URL stays stable), try binding it first
- * and fall back to an ephemeral port only if something else grabbed it.
- */
-export async function allocatePort(preferred?: number): Promise<number> {
-  if (preferred) {
-    try {
-      return await bindPort(preferred)
-    } catch (err) {
-      log.warn(`preferred port ${preferred} unavailable, allocating a fresh one`, err)
-    }
-  }
-  return bindPort(0)
-}
-
-// How many non-noise ssh stderr lines to retain for the exit reason. ssh
-// prints the fatal cause last, so a short tail is enough even under IAP/gcloud
-// warning spew.
-const STDERR_TAIL_LINES = 20
-
 export function spawnTunnel(command: string, args: string[]): TunnelProcess {
   log.info('spawn tunnel', { command, args })
   const child = spawn(command, args)
-  // Retain the tail of ssh's stderr so an exit can report its real cause
-  // ("Permission denied", "Host key verification failed") instead of a
-  // generic tunnel-died error that only the main log explains.
-  const stderrTail: string[] = []
+  // Keep the tail of stderr so a dying tunnel can report WHY it died
+  // ("Permission denied", "Connection refused") instead of a bare error pip.
+  let stderrTail = ''
   // Surface ssh + remote-server output: this is where a crashed server, an
   // EADDRINUSE from a lingering server, or an ssh/forward error shows up.
   child.stdout.on('data', (d) => log.info(`tunnel stdout: ${String(d).trimEnd()}`))
   child.stderr.on('data', (d) => {
-    const text = String(d)
-    log.warn(`tunnel stderr: ${text.trimEnd()}`)
-    for (const raw of text.split('\n')) {
-      const line = raw.trim()
-      if (!line || isNoiseLine(line)) continue
-      stderrTail.push(line)
-      if (stderrTail.length > STDERR_TAIL_LINES) stderrTail.shift()
-    }
+    log.warn(`tunnel stderr: ${String(d).trimEnd()}`)
+    stderrTail = (stderrTail + String(d)).slice(-4096)
   })
   child.on('exit', (code, signal) => log.info('tunnel exited', { code, signal }))
-  child.on('error', (err) => log.warn('tunnel spawn error', err))
+  child.on('error', (err) => {
+    log.warn('tunnel spawn error', err)
+    stderrTail = (stderrTail + err.message).slice(-4096)
+  })
   return {
     kill: () => child.kill(),
-    onExit: (cb) => child.once('exit', () => cb(summarizeSshError(stderrTail.join('\n')) || undefined)),
+    onExit: (cb) => child.once('exit', cb),
+    exitReason: () => {
+      const summary = summarizeSshError(stderrTail)
+      return summary ? `tunnel closed: ${summary}` : undefined
+    },
   }
 }
 

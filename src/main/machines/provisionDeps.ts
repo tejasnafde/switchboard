@@ -4,11 +4,7 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Machine } from '@shared/machines'
 import { appRootDir, appVersion } from '../runtime'
-import { createMainLogger } from '../logger'
 import { provisionRemote, type ProcRunner } from './provisioner'
-import type { ProvisionHooks } from './connectionManager'
-
-const log = createMainLogger('machines:provision')
 
 // Cap on captured child output. `cat > file` produces no stdout, but a
 // misbehaving remote (sudo retry loop, an echoing pipe) can spew without
@@ -16,24 +12,18 @@ const log = createMainLogger('machines:provision')
 // is far more than enough to surface any real error message.
 const MAX_CAPTURE = 1024 * 1024
 
-// Ceiling on any single provisioning command. Generous because `npm install`
-// on a slow VM legitimately takes minutes; the point is that a hung ssh (dead
-// forward, remote wedged mid-stream) can no longer block connect forever.
-const DEFAULT_EXEC_TIMEOUT_MS = 10 * 60 * 1000
+// Backstop for a post-connect hang (npm stall, sudo waiting on a password
+// despite -n): ssh's ConnectTimeout only covers connection setup. Generous
+// because npm install on a slow VM legitimately takes minutes.
+const EXEC_TIMEOUT_MS = 10 * 60 * 1000
 
-// Grace between SIGTERM and SIGKILL when the timeout fires.
-const KILL_GRACE_MS = 5000
-
-/**
- * Build a ProcRunner exec. `onSpawn` (when given) receives a kill handle for
- * every child the moment it spawns, so a user cancel (disconnect) can reap an
- * in-flight provisioning ssh instead of letting it run to completion.
- */
-export function makeExecProc(onSpawn?: (child: { kill: () => void }) => void): ProcRunner['exec'] {
-  return (command, args, stdin, timeoutMs = DEFAULT_EXEC_TIMEOUT_MS) =>
-  new Promise((resolve, reject) => {
+export const execProc: ProcRunner['exec'] = (command, args, stdin, timeoutMs = EXEC_TIMEOUT_MS) =>
+  new Promise((resolve) => {
     const child = spawn(command, args)
-    onSpawn?.({ kill: () => child.kill() })
+    const timer = setTimeout(() => {
+      child.kill()
+      finish(1, `command timed out after ${Math.round(timeoutMs / 1000)}s`)
+    }, timeoutMs)
     const out: Buffer[] = []
     const err: Buffer[] = []
     let outLen = 0
@@ -44,21 +34,11 @@ export function makeExecProc(onSpawn?: (child: { kill: () => void }) => void): P
     child.stderr.on('data', (d: Buffer) => {
       if (errLen < MAX_CAPTURE) { err.push(d); errLen += d.length }
     })
-    let timedOut = false
-    let hardKill: ReturnType<typeof setTimeout> | undefined
-    const killTimer = setTimeout(() => {
-      timedOut = true
-      log.warn(`exec timed out after ${timeoutMs}ms, killing`, { command })
-      child.kill('SIGTERM')
-      hardKill = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS)
-    }, timeoutMs)
+    let done = false
     const finish = (code: number, stderrOverride?: string) => {
-      clearTimeout(killTimer)
-      if (hardKill) clearTimeout(hardKill)
-      if (timedOut) {
-        reject(new Error(`command timed out after ${timeoutMs / 1000}s`))
-        return
-      }
+      if (done) return
+      done = true
+      clearTimeout(timer)
       resolve({
         code,
         stdout: Buffer.concat(out).toString('utf-8'),
@@ -88,9 +68,6 @@ export function makeExecProc(onSpawn?: (child: { kill: () => void }) => void): P
       }
     }
   })
-}
-
-export const execProc: ProcRunner['exec'] = makeExecProc()
 
 function readServerBundlePath(): string {
   // Shipped inside the asar via `out/**` (build runs build:server); dev reads it
@@ -108,7 +85,7 @@ function depVersion(name: string): string {
 
 /** Bundle the real deps into the ConnectionManager `provision` hook. */
 export function makeProvision(log?: (msg: string) => void) {
-  return (machine: Machine, hooks?: ProvisionHooks) =>
+  return (machine: Machine, onStep?: (label: string) => void) =>
     provisionRemote(
       machine,
       {
@@ -117,8 +94,8 @@ export function makeProvision(log?: (msg: string) => void) {
         claudeSdkVersion: depVersion('@anthropic-ai/claude-agent-sdk'),
         bundlePath: readServerBundlePath(),
       },
-      { exec: makeExecProc(hooks?.onChild) },
+      { exec: execProc },
       log,
-      hooks?.onProgress,
+      onStep,
     )
 }

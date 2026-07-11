@@ -35,16 +35,6 @@ describe('buildMachineList', () => {
     expect(list.find((m) => m.id === 'b')!.status).toBe('connecting')
   })
 
-  it('passes the provisioning and reconnecting connect-phase statuses through', () => {
-    const remotes = [mk({ id: 'a', sortOrder: 0 }), mk({ id: 'b', sortOrder: 1 })]
-    const list = buildMachineList(remotes, {
-      localName: 'This Mac',
-      connections: { a: 'provisioning', b: 'reconnecting' },
-    })
-    expect(list.find((m) => m.id === 'a')!.status).toBe('provisioning')
-    expect(list.find((m) => m.id === 'b')!.status).toBe('reconnecting')
-  })
-
   it('carries ssh fields through for display', () => {
     const list = buildMachineList([mk({ id: 'a', sshUser: 'deploy', sshHost: 'h.dev' })], {
       localName: 'Local',

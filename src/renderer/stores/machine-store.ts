@@ -13,20 +13,13 @@ import type { Project } from '@shared/types'
 import { AppChannels } from '@shared/ipc-channels'
 import type { MachineStatus } from '../components/sidebar/machineList'
 import { projectsToSnapshot } from '../components/sidebar/machineSnapshot'
-// Cycle-safe: agent-store imports no other store (only zustand + shared types).
-import { useAgentStore } from './agent-store'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:machines')
 
-const MACHINE_STATUSES: readonly MachineStatus[] = ['connected', 'connecting', 'provisioning', 'reconnecting', 'offline', 'error']
+const MACHINE_STATUSES: readonly MachineStatus[] = ['connected', 'connecting', 'offline', 'error']
 function toMachineStatus(status: string): MachineStatus {
   return (MACHINE_STATUSES as readonly string[]).includes(status) ? (status as MachineStatus) : 'offline'
-}
-
-/** States with a connect attempt in flight (or already live) - a fresh attempt entering from these does not restamp connectStartedAt. */
-function isActiveStatus(status: MachineStatus): boolean {
-  return status === 'connecting' || status === 'provisioning' || status === 'reconnecting' || status === 'connected'
 }
 
 /**
@@ -56,10 +49,10 @@ interface MachineStore {
   snapshots: Record<string, MachineSnapshot>
   /** machineId -> human-readable reason for the last 'error' status (null once cleared). */
   lastError: Record<string, string | null>
-  /** machineId -> current connect-phase progress label ('npm install ...', 'waiting for server…'), null when idle. */
-  connectionDetail: Record<string, string | null>
-  /** machineId -> when the current connect attempt started (drives the elapsed counter), null outside an attempt. */
-  connectStartedAt: Record<string, number | null>
+  /** machineId -> current connect-phase detail ("npm install…"), only while connecting. */
+  progress: Record<string, string | null>
+  /** machineId -> true while an errored connection is auto-reconnecting. */
+  reconnecting: Record<string, boolean>
 
   hydrate: () => Promise<void>
   add: (input: MachineInput) => Promise<Machine | null>
@@ -94,8 +87,8 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   sshHosts: [],
   snapshots: {},
   lastError: {},
-  connectionDetail: {},
-  connectStartedAt: {},
+  progress: {},
+  reconnecting: {},
 
   hydrate: async () => {
     const api = window.api?.machines
@@ -106,49 +99,27 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       log.warn('hydrate failed', err)
       return
     }
-    // Renderer-reload rehydration: main keeps its tunnels across a reload, but
-    // this fresh renderer has no transports for them and no status event fires
-    // until something changes - id-keyed calls would error with 'machine not
-    // connected'. Pull main's live snapshot and rebuild routing for every
-    // connected machine. connectMachine is idempotent, so a status event that
-    // raced ahead of this fetch is harmless.
+    // Resync from main's live connection state: after a renderer reload the
+    // preload transports are gone even though main's tunnels are still up.
+    // Re-dial connected machines and rebind their project paths, or id-keyed
+    // routing resolves to a machine with no registered transport.
     try {
-      const snapshot = (await api.getConnections?.()) ?? []
-      const connected = snapshot.filter((c) => c.status === 'connected' && c.url)
-      // bindSnapshotPaths below needs the cached trees; on a fresh reload this
-      // runs concurrently with loadSnapshots(), so pull them ourselves first.
-      if (connected.length && Object.keys(get().snapshots).length === 0) {
-        await get().loadSnapshots()
-      }
-      if (snapshot.length) {
-        set((s) => {
-          const connections = { ...s.connections }
-          for (const { machineId, status } of snapshot) {
-            // A live status event that already landed wins over the snapshot.
-            if (!(machineId in connections)) connections[machineId] = toMachineStatus(status)
-          }
-          return { connections }
-        })
-      }
-      for (const { machineId, url } of connected) {
-        window.api.routing.connectMachine(machineId, url!)
-        bindSnapshotPaths(machineId, get().snapshots[machineId])
-        // Sessions already open on this machine (restored before we got here)
-        // need their id-keyed IPC re-pointed at it, mirroring session-events'
-        // connected-rebind. Idempotent.
-        for (const s of useAgentStore.getState().sessions) {
-          if (s.machineId === machineId) window.api.routing.bind(s.id, machineId)
+      const statuses = await api.getStatuses()
+      const connections = { ...get().connections }
+      for (const [machineId, { status, url }] of Object.entries(statuses)) {
+        // Only dial when the store didn't know about the connection (i.e. a
+        // reload wiped the transports). hydrate() also runs after add/update/
+        // remove, and connectMachine tears down + replaces the socket - doing
+        // that to a healthy transport rejects its in-flight invokes.
+        if (status === 'connected' && url && connections[machineId] !== 'connected') {
+          window.api.routing.connectMachine(machineId, url)
+          bindSnapshotPaths(machineId, get().snapshots[machineId])
         }
+        connections[machineId] = toMachineStatus(status)
       }
+      set({ connections })
     } catch (err) {
-      log.warn('connection snapshot rehydration failed', err)
-    }
-    // Machines that reconnected before this hydrate resolved already have a
-    // 'connected' status and a cached snapshot - rebind their project paths
-    // so path-keyed IPC doesn't silently fall back to local after a reload.
-    const { connections, snapshots } = get()
-    for (const [machineId, status] of Object.entries(connections)) {
-      if (status === 'connected') bindSnapshotPaths(machineId, snapshots[machineId])
+      log.warn('status resync failed', err)
     }
   },
 
@@ -156,10 +127,6 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     try {
       const created = await window.api.machines.create(input)
       await get().hydrate()
-      // Auto-connect the fresh machine so the user lands on a live tree
-      // instead of an offline row. Non-blocking: connect() reports failures
-      // through connection status + lastError, not through add().
-      void get().connect(created.id)
       return created
     } catch (err) {
       log.warn('add failed', err)
@@ -182,13 +149,9 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     set((s) => {
       const connections = { ...s.connections }
       const snapshots = { ...s.snapshots }
-      const connectionDetail = { ...s.connectionDetail }
-      const connectStartedAt = { ...s.connectStartedAt }
       delete connections[id]
       delete snapshots[id]
-      delete connectionDetail[id]
-      delete connectStartedAt[id]
-      return { connections, snapshots, connectionDetail, connectStartedAt }
+      return { connections, snapshots }
     })
   },
 
@@ -281,26 +244,23 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     }),
 
   connect: async (id) => {
+    const failLocal = (reason: string) =>
+      set((s) => ({
+        connections: { ...s.connections, [id]: 'error' },
+        lastError: { ...s.lastError, [id]: reason },
+      }))
     set((s) => ({
       connections: { ...s.connections, [id]: 'connecting' },
-      connectStartedAt: isActiveStatus(s.connections[id] ?? 'offline')
-        ? s.connectStartedAt
-        : { ...s.connectStartedAt, [id]: Date.now() },
+      progress: { ...s.progress, [id]: null },
     }))
     try {
       const res = await window.api.machines.connect(id)
       if (!res.ok) {
-        set((s) => ({
-          connections: { ...s.connections, [id]: 'error' },
-          connectStartedAt: { ...s.connectStartedAt, [id]: null },
-        }))
+        failLocal(res.error ?? 'connect rejected')
         log.warn('connect rejected', res.error)
       }
     } catch (err) {
-      set((s) => ({
-        connections: { ...s.connections, [id]: 'error' },
-        connectStartedAt: { ...s.connectStartedAt, [id]: null },
-      }))
+      failLocal(err instanceof Error ? err.message : String(err))
       log.warn('connect failed', err)
     }
   },
@@ -311,40 +271,41 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     } catch (err) {
       log.warn('disconnect failed', err)
     }
-    set((s) => ({
-      connections: { ...s.connections, [id]: 'offline' },
-      connectionDetail: { ...s.connectionDetail, [id]: null },
-      connectStartedAt: { ...s.connectStartedAt, [id]: null },
-    }))
+    set((s) => ({ connections: { ...s.connections, [id]: 'offline' } }))
   },
 
   subscribeStatus: () =>
-    window.api.machines.onStatus((id, status, url, reason, detail) => {
+    window.api.machines.onStatus((id, status, url, reason, willRetry) => {
       if (status === 'connected' && url) {
         // connectMachine() replaces a stale transport in place, covering reconnect-after-error.
         window.api.routing.connectMachine(id, url)
         void get().syncMachine(id)
       } else if (status === 'offline') {
-        // Only intentional disconnects wipe bindings. 'error' and 'reconnecting'
-        // are often a transient tunnel blip that auto-reconnects; forgetting
-        // bindings would orphan live sessions.
+        // Only intentional disconnects wipe bindings. 'error' is often a transient
+        // tunnel blip that auto-reconnects; forgetting bindings would orphan live sessions.
         window.api.routing.disconnectMachine(id)
       }
       set((s) => {
-        const next = toMachineStatus(status)
         const lastError = { ...s.lastError }
-        if (status === 'error') lastError[id] = reason ?? null
-        // 'reconnecting' deliberately leaves lastError alone: the backoff is
-        // self-healing, not a new failure the user must act on.
-        else if (status === 'connecting' || status === 'provisioning' || status === 'connected') lastError[id] = null
-        const connectionDetail = { ...s.connectionDetail, [id]: detail ?? null }
-        const connectStartedAt = { ...s.connectStartedAt }
-        const prev = s.connections[id] ?? 'offline'
-        if ((next === 'connecting' || next === 'provisioning') && !isActiveStatus(prev)) {
-          connectStartedAt[id] = Date.now()
+        const progress = { ...s.progress }
+        const reconnecting = { ...s.reconnecting }
+        if (status === 'error') {
+          lastError[id] = reason ?? null
+          progress[id] = null
+          reconnecting[id] = !!willRetry
+        } else if (status === 'connecting') {
+          lastError[id] = null
+          // reason doubles as progress detail on repeated connecting emissions
+          progress[id] = reason ?? progress[id] ?? null
+          reconnecting[id] = false
+        } else {
+          // connected clears the error; offline keeps it (a deliberate
+          // disconnect after a failure shouldn't erase why it failed)
+          if (status === 'connected') lastError[id] = null
+          progress[id] = null
+          reconnecting[id] = false
         }
-        if (next === 'connected' || next === 'offline' || next === 'error') connectStartedAt[id] = null
-        return { connections: { ...s.connections, [id]: next }, lastError, connectionDetail, connectStartedAt }
+        return { connections: { ...s.connections, [id]: toMachineStatus(status) }, lastError, progress, reconnecting }
       })
     }),
 

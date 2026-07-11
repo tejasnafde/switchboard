@@ -55,12 +55,12 @@ describe('buildTunnelCommand', () => {
   it('sets batch mode + keepalive so a dead link fails fast instead of hanging', () => {
     const { args } = buildTunnelCommand(mk({}), { localPort: 1, remotePort: 2, remoteCommand: 'x' })
     expect(args).toEqual(expect.arrayContaining(['-o', 'BatchMode=yes']))
-    expect(args.join(' ')).toMatch(/ServerAliveInterval=30/)
+    expect(args.join(' ')).toMatch(/ServerAliveInterval=15/)
   })
 
-  it('bounds keepalive failures so a silently dropped tunnel dies deterministically (~90s)', () => {
+  it('bounds keepalive failures so a silently dropped tunnel dies deterministically (~30s)', () => {
     const { args } = buildTunnelCommand(mk({}), { localPort: 1, remotePort: 2, remoteCommand: 'x' })
-    expect(args).toEqual(expect.arrayContaining(['-o', 'ServerAliveCountMax=3']))
+    expect(args).toEqual(expect.arrayContaining(['-o', 'ServerAliveCountMax=2']))
   })
 
   it('bounds the TCP connect via ConnectTimeout in the shared opts (probe/install/tunnel all inherit it)', () => {

@@ -1,14 +1,17 @@
 /**
- * Add/edit-machine modal: pick a host from ~/.ssh/config, type one manually,
- * or (when `editMachine` is set) patch an existing machine's fields via the
- * store's update(). Escape closes; Enter submits the manual form when valid.
+ * Add-machine picker: pick a host from ~/.ssh/config, or type one manually.
+ * Selecting/submitting creates a remote machine row via the machine store and
+ * immediately kicks off its first connect. With `editMachine` set, the same
+ * form edits an existing machine in place (ssh picker hidden, saves via
+ * update() - no connect side effect).
  */
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { useMachineStore } from '../../stores/machine-store'
 import { filterSshHosts } from './sshHostFilter'
-import { isDuplicateMachine, parsePort, validateManualMachine } from './addMachineValidation'
+import { isDuplicateMachine, parsePort } from './addMachineValidation'
 import { createRendererLogger } from '../../logger'
-import type { Machine, SshHost } from '@shared/machines'
+import type { SshHost, Machine, MachineInput } from '@shared/machines'
 
 const log = createRendererLogger('sidebar:add-machine')
 
@@ -17,92 +20,107 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
   const remotes = useMachineStore((s) => s.remotes)
   const add = useMachineStore((s) => s.add)
   const update = useMachineStore((s) => s.update)
+  const connect = useMachineStore((s) => s.connect)
 
-  const isEdit = !!editMachine
+  const editing = !!editMachine
   const [name, setName] = useState(editMachine?.name ?? '')
   const [host, setHost] = useState(editMachine?.sshHost ?? '')
   const [user, setUser] = useState(editMachine?.sshUser ?? '')
   const [port, setPort] = useState(String(editMachine?.sshPort ?? 22))
   // Default to ubuntu: our VMs all run the agent as the ubuntu user (the ssh
   // login user varies per machine). Clear the field to run as the login user.
-  const [remoteUser, setRemoteUser] = useState(isEdit ? (editMachine?.remoteUser ?? '') : 'ubuntu')
-  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [remoteUser, setRemoteUser] = useState(editing ? (editMachine?.remoteUser ?? '') : 'ubuntu')
   const [search, setSearch] = useState('')
   // Guards against a double-click firing two CREATE calls before the first
   // one's re-hydrate lands (which would add the same host twice).
   const [adding, setAdding] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-
-  // Escape closes regardless of which input (if any) holds focus.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const [error, setError] = useState<string | null>(null)
 
   const filteredHosts = filterSshHosts(sshHosts, search)
   const parsedPort = parsePort(port)
 
-  // When editing, the machine must not collide with itself in the dup check.
-  const dedupeTargets = isEdit ? remotes.filter((m) => m.id !== editMachine.id) : remotes
-  const manualValidation = validateManualMachine(dedupeTargets, { name, host, user, port })
-  const manualDuplicate = !manualValidation.ok && manualValidation.reason === 'duplicate'
-
   const runAs = () => remoteUser.trim() || null
-  const failureMessage = isEdit ? 'Could not save machine - check the log' : 'Could not add machine - check the log'
 
-  const addFromSsh = async (h: SshHost) => {
-    if (adding || isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })) return
+  // Add, auto-connect, close. A null result (create threw) keeps the modal
+  // open with an inline error instead of failing silently.
+  const submit = async (input: MachineInput) => {
     setAdding(true)
-    setSubmitError(null)
+    setError(null)
     try {
-      const created = await add({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
-      if (created) onClose()
-      else setSubmitError(failureMessage)
-    } finally {
-      setAdding(false)
-    }
-  }
-
-  const submitManual = async () => {
-    if (adding || !manualValidation.ok) return
-    setAdding(true)
-    setSubmitError(null)
-    try {
-      if (isEdit) {
-        await update(editMachine.id, { ...manualValidation.input, remoteUser: runAs() })
+      const created = await add(input)
+      if (created) {
+        void connect(created.id)
         onClose()
       } else {
-        const created = await add({ ...manualValidation.input, remoteUser: runAs() })
-        if (created) onClose()
-        else setSubmitError(failureMessage)
+        setError('Could not add machine. Check the app log for details.')
       }
-    } catch (err) {
-      // add() swallows its own failures; this covers update() rejecting.
-      log.warn('submit failed', err)
-      setSubmitError(failureMessage)
     } finally {
       setAdding(false)
     }
   }
 
-  // Enter submits the manual form - attached only to its own inputs so it
-  // never fights the ssh-host search box (whose Enter does nothing).
-  const onManualKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      void submitManual()
+  const saveEdit = async (patch: Partial<MachineInput>) => {
+    if (!editMachine) return
+    setAdding(true)
+    setError(null)
+    try {
+      await update(editMachine.id, patch)
+      onClose()
+    } catch (err) {
+      log.warn('machine update failed', err)
+      setError('Could not save changes. Check the app log for details.')
+    } finally {
+      setAdding(false)
+    }
+  }
+
+  const addFromSsh = (h: SshHost) => {
+    if (adding || isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })) return
+    void submit({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
+  }
+
+  // In edit mode the machine's own row must not read as a duplicate of itself.
+  const dupCandidates = editing ? remotes.filter((m) => m.id !== editMachine!.id) : remotes
+  const manualDup =
+    !!host.trim() && isDuplicateMachine(dupCandidates, { sshHost: host.trim(), sshUser: user.trim() || null })
+  const manualReady = !!host.trim() && parsedPort !== null && !manualDup && !adding
+
+  const addManual = () => {
+    if (!manualReady || parsedPort === null) return
+    const fields = {
+      name: name.trim() || host.trim(),
+      sshHost: host.trim(),
+      sshUser: user.trim() || null,
+      sshPort: parsedPort,
+      remoteUser: runAs(),
+    }
+    if (editing) void saveEdit(fields)
+    else void submit(fields)
+  }
+
+  const onKeyDown = (e: KeyboardEvent) => {
+    const target = e.target as HTMLElement
+    if (e.key === 'Escape') {
+      e.stopPropagation()
+      onClose()
+    } else if (e.key === 'Enter' && target.tagName === 'INPUT') {
+      // Enter in the ssh-config search picks the top match; Enter anywhere
+      // else submits the manual form. Without the split, Enter while
+      // searching would submit a half-abandoned manual entry.
+      if (target.dataset.sshSearch) {
+        if (filteredHosts.length > 0) addFromSsh(filteredHosts[0])
+      } else {
+        addManual()
+      }
     }
   }
 
   return (
     <div className="machine-modal-overlay" onClick={onClose}>
-      <div className="machine-modal" onClick={(e) => e.stopPropagation()}>
-        <div className="machine-modal-title">{isEdit ? 'Edit machine' : 'Add machine'}</div>
+      <div className="machine-modal" onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
+        <div className="machine-modal-title">{editing ? 'Edit machine' : 'Add machine'}</div>
 
-        {!isEdit && sshHosts.length > 0 && (
+        {!editing && sshHosts.length > 0 && (
           <div className="machine-modal-section">
             <div className="machine-modal-label">From ~/.ssh/config</div>
             <input
@@ -110,6 +128,7 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
               placeholder={`Search ${sshHosts.length} hosts...`}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
+              data-ssh-search="true"
               autoFocus
             />
             <div className="machine-modal-hostlist">
@@ -119,7 +138,7 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
                   <button
                     key={h.alias}
                     className="machine-modal-host"
-                    onClick={() => void addFromSsh(h)}
+                    onClick={() => addFromSsh(h)}
                     disabled={adding || isDup}
                     title={isDup ? 'Already added' : undefined}
                   >
@@ -141,74 +160,48 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
         )}
 
         <div className="machine-modal-section">
-          <div className="machine-modal-label">{isEdit ? 'Connection' : 'Manual'}</div>
+          <div className="machine-modal-label">{editing ? 'Connection' : sshHosts.length > 0 ? 'Manual' : 'Host'}</div>
           <input
             className="machine-modal-input"
             placeholder="Name (optional)"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            onKeyDown={onManualKeyDown}
-            autoFocus={isEdit || sshHosts.length === 0}
+            autoFocus={editing || sshHosts.length === 0}
           />
-          <input
-            className="machine-modal-input"
-            placeholder="Host (e.g. 10.0.0.4)"
-            value={host}
-            onChange={(e) => setHost(e.target.value)}
-            onKeyDown={onManualKeyDown}
-          />
+          <input className="machine-modal-input" placeholder="Host (e.g. 10.0.0.4)" value={host} onChange={(e) => setHost(e.target.value)} />
           <div className="machine-modal-row">
-            <input
-              className="machine-modal-input"
-              placeholder="User"
-              value={user}
-              onChange={(e) => setUser(e.target.value)}
-              onKeyDown={onManualKeyDown}
-            />
+            <input className="machine-modal-input" placeholder="User" value={user} onChange={(e) => setUser(e.target.value)} />
             <input
               className="machine-modal-input"
               style={{ width: '70px' }}
               placeholder="Port"
               value={port}
               onChange={(e) => setPort(e.target.value)}
-              onKeyDown={onManualKeyDown}
             />
           </div>
           {port.trim() !== '' && parsedPort === null && (
-            <div className="machine-modal-error">Port must be an integer between 1 and 65535</div>
+            <div className="machine-modal-empty">Port must be an integer between 1 and 65535</div>
           )}
-          {manualDuplicate && (
-            <div className="machine-modal-error">This machine is already added</div>
-          )}
+          {manualDup && <div className="machine-modal-empty">This host is already added</div>}
         </div>
 
-        <div className="machine-modal-section">
-          <button
-            className="machine-modal-advanced-toggle"
-            onClick={() => setAdvancedOpen((v) => !v)}
-          >
-            <span className="sidebar-chevron">{advancedOpen ? '▼' : '▶'}</span> Advanced
-          </button>
-          {advancedOpen && (
-            <>
-              <div className="machine-modal-label">Run as user (sudo, optional)</div>
-              <input
-                className="machine-modal-input"
-                placeholder="e.g. ubuntu - leave blank to use the login user"
-                value={remoteUser}
-                onChange={(e) => setRemoteUser(e.target.value)}
-                onKeyDown={onManualKeyDown}
-              />
-            </>
-          )}
-        </div>
+        <details className="machine-modal-section machine-modal-advanced">
+          <summary className="machine-modal-label">Advanced</summary>
+          <div className="machine-modal-label">Run as user (sudo, optional)</div>
+          <input
+            className="machine-modal-input"
+            placeholder="e.g. ubuntu - leave blank to use the login user"
+            value={remoteUser}
+            onChange={(e) => setRemoteUser(e.target.value)}
+          />
+        </details>
 
-        {submitError && <div className="machine-modal-error">{submitError}</div>}
+        {error && <div className="machine-modal-error">{error}</div>}
 
         <div className="machine-modal-actions">
           <button className="machine-modal-cancel" onClick={onClose}>Cancel</button>
-          <button className="machine-modal-add" onClick={() => void submitManual()} disabled={!manualValidation.ok || adding}>
-            {adding ? (isEdit ? 'Saving…' : 'Adding…') : isEdit ? 'Save' : 'Add'}
+          <button className="machine-modal-add" onClick={addManual} disabled={!manualReady}>
+            {editing ? (adding ? 'Saving…' : 'Save') : adding ? 'Adding…' : 'Add + connect'}
           </button>
         </div>
       </div>

@@ -82,11 +82,10 @@ export const MachineChannels = {
   CONNECT: 'machines:connect',
   /** Tear down a remote's tunnel. */
   DISCONNECT: 'machines:disconnect',
-  /** Snapshot of every machine's live connection state ({machineId, status, url}[])
-   *  so a reloaded renderer can rebuild transports without waiting for a status event. */
-  GET_CONNECTIONS: 'machines:get-connections',
   /** Main -> renderer: per-machine connection status changed, optionally with a human-readable reason. */
   STATUS: 'machines:status',
+  /** Current status + tunnel URL for every machine, so a reloaded renderer can re-dial live connections. */
+  GET_STATUSES: 'machines:get-statuses',
 } as const
 
 export const KanbanChannels = {

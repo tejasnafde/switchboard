@@ -1,7 +1,7 @@
 /** provisionRemote: probe -> plan -> (upload + install) over a faked runner. */
 import { describe, it, expect, vi } from 'vitest'
 import { provisionRemote } from '../../src/main/machines/provisioner'
-import { execProc, makeExecProc } from '../../src/main/machines/provisionDeps'
+import { execProc } from '../../src/main/machines/provisionDeps'
 import type { Machine } from '@shared/machines'
 
 const machine: Machine = {
@@ -130,11 +130,12 @@ describe('provisionRemote', () => {
     )
   })
 
-  it('reports every install step through onProgress, in order', async () => {
+  it('reports every install step through onStep, in order', async () => {
     const steps: string[] = []
     const r = runner({ ...full, server: null })
     await provisionRemote(machine, inputs, r, undefined, (label) => steps.push(label))
     expect(steps).toEqual([
+      'checking remote',
       'mkdir server dir',
       'upload server bundle',
       'upload package.json',
@@ -144,11 +145,11 @@ describe('provisionRemote', () => {
     ])
   })
 
-  it('never fires onProgress when the probe reports ready', async () => {
+  it('fires only the probe step when the remote is already ready', async () => {
     const steps: string[] = []
     const r = runner(full)
     await provisionRemote(machine, inputs, r, undefined, (label) => steps.push(label))
-    expect(steps).toEqual([])
+    expect(steps).toEqual(['checking remote'])
   })
 
   it('accepts node versions at or above the minimum', async () => {
@@ -168,26 +169,15 @@ describe('execProc (real child processes)', () => {
     expect(res).toEqual({ code: 3, stdout: 'hi', stderr: 'oops' })
   })
 
-  it('kills a hung command and rejects once the timeout elapses', async () => {
-    await expect(execProc('sleep', ['30'], undefined, 100)).rejects.toThrow(
-      /command timed out after 0\.1s/,
-    )
+  it('kills a hung command and resolves code 1 with a timeout message once the limit elapses', async () => {
+    const res = await execProc('sleep', ['30'], undefined, 100)
+    expect(res.code).toBe(1)
+    expect(res.stderr).toMatch(/command timed out after \d+s/)
   })
 
   it('does not time out a command that finishes within the limit', async () => {
     const res = await execProc('sh', ['-c', 'printf ok'], undefined, 5000)
     expect(res.code).toBe(0)
     expect(res.stdout).toBe('ok')
-  })
-
-  it('makeExecProc hands a kill handle to onSpawn that reaps the live child (user cancel)', async () => {
-    let child: { kill: () => void } | undefined
-    const exec = makeExecProc((c) => { child = c })
-    const running = exec('sleep', ['30'], undefined, 60_000)
-    expect(child).toBeDefined()
-    child!.kill()
-    const res = await running
-    // Killed before completion: non-zero exit, and well before the timeout.
-    expect(res.code).not.toBe(0)
   })
 })

@@ -52,13 +52,15 @@ export async function provisionRemote(
   inputs: ProvisionInputs,
   runner: ProcRunner,
   log?: (msg: string) => void,
-  /** Coarse per-step progress ('upload server bundle', 'npm install ...') for the connect UI. Never fires when the probe reports ready. */
-  onProgress?: (label: string) => void,
+  /** Coarse per-step progress for the connect UI ('upload server bundle', ...). */
+  onStep?: (label: string) => void,
 ): Promise<ProvisionResult> {
+  onStep?.('checking remote')
   const probeCmd = buildProbeCommand(machine)
   const probeOut = await runner.exec(probeCmd.command, probeCmd.args, undefined, PROBE_TIMEOUT_MS)
   if (probeOut.code !== 0) {
-    throw new Error(`ssh probe failed (${probeOut.code}): ${summarizeSshError(probeOut.stderr)}`)
+    const cause = summarizeSshError(probeOut.stderr)
+    throw new Error(`ssh probe failed (${probeOut.code})${cause ? `: ${cause}` : ''}`)
   }
   const probe = parseProbeOutput(probeOut.stdout)
   assertSupportedNode(probe.node)
@@ -69,7 +71,7 @@ export async function provisionRemote(
 
   const run = async (label: string, remoteCommand: string, stdin?: string | { file: string }) => {
     log?.(`provision ${machine.id}: ${label}`)
-    onProgress?.(label)
+    onStep?.(label)
     const c = buildRemoteShellCommand(machine, remoteCommand)
     const res = await runner.exec(c.command, c.args, stdin)
     if (res.code !== 0) throw new Error(`${label} failed (${res.code}): ${summarizeSshError(res.stderr) || remoteCommand}`)
