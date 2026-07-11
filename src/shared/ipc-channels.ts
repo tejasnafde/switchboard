@@ -140,6 +140,8 @@ export const GitChannels = {
  */
 export const IdeChannels = {
   ENSURE: 'ide:ensure',
+  /** Write workbench.colorTheme into code-server's settings.json - applied live by its file watcher. */
+  SET_THEME: 'ide:set-theme',
   STATUS: 'ide:status',
   OPEN: 'ide:open',
   SELECTION: 'ide:selection',

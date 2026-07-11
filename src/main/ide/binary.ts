@@ -4,7 +4,7 @@
  * system tar (zero new npm deps). Never bundled in the app package.
  */
 import { createWriteStream, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { Readable } from 'node:stream'
+import { Readable, Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -39,10 +39,13 @@ async function pathBinary(): Promise<string | null> {
 
 /**
  * Resolve the code-server binary: previous download → PATH (dev convenience)
- * → fresh download. `onDownloadStart` fires only when a network fetch begins,
- * so the renderer can show the one-time progress state.
+ * → fresh download. `onDownloadProgress` fires only when a network fetch is
+ * needed: first with null (started), then at 5% steps.
  */
-export async function ensureBinary(userDataRoot: string, onDownloadStart?: () => void): Promise<string> {
+export async function ensureBinary(
+  userDataRoot: string,
+  onDownloadProgress?: (pct: number | null) => void,
+): Promise<string> {
   const installed = installedBinaryPath(userDataRoot)
   if (existsSync(installed)) return installed
 
@@ -52,15 +55,32 @@ export async function ensureBinary(userDataRoot: string, onDownloadStart?: () =>
     return onPath
   }
 
-  onDownloadStart?.()
+  onDownloadProgress?.(null)
   const { url, assetName } = resolveDownloadAsset(CODE_SERVER_VERSION, process.platform, process.arch)
   log.info('downloading code-server', { url })
-  const res = await fetch(url)
+  const res = await fetch(url, { signal: AbortSignal.timeout(10 * 60 * 1000) })
   if (!res.ok || !res.body) {
     throw new Error(`code-server download failed: HTTP ${res.status} for ${url}`)
   }
+  const total = Number(res.headers.get('content-length')) || 0
+  let received = 0
+  let lastPct = -1
+  const counter = new Transform({
+    transform(chunk, _enc, cb) {
+      received += chunk.length
+      if (total > 0) {
+        const pct = Math.floor((received / total) * 100)
+        if (pct >= lastPct + 5) {
+          lastPct = pct
+          log.info('download progress', { pct })
+          onDownloadProgress?.(pct)
+        }
+      }
+      cb(null, chunk)
+    },
+  })
   const tarPath = join(tmpdir(), assetName)
-  await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), createWriteStream(tarPath))
+  await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), counter, createWriteStream(tarPath))
 
   const dir = installDir(userDataRoot)
   mkdirSync(dir, { recursive: true })

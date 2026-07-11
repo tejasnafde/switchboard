@@ -7,13 +7,14 @@
 import { app } from 'electron'
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { WebSocketServer } from 'ws'
 import type { BackendHost } from '../backend/host'
 import { IdeChannels } from '@shared/ipc-channels'
 import { CodeServerManager, seedBridgeExtension, type IdeStatus } from '../ide/code-server-manager'
+import { mergeUserSettings, themeToColorTheme } from '../ide/settings'
 import { ensureBinary } from '../ide/binary'
 import { BridgeServer } from '../ide/bridge-server'
 import { allocatePort } from '../machines/connectDeps'
@@ -44,13 +45,34 @@ export function registerIdeHandlers(host: BackendHost): void {
   let runtime: IdeRuntime | null = null
   let booting: Promise<IdeRuntime> | null = null
 
-  const pushStatus = (status: IdePublicStatus, port?: number): void => {
-    host.emit(IdeChannels.STATUS, { status, port })
+  const pushStatus = (status: IdePublicStatus, port?: number, pct?: number): void => {
+    host.emit(IdeChannels.STATUS, { status, port, pct })
+  }
+
+  const settingsPath = (): string =>
+    join(app.getPath('userData'), 'code-server', 'data', 'User', 'settings.json')
+
+  /** Merge a patch into the workbench user settings - code-server applies it live. */
+  const patchUserSettings = (patch: Record<string, unknown>): void => {
+    const p = settingsPath()
+    mkdirSync(join(p, '..'), { recursive: true })
+    let existing: string | null = null
+    try {
+      existing = readFileSync(p, 'utf8')
+    } catch {
+      existing = null
+    }
+    writeFileSync(p, mergeUserSettings(existing, patch))
   }
 
   async function boot(): Promise<IdeRuntime> {
     const userDataRoot = app.getPath('userData')
-    const binaryPath = await ensureBinary(userDataRoot, () => pushStatus('downloading'))
+    const binaryPath = await ensureBinary(userDataRoot, (pct) =>
+      pushStatus('downloading', undefined, pct ?? undefined)
+    )
+    // First-run defaults (autosave, no welcome tab, no trust popup). A merge
+    // with an empty patch seeds them only when no settings file exists yet.
+    patchUserSettings({})
 
     const extensionsDir = join(userDataRoot, 'code-server', 'extensions')
     seedBridgeExtension(bundledExtensionDir(), extensionsDir)
@@ -125,6 +147,20 @@ export function registerIdeHandlers(host: BackendHost): void {
       return { ok: routed }
     }
   )
+
+  host.handle<[string]>(IdeChannels.SET_THEME, async (theme: string) => {
+    try {
+      const patch = { 'workbench.colorTheme': themeToColorTheme(theme) }
+      // File write covers the next boot; the bridge push applies it to any
+      // live workbench immediately (the file watcher alone is unreliable).
+      patchUserSettings(patch)
+      runtime?.bridge.broadcastConfig(patch)
+      return { ok: true }
+    } catch (err) {
+      log.warn('set-theme failed', err)
+      return { ok: false }
+    }
+  })
 
   host.handle(IdeChannels.STOP, async () => {
     // Idle shutdown: reclaim the server process; the webview blanks renderer-side.

@@ -104,6 +104,18 @@ describe('BridgeServer', () => {
     expect(fresh.sent).toHaveLength(1)
   })
 
+  it('broadcastConfig sends a config frame to every registered workbench', () => {
+    const a = connectAndHello('/p1')
+    const b = connectAndHello('/p2')
+    const sent = server.broadcastConfig({ 'workbench.colorTheme': 'Default Light Modern' })
+    expect(sent).toBe(2)
+    expect(JSON.parse(a.sent[0])).toEqual({
+      type: 'config',
+      settings: { 'workbench.colorTheme': 'Default Light Modern' },
+    })
+    expect(JSON.parse(b.sent[0])).toEqual(JSON.parse(a.sent[0]))
+  })
+
   it('a stale socket close does not unregister a fresher one for the same folder', () => {
     const stale = connectAndHello('/p')
     connectAndHello('/p')

@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { useLayoutStore } from '../../stores/layout-store'
+import { useThemeStore } from '../../stores/theme-store'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('ide:pane')
@@ -34,12 +35,20 @@ export function IdePane(): React.ReactElement {
 
   // Reflect main-pushed status while ENSURE is in flight (binary download).
   useEffect(() => {
-    return window.api.ide.onStatus(({ status }) => {
+    return window.api.ide.onStatus(({ status, pct }) => {
       if (status === 'downloading') {
-        setState({ kind: 'booting', label: 'Downloading code-server (one-time)…' })
+        const suffix = pct !== undefined ? ` ${pct}%` : ''
+        setState({ kind: 'booting', label: `Downloading VS Code workbench (one-time)…${suffix}` })
       }
     })
   }, [])
+
+  // Theme coupling: the workbench follows the app theme. Written into
+  // code-server's settings.json, which its file watcher applies live.
+  const theme = useThemeStore((s) => s.theme)
+  useEffect(() => {
+    if (state.kind === 'ready') void window.api.ide.setTheme(theme)
+  }, [theme, state.kind])
 
   // Boot / re-point the workbench when the pane is visible for a folder.
   useEffect(() => {

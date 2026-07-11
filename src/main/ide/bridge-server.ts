@@ -81,6 +81,17 @@ export class BridgeServer {
     wss.on('connection', (socket, request) => this.onConnection(socket, request))
   }
 
+  /** Push live vscode settings to every connected workbench. Returns the send count. */
+  broadcastConfig(settings: Record<string, unknown>): number {
+    const frame = JSON.stringify({ type: 'config', settings })
+    let sent = 0
+    for (const socket of new Set(this.byFolder.values())) {
+      socket.send(frame)
+      sent++
+    }
+    return sent
+  }
+
   /** Route an open request to the extension host serving `folder`. False if none is connected. */
   openFile(folder: string, path: string, line?: number, endLine?: number): boolean {
     const socket = this.byFolder.get(folder)

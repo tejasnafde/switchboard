@@ -532,10 +532,12 @@ const api = {
       transport.invoke(IdeChannels.OPEN, args),
     /** Idle shutdown - kill the server, renderer blanks the webview. */
     stop: (): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.STOP),
+    /** Follow the app theme - written into the workbench settings, applied live. */
+    setTheme: (theme: string): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.SET_THEME, theme),
     onStatus: (
-      callback: (payload: { status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number }) => void,
+      callback: (payload: { status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number; pct?: number }) => void,
     ): (() => void) =>
-      transport.on<[{ status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number }]>(
+      transport.on<[{ status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number; pct?: number }]>(
         IdeChannels.STATUS,
         (payload) => callback(payload),
       ),

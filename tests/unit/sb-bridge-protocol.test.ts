@@ -58,6 +58,20 @@ describe('parseMessage', () => {
   })
 })
 
+describe('config messages (main -> ext live settings)', () => {
+  it('accepts a config message with a settings object', () => {
+    expect(parseMessage('{"type":"config","settings":{"workbench.colorTheme":"Default Light Modern"}}')).toEqual({
+      type: 'config',
+      settings: { 'workbench.colorTheme': 'Default Light Modern' },
+    })
+  })
+
+  it('rejects config without a settings object', () => {
+    expect(parseMessage('{"type":"config"}')).toBeNull()
+    expect(parseMessage('{"type":"config","settings":"nope"}')).toBeNull()
+  })
+})
+
 describe('backoffDelayMs', () => {
   it('starts small, grows, and caps', () => {
     expect(backoffDelayMs(0)).toBeGreaterThanOrEqual(250)

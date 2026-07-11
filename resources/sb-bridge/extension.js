@@ -41,6 +41,17 @@ async function handleOpen(msg) {
   }
 }
 
+async function handleConfig(msg) {
+  const config = vscode.workspace.getConfiguration()
+  for (const [key, value] of Object.entries(msg.settings)) {
+    try {
+      await config.update(key, value, vscode.ConfigurationTarget.Global)
+    } catch (err) {
+      log(`config update failed for ${key}: ${err && err.message}`)
+    }
+  }
+}
+
 function connect() {
   const port = process.env.SB_BRIDGE_PORT
   const token = process.env.SB_BRIDGE_TOKEN
@@ -62,7 +73,9 @@ function connect() {
   })
   ws.addEventListener('message', (event) => {
     const msg = parseMessage(String(event.data))
-    if (msg && msg.type === 'open') void handleOpen(msg)
+    if (!msg) return
+    if (msg.type === 'open') void handleOpen(msg)
+    else if (msg.type === 'config') void handleConfig(msg)
   })
   ws.addEventListener('close', () => {
     socket = null

@@ -6,6 +6,7 @@
  * Wire format (JSON, one object per WebSocket frame):
  *   ext -> main  {type:'hello', folder}
  *   main -> ext  {type:'open', path, line?, endLine?}
+ *   main -> ext  {type:'config', settings}  - live vscode settings to apply
  *   ext -> main  {type:'selection', path, startLine, endLine, text}
  */
 'use strict'
@@ -22,8 +23,11 @@ const isStr = (v) => typeof v === 'string' && v.length > 0
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v)
 
 /** Per-type required/optional field validators. Unknown types are rejected. */
+const isSettingsObj = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
+
 const VALIDATORS = {
   hello: (m) => isStr(m.folder),
+  config: (m) => isSettingsObj(m.settings),
   open: (m) => isStr(m.path) && (m.line === undefined || isNum(m.line)) && (m.endLine === undefined || isNum(m.endLine)),
   selection: (m) => isStr(m.path) && isNum(m.startLine) && isNum(m.endLine) && typeof m.text === 'string',
 }
