@@ -2,6 +2,26 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-11 - Remote chats survive reconnects; auth preflight; day-2 SSH batch (v0.6.3)
+
+### Fixed
+- **Remote chat history no longer vanishes.** Two independent causes: (1) the remote server scanned only `~/.claude` for JSONLs while sessions run under forwarded per-instance dirs like `~/.claude-tech-team`, so history loads returned empty and reconnect re-syncs overwrote snapshots without those chats; (2) a disconnect wiped session-id routing bindings and reconnect never restored them, silently routing open chats to the local backend. Scans now cover every config dir on the VM (by `.claude*` name or the `projects/` marker, so free-text oauth_dir names work too), and reconnect re-binds every open session.
+- **WsTransport double-execute:** a queued invoke that timed out during a tunnel blip was still flushed after the re-dial, running non-idempotent calls remotely after the caller saw them fail. Timed-out frames are purged from the outbox.
+- **Permanent transport wedge:** the transport self-closed after a 60s reconnect budget even when the connection manager still (correctly) reported connected - nothing ever replaced it. It now re-dials indefinitely at the capped interval; only the manager closes it.
+- **Editing an ssh-config machine's connection now takes effect** - the stale alias shadowed host/user/port; it is cleared when connection fields change.
+- **Model picker no longer shows a stale or cross-instance list.** Dynamic model lists are cached per (agent, instance) and hydrate new chats instantly; the live Claude fetch re-arms when the session becomes active instead of exhausting a mount-time retry loop.
+- **QuestionCard:** a typed free-text answer on a single single-select question now has a Submit button, and Enter submits (Shift+Enter for newline) - previously the only way out was interrupting the agent.
+- Sidebar titles for remote chats track renames/auto-title; remote rows have a right-click menu (Rename / Export as Markdown / Archive) with machine-routed actions.
+- Rate-limit errors no longer render twice; error cards survive restart; cross-profile session migration falls back to a projects-wide scan (merged from fix/chat-layer-bugs).
+
+### Added
+- **Remote auth preflight:** opening a chat on a VM that isn't logged in to Claude shows a banner above the composer with a copyable interactive login command (`CLAUDE_CONFIG_DIR=... claude` + `/login` - the headless `claude auth login` URL flow breaks on VMs) and a Re-check button. The first-send error remains as backstop.
+- **Provisioning symlinks the bundled `claude` CLI onto PATH** (`~/.local/bin/claude`, glibc-first) so login instructions work as written on every VM.
+- Machine edit UI (pencil on remote rows) - name/host/user/port/run-as editable in place.
+
+### Changed
+- Reconciled with PR #60's parallel remote-UX overhaul (shipped in 0.6.2): its connect-lifecycle implementation (progress detail, reconnecting pip, cancel, ssh timeouts, tunnel stderr reasons, stable ports, hydrate resync, modal polish) is kept as-is; this release layers the unique day-2 work on top and removes the dead states left by the reconciliation.
+
 ## 2026-07-05 - Remote session fixes (v0.5.5)
 
 ### Fixed
