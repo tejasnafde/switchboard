@@ -82,8 +82,8 @@ export function extractCommandPaths(toolName: string, input: unknown, baseCwd?: 
     .map((p) => {
       if (p.startsWith('/')) return p
       if (!baseCwd) return null
-      const stack = baseCwd.split('/')
-      for (const seg of p.split('/')) {
+      const stack = toPosix(baseCwd).split('/')
+      for (const seg of toPosix(p).split('/')) {
         if (seg === '.' || seg === '') continue
         else if (seg === '..') stack.pop()
         else stack.push(seg)
@@ -98,6 +98,11 @@ export interface WorktreeRef {
   path: string
   branch: string
 }
+
+/** All comparisons happen in posix form - Windows mixes drive-letter
+ *  backslash paths (fs APIs) with forward slashes (git porcelain), and
+ *  prefix matching must not care which producer a path came from. */
+const toPosix = (p: string): string => p.replace(/\\/g, '/')
 
 const isUnder = (path: string, root: string): boolean => path === root || path.startsWith(root + '/')
 
@@ -236,16 +241,17 @@ export class DriftWatcher {
     fresh: boolean
   ): Promise<RuntimeWorktreeDriftEvent | null> {
     if (paths.length === 0) return null
-    const worktrees = await this.listWorktrees(sessionFolder, fresh)
+    const listed = await this.listWorktrees(sessionFolder, fresh)
     // Single-worktree repos cannot drift - the overwhelmingly common case.
-    if (worktrees.length <= 1) return null
+    if (listed.length <= 1) return null
+    const worktrees = listed.map((wt) => ({ ...wt, path: toPosix(wt.path) }))
 
     let home = this.homeCache.get(threadId)
     if (!home) {
-      home = await this.normalize(sessionFolder)
+      home = toPosix(await this.normalize(sessionFolder))
       this.homeCache.set(threadId, home)
     }
-    const normalizedPaths = await Promise.all(paths.map((p) => this.normalize(p)))
+    const normalizedPaths = await Promise.all(paths.map(async (p) => toPosix(await this.normalize(p))))
     const drift = detectDrift(home, normalizedPaths, worktrees)
     if (!drift) return null
 
