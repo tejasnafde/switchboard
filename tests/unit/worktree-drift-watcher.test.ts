@@ -88,6 +88,22 @@ describe('DriftWatcher against a real repo', () => {
     expect(ev?.threadId).toBe('t5')
   })
 
+  it('Bash `git worktree add` flow: worktree created mid-turn is seen on command completion (fresh list, not the cache)', async () => {
+    // Warm the cache with a state where the new worktree does not exist yet.
+    await watcher.onToolStarted('t7', repo, 'Write', { file_path: join(repo, 'warm.ts') })
+    const lateWt = mkdtempSync(join(tmpdir(), 'sb-drift-late-'))
+    rmSync(lateWt, { recursive: true, force: true })
+    execFileSync('git', ['worktree', 'add', '-q', '-b', 'test/late', lateWt], { cwd: repo, env: gitEnv })
+    try {
+      const ev = await watcher.onCommandCompleted('t7', repo, 'Bash', {
+        command: `git worktree add ${lateWt} -b test/late`,
+      })
+      expect(ev?.branch).toBe('test/late')
+    } finally {
+      rmSync(lateWt, { recursive: true, force: true })
+    }
+  })
+
   it('sessions rooted IN a worktree treat the main repo as foreign', async () => {
     const ev = await watcher.onToolStarted('t6', nestedWt, 'Write', { file_path: join(repo, 'main-side.ts') })
     expect(ev?.branch).toBe('main')

@@ -11,7 +11,7 @@
  *   opencode: ACP tool_call, toolName = title||kind ('edit'/'write'), rawInput {path}
  */
 import { describe, it, expect } from 'vitest'
-import { extractWritePaths, detectDrift } from '../../src/main/provider/worktree-drift'
+import { extractWritePaths, extractCommandPaths, detectDrift } from '../../src/main/provider/worktree-drift'
 
 describe('extractWritePaths', () => {
   it('claude: Write/Edit/MultiEdit file_path and NotebookEdit notebook_path', () => {
@@ -44,6 +44,30 @@ describe('extractWritePaths', () => {
     expect(extractWritePaths('Edit', 'nope')).toEqual([])
     expect(extractWritePaths('Edit', { changes: 'nope' })).toEqual([])
     expect(extractWritePaths('Edit', { changes: [{ nopath: 1 }] })).toEqual([])
+  })
+})
+
+describe('extractCommandPaths', () => {
+  it('claude Bash: absolute path tokens in the command string', () => {
+    expect(extractCommandPaths('Bash', { command: 'git worktree add /tmp/sb-x -b test/x' })).toEqual(['/tmp/sb-x'])
+    expect(extractCommandPaths('Bash', { command: 'cd /repo/.switchboard/worktrees/feat-x && npm test' })).toEqual([
+      '/repo/.switchboard/worktrees/feat-x',
+    ])
+    expect(extractCommandPaths('Bash', { command: "echo 'hi' > /tmp/wt/notes.md" })).toEqual(['/tmp/wt/notes.md'])
+  })
+
+  it('codex commandExecution (normalized to Bash): cwd counts as a path signal', () => {
+    expect(extractCommandPaths('Bash', { command: 'npm test', cwd: '/tmp/wt' })).toEqual(['/tmp/wt'])
+  })
+
+  it('opencode ACP execute kind', () => {
+    expect(extractCommandPaths('execute', { command: 'git -C /tmp/wt status' })).toEqual(['/tmp/wt'])
+  })
+
+  it('non-command tools and commands without absolute paths yield nothing', () => {
+    expect(extractCommandPaths('Write', { command: '/tmp/x' })).toEqual([])
+    expect(extractCommandPaths('Bash', { command: 'ls -la && git status' })).toEqual([])
+    expect(extractCommandPaths('Bash', null)).toEqual([])
   })
 })
 

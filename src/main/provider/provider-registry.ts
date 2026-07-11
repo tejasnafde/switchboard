@@ -10,7 +10,7 @@ import { CodexAdapter } from './adapters/codex-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
-import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-drift'
+import { DriftWatcher, extractCommandPaths, parseWorktreeList, type WorktreeRef } from './worktree-drift'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { CheckpointTracker } from './checkpoint-tracker'
@@ -43,7 +43,10 @@ export class ProviderRegistry {
   private sessionCwd = new Map<string, string>()
   /** Worktree list cache per repo folder (10s TTL); drift dedupe lives in the watcher. */
   private worktreeCache = new Map<string, { at: number; refs: WorktreeRef[] }>()
-  private driftWatcher = new DriftWatcher((folder) => this.listWorktrees(folder))
+  private driftWatcher = new DriftWatcher((folder, fresh) => this.listWorktrees(folder, fresh))
+  /** toolId -> command input, stashed at start so completion (which carries
+   *  only toolId) can run drift detection after the command has executed. */
+  private pendingCommands = new Map<string, { threadId: string; toolName: string; input: unknown }>()
 
   /**
    * Derives per-file diff cards from git checkpoints around each turn -
@@ -107,19 +110,49 @@ export class ProviderRegistry {
     }
 
     // Provider-agnostic worktree-drift detection: all three adapters emit
-    // tool.started through here, so one subscription covers claude, codex,
+    // tool events through here, so one subscription covers claude, codex,
     // and opencode alike. Worktrees may live anywhere (nested under
     // .switchboard/, /tmp, userData) - `git worktree list` names them all.
+    // Writes are checked at start (path known up front); commands at
+    // completion (`git worktree add` creates the worktree mid-command).
     if (event.type === 'tool.started') {
-      void this.maybeEmitDrift(event.threadId, event.toolName, event.input)
+      if (extractCommandPaths(event.toolName, event.input).length > 0) {
+        this.pendingCommands.set(event.toolId, {
+          threadId: event.threadId,
+          toolName: event.toolName,
+          input: event.input,
+        })
+        // Bounded: completions clear entries; a runaway backlog self-prunes.
+        if (this.pendingCommands.size > 200) {
+          const oldest = this.pendingCommands.keys().next().value
+          if (oldest !== undefined) this.pendingCommands.delete(oldest)
+        }
+      } else {
+        void this.maybeEmitDrift(event.threadId, event.toolName, event.input, 'write')
+      }
+    }
+    if (event.type === 'tool.completed') {
+      const pending = this.pendingCommands.get(event.toolId)
+      if (pending) {
+        this.pendingCommands.delete(event.toolId)
+        void this.maybeEmitDrift(pending.threadId, pending.toolName, pending.input, 'command')
+      }
     }
   }
 
-  private async maybeEmitDrift(threadId: string, toolName: string, input: unknown): Promise<void> {
+  private async maybeEmitDrift(
+    threadId: string,
+    toolName: string,
+    input: unknown,
+    kind: 'write' | 'command'
+  ): Promise<void> {
     try {
       const cwd = this.sessionCwd.get(threadId)
       if (!cwd) return
-      const event = await this.driftWatcher.onToolStarted(threadId, cwd, toolName, input)
+      const event =
+        kind === 'write'
+          ? await this.driftWatcher.onToolStarted(threadId, cwd, toolName, input)
+          : await this.driftWatcher.onCommandCompleted(threadId, cwd, toolName, input)
       if (!event) return
       log.info('worktree drift detected', { threadId, worktree: event.worktreePath, branch: event.branch })
       this.bus.publish(event)
@@ -128,9 +161,9 @@ export class ProviderRegistry {
     }
   }
 
-  private async listWorktrees(repoFolder: string): Promise<WorktreeRef[]> {
+  private async listWorktrees(repoFolder: string, fresh = false): Promise<WorktreeRef[]> {
     const cached = this.worktreeCache.get(repoFolder)
-    if (cached && Date.now() - cached.at < 10_000) return cached.refs
+    if (!fresh && cached && Date.now() - cached.at < 10_000) return cached.refs
     const { stdout } = await promisify(execFile)('git', ['worktree', 'list', '--porcelain'], {
       cwd: repoFolder,
       timeout: 5_000,

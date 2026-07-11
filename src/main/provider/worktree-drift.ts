@@ -31,6 +31,28 @@ export function extractWritePaths(toolName: string, input: unknown): string[] {
   return out
 }
 
+/** Command-executing tool names, lowercase: claude 'Bash', codex
+ *  commandExecution (normalized to 'Bash'), opencode ACP 'execute'. */
+const COMMAND_TOOLS = new Set(['bash', 'execute', 'shell'])
+
+/** Absolute-path tokens in a shell command, plus an explicit cwd field.
+ *  Conservative charset - a token only matters if it lands under a KNOWN
+ *  worktree of the session's repo, so false positives are structurally
+ *  impossible downstream. */
+export function extractCommandPaths(toolName: string, input: unknown): string[] {
+  if (!COMMAND_TOOLS.has(toolName.toLowerCase())) return []
+  if (typeof input !== 'object' || input === null) return []
+  const obj = input as Record<string, unknown>
+  const out: string[] = []
+  if (typeof obj.cwd === 'string' && obj.cwd.startsWith('/')) out.push(obj.cwd)
+  if (typeof obj.command === 'string') {
+    for (const m of obj.command.matchAll(/(?:^|[\s"'`=;|&(<>])(\/[A-Za-z0-9._~/-]+)/g)) {
+      out.push(m[1])
+    }
+  }
+  return out
+}
+
 export interface WorktreeRef {
   path: string
   branch: string
@@ -123,25 +145,43 @@ function realpathNearest(p: string): string {
 export class DriftWatcher {
   private readonly notified = new Set<string>()
 
-  constructor(private readonly listWorktrees: (repoFolder: string) => Promise<WorktreeRef[]>) {}
+  constructor(
+    private readonly listWorktrees: (repoFolder: string, fresh?: boolean) => Promise<WorktreeRef[]>
+  ) {}
 
+  /** File-writing tools, checked at tool START (path known up front). */
   async onToolStarted(
     threadId: string,
     sessionFolder: string,
     toolName: string,
     input: unknown
   ): Promise<RuntimeWorktreeDriftEvent | null> {
-    const paths = extractWritePaths(toolName, input)
+    return this.check(threadId, sessionFolder, extractWritePaths(toolName, input), false)
+  }
+
+  /** Command tools, checked at COMPLETION: `git worktree add` creates the
+   *  worktree during the command, so only a fresh post-run list can see it. */
+  async onCommandCompleted(
+    threadId: string,
+    sessionFolder: string,
+    toolName: string,
+    input: unknown
+  ): Promise<RuntimeWorktreeDriftEvent | null> {
+    return this.check(threadId, sessionFolder, extractCommandPaths(toolName, input), true)
+  }
+
+  private async check(
+    threadId: string,
+    sessionFolder: string,
+    paths: string[],
+    fresh: boolean
+  ): Promise<RuntimeWorktreeDriftEvent | null> {
     if (paths.length === 0) return null
-    const worktrees = (await this.listWorktrees(sessionFolder)).map((wt) => ({
+    const worktrees = (await this.listWorktrees(sessionFolder, fresh)).map((wt) => ({
       ...wt,
       path: realpathNearest(wt.path),
     }))
-    const drift = detectDrift(
-      realpathNearest(sessionFolder),
-      paths.map(realpathNearest),
-      worktrees
-    )
+    const drift = detectDrift(realpathNearest(sessionFolder), paths.map(realpathNearest), worktrees)
     if (!drift) return null
     const key = `${threadId}:${drift.path}`
     if (this.notified.has(key)) return null
