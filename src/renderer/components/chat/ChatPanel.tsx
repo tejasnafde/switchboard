@@ -489,7 +489,13 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
         case 'worktree.drift': {
           // Suggestion only - swapping the pointer is the user's call (three
-          // agents in three worktrees would ping-pong an auto-swap).
+          // agents in three worktrees would ping-pong an auto-swap). Remote
+          // sessions are skipped: the pointer swap would write a remote path
+          // into local routing. Already-followed worktrees are skipped too
+          // (per-turn re-arm would otherwise re-suggest where you are).
+          if (event.machineId && event.machineId !== 'local') break
+          const drifted = useAgentStore.getState().sessions.find((s) => s.id === tid)
+          if (drifted?.worktreePath === event.worktreePath) break
           useAgentStore.getState().setDriftSuggestion(tid, {
             worktreePath: event.worktreePath,
             branch: event.branch,

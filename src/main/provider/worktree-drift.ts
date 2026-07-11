@@ -1,20 +1,39 @@
 /**
- * Worktree drift detection - pure half. When a session's agent WRITES into a
- * git worktree other than the session's folder, the registry surfaces a
+ * Worktree drift detection. When a session's agent works inside a git
+ * worktree other than the session's folder, the registry surfaces a
  * worktree.drift event so the user can follow it (one pointer drives the
  * branch chip, IDE pane, terminal cwd, and diff review).
  *
  * Provider-agnostic by construction: it feeds on the normalized tool.started
- * events all three adapters emit. Only the input-shape table below is
- * per-provider, pinned by tests with each adapter's real wire shapes.
+ * / turn.completed events all three adapters emit. Notably it does NOT use
+ * tool.completed - the Claude adapter never emits one. Instead, command
+ * checks are deferred to the thread's NEXT event: agents execute tools
+ * sequentially within a turn, so a later tool.started (or the turn's end)
+ * implies the stashed command has finished and any worktree it created
+ * exists on disk.
+ *
+ * The per-provider surface is only the input-shape tables below, pinned by
+ * tests with each adapter's real wire shapes.
  */
+import type { RuntimeWorktreeDriftEvent } from '@shared/provider-events'
 
 /** Tool names that mutate files, lowercase. Reads never signal drift. */
 const WRITE_TOOLS = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'apply_patch', 'patch'])
 
+/** Command-executing tools: claude 'Bash', codex commandExecution (normalized
+ *  to 'Bash'), opencode ACP kind 'execute'. */
+const COMMAND_TOOLS = new Set(['bash', 'execute', 'shell'])
+
+/**
+ * OpenCode's ACP adapter emits toolName as `title || kind`, and titles are
+ * free-form ('Write src/foo.ts'). Match on the first token so display-shaped
+ * names still classify.
+ */
+const firstToken = (name: string): string => name.trim().split(/\s+/, 1)[0]?.toLowerCase() ?? ''
+
 /** Pull absolute file paths out of a write-tool input, tolerating any shape. */
 export function extractWritePaths(toolName: string, input: unknown): string[] {
-  if (!WRITE_TOOLS.has(toolName.toLowerCase())) return []
+  if (!WRITE_TOOLS.has(firstToken(toolName))) return []
   if (typeof input !== 'object' || input === null) return []
   const obj = input as Record<string, unknown>
   const out: string[] = []
@@ -31,26 +50,48 @@ export function extractWritePaths(toolName: string, input: unknown): string[] {
   return out
 }
 
-/** Command-executing tool names, lowercase: claude 'Bash', codex
- *  commandExecution (normalized to 'Bash'), opencode ACP 'execute'. */
-const COMMAND_TOOLS = new Set(['bash', 'execute', 'shell'])
+export interface CommandSignal {
+  paths: string[]
+  /** The command can change worktree topology (git worktree ...) - the
+   *  post-command check must bypass the worktree-list cache. */
+  mutatesWorktrees: boolean
+}
 
-/** Absolute-path tokens in a shell command, plus an explicit cwd field.
- *  Conservative charset - a token only matters if it lands under a KNOWN
- *  worktree of the session's repo, so false positives are structurally
- *  impossible downstream. */
-export function extractCommandPaths(toolName: string, input: unknown): string[] {
-  if (!COMMAND_TOOLS.has(toolName.toLowerCase())) return []
-  if (typeof input !== 'object' || input === null) return []
+/**
+ * Path candidates in a shell command: an explicit cwd field (codex sends
+ * one), quoted absolute or dot-relative paths (agents quote paths with
+ * spaces - Switchboard's own session worktrees live under "Application
+ * Support"), bare absolute tokens, and ./ ../ tokens resolved against the
+ * session folder (the canonical `git worktree add ../feature-x` form). A
+ * candidate only matters if it lands under a KNOWN worktree of the session's
+ * repo, so downstream false positives are structurally impossible.
+ */
+export function extractCommandPaths(toolName: string, input: unknown, baseCwd?: string): CommandSignal {
+  const none: CommandSignal = { paths: [], mutatesWorktrees: false }
+  if (!COMMAND_TOOLS.has(firstToken(toolName))) return none
+  if (typeof input !== 'object' || input === null) return none
   const obj = input as Record<string, unknown>
   const out: string[] = []
   if (typeof obj.cwd === 'string' && obj.cwd.startsWith('/')) out.push(obj.cwd)
-  if (typeof obj.command === 'string') {
-    for (const m of obj.command.matchAll(/(?:^|[\s"'`=;|&(<>])(\/[A-Za-z0-9._~/-]+)/g)) {
-      out.push(m[1])
-    }
+  const command = typeof obj.command === 'string' ? obj.command : ''
+  if (command) {
+    for (const m of command.matchAll(/["']((?:\/|\.{1,2}\/)[^"']+)["']/g)) out.push(m[1])
+    for (const m of command.matchAll(/(?:^|[\s=;|&(<>])((?:\/|\.{1,2}\/)[A-Za-z0-9._~/-]+)/g)) out.push(m[1])
   }
-  return out
+  const resolved = out
+    .map((p) => {
+      if (p.startsWith('/')) return p
+      if (!baseCwd) return null
+      const stack = baseCwd.split('/')
+      for (const seg of p.split('/')) {
+        if (seg === '.' || seg === '') continue
+        else if (seg === '..') stack.pop()
+        else stack.push(seg)
+      }
+      return stack.join('/') || '/'
+    })
+    .filter((p): p is string => !!p)
+  return { paths: [...new Set(resolved)], mutatesWorktrees: /\bworktree\b/.test(command) }
 }
 
 export interface WorktreeRef {
@@ -60,11 +101,6 @@ export interface WorktreeRef {
 
 const isUnder = (path: string, root: string): boolean => path === root || path.startsWith(root + '/')
 
-/**
- * First write path that lands in a worktree other than the session folder.
- * Longest-matching worktree root wins so the main repo root does not swallow
- * worktrees nested under it (the .switchboard/worktrees layout).
- */
 /** Longest-matching worktree root containing `p`, or null. */
 function worktreeOf(p: string, worktrees: WorktreeRef[]): WorktreeRef | null {
   let best: WorktreeRef | null = null
@@ -74,16 +110,18 @@ function worktreeOf(p: string, worktrees: WorktreeRef[]): WorktreeRef | null {
   return best
 }
 
+/**
+ * First path landing in a worktree other than the session's CONTAINING
+ * worktree: subdir-rooted sessions do not false-positive at the repo root,
+ * and worktree-rooted sessions treat the main checkout as foreign.
+ * Longest-match matters throughout - .switchboard-style worktrees nest under
+ * the repo root.
+ */
 export function detectDrift(
   sessionFolder: string,
   paths: string[],
   worktrees: WorktreeRef[]
 ): WorktreeRef | null {
-  // Drift is defined relative to the session's OWN containing worktree, not
-  // the raw folder: sessions rooted at a repo subdir writing at the repo root
-  // are not drifting, while a worktree-rooted session writing into the main
-  // checkout is. Longest-match matters throughout - .switchboard-style
-  // worktrees nest under the repo root.
   const home = worktreeOf(sessionFolder, worktrees)
   for (const p of paths) {
     const target = worktreeOf(p, worktrees)
@@ -92,7 +130,12 @@ export function detectDrift(
   return null
 }
 
-/** Parse `git worktree list --porcelain` output into refs. */
+/**
+ * Parse `git worktree list --porcelain` into refs, INCLUDING the main
+ * checkout. (src/main/worktree.ts has a sibling parser that deliberately
+ * excludes it - drift needs main so worktree-rooted sessions can detect
+ * drift back into the main checkout.)
+ */
 export function parseWorktreeList(stdout: string): WorktreeRef[] {
   const out: WorktreeRef[] = []
   let current: Partial<WorktreeRef> = {}
@@ -108,66 +151,82 @@ export function parseWorktreeList(stdout: string): WorktreeRef[] {
   return out
 }
 
-import { existsSync, realpathSync } from 'node:fs'
-import { dirname, join, basename } from 'node:path'
-import type { RuntimeWorktreeDriftEvent } from '@shared/provider-events'
-
-/**
- * Realpath a path that may not fully exist yet (a Write creates the leaf):
- * resolve the nearest existing ancestor and re-append the tail. Symlinked
- * roots are the norm on macOS - /tmp and /var/folders ARE symlinks into
- * /private, so agent-supplied paths and `git worktree list` output disagree
- * by prefix unless both sides are normalized.
- */
-function realpathNearest(p: string): string {
-  let dir = p
-  const tail: string[] = []
-  for (;;) {
-    if (existsSync(dir)) {
-      try {
-        return tail.length ? join(realpathSync(dir), ...tail.reverse()) : realpathSync(dir)
-      } catch {
-        return p
-      }
-    }
-    const parent = dirname(dir)
-    if (parent === dir) return p
-    tail.push(basename(dir))
-    dir = parent
-  }
+interface PendingCommands {
+  paths: string[]
+  needFresh: boolean
 }
 
 /**
- * Stateful half: dedupe (one event per thread+worktree) over the pure
- * detector. The worktree lister is injected so the registry supplies its
- * cached `git worktree list` and tests supply a real or fake one.
+ * Stateful half. Lifecycle is turn-scoped:
+ *  - write tools check at tool START (path known up front, cached list)
+ *  - command tools stash their path candidates; the check runs on the
+ *    thread's NEXT event (later tool.started or turn end), when the command
+ *    has finished and any worktree it created exists
+ *  - dedupe is per (thread, worktree) WITHIN a turn; the turn's end re-arms
+ *    it, so an agent that keeps working in a foreign worktree re-suggests
+ *    next turn (a dismissed banner is dismissed for the turn, not forever)
+ * The worktree lister and path normalizer are injected: the registry supplies
+ * its cached `git worktree list` and the shared realpath helper.
  */
 export class DriftWatcher {
-  private readonly notified = new Set<string>()
+  private readonly notified = new Map<string, Set<string>>()
+  private readonly pending = new Map<string, PendingCommands>()
+  private readonly homeCache = new Map<string, string>()
 
   constructor(
-    private readonly listWorktrees: (repoFolder: string, fresh?: boolean) => Promise<WorktreeRef[]>
+    private readonly listWorktrees: (repoFolder: string, fresh?: boolean) => Promise<WorktreeRef[]>,
+    private readonly normalize: (p: string) => Promise<string>
   ) {}
 
-  /** File-writing tools, checked at tool START (path known up front). */
   async onToolStarted(
     threadId: string,
     sessionFolder: string,
     toolName: string,
     input: unknown
   ): Promise<RuntimeWorktreeDriftEvent | null> {
-    return this.check(threadId, sessionFolder, extractWritePaths(toolName, input), false)
+    // A new tool starting means the previously stashed command (if any) has
+    // finished - flush it first.
+    const flushed = await this.flushPending(threadId, sessionFolder)
+
+    const command = extractCommandPaths(toolName, input, sessionFolder)
+    if (command.paths.length > 0) {
+      const existing = this.pending.get(threadId)
+      this.pending.set(threadId, {
+        paths: [...(existing?.paths ?? []), ...command.paths].slice(-50),
+        needFresh: (existing?.needFresh ?? false) || command.mutatesWorktrees,
+      })
+      return flushed
+    }
+
+    const writes = extractWritePaths(toolName, input)
+    if (writes.length === 0) return flushed
+    return flushed ?? (await this.check(threadId, sessionFolder, writes, false))
   }
 
-  /** Command tools, checked at COMPLETION: `git worktree add` creates the
-   *  worktree during the command, so only a fresh post-run list can see it. */
-  async onCommandCompleted(
-    threadId: string,
-    sessionFolder: string,
-    toolName: string,
-    input: unknown
-  ): Promise<RuntimeWorktreeDriftEvent | null> {
-    return this.check(threadId, sessionFolder, extractCommandPaths(toolName, input), true)
+  /** Flush any stashed command paths, then re-arm the per-turn dedupe. */
+  async onTurnCompleted(threadId: string, sessionFolder: string): Promise<RuntimeWorktreeDriftEvent | null> {
+    const event = await this.flushPending(threadId, sessionFolder)
+    this.notified.delete(threadId)
+    return event
+  }
+
+  onSessionStopped(threadId: string): void {
+    this.notified.delete(threadId)
+    this.pending.delete(threadId)
+    this.homeCache.delete(threadId)
+  }
+
+  /** The session's folder pointer moved (user followed / swapped worktree). */
+  onSessionMoved(threadId: string): void {
+    this.notified.delete(threadId)
+    this.homeCache.delete(threadId)
+  }
+
+  private async flushPending(threadId: string, sessionFolder: string): Promise<RuntimeWorktreeDriftEvent | null> {
+    const stash = this.pending.get(threadId)
+    if (!stash) return null
+    this.pending.delete(threadId)
+    return this.check(threadId, sessionFolder, stash.paths, stash.needFresh)
   }
 
   private async check(
@@ -177,15 +236,23 @@ export class DriftWatcher {
     fresh: boolean
   ): Promise<RuntimeWorktreeDriftEvent | null> {
     if (paths.length === 0) return null
-    const worktrees = (await this.listWorktrees(sessionFolder, fresh)).map((wt) => ({
-      ...wt,
-      path: realpathNearest(wt.path),
-    }))
-    const drift = detectDrift(realpathNearest(sessionFolder), paths.map(realpathNearest), worktrees)
+    const worktrees = await this.listWorktrees(sessionFolder, fresh)
+    // Single-worktree repos cannot drift - the overwhelmingly common case.
+    if (worktrees.length <= 1) return null
+
+    let home = this.homeCache.get(threadId)
+    if (!home) {
+      home = await this.normalize(sessionFolder)
+      this.homeCache.set(threadId, home)
+    }
+    const normalizedPaths = await Promise.all(paths.map((p) => this.normalize(p)))
+    const drift = detectDrift(home, normalizedPaths, worktrees)
     if (!drift) return null
-    const key = `${threadId}:${drift.path}`
-    if (this.notified.has(key)) return null
-    this.notified.add(key)
+
+    const seen = this.notified.get(threadId) ?? new Set<string>()
+    if (seen.has(drift.path)) return null
+    seen.add(drift.path)
+    this.notified.set(threadId, seen)
     return { type: 'worktree.drift', threadId, worktreePath: drift.path, branch: drift.branch }
   }
 }

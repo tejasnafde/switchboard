@@ -1,5 +1,6 @@
 import type { BackendHost } from '../backend/host'
 import { readFile, stat } from 'fs/promises'
+import { notifyWorktreeSwap } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
@@ -235,6 +236,9 @@ export function registerAppHandlers(host: BackendHost): void {
       worktreeBranch: string | null,
     ) => {
       setConversationWorktree(conversationId, worktreePath, worktreeBranch)
+      // Live sessions share the conversation id as threadId: re-baseline the
+      // drift detector so reverse drift stays detectable after a Follow.
+      notifyWorktreeSwap(conversationId, worktreePath)
       return { ok: true }
     },
   )

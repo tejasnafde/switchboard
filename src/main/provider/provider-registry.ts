@@ -10,7 +10,8 @@ import { CodexAdapter } from './adapters/codex-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
-import { DriftWatcher, extractCommandPaths, parseWorktreeList, type WorktreeRef } from './worktree-drift'
+import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-drift'
+import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { CheckpointTracker } from './checkpoint-tracker'
@@ -41,12 +42,14 @@ export class ProviderRegistry {
   private sessionAdapters = new Map<string, ProviderAdapter>()
   /** Working-tree root per session, captured at startSession for checkpointing. */
   private sessionCwd = new Map<string, string>()
-  /** Worktree list cache per repo folder (10s TTL); drift dedupe lives in the watcher. */
-  private worktreeCache = new Map<string, { at: number; refs: WorktreeRef[] }>()
-  private driftWatcher = new DriftWatcher((folder, fresh) => this.listWorktrees(folder, fresh))
-  /** toolId -> command input, stashed at start so completion (which carries
-   *  only toolId) can run drift detection after the command has executed. */
-  private pendingCommands = new Map<string, { threadId: string; toolName: string; input: unknown }>()
+  /** Worktree list cache per repo folder (10s TTL, failures negatively
+   *  cached, refs realpath-normalized once at fill). Drift state lives in
+   *  the watcher, turn-scoped. */
+  private worktreeCache = new Map<string, { at: number; refs: WorktreeRef[]; inflight?: Promise<WorktreeRef[]> }>()
+  private driftWatcher = new DriftWatcher(
+    (folder, fresh) => this.listWorktrees(folder, fresh),
+    (p) => realpathOrAncestor(p)
+  )
 
   /**
    * Derives per-file diff cards from git checkpoints around each turn -
@@ -67,6 +70,7 @@ export class ProviderRegistry {
   // `adapters` is injectable for tests (e.g. a mock echo provider exercising
   // the full path over a WsHost); production passes none and gets the real set.
   constructor(host: BackendHost, adapters?: Map<ProviderKind, ProviderAdapter>) {
+    activeRegistry = this
     this.host = host
     this.opencodeAcp = new OpencodeAcpAdapter()
     this.adapters = adapters ?? new Map<ProviderKind, ProviderAdapter>([
@@ -110,49 +114,27 @@ export class ProviderRegistry {
     }
 
     // Provider-agnostic worktree-drift detection: all three adapters emit
-    // tool events through here, so one subscription covers claude, codex,
-    // and opencode alike. Worktrees may live anywhere (nested under
-    // .switchboard/, /tmp, userData) - `git worktree list` names them all.
-    // Writes are checked at start (path known up front); commands at
-    // completion (`git worktree add` creates the worktree mid-command).
+    // tool.started and turn.completed through here (tool.completed is NOT
+    // universal - claude never sends it), so the watcher defers command
+    // checks to the thread's next event. Worktrees may live anywhere (nested
+    // under .switchboard/, /tmp, userData) - `git worktree list` names them.
     if (event.type === 'tool.started') {
-      if (extractCommandPaths(event.toolName, event.input).length > 0) {
-        this.pendingCommands.set(event.toolId, {
-          threadId: event.threadId,
-          toolName: event.toolName,
-          input: event.input,
-        })
-        // Bounded: completions clear entries; a runaway backlog self-prunes.
-        if (this.pendingCommands.size > 200) {
-          const oldest = this.pendingCommands.keys().next().value
-          if (oldest !== undefined) this.pendingCommands.delete(oldest)
-        }
-      } else {
-        void this.maybeEmitDrift(event.threadId, event.toolName, event.input, 'write')
-      }
+      void this.driftHook((watcher, cwd) =>
+        watcher.onToolStarted(event.threadId, cwd, event.toolName, event.input), event.threadId)
     }
-    if (event.type === 'tool.completed') {
-      const pending = this.pendingCommands.get(event.toolId)
-      if (pending) {
-        this.pendingCommands.delete(event.toolId)
-        void this.maybeEmitDrift(pending.threadId, pending.toolName, pending.input, 'command')
-      }
+    if (event.type === 'turn.completed') {
+      void this.driftHook((watcher, cwd) => watcher.onTurnCompleted(event.threadId, cwd), event.threadId)
     }
   }
 
-  private async maybeEmitDrift(
-    threadId: string,
-    toolName: string,
-    input: unknown,
-    kind: 'write' | 'command'
+  private async driftHook(
+    run: (watcher: DriftWatcher, cwd: string) => Promise<import('@shared/provider-events').RuntimeWorktreeDriftEvent | null>,
+    threadId: string
   ): Promise<void> {
     try {
       const cwd = this.sessionCwd.get(threadId)
       if (!cwd) return
-      const event =
-        kind === 'write'
-          ? await this.driftWatcher.onToolStarted(threadId, cwd, toolName, input)
-          : await this.driftWatcher.onCommandCompleted(threadId, cwd, toolName, input)
+      const event = await run(this.driftWatcher, cwd)
       if (!event) return
       log.info('worktree drift detected', { threadId, worktree: event.worktreePath, branch: event.branch })
       this.bus.publish(event)
@@ -161,16 +143,41 @@ export class ProviderRegistry {
     }
   }
 
+  /** The conversation's worktree pointer moved (Follow / branch-picker swap):
+   *  re-baseline drift detection so reverse drift stays detectable. */
+  updateSessionCwd(threadId: string, cwd: string): void {
+    if (!this.sessionCwd.has(threadId)) return
+    this.sessionCwd.set(threadId, cwd)
+    this.driftWatcher.onSessionMoved(threadId)
+  }
+
   private async listWorktrees(repoFolder: string, fresh = false): Promise<WorktreeRef[]> {
     const cached = this.worktreeCache.get(repoFolder)
     if (!fresh && cached && Date.now() - cached.at < 10_000) return cached.refs
-    const { stdout } = await promisify(execFile)('git', ['worktree', 'list', '--porcelain'], {
-      cwd: repoFolder,
-      timeout: 5_000,
-    })
-    const refs = parseWorktreeList(stdout)
-    this.worktreeCache.set(repoFolder, { at: Date.now(), refs })
-    return refs
+    // Coalesce concurrent misses into one subprocess.
+    if (cached?.inflight) return cached.inflight
+    const inflight = (async () => {
+      try {
+        const { stdout } = await promisify(execFile)('git', ['worktree', 'list', '--porcelain'], {
+          cwd: repoFolder,
+          timeout: 5_000,
+        })
+        // Normalize once at the cache boundary - roots are stable for the TTL.
+        const refs = await Promise.all(
+          parseWorktreeList(stdout).map(async (wt) => ({ ...wt, path: await realpathOrAncestor(wt.path) }))
+        )
+        this.worktreeCache.set(repoFolder, { at: Date.now(), refs })
+        return refs
+      } catch (err) {
+        // Negative cache: a non-git session folder must not spawn a failing
+        // subprocess (and a warn line) per tool event.
+        log.warn(`git worktree list failed for ${repoFolder}: ${err instanceof Error ? err.message : String(err)}`)
+        this.worktreeCache.set(repoFolder, { at: Date.now(), refs: [] })
+        return []
+      }
+    })()
+    this.worktreeCache.set(repoFolder, { at: cached?.at ?? 0, refs: cached?.refs ?? [], inflight })
+    return inflight
   }
 
   private async emitFileEdits(threadId: string): Promise<void> {
@@ -338,6 +345,7 @@ export class ProviderRegistry {
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
       this.checkpoints.clear(threadId)
+      this.driftWatcher.onSessionStopped(threadId)
     })
 
     log.info('IPC handlers registered')
@@ -357,4 +365,12 @@ export class ProviderRegistry {
     }
     this.bus.clear()
   }
+}
+
+/** Last-constructed registry, for callers without a reference (ipc/app.ts's
+ *  worktree-swap handler re-baselines drift detection through this). */
+let activeRegistry: ProviderRegistry | null = null
+
+export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
+  if (cwd) activeRegistry?.updateSessionCwd(threadId, cwd)
 }

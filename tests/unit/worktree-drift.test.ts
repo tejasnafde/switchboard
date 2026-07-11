@@ -48,26 +48,56 @@ describe('extractWritePaths', () => {
 })
 
 describe('extractCommandPaths', () => {
+  const paths = (name: string, input: unknown, cwd?: string) => extractCommandPaths(name, input, cwd).paths
+
   it('claude Bash: absolute path tokens in the command string', () => {
-    expect(extractCommandPaths('Bash', { command: 'git worktree add /tmp/sb-x -b test/x' })).toEqual(['/tmp/sb-x'])
-    expect(extractCommandPaths('Bash', { command: 'cd /repo/.switchboard/worktrees/feat-x && npm test' })).toEqual([
+    expect(paths('Bash', { command: 'git worktree add /tmp/sb-x -b test/x' })).toEqual(['/tmp/sb-x'])
+    expect(paths('Bash', { command: 'cd /repo/.switchboard/worktrees/feat-x && npm test' })).toEqual([
       '/repo/.switchboard/worktrees/feat-x',
     ])
-    expect(extractCommandPaths('Bash', { command: "echo 'hi' > /tmp/wt/notes.md" })).toEqual(['/tmp/wt/notes.md'])
+    expect(paths('Bash', { command: "echo 'hi' > /tmp/wt/notes.md" })).toEqual(['/tmp/wt/notes.md'])
+  })
+
+  it('quoted paths with spaces survive - Switchboard session worktrees live under "Application Support"', () => {
+    expect(
+      paths('Bash', { command: 'git worktree add "/Users/t/Library/Application Support/switchboard/worktrees/r/fix" -b sb/fix' })
+    ).toEqual(['/Users/t/Library/Application Support/switchboard/worktrees/r/fix'])
+  })
+
+  it('relative ../ and ./ tokens resolve against the session folder - the canonical `git worktree add ../feature-x` form', () => {
+    expect(paths('Bash', { command: 'git worktree add ../feature-x -b feat' }, '/repo/main')).toEqual([
+      '/repo/feature-x',
+    ])
+    expect(paths('Bash', { command: 'cd ./sub/dir' }, '/repo')).toEqual(['/repo/sub/dir'])
+    // no base cwd -> relative tokens are dropped, not misresolved
+    expect(paths('Bash', { command: 'git worktree add ../feature-x' })).toEqual([])
   })
 
   it('codex commandExecution (normalized to Bash): cwd counts as a path signal', () => {
-    expect(extractCommandPaths('Bash', { command: 'npm test', cwd: '/tmp/wt' })).toEqual(['/tmp/wt'])
+    expect(paths('Bash', { command: 'npm test', cwd: '/tmp/wt' })).toEqual(['/tmp/wt'])
   })
 
-  it('opencode ACP execute kind', () => {
-    expect(extractCommandPaths('execute', { command: 'git -C /tmp/wt status' })).toEqual(['/tmp/wt'])
+  it('opencode ACP: kind or free-form title classify by first token', () => {
+    expect(paths('execute', { command: 'git -C /tmp/wt status' })).toEqual(['/tmp/wt'])
+    expect(paths('Bash npm test', { command: 'git -C /tmp/wt status' })).toEqual(['/tmp/wt'])
   })
 
-  it('non-command tools and commands without absolute paths yield nothing', () => {
-    expect(extractCommandPaths('Write', { command: '/tmp/x' })).toEqual([])
-    expect(extractCommandPaths('Bash', { command: 'ls -la && git status' })).toEqual([])
-    expect(extractCommandPaths('Bash', null)).toEqual([])
+  it('flags worktree-mutating commands so the post-run check bypasses the list cache', () => {
+    expect(extractCommandPaths('Bash', { command: 'git worktree add /tmp/x -b y' }).mutatesWorktrees).toBe(true)
+    expect(extractCommandPaths('Bash', { command: 'ls /tmp/x' }).mutatesWorktrees).toBe(false)
+  })
+
+  it('non-command tools and commands without path tokens yield nothing', () => {
+    expect(paths('Write', { command: '/tmp/x' })).toEqual([])
+    expect(paths('Bash', { command: 'ls -la && git status' })).toEqual([])
+    expect(paths('Bash', null)).toEqual([])
+  })
+})
+
+describe('first-token tool-name matching (opencode free-form titles)', () => {
+  it("classifies 'Write src/foo.ts'-style display titles as writes", () => {
+    expect(extractWritePaths('Write src/foo.ts', { path: '/wt/foo.ts' })).toEqual(['/wt/foo.ts'])
+    expect(extractWritePaths('Read src/foo.ts', { path: '/wt/foo.ts' })).toEqual([])
   })
 })
 

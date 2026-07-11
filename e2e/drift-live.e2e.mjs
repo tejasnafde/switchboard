@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 /**
  * LIVE worktree-drift probe: a real Claude agent in a throwaway repo is asked
- * to `git worktree add` via shell and then write a file in the new worktree.
+ * to `git worktree add` via shell and write a file via SHELL REDIRECT only -
+ * the pure command-signal path (claude emits no tool.completed, so this
+ * exercises the deferred next-event flush).
  * Asserts the registry's drift detection fires a worktree.drift event for
  * the session - the full production path: SDK -> adapter -> tool events ->
  * DriftWatcher -> bus -> renderer push. (The banner UI half is covered by
@@ -78,9 +80,9 @@ try {
     {
       tid: threadId,
       msg:
-        `Run exactly these two steps, no questions: ` +
-        `1) with your shell tool run: git worktree add /tmp/${wtName} -b drift-test/${wtName} ` +
-        `2) using your file-write tool, create /tmp/${wtName}/notes.md containing the single line "drift probe". ` +
+        `Run exactly these two steps using ONLY your shell (Bash) tool - do not use any file-write tool, no questions: ` +
+        `1) git worktree add /tmp/${wtName} -b drift-test/${wtName} ` +
+        `2) echo "drift probe" > /tmp/${wtName}/notes.md ` +
         `Then stop.`,
     },
   )

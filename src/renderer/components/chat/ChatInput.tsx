@@ -414,25 +414,30 @@ export function ChatInput({
   // at-menu file listing AND the BranchPicker, so a worktree session's branch
   // switch can't flip HEAD in the shared parent repo.
   const sessionsForRepo = useAgentStore((s) => s.sessions)
-  const driftSuggestion = useAgentStore((st) =>
-    st.sessions.find((x) => x.id === sessionId)?.driftSuggestion ?? null,
-  )
-  const followDrift = () => {
-    if (!sessionId || !driftSuggestion) return
-    // Same pointer swap the branch picker uses - chip, IDE pane, terminals,
-    // and diff review all derive from it.
-    useAgentStore.getState().setWorktree(sessionId, driftSuggestion.worktreePath, driftSuggestion.branch)
+  // The ONE pointer swap: chip, IDE pane, terminals, and diff review all
+  // derive from it. Shared by the branch picker and the drift Follow button
+  // so future swap side effects cannot diverge between the two.
+  const swapWorktreePointer = (newCwd: string, branch: string) => {
+    if (!sessionId) return
+    useAgentStore.getState().setWorktree(sessionId, newCwd, branch)
     const conversationId = useAgentStore.getState().sessions.find((x) => x.id === sessionId)?.conversationId
       ?? sessionId
     window.api.app
-      .setConversationWorktree(conversationId, driftSuggestion.worktreePath, driftSuggestion.branch)
+      .setConversationWorktree(conversationId, newCwd, branch)
       .catch((err: unknown) => log.warn('persist worktree failed:', err))
   }
 
-  const repoRoot = useMemo(() => {
+  const { repoRoot, driftSuggestion } = useMemo(() => {
     const s = sessionsForRepo.find((sess) => sess.id === sessionId)
-    return s?.worktreePath ?? s?.projectPath ?? null
+    return {
+      repoRoot: s?.worktreePath ?? s?.projectPath ?? null,
+      driftSuggestion: s?.driftSuggestion ?? null,
+    }
   }, [sessionsForRepo, sessionId])
+
+  const followDrift = () => {
+    if (driftSuggestion) swapWorktreePointer(driftSuggestion.worktreePath, driftSuggestion.branch)
+  }
 
   // Lazy-load the file list the first time the user opens `@`. Cached on
   // a per-mount ref so reopening this chat refreshes the listing.
@@ -963,15 +968,7 @@ export function ChatInput({
             session restart, then picks up the new pointer. */}
         <BranchPickerTrigger
           cwd={repoRoot}
-          onSwapWorktree={(newCwd, branch) => {
-            if (!sessionId) return
-            useAgentStore.getState().setWorktree(sessionId, newCwd, branch)
-            const conversationId = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.conversationId
-              ?? sessionId
-            window.api.app
-              .setConversationWorktree(conversationId, newCwd, branch)
-              .catch((err: unknown) => log.warn('persist worktree failed:', err))
-          }}
+          onSwapWorktree={swapWorktreePointer}
         />
 
         {/* Runtime mode selector (per-session) */}
