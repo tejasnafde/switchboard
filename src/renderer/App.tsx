@@ -22,7 +22,7 @@ import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
-import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection } from './services/contextBridge'
+import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated } from './services/session-events'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
@@ -101,8 +101,21 @@ export function App() {
   // `tour.lastSeenVersion` is missing or older than TOUR_VERSION, unless
   // the user has switched off `tour.autoplay`. Settings tab provides a
   // manual replay path either way.
-  // cmd+l inside the embedded IDE workbench: sb-bridge -> main -> here.
-  useEffect(() => window.api.ide.onSelection(appendIdeSelectionToDraft), [])
+  // Workbench selections: cmd+l appends a draft pill; cmd+k (intent 'edit')
+  // opens the quick prompt pre-filled with the selection - Cursor-style, but
+  // the edit runs through the active agent + in-chat diff review.
+  const [ideEditContext, setIdeEditContext] = useState<{ preview: string; full: string } | null>(null)
+  useEffect(() =>
+    window.api.ide.onSelection((msg) => {
+      if (msg.intent === 'edit') {
+        const formatted = formatIdeSelection(msg)
+        if (!formatted) return
+        setIdeEditContext({ preview: formatted.label, full: formatted.block })
+        setQuickPromptOpen(true)
+      } else {
+        appendIdeSelectionToDraft(msg)
+      }
+    }), [])
 
   useEffect(() => {
     let cancelled = false
@@ -932,7 +945,11 @@ export function App() {
       />
       <QuickPromptModal
         open={quickPromptOpen}
-        onClose={() => setQuickPromptOpen(false)}
+        onClose={() => {
+          setQuickPromptOpen(false)
+          setIdeEditContext(null)
+        }}
+        ideContext={ideEditContext}
       />
       <FeatureTourModal
         open={tourOpen}

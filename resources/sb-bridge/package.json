@@ -16,6 +16,10 @@
       {
         "command": "switchboard.sendSelection",
         "title": "Switchboard: Send Selection to Chat"
+      },
+      {
+        "command": "switchboard.quickEdit",
+        "title": "Switchboard: Quick Edit Selection"
       }
     ],
     "keybindings": [
@@ -23,6 +27,12 @@
         "command": "switchboard.sendSelection",
         "key": "ctrl+l",
         "mac": "cmd+l",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "switchboard.quickEdit",
+        "key": "ctrl+k",
+        "mac": "cmd+k",
         "when": "editorTextFocus"
       }
     ]

@@ -22,6 +22,8 @@ export interface SelectionMessage {
   startLine: number
   endLine: number
   text: string
+  /** 'edit' opens the quick-edit prompt in the renderer instead of a draft pill. */
+  intent?: 'edit'
 }
 
 type InboundMessage = HelloMessage | SelectionMessage
@@ -64,7 +66,14 @@ function parseInbound(raw: string): InboundMessage | null {
     isNum(msg.endLine) &&
     typeof msg.text === 'string'
   ) {
-    return { type: 'selection', path: msg.path, startLine: msg.startLine, endLine: msg.endLine, text: msg.text }
+    return {
+      type: 'selection',
+      path: msg.path,
+      startLine: msg.startLine,
+      endLine: msg.endLine,
+      text: msg.text,
+      ...(msg.intent === 'edit' && { intent: 'edit' as const }),
+    }
   }
   return null
 }

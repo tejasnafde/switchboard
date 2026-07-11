@@ -10,6 +10,8 @@ import {
 interface QuickPromptModalProps {
   open: boolean
   onClose: () => void
+  /** Pre-filled context from a workbench cmd+k selection (wins over terminal selection). */
+  ideContext?: { preview: string; full: string } | null
 }
 
 /**
@@ -22,7 +24,7 @@ interface QuickPromptModalProps {
  *
  * Escapes via Esc or outside-click. Enter sends; Shift+Enter newline.
  */
-export function QuickPromptModal({ open, onClose }: QuickPromptModalProps) {
+export function QuickPromptModal({ open, onClose, ideContext }: QuickPromptModalProps) {
   const activeSession = useAgentStore((s) =>
     s.sessions.find((sess) => sess.id === s.activeSessionId),
   )
@@ -40,19 +42,23 @@ export function QuickPromptModal({ open, onClose }: QuickPromptModalProps) {
     setStatus('idle')
     setErrorMsg(null)
 
-    const found = findActiveTerminalSelection()
-    if (found) {
-      const ctx = captureTerminalContext(found.sessionId, found.paneId, found.selection)
-      const block = formatTerminalContext(ctx)
-      const preview = found.selection.split('\n')[0].slice(0, 80)
-      setContext({ preview: `${ctx.paneLabel}: ${preview}`, full: block })
+    if (ideContext) {
+      setContext(ideContext)
     } else {
-      setContext(null)
+      const found = findActiveTerminalSelection()
+      if (found) {
+        const ctx = captureTerminalContext(found.sessionId, found.paneId, found.selection)
+        const block = formatTerminalContext(ctx)
+        const preview = found.selection.split('\n')[0].slice(0, 80)
+        setContext({ preview: `${ctx.paneLabel}: ${preview}`, full: block })
+      } else {
+        setContext(null)
+      }
     }
 
     // Focus after mount so the cursor starts in the input.
     setTimeout(() => textareaRef.current?.focus(), 20)
-  }, [open])
+  }, [open, ideContext])
 
   const agentLabel = useMemo(() => {
     if (!activeSession) return 'agent'

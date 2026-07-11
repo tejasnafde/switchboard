@@ -542,9 +542,9 @@ const api = {
         (payload) => callback(payload),
       ),
     onSelection: (
-      callback: (msg: { path: string; startLine: number; endLine: number; text: string }) => void,
+      callback: (msg: { path: string; startLine: number; endLine: number; text: string; intent?: 'edit' }) => void,
     ): (() => void) =>
-      transport.on<[{ path: string; startLine: number; endLine: number; text: string }]>(
+      transport.on<[{ path: string; startLine: number; endLine: number; text: string; intent?: 'edit' }]>(
         IdeChannels.SELECTION,
         (msg) => callback(msg),
       ),

@@ -138,7 +138,28 @@ try {
   }
   check(pills.length > 0, 'cmd+l selection landed as a chat draft pill')
 
-  // 8. Theme coupling: setTheme('light') writes the workbench settings file,
+  // 8. In-workbench terminals are disposed on open - Switchboard owns terminals.
+  await workbench.keyboard.press('Control+`')
+  await win.waitForTimeout(3000)
+  const termCount = await workbench.locator('.terminal .xterm').count()
+  check(termCount === 0, 'workbench terminal is disposed on open (Switchboard owns terminals)')
+
+  // 9. cmd+k on a selection opens the quick-edit prompt in the app, pre-filled.
+  await workbench.locator('.monaco-editor .view-lines').first().click()
+  await workbench.keyboard.press('Meta+End')
+  await workbench.keyboard.press('Shift+Home')
+  await workbench.keyboard.press('Meta+k')
+  let promptVisible = false
+  for (let i = 0; i < 15 && !promptVisible; i++) {
+    await win.waitForTimeout(1000)
+    promptVisible = (await win.locator('textarea[placeholder*="Ask"], .sb-floating-surface textarea').count()) > 0
+  }
+  check(promptVisible, 'cmd+k in the workbench opens the quick-edit prompt')
+  const pillText = await win.locator('.sb-floating-surface').textContent().catch(() => '')
+  check(pillText.includes('hello.js'), 'quick-edit prompt is pre-filled with the selection context')
+  await win.keyboard.press('Escape')
+
+  // 10. Theme coupling: setTheme('light') writes the workbench settings file,
   //    which code-server applies live - the workbench flips out of vs-dark.
   await win.evaluate(() => window.api.ide.setTheme('light'))
   let light = false

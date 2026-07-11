@@ -58,6 +58,18 @@ describe('parseMessage', () => {
   })
 })
 
+describe('selection intent (cmd+k quick edit)', () => {
+  it('round-trips buildSelection with an edit intent', () => {
+    const msg = parseMessage(JSON.stringify(buildSelection('a.ts', 1, 2, 'x', 'edit')))
+    expect(msg).toEqual({ type: 'selection', path: 'a.ts', startLine: 1, endLine: 2, text: 'x', intent: 'edit' })
+  })
+
+  it('omits intent when not given and rejects unknown intents', () => {
+    expect(buildSelection('a.ts', 1, 2, 'x')).not.toHaveProperty('intent')
+    expect(parseMessage('{"type":"selection","path":"a","startLine":1,"endLine":1,"text":"x","intent":"evil"}')).toBeNull()
+  })
+})
+
 describe('config messages (main -> ext live settings)', () => {
   it('accepts a config message with a settings object', () => {
     expect(parseMessage('{"type":"config","settings":{"workbench.colorTheme":"Default Light Modern"}}')).toEqual({

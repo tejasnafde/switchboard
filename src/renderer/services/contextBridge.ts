@@ -296,20 +296,22 @@ export async function sendQuickPrompt(
  * Absolute paths are relativized against the active session's repo root so
  * pills read like repo paths.
  */
-export function appendIdeSelectionToDraft(msg: {
+export interface IdeSelection {
   path: string
   startLine: number
   endLine: number
   text: string
-}): boolean {
+}
+
+/** Relativize + format a workbench selection. Null when there is no session or no text. */
+export function formatIdeSelection(msg: IdeSelection): { label: string; block: string } | null {
   const state = useAgentStore.getState()
   const sid = state.activeSessionId
-  if (!sid || !msg.text.trim()) return false
+  if (!sid || !msg.text.trim()) return null
   const session = state.sessions.find((s) => s.id === sid)
   const root = session?.worktreePath ?? session?.projectPath
   const path = root && msg.path.startsWith(root + '/') ? msg.path.slice(root.length + 1) : msg.path
-
-  const content = formatFileViewerContext({
+  const block = formatFileViewerContext({
     path,
     startLine: msg.startLine,
     endLine: msg.endLine,
@@ -317,12 +319,19 @@ export function appendIdeSelectionToDraft(msg: {
   })
   const fileName = path.split('/').pop() ?? path
   const range = msg.startLine === msg.endLine ? `${msg.startLine}` : `${msg.startLine}-${msg.endLine}`
+  return { label: `${fileName} (${range})`, block }
+}
+
+export function appendIdeSelectionToDraft(msg: IdeSelection): boolean {
+  const sid = useAgentStore.getState().activeSessionId
+  const formatted = formatIdeSelection(msg)
+  if (!sid || !formatted) return false
   const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   useDraftStore.getState().addPill(sid, {
     id: pillId,
     kind: 'file',
-    label: `${fileName} (${range})`,
-    content,
+    label: formatted.label,
+    content: formatted.block,
   })
   window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))
   return true

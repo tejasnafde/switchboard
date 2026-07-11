@@ -89,20 +89,34 @@ function connect() {
   })
 }
 
-function sendSelection() {
+function sendSelection(intent) {
   const editor = vscode.window.activeTextEditor
   if (!editor || !socket || socket.readyState !== WebSocket.OPEN) return
   const sel = editor.selection
   const text = editor.document.getText(sel.isEmpty ? editor.document.lineAt(sel.active.line).range : sel)
   socket.send(
     JSON.stringify(
-      buildSelection(editor.document.uri.fsPath, sel.start.line + 1, sel.end.line + 1, text)
+      buildSelection(editor.document.uri.fsPath, sel.start.line + 1, sel.end.line + 1, text, intent)
     )
   )
 }
 
+let terminalNoticeShown = false
+
 function activate(context) {
-  context.subscriptions.push(vscode.commands.registerCommand('switchboard.sendSelection', sendSelection))
+  context.subscriptions.push(
+    vscode.commands.registerCommand('switchboard.sendSelection', () => sendSelection()),
+    vscode.commands.registerCommand('switchboard.quickEdit', () => sendSelection('edit')),
+    // Terminals live in Switchboard (cmd+j), not in the workbench - dispose
+    // any that open so the two terminal systems never fork.
+    vscode.window.onDidOpenTerminal((terminal) => {
+      terminal.dispose()
+      if (!terminalNoticeShown) {
+        terminalNoticeShown = true
+        void vscode.window.showInformationMessage('Terminals live in Switchboard - press cmd+j.')
+      }
+    })
+  )
   connect()
 }
 
