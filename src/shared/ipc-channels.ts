@@ -193,4 +193,7 @@ export const ProviderChannels = {
   ANSWER_QUESTION: 'provider:answer-question',
   EVENT: 'provider:event',
   IS_AVAILABLE: 'provider:is-available',
+  /** Proactive remote-auth preflight - args[0] is a threadId purely so the
+   *  preload RoutingTable routes the call to the session's machine. */
+  CHECK_REMOTE_AUTH: 'provider:check-remote-auth',
 } as const

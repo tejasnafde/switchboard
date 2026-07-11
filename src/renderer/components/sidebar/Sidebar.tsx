@@ -15,6 +15,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { useAgentStore } from '../../stores/agent-store'
+import { useMachineStore } from '../../stores/machine-store'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { onSessionRename, emitSessionRename, onSessionCreated } from '../../services/session-events'
@@ -32,6 +33,7 @@ import {
   type WorkspaceGroup,
 } from './sidebar-helpers'
 import type { Workspace } from '@shared/types'
+import type { Machine } from '@shared/machines'
 
 function useUnreadCount(sessionId: string): number {
   return useAgentStore((s) => s.sessions.find((sess) => sess.id === sessionId)?.unreadCount ?? 0)
@@ -105,7 +107,7 @@ function GroupUnreadBadge({ sessionIds, expanded }: { sessionIds: string[]; expa
     </span>
   )
 }
-import type { Project, SessionSummary, Bookmark } from '@shared/types'
+import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
 
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
@@ -158,6 +160,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   const [filterQuery, setFilterQuery] = useState('')
   const [managerOpen, setManagerOpen] = useState(false)
   const [addMachineOpen, setAddMachineOpen] = useState(false)
+  const [editMachine, setEditMachine] = useState<Machine | null>(null)
   const [savedOpen, setSavedOpen] = useState(false)
   const editRef = useRef<HTMLInputElement>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
@@ -187,6 +190,15 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     x: number
     y: number
     project: Project
+  } | null>(null)
+  // Remote (MachineLayer) session rows - actions route to the machine and
+  // mutate the snapshot, not `projects`.
+  const [remoteMenu, setRemoteMenu] = useState<{
+    x: number
+    y: number
+    machineId: string
+    projectPath: string
+    session: SessionSummary
   } | null>(null)
   const [mergePickerFor, setMergePickerFor] = useState<{
     sessionId: string
@@ -415,6 +427,54 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
             : { ...p, sessions: [...p.sessions, session].sort((a, b) => b.startedAt - a.startedAt) }
         )
       )
+    })
+  }, [])
+
+  // Remote-session menu actions bind the session id to its machine first -
+  // an unbound id silently routes local.
+  const handleRemoteRename = useCallback((menu: { machineId: string; session: SessionSummary }) => {
+    const title = window.prompt('Rename chat', menu.session.title)?.trim()
+    if (!title || title === menu.session.title) return
+    window.api.routing.bind(menu.session.id, menu.machineId)
+    window.api.app.renameConversation(menu.session.id, title).catch(() => {
+      // best-effort - next sync restores the real title
+    })
+    emitSessionRename(menu.session.id, title)
+  }, [])
+
+  const handleRemoteExport = useCallback(async (menu: { machineId: string; projectPath: string; session: SessionSummary }) => {
+    let messages = useAgentStore.getState().sessions.find((s) => s.id === menu.session.id)?.messages
+    if (!messages || messages.length === 0) {
+      try {
+        // Remote rows carry no filePath - load by id, routed to the machine.
+        window.api.routing.bind(menu.session.id, menu.machineId)
+        const resp = await window.api.app.loadSessionById(menu.session.id) as { messages?: ChatMessage[] }
+        messages = resp?.messages
+      } catch { /* best-effort - export whatever we have */ }
+    }
+    const content = serializeConversationToMarkdown({
+      title: menu.session.title ?? 'Conversation',
+      projectPath: menu.projectPath,
+      startedAt: menu.session.startedAt,
+      messages: messages ?? [],
+      agentType: menu.session.source === 'codex' ? 'codex' : 'claude-code',
+    })
+    await window.api.app.exportMarkdown({
+      suggestedFilename: suggestedExportFilename(menu.session.title ?? 'conversation'),
+      content,
+    })
+  }, [])
+
+  const handleRemoteArchive = useCallback((menu: { machineId: string; projectPath: string; session: SessionSummary }) => {
+    window.api.routing.bind(menu.session.id, menu.machineId)
+    // Optimistic: drop from the snapshot; roll back if the routed archive fails.
+    useMachineStore.getState().removeSnapshotSession(menu.machineId, menu.session.id)
+    window.api.app.archiveConversation(menu.session.id, menu.projectPath, menu.session.title).catch(() => {
+      useMachineStore.getState().addSnapshotSession(menu.machineId, menu.projectPath, {
+        id: menu.session.id,
+        title: menu.session.title,
+        agentType: menu.session.agentType ?? null,
+      })
     })
   }, [])
 
@@ -748,8 +808,11 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
 
         <MachineLayer
           onAddMachine={() => setAddMachineOpen(true)}
+          onEditMachine={(machine) => setEditMachine(machine)}
           onOpenRemoteSession={(machineId, projectPath, session) => onSessionSelect?.(session, projectPath, machineId)}
           onNewRemoteChat={(machineId, projectPath) => onNewChat?.(projectPath, machineId)}
+          onSessionContextMenu={(e, machineId, projectPath, session) =>
+            setRemoteMenu({ x: e.clientX, y: e.clientY, machineId, projectPath, session })}
         >
         <DndContext
           sensors={sensors}
@@ -892,6 +955,36 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         />
       )}
 
+      {/* Right-click menu on remote (MachineLayer) session rows */}
+      {remoteMenu && (
+        <SidebarContextMenu
+          x={remoteMenu.x}
+          y={remoteMenu.y}
+          onClose={() => setRemoteMenu(null)}
+          items={[
+            {
+              label: 'Rename',
+              onClick: () => { handleRemoteRename(remoteMenu); setRemoteMenu(null) },
+            },
+            {
+              label: 'Export as Markdown',
+              onClick: () => {
+                void handleRemoteExport(remoteMenu)
+                setRemoteMenu(null)
+              },
+            },
+            {
+              label: 'Archive',
+              danger: true,
+              onClick: () => {
+                handleRemoteArchive(remoteMenu)
+                setRemoteMenu(null)
+              },
+            },
+          ]}
+        />
+      )}
+
       {/* Right-click on a project header - workspace assignment */}
       {projectMenu && (
         <SidebarContextMenu
@@ -948,7 +1041,12 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
         />
       )}
 
-      {addMachineOpen && <AddMachineModal onClose={() => setAddMachineOpen(false)} />}
+      {(addMachineOpen || editMachine) && (
+        <AddMachineModal
+          editMachine={editMachine ?? undefined}
+          onClose={() => { setAddMachineOpen(false); setEditMachine(null) }}
+        />
+      )}
 
       {/* Merge-fragment picker - lists sibling chats in the same project. */}
       {mergePickerFor && (

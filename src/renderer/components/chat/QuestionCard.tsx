@@ -316,12 +316,16 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
               setOtherOpen((prev) => prev.map((v, i) => (i === qIdx ? false : v)))
               setOtherTexts((prev) => prev.map((t, i) => (i === qIdx ? '' : t)))
             }}
+            onSubmit={() => advance(selections)}
           />
         )}
       </div>
 
-      {/* Footer - multi-select or manual advance */}
-      {!answered && (activeQ.multiSelect || totalQuestions > 1) && (
+      {/* Footer - multi-select, multi-question, or an in-progress free-text
+          answer. The last case matters on single single-select questions:
+          preset options auto-advance on click, but a typed Other answer has
+          no click, so without the footer there is no way to submit it. */}
+      {!answered && (activeQ.multiSelect || totalQuestions > 1 || activeOtherOpen || activeOther.trim().length > 0) && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -410,6 +414,7 @@ function OtherOption({
   onOpen,
   onChange,
   onCancel,
+  onSubmit,
 }: {
   isOpen: boolean
   text: string
@@ -417,6 +422,8 @@ function OtherOption({
   onOpen: () => void
   onChange: (text: string) => void
   onCancel: () => void
+  /** Enter (without Shift) submits the typed answer; Shift+Enter inserts a newline. */
+  onSubmit?: () => void
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -474,7 +481,13 @@ function OtherOption({
         ref={inputRef}
         value={text}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="Tell the agent what you'd rather do…"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            if (text.trim()) onSubmit?.()
+          }
+        }}
+        placeholder="Tell the agent what you'd rather do… (Enter to submit)"
         rows={2}
         style={{
           flex: 1,

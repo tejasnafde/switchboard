@@ -230,4 +230,38 @@ describe('machine-store', () => {
     toggleCollapsed('a')
     expect(useMachineStore.getState().collapsed.has('a')).toBe(false)
   })
+
+  it('renameSnapshotSession patches the title of a cached session in whichever snapshot holds it', () => {
+    useMachineStore.setState((s) => ({
+      snapshots: {
+        ...s.snapshots,
+        m1: { syncedAt: 0, projects: [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 'New conversation', agentType: null }] }] },
+        m2: { syncedAt: 0, projects: [{ path: '/r/web', name: 'web', sessions: [{ id: 's2', title: 'keep me', agentType: null }] }] },
+      },
+    }))
+    useMachineStore.getState().renameSnapshotSession('s1', 'create a claude.local.md')
+    const { snapshots } = useMachineStore.getState()
+    expect(snapshots.m1.projects[0].sessions[0].title).toBe('create a claude.local.md')
+    expect(snapshots.m2.projects[0].sessions[0].title).toBe('keep me')
+  })
+
+  it('renameSnapshotSession is a no-op for an unknown session id', () => {
+    const before = useMachineStore.getState().snapshots
+    useMachineStore.getState().renameSnapshotSession('nope', 'x')
+    expect(useMachineStore.getState().snapshots).toBe(before)
+  })
+
+  it('removeSnapshotSession drops the session from its project and leaves others alone', () => {
+    useMachineStore.setState((s) => ({
+      snapshots: {
+        ...s.snapshots,
+        m1: {
+          syncedAt: 0,
+          projects: [{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 'a', agentType: null }, { id: 's2', title: 'b', agentType: null }] }],
+        },
+      },
+    }))
+    useMachineStore.getState().removeSnapshotSession('m1', 's1')
+    expect(useMachineStore.getState().snapshots.m1.projects[0].sessions.map((x) => x.id)).toEqual(['s2'])
+  })
 })

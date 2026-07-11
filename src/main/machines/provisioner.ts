@@ -3,14 +3,16 @@ import type { Machine } from '@shared/machines'
 import { buildProbeCommand, buildRemoteShellCommand, REMOTE_SERVER_DIR } from './provisionCommands'
 import { parseProbeOutput } from './remoteProbe'
 import { planProvision, type ProvisionAction } from './provisionPlan'
-import { remotePackageJson, remoteInstallScript } from './provisionSetup'
+import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript } from './provisionSetup'
 import { asUserScript, asUserUpload } from './remoteExec'
 import { summarizeSshError } from './sshError'
 
 export interface ProcRunner {
   // stdin is either an inline string (small payloads like package.json) or a
   // file to stream in (the server bundle, which is too large to buffer).
-  exec: (command: string, args: string[], stdin?: string | { file: string }) => Promise<{ code: number; stdout: string; stderr: string }>
+  // timeoutMs caps the whole command; the runner applies its own default when
+  // omitted (long enough for npm install).
+  exec: (command: string, args: string[], stdin?: string | { file: string }, timeoutMs?: number) => Promise<{ code: number; stdout: string; stderr: string }>
 }
 
 export interface ProvisionInputs {
@@ -30,6 +32,11 @@ export interface ProvisionResult {
  *  check but crashes at launch behind a generic health-check timeout. */
 const MIN_NODE_MAJOR = 20
 
+/** The probe is a trivial node one-liner and ConnectTimeout=10 already bounds
+ *  the ssh connect, so anything past 30s means a wedged remote - fail fast
+ *  instead of eating the runner's install-sized default. */
+const PROBE_TIMEOUT_MS = 30_000
+
 function assertSupportedNode(version: string | null): void {
   if (!version) return
   const match = version.match(/^v?(\d+)/)
@@ -45,11 +52,12 @@ export async function provisionRemote(
   inputs: ProvisionInputs,
   runner: ProcRunner,
   log?: (msg: string) => void,
+  /** Coarse per-step progress for the connect UI ('upload server bundle', ...). */
   onStep?: (label: string) => void,
 ): Promise<ProvisionResult> {
   onStep?.('checking remote')
   const probeCmd = buildProbeCommand(machine)
-  const probeOut = await runner.exec(probeCmd.command, probeCmd.args)
+  const probeOut = await runner.exec(probeCmd.command, probeCmd.args, undefined, PROBE_TIMEOUT_MS)
   if (probeOut.code !== 0) {
     const cause = summarizeSshError(probeOut.stderr)
     throw new Error(`ssh probe failed (${probeOut.code})${cause ? `: ${cause}` : ''}`)
@@ -77,7 +85,18 @@ export async function provisionRemote(
     asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/package.json`),
     JSON.stringify(remotePackageJson(inputs.appVersion, inputs.betterSqliteVersion, inputs.claudeSdkVersion), null, 2),
   )
-  await run('npm install (this can take a minute)', asUserScript(u, remoteInstallScript(inputs.appVersion)))
+  await run('npm install (this can take a minute)', asUserScript(u, remoteInstallScript()))
+
+  // Best-effort: puts `claude` on PATH for remote shells, but the server
+  // resolves the SDK binary itself, so a miss must not fail provisioning.
+  try {
+    await run('link claude CLI onto PATH', asUserScript(u, claudeSymlinkScript()))
+  } catch (err) {
+    log?.(`provision ${machine.id}: claude CLI symlink failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  // Marker last: a half-finished install must never probe as ready.
+  await run('write version marker', asUserScript(u, versionMarkerScript(inputs.appVersion)))
   log?.(`provision ${machine.id}: install complete`)
 
   return plan

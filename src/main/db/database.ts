@@ -1001,12 +1001,15 @@ export function getSystemMarkerMessages(conversationId: string): Array<{
   content: string
   timestamp: number
 }> {
+  // '[[sb:%' catches structural markers (rotation pill); 'Error: %' catches
+  // persisted error cards. Both are Switchboard-authored system rows that the
+  // JSONL reload path would otherwise drop.
   return getDb().prepare(
     `SELECT id, role, content, timestamp
        FROM messages
       WHERE conversation_id = ?
         AND role = 'system'
-        AND content LIKE '[[sb:%'
+        AND (content LIKE '[[sb:%' OR content LIKE 'Error: %')
       ORDER BY timestamp ASC`
   ).all(conversationId) as Array<{ id: string; role: string; content: string; timestamp: number }>
 }

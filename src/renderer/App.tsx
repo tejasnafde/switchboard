@@ -24,7 +24,7 @@ import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
-import { emitSessionCreated } from './services/session-events'
+import { emitSessionCreated, onSessionRename } from './services/session-events'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import type { SessionSummary, ChatMessage } from '@shared/types'
 import { shouldEvictMessages, needsMessageReload } from './utils/session-eviction'
@@ -205,7 +205,12 @@ export function App() {
     void useMachineStore.getState().hydrate()
     void useMachineStore.getState().loadSshHosts()
     void useMachineStore.getState().loadSnapshots()
-    return useMachineStore.getState().subscribeStatus()
+    const unsubStatus = useMachineStore.getState().subscribeStatus()
+    // Keep cached remote sidebar rows in sync with renames - nothing else
+    // refreshes a snapshot until the next connect-time sync.
+    const unsubRename = onSessionRename((sessionId, title) =>
+      useMachineStore.getState().renameSnapshotSession(sessionId, title))
+    return () => { unsubStatus(); unsubRename() }
   }, [])
 
   // Load saved theme on mount
@@ -447,8 +452,16 @@ export function App() {
               messages: ChatMessage[]
               meta: { id: string; title: string; projectPath: string; agentType: string } | null
             }
-            if (resp?.messages?.length) setMessages(session.id, resp.messages)
-          } catch { /* failed reload - session shows empty state */ }
+            if (resp?.messages?.length) {
+              setMessages(session.id, resp.messages)
+            } else if (effectiveMachineId !== 'local') {
+              // Empty reload for a remote chat means routing/scan failure, not
+              // an empty conversation.
+              log.warn('remote history reload returned no messages', { sessionId: session.id, machineId: effectiveMachineId })
+            }
+          } catch (err) {
+            log.warn('session history reload failed', { sessionId: session.id, machineId: effectiveMachineId, err })
+          }
         }
         return
       }

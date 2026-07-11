@@ -14,7 +14,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
 import { recordThreadSession, updateConversationSessionId } from '../db/database'
 import { defaultClaudeDir } from './claude-session-migrate'
-import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir } from './remote-gate'
+import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir, checkRemoteClaudeAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
 import type {
   ProviderAdapter,
@@ -117,6 +117,17 @@ export class ProviderRegistry {
       const adapter = this.getAdapter(provider)
       if (!adapter) return false
       return adapter.isAvailable()
+    })
+
+    // Proactive remote-auth preflight for the chat-open banner. `_threadId`
+    // exists ONLY so the preload RoutingTable (which keys on args[0]) routes
+    // the call to the machine the session is bound to - the check itself
+    // never uses it. Locally there is nothing to preflight, so a non-remote
+    // backend always reports logged in; the START_SESSION backstop below
+    // still catches any race.
+    this.host.handle(ProviderChannels.CHECK_REMOTE_AUTH, async (_threadId: string, remoteConfigDir?: string) => {
+      if (!process.env.SWITCHBOARD_REMOTE) return { loggedIn: true }
+      return checkRemoteClaudeAuth(remoteClaudeConfigDir(remoteConfigDir))
     })
 
     this.host.handle(ProviderChannels.START_SESSION, async (opts: SessionStartOpts) => {

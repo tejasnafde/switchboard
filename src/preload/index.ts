@@ -2,7 +2,7 @@ import { contextBridge } from 'electron'
 import { IpcTransport, type Transport } from './transport'
 import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
-import { TransportRouter } from './transport-router'
+import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
 import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
@@ -373,10 +373,13 @@ const api = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     invokeOn: <T = any>(machineId: string, channel: string, ...args: unknown[]): Promise<T> =>
       router.invokeOn<T>(machineId, channel, ...args),
-    /** Register a connected remote's WS backend. A reconnect gets a new tunnel
-     *  port, so any stale transport is torn down first (not pinned forever). */
+    /** Register a connected remote's WS backend. Idempotent: a reconnect keeps
+     *  its tunnel port, so a same-URL event on a still-alive transport keeps it
+     *  (subscriptions survive the blip). A moved URL or a terminally-closed
+     *  transport is torn down and replaced. */
     connectMachine: (machineId: string, url: string): void => {
       const existing = remoteTransports.get(machineId)
+      if (!shouldReplaceTransport(existing, url)) return
       if (existing) {
         router.unregister(machineId)
         existing.close()
@@ -512,6 +515,19 @@ const api = {
 
     isAvailable: (provider: 'claude' | 'codex') =>
       transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
+
+    /**
+     * Proactive remote-auth preflight. `threadId` is passed purely so the
+     * routing table dispatches the call to the machine the session is bound
+     * to (RoutingTable keys on args[0]); a local backend always reports
+     * `{ loggedIn: true }`. `remoteConfigDir` is the instance oauth_dir
+     * basename, same derivation the startSession path forwards.
+     */
+    checkRemoteAuth: (
+      threadId: string,
+      remoteConfigDir?: string,
+    ): Promise<{ loggedIn: boolean; loginCommand?: string; configDir?: string }> =>
+      transport.invoke(ProviderChannels.CHECK_REMOTE_AUTH, threadId, remoteConfigDir),
 
     // Stamp the emitting transport's machineId so two machines emitting the
     // same threadId don't merge into one chat downstream.

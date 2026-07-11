@@ -34,11 +34,36 @@ export function remotePackageJson(
   }
 }
 
-// Marker written last so a half-finished install never probes as ready.
-export function remoteInstallScript(appVersion: string): string {
+export function remoteInstallScript(): string {
   return [
     `cd ${REMOTE_SERVER_DIR}`,
     'npm install --omit=dev --no-audit --no-fund',
-    `printf %s ${appVersion} > version`,
   ].join(' && ')
+}
+
+/**
+ * Symlink the SDK-bundled claude CLI onto PATH so remote shells can run
+ * `claude` directly. npm installs exactly one platform package via the SDK's
+ * optionalDependencies; prefer the glibc dir and fall back to musl, mirroring
+ * findSdkClaudeBin in claude-adapter.ts (node's detect-libc misfires to musl
+ * on some builds). Exits non-zero when neither variant is installed - the
+ * caller treats this step as best-effort.
+ */
+export function claudeSymlinkScript(): string {
+  const sdkDir = `${REMOTE_SERVER_DIR}/node_modules/@anthropic-ai`
+  return [
+    "ARCH=\"$(uname -m | sed 's/aarch64/arm64/;s/x86_64/x64/')\"",
+    `GLIBC="${sdkDir}/claude-agent-sdk-linux-$ARCH/claude"`,
+    `MUSL="${sdkDir}/claude-agent-sdk-linux-$ARCH-musl/claude"`,
+    'if [ -f "$GLIBC" ]; then BIN="$GLIBC"; elif [ -f "$MUSL" ]; then BIN="$MUSL"; else echo "no bundled claude CLI for linux-$ARCH" >&2; exit 1; fi',
+    'chmod +x "$BIN" 2>/dev/null || true',
+    'mkdir -p "$HOME/.local/bin"',
+    'ln -sf "$BIN" "$HOME/.local/bin/claude"',
+  ].join('\n')
+}
+
+// Marker written as its own final step so a half-finished install never
+// probes as ready - keep this the LAST thing provisioning runs.
+export function versionMarkerScript(appVersion: string): string {
+  return `cd ${REMOTE_SERVER_DIR} && printf %s ${appVersion} > version`
 }

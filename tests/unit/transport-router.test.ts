@@ -5,7 +5,7 @@
  * remote backends merge in one window.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { TransportRouter } from '../../src/preload/transport-router'
+import { TransportRouter, shouldReplaceTransport } from '../../src/preload/transport-router'
 import type { Transport } from '@shared/transport'
 
 function fake(tag: string) {
@@ -177,5 +177,29 @@ describe('TransportRouter', () => {
     local.emit('e', 'a')
     remote.emit('e', 'b')
     expect(seen).toEqual([])
+  })
+})
+
+describe('shouldReplaceTransport', () => {
+  const t = (url: string, alive: boolean) => ({ url, isAlive: () => alive })
+
+  it('registers fresh when there is no existing transport', () => {
+    expect(shouldReplaceTransport(undefined, 'ws://127.0.0.1:7681')).toBe(true)
+  })
+
+  it('keeps an alive transport dialing the same url (idempotent reconnect echo)', () => {
+    // A stable-port reconnect re-emits 'connected' with an unchanged url; the
+    // transport heals in place, so tearing it down would drop every subscription.
+    expect(shouldReplaceTransport(t('ws://127.0.0.1:7681', true), 'ws://127.0.0.1:7681')).toBe(false)
+  })
+
+  it('replaces when the url moved (port-stolen fallback allocated a new one)', () => {
+    expect(shouldReplaceTransport(t('ws://127.0.0.1:7681', true), 'ws://127.0.0.1:7999')).toBe(true)
+  })
+
+  it('replaces a terminally-closed transport even on the same url', () => {
+    // isAlive() is false only after a deliberate close() or an exhausted
+    // reconnect budget - either way the old object will never carry traffic again.
+    expect(shouldReplaceTransport(t('ws://127.0.0.1:7681', false), 'ws://127.0.0.1:7681')).toBe(true)
   })
 })

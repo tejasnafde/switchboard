@@ -14,6 +14,22 @@ import type { Transport } from '@shared/transport'
 /** Maps a call to the machine id that should serve it. Returns 'local' to stay local. */
 export type MachineResolver = (channel: string, args: unknown[]) => string
 
+/**
+ * Whether a machine's `connected` status event should replace its existing
+ * transport. Reconnects reuse the same tunnel port, so the URL usually hasn't
+ * changed - keep the transport (it re-dials in place, preserving every push
+ * subscription and queued call) instead of tearing it down for a no-op echo.
+ * Replace only when there is none yet, the URL moved (port-stolen fallback),
+ * or the old one terminally closed (deliberate close / reconnect budget spent).
+ */
+export function shouldReplaceTransport(
+  existing: { url: string; isAlive(): boolean } | undefined,
+  url: string,
+): boolean {
+  if (!existing) return true
+  return existing.url !== url || !existing.isAlive()
+}
+
 interface Fanout {
   channel: string
   /** Source-aware handler - always takes the emitting machine id first. */

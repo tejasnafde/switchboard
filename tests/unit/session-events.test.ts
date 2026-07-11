@@ -115,6 +115,7 @@ describe('decideMachineTransition', () => {
     expect(decideMachineTransition('connecting', 'connected', false)).toBe(null)
     expect(decideMachineTransition(undefined, 'connected', false)).toBe(null)
   })
+
 })
 
 describe('initMachineReconnectResync', () => {
@@ -133,10 +134,11 @@ describe('initMachineReconnectResync', () => {
       handler = cb
       return () => {}
     })
+    const bind = vi.fn()
     ;(globalThis as unknown as { window: unknown }).window = {
-      api: { machines: { onStatus } },
+      api: { machines: { onStatus }, routing: { bind } },
     }
-    return { emit: (machineId: string, status: string) => handler?.(machineId, status), onStatus }
+    return { emit: (machineId: string, status: string) => handler?.(machineId, status), onStatus, bind }
   }
 
   it('resets in-flight sessions and notices panes the moment the tunnel drops', () => {
@@ -182,6 +184,42 @@ describe('initMachineReconnectResync', () => {
 
     expect(useAgentStore.getState().sessions.find((s) => s.id === 't1')?.status).toBe('running')
     expect(writeMachineNotice).not.toHaveBeenCalled()
+  })
+
+  it('rebinds this machine\'s session ids on every connected (disconnect wiped them via forgetMachine)', () => {
+    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle', machineId: 'm1' })
+    useAgentStore.getState().addSession({ id: 't2', type: 'claude-code', status: 'idle', machineId: 'm2' })
+    useAgentStore.getState().addSession({ id: 't3', type: 'claude-code', status: 'idle' })
+    const { emit, bind } = stubOnStatus()
+    initMachineReconnectResync()
+    emit('m1', 'connected')
+
+    expect(bind).toHaveBeenCalledWith('t1', 'm1')
+    expect(bind).not.toHaveBeenCalledWith('t2', expect.anything())
+    expect(bind).not.toHaveBeenCalledWith('t3', expect.anything())
+  })
+
+  it('does not rebind on connecting / error / offline', () => {
+    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle', machineId: 'm1' })
+    const { emit, bind } = stubOnStatus()
+    initMachineReconnectResync()
+    emit('m1', 'connecting')
+    emit('m1', 'error')
+    emit('m1', 'offline')
+
+    expect(bind).not.toHaveBeenCalled()
+  })
+
+  it('rebinds session ids on the connected that follows an error self-heal', () => {
+    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle', machineId: 'm1' })
+    const { emit, bind } = stubOnStatus()
+    initMachineReconnectResync()
+    emit('m1', 'connected')
+    bind.mockClear()
+    emit('m1', 'error')
+    expect(bind).not.toHaveBeenCalled()
+    emit('m1', 'connected')
+    expect(bind).toHaveBeenCalledWith('t1', 'm1')
   })
 
   it('is idempotent - a second call does not double-subscribe', () => {

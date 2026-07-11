@@ -5,6 +5,7 @@ import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX } from './rotationMarker'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
+import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
 import { generateTitle } from '@shared/auto-title'
@@ -212,6 +213,10 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         content: marker.content,
       }).catch(() => {})
     }
+    // The new instance may map to a different remote config dir - drop the
+    // machine's cached auth verdicts so the banner re-probes under it.
+    const machineForSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId
+    if (machineForSession && machineForSession !== 'local') invalidateRemoteAuthCache(machineForSession)
     providerStartedRef.current.delete(sessionId)
     agentStartedRef.current.delete(sessionId)
     await window.api.provider?.stopSession?.(sessionId).catch(() => {})
@@ -483,12 +488,21 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
         case 'error': {
-          appendMessage(tid, {
+          const errMsg: ChatMessage = {
             id: `error_${Date.now()}`,
             role: 'system',
             content: `Error: ${event.message}`,
             timestamp: Date.now(),
-          })
+          }
+          appendMessage(tid, errMsg)
+          // Persist like the rotation marker does - error cards were
+          // renderer-state-only and vanished on restart.
+          window.api.app.saveMessage({
+            id: errMsg.id,
+            conversationId: tid,
+            role: errMsg.role,
+            content: errMsg.content,
+          }).catch(() => {})
           break
         }
         case 'status': {
@@ -1092,6 +1106,16 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           <span>{status === 'thinking' ? 'Thinking\u2026' : 'Working\u2026'}</span>
         </div>
       )}
+
+      {/* Remote-auth preflight - warns at chat-open when this session's VM
+          has no Claude credentials, instead of erroring at first send.
+          Non-blocking; the START_SESSION backstop still guards the race. */}
+      <RemoteAuthBanner
+        sessionId={sessionId}
+        machineId={activeSession?.machineId}
+        agentType={agentType}
+        instanceId={instanceId}
+      />
 
       {/* Input - now includes runtime mode + context meter in footer */}
       <ChatInput

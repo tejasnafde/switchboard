@@ -96,12 +96,12 @@ type MachineConnStatus = 'connecting' | 'connected' | 'error' | 'offline'
 export type MachineTransition = 'lost' | 'reconnected' | null
 
 /**
- * Leaving 'connected' (a drop -> error, or a manual disconnect -> offline) means
- * the remote server - a child of the ssh tunnel - just died, so its sessions are
- * stale: 'lost'. Coming back to 'connected' after a loss is 'reconnected'.
- * `wasLost` is threaded in (not derived from prevStatus) because auto-reconnect
- * passes through 'connecting', so the direct error->connected edge never occurs.
- * Pure so the matrix is unit-testable.
+ * Leaving 'connected' (a drop -> error, or a manual disconnect -> offline)
+ * means the remote server - a child of the ssh tunnel - just died, so its
+ * sessions are stale: 'lost'. Coming back to 'connected' after a loss is
+ * 'reconnected'. `wasLost` is threaded in (not derived from prevStatus)
+ * because auto-reconnect passes through 'connecting', so the direct
+ * error->connected edge never occurs. Pure so the matrix is unit-testable.
  */
 export function decideMachineTransition(
   prevStatus: MachineConnStatus | undefined,
@@ -134,6 +134,15 @@ export function initMachineReconnectResync(): () => void {
     if (!isMachineConnStatus(status)) return
     const transition = decideMachineTransition(prevMachineStatus.get(machineId), status, lostMachines.has(machineId))
     prevMachineStatus.set(machineId, status)
+
+    if (status === 'connected') {
+      // Disconnect wipes session-id bindings (forgetMachine) and reconnect only
+      // restores project paths - rebind open sessions so their id-keyed IPC
+      // doesn't silently route to the local backend. Idempotent.
+      for (const s of useAgentStore.getState().sessions) {
+        if (s.machineId === machineId) window.api.routing.bind(s.id, machineId)
+      }
+    }
 
     if (transition === 'lost') {
       lostMachines.add(machineId)

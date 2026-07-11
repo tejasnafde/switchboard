@@ -4,8 +4,9 @@
  * rows below it, drag-reorderable. Connect/provision/tunnel is live (see
  * src/main/machines/); offline remotes show a cached read-only snapshot.
  */
-import { useState, type ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import type { SessionSummary } from '@shared/types'
+import type { Machine } from '@shared/machines'
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
@@ -50,13 +51,17 @@ function SortableMachine({
 export function MachineLayer({
   children,
   onAddMachine,
+  onEditMachine,
   onOpenRemoteSession,
   onNewRemoteChat,
+  onSessionContextMenu,
 }: {
   children: ReactNode
   onAddMachine: () => void
+  onEditMachine?: (machine: Machine) => void
   onOpenRemoteSession?: (machineId: string, projectPath: string, session: SessionSummary) => void
   onNewRemoteChat?: (machineId: string, projectPath: string) => void
+  onSessionContextMenu?: (e: MouseEvent, machineId: string, projectPath: string, session: SessionSummary) => void
 }) {
   const remotes = useMachineStore((s) => s.remotes)
   const connections = useMachineStore((s) => s.connections)
@@ -149,30 +154,37 @@ export function MachineLayer({
                 )}
               </div>
               {p.sessions.map((s) => {
-                const openable = node.status === 'connected' && !!onOpenRemoteSession
+                const connected = node.status === 'connected'
+                const openable = connected && !!onOpenRemoteSession
+                const summary: SessionSummary = {
+                  id: s.id,
+                  title: s.title,
+                  source:
+                    s.agentType === 'codex'
+                      ? 'codex'
+                      : s.agentType === 'opencode'
+                        ? 'opencode'
+                        : 'claude-code',
+                  agentType: s.agentType ?? null,
+                  startedAt: 0,
+                  messageCount: 0,
+                  filePath: '',
+                }
                 return (
                   <div
                     key={s.id}
                     className={`cached-chat${s.id === activeSessionId ? ' sidebar-thread-active' : ''}`}
                     data-openable={openable || undefined}
                     title={openable ? undefined : 'Connect to this machine to open'}
-                    onClick={
-                      openable
-                        ? () =>
-                            onOpenRemoteSession!(node.id, p.path, {
-                              id: s.id,
-                              title: s.title,
-                              source:
-                                s.agentType === 'codex'
-                                  ? 'codex'
-                                  : s.agentType === 'opencode'
-                                    ? 'opencode'
-                                    : 'claude-code',
-                              agentType: s.agentType ?? null,
-                              startedAt: 0,
-                              messageCount: 0,
-                              filePath: '',
-                            })
+                    onClick={openable ? () => onOpenRemoteSession!(node.id, p.path, summary) : undefined}
+                    onContextMenu={
+                      // Menu actions route to the machine - connected only.
+                      connected && onSessionContextMenu
+                        ? (e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            onSessionContextMenu(e, node.id, p.path, summary)
+                          }
                         : undefined
                     }
                   >
@@ -213,6 +225,19 @@ export function MachineLayer({
               {node.sshUser ? `${node.sshUser}@` : ''}
               {node.sshHost}
             </span>
+          )}
+          {node.kind === 'remote' && onEditMachine && (
+            <button
+              className="machine-edit"
+              title="Edit machine"
+              onClick={(e) => {
+                e.stopPropagation()
+                const machine = remotes.find((m) => m.id === node.id)
+                if (machine) onEditMachine(machine)
+              }}
+            >
+              ✎
+            </button>
           )}
           {node.kind === 'remote' && (
             <button

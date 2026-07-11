@@ -66,6 +66,11 @@ interface MachineStore {
   /** Optimistically add a just-created chat to a machine's snapshot so its row
    *  appears immediately (a rescan can't see an empty conversation yet). */
   addSnapshotSession: (machineId: string, projectPath: string, session: { id: string; title: string; agentType?: string | null }) => void
+  /** Patch a cached session's title in whichever snapshot holds it, so the
+   *  sidebar row tracks renames (auto-title, manual) without a full re-sync. */
+  renameSnapshotSession: (sessionId: string, title: string) => void
+  /** Optimistically drop a session from a machine's snapshot (archive). */
+  removeSnapshotSession: (machineId: string, sessionId: string) => void
   connect: (id: string) => Promise<void>
   disconnect: (id: string) => Promise<void>
   /** Subscribe to main's per-machine status events. Returns an unsubscribe fn. */
@@ -202,6 +207,37 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
       const projects = snap.projects.map((p) =>
         p.path === projectPath && !p.sessions.some((x) => x.id === session.id)
           ? { ...p, sessions: [{ id: session.id, title: session.title, agentType: session.agentType ?? null }, ...p.sessions] }
+          : p,
+      )
+      return { snapshots: { ...s.snapshots, [machineId]: { ...snap, projects } } }
+    }),
+
+  renameSnapshotSession: (sessionId, title) =>
+    set((s) => {
+      let changed = false
+      const snapshots = { ...s.snapshots }
+      for (const [machineId, snap] of Object.entries(s.snapshots)) {
+        if (!snap.projects.some((p) => p.sessions.some((x) => x.id === sessionId))) continue
+        changed = true
+        snapshots[machineId] = {
+          ...snap,
+          projects: snap.projects.map((p) =>
+            p.sessions.some((x) => x.id === sessionId)
+              ? { ...p, sessions: p.sessions.map((x) => (x.id === sessionId ? { ...x, title } : x)) }
+              : p,
+          ),
+        }
+      }
+      return changed ? { snapshots } : {}
+    }),
+
+  removeSnapshotSession: (machineId, sessionId) =>
+    set((s) => {
+      const snap = s.snapshots[machineId]
+      if (!snap) return {}
+      const projects = snap.projects.map((p) =>
+        p.sessions.some((x) => x.id === sessionId)
+          ? { ...p, sessions: p.sessions.filter((x) => x.id !== sessionId) }
           : p,
       )
       return { snapshots: { ...s.snapshots, [machineId]: { ...snap, projects } } }

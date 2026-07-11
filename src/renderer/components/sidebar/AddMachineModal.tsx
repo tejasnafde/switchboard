@@ -1,28 +1,35 @@
 /**
  * Add-machine picker: pick a host from ~/.ssh/config, or type one manually.
  * Selecting/submitting creates a remote machine row via the machine store and
- * immediately kicks off its first connect.
+ * immediately kicks off its first connect. With `editMachine` set, the same
+ * form edits an existing machine in place (ssh picker hidden, saves via
+ * update() - no connect side effect).
  */
 import { useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useMachineStore } from '../../stores/machine-store'
 import { filterSshHosts } from './sshHostFilter'
 import { isDuplicateMachine, parsePort } from './addMachineValidation'
-import type { SshHost, MachineInput } from '@shared/machines'
+import { createRendererLogger } from '../../logger'
+import type { SshHost, Machine, MachineInput } from '@shared/machines'
 
-export function AddMachineModal({ onClose }: { onClose: () => void }) {
+const log = createRendererLogger('sidebar:add-machine')
+
+export function AddMachineModal({ onClose, editMachine }: { onClose: () => void; editMachine?: Machine }) {
   const sshHosts = useMachineStore((s) => s.sshHosts)
   const remotes = useMachineStore((s) => s.remotes)
   const add = useMachineStore((s) => s.add)
+  const update = useMachineStore((s) => s.update)
   const connect = useMachineStore((s) => s.connect)
 
-  const [name, setName] = useState('')
-  const [host, setHost] = useState('')
-  const [user, setUser] = useState('')
-  const [port, setPort] = useState('22')
+  const editing = !!editMachine
+  const [name, setName] = useState(editMachine?.name ?? '')
+  const [host, setHost] = useState(editMachine?.sshHost ?? '')
+  const [user, setUser] = useState(editMachine?.sshUser ?? '')
+  const [port, setPort] = useState(String(editMachine?.sshPort ?? 22))
   // Default to ubuntu: our VMs all run the agent as the ubuntu user (the ssh
   // login user varies per machine). Clear the field to run as the login user.
-  const [remoteUser, setRemoteUser] = useState('ubuntu')
+  const [remoteUser, setRemoteUser] = useState(editing ? (editMachine?.remoteUser ?? '') : 'ubuntu')
   const [search, setSearch] = useState('')
   // Guards against a double-click firing two CREATE calls before the first
   // one's re-hydrate lands (which would add the same host twice).
@@ -52,24 +59,53 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
     }
   }
 
+  const saveEdit = async (patch: Partial<MachineInput>) => {
+    if (!editMachine) return
+    setAdding(true)
+    setError(null)
+    try {
+      await update(editMachine.id, patch)
+      onClose()
+    } catch (err) {
+      log.warn('machine update failed', err)
+      setError('Could not save changes. Check the app log for details.')
+    } finally {
+      setAdding(false)
+    }
+  }
+
   const addFromSsh = (h: SshHost) => {
     if (adding || isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })) return
     void submit({ name: h.alias, sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null, sshPort: h.port, remoteUser: runAs() })
   }
 
+  // In edit mode the machine's own row must not read as a duplicate of itself.
+  const dupCandidates = editing ? remotes.filter((m) => m.id !== editMachine!.id) : remotes
   const manualDup =
-    !!host.trim() && isDuplicateMachine(remotes, { sshHost: host.trim(), sshUser: user.trim() || null })
+    !!host.trim() && isDuplicateMachine(dupCandidates, { sshHost: host.trim(), sshUser: user.trim() || null })
   const manualReady = !!host.trim() && parsedPort !== null && !manualDup && !adding
 
   const addManual = () => {
     if (!manualReady || parsedPort === null) return
-    void submit({
+    const fields = {
       name: name.trim() || host.trim(),
       sshHost: host.trim(),
       sshUser: user.trim() || null,
       sshPort: parsedPort,
       remoteUser: runAs(),
-    })
+    }
+    if (editing) {
+      // An ssh-config alias shadows host/user/port entirely (sshHostArgs
+      // returns just the alias) - once the user edits any connection field,
+      // drop the alias so the edited fields actually take effect.
+      const connectionChanged =
+        fields.sshHost !== editMachine!.sshHost ||
+        fields.sshUser !== editMachine!.sshUser ||
+        fields.sshPort !== editMachine!.sshPort
+      void saveEdit(connectionChanged ? { ...fields, sshAlias: null } : fields)
+    } else {
+      void submit(fields)
+    }
   }
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -92,9 +128,9 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="machine-modal-overlay" onClick={onClose}>
       <div className="machine-modal" onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
-        <div className="machine-modal-title">Add machine</div>
+        <div className="machine-modal-title">{editing ? 'Edit machine' : 'Add machine'}</div>
 
-        {sshHosts.length > 0 && (
+        {!editing && sshHosts.length > 0 && (
           <div className="machine-modal-section">
             <div className="machine-modal-label">From ~/.ssh/config</div>
             <input
@@ -134,13 +170,13 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
         )}
 
         <div className="machine-modal-section">
-          <div className="machine-modal-label">{sshHosts.length > 0 ? 'Manual' : 'Host'}</div>
+          <div className="machine-modal-label">{editing ? 'Connection' : sshHosts.length > 0 ? 'Manual' : 'Host'}</div>
           <input
             className="machine-modal-input"
             placeholder="Name (optional)"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            autoFocus={sshHosts.length === 0}
+            autoFocus={editing || sshHosts.length === 0}
           />
           <input className="machine-modal-input" placeholder="Host (e.g. 10.0.0.4)" value={host} onChange={(e) => setHost(e.target.value)} />
           <div className="machine-modal-row">
@@ -175,7 +211,7 @@ export function AddMachineModal({ onClose }: { onClose: () => void }) {
         <div className="machine-modal-actions">
           <button className="machine-modal-cancel" onClick={onClose}>Cancel</button>
           <button className="machine-modal-add" onClick={addManual} disabled={!manualReady}>
-            {adding ? 'Adding…' : 'Add + connect'}
+            {editing ? (adding ? 'Saving…' : 'Save') : adding ? 'Adding…' : 'Add + connect'}
           </button>
         </div>
       </div>

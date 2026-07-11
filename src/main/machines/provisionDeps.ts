@@ -17,13 +17,13 @@ const MAX_CAPTURE = 1024 * 1024
 // because npm install on a slow VM legitimately takes minutes.
 const EXEC_TIMEOUT_MS = 10 * 60 * 1000
 
-export const execProc: ProcRunner['exec'] = (command, args, stdin) =>
+export const execProc: ProcRunner['exec'] = (command, args, stdin, timeoutMs = EXEC_TIMEOUT_MS) =>
   new Promise((resolve) => {
     const child = spawn(command, args)
     const timer = setTimeout(() => {
       child.kill()
-      finish(1, `command timed out after ${EXEC_TIMEOUT_MS / 60_000} minutes`)
-    }, EXEC_TIMEOUT_MS)
+      finish(1, `command timed out after ${Math.round(timeoutMs / 1000)}s`)
+    }, timeoutMs)
     const out: Buffer[] = []
     const err: Buffer[] = []
     let outLen = 0

@@ -1102,7 +1102,8 @@ mark.sb-search-mark.active {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.sidebar-machine-header:hover .machine-remove {
+.sidebar-machine-header:hover .machine-remove,
+.sidebar-machine-header:hover .machine-edit {
   opacity: 0.6;
 }
 .machine-pip {
@@ -1149,6 +1150,21 @@ mark.sb-search-mark.active {
   flex: none;
 }
 .machine-remove:hover {
+  color: var(--text-primary);
+  opacity: 1 !important;
+}
+.machine-edit {
+  margin-left: 6px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+  flex: none;
+}
+.machine-edit:hover {
   color: var(--text-primary);
   opacity: 1 !important;
 }
