@@ -55,6 +55,7 @@ import {
 } from '../db/database'
 import { listOauthDirsForAgent } from '../db/providerInstances'
 import { defaultClaudeDir } from '../provider/claude-session-migrate'
+import { listRemoteClaudeConfigDirs } from '../provider/remote-gate'
 import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
 import { JsonlParser } from '../agent/jsonl-parser'
 import { forkConversation } from '../conversations/fork'
@@ -63,11 +64,17 @@ import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage 
 
 const log = createLogger('ipc:app')
 
-/** All Claude config roots: every enabled oauth_dir + the default ~/.claude. */
+/**
+ * All Claude config roots: every enabled oauth_dir + the default ~/.claude.
+ * On a remote VM, also every ~/.claude* dir - per-instance dirs are forwarded
+ * per session and never registered in the VM's provider_instances table, so
+ * without the extra scan session scans and history loads miss their JSONLs.
+ */
 export function claudeCandidateDirs(): string[] {
   return Array.from(new Set([
     ...listOauthDirsForAgent('claude-code'),
     defaultClaudeDir(),
+    ...(process.env.SWITCHBOARD_REMOTE ? listRemoteClaudeConfigDirs() : []),
   ]))
 }
 
@@ -345,14 +352,9 @@ export function registerAppHandlers(host: BackendHost): void {
 
     if (source === 'claude-code') {
       const encoded = encodeClaudeProjectPath(row.project_path)
-      // Scan every known Claude profile dir (every enabled oauth_dir + ~/.claude).
-      // Without this, switching instances mid-conversation hides turns that
-      // landed in the alternate profile after restart, because the SDK
-      // writes JSONLs under the active CLAUDE_CONFIG_DIR - not ~/.claude.
-      const candidateDirs = Array.from(new Set([
-        ...listOauthDirsForAgent('claude-code'),
-        defaultClaudeDir(),
-      ]))
+      // Scan every known Claude profile dir - the SDK writes JSONLs under the
+      // active CLAUDE_CONFIG_DIR, not ~/.claude.
+      const candidateDirs = claudeCandidateDirs()
       const all: ChatMessage[] = []
       for (const sid of sessionIds) {
         for (const dir of candidateDirs) {

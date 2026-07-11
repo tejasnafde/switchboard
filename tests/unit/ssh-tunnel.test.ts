@@ -4,7 +4,7 @@
  * remote server's port, and the remote command boots the server bound there.
  */
 import { describe, it, expect } from 'vitest'
-import { buildTunnelCommand } from '../../src/main/machines/sshTunnel'
+import { buildTunnelCommand, SSH_COMMON_OPTS } from '../../src/main/machines/sshTunnel'
 import type { Machine } from '@shared/machines'
 
 const mk = (over: Partial<Machine>): Machine => ({
@@ -55,7 +55,18 @@ describe('buildTunnelCommand', () => {
   it('sets batch mode + keepalive so a dead link fails fast instead of hanging', () => {
     const { args } = buildTunnelCommand(mk({}), { localPort: 1, remotePort: 2, remoteCommand: 'x' })
     expect(args).toEqual(expect.arrayContaining(['-o', 'BatchMode=yes']))
-    expect(args.join(' ')).toMatch(/ServerAliveInterval=/)
+    expect(args.join(' ')).toMatch(/ServerAliveInterval=30/)
+  })
+
+  it('bounds keepalive failures so a silently dropped tunnel dies deterministically (~90s)', () => {
+    const { args } = buildTunnelCommand(mk({}), { localPort: 1, remotePort: 2, remoteCommand: 'x' })
+    expect(args).toEqual(expect.arrayContaining(['-o', 'ServerAliveCountMax=3']))
+  })
+
+  it('bounds the TCP connect via ConnectTimeout in the shared opts (probe/install/tunnel all inherit it)', () => {
+    expect(SSH_COMMON_OPTS.join(' ')).toContain('ConnectTimeout=10')
+    const { args } = buildTunnelCommand(mk({}), { localPort: 1, remotePort: 2, remoteCommand: 'x' })
+    expect(args).toEqual(expect.arrayContaining(['-o', 'ConnectTimeout=10']))
   })
 
   it('rejects an alias that looks like an ssh option', () => {

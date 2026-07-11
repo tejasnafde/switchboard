@@ -41,12 +41,17 @@ function assertSafeSshArg(field: string, value: string): void {
  * whose key has *changed* - so the MITM protection that plain StrictHostKeyChecking
  * gives is preserved; only the interactive first-connect prompt is removed.
  *
+ * `ConnectTimeout=10` bounds the TCP connect: a black-holed host (firewall
+ * DROP, dead VM) would otherwise sit on the OS default TCP timeout (~75s) for
+ * every probe/install/tunnel command.
+ *
  * These are constant flags (never user input), so the UNSAFE_SSH_ARG guard in
  * sshHostArgs is unaffected - that guard only vets the alias/host/user values.
  */
 export const SSH_COMMON_OPTS = [
   '-o', 'BatchMode=yes',
   '-o', 'StrictHostKeyChecking=accept-new',
+  '-o', 'ConnectTimeout=10',
 ]
 
 /**
@@ -70,7 +75,11 @@ export function sshHostArgs(machine: Machine): string[] {
 export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { command: string; args: string[] } {
   const args = [
     ...SSH_COMMON_OPTS,
+    // Interval * CountMax: ssh declares the link dead after 3 unanswered
+    // keepalives, so a silently dropped tunnel is detected in ~90s
+    // deterministically instead of relying on ssh's build default.
     '-o', 'ServerAliveInterval=30',
+    '-o', 'ServerAliveCountMax=3',
     '-o', 'ExitOnForwardFailure=yes',
     '-L', `${opts.localPort}:127.0.0.1:${opts.remotePort}`,
     ...sshHostArgs(machine),

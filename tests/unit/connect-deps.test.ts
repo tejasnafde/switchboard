@@ -13,6 +13,7 @@
  * ungraceful tunnel drop can't keep holding the port.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { createServer, type AddressInfo } from 'node:net'
 
 interface Listeners {
   open: Array<() => void>
@@ -67,6 +68,8 @@ class FakeWebSocket {
 vi.mock('ws', () => ({ default: FakeWebSocket }))
 
 let waitForHealth: typeof import('../../src/main/machines/connectDeps').waitForHealth
+let spawnTunnel: typeof import('../../src/main/machines/connectDeps').spawnTunnel
+let allocatePort: typeof import('../../src/main/machines/connectDeps').allocatePort
 let REMOTE_COMMAND: typeof import('../../src/main/machines/connectDeps').REMOTE_COMMAND
 let SERVER_VERSION_CHANNEL: typeof import('../../src/main/machines/connectDeps').SERVER_VERSION_CHANNEL
 
@@ -76,7 +79,7 @@ beforeEach(async () => {
   vi.useFakeTimers()
   FakeWebSocket.instances = []
   process.env.npm_package_version = LOCAL_VERSION
-  ;({ waitForHealth, REMOTE_COMMAND, SERVER_VERSION_CHANNEL } = await import('../../src/main/machines/connectDeps'))
+  ;({ waitForHealth, spawnTunnel, allocatePort, REMOTE_COMMAND, SERVER_VERSION_CHANNEL } = await import('../../src/main/machines/connectDeps'))
 })
 
 afterEach(() => {
@@ -185,6 +188,38 @@ describe('waitForHealth', () => {
   })
 })
 
+describe('spawnTunnel', () => {
+  // Real child processes: their exit events are plain IO, so the fake timers
+  // installed by beforeEach are irrelevant here - but switch back anyway so a
+  // slow spawn can never interleave with a queued fake-timer tick.
+  it('passes the summarized ssh stderr through the exit callback as the failure reason', async () => {
+    vi.useRealTimers()
+    const proc = spawnTunnel('sh', [
+      '-c',
+      'echo "Warning: Permanently added host" >&2; echo "Permission denied (publickey)." >&2; exit 255',
+    ])
+    const reason = await new Promise<string | undefined>((resolve) => proc.onExit(resolve))
+    expect(reason).toBe('Permission denied (publickey).')
+  })
+
+  it('reports no reason when the process exits with a silent stderr', async () => {
+    vi.useRealTimers()
+    const proc = spawnTunnel('sh', ['-c', 'exit 0'])
+    const reason = await new Promise<string | undefined>((resolve) => proc.onExit(resolve))
+    expect(reason).toBeUndefined()
+  })
+
+  it('drops known-noise stderr lines so chatter alone yields no bogus reason', async () => {
+    vi.useRealTimers()
+    const proc = spawnTunnel('sh', [
+      '-c',
+      'echo "WARNING: To increase the performance of the tunnel, consider installing NumPy" >&2; exit 1',
+    ])
+    const reason = await new Promise<string | undefined>((resolve) => proc.onExit(resolve))
+    expect(reason).toBeUndefined()
+  })
+})
+
 describe('REMOTE_COMMAND', () => {
   it('kills a lingering server tracked by pidfile before launching a fresh one', () => {
     expect(REMOTE_COMMAND).toContain('server.pid')
@@ -195,5 +230,32 @@ describe('REMOTE_COMMAND', () => {
   it('only kills the pid when it is actually our server (guards against a recycled pid)', () => {
     expect(REMOTE_COMMAND).toContain('/proc/$P/cmdline')
     expect(REMOTE_COMMAND).toContain('grep -qsa index.cjs')
+  })
+})
+
+describe('allocatePort', () => {
+  // Real socket binds - the file-level fake timers don't gate net I/O, but
+  // switch to real timers anyway so nothing here depends on the fake clock.
+  it('reuses a free preferred port so a reconnect keeps its ws url', async () => {
+    vi.useRealTimers()
+    const first = await allocatePort()
+    expect(first).toBeGreaterThan(0)
+    expect(await allocatePort(first)).toBe(first)
+  })
+
+  it('falls back to a fresh port when the preferred one is already taken', async () => {
+    vi.useRealTimers()
+    const srv = createServer()
+    const taken = await new Promise<number>((resolve, reject) => {
+      srv.once('error', reject)
+      srv.listen(0, '127.0.0.1', () => resolve((srv.address() as AddressInfo).port))
+    })
+    try {
+      const port = await allocatePort(taken)
+      expect(port).toBeGreaterThan(0)
+      expect(port).not.toBe(taken)
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()))
+    }
   })
 })

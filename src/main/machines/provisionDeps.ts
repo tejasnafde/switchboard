@@ -4,7 +4,11 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Machine } from '@shared/machines'
 import { appRootDir, appVersion } from '../runtime'
+import { createMainLogger } from '../logger'
 import { provisionRemote, type ProcRunner } from './provisioner'
+import type { ProvisionHooks } from './connectionManager'
+
+const log = createMainLogger('machines:provision')
 
 // Cap on captured child output. `cat > file` produces no stdout, but a
 // misbehaving remote (sudo retry loop, an echoing pipe) can spew without
@@ -12,9 +16,24 @@ import { provisionRemote, type ProcRunner } from './provisioner'
 // is far more than enough to surface any real error message.
 const MAX_CAPTURE = 1024 * 1024
 
-export const execProc: ProcRunner['exec'] = (command, args, stdin) =>
-  new Promise((resolve) => {
+// Ceiling on any single provisioning command. Generous because `npm install`
+// on a slow VM legitimately takes minutes; the point is that a hung ssh (dead
+// forward, remote wedged mid-stream) can no longer block connect forever.
+const DEFAULT_EXEC_TIMEOUT_MS = 10 * 60 * 1000
+
+// Grace between SIGTERM and SIGKILL when the timeout fires.
+const KILL_GRACE_MS = 5000
+
+/**
+ * Build a ProcRunner exec. `onSpawn` (when given) receives a kill handle for
+ * every child the moment it spawns, so a user cancel (disconnect) can reap an
+ * in-flight provisioning ssh instead of letting it run to completion.
+ */
+export function makeExecProc(onSpawn?: (child: { kill: () => void }) => void): ProcRunner['exec'] {
+  return (command, args, stdin, timeoutMs = DEFAULT_EXEC_TIMEOUT_MS) =>
+  new Promise((resolve, reject) => {
     const child = spawn(command, args)
+    onSpawn?.({ kill: () => child.kill() })
     const out: Buffer[] = []
     const err: Buffer[] = []
     let outLen = 0
@@ -25,12 +44,27 @@ export const execProc: ProcRunner['exec'] = (command, args, stdin) =>
     child.stderr.on('data', (d: Buffer) => {
       if (errLen < MAX_CAPTURE) { err.push(d); errLen += d.length }
     })
-    const finish = (code: number, stderrOverride?: string) =>
+    let timedOut = false
+    let hardKill: ReturnType<typeof setTimeout> | undefined
+    const killTimer = setTimeout(() => {
+      timedOut = true
+      log.warn(`exec timed out after ${timeoutMs}ms, killing`, { command })
+      child.kill('SIGTERM')
+      hardKill = setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS)
+    }, timeoutMs)
+    const finish = (code: number, stderrOverride?: string) => {
+      clearTimeout(killTimer)
+      if (hardKill) clearTimeout(hardKill)
+      if (timedOut) {
+        reject(new Error(`command timed out after ${timeoutMs / 1000}s`))
+        return
+      }
       resolve({
         code,
         stdout: Buffer.concat(out).toString('utf-8'),
         stderr: stderrOverride ?? Buffer.concat(err).toString('utf-8'),
       })
+    }
     child.on('error', (e) => finish(1, e.message))
     child.on('close', (code) => finish(code ?? 1))
     if (stdin !== undefined) {
@@ -54,6 +88,9 @@ export const execProc: ProcRunner['exec'] = (command, args, stdin) =>
       }
     }
   })
+}
+
+export const execProc: ProcRunner['exec'] = makeExecProc()
 
 function readServerBundlePath(): string {
   // Shipped inside the asar via `out/**` (build runs build:server); dev reads it
@@ -71,7 +108,7 @@ function depVersion(name: string): string {
 
 /** Bundle the real deps into the ConnectionManager `provision` hook. */
 export function makeProvision(log?: (msg: string) => void) {
-  return (machine: Machine) =>
+  return (machine: Machine, hooks?: ProvisionHooks) =>
     provisionRemote(
       machine,
       {
@@ -80,7 +117,8 @@ export function makeProvision(log?: (msg: string) => void) {
         claudeSdkVersion: depVersion('@anthropic-ai/claude-agent-sdk'),
         bundlePath: readServerBundlePath(),
       },
-      { exec: execProc },
+      { exec: makeExecProc(hooks?.onChild) },
       log,
+      hooks?.onProgress,
     )
 }

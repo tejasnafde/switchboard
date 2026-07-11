@@ -38,9 +38,9 @@ export function registerMachineHandlers(host: BackendHost): void {
       provision: makeProvision((msg) => log.info(msg)),
       maxReconnects: 5,
       onLog: (msg) => log.error(msg),
-      onStatus: (machineId, status, url, reason) => {
-        log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}`)
-        currentHost?.emit(MachineChannels.STATUS, machineId, status, url, reason)
+      onStatus: (machineId, status, url, reason, detail) => {
+        log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}${detail ? ` [${detail}]` : ''}`)
+        currentHost?.emit(MachineChannels.STATUS, machineId, status, url, reason, detail)
       },
     })
   }
@@ -86,6 +86,11 @@ export function registerMachineHandlers(host: BackendHost): void {
     await mgr.disconnect(id)
     return { ok: true as const }
   })
+
+  // Renderer-reload rehydration: main keeps its tunnels across a renderer
+  // reload, but the fresh renderer has no transports for them and no status
+  // event will fire until something changes - this hands it the live state.
+  host.handle(MachineChannels.GET_CONNECTIONS, () => mgr.snapshot())
 
   host.handle(MachineChannels.LIST_SSH_HOSTS, async () => {
     try {

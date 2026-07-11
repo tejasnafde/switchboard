@@ -5,7 +5,7 @@
  */
 import type { Machine } from '@shared/machines'
 
-export type MachineStatus = 'connected' | 'connecting' | 'offline' | 'error'
+export type MachineStatus = 'connected' | 'connecting' | 'provisioning' | 'reconnecting' | 'offline' | 'error'
 
 export interface MachineNode {
   id: string // 'local' or a Machine id

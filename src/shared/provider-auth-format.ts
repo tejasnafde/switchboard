@@ -43,6 +43,18 @@ export function oauthLoginCommand(agentType: AgentType, oauthDir: string): strin
   return `${envName}=${shellQuote(commandPath(dir))} ${cli}`
 }
 
+/**
+ * Interactive TUI login (bare CLI + `/login`). Suggested on remote VMs, where
+ * the headless `claude auth login` URL+paste flow breaks without a browser.
+ */
+export function oauthInteractiveLoginCommand(agentType: AgentType, oauthDir: string): string {
+  const envName = oauthEnvName(agentType)
+  const dir = oauthDir.trim()
+  if (!envName || !dir) return ''
+  const cli = agentType === 'claude-code' ? 'claude' : 'codex'
+  return `${envName}=${shellQuote(commandPath(dir))} ${cli}`
+}
+
 export function oauthCreateDirCommand(oauthDir: string): string {
   const dir = oauthDir.trim()
   return dir ? `mkdir -p ${shellQuote(commandPath(dir))}` : ''

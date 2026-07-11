@@ -8,6 +8,7 @@ import {
   modelsForAgent,
   REASONING_EFFORTS,
   agentSupportsReasoningEffort,
+  type ModelOption,
   type ReasoningEffort,
 } from '@shared/models'
 import { type AgentType, type ProviderSkill } from '@shared/types'
@@ -117,40 +118,64 @@ export function ChatInput({
   const staticModels = modelsForAgent(agentType)
   const [dynamicModels, setDynamicModels] = useState<typeof staticModels | null>(null)
 
-  // Dynamically fetch the model list. OpenCode: the dropdown reflects
-  // whatever providers the user has configured in ~/.config/opencode.json,
-  // plus opencode's own built-in free tier (opencode/* models). Claude:
-  // the adapter's live query reports the account's actual availability;
-  // retried while empty because the query only exists once the first turn
-  // starts.
+  const persistDynamicModels = useCallback((agent: AgentType, models: ModelOption[]) => {
+    setDynamicModels(models)
+    void window.api.settings?.set?.(`models.dynamic.${agent}`, JSON.stringify(models))
+  }, [])
+
+  // Stale-while-revalidate: hydrate the last-known dynamic list from the
+  // settings cache instantly; live fetches overwrite it when they land.
   useEffect(() => {
     let cancelled = false
     setDynamicModels(null)
+    ;window.api.settings?.get?.(`models.dynamic.${agentType}`).then((raw: string | null) => {
+      if (cancelled || !raw) return
+      try {
+        const parsed = JSON.parse(raw) as ModelOption[]
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // prev ?? parsed: never clobber a live fetch that beat the cache read.
+          setDynamicModels((prev) => prev ?? parsed)
+        }
+      } catch { /* corrupt cache - the next successful fetch rewrites it */ }
+    }).catch(() => { /* no cache yet */ })
+
     if (agentType === 'opencode') {
       ;window.api.provider.listOpencodeModels?.().then((ids: string[]) => {
         if (cancelled || !ids || ids.length === 0) return
-        setDynamicModels(ids.map((id) => ({
+        persistDynamicModels(agentType, ids.map((id) => ({
           id,
           label: formatOpencodeModelLabel(id),
           tier: inferTierFromId(id),
         })))
       }).catch(() => { /* keep fallback list */ })
-    } else if (agentType === 'claude-code' && sessionId) {
-      let attempts = 0
-      const tryFetch = () => {
-        ;window.api.provider.listModels?.(sessionId).then((models) => {
-          if (cancelled) return
-          if (models && models.length > 0) {
-            setDynamicModels(models)
-          } else if (attempts++ < 4) {
-            setTimeout(tryFetch, 500 * (attempts + 1))
-          }
-        }).catch(() => { /* keep fallback list */ })
-      }
-      tryFetch()
     }
     return () => { cancelled = true }
-  }, [agentType, sessionId])
+  }, [agentType, sessionId, persistDynamicModels])
+
+  // Claude: the live query only exists once the first turn starts, so key the
+  // fetch on the session going active - a mount-time retry loop always
+  // exhausted before the user sent anything.
+  const sessionIsActive = useAgentStore((s) => {
+    const st = s.sessions.find((x) => x.id === sessionId)?.status
+    return st === 'running' || st === 'thinking'
+  })
+  useEffect(() => {
+    if (agentType !== 'claude-code' || !sessionId || !sessionIsActive) return
+    let cancelled = false
+    let attempts = 0
+    const tryFetch = () => {
+      ;window.api.provider.listModels?.(sessionId).then((models) => {
+        if (cancelled) return
+        if (models && models.length > 0) {
+          persistDynamicModels(agentType, models)
+        } else if (attempts++ < 4) {
+          setTimeout(tryFetch, 500 * (attempts + 1))
+        }
+      }).catch(() => { /* keep fallback list */ })
+    }
+    tryFetch()
+    return () => { cancelled = true }
+  }, [agentType, sessionId, sessionIsActive, persistDynamicModels])
 
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
 

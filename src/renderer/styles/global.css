@@ -1099,7 +1099,8 @@ mark.sb-search-mark.active {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.sidebar-machine-header:hover .machine-remove {
+.sidebar-machine-header:hover .machine-remove,
+.sidebar-machine-header:hover .machine-edit {
   opacity: 0.6;
 }
 .machine-pip {
@@ -1149,21 +1150,52 @@ mark.sb-search-mark.active {
   color: var(--text-primary);
   opacity: 1 !important;
 }
+.machine-edit {
+  display: flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 0;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  flex: none;
+}
+.machine-edit:hover {
+  color: var(--text-primary);
+  opacity: 1 !important;
+}
 .sidebar-machine-empty {
   padding: 8px 12px 10px 24px;
   font-size: 11px;
   color: var(--text-muted);
 }
+/* Machine-layer header row - keeps "+ Add machine" pinned above the tree. */
+.machine-layer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 6px 3px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.machine-layer-title {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
 .sidebar-add-machine {
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 7px 12px;
+  gap: 4px;
+  padding: 3px 8px;
   background: none;
   border: none;
+  border-radius: 4px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   text-align: left;
 }
@@ -1205,6 +1237,28 @@ mark.sb-search-mark.active {
   padding: 8px 4px;
   font-size: 12px;
   color: var(--text-muted);
+}
+.machine-modal-error {
+  padding: 4px 4px 8px;
+  font-size: 12px;
+  color: var(--error);
+}
+.machine-modal-advanced-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 0 6px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.machine-modal-advanced-toggle:hover {
+  color: var(--text-primary);
 }
 .machine-modal-title {
   font-size: 14px;
@@ -1336,6 +1390,31 @@ mark.sb-search-mark.active {
 }
 .cached-label {
   color: var(--text-muted);
+}
+/* Connect-in-flight banner (connecting / provisioning / reconnecting) */
+.machine-spinner {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--text-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: machine-spin 0.8s linear infinite;
+}
+@keyframes machine-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.machine-busy-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.machine-elapsed {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
 }
 .machine-error-reason {
   overflow: hidden;
