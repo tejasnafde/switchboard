@@ -1,9 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useLayoutStore, hydrateSidebarCollapse } from './stores/layout-store'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
-import { useEditorStore } from './stores/editor-store'
 import { classifyCloseFocus, type ClosestEl } from './closeFocus'
-import { closeEditorTab } from './components/files/editor/editorTabClose'
 import { useBookmarkStore } from './stores/bookmark-store'
 import { useThemeStore } from './stores/theme-store'
 import { useTerminalStore } from './stores/terminal-store'
@@ -14,7 +12,7 @@ import { Sidebar } from './components/sidebar/Sidebar'
 import { ChatPanel } from './components/chat/ChatPanel'
 import { TerminalSessionPane } from './components/terminal/TerminalSessionPane'
 import { TerminalStrip } from './components/terminal/TerminalStrip'
-import { FilesPane } from './components/files/FilesPane'
+import { IdePane } from './components/ide/IdePane'
 import { KanbanView } from './components/kanban/KanbanView'
 import { SettingsModal } from './components/SettingsModal'
 import { CommandPalette } from './components/CommandPalette'
@@ -22,10 +20,9 @@ import { SearchModal } from './components/SearchModal'
 import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
-import { QuickOpenModal } from './components/files/QuickOpenModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
-import { appendTerminalSelectionToDraft, captureSelection } from './services/contextBridge'
+import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated, onSessionRename } from './services/session-events'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
@@ -85,18 +82,16 @@ export function App() {
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [quickPromptOpen, setQuickPromptOpen] = useState(false)
-  const [quickOpenOpen, setQuickOpenOpen] = useState(false)
   // Refs mirror modal-open state so the keybinding effect (which only
   // depends on toggle callbacks) reads fresh values without re-binding
   // listeners on every state change.
-  const modalStateRef = useRef({ settings: false, palette: false, search: false, picker: false, quickPrompt: false, quickOpen: false })
+  const modalStateRef = useRef({ settings: false, palette: false, search: false, picker: false, quickPrompt: false })
   modalStateRef.current = {
     settings: settingsOpen,
     palette: paletteOpen,
     search: searchOpen,
     picker: sessionPickerOpen,
     quickPrompt: quickPromptOpen,
-    quickOpen: quickOpenOpen,
   }
   const [templateToast, setTemplateToast] = useState<string | null>(null)
   const [tourOpen, setTourOpen] = useState(false)
@@ -106,6 +101,32 @@ export function App() {
   // `tour.lastSeenVersion` is missing or older than TOUR_VERSION, unless
   // the user has switched off `tour.autoplay`. Settings tab provides a
   // manual replay path either way.
+  // Terminal intent inside the workbench (ctrl+` or cmd+j): the webview
+  // swallows Switchboard's global keys, so the bridge forwards it - flip the
+  // right pane to the terminal strip.
+  useEffect(() =>
+    window.api.ide.onTerminalRequest(() => {
+      const layout = useLayoutStore.getState()
+      layout.setRightPaneMode('terminal')
+      if (!layout.terminalVisible) layout.toggleTerminal()
+    }), [])
+
+  // Workbench selections: cmd+l appends a draft pill; cmd+k (intent 'edit')
+  // opens the quick prompt pre-filled with the selection - Cursor-style, but
+  // the edit runs through the active agent + in-chat diff review.
+  const [ideEditContext, setIdeEditContext] = useState<{ preview: string; full: string } | null>(null)
+  useEffect(() =>
+    window.api.ide.onSelection((msg) => {
+      if (msg.intent === 'edit') {
+        const formatted = formatIdeSelection(msg)
+        if (!formatted) return
+        setIdeEditContext({ preview: formatted.label, full: formatted.block })
+        setQuickPromptOpen(true)
+      } else {
+        appendIdeSelectionToDraft(msg)
+      }
+    }), [])
+
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -286,13 +307,9 @@ export function App() {
       const focus = classifyCloseFocus(document.activeElement as unknown as ClosestEl | null)
       const layoutState = useLayoutStore.getState()
 
-      // Files/editor pane → close the active editor tab, and stop here.
-      if (focus === 'editor') {
-        const esid = useAgentStore.getState().activeSessionId
-        const bufId = esid ? useEditorStore.getState().activeBySession[esid] : null
-        if (esid && bufId) closeEditorTab(esid, bufId)
-        return
-      }
+      // IDE pane → the workbench webview owns its own tab lifecycle; a ⌘W
+      // here should not close the app window out from under it.
+      if (focus === 'editor') return
 
       // Chat panel in dual mode → close that panel.
       if (layoutState.dualChat && (focus === 'chat-left' || focus === 'chat-right')) {
@@ -539,53 +556,12 @@ export function App() {
     termSetActiveSession(activeAgentSessionId)
   }, [activeAgentSessionId, termSetActiveSession])
 
-  // Restore the per-session viewer file when the active session changes.
-  // Each chat keeps its own viewer context - switching back to a chat
-  // lands on the file you were last reading there.
-  useEffect(() => {
-    useLayoutStore.getState().hydrateViewerForSession(activeAgentSessionId)
-  }, [activeAgentSessionId])
-
   // Terminal lifecycle - spawn/kill PTYs on session change
   useTerminalLifecycle()
 
   // Keyboard shortcuts
   useEffect(() => {
-    // ⌘-/⌘⇧- (macOS) or Alt+←/→ (Win/Linux) - VS Code-style editor back/forward
-    const isMac =(typeof navigator !== 'undefined' && /Mac|iPad|iPhone/.test(navigator.platform)) || process.platform === 'darwin'
-    const handleNavKeys = (e: KeyboardEvent): boolean => {
-      if (useLayoutStore.getState().rightPaneMode !== 'files') return false
-      const inFilesPane = !!(document.activeElement as HTMLElement | null)?.closest('[data-context-source="file-viewer"], [data-files-pane]')
-      if (!inFilesPane) return false
-      const sessionId = useAgentStore.getState().activeSessionId
-      if (!sessionId) return false
-      const isBack = isMac
-        ? e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && e.key === '-'
-        : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.key === 'ArrowLeft'
-      const isForward = isMac
-        ? e.ctrlKey && !e.metaKey && !e.altKey && e.shiftKey && (e.key === '-' || e.key === '_')
-        : e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.key === 'ArrowRight'
-      if (isBack) {
-        const target = useEditorStore.getState().navBack(sessionId)
-        if (target) {
-          e.preventDefault()
-          useLayoutStore.getState().openInViewer(target.path, { start: target.line, end: target.line }, { recordHistory: false })
-        }
-        return true
-      }
-      if (isForward) {
-        const target = useEditorStore.getState().navForward(sessionId)
-        if (target) {
-          e.preventDefault()
-          useLayoutStore.getState().openInViewer(target.path, { start: target.line, end: target.line }, { recordHistory: false })
-        }
-        return true
-      }
-      return false
-    }
-
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (handleNavKeys(e)) return
       if (e.metaKey || e.ctrlKey) {
         if (e.key === 'b' || e.key === 'B') {
           e.preventDefault()
@@ -609,16 +585,6 @@ export function App() {
         else if ((e.key === 'p' || e.key === 'P') && e.shiftKey) {
           e.preventDefault()
           setPaletteOpen((prev) => !prev)
-        }
-        // ⌘+P - fuzzy file finder (Quick Open). Skip when another modal
-        // is already up so we don't stack them, and bail when focus is
-        // in any text input so users typing "p" with their cmd key down
-        // don't accidentally trigger it.
-        else if ((e.key === 'p' || e.key === 'P') && !e.shiftKey && !e.altKey) {
-          const m = modalStateRef.current
-          if (m.settings || m.palette || m.search || m.picker || m.quickPrompt || m.quickOpen) return
-          e.preventDefault()
-          setQuickOpenOpen(true)
         }
         // ⌘+Shift+F - search across conversations
         else if ((e.key === 'f' || e.key === 'F') && e.shiftKey) {
@@ -955,7 +921,7 @@ export function App() {
                 display: rightPaneMode === 'files' ? 'flex' : 'none',
               }}
             >
-              <FilesPane />
+              <IdePane />
             </div>
           </div>
         </div>
@@ -1002,11 +968,11 @@ export function App() {
       />
       <QuickPromptModal
         open={quickPromptOpen}
-        onClose={() => setQuickPromptOpen(false)}
-      />
-      <QuickOpenModal
-        open={quickOpenOpen}
-        onClose={() => setQuickOpenOpen(false)}
+        onClose={() => {
+          setQuickPromptOpen(false)
+          setIdeEditContext(null)
+        }}
+        ideContext={ideEditContext}
       />
       <FeatureTourModal
         open={tourOpen}

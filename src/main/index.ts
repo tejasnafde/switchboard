@@ -25,8 +25,7 @@ import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machin
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost } from './backend/host'
 import { registerGitHandlers } from './ipc/git'
-import { registerLspHandlers } from './ipc/lsp'
-import { disposeAllLspServers } from './lsp/manager'
+import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { resolveProviderInstance } from './db/providerInstances'
@@ -162,6 +161,8 @@ function createWindow(): BrowserWindow {
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
+      // Embedded IDE: the code-server workbench renders in a <webview>.
+      webviewTag: true,
     },
   })
 
@@ -453,7 +454,7 @@ app.whenReady().then(() => {
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
-  registerLspHandlers(backendHost)
+  registerIdeHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
   // Local-only resolver: hand preload an instance's oauth_dir BASENAME (a path
@@ -488,6 +489,7 @@ app.whenReady().then(() => {
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
+      registerIdeHandlers(reactivatedHost)
       registerKanbanHandlers(reactivatedHost)
       registerMachineHandlers(reactivatedHost)
       registerAutoUpdater(mainWindow)
@@ -507,6 +509,5 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   providerRegistry?.stopAll()
   void stopAllMachineConnections()
-  disposeAllLspServers()
   closeDb()
 })

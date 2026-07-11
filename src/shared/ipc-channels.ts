@@ -54,8 +54,6 @@ export const AppChannels = {
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
   FORK_CONVERSATION: 'app:fork-conversation',
   // Editor tabs persistence - open files survive app restart per session.
-  EDITOR_TABS_LOAD: 'app:editor-tabs-load',
-  EDITOR_TABS_SAVE: 'app:editor-tabs-save',
   /**
    * Update the worktree pointer on an existing conversation. Fired from
    * the branch picker's swap-cwd action when the user picks a branch
@@ -106,14 +104,12 @@ export const KanbanChannels = {
 } as const
 
 export const FilesChannels = {
+  /** Lean directory listing (name/isDir) - remote add-project path autocomplete. */
   LIST_DIR: 'files:list-dir',
-  READ_FILE: 'files:read-file',
   WRITE_FILE: 'files:write-file',
   DELETE_FILE: 'files:delete-file',
-  READ_BATCH: 'files:read-batch',
   RESOLVE: 'files:resolve',
   LIST_ALL: 'files:list-all',
-  GREP_SYMBOL: 'files:grep-symbol',
 } as const
 
 /**
@@ -126,8 +122,6 @@ export const GitChannels = {
   LIST_REFS: 'git:list-refs',
   SWITCH_REF: 'git:switch-ref',
   CURRENT_BRANCH: 'git:current-branch',
-  /** Editor gutter - hunks for a single file, computed against HEAD. */
-  FILE_DIFF: 'git:file-diff',
   /**
    * Create a deterministic-path worktree under userData/worktrees for a
    * new chat session and return its absolute path + the branch we
@@ -138,18 +132,22 @@ export const GitChannels = {
 } as const
 
 /**
- * LSP bridge - main-process spawns typescript-language-server / pyright
- * per workspace; renderer sends document lifecycle + queries via these
- * channels and gets typed results / diagnostics back.
+ * Embedded IDE (code-server in a webview). ENSURE boots the per-app server
+ * (first call pays the one-time binary download) and serves `folder`; STATUS
+ * pushes lifecycle updates; OPEN routes open-at-line to the extension host
+ * serving the folder; SELECTION carries cmd+l captures from the workbench;
+ * STOP is the idle shutdown (hidden pane reclaims the server's RAM).
  */
-export const LspChannels = {
-  OPEN: 'lsp:open',
-  CHANGE: 'lsp:change',
-  CLOSE: 'lsp:close',
-  DEFINITION: 'lsp:definition',
-  REFERENCES: 'lsp:references',
-  HOVER: 'lsp:hover',
-  DOCUMENT_SYMBOLS: 'lsp:document-symbols',
+export const IdeChannels = {
+  ENSURE: 'ide:ensure',
+  /** Write workbench.colorTheme into code-server's settings.json - applied live by its file watcher. */
+  SET_THEME: 'ide:set-theme',
+  STATUS: 'ide:status',
+  OPEN: 'ide:open',
+  SELECTION: 'ide:selection',
+  /** Workbench terminal intercepted (ctrl+` / cmd+j) - renderer opens Switchboard's terminal pane. */
+  TERMINAL_REQUEST: 'ide:terminal-request',
+  STOP: 'ide:stop',
 } as const
 
 export const BookmarkChannels = {

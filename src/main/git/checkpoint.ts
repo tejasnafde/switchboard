@@ -55,12 +55,22 @@ export type CheckpointGitRunner = (
   env?: NodeJS.ProcessEnv,
 ) => Promise<{ stdout: string; stderr: string }>
 
+/**
+ * Inherited GIT_DIR / GIT_INDEX_FILE / GIT_WORK_TREE (set by git when running
+ * hooks) would redirect our git calls at a DIFFERENT repo than `cwd` - this
+ * once wiped a parent repo's index when the suite ran under pre-commit.
+ */
+export function scrubGitEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const { GIT_DIR: _d, GIT_INDEX_FILE: _i, GIT_WORK_TREE: _w, ...clean } = base
+  return clean
+}
+
 const defaultRunner: CheckpointGitRunner = async (args, cwd, env) => {
   const res = await execFileP('git', args, {
     cwd,
     timeout: 15_000,
     maxBuffer: 16 * 1024 * 1024,
-    env: env ? { ...process.env, ...env } : process.env,
+    env: { ...scrubGitEnv(process.env), ...env },
   })
   return { stdout: res.stdout, stderr: res.stderr }
 }

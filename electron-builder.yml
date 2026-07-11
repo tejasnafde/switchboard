@@ -44,6 +44,11 @@ extraResources:
   - from: videos/dist
     to: videos/dist
     filter: ["*.mp4"]
+  # sb-bridge extension for the embedded IDE - seeded into code-server's
+  # extensions dir on first IDE-pane open. Resolved from
+  # `process.resourcesPath/sb-bridge` in packaged builds (ipc/ide.ts).
+  - from: resources/sb-bridge
+    to: sb-bridge
 # Pull in node-pty and better-sqlite3 native builds. `asarUnpack` keeps
 # their .node binaries outside the asar archive so Electron can load them.
 asarUnpack:

@@ -1,0 +1,68 @@
+{
+  "name": "sb-bridge",
+  "displayName": "Switchboard Bridge",
+  "description": "Connects the embedded code-server workbench to Switchboard (open-at-line, cmd+l selection capture).",
+  "version": "0.0.1",
+  "publisher": "switchboard",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "switchboard.sendSelection",
+        "title": "Switchboard: Send Selection to Chat"
+      },
+      {
+        "command": "switchboard.quickEdit",
+        "title": "Switchboard: Quick Edit Selection"
+      },
+      {
+        "command": "switchboard.openTerminal",
+        "title": "Switchboard: Open Terminal"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "switchboard.sendSelection",
+        "key": "ctrl+l",
+        "mac": "cmd+l",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "switchboard.quickEdit",
+        "key": "ctrl+k",
+        "mac": "cmd+k",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "switchboard.openTerminal",
+        "key": "ctrl+j",
+        "mac": "cmd+j"
+      },
+      {
+        "command": "switchboard.openTerminal",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e"
+      },
+      {
+        "command": "switchboard.openTerminal",
+        "key": "ctrl+`"
+      }
+    ]
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true,
+      "description": "Only opens files at the host request and forwards editor selections."
+    },
+    "virtualWorkspaces": false
+  },
+  "extensionKind": [
+    "workspace"
+  ]
+}

@@ -1,6 +1,8 @@
 import { create } from 'zustand'
+import { createRendererLogger } from '../logger'
 import { useAgentStore } from './agent-store'
-import { useEditorStore } from './editor-store'
+
+const log = createRendererLogger('store:layout')
 
 const SIDEBAR_MIN = 140
 const SIDEBAR_MAX = 500
@@ -49,30 +51,11 @@ interface LayoutStore {
   setKanbanWorkspaceFilter: (id: string | null) => void
   setKanbanProjectFilter: (path: string | null) => void
 
-  /** Active file path open in the viewer (repo-relative). */
-  viewerFilePath: string | null
-  /** Optional line range to scroll/highlight in the viewer. */
-  viewerLineRange: { start: number; end: number } | null
+  /** Open a file in the embedded IDE workbench, flipping the right pane to it. */
   openInViewer: (
     path: string,
     lineRange?: { start: number; end: number } | null,
-    opts?: { recordHistory?: boolean },
   ) => void
-
-  /**
-   * Per-session memory of "what was last open in the viewer". Switching
-   * sessions reads from this map so each chat keeps its own viewer
-   * context. Persisted whole.
-   */
-  viewerStateBySession: Record<string, { path: string; lineRange: { start: number; end: number } | null }>
-  hydrateViewerForSession: (sessionId: string | null) => void
-
-  /**
-   * File-tree column collapse state (right pane "Files" mode). Lives
-   * here so both `FilesPane` and `FileViewerPane` can read/write it.
-   */
-  fileTreeCollapsed: boolean
-  toggleFileTreeCollapsed: () => void
 
   // Side-by-side chat panels. When `dualChat` is true, App renders two
   // ChatPanel instances with `rightSessionId` bound to the right panel.
@@ -124,8 +107,6 @@ interface LayoutStore {
 const COLLAPSE_PROJECTS_KEY = 'sidebar.collapsed.projects'
 const COLLAPSE_WORKSPACES_KEY = 'sidebar.collapsed.workspaces'
 const RIGHT_PANE_MODE_KEY = 'layout.rightPaneMode'
-const VIEWER_STATE_BY_SESSION_KEY = 'layout.viewerStateBySession'
-const FILE_TREE_COLLAPSED_KEY = 'layout.fileTreeCollapsed'
 const APP_VIEW_KEY = 'layout.appView'
 const KANBAN_WS_FILTER_KEY = 'layout.kanbanWorkspaceFilter'
 const KANBAN_PROJECT_FILTER_KEY = 'layout.kanbanProjectFilter'
@@ -191,56 +172,28 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ kanbanProjectFilter: path })
   },
 
-  viewerFilePath: null,
-  viewerLineRange: null,
-  viewerStateBySession: {},
-  openInViewer: (path, lineRange = null, opts = {}) => {
-    // Tag this onto the active session so toggling away and back lands
-    // the user on the same file. Reading agent-store from inside a
-    // layout-store action is the simplest way to avoid prop-drilling
-    // sessionId through every caller; we accept the import edge.
-    let activeId: string | null = null
-    try { activeId = useAgentStore.getState().activeSessionId } catch { /* test env */ }
-    const map = { ...get().viewerStateBySession }
-    if (activeId) {
-      map[activeId] = { path, lineRange }
-      try { void window.api?.settings?.set(VIEWER_STATE_BY_SESSION_KEY, JSON.stringify(map)) } catch { /* ignore */ }
-    }
-    set({
-      viewerFilePath: path,
-      viewerLineRange: lineRange,
-      rightPaneMode: 'files',
-      viewerStateBySession: map,
-    })
+  openInViewer: (path, lineRange = null) => {
+    // Flip the right pane to the IDE, then route the open to the workbench
+    // serving the active session's repo. Fire-and-forget: if the ext host
+    // isn't connected yet (workbench still booting), the click simply
+    // focuses the pane.
+    set({ rightPaneMode: 'files' })
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
-    // Single seat for nav history; back/forward replays pass recordHistory:false
-    // so they don't truncate the forward stack.
-    if (activeId && opts.recordHistory !== false) {
-      useEditorStore.getState().pushNav(activeId, {
-        path,
-        line: lineRange?.start ?? 1,
-        ch: 0,
-      })
+    try {
+      const agent = useAgentStore.getState()
+      const session = agent.sessions.find((x) => x.id === agent.activeSessionId)
+      const folder = session?.worktreePath ?? session?.projectPath
+      if (folder) {
+        void window.api?.ide?.open({
+          folder,
+          path,
+          line: lineRange?.start,
+          endLine: lineRange?.end,
+        })
+      }
+    } catch (err) {
+      log.warn('openInViewer routing failed', err)
     }
-  },
-  hydrateViewerForSession: (sessionId) => {
-    if (!sessionId) {
-      set({ viewerFilePath: null, viewerLineRange: null })
-      return
-    }
-    const remembered = get().viewerStateBySession[sessionId]
-    if (remembered) {
-      set({ viewerFilePath: remembered.path, viewerLineRange: remembered.lineRange })
-    } else {
-      set({ viewerFilePath: null, viewerLineRange: null })
-    }
-  },
-
-  fileTreeCollapsed: false,
-  toggleFileTreeCollapsed: () => {
-    const next = !get().fileTreeCollapsed
-    try { void window.api?.settings?.set(FILE_TREE_COLLAPSED_KEY, next ? '1' : '0') } catch { /* ignore */ }
-    set({ fileTreeCollapsed: next })
   },
 
   sidebarCollapsedProjects: [],
@@ -345,12 +298,10 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson, modeStr, viewerStateJson, treeCollapsedStr, appViewStr, kanbanWsStr, kanbanProjStr] = await Promise.all([
+    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
       window.api.settings.get(RIGHT_PANE_MODE_KEY),
-      window.api.settings.get(VIEWER_STATE_BY_SESSION_KEY),
-      window.api.settings.get(FILE_TREE_COLLAPSED_KEY),
       window.api.settings.get(APP_VIEW_KEY),
       window.api.settings.get(KANBAN_WS_FILTER_KEY),
       window.api.settings.get(KANBAN_PROJECT_FILTER_KEY),
@@ -360,35 +311,12 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       try { const v = JSON.parse(s); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [] }
       catch { return [] }
     }
-    const parseViewerMap = (s: string | null): Record<string, { path: string; lineRange: { start: number; end: number } | null }> => {
-      if (!s) return {}
-      try {
-        const v = JSON.parse(s)
-        if (!v || typeof v !== 'object') return {}
-        const out: Record<string, { path: string; lineRange: { start: number; end: number } | null }> = {}
-        for (const [k, val] of Object.entries(v)) {
-          const obj = val as { path?: unknown; lineRange?: { start?: unknown; end?: unknown } | null } | null
-          if (obj && typeof obj === 'object' && typeof obj.path === 'string') {
-            const lr = obj.lineRange
-            const lineRange = lr && typeof lr.start === 'number' && typeof lr.end === 'number'
-              ? { start: lr.start, end: lr.end } : null
-            out[k] = { path: obj.path, lineRange }
-          }
-        }
-        return out
-      } catch { return {} }
-    }
-    // Migrate legacy 'kanban' right-pane setting from the per-session
-    // build - that mode is gone now; fall back to terminal so users
-    // upgrading don't see a blank pane.
     const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
     const appView: AppView = appViewStr === 'kanban' ? 'kanban' : 'chats'
     useLayoutStore.setState({
       sidebarCollapsedProjects: parse(projJson),
       sidebarCollapsedWorkspaces: parse(wsJson),
       rightPaneMode: mode,
-      viewerStateBySession: parseViewerMap(viewerStateJson),
-      fileTreeCollapsed: treeCollapsedStr === '1',
       appView,
       kanbanWorkspaceFilter: kanbanWsStr || null,
       kanbanProjectFilter: kanbanProjStr || null,

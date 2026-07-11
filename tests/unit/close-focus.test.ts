@@ -24,8 +24,8 @@ describe('classifyCloseFocus', () => {
   })
 
   it('classifies the files/editor pane as editor', () => {
-    expect(classifyCloseFocus(fakeEl({ '[data-files-pane]': {} }))).toBe('editor')
-    expect(classifyCloseFocus(fakeEl({ '[data-context-source="file-viewer"]': {} }))).toBe('editor')
+    expect(classifyCloseFocus(fakeEl({ '[data-ide-pane]': {} }))).toBe('editor')
+    expect(classifyCloseFocus(fakeEl({ '[data-ide-pane]': {} }))).toBe('editor')
   })
 
   it('classifies a focused terminal pane', () => {
@@ -39,7 +39,7 @@ describe('classifyCloseFocus', () => {
 
   it('prefers editor over chat when both match (files pane never closes a terminal)', () => {
     expect(
-      classifyCloseFocus(fakeEl({ '[data-files-pane]': {}, '[data-chat-panel]': { side: 'left' } })),
+      classifyCloseFocus(fakeEl({ '[data-ide-pane]': {}, '[data-chat-panel]': { side: 'left' } })),
     ).toBe('editor')
   })
 

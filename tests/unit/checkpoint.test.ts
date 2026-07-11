@@ -19,6 +19,7 @@ import {
   createCheckpoint,
   diffCheckpoint,
   isGitRepo,
+  scrubGitEnv,
   type CheckpointGitRunner,
 } from '../../src/main/git/checkpoint'
 
@@ -121,11 +122,10 @@ describe('checkpoint against real git', () => {
   it('isolates turn changes on a dirty repo, including untracked + deleted', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'sb-ckpt-real-'))
     try {
-      // Scrub GIT_* vars: when this suite runs inside a pre-commit hook, git
-      // exports GIT_DIR/GIT_INDEX_FILE, which would make this nested git
-      // operate on the OUTER repo (and recursively fire its hooks).
-      const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith('GIT_')))
-      const git = (args: string[]) => execFileP('git', args, { cwd: dir, env })
+      // scrubGitEnv: without it, GIT_DIR/GIT_INDEX_FILE inherited from a git
+      // hook (pre-commit runs this suite) redirect these calls at the REAL repo.
+      const git = (args: string[]) =>
+        execFileP('git', args, { cwd: dir, env: scrubGitEnv(process.env) })
       await git(['init', '-q'])
       await git(['config', 'user.email', 't@t.io'])
       await git(['config', 'user.name', 't'])

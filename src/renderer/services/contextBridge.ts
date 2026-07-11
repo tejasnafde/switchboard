@@ -156,7 +156,7 @@ export function findActiveTerminalSelection(): {
 
 /**
  * Walk up from an element to find the nearest `[data-context-source]`
- * ancestor. Returns its value (`'terminal' | 'file-viewer' | 'chat-message'`)
+ * ancestor. Returns its value (`'terminal' | 'chat-message'`)
  * or null if there isn't one - caller should fall back to the legacy
  * terminal-only path.
  */
@@ -182,42 +182,16 @@ function getDomSelectionText(): string {
 }
 
 /**
- * Determine which line range a viewer selection covers. CM6 wraps each
- * doc line in `<div class="cm-line">`; we count those in the start
- * container's ancestry to derive 1-based line numbers. Older Shiki HTML
- * used `.line` / `[data-line]` - still matched for back-compat. Best
- * effort; falls back to start=end=1 if the structure doesn't match.
- */
-function viewerSelectionLineRange(viewerRoot: Element): { start: number; end: number } {
-  const sel = window.getSelection?.()
-  if (!sel || sel.rangeCount === 0) return { start: 1, end: 1 }
-  const range = sel.getRangeAt(0)
-  const lines = Array.from(viewerRoot.querySelectorAll('.cm-line, .line, [data-line]'))
-  if (lines.length === 0) return { start: 1, end: 1 }
-  const isLineEl = (n: unknown): n is Element =>
-    n instanceof Element &&
-    (n.classList.contains('cm-line') || n.classList.contains('line') || n.hasAttribute('data-line'))
-  const findLineIndex = (node: Node): number => {
-    let cur: Node | null = node
-    while (cur && !isLineEl(cur)) cur = cur.parentNode
-    if (!cur) return 0
-    const idx = lines.indexOf(cur as Element)
-    return idx >= 0 ? idx + 1 : 1
-  }
-  return {
-    start: findLineIndex(range.startContainer),
-    end: findLineIndex(range.endContainer),
-  }
-}
-
-/**
  * Unified ⌘L entry point. Inspects the focused/selection-anchor element
  * for `data-context-source` and dispatches to the appropriate formatter:
  *
  *   - 'terminal' → existing terminal selection flow
- *   - 'file-viewer' → `@<path>:<start>-<end>` pill + fenced code block
  *   - 'chat-message' → `> from <agent>: "..."` quoted block
  *   - null/unknown → fall back to terminal flow (preserves legacy ⌘L)
+ *
+ * cmd+l inside the embedded IDE never reaches this handler - the workbench
+ * webview swallows the key and the sb-bridge extension routes the selection
+ * via appendIdeSelectionToDraft below.
  *
  * Returns `true` if anything was appended, `false` otherwise.
  */
@@ -229,38 +203,6 @@ export function captureSelection(): boolean {
       ? anchor
       : (anchor?.parentElement ?? null)
   const source = findContextSource(anchorEl)
-
-  if (source === 'file-viewer') {
-    const root = anchorEl?.closest('[data-context-source="file-viewer"]') as HTMLElement | null
-    // `data-file-path` lives on FileViewerPane's outer wrapper, not on
-    // EditorHost's container - walk up independently to find it.
-    const path = anchorEl?.closest('[data-file-path]')?.getAttribute('data-file-path') ?? ''
-    const text = getDomSelectionText()
-    if (!path || !text.trim()) return appendTerminalSelectionToDraft()
-    const { start, end } = root ? viewerSelectionLineRange(root) : { start: 1, end: 1 }
-    const sid = useAgentStore.getState().activeSessionId
-    if (!sid) return false
-    const content = formatFileViewerContext({
-      path,
-      startLine: start,
-      endLine: end,
-      content: text,
-    })
-    const fileName = path.split('/').pop() ?? path
-    const range = start === end ? `${start}` : `${start}-${end}`
-    const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    useDraftStore.getState().addPill(sid, {
-      id: pillId,
-      kind: 'file',
-      label: `${fileName} (${range})`,
-      content,
-    })
-    // Notify the active ChatInput so it can insert the chip inline at the
-    // current caret position (Lexical-backed editor). Decoupled via a
-    // window event to keep this module free of Lexical/React imports.
-    window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))
-    return true
-  }
 
   if (source === 'chat-message') {
     const text = getDomSelectionText()
@@ -345,4 +287,52 @@ export async function sendQuickPrompt(
   } catch {
     return false
   }
+}
+
+/**
+ * cmd+l inside the embedded IDE: the sb-bridge extension captures the editor
+ * selection and the main process forwards it here (IdeChannels.SELECTION).
+ * Same draft/pill path as the old file-viewer branch of captureSelection().
+ * Absolute paths are relativized against the active session's repo root so
+ * pills read like repo paths.
+ */
+export interface IdeSelection {
+  path: string
+  startLine: number
+  endLine: number
+  text: string
+}
+
+/** Relativize + format a workbench selection. Null when there is no session or no text. */
+export function formatIdeSelection(msg: IdeSelection): { label: string; block: string } | null {
+  const state = useAgentStore.getState()
+  const sid = state.activeSessionId
+  if (!sid || !msg.text.trim()) return null
+  const session = state.sessions.find((s) => s.id === sid)
+  const root = session?.worktreePath ?? session?.projectPath
+  const path = root && msg.path.startsWith(root + '/') ? msg.path.slice(root.length + 1) : msg.path
+  const block = formatFileViewerContext({
+    path,
+    startLine: msg.startLine,
+    endLine: msg.endLine,
+    content: msg.text.slice(0, MAX_SELECTION_CHARS),
+  })
+  const fileName = path.split('/').pop() ?? path
+  const range = msg.startLine === msg.endLine ? `${msg.startLine}` : `${msg.startLine}-${msg.endLine}`
+  return { label: `${fileName} (${range})`, block }
+}
+
+export function appendIdeSelectionToDraft(msg: IdeSelection): boolean {
+  const sid = useAgentStore.getState().activeSessionId
+  const formatted = formatIdeSelection(msg)
+  if (!sid || !formatted) return false
+  const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  useDraftStore.getState().addPill(sid, {
+    id: pillId,
+    kind: 'file',
+    label: formatted.label,
+    content: formatted.block,
+  })
+  window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))
+  return true
 }

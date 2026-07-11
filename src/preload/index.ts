@@ -4,7 +4,7 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, LspChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
@@ -139,18 +139,6 @@ const api = {
         worktreePath,
         worktreeBranch,
       ),
-    editorTabsLoad: (
-      sessionId: string,
-    ): Promise<{
-      ok: boolean
-      error?: string
-      tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>
-    }> => transport.invoke(AppChannels.EDITOR_TABS_LOAD, sessionId),
-    editorTabsSave: (
-      sessionId: string,
-      tabs: Array<{ path: string; cursorLine: number; cursorCol: number; scrollTop: number; isActive: boolean }>,
-    ): Promise<{ ok: boolean; error?: string }> =>
-      transport.invoke(AppChannels.EDITOR_TABS_SAVE, sessionId, tabs),
     loadSession: (filePath: string, conversationId?: string, source?: 'claude-code' | 'codex') =>
       transport.invoke(AppChannels.LOAD_SESSION, filePath, conversationId, source),
     loadSessionById: (conversationId: string) =>
@@ -273,18 +261,14 @@ const api = {
     > => transport.invoke(AppChannels.FORK_CONVERSATION, args),
   },
 
-  // ─── Files (file-tree pane + viewer + chip resolver) ──────────
+  // ─── Files (chip resolver + @-mentions + diff-card writes) ─────
   files: {
+    /** Lean listing (name/isDir) - remote add-project autocomplete + transport probes. */
     listDir: (
       repoRoot: string,
       subPath?: string,
-    ): Promise<{ ok: boolean; error?: string; entries: Array<{ name: string; isDir: boolean; isGitignored: boolean }> }> =>
+    ): Promise<{ ok: boolean; error?: string; entries: Array<{ name: string; isDir: boolean }> }> =>
       transport.invoke(FilesChannels.LIST_DIR, repoRoot, subPath ?? ''),
-    readFile: (
-      repoRoot: string,
-      subPath: string,
-    ): Promise<{ ok: boolean; error?: string; content: string; truncated: boolean; totalBytes: number; mtimeMs: number }> =>
-      transport.invoke(FilesChannels.READ_FILE, repoRoot, subPath),
     resolve: (
       repoRoot: string,
       subPath: string,
@@ -294,11 +278,6 @@ const api = {
       repoRoot: string,
     ): Promise<{ ok: boolean; error?: string; files: string[] }> =>
       transport.invoke(FilesChannels.LIST_ALL, repoRoot),
-    grepSymbol: (
-      repoRoot: string,
-      symbol: string,
-    ): Promise<{ ok: boolean; hits: Array<{ relPath: string; line: number; ch: number }> }> =>
-      transport.invoke(FilesChannels.GREP_SYMBOL, repoRoot, symbol),
     writeFile: (
       repoRoot: string,
       subPath: string,
@@ -320,13 +299,6 @@ const api = {
       subPath: string,
     ): Promise<{ ok: true } | { ok: false; error: string }> =>
       transport.invoke(FilesChannels.DELETE_FILE, repoRoot, subPath),
-    readBatch: (
-      repoRoot: string,
-      subPaths: string[],
-    ): Promise<{
-      ok: true
-      files: Array<{ path: string; content: string; mtimeMs: number; truncated: boolean }>
-    }> => transport.invoke(FilesChannels.READ_BATCH, repoRoot, subPaths),
   },
 
   // ─── Git (per-thread branch picker) ───────────────────────────
@@ -364,42 +336,6 @@ const api = {
     }): Promise<
       { ok: true; path: string; branch: string } | { ok: false; error: string }
     > => transport.invoke(GitChannels.CREATE_SESSION_WORKTREE, args),
-    fileDiff: (
-      repoRoot: string,
-      subPath: string,
-    ): Promise<
-      | { ok: true; hunks: Array<{ kind: 'add' | 'mod' | 'del'; startLine: number; endLine: number }> }
-      | { ok: false; error: string }
-    > => transport.invoke(GitChannels.FILE_DIFF, repoRoot, subPath),
-  },
-
-  lsp: {
-    open: (args: { workspaceRoot: string; absPath: string; text: string; version: number; languageId: string }) =>
-      transport.invoke(LspChannels.OPEN, args),
-    change: (args: { workspaceRoot: string; absPath: string; text: string; version: number }) =>
-      transport.invoke(LspChannels.CHANGE, args),
-    close: (args: { workspaceRoot: string; absPath: string }) =>
-      transport.invoke(LspChannels.CLOSE, args),
-    definition: (args: {
-      workspaceRoot: string
-      absPath: string
-      position: { line: number; character: number }
-    }): Promise<
-      | { ok: true; supported: boolean; locations: Array<{ uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } } }> }
-      | { ok: false; error: string }
-    > => transport.invoke(LspChannels.DEFINITION, args),
-    references: (args: {
-      workspaceRoot: string
-      absPath: string
-      position: { line: number; character: number }
-    }) => transport.invoke(LspChannels.REFERENCES, args),
-    hover: (args: {
-      workspaceRoot: string
-      absPath: string
-      position: { line: number; character: number }
-    }) => transport.invoke(LspChannels.HOVER, args),
-    documentSymbols: (args: { workspaceRoot: string; absPath: string }) =>
-      transport.invoke(LspChannels.DOCUMENT_SYMBOLS, args),
   },
 
   // ─── Machines (local + remote SSH hosts) ─────────────────────
@@ -600,6 +536,37 @@ const api = {
         event.machineId = machineId
         callback(event)
       }),
+  },
+
+  // ─── Embedded IDE (code-server webview) ────────────────────────
+  ide: {
+    /** Boot the per-app server (first call may download the binary) and serve `folder`. */
+    ensure: (folder: string): Promise<{ ok: true; port: number } | { ok: false; error: string }> =>
+      transport.invoke(IdeChannels.ENSURE, folder),
+    /** Route an open-at-line to the workbench serving `folder`. */
+    open: (args: { folder: string; path: string; line?: number; endLine?: number }): Promise<{ ok: boolean }> =>
+      transport.invoke(IdeChannels.OPEN, args),
+    /** Idle shutdown - kill the server, renderer blanks the webview. */
+    stop: (): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.STOP),
+    /** ctrl+` or cmd+j inside the workbench - open Switchboard's terminal pane instead. */
+    onTerminalRequest: (callback: () => void): (() => void) =>
+      transport.on(IdeChannels.TERMINAL_REQUEST, () => callback()),
+    /** Follow the app theme - written into the workbench settings, applied live. */
+    setTheme: (theme: string): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.SET_THEME, theme),
+    onStatus: (
+      callback: (payload: { status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number; pct?: number }) => void,
+    ): (() => void) =>
+      transport.on<[{ status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number; pct?: number }]>(
+        IdeChannels.STATUS,
+        (payload) => callback(payload),
+      ),
+    onSelection: (
+      callback: (msg: { path: string; startLine: number; endLine: number; text: string; intent?: 'edit' }) => void,
+    ): (() => void) =>
+      transport.on<[{ path: string; startLine: number; endLine: number; text: string; intent?: 'edit' }]>(
+        IdeChannels.SELECTION,
+        (msg) => callback(msg),
+      ),
   },
 
   // ─── Bookmarks ─────────────────────────────────────────────────

@@ -16,7 +16,6 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { GitChannels } from '@shared/ipc-channels'
 import { listRefs, switchRef, getCurrentBranch, type Ref } from '../git/refs'
-import { parseUnifiedDiff, type DiffHunk } from '../git/diffHunks'
 import { createSessionWorktree } from '../worktree'
 import { createMainLogger } from '../logger'
 
@@ -62,30 +61,6 @@ export function registerGitHandlers(host: BackendHost): void {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         log.warn(`current-branch failed: ${msg}`)
-        return { ok: false, error: msg }
-      }
-    },
-  )
-
-  host.handle(
-    GitChannels.FILE_DIFF,
-    async (repoRoot: string,
-      subPath: string,
-    ): Promise<{ ok: true; hunks: DiffHunk[] } | { ok: false; error: string }> => {
-      try {
-        const { stdout } = await execFileP(
-          'git',
-          ['diff', '--no-color', 'HEAD', '--', subPath],
-          { cwd: repoRoot, timeout: 5_000, maxBuffer: 4 * 1024 * 1024 },
-        )
-        return { ok: true, hunks: parseUnifiedDiff(stdout) }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        // Untracked / not-a-repo / binary - just return empty hunks.
-        if (/not a git repository|exists on disk, but not in/i.test(msg)) {
-          return { ok: true, hunks: [] }
-        }
-        log.warn(`file-diff failed: ${msg}`)
         return { ok: false, error: msg }
       }
     },
