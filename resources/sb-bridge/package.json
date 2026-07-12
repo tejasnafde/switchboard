@@ -53,6 +53,13 @@
         "command": "switchboard.openTerminal",
         "key": "ctrl+`"
       }
+    ],
+    "themes": [
+      {
+        "label": "Switchboard Charcoal",
+        "uiTheme": "vs-dark",
+        "path": "./themes/switchboard-charcoal-color-theme.json"
+      }
     ]
   },
   "capabilities": {

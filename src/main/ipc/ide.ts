@@ -44,7 +44,7 @@ function bundledExtensionDir(): string {
 
 export function registerIdeHandlers(host: BackendHost): void {
   let runtime: IdeRuntime | null = null
-  let booting: Promise<IdeRuntime> | null = null
+  let booting: Promise<IdeRuntime | null> | null = null
   /** Latest unrouted open per folder - flushed on that workbench's hello. */
   const pendingOpens = new Map<string, { path: string; line?: number; endLine?: number }>()
 
@@ -80,11 +80,14 @@ export function registerIdeHandlers(host: BackendHost): void {
     })
   }
 
-  async function boot(): Promise<IdeRuntime> {
+  async function boot(skipDownload: boolean): Promise<IdeRuntime | null> {
     const userDataRoot = app.getPath('userData')
-    const binaryPath = await ensureBinary(userDataRoot, (pct) =>
-      pushStatus('downloading', undefined, pct ?? undefined)
+    const binaryPath = await ensureBinary(
+      userDataRoot,
+      (pct) => pushStatus('downloading', undefined, pct ?? undefined),
+      { skipDownload }
     )
+    if (!binaryPath) return null
     // First-run defaults (autosave, no welcome tab, no trust popup). A merge
     // with an empty patch seeds them only when no settings file exists yet.
     patchUserSettings({})
@@ -145,29 +148,46 @@ export function registerIdeHandlers(host: BackendHost): void {
     return { manager, bridge }
   }
 
-  host.handle<[string]>(IdeChannels.ENSURE, async (folder: string) => {
-    try {
-      // TCC pre-flight: also on reuse - a new project folder may be denied
-      // even while the server is already up for another one.
-      await assertCwdReadable(folder)
-      if (!runtime) {
-        booting ??= boot().catch((err) => {
-          booting = null
-          throw err
-        })
-        runtime = await booting
+  host.handle<[string, { theme?: string; skipDownload?: boolean } | undefined]>(
+    IdeChannels.ENSURE,
+    async (folder: string, opts?: { theme?: string; skipDownload?: boolean }) => {
+      try {
+        // TCC pre-flight: also on reuse - a new project folder may be denied
+        // even while the server is already up for another one.
+        await assertCwdReadable(folder)
+        // Theme lands in settings.json BEFORE the workbench first serves the
+        // folder, so the first paint is already the right theme (writing it
+        // after ready flashed light for seconds until the bridge caught up).
+        if (opts?.theme) patchUserSettings({ 'workbench.colorTheme': themeToColorTheme(opts.theme) })
+        if (!runtime) {
+          booting ??= boot(opts?.skipDownload ?? false)
+            .catch((err) => {
+              booting = null
+              throw err
+            })
+            .then((rt) => {
+              if (!rt) booting = null
+              return rt
+            })
+          runtime = await booting
+          if (!runtime) {
+            // Prewarm without an installed binary: stay idle silently - the
+            // real download happens when the user explicitly opens the pane.
+            return { ok: false as const, error: 'binary-not-installed' }
+          }
+        }
+        pushStatus('starting')
+        const port = await runtime.manager.ensureStarted()
+        pushStatus('ready', port)
+        return { ok: true as const, port }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        log.error('ide ensure failed', err)
+        pushStatus('error')
+        return { ok: false as const, error: message }
       }
-      pushStatus('starting')
-      const port = await runtime.manager.ensureStarted()
-      pushStatus('ready', port)
-      return { ok: true as const, port }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      log.error('ide ensure failed', err)
-      pushStatus('error')
-      return { ok: false as const, error: message }
     }
-  })
+  )
 
   host.handle<[{ folder: string; path: string; line?: number; endLine?: number }]>(
     IdeChannels.OPEN,

@@ -56,20 +56,31 @@ export function IdePane(): React.ReactElement {
     if (state.kind === 'ready') void window.api.ide.setTheme(theme)
   }, [theme, state.kind])
 
-  // Boot / re-point the workbench when the pane is visible for a folder.
+  // Boot / re-point the workbench. Runs even while HIDDEN (prewarm): the
+  // server spawns and the webview loads the workbench in the background, so
+  // the first cmd+shift+E shows an already-booted editor instead of a
+  // multi-second boot. Prewarm never downloads the binary - a cold install
+  // stays idle until the pane is explicitly opened. The 15-min idle shutdown
+  // reclaims an unused prewarm.
   useEffect(() => {
-    if (!visible || !folder) return
+    if (!folder) return
     let cancelled = false
-    setState((prev) => (prev.kind === 'ready' ? prev : { kind: 'booting', label: 'Starting IDE…' }))
-    void window.api.ide.ensure(folder).then((res) => {
-      if (cancelled) return
-      if (res.ok) {
-        setState({ kind: 'ready', port: res.port })
-      } else {
-        log.warn('ide ensure failed', res.error)
-        setState({ kind: 'error', message: res.error })
-      }
-    })
+    if (visible) {
+      setState((prev) => (prev.kind === 'ready' ? prev : { kind: 'booting', label: 'Starting IDE…' }))
+    }
+    void window.api.ide
+      .ensure(folder, { theme: useThemeStore.getState().theme, skipDownload: !visible })
+      .then((res) => {
+        if (cancelled) return
+        if (res.ok) {
+          setState({ kind: 'ready', port: res.port })
+        } else if (res.error === 'binary-not-installed' && !visible) {
+          // Prewarm on a cold install: silently stay idle.
+        } else {
+          log.warn('ide ensure failed', res.error)
+          setState({ kind: 'error', message: res.error })
+        }
+      })
     return () => {
       cancelled = true
     }
@@ -129,7 +140,8 @@ export function IdePane(): React.ReactElement {
           )}
         </div>
       )}
-      <webview src={src} partition="persist:ide" style={{ flex: 1, border: 'none' }} />
+      {/* Painted app-dark so the guest never flashes white while loading. */}
+      <webview src={src} partition="persist:ide" style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
     </div>
   )
 }

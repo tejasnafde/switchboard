@@ -9,29 +9,31 @@ import { themeToColorTheme, mergeUserSettings, SEEDED_DEFAULTS } from '../../src
 
 describe('themeToColorTheme', () => {
   it('maps dark and translucent to the dark theme, light to light', () => {
-    expect(themeToColorTheme('dark')).toBe('Default Dark Modern')
-    expect(themeToColorTheme('translucent')).toBe('Default Dark Modern')
+    expect(themeToColorTheme('dark')).toBe('Switchboard Charcoal')
+    expect(themeToColorTheme('translucent')).toBe('Switchboard Charcoal')
     expect(themeToColorTheme('light')).toBe('Default Light Modern')
   })
 
   it('falls back to dark for unknown values', () => {
-    expect(themeToColorTheme('system')).toBe('Default Dark Modern')
+    expect(themeToColorTheme('system')).toBe('Switchboard Charcoal')
   })
 })
 
 describe('mergeUserSettings', () => {
   it('seeds defaults plus the patch when no settings file exists', () => {
-    const out = JSON.parse(mergeUserSettings(null, { 'workbench.colorTheme': 'Default Light Modern' }))
+    const out = JSON.parse(mergeUserSettings(null, { 'workbench.colorTheme': 'Default Light Modern' })!)
     expect(out['files.autoSave']).toBe(SEEDED_DEFAULTS['files.autoSave'])
     expect(out['workbench.colorTheme']).toBe('Default Light Modern')
   })
 
-  it('preserves user-set keys and does NOT re-apply defaults on an existing file', () => {
+  it('user-set keys always win, but ABSENT defaults backfill - new suppressions reach existing installs', () => {
     const existing = JSON.stringify({ 'files.autoSave': 'off', 'editor.fontSize': 18 })
-    const out = JSON.parse(mergeUserSettings(existing, { 'workbench.colorTheme': 'Default Dark Modern' }))
+    const out = JSON.parse(mergeUserSettings(existing, { 'workbench.colorTheme': 'Switchboard Charcoal' })!)
     expect(out['files.autoSave']).toBe('off') // user turned it off, stays off
     expect(out['editor.fontSize']).toBe(18)
-    expect(out['workbench.colorTheme']).toBe('Default Dark Modern')
+    expect(out['workbench.colorTheme']).toBe('Switchboard Charcoal')
+    // seeded key the user never touched arrives even on an existing file
+    expect(out['workbench.secondarySideBar.defaultVisibility']).toBe('hidden')
   })
 
   it('returns null (do not write) when the existing file is unparseable - VS Code settings are JSONC and users hand-edit comments in; clobbering them with defaults is data loss', () => {

@@ -19,15 +19,19 @@ export const SEEDED_DEFAULTS: Record<string, unknown> = {
 }
 
 export function themeToColorTheme(theme: string): string {
-  return theme === 'light' ? 'Default Light Modern' : 'Default Dark Modern'
+  // Charcoal ships inside sb-bridge and mirrors the app's own dark palette.
+  return theme === 'light' ? 'Default Light Modern' : 'Switchboard Charcoal'
 }
 
 /**
- * Merge `patch` into the existing settings JSON (defaults only when starting
- * fresh). Returns null when the existing file is present but unparseable:
- * VS Code settings are JSONC and users hand-edit comments in, so replacing an
- * unreadable file with defaults would destroy their settings. Callers skip
- * the write (live changes still land via the bridge config push).
+ * Merge `patch` into the existing settings JSON. Defaults BACKFILL absent
+ * keys on every merge - a key the user has ever set (to anything) always
+ * wins, but defaults added in later app versions still reach existing
+ * installs (seed-once left early adopters with recurring workbench banners
+ * the newer defaults suppress). Returns null when the existing file is
+ * present but unparseable: VS Code settings are JSONC and users hand-edit
+ * comments in, so replacing an unreadable file with defaults would destroy
+ * their settings - callers skip the write.
  */
 export function mergeUserSettings(existingJson: string | null, patch: Record<string, unknown>): string | null {
   let existing: Record<string, unknown> | null = null
@@ -39,6 +43,5 @@ export function mergeUserSettings(existingJson: string | null, patch: Record<str
     }
     if (!existing || typeof existing !== 'object') return null
   }
-  const base = existing ?? { ...SEEDED_DEFAULTS }
-  return JSON.stringify({ ...base, ...patch }, null, 2)
+  return JSON.stringify({ ...SEEDED_DEFAULTS, ...(existing ?? {}), ...patch }, null, 2)
 }

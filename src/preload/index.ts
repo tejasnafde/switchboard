@@ -540,9 +540,14 @@ const api = {
 
   // ─── Embedded IDE (code-server webview) ────────────────────────
   ide: {
-    /** Boot the per-app server (first call may download the binary) and serve `folder`. */
-    ensure: (folder: string): Promise<{ ok: true; port: number } | { ok: false; error: string }> =>
-      transport.invoke(IdeChannels.ENSURE, folder),
+    /** Boot the per-app server and serve `folder`. `theme` is seeded into the
+     *  workbench settings before first paint; `skipDownload` is the prewarm
+     *  path (never triggers the one-time binary download). */
+    ensure: (
+      folder: string,
+      opts?: { theme?: string; skipDownload?: boolean },
+    ): Promise<{ ok: true; port: number } | { ok: false; error: string }> =>
+      transport.invoke(IdeChannels.ENSURE, folder, opts),
     /** Route an open-at-line to the workbench serving `folder`. */
     open: (args: { folder: string; path: string; line?: number; endLine?: number }): Promise<{ ok: boolean }> =>
       transport.invoke(IdeChannels.OPEN, args),
