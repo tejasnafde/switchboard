@@ -1178,6 +1178,7 @@ mark.sb-search-mark.active {
      off-screen in any real workspace. Pin it to the scroll container bottom. */
   position: sticky;
   bottom: 0;
+  z-index: 1; /* above positioned bits inside scrolled rows */
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1194,6 +1195,16 @@ mark.sb-search-mark.active {
 .sidebar-add-machine:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+/* Translucent: --bg-secondary is 3% alpha, so rows scrolling under the
+   sticky button ghosted through it. Same recipe as .sb-floating-surface. */
+.theme-translucent .sidebar-add-machine {
+  background: rgba(20, 20, 20, 0.75);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+.theme-translucent .sidebar-add-machine:hover {
+  background: rgba(40, 40, 40, 0.8);
 }
 
 /* ── Add-machine modal ──────────────────────────────────────────────── */
