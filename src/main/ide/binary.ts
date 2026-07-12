@@ -47,7 +47,8 @@ async function pathBinary(): Promise<string | null> {
 export async function ensureBinary(
   userDataRoot: string,
   onDownloadProgress?: (pct: number | null) => void,
-): Promise<string> {
+  opts?: { skipDownload?: boolean },
+): Promise<string | null> {
   const installed = installedBinaryPath(userDataRoot)
   if (existsSync(installed)) return installed
 
@@ -56,6 +57,9 @@ export async function ensureBinary(
     log.info('using code-server from PATH', { path: onPath })
     return onPath
   }
+
+  // Prewarm path: never start a ~100MB download the user did not ask for.
+  if (opts?.skipDownload) return null
 
   onDownloadProgress?.(null)
   const { url, assetName } = resolveDownloadAsset(CODE_SERVER_VERSION, process.platform, process.arch)
