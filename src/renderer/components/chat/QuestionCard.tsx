@@ -101,7 +101,19 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
       const digit = parseInt(e.key, 10)
       if (Number.isNaN(digit) || digit < 1 || digit > 9) return
       const idx = digit - 1
-      if (idx >= activeQ.options.length) return
+      if (idx === activeQ.options.length) {
+        // Digit right after the last option opens the "None of the above"
+        // free-text row, so the keyboard flow can reach it too.
+        e.preventDefault()
+        setOtherOpen((prev) => prev.map((v, i) => (i === qIdx ? true : v)))
+        setSelections((prev) => prev.map((s, i) => (i === qIdx ? [] : s)))
+        if (autoAdvanceRef.current) {
+          clearTimeout(autoAdvanceRef.current)
+          autoAdvanceRef.current = null
+        }
+        return
+      }
+      if (idx > activeQ.options.length) return
       e.preventDefault()
       toggleOption(activeQ.options[idx].label)
     }
@@ -321,11 +333,12 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
         )}
       </div>
 
-      {/* Footer - multi-select, multi-question, or an in-progress free-text
-          answer. The last case matters on single single-select questions:
-          preset options auto-advance on click, but a typed Other answer has
-          no click, so without the footer there is no way to submit it. */}
-      {!answered && (activeQ.multiSelect || totalQuestions > 1 || activeOtherOpen || activeOther.trim().length > 0) && (
+      {/* Footer - ALWAYS rendered while unanswered. It used to be conditional
+          (multi-select / multi-question / free-text in progress), which left
+          single single-select questions with zero visible way to proceed
+          whenever the auto-advance path wasn't taken. A permanent Submit
+          (disabled until a pick or typed answer exists) can't strand anyone. */}
+      {!answered && (
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -336,6 +349,7 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
         }}>
           <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
             Press <kbd style={kbdStyle}>1-{Math.min(activeQ.options.length, 9)}</kbd> to pick
+            {activeQ.options.length < 9 ? <> · <kbd style={kbdStyle}>{activeQ.options.length + 1}</kbd> other</> : ''}
             {activeQ.multiSelect ? ' · toggle to multi-select' : ''}
           </span>
           <span style={{ flex: 1 }} />
