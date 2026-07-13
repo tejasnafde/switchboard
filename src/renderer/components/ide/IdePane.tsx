@@ -32,6 +32,16 @@ export function IdePane(): React.ReactElement {
   const [state, setState] = useState<PaneState>({ kind: 'idle' })
   const [retryNonce, setRetryNonce] = useState(0)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const webviewRef = useRef<HTMLElement>(null)
+
+  // Focus follows the pane: when the workbench is shown and ready, move focus
+  // INTO the webview so VS Code owns the keyboard - cmd+p (quick open), cmd+b
+  // (sidebar), and typing all land in the editor instead of the app. Leaving
+  // to the terminal refocuses the app (App.tsx), so cmd+b toggles the
+  // Switchboard sidebar there.
+  useEffect(() => {
+    if (visible && state.kind === 'ready') webviewRef.current?.focus()
+  }, [visible, state.kind])
 
   // Reflect main-pushed status: download progress while ENSURE is in flight,
   // and crash-after-ready (server died under a live webview - without this
@@ -141,7 +151,7 @@ export function IdePane(): React.ReactElement {
         </div>
       )}
       {/* Painted app-dark so the guest never flashes white while loading. */}
-      <webview src={src} partition="persist:ide" style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
+      <webview ref={webviewRef} src={src} partition="persist:ide" style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
     </div>
   )
 }
