@@ -25,6 +25,26 @@ export function emitSessionRename(sessionId: string, title: string): void {
   }
 }
 
+// ─── Session activity (message sent / turn) ───────────────────────
+// Bumps the sidebar's live ordering so the active chat jumps to the top
+// with "now" without a reload. The DB (conversations.updated_at) is already
+// maintained by saveMessage; this keeps the in-memory list in step.
+
+type ActivityListener = (sessionId: string, timestamp: number) => void
+
+const activityListeners = new Set<ActivityListener>()
+
+export function onSessionActivity(cb: ActivityListener): () => void {
+  activityListeners.add(cb)
+  return () => activityListeners.delete(cb)
+}
+
+export function emitSessionActivity(sessionId: string, timestamp: number = Date.now()): void {
+  for (const listener of activityListeners) {
+    try { listener(sessionId, timestamp) } catch { /* ignore */ }
+  }
+}
+
 // ─── Session created ──────────────────────────────────────────────
 
 export interface NewSession {

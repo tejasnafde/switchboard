@@ -109,6 +109,11 @@ export function App() {
       const layout = useLayoutStore.getState()
       layout.setRightPaneMode('terminal')
       if (!layout.terminalVisible) layout.toggleTerminal()
+      // Pull focus out of the workbench webview into the terminal so app-level
+      // keys (cmd+b toggles the Switchboard sidebar) work again.
+      const sid = useAgentStore.getState().activeSessionId
+      const pid = sid ? useTerminalStore.getState().getActivePaneId(sid) : null
+      if (pid) setTimeout(() => focusTerminal(pid), 40)
     }), [])
 
   // Workbench selections: cmd+l appends a draft pill; cmd+k (intent 'edit')
@@ -575,6 +580,13 @@ export function App() {
           e.preventDefault()
           toggleRightPaneMode()
           if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
+          // Flipping to terminal: focus it (IdePane focuses the webview on the
+          // flip to files). Keeps cmd+b/cmd+p routed to the pane you're in.
+          if (useLayoutStore.getState().rightPaneMode === 'terminal') {
+            const sid = useAgentStore.getState().activeSessionId
+            const pid = sid ? useTerminalStore.getState().getActivePaneId(sid) : null
+            if (pid) setTimeout(() => focusTerminal(pid), 40)
+          }
         }
         // ⌘+Shift+K - toggle top-level app view (chats ↔ kanban board)
         else if ((e.key === 'k' || e.key === 'K') && e.shiftKey) {

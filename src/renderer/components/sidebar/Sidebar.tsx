@@ -18,7 +18,8 @@ import { useAgentStore } from '../../stores/agent-store'
 import { useMachineStore } from '../../stores/machine-store'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 import { useLayoutStore } from '../../stores/layout-store'
-import { onSessionRename, emitSessionRename, onSessionCreated } from '../../services/session-events'
+import { onSessionRename, emitSessionRename, onSessionCreated, onSessionActivity } from '../../services/session-events'
+import { bumpSessionActivity } from './sessionActivity'
 import { serializeConversationToMarkdown, suggestedExportFilename } from '../../services/exportMarkdown'
 import { SidebarFilter } from './SidebarFilter'
 import { decideDragOutcome } from './dragLogic'
@@ -321,6 +322,14 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           ),
         }))
       )
+    })
+  }, [])
+
+  // Live activity: a sent message bumps its chat to the top with "now"
+  // without waiting for a reload (the DB updated_at is already maintained).
+  useEffect(() => {
+    return onSessionActivity((sid, ts) => {
+      setProjects((prev) => bumpSessionActivity(prev, sid, ts))
     })
   }, [])
 

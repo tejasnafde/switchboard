@@ -935,6 +935,9 @@ export function ChatInput({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+              maxWidth: '100%',
               fontSize: 11,
               color: 'var(--text-secondary)',
               background: 'var(--bg-tertiary)',
@@ -943,7 +946,9 @@ export function ChatInput({
               padding: '3px 8px',
             }}
           >
-            Agent is working in <strong>{driftSuggestion.branch}</strong>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              Agent is working in <strong>{driftSuggestion.branch}</strong>
+            </span>
             <button
               type="button"
               onClick={followDrift}

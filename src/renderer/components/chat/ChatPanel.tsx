@@ -9,7 +9,7 @@ import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
 import { generateTitle } from '@shared/auto-title'
-import { onSessionRename, emitSessionRename, onProviderEvent } from '../../services/session-events'
+import { onSessionRename, emitSessionRename, emitSessionActivity, onProviderEvent } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
 import { isAssistantStreamingEnabled } from '../../services/streamingPref'
 import { createRendererLogger } from '../../logger'
@@ -710,6 +710,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       // Optimistic status so the "thinking" indicator shows immediately -
       // real status events from the provider will override this.
       updateStatus(sessionId, 'running')
+      // Live-bump the sidebar so this chat jumps to the top with "now".
+      emitSessionActivity(sessionId, userMsg.timestamp)
 
       window.api.app.saveMessage({
         id: userMsg.id,

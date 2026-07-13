@@ -15,6 +15,7 @@
 import { getTerminalInstance } from './terminal-registry'
 import { useTerminalStore } from '../stores/terminal-store'
 import { useAgentStore } from '../stores/agent-store'
+import { emitSessionActivity } from './session-events'
 import { useDraftStore } from '../stores/draft-store'
 import { agentShortLabel } from '@shared/types'
 import { formatFileViewerContext, formatChatMessageContext } from './contextFormatters'
@@ -282,6 +283,22 @@ export async function sendQuickPrompt(
   const session = useAgentStore.getState().sessions.find((s) => s.id === agentSid)
   const runtimeMode = session?.runtimeMode
   try {
+    // Append + persist the user bubble like the normal send path does -
+    // without this, ⌘K prompts reach the agent and the reply renders, but the
+    // message the user sent never appears in the transcript.
+    const userMsg = {
+      id: `user_${Date.now()}`,
+      role: 'user' as const,
+      content: message,
+      timestamp: Date.now(),
+    }
+    useAgentStore.getState().appendMessage(agentSid, userMsg)
+    useAgentStore.getState().updateStatus(agentSid, 'running')
+    emitSessionActivity(agentSid, userMsg.timestamp)
+    window.api.app
+      .saveMessage({ id: userMsg.id, conversationId: agentSid, role: 'user', content: message })
+      .catch(() => {})
+
     await window.api.provider?.sendTurn?.(agentSid, message, runtimeMode)
     return true
   } catch {
