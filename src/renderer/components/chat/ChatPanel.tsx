@@ -359,12 +359,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
               }
             }
           }
-          if (event.usedTokens) {
-            useAgentStore.getState().setTokenUsage(tid, {
-              usedTokens: event.usedTokens,
-              maxTokens: event.maxTokens ?? null,
-            })
-          }
+          // Token usage intentionally NOT taken from turn.completed: its
+          // usedTokens is the API's input_tokens, which excludes cache reads
+          // (a tiny, misleading number that flashed onto the meter every
+          // turn). All adapters emit authoritative context_window events -
+          // that handler owns the meter.
           // Stamp wall-clock duration on the last assistant message so the
           // bubble can render "Worked for X.Xs" Cursor-style.
           if (event.durationMs !== undefined) {

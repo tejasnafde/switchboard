@@ -972,6 +972,22 @@ export class ClaudeAdapter implements ProviderAdapter {
             active.skills = parsed
             log.info(`captured ${parsed.length} claude slash commands`)
           }
+          // Push real context usage as soon as the session is up. Without
+          // this, a resumed session's meter sat on the renderer's chars/4
+          // estimate against the 200k fallback until the NEXT turn completed
+          // - wildly wrong for long sessions and big-window models.
+          if (active.query) {
+            active.query.getContextUsage().then((ctx) => {
+              active.onEvent({
+                type: 'context_window',
+                threadId,
+                usedTokens: ctx.totalTokens,
+                maxTokens: ctx.maxTokens,
+              })
+            }).catch((err) => {
+              log.warn(`getContextUsage at init failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+            })
+          }
         }
 
         if (sys.session_id) {

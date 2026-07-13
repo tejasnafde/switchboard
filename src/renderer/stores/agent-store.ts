@@ -361,7 +361,19 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   setTokenUsage: (sessionId, usage) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
-        s.id === sessionId ? { ...s, tokenUsage: usage } : s
+        s.id === sessionId
+          ? {
+              ...s,
+              tokenUsage: {
+                usedTokens: usage.usedTokens,
+                // Never clobber a known context-window max with null. Events
+                // that don't know the max (turn.completed) used to replace the
+                // real value from context_window events, dropping the meter
+                // back to the renderer's 200k fallback.
+                maxTokens: usage.maxTokens ?? s.tokenUsage?.maxTokens ?? null,
+              },
+            }
+          : s
       ),
     })),
 
