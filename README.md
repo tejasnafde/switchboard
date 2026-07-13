@@ -1,11 +1,10 @@
 # Switchboard
 
-**An open-source command center for AI agents and the development environment around them.**
+**An open-source command center for coding agents, terminals, files, and git worktrees.**
 
-Switchboard brings coding agents, real terminals, files, git worktrees, and
-remote machines into one desktop workspace. Instead of moving between an agent
-CLI, terminal tabs, an editor, and a browser, keep the work for a project in
-one place and pass live context where it is needed.
+Switchboard keeps coding agents, real terminals, files, git worktrees, and
+remote machines in one desktop workspace. Send terminal output, file ranges,
+and chat messages to an agent without leaving the project.
 
 Today, Switchboard supports **Claude Code**, **Codex**, and **OpenCode**.
 Cursor and additional providers are planned. The provider layer is designed to
@@ -17,10 +16,9 @@ grow, and contributions are welcome.
 
 ## Why Switchboard?
 
-Coding agents work best when they can see the system you are working in. In a
-typical project, that context is fragmented: an agent chat in one place,
-frontend and backend processes in terminal tabs, logs elsewhere, and a diff in
-your editor.
+In a typical project, agent context is fragmented across a chat window,
+terminal tabs, logs, and an editor. The agent does not automatically see the
+error from the running service or the branch you are testing.
 
 Switchboard connects those surfaces. Select terminal output, a file range, or a
 chat message and send it to the active agent with `Cmd+L`. Run parallel work in
@@ -32,13 +30,14 @@ than scattered across applications.
 
 ### Work with the agents you already use
 
-- Run Claude Code, Codex, or OpenCode in rendered chat panes.
+- Run Claude Code, Codex, or OpenCode in dedicated chat panes.
 - Start two agent chats side by side to compare approaches or delegate parallel
   work.
 - Choose permission modes per chat: plan, sandbox, accept edits, or full
   access. Plan mode is enforced by Switchboard, not just requested from the
   provider.
-- Resume and search Claude Code and Codex history from the project sidebar.
+- Resume Claude Code sessions, and search Claude Code and Codex history from
+  the project sidebar.
 - Use skills and slash commands exposed by the active provider.
 
 ### Give agents useful context
@@ -73,7 +72,7 @@ than scattered across applications.
 | --- | --- | --- |
 | Claude Code | Supported | Agent SDK integration, sessions, permissions, skills, images, and remote machines |
 | Codex | Supported | `codex app-server` integration, sessions, permissions, skills, and images |
-| OpenCode | Supported | Agent Client Protocol integration, dynamic models, and skills |
+| OpenCode | Supported | Agent Client Protocol integration, dynamic models, skills, and images |
 | Cursor | Planned | Not implemented yet. No delivery date. |
 | Other agents | Planned | New adapters are welcome through the provider interface. |
 
