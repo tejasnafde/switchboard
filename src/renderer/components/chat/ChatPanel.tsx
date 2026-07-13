@@ -359,11 +359,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
               }
             }
           }
-          // Token usage intentionally NOT taken from turn.completed: its
-          // usedTokens is the API's input_tokens, which excludes cache reads
-          // (a tiny, misleading number that flashed onto the meter every
-          // turn). All adapters emit authoritative context_window events -
-          // that handler owns the meter.
+          // Token usage comes from context_window events only - this event's
+          // usedTokens is input_tokens sans cache reads, misleadingly tiny.
           // Stamp wall-clock duration on the last assistant message so the
           // bubble can render "Worked for X.Xs" Cursor-style.
           if (event.durationMs !== undefined) {

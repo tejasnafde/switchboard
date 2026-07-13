@@ -366,10 +366,8 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
               ...s,
               tokenUsage: {
                 usedTokens: usage.usedTokens,
-                // Never clobber a known context-window max with null. Events
-                // that don't know the max (turn.completed) used to replace the
-                // real value from context_window events, dropping the meter
-                // back to the renderer's 200k fallback.
+                // Merge: an event that doesn't know the max must not clobber
+                // a known window size back to the 200k fallback.
                 maxTokens: usage.maxTokens ?? s.tokenUsage?.maxTokens ?? null,
               },
             }

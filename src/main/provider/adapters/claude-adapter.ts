@@ -972,10 +972,8 @@ export class ClaudeAdapter implements ProviderAdapter {
             active.skills = parsed
             log.info(`captured ${parsed.length} claude slash commands`)
           }
-          // Push real context usage as soon as the session is up. Without
-          // this, a resumed session's meter sat on the renderer's chars/4
-          // estimate against the 200k fallback until the NEXT turn completed
-          // - wildly wrong for long sessions and big-window models.
+          // Seed real context usage at init - resumed sessions otherwise
+          // show the renderer's rough estimate until the next turn ends.
           if (active.query) {
             active.query.getContextUsage().then((ctx) => {
               active.onEvent({
