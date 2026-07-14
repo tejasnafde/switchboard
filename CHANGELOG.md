@@ -2,6 +2,45 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-14 - Embedded IDE: TTL kill, server recycle, extension popups
+
+### Added
+- **Configurable idle TTL** (Settings → General → Embedded IDE). The IDE server is killed after it sits hidden this long (default lowered 15min → **5min**); reopening relaunches in ~2s. IdePane re-reads the setting live on save.
+- **Server recycle after N distinct folders** (default 5): once the single code-server has served that many folders in a session, the next switch restarts it, reclaiming the per-folder extension hosts it had accumulated. Bounds the CPU/RAM growth from actively hopping many worktrees.
+- **`<webview>` popups now open in the system browser** (`app.on('web-contents-created')` → `setWindowOpenHandler` → `shell.openExternal`). A bare webview no-ops `window.open`, so extension "Open in browser" / OAuth "Authorize" buttons inside code-server previously did nothing; they now launch the real browser.
+
+### Notes
+- Extension OAuth (e.g. Bitbucket) that failed to "take" was most likely a stale extension host - left over from a previous folder/workbench - squatting the extension's localhost callback port, so the callback updated an invisible host. The TTL + recycle above clear those, so doing the sign-in in a freshly-opened IDE within a single chat now completes.
+
+### Fixed
+- **Keeping the IDE pane (⌘⇧E) open while hopping across chats no longer thrashes CPU/RAM.** The webview's `?folder=` was re-pointed on every `activeSessionId` change, and each change fully reloads the workbench (a fresh extension host per folder). `IdePane` now debounces the navigated folder (500ms) and only advances it while the pane is visible, so fast chat-hopping collapses into a single navigation and hopping with the IDE hidden doesn't churn at all. (Deliberately visiting many distinct worktrees over a session can still accumulate extension hosts inside code-server - that reaping is code-server-side.)
+
+
+
+### Fixed
+- **The "Agent is working in <branch> - Follow?" banner now fires when an agent calls Claude Code's `EnterWorktree` tool**, instead of only noticing a few commands later once the agent happened to *write* into the new worktree. `worktree-drift.ts` recognizes `EnterWorktree`, stashes its `name`, and resolves it against `git worktree list` (by branch or directory basename) on the next event. The detection is still deferred one event (Claude emits no `tool.completed`, and the worktree may have just been created), so a long agent pause can still delay the banner by the think time between tools - but reads now trigger it too, not just writes.
+
+## 2026-07-14 - Unbounded pane resize + stuck-divider fix
+
+### Changed
+- **Removed the max-width cap on the sidebar and right (terminal/IDE) panes.** The old hard caps (500px sidebar, 800px terminal) are gone. A pane can now be stretched as far as you like - the only bound is viewport-relative (`window.innerWidth - the other pane - a 240px chat minimum`) so the chat and the opposite pane's own resize handle always stay on screen. ⌘B / ⌘J still hide the panes entirely. `layout-store` exports `paneMaxWidth()` as the single source of truth; App.tsx recomputes it on window resize.
+
+### Fixed
+- **Resize dividers could get stuck in "resize mode."** If the pointer crossed into the code-server `<webview>` (the embedded IDE) or the xterm canvas mid-drag, pointer capture was lost, the terminating `pointerup` never arrived, and the `col-resize` cursor + `user-select: none` + `pointerEvents` overrides stayed frozen until reload. Fixes, applied to all three handles (main `ResizeHandle`, terminal `PaneResizeHandle`, dual-chat `ChatSplitHandle`):
+  - A full-viewport shield overlay (`src/renderer/services/dragOverlay.ts`) is raised for the duration of a drag, so the pointer can't reach a child frame and capture is never lost in the first place.
+  - A `lostpointercapture` listener ends the drag cleanly as a fallback if capture is yanked anyway.
+  - `ChatSplitHandle` (previously `pointerup`-only) gained `pointercancel` + `lostpointercapture` + a window-`blur` fallback and a single idempotent teardown.
+
+### Tests
+- `drag-overlay.test.ts` (overlay create/idempotent/cleanup), expanded `layout-store.test.ts` (viewport-relative max, old caps lifted, opposite-pane accounting), guardrails in `resize-handle-wiring.test.ts`, and a real Playwright/Electron e2e (`e2e/resize.e2e.mjs`, `SB_RESIZE_E2E=1`) that drags the sidebar past 500px and asserts the cursor/overlay never stick after a normal release or an interrupted (blur) drag.
+
+### Changed
+- **The terminal-template feature is now called "launch configs"** everywhere, freeing the word "workspace" to mean only the sidebar project grouping (`project_workspaces`). The feature previously carried two names - "workspace" (the config file/types/store/IPC) and "template" (picker, planner, reducer, DB column) - now unified under "launch config".
+  - **On-disk file:** `.switchboard/workspace.yaml` → `.switchboard/launch-config.yaml`. The old filename is still read as a fallback, and the legacy top-level `templates:` key is still parsed as an alias for the new `configs:` map, so existing projects keep working until their next save (which writes the new name/shape). Existing local `workspace.yaml` files were migrated in place.
+  - **DB:** `session_layouts.template_name` → `launch_config_name`, renamed in place via `ALTER TABLE ... RENAME COLUMN` so pinned per-chat selections survive the upgrade.
+  - **Code:** types (`LaunchConfigFile`/`LaunchConfig`/…), shared parser (`src/shared/launch-config.ts`), main store (`src/main/launch-config/launch-config-store.ts`), IPC channels (`GET_LAUNCH_CONFIG`/`SAVE_LAUNCH_CONFIG`/`app:launch-config-changed`), preload bridge, renderer component (`LaunchConfigPicker`), services, and Settings tab ("Launch Configs") all renamed. The sidebar workspace-grouping concept was deliberately left untouched.
+  - Back-compat parsing is covered by a new test; full suite green (1217 tests).
+
 ## 2026-07-14 - Fix rename flows dead in Electron (window.prompt)
 
 ### Fixed
