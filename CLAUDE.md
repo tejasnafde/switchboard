@@ -217,12 +217,12 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - Single-instance lock
 - Native app menu (`⌘,` for settings, standard Edit/View/Window)
 - File-based logger at `~/Library/Application Support/switchboard/logs/`
-- Workspace YAML parser (runtime hydration on launch)
+- Launch-config YAML parser (runtime hydration on launch)
 
 ## What's NOT working yet
 
 - **Code-signing** - unsigned macOS arm64/x64 `.dmg`/`.zip` and Windows `.exe`/`.zip` builds ship via `npm run dist:*`; `electron-updater` is wired (`main/updater.ts`, auto + manual). Awaiting Apple Developer cert.
-- **workspace.yaml hot-reload** + `on_start` wait/then orchestration - partial; runtime hydration works
+- **launch-config.yaml hot-reload** + `on_start` wait/then orchestration - partial; runtime hydration works
 - **Cursor import** (read `state.vscdb`) - not started
 - **Codex / OpenCode fork resume** - fork creates the new conversation but only Claude resumes real context; Codex/OpenCode start cold (audit record / summary only)
 - **Provider hot-swap context preservation** - swapping agent mid-chat keeps the visible stream but the new adapter starts with zero context (see `docs/notes/roadmap-deferred.md` #4)
@@ -306,7 +306,7 @@ src/
 │   │       ├── opencode/env.ts        # Shared env-probe helper
 │   │       └── question-answers.ts    # Shape AskUserQuestion answers for SDK wire format
 │   ├── terminal/pty-manager.ts · path-access.ts · updater.ts · logger.ts
-│   └── workspace/workspace-store.ts   # workspace.yaml hydration
+│   └── launch-config/launch-config-store.ts   # launch-config.yaml hydration (+ legacy workspace.yaml read)
 ├── preload/index.ts                   # Typed window.api (SwitchboardAPI), strongly-typed provider.onEvent
 ├── renderer/
 │   ├── App.tsx                        # Flat flex-row layout, all keybindings, view switching

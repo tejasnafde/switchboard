@@ -1,21 +1,21 @@
 /**
- * Local recently-used tracker for workspace templates.
+ * Local recently-used tracker for launch configs.
  *
  * Drives the picker dropdown's sort order: most-recently-applied
- * templates float to the top per project. Backed by `localStorage`
+ * launch configs float to the top per project. Backed by `localStorage`
  * because (a) it's a UI-affordance preference, (b) it's per-laptop,
  * not per-account, and (c) it doesn't warrant a SQLite migration for
  * what's effectively a sort key.
  *
  * Schema:
- *   key: `sb-template-usage`
- *   value: { [projectPath]: { [templateName]: lastUsedMs } }
+ *   key: `sb-launch-config-usage`
+ *   value: { [projectPath]: { [launchConfigName]: lastUsedMs } }
  *
- * `default` is special-cased: it sorts first when no other template
+ * `default` is special-cased: it sorts first when no other launch config
  * has been used in the project, so a fresh project still gets a
  * sensible top-of-list pick.
  */
-const STORAGE_KEY = 'sb-template-usage'
+const STORAGE_KEY = 'sb-launch-config-usage'
 
 type UsageMap = Record<string, Record<string, number>>
 
@@ -38,27 +38,27 @@ function write(map: UsageMap): void {
   }
 }
 
-export function recordTemplateUsage(projectPath: string, templateName: string): void {
+export function recordLaunchConfigUsage(projectPath: string, launchConfigName: string): void {
   const map = read()
   if (!map[projectPath]) map[projectPath] = {}
-  map[projectPath][templateName] = Date.now()
+  map[projectPath][launchConfigName] = Date.now()
   write(map)
 }
 
-export function getTemplateUsage(projectPath: string): Record<string, number> {
+export function getLaunchConfigUsage(projectPath: string): Record<string, number> {
   return read()[projectPath] ?? {}
 }
 
 /**
- * Sort templates by recency desc, then alphabetical for templates
+ * Sort launch configs by recency desc, then alphabetical for launch configs
  * with no recorded use. `default` is pinned to the top of the
  * "no recorded use" bucket so first-time users see it first.
  */
-export function sortTemplatesByRecency(
+export function sortLaunchConfigsByRecency(
   names: string[],
   projectPath: string,
 ): string[] {
-  const usage = getTemplateUsage(projectPath)
+  const usage = getLaunchConfigUsage(projectPath)
   return [...names].sort((a, b) => {
     const ua = usage[a] ?? 0
     const ub = usage[b] ?? 0

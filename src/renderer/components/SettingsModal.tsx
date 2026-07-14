@@ -4,13 +4,13 @@ import { emitSessionRename } from '../services/session-events'
 import { FEATURE_TOUR_STEPS } from './onboarding/featureRegistry'
 import type { UpdateStatus } from '@shared/update-status'
 import {
-  parseWorkspaceConfig,
-  serializeWorkspaceConfig,
-  serializeTemplateBody,
-  parseTemplateBodyYaml,
-  type WorkspaceConfig,
-} from '@shared/workspace-config'
-import { templateListReducer } from '../services/templateListReducer'
+  parseLaunchConfigFile,
+  serializeLaunchConfigFile,
+  serializeLaunchConfigBody,
+  parseLaunchConfigBodyYaml,
+  type LaunchConfigFile,
+} from '@shared/launch-config'
+import { launchConfigListReducer } from '../services/launchConfigListReducer'
 import {
   areNotificationsEnabled,
   setNotificationsEnabled,
@@ -47,7 +47,7 @@ interface ArchivedConv {
   updated_at: number
 }
 
-const DEFAULT_WORKSPACE_YAML = `# Terminals to spawn when a chat in this project is opened.
+const DEFAULT_LAUNCH_CONFIG_YAML = `# Terminals to spawn when a chat in this project is opened.
 # Each terminal is given a cwd (relative to project root) and an optional
 # on_start command that runs after the shell initializes.
 #
@@ -63,29 +63,32 @@ const DEFAULT_WORKSPACE_YAML = `# Terminals to spawn when a chat in this project
 terminals: []
 `
 
-interface WorkspaceProject {
+// Settings tab ids render capitalized as-is; only multi-word tabs need a label.
+const TAB_LABELS: Record<string, string> = { launchConfigs: 'Launch Configs' }
+
+interface LaunchConfigProjectRow {
   path: string
   name: string
 }
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const { theme, setTheme } = useThemeStore()
-  const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'workspaces' | 'archived' | 'tour' | 'about'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'launchConfigs' | 'archived' | 'tour' | 'about'>('general')
   const [archived, setArchived] = useState<ArchivedConv[]>([])
   const [loadingArchived, setLoadingArchived] = useState(false)
-  const [workspaceProjects, setWorkspaceProjects] = useState<WorkspaceProject[]>([])
-  const [selectedWorkspace, setSelectedWorkspace] = useState<string | null>(null)
-  // Parsed config drives the template list. The body editor is a per-template
+  const [launchConfigProjects, setLaunchConfigProjectRows] = useState<LaunchConfigProjectRow[]>([])
+  const [selectedLaunchConfigProject, setSelectedLaunchConfigProject] = useState<string | null>(null)
+  // Parsed config drives the launch config list. The body editor is a per-launch config
   // YAML buffer; on save we feed it back into the reducer + serialize.
-  const [workspaceConfig, setWorkspaceConfig] = useState<WorkspaceConfig>({ terminals: [], templates: { default: { terminals: [] } } })
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('default')
+  const [launchConfigFile, setLaunchConfigFile] = useState<LaunchConfigFile>({ terminals: [], configs: { default: { terminals: [] } } })
+  const [selectedLaunchConfig, setSelectedLaunchConfig] = useState<string>('default')
   const [bodyYaml, setBodyYaml] = useState('')
   const [bodyDirty, setBodyDirty] = useState(false)
-  const [workspaceSaveState, setWorkspaceSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
-  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
-  const [renamingTemplate, setRenamingTemplate] = useState<string | null>(null)
+  const [configSaveState, setConfigSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
+  const [configError, setConfigError] = useState<string | null>(null)
+  const [renamingLaunchConfig, setRenamingLaunchConfig] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [addingTemplate, setAddingTemplate] = useState(false)
+  const [addingLaunchConfig, setAddingLaunchConfig] = useState(false)
   const [addValue, setAddValue] = useState('')
 
   const loadArchived = useCallback(async () => {
@@ -104,143 +107,143 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     if (open && activeTab === 'archived') loadArchived()
   }, [open, activeTab, loadArchived])
 
-  // Workspaces tab - load project list once
+  // Launch Configs tab - load project list once
   useEffect(() => {
-    if (!open || activeTab !== 'workspaces') return
-    window.api.app.getProjects().then((rows: WorkspaceProject[]) => {
-      setWorkspaceProjects(rows ?? [])
-      if (rows?.length && !selectedWorkspace) setSelectedWorkspace(rows[0].path)
+    if (!open || activeTab !== 'launchConfigs') return
+    window.api.app.getProjects().then((rows: LaunchConfigProjectRow[]) => {
+      setLaunchConfigProjectRows(rows ?? [])
+      if (rows?.length && !selectedLaunchConfigProject) setSelectedLaunchConfigProject(rows[0].path)
     }).catch(() => {})
-  }, [open, activeTab, selectedWorkspace])
+  }, [open, activeTab, selectedLaunchConfigProject])
 
   // When selected project changes, load + parse its yaml
   useEffect(() => {
-    if (!selectedWorkspace) return
-    window.api.app.getWorkspaceConfig(selectedWorkspace).then((yaml: string | null) => {
-      const text = yaml ?? DEFAULT_WORKSPACE_YAML
-      let parsed: WorkspaceConfig
+    if (!selectedLaunchConfigProject) return
+    window.api.app.getLaunchConfig(selectedLaunchConfigProject).then((yaml: string | null) => {
+      const text = yaml ?? DEFAULT_LAUNCH_CONFIG_YAML
+      let parsed: LaunchConfigFile
       try {
-        parsed = parseWorkspaceConfig(text)
+        parsed = parseLaunchConfigFile(text)
       } catch {
-        parsed = { terminals: [], templates: { default: { terminals: [] } } }
+        parsed = { terminals: [], configs: { default: { terminals: [] } } }
       }
       // Ensure `default` always exists - the reducer + lifecycle assume it.
-      if (!parsed.templates || !parsed.templates.default) {
+      if (!parsed.configs || !parsed.configs.default) {
         parsed = {
           ...parsed,
-          templates: { default: { terminals: parsed.terminals ?? [], rows: parsed.rows }, ...(parsed.templates ?? {}) },
+          configs: { default: { terminals: parsed.terminals ?? [], rows: parsed.rows }, ...(parsed.configs ?? {}) },
         }
       }
-      setWorkspaceConfig(parsed)
-      setSelectedTemplate('default')
-      setBodyYaml(serializeTemplateBody(parsed.templates!.default))
+      setLaunchConfigFile(parsed)
+      setSelectedLaunchConfig('default')
+      setBodyYaml(serializeLaunchConfigBody(parsed.configs!.default))
       setBodyDirty(false)
-      setWorkspaceSaveState('idle')
-      setWorkspaceError(null)
+      setConfigSaveState('idle')
+      setConfigError(null)
     }).catch(() => {
-      const fresh: WorkspaceConfig = { terminals: [], templates: { default: { terminals: [] } } }
-      setWorkspaceConfig(fresh)
-      setSelectedTemplate('default')
-      setBodyYaml(serializeTemplateBody(fresh.templates!.default))
+      const fresh: LaunchConfigFile = { terminals: [], configs: { default: { terminals: [] } } }
+      setLaunchConfigFile(fresh)
+      setSelectedLaunchConfig('default')
+      setBodyYaml(serializeLaunchConfigBody(fresh.configs!.default))
       setBodyDirty(false)
     })
-  }, [selectedWorkspace])
+  }, [selectedLaunchConfigProject])
 
-  // When the user picks a different template name, swap the body editor.
+  // When the user picks a different launch config name, swap the body editor.
   useEffect(() => {
-    const tpl = workspaceConfig.templates?.[selectedTemplate]
+    const tpl = launchConfigFile.configs?.[selectedLaunchConfig]
     if (!tpl) return
-    setBodyYaml(serializeTemplateBody(tpl))
+    setBodyYaml(serializeLaunchConfigBody(tpl))
     setBodyDirty(false)
-    setWorkspaceError(null)
-  }, [selectedTemplate, workspaceConfig])
+    setConfigError(null)
+  }, [selectedLaunchConfig, launchConfigFile])
 
-  const persist = useCallback(async (config: WorkspaceConfig) => {
-    if (!selectedWorkspace) return
-    setWorkspaceSaveState('saving')
-    setWorkspaceError(null)
+  const persist = useCallback(async (config: LaunchConfigFile) => {
+    if (!selectedLaunchConfigProject) return
+    setConfigSaveState('saving')
+    setConfigError(null)
     try {
-      const text = serializeWorkspaceConfig(config)
-      await window.api.app.saveWorkspaceConfig(selectedWorkspace, text)
-      setWorkspaceConfig(config)
-      setWorkspaceSaveState('saved')
-      setTimeout(() => setWorkspaceSaveState('idle'), 1500)
+      const text = serializeLaunchConfigFile(config)
+      await window.api.app.saveLaunchConfig(selectedLaunchConfigProject, text)
+      setLaunchConfigFile(config)
+      setConfigSaveState('saved')
+      setTimeout(() => setConfigSaveState('idle'), 1500)
     } catch (e) {
-      setWorkspaceSaveState('error')
-      setWorkspaceError(e instanceof Error ? e.message : String(e))
+      setConfigSaveState('error')
+      setConfigError(e instanceof Error ? e.message : String(e))
     }
-  }, [selectedWorkspace])
+  }, [selectedLaunchConfigProject])
 
   const handleSaveBody = useCallback(async () => {
     let body
     try {
-      body = parseTemplateBodyYaml(bodyYaml)
+      body = parseLaunchConfigBodyYaml(bodyYaml)
     } catch (e) {
-      setWorkspaceError(e instanceof Error ? e.message : 'Invalid YAML')
-      setWorkspaceSaveState('error')
+      setConfigError(e instanceof Error ? e.message : 'Invalid YAML')
+      setConfigSaveState('error')
       return
     }
     if (!body) {
-      setWorkspaceError('Template body must define `terminals:` or `rows:`.')
-      setWorkspaceSaveState('error')
+      setConfigError('Launch config body must define `terminals:` or `rows:`.')
+      setConfigSaveState('error')
       return
     }
-    const result = templateListReducer(workspaceConfig, { type: 'replaceTemplateBody', name: selectedTemplate, body })
+    const result = launchConfigListReducer(launchConfigFile, { type: 'replaceLaunchConfigBody', name: selectedLaunchConfig, body })
     if (!result.ok) {
-      setWorkspaceError(result.error)
-      setWorkspaceSaveState('error')
+      setConfigError(result.error)
+      setConfigSaveState('error')
       return
     }
     await persist(result.config)
     setBodyDirty(false)
-  }, [bodyYaml, workspaceConfig, selectedTemplate, persist])
+  }, [bodyYaml, launchConfigFile, selectedLaunchConfig, persist])
 
-  const handleAddTemplate = useCallback(async () => {
+  const handleAddLaunchConfig = useCallback(async () => {
     const name = addValue.trim()
-    if (!name) { setAddingTemplate(false); return }
-    const result = templateListReducer(workspaceConfig, { type: 'addTemplate', name })
+    if (!name) { setAddingLaunchConfig(false); return }
+    const result = launchConfigListReducer(launchConfigFile, { type: 'addLaunchConfig', name })
     if (!result.ok) {
-      setWorkspaceError(result.error)
+      setConfigError(result.error)
       return
     }
     await persist(result.config)
-    setSelectedTemplate(name)
-    setAddingTemplate(false)
+    setSelectedLaunchConfig(name)
+    setAddingLaunchConfig(false)
     setAddValue('')
-  }, [addValue, workspaceConfig, persist])
+  }, [addValue, launchConfigFile, persist])
 
-  const handleRenameTemplate = useCallback(async (from: string) => {
+  const handleRenameLaunchConfig = useCallback(async (from: string) => {
     const to = renameValue.trim()
-    if (!to || to === from) { setRenamingTemplate(null); return }
-    const result = templateListReducer(workspaceConfig, { type: 'renameTemplate', from, to })
+    if (!to || to === from) { setRenamingLaunchConfig(null); return }
+    const result = launchConfigListReducer(launchConfigFile, { type: 'renameLaunchConfig', from, to })
     if (!result.ok) {
-      setWorkspaceError(result.error)
+      setConfigError(result.error)
       return
     }
     await persist(result.config)
-    if (selectedTemplate === from) setSelectedTemplate(to)
-    setRenamingTemplate(null)
+    if (selectedLaunchConfig === from) setSelectedLaunchConfig(to)
+    setRenamingLaunchConfig(null)
     setRenameValue('')
-  }, [renameValue, workspaceConfig, selectedTemplate, persist])
+  }, [renameValue, launchConfigFile, selectedLaunchConfig, persist])
 
-  const handleDeleteTemplate = useCallback(async (name: string) => {
-    const result = templateListReducer(workspaceConfig, { type: 'deleteTemplate', name })
+  const handleDeleteLaunchConfig = useCallback(async (name: string) => {
+    const result = launchConfigListReducer(launchConfigFile, { type: 'deleteLaunchConfig', name })
     if (!result.ok) {
-      setWorkspaceError(result.error)
+      setConfigError(result.error)
       return
     }
     await persist(result.config)
-    if (selectedTemplate === name) setSelectedTemplate('default')
-  }, [workspaceConfig, selectedTemplate, persist])
+    if (selectedLaunchConfig === name) setSelectedLaunchConfig('default')
+  }, [launchConfigFile, selectedLaunchConfig, persist])
 
-  const templateNames = useMemo(() => {
-    const names = Object.keys(workspaceConfig.templates ?? {})
+  const launchConfigNames = useMemo(() => {
+    const names = Object.keys(launchConfigFile.configs ?? {})
     return names.sort((a, b) => {
       if (a === 'default') return -1
       if (b === 'default') return 1
       return a.localeCompare(b)
     })
-  }, [workspaceConfig])
+  }, [launchConfigFile])
 
   const handleUnarchive = useCallback(async (conv: ArchivedConv) => {
     setArchived((prev) => prev.filter((c) => c.id !== conv.id))
@@ -329,7 +332,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           padding: '0 18px',
           gap: '0',
         }}>
-          {(['general', 'providers', 'workspaces', 'archived', 'tour', 'about'] as const).map((tab) => (
+          {(['general', 'providers', 'launchConfigs', 'archived', 'tour', 'about'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -346,7 +349,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 transition: 'color 0.12s',
               }}
             >
-              {tab}
+              {TAB_LABELS[tab] ?? tab}
             </button>
           ))}
         </div>
@@ -434,24 +437,24 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
 
           {activeTab === 'providers' && <ProvidersTab />}
 
-          {activeTab === 'workspaces' && (
+          {activeTab === 'launchConfigs' && (
             <div>
-              <SettingsSection title="Project Workspace Templates">
+              <SettingsSection title="Project Launch Configs">
                 <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '10px', lineHeight: 1.6 }}>
-                  Each project defines named terminal templates in <code style={{ fontFamily: 'var(--font-mono)' }}>&lt;project&gt;/.switchboard/workspace.yaml</code>.
-                  New chats start from the <code style={{ fontFamily: 'var(--font-mono)' }}>default</code> template;
-                  switch templates per chat from the terminal strip header.
+                  Each project defines named terminal configs in <code style={{ fontFamily: 'var(--font-mono)' }}>&lt;project&gt;/.switchboard/launch-config.yaml</code>.
+                  New chats start from the <code style={{ fontFamily: 'var(--font-mono)' }}>default</code> launch config;
+                  switch configs per chat from the terminal strip header.
                 </div>
 
-                {workspaceProjects.length === 0 ? (
+                {launchConfigProjects.length === 0 ? (
                   <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
                     No projects added yet. Click "+ Add Project" in the sidebar first.
                   </div>
                 ) : (
                   <>
                     <select
-                      value={selectedWorkspace ?? ''}
-                      onChange={(e) => setSelectedWorkspace(e.target.value)}
+                      value={selectedLaunchConfigProject ?? ''}
+                      onChange={(e) => setSelectedLaunchConfigProject(e.target.value)}
                       style={{
                         width: '100%',
                         padding: '6px 8px',
@@ -464,13 +467,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                         outline: 'none',
                       }}
                     >
-                      {workspaceProjects.map((p) => (
+                      {launchConfigProjects.map((p) => (
                         <option key={p.path} value={p.path}>{p.name}</option>
                       ))}
                     </select>
 
                     <div style={{ display: 'flex', gap: '10px', minHeight: '260px' }}>
-                      {/* Left rail: template list */}
+                      {/* Left rail: launch config list */}
                       <div style={{
                         width: '140px',
                         flexShrink: 0,
@@ -482,9 +485,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                         flexDirection: 'column',
                         gap: '2px',
                       }}>
-                        {templateNames.map((name) => {
-                          const isSelected = name === selectedTemplate
-                          const isRenaming = renamingTemplate === name
+                        {launchConfigNames.map((name) => {
+                          const isSelected = name === selectedLaunchConfig
+                          const isRenaming = renamingLaunchConfig === name
                           return (
                             <div key={name} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
                               {isRenaming ? (
@@ -493,10 +496,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                                   value={renameValue}
                                   onChange={(e) => setRenameValue(e.target.value)}
                                   onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleRenameTemplate(name)
-                                    if (e.key === 'Escape') { setRenamingTemplate(null); setRenameValue('') }
+                                    if (e.key === 'Enter') handleRenameLaunchConfig(name)
+                                    if (e.key === 'Escape') { setRenamingLaunchConfig(null); setRenameValue('') }
                                   }}
-                                  onBlur={() => handleRenameTemplate(name)}
+                                  onBlur={() => handleRenameLaunchConfig(name)}
                                   style={{
                                     flex: 1,
                                     padding: '4px 6px',
@@ -511,10 +514,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                                 />
                               ) : (
                                 <button
-                                  onClick={() => setSelectedTemplate(name)}
+                                  onClick={() => setSelectedLaunchConfig(name)}
                                   onDoubleClick={() => {
                                     if (name === 'default') return
-                                    setRenamingTemplate(name)
+                                    setRenamingLaunchConfig(name)
                                     setRenameValue(name)
                                   }}
                                   title={name === 'default' ? 'default \u2014 implicit fallback (cannot rename / delete)' : 'Double-click to rename'}
@@ -540,9 +543,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                               {!isRenaming && name !== 'default' && (
                                 <button
                                   onClick={() => {
-                                    if (confirm(`Delete template "${name}"?`)) handleDeleteTemplate(name)
+                                    if (confirm(`Delete launch config "${name}"?`)) handleDeleteLaunchConfig(name)
                                   }}
-                                  title="Delete template"
+                                  title="Delete launch config"
                                   style={{
                                     background: 'none',
                                     border: 'none',
@@ -560,17 +563,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                           )
                         })}
 
-                        {addingTemplate ? (
+                        {addingLaunchConfig ? (
                           <input
                             autoFocus
                             value={addValue}
                             onChange={(e) => setAddValue(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') handleAddTemplate()
-                              if (e.key === 'Escape') { setAddingTemplate(false); setAddValue('') }
+                              if (e.key === 'Enter') handleAddLaunchConfig()
+                              if (e.key === 'Escape') { setAddingLaunchConfig(false); setAddValue('') }
                             }}
-                            onBlur={handleAddTemplate}
-                            placeholder="template name"
+                            onBlur={handleAddLaunchConfig}
+                            placeholder="launch config name"
                             style={{
                               padding: '5px 8px',
                               fontSize: '11.5px',
@@ -585,7 +588,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                           />
                         ) : (
                           <button
-                            onClick={() => { setAddingTemplate(true); setAddValue('') }}
+                            onClick={() => { setAddingLaunchConfig(true); setAddValue('') }}
                             style={{
                               marginTop: '2px',
                               padding: '5px 8px',
@@ -599,7 +602,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                               textAlign: 'left',
                             }}
                           >
-                            + new template
+                            + new launch config
                           </button>
                         )}
                       </div>
@@ -608,7 +611,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                         <textarea
                           value={bodyYaml}
-                          onChange={(e) => { setBodyYaml(e.target.value); setBodyDirty(true); setWorkspaceSaveState('idle'); setWorkspaceError(null) }}
+                          onChange={(e) => { setBodyYaml(e.target.value); setBodyDirty(true); setConfigSaveState('idle'); setConfigError(null) }}
                           spellCheck={false}
                           style={{
                             width: '100%',
@@ -634,17 +637,17 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                           fontSize: '11px',
                           gap: '8px',
                         }}>
-                          <span style={{ color: workspaceError ? 'var(--error)' : 'var(--text-muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={workspaceError ?? undefined}>
-                            {workspaceError
-                              ? workspaceError
-                              : workspaceSaveState === 'saving' ? 'Saving\u2026'
-                              : workspaceSaveState === 'saved' ? 'Saved'
-                              : bodyDirty ? `Editing "${selectedTemplate}" \u2014 unsaved`
-                              : `Editing "${selectedTemplate}"`}
+                          <span style={{ color: configError ? 'var(--error)' : 'var(--text-muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={configError ?? undefined}>
+                            {configError
+                              ? configError
+                              : configSaveState === 'saving' ? 'Saving\u2026'
+                              : configSaveState === 'saved' ? 'Saved'
+                              : bodyDirty ? `Editing "${selectedLaunchConfig}" \u2014 unsaved`
+                              : `Editing "${selectedLaunchConfig}"`}
                           </span>
                           <button
                             onClick={handleSaveBody}
-                            disabled={!bodyDirty || workspaceSaveState === 'saving'}
+                            disabled={!bodyDirty || configSaveState === 'saving'}
                             style={{
                               padding: '5px 14px',
                               borderRadius: '4px',

@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
-  parseWorkspaceConfig,
-  type WorkspaceConfig,
-  type WorkspaceTerminal,
-} from '../../src/shared/workspace-config'
+  parseLaunchConfigFile,
+  type LaunchConfigFile,
+  type LaunchConfigTerminal,
+} from '../../src/shared/launch-config'
 
 describe('workspace config parser', () => {
   // ── Valid configs ─────────────────────────────────────────────
@@ -15,7 +15,7 @@ terminals:
     cwd: "."
     on_start: "npm run dev"
 `
-    const config = parseWorkspaceConfig(yaml)
+    const config = parseLaunchConfigFile(yaml)
     expect(config.terminals).toHaveLength(1)
     expect(config.terminals[0].label).toBe('server')
     expect(config.terminals[0].cwd).toBe('.')
@@ -33,7 +33,7 @@ terminals:
     on_start: "go run ."
   - label: logs
 `
-    const config = parseWorkspaceConfig(yaml)
+    const config = parseLaunchConfigFile(yaml)
     expect(config.terminals).toHaveLength(3)
     expect(config.terminals[0].label).toBe('frontend')
     expect(config.terminals[1].cwd).toBe('./backend')
@@ -55,7 +55,7 @@ rows:
       - label: logs
         on_start: "tail -f logs/app.log"
 `
-    const config = parseWorkspaceConfig(yaml)
+    const config = parseLaunchConfigFile(yaml)
     expect(config.rows).toBeDefined()
     expect(config.rows).toHaveLength(2)
     expect(config.rows![0].panes).toHaveLength(2)
@@ -71,7 +71,7 @@ rows:
 terminals:
   - label: shell
 `
-    const config = parseWorkspaceConfig(yaml)
+    const config = parseLaunchConfigFile(yaml)
     expect(config.terminals).toHaveLength(1)
     expect(config.terminals[0].label).toBe('shell')
     expect(config.terminals[0].cwd).toBeUndefined()
@@ -81,7 +81,7 @@ terminals:
   // ── Edge cases ────────────────────────────────────────────────
 
   it('returns empty config for empty yaml', () => {
-    const config = parseWorkspaceConfig('')
+    const config = parseLaunchConfigFile('')
     expect(config.terminals).toEqual([])
     expect(config.rows).toBeUndefined()
   })
@@ -91,7 +91,7 @@ terminals:
 something_else: true
 random: 42
 `
-    const config = parseWorkspaceConfig(yaml)
+    const config = parseLaunchConfigFile(yaml)
     expect(config.terminals).toEqual([])
   })
 
@@ -103,7 +103,7 @@ terminals:
   - 42
   - label: also valid
 `
-    const config = parseWorkspaceConfig(yaml)
+    const config = parseLaunchConfigFile(yaml)
     expect(config.terminals).toHaveLength(2)
     expect(config.terminals[0].label).toBe('valid')
     expect(config.terminals[1].label).toBe('also valid')
@@ -114,7 +114,7 @@ terminals:
 terminals:
   - cwd: "/some/path"
 `
-    const config = parseWorkspaceConfig(yaml)
+    const config = parseLaunchConfigFile(yaml)
     expect(config.terminals).toHaveLength(1)
     expect(config.terminals[0].label).toBe('Terminal 1')
   })
@@ -127,67 +127,67 @@ terminals:
   - label: "unclosed
     [invalid yaml
 `
-    expect(() => parseWorkspaceConfig(yaml)).toThrow()
+    expect(() => parseLaunchConfigFile(yaml)).toThrow()
   })
 
   it('returns empty config when terminals is not an array', () => {
     const yaml = `
 terminals: "not an array"
 `
-    const config = parseWorkspaceConfig(yaml)
+    const config = parseLaunchConfigFile(yaml)
     expect(config.terminals).toEqual([])
   })
 
   // ── Serialization ─────────────────────────────────────────────
 
-  it('serializeWorkspaceConfig produces valid yaml', async () => {
-    const { serializeWorkspaceConfig } = await import('../../src/shared/workspace-config')
-    const config: WorkspaceConfig = {
+  it('serializeLaunchConfigFile produces valid yaml', async () => {
+    const { serializeLaunchConfigFile } = await import('../../src/shared/launch-config')
+    const config: LaunchConfigFile = {
       terminals: [
         { label: 'server', cwd: '.', on_start: 'npm run dev' },
         { label: 'test' },
       ],
     }
-    const yaml = serializeWorkspaceConfig(config)
+    const yaml = serializeLaunchConfigFile(config)
     // Round-trip
-    const parsed = parseWorkspaceConfig(yaml)
+    const parsed = parseLaunchConfigFile(yaml)
     expect(parsed.terminals).toHaveLength(2)
     expect(parsed.terminals[0].label).toBe('server')
     expect(parsed.terminals[0].on_start).toBe('npm run dev')
     expect(parsed.terminals[1].label).toBe('test')
   })
 
-  // ── Named templates (multi-template support) ─────────────────
+  // ── Named configs (multi-template support) ─────────────────
 
-  it('top-level terminals materialize as templates.default (back-compat)', () => {
+  it('top-level terminals materialize as configs.default (back-compat)', () => {
     const yaml = `
 terminals:
   - label: dev
     on_start: "npm run dev"
 `
-    const config = parseWorkspaceConfig(yaml)
-    expect(config.templates).toBeDefined()
-    expect(config.templates!.default).toBeDefined()
-    expect(config.templates!.default.terminals).toHaveLength(1)
-    expect(config.templates!.default.terminals[0].label).toBe('dev')
+    const config = parseLaunchConfigFile(yaml)
+    expect(config.configs).toBeDefined()
+    expect(config.configs!.default).toBeDefined()
+    expect(config.configs!.default.terminals).toHaveLength(1)
+    expect(config.configs!.default.terminals[0].label).toBe('dev')
   })
 
-  it('top-level rows materialize as templates.default (back-compat)', () => {
+  it('top-level rows materialize as configs.default (back-compat)', () => {
     const yaml = `
 rows:
   - panes:
       - label: a
       - label: b
 `
-    const config = parseWorkspaceConfig(yaml)
-    expect(config.templates!.default.rows).toBeDefined()
-    expect(config.templates!.default.rows).toHaveLength(1)
-    expect(config.templates!.default.rows![0].panes).toHaveLength(2)
+    const config = parseLaunchConfigFile(yaml)
+    expect(config.configs!.default.rows).toBeDefined()
+    expect(config.configs!.default.rows).toHaveLength(1)
+    expect(config.configs!.default.rows![0].panes).toHaveLength(2)
   })
 
-  it('parses templates: { name: { terminals } } block into named templates', () => {
+  it('parses configs: { name: { terminals } } block into named configs', () => {
     const yaml = `
-templates:
+configs:
   backend:
     terminals:
       - label: api
@@ -199,18 +199,18 @@ templates:
       - label: logs
         on_start: tail -f logs/app.log
 `
-    const config = parseWorkspaceConfig(yaml)
-    expect(config.templates).toBeDefined()
-    expect(Object.keys(config.templates!).sort()).toEqual(['backend', 'monitoring'])
-    expect(config.templates!.backend.terminals).toHaveLength(2)
-    expect(config.templates!.backend.terminals[0].label).toBe('api')
-    expect(config.templates!.backend.terminals[0].cwd).toBe('services/api')
-    expect(config.templates!.monitoring.terminals[0].on_start).toBe('tail -f logs/app.log')
+    const config = parseLaunchConfigFile(yaml)
+    expect(config.configs).toBeDefined()
+    expect(Object.keys(config.configs!).sort()).toEqual(['backend', 'monitoring'])
+    expect(config.configs!.backend.terminals).toHaveLength(2)
+    expect(config.configs!.backend.terminals[0].label).toBe('api')
+    expect(config.configs!.backend.terminals[0].cwd).toBe('services/api')
+    expect(config.configs!.monitoring.terminals[0].on_start).toBe('tail -f logs/app.log')
   })
 
-  it('parses templates with rows layout', () => {
+  it('parses configs with rows layout', () => {
     const yaml = `
-templates:
+configs:
   split:
     rows:
       - panes:
@@ -219,52 +219,70 @@ templates:
           - label: bottom-left
           - label: bottom-right
 `
-    const config = parseWorkspaceConfig(yaml)
-    expect(config.templates!.split.rows).toHaveLength(2)
-    expect(config.templates!.split.rows![1].panes).toHaveLength(2)
+    const config = parseLaunchConfigFile(yaml)
+    expect(config.configs!.split.rows).toHaveLength(2)
+    expect(config.configs!.split.rows![1].panes).toHaveLength(2)
   })
 
-  it('mixes top-level (default) with named templates', () => {
+  it('mixes top-level (default) with named configs', () => {
     const yaml = `
 terminals:
   - label: shell
-templates:
+configs:
   backend:
     terminals:
       - label: api
 `
-    const config = parseWorkspaceConfig(yaml)
-    expect(config.templates!.default.terminals[0].label).toBe('shell')
-    expect(config.templates!.backend.terminals[0].label).toBe('api')
+    const config = parseLaunchConfigFile(yaml)
+    expect(config.configs!.default.terminals[0].label).toBe('shell')
+    expect(config.configs!.backend.terminals[0].label).toBe('api')
   })
 
   it('serializes a multi-template config and round-trips', async () => {
-    const { serializeWorkspaceConfig } = await import('../../src/shared/workspace-config')
-    const config: WorkspaceConfig = {
+    const { serializeLaunchConfigFile } = await import('../../src/shared/launch-config')
+    const config: LaunchConfigFile = {
       terminals: [{ label: 'shell' }],
-      templates: {
+      configs: {
         default: { terminals: [{ label: 'shell' }] },
         backend: { terminals: [{ label: 'api', cwd: 'services/api' }] },
         monitoring: { terminals: [{ label: 'logs', on_start: 'tail -f logs/app.log' }] },
       },
     }
-    const yaml = serializeWorkspaceConfig(config)
-    const parsed = parseWorkspaceConfig(yaml)
-    expect(Object.keys(parsed.templates!).sort()).toEqual(['backend', 'default', 'monitoring'])
-    expect(parsed.templates!.backend.terminals[0].cwd).toBe('services/api')
-    expect(parsed.templates!.monitoring.terminals[0].on_start).toBe('tail -f logs/app.log')
+    const yaml = serializeLaunchConfigFile(config)
+    const parsed = parseLaunchConfigFile(yaml)
+    expect(Object.keys(parsed.configs!).sort()).toEqual(['backend', 'default', 'monitoring'])
+    expect(parsed.configs!.backend.terminals[0].cwd).toBe('services/api')
+    expect(parsed.configs!.monitoring.terminals[0].on_start).toBe('tail -f logs/app.log')
   })
 
   it('skips invalid template entries (non-object) gracefully', () => {
     const yaml = `
-templates:
+configs:
   good:
     terminals:
       - label: a
   bad: "not an object"
   alsobad: 42
 `
-    const config = parseWorkspaceConfig(yaml)
-    expect(Object.keys(config.templates!)).toEqual(['good'])
+    const config = parseLaunchConfigFile(yaml)
+    expect(Object.keys(config.configs!)).toEqual(['good'])
+  })
+
+  // ── Back-compat: pre-rename `templates:` key still parses ─────
+  it('accepts the legacy `templates:` key as an alias for `configs:`', () => {
+    const yaml = `
+templates:
+  default:
+    terminals:
+      - label: shell
+  backend:
+    terminals:
+      - label: api
+        cwd: services/api
+`
+    const config = parseLaunchConfigFile(yaml)
+    expect(Object.keys(config.configs!).sort()).toEqual(['backend', 'default'])
+    expect(config.configs!.default.terminals[0].label).toBe('shell')
+    expect(config.configs!.backend.terminals[0].cwd).toBe('services/api')
   })
 })

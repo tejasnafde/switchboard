@@ -100,11 +100,11 @@ function activePaneInWindow(layout: SessionLayout): string | null {
 interface TerminalStore {
   layouts: Record<string, SessionLayout>
   /**
-   * Per-session workspace-template selection. Set when the session
-   * hydrates from a named template; surfaced by `TemplatePicker` and
-   * persisted into `session_layouts.template_name`.
+   * Per-session launch-config selection. Set when the session
+   * hydrates from a named launch config; surfaced by `LaunchConfigPicker` and
+   * persisted into `session_layouts.launch_config_name`.
    */
-  templateNames: Record<string, string>
+  launchConfigNames: Record<string, string>
   /** Deprecated - kept for backward compat in older callers */
   globalActivePaneId: string | null
   activeSessionId: string | null
@@ -144,14 +144,14 @@ interface TerminalStore {
   setActiveSession: (sessionId: string | null) => void
   clearSessionLayout: (sessionId: string) => void
 
-  // Template tracking - used by the per-chat picker chip
-  getSessionTemplateName: (sessionId: string) => string | null
-  setSessionTemplateName: (sessionId: string, name: string | null) => void
+  // Launch-config tracking - used by the per-chat picker chip
+  getSessionLaunchConfigName: (sessionId: string) => string | null
+  setSessionLaunchConfigName: (sessionId: string, name: string | null) => void
 }
 
 export const useTerminalStore = create<TerminalStore>((set, get) => ({
   layouts: {},
-  templateNames: {},
+  launchConfigNames: {},
   globalActivePaneId: null,
   activeSessionId: null,
 
@@ -548,16 +548,16 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
     })
   },
 
-  // ── Template tracking ────────────────────────────────────────
+  // ── Launch-config tracking ────────────────────────────────────────
 
-  getSessionTemplateName: (sessionId) => get().templateNames[sessionId] ?? null,
+  getSessionLaunchConfigName: (sessionId) => get().launchConfigNames[sessionId] ?? null,
 
-  setSessionTemplateName: (sessionId, name) => {
+  setSessionLaunchConfigName: (sessionId, name) => {
     set((state) => {
-      const next = { ...state.templateNames }
+      const next = { ...state.launchConfigNames }
       if (name == null) delete next[sessionId]
       else next[sessionId] = name
-      return { templateNames: next }
+      return { launchConfigNames: next }
     })
   },
 }))
