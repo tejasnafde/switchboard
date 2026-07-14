@@ -9,6 +9,7 @@ import {
   bulkSaveMessages,
   listSessionIdsForThread,
   getMessagesForConversation,
+  messageRowsToChatMessages,
 } from '../db/database'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
 import { JsonlParser } from '../agent/jsonl-parser'
@@ -466,16 +467,7 @@ async function loadSourceMessages(
   // authoritative - JSONL parse can miss when the rollout file is in a
   // non-standard location (Codex `agent_*` ids), when we haven't wired up
   // on-disk parsing (OpenCode), or when the thread hasn't compacted yet.
-  return getMessagesForConversation(source.id).map((row) => ({
-    id: row.id,
-    role: row.role as ChatMessage['role'],
-    content: row.content,
-    timestamp: row.timestamp,
-    toolCalls: row.tool_calls ? tryParseJson(row.tool_calls) : undefined,
-    images: row.images ? tryParseJson(row.images) : undefined,
-    displayBody: row.display_body ?? undefined,
-    pillsMeta: row.pills_meta ? tryParseJson(row.pills_meta) : undefined,
-  }))
+  return messageRowsToChatMessages(getMessagesForConversation(source.id))
 }
 
 function makeForkTitle(sourceTitle: string): string {
@@ -491,10 +483,6 @@ function makeForkTitle(sourceTitle: string): string {
  */
 function stripForkSuffix(title: string): string {
   return title.replace(/ · fork(\/[^·]*)?$/, '').trim()
-}
-
-function tryParseJson<T>(s: string): T | undefined {
-  try { return JSON.parse(s) as T } catch { return undefined }
 }
 
 function toMessageRow(m: ChatMessage): {

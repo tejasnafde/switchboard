@@ -54,8 +54,8 @@ import {
   getDisplayBodyEnrichments,
   getSystemMarkerMessages,
   getMessagesForConversation,
+  messageRowsToChatMessages,
 } from '../db/database'
-import type { MessageRow } from '../db/database'
 import { listOauthDirsForAgent } from '../db/providerInstances'
 import { defaultClaudeDir } from '../provider/claude-session-migrate'
 import { listRemoteClaudeConfigDirs } from '../provider/remote-gate'
@@ -66,35 +66,6 @@ import { readWorkspaceConfig, writeWorkspaceConfig, watchWorkspaceConfig, setWor
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
 
 const log = createLogger('ipc:app')
-
-function safeJsonParse<T>(raw: string | null): T | undefined {
-  if (!raw) return undefined
-  try {
-    return JSON.parse(raw) as T
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Map persisted message rows to ChatMessage. Used as the recovery path when a
- * conversation's provider JSONL is gone (e.g. Claude Code pruned its projects
- * dir) but the messages are still mirrored in SQLite. Rows written by live
- * turns carry tool_calls/images/display_body; rows indexed from JSONL only have
- * content - both round-trip through the optional fields below.
- */
-function dbRowsToChatMessages(rows: MessageRow[]): ChatMessage[] {
-  return rows.map((r) => ({
-    id: r.id,
-    role: r.role as ChatMessage['role'],
-    content: r.content,
-    timestamp: r.timestamp,
-    ...(r.tool_calls ? { toolCalls: safeJsonParse<ChatMessage['toolCalls']>(r.tool_calls) } : {}),
-    ...(r.images ? { images: safeJsonParse<ChatMessage['images']>(r.images) } : {}),
-    ...(r.display_body ? { displayBody: r.display_body } : {}),
-    ...(r.pills_meta ? { pillsMeta: safeJsonParse<ChatMessage['pillsMeta']>(r.pills_meta) } : {}),
-  }))
-}
 
 /**
  * All Claude config roots: every enabled oauth_dir + the default ~/.claude.
@@ -397,7 +368,7 @@ export function registerAppHandlers(host: BackendHost): void {
       // messages are mirrored in SQLite - recover from the DB so the
       // conversation still renders instead of showing an empty chat.
       if (deduped.length === 0) {
-        const dbMsgs = dbRowsToChatMessages(getMessagesForConversation(conversationId))
+        const dbMsgs = messageRowsToChatMessages(getMessagesForConversation(conversationId))
         if (dbMsgs.length > 0) {
           log.info(`load-by-id: ${conversationId} → no JSONL, recovered ${dbMsgs.length} messages from DB`)
           return { messages: dbMsgs, meta }
@@ -438,7 +409,7 @@ export function registerAppHandlers(host: BackendHost): void {
         return true
       })
       if (dedupedCodex.length === 0) {
-        const dbMsgs = dbRowsToChatMessages(getMessagesForConversation(conversationId))
+        const dbMsgs = messageRowsToChatMessages(getMessagesForConversation(conversationId))
         if (dbMsgs.length > 0) {
           log.info(`load-by-id (codex): ${conversationId} → no JSONL, recovered ${dbMsgs.length} messages from DB`)
           return { messages: dbMsgs, meta }

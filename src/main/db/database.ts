@@ -8,6 +8,7 @@ import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { applyKanbanArchiveSideEffect } from '@shared/kanbanArchive'
 import type { RuntimeMode } from '@shared/provider-events'
 import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
+import type { ChatMessage } from '@shared/types'
 
 const log = createLogger('db')
 
@@ -963,6 +964,29 @@ export function getMessagesForConversation(conversationId: string): MessageRow[]
   return getDb().prepare(
     'SELECT * FROM messages WHERE conversation_id = ? ORDER BY timestamp ASC'
   ).all(conversationId) as MessageRow[]
+}
+
+function tryParseJson<T>(s: string): T | undefined {
+  try { return JSON.parse(s) as T } catch { return undefined }
+}
+
+/**
+ * Map persisted message rows to ChatMessage. The messages table mirrors every
+ * streamed turn (saveMessage) plus JSONL-indexed history (bulkSaveMessages), so
+ * this is the authoritative source when a conversation's provider JSONL is
+ * missing - fork assembly and JSONL-less session loads both reuse it.
+ */
+export function messageRowsToChatMessages(rows: MessageRow[]): ChatMessage[] {
+  return rows.map((row) => ({
+    id: row.id,
+    role: row.role as ChatMessage['role'],
+    content: row.content,
+    timestamp: row.timestamp,
+    toolCalls: row.tool_calls ? tryParseJson(row.tool_calls) : undefined,
+    images: row.images ? tryParseJson(row.images) : undefined,
+    displayBody: row.display_body ?? undefined,
+    pillsMeta: row.pills_meta ? tryParseJson(row.pills_meta) : undefined,
+  }))
 }
 
 /** Pill enrichments for user messages, keyed by content. See
