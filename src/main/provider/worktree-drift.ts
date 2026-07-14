@@ -24,6 +24,23 @@ const WRITE_TOOLS = new Set(['write', 'edit', 'multiedit', 'notebookedit', 'appl
  *  to 'Bash'), opencode ACP kind 'execute'. */
 const COMMAND_TOOLS = new Set(['bash', 'execute', 'shell'])
 
+/** Claude Code's dedicated worktree tool. Its input names a worktree/branch
+ *  (not a path), so we resolve the name against `git worktree list` on the
+ *  next event - catches the move even when the agent only reads in the new
+ *  worktree, instead of waiting for the first write a few commands later. */
+const WORKTREE_ENTER_TOOLS = new Set(['enterworktree'])
+
+/** The worktree/branch name from an EnterWorktree call, or null. */
+export function extractEnterWorktreeName(toolName: string, input: unknown): string | null {
+  if (!WORKTREE_ENTER_TOOLS.has(firstToken(toolName))) return null
+  if (typeof input !== 'object' || input === null) return null
+  const obj = input as Record<string, unknown>
+  for (const key of ['name', 'branch', 'worktree']) {
+    if (typeof obj[key] === 'string' && obj[key]) return obj[key] as string
+  }
+  return null
+}
+
 /**
  * OpenCode's ACP adapter emits toolName as `title || kind`, and titles are
  * free-form ('Write src/foo.ts'). Match on the first token so display-shaped
@@ -162,6 +179,8 @@ export function parseWorktreeList(stdout: string): WorktreeRef[] {
 interface PendingCommands {
   paths: string[]
   needFresh: boolean
+  /** EnterWorktree names to resolve against the fresh worktree list. */
+  enterNames: string[]
 }
 
 /**
@@ -196,19 +215,31 @@ export class DriftWatcher {
     // finished - flush it first.
     const flushed = await this.flushPending(threadId, sessionFolder)
 
+    const enterName = extractEnterWorktreeName(toolName, input)
+    if (enterName) {
+      const existing = this.pending.get(threadId)
+      this.pending.set(threadId, {
+        paths: existing?.paths ?? [],
+        needFresh: true, // the worktree may have just been created
+        enterNames: [...(existing?.enterNames ?? []), enterName],
+      })
+      return flushed
+    }
+
     const command = extractCommandPaths(toolName, input, sessionFolder)
     if (command.paths.length > 0) {
       const existing = this.pending.get(threadId)
       this.pending.set(threadId, {
         paths: [...(existing?.paths ?? []), ...command.paths].slice(-50),
         needFresh: (existing?.needFresh ?? false) || command.mutatesWorktrees,
+        enterNames: existing?.enterNames ?? [],
       })
       return flushed
     }
 
     const writes = extractWritePaths(toolName, input)
     if (writes.length === 0) return flushed
-    return flushed ?? (await this.check(threadId, sessionFolder, writes, false))
+    return flushed ?? (await this.check(threadId, sessionFolder, writes, false, []))
   }
 
   /** Flush any stashed command paths, then re-arm the per-turn dedupe. */
@@ -234,27 +265,36 @@ export class DriftWatcher {
     const stash = this.pending.get(threadId)
     if (!stash) return null
     this.pending.delete(threadId)
-    return this.check(threadId, sessionFolder, stash.paths, stash.needFresh)
+    return this.check(threadId, sessionFolder, stash.paths, stash.needFresh, stash.enterNames)
   }
 
   private async check(
     threadId: string,
     sessionFolder: string,
     paths: string[],
-    fresh: boolean
+    fresh: boolean,
+    enterNames: string[]
   ): Promise<RuntimeWorktreeDriftEvent | null> {
-    if (paths.length === 0) return null
+    if (paths.length === 0 && enterNames.length === 0) return null
     const listed = await this.listWorktrees(sessionFolder, fresh)
     // Single-worktree repos cannot drift - the overwhelmingly common case.
     if (listed.length <= 1) return null
     const worktrees = listed.map((wt) => ({ ...wt, path: toPosix(wt.path) }))
+
+    // Resolve EnterWorktree names to worktree paths (branch or dir basename).
+    const enterPaths = enterNames
+      .map((name) => worktrees.find((w) => w.branch === name || w.path.split('/').pop() === name)?.path)
+      .filter((p): p is string => !!p)
 
     let home = this.homeCache.get(threadId)
     if (!home) {
       home = toPosix(await this.normalize(sessionFolder))
       this.homeCache.set(threadId, home)
     }
-    const normalizedPaths = await Promise.all(paths.map(async (p) => toPosix(await this.normalize(p))))
+    const normalizedPaths = [
+      ...enterPaths, // already canonical from `git worktree list`
+      ...(await Promise.all(paths.map(async (p) => toPosix(await this.normalize(p))))),
+    ]
     const drift = detectDrift(home, normalizedPaths, worktrees)
     if (!drift) return null
 

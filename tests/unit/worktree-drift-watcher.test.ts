@@ -98,6 +98,23 @@ describe('DriftWatcher against a real repo', () => {
     expect(await watcher.onToolStarted('t4', repo, 'Read c.txt', { path: join(nestedWt, 'c.txt') })).toBeNull()
   })
 
+  it('EnterWorktree: resolves the worktree name (dir basename) and fires on the next event', async () => {
+    // Deferred like commands - the worktree may have just been created.
+    expect(await watcher.onToolStarted('t9', repo, 'EnterWorktree', { name: 'feat-x' })).toBeNull()
+    // Any next event flushes the stash; even a read triggers detection now.
+    const ev = await watcher.onToolStarted('t9', repo, 'Read x', { path: join(nestedWt, 'x.ts') })
+    expect(ev?.worktreePath).toBe(posix(nestedWt))
+    expect(ev?.branch).toBe('fork/feat-x')
+    await watcher.onTurnCompleted('t9', repo)
+  })
+
+  it('EnterWorktree: matches by branch name and flushes on turn end', async () => {
+    expect(await watcher.onToolStarted('t10', repo, 'EnterWorktree', { name: 'fork/tmp-y' })).toBeNull()
+    const ev = await watcher.onTurnCompleted('t10', repo)
+    expect(ev?.worktreePath).toBe(posix(tmpWt))
+    expect(ev?.branch).toBe('fork/tmp-y')
+  })
+
   it('command flow WITHOUT tool.completed (claude): stash on Bash start, flush on the next event', async () => {
     const lateWt = mkdtempSync(join(tmpdir(), 'sb-drift-late-'))
     rmSync(lateWt, { recursive: true, force: true })
