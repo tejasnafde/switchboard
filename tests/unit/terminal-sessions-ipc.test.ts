@@ -1,16 +1,17 @@
 /**
- * Pure helper tests for terminal session injection and agentType stamping.
+ * Pure helper tests for DB-only session injection and agentType stamping.
  *
- * Terminal sessions are DB-only - they have no JSONL file so the file
- * scanner never finds them. `synthesizeTerminalSessions` builds synthetic
- * SessionSummary entries from conversations rows; `stampAgentTypes` stamps
- * `agentType` onto file-scanned sessions that already have a DB record.
+ * `synthesizeDbOnlySessions` builds synthetic SessionSummary entries for any
+ * conversation the file scanner missed - terminal sessions (never had a JSONL)
+ * and provider conversations whose JSONL was pruned/rotated away (Claude Code
+ * cleans out ~/.claude/projects). `stampAgentTypes` stamps `agentType` onto
+ * file-scanned sessions that already have a DB record.
  *
  * These helpers power SCAN_SESSIONS and GET_PROJECTS in app.ts.
  */
 import { describe, it, expect } from 'vitest'
 import {
-  synthesizeTerminalSessions,
+  synthesizeDbOnlySessions,
   stampAgentTypes,
 } from '../../src/main/ipc/terminal-sessions'
 import type { ConversationRow } from '../../src/main/db/database'
@@ -48,15 +49,15 @@ function makeSession(over: Partial<SessionSummary> & { id: string }): SessionSum
   }
 }
 
-// ─── synthesizeTerminalSessions ───────────────────────────────────────────────
+// ─── synthesizeDbOnlySessions ─────────────────────────────────────────────────
 
-describe('synthesizeTerminalSessions', () => {
+describe('synthesizeDbOnlySessions', () => {
   it('returns a SessionSummary for each terminal row', () => {
     const rows = [
       makeRow({ id: 't1', agent_type: 'terminal', title: 'claude session', created_at: 5000 }),
       makeRow({ id: 't2', agent_type: 'terminal', title: 'codex session', created_at: 6000 }),
     ]
-    const result = synthesizeTerminalSessions(rows, new Set(), new Set())
+    const result = synthesizeDbOnlySessions(rows, new Set(), new Set())
     expect(result).toHaveLength(2)
     expect(result[0]).toMatchObject({
       id: 't1',
@@ -70,26 +71,50 @@ describe('synthesizeTerminalSessions', () => {
     expect(result[1].id).toBe('t2')
   })
 
-  it('excludes non-terminal rows', () => {
+  it('surfaces provider rows whose JSONL the scanner did not find (the someday bug)', () => {
+    // Claude Code pruned ~/.claude/projects/<encoded>, so scannedIds is empty
+    // even though the conversation and its messages live in the DB.
     const rows = [
-      makeRow({ id: 'c1', agent_type: 'claude-code' }),
-      makeRow({ id: 'x1', agent_type: 'codex' }),
-      makeRow({ id: 't1', agent_type: 'terminal' }),
+      makeRow({ id: 'agent_1', agent_type: 'claude-code', title: 'v0', session_id: 'uuid-a' }),
+      makeRow({ id: 'agent_2', agent_type: 'codex', title: 'Bug fixing', session_id: null }),
     ]
-    const result = synthesizeTerminalSessions(rows, new Set(), new Set())
-    expect(result).toHaveLength(1)
-    expect(result[0].id).toBe('t1')
+    const result = synthesizeDbOnlySessions(rows, new Set(), new Set())
+    expect(result).toHaveLength(2)
+    expect(result.map((s) => s.id)).toEqual(['agent_1', 'agent_2'])
   })
 
-  it('excludes archived terminal sessions', () => {
+  it('maps agent_type to the correct SessionSource', () => {
     const rows = [
-      makeRow({ id: 't1', agent_type: 'terminal' }),
-      makeRow({ id: 't2', agent_type: 'terminal' }),
+      makeRow({ id: 'a', agent_type: 'claude-code' }),
+      makeRow({ id: 'b', agent_type: 'codex' }),
+      makeRow({ id: 'c', agent_type: 'opencode' }),
+      makeRow({ id: 'd', agent_type: 'terminal' }),
     ]
-    const archived = new Set(['t1'])
-    const result = synthesizeTerminalSessions(rows, archived, new Set())
+    const result = synthesizeDbOnlySessions(rows, new Set(), new Set())
+    expect(result.map((s) => s.source)).toEqual(['claude-code', 'codex', 'opencode', 'switchboard'])
+    expect(result.map((s) => s.agentType)).toEqual(['claude-code', 'codex', 'opencode', 'terminal'])
+  })
+
+  it('excludes a conversation whose session_id was scanned (no dup with disk entry)', () => {
+    // Live Claude conversation: DB id is agent_*, disk JSONL is the session UUID.
+    // Matching only on c.id would duplicate it; matching session_id dedups.
+    const rows = [
+      makeRow({ id: 'agent_live', agent_type: 'claude-code', session_id: 'uuid-on-disk' }),
+      makeRow({ id: 'agent_gone', agent_type: 'claude-code', session_id: 'uuid-pruned' }),
+    ]
+    const scanned = new Set(['uuid-on-disk'])
+    const result = synthesizeDbOnlySessions(rows, new Set(), scanned)
+    expect(result.map((s) => s.id)).toEqual(['agent_gone'])
+  })
+
+  it('excludes archived rows', () => {
+    const rows = [
+      makeRow({ id: 'c1', agent_type: 'claude-code' }),
+      makeRow({ id: 'c2', agent_type: 'claude-code' }),
+    ]
+    const result = synthesizeDbOnlySessions(rows, new Set(['c1']), new Set())
     expect(result).toHaveLength(1)
-    expect(result[0].id).toBe('t2')
+    expect(result[0].id).toBe('c2')
   })
 
   it('excludes IDs already present in scannedIds (dedup)', () => {
@@ -97,16 +122,22 @@ describe('synthesizeTerminalSessions', () => {
       makeRow({ id: 't1', agent_type: 'terminal' }),
       makeRow({ id: 't2', agent_type: 'terminal' }),
     ]
-    const scanned = new Set(['t1'])
-    const result = synthesizeTerminalSessions(rows, new Set(), scanned)
+    const result = synthesizeDbOnlySessions(rows, new Set(), new Set(['t1']))
     expect(result).toHaveLength(1)
     expect(result[0].id).toBe('t2')
   })
 
   it('excludes a session that is both archived and scanned (belt-and-suspenders)', () => {
     const rows = [makeRow({ id: 't1', agent_type: 'terminal' })]
-    const result = synthesizeTerminalSessions(rows, new Set(['t1']), new Set(['t1']))
+    const result = synthesizeDbOnlySessions(rows, new Set(['t1']), new Set(['t1']))
     expect(result).toHaveLength(0)
+  })
+
+  it('does not treat a null session_id as a scanned match', () => {
+    // scannedIds should never contain an empty string, but guard anyway.
+    const rows = [makeRow({ id: 'c1', agent_type: 'claude-code', session_id: null })]
+    const result = synthesizeDbOnlySessions(rows, new Set(), new Set(['']))
+    expect(result).toHaveLength(1)
   })
 
   it('propagates worktree fields when set', () => {
@@ -118,25 +149,20 @@ describe('synthesizeTerminalSessions', () => {
         worktree_branch: 'fork/bar',
       }),
     ]
-    const result = synthesizeTerminalSessions(rows, new Set(), new Set())
+    const result = synthesizeDbOnlySessions(rows, new Set(), new Set())
     expect(result[0].worktreePath).toBe('/repos/foo/.switchboard/worktrees/bar')
     expect(result[0].worktreeBranch).toBe('fork/bar')
   })
 
   it('sets worktreePath/worktreeBranch to null when row has none', () => {
     const rows = [makeRow({ id: 't1', agent_type: 'terminal' })]
-    const result = synthesizeTerminalSessions(rows, new Set(), new Set())
+    const result = synthesizeDbOnlySessions(rows, new Set(), new Set())
     expect(result[0].worktreePath).toBeNull()
     expect(result[0].worktreeBranch).toBeNull()
   })
 
-  it('returns empty array when there are no terminal rows', () => {
-    const rows = [makeRow({ id: 'c1', agent_type: 'claude-code' })]
-    expect(synthesizeTerminalSessions(rows, new Set(), new Set())).toHaveLength(0)
-  })
-
   it('returns empty array for empty input', () => {
-    expect(synthesizeTerminalSessions([], new Set(), new Set())).toHaveLength(0)
+    expect(synthesizeDbOnlySessions([], new Set(), new Set())).toHaveLength(0)
   })
 })
 
