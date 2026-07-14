@@ -93,7 +93,7 @@ export function App() {
     picker: sessionPickerOpen,
     quickPrompt: quickPromptOpen,
   }
-  const [templateToast, setTemplateToast] = useState<string | null>(null)
+  const [launchConfigToast, setLaunchConfigToast] = useState<string | null>(null)
   const [tourOpen, setTourOpen] = useState(false)
   const [tourStartAt, setTourStartAt] = useState(0)
 
@@ -184,23 +184,23 @@ export function App() {
     return () => window.removeEventListener('tour:replay', handler)
   }, [])
 
-  // Toast when a session's template was deleted from workspace.yaml and
+  // Toast when a session's launch config was deleted from launch-config.yaml and
   // we fell back to default. Auto-dismisses after 4s.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ removedName: string; fallbackName: string }>).detail
       if (!detail) return
-      setTemplateToast(`Template "${detail.removedName}" was removed; using ${detail.fallbackName}`)
+      setLaunchConfigToast(`Launch config "${detail.removedName}" was removed; using ${detail.fallbackName}`)
     }
-    window.addEventListener('sb-template-fallback', handler)
-    return () => window.removeEventListener('sb-template-fallback', handler)
+    window.addEventListener('sb-launch-config-fallback', handler)
+    return () => window.removeEventListener('sb-launch-config-fallback', handler)
   }, [])
 
   useEffect(() => {
-    if (!templateToast) return
-    const t = setTimeout(() => setTemplateToast(null), 4000)
+    if (!launchConfigToast) return
+    const t = setTimeout(() => setLaunchConfigToast(null), 4000)
     return () => clearTimeout(t)
-  }, [templateToast])
+  }, [launchConfigToast])
 
   // Load bookmarks on mount
   useEffect(() => { void useBookmarkStore.getState().load() }, [])
@@ -992,7 +992,7 @@ export function App() {
         startAt={tourStartAt}
         onTryIt={handleTryIt}
       />
-      {templateToast && (
+      {launchConfigToast && (
         <div
           style={{
             position: 'fixed',
@@ -1010,7 +1010,7 @@ export function App() {
             maxWidth: '480px',
           }}
         >
-          {templateToast}
+          {launchConfigToast}
         </div>
       )}
     </div>

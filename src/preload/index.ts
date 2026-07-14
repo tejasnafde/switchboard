@@ -169,10 +169,10 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
     setVibrancy: (enabled: boolean) =>
       transport.invoke(AppChannels.SET_VIBRANCY, enabled),
-    saveSessionLayout: (sessionId: string, layoutJson: string, templateName?: string | null) =>
-      transport.invoke(AppChannels.SAVE_SESSION_LAYOUT, sessionId, layoutJson, templateName ?? null),
+    saveSessionLayout: (sessionId: string, layoutJson: string, launchConfigName?: string | null) =>
+      transport.invoke(AppChannels.SAVE_SESSION_LAYOUT, sessionId, layoutJson, launchConfigName ?? null),
     getSessionLayout: (sessionId: string) =>
-      transport.invoke(AppChannels.GET_SESSION_LAYOUT, sessionId) as Promise<{ layoutJson: string; templateName: string | null } | null>,
+      transport.invoke(AppChannels.GET_SESSION_LAYOUT, sessionId) as Promise<{ layoutJson: string; launchConfigName: string | null } | null>,
     searchMessages: (query: string) =>
       transport.invoke(AppChannels.SEARCH_MESSAGES, query),
     archiveConversation: (id: string, projectPath?: string, title?: string) =>
@@ -183,12 +183,12 @@ const api = {
       transport.invoke(AppChannels.GET_ARCHIVED_CONVERSATIONS),
     exportMarkdown: (params: { suggestedFilename: string; content: string }) =>
       transport.invoke(AppChannels.EXPORT_MARKDOWN, params),
-    getWorkspaceConfig: (projectPath: string) =>
-      transport.invoke(AppChannels.GET_WORKSPACE_CONFIG, projectPath),
-    saveWorkspaceConfig: (projectPath: string, yamlContent: string) =>
-      transport.invoke(AppChannels.SAVE_WORKSPACE_CONFIG, projectPath, yamlContent),
-    onWorkspaceChanged: (callback: (projectPath: string) => void) =>
-      transport.on<[string]>('app:workspace-changed', (projectPath) => callback(projectPath)),
+    getLaunchConfig: (projectPath: string) =>
+      transport.invoke(AppChannels.GET_LAUNCH_CONFIG, projectPath),
+    saveLaunchConfig: (projectPath: string, yamlContent: string) =>
+      transport.invoke(AppChannels.SAVE_LAUNCH_CONFIG, projectPath, yamlContent),
+    onLaunchConfigChanged: (callback: (projectPath: string) => void) =>
+      transport.on<[string]>('app:launch-config-changed', (projectPath) => callback(projectPath)),
     /**
      * Manual "check for updates" trigger. Returns the most recent
      * status the main process saw (or `unsupported` in dev). Live

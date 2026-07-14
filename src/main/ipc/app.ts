@@ -62,7 +62,7 @@ import { listRemoteClaudeConfigDirs } from '../provider/remote-gate'
 import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
 import { JsonlParser } from '../agent/jsonl-parser'
 import { forkConversation } from '../conversations/fork'
-import { readWorkspaceConfig, writeWorkspaceConfig, watchWorkspaceConfig, setWorkspaceEmitter } from '../workspace/workspace-store'
+import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
 
 const log = createLogger('ipc:app')
@@ -84,7 +84,7 @@ export function claudeCandidateDirs(): string[] {
 // Data handlers - transport-agnostic, run on either ElectronIpcHost or WsHost.
 // Native-dialog / window / app-lifecycle handlers live in app-desktop.ts.
 export function registerAppHandlers(host: BackendHost): void {
-  setWorkspaceEmitter((channel, ...args) => host.emit(channel, ...args))
+  setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
 
   host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {
     log.info(`scan-sessions: ${projectPath}`)
@@ -476,13 +476,13 @@ export function registerAppHandlers(host: BackendHost): void {
 
   // Get conversations for a project
   host.handle(AppChannels.GET_CONVERSATIONS, (projectPath: string) => {
-    watchWorkspaceConfig(projectPath) // Start watching as soon as project is loaded
+    watchLaunchConfig(projectPath) // Start watching as soon as project is loaded
     return getConversationsForProject(projectPath)
   })
 
   // Session layout persistence
-  host.handle(AppChannels.SAVE_SESSION_LAYOUT, (sessionId: string, layoutJson: string, templateName?: string | null) => {
-    saveSessionLayout(sessionId, layoutJson, templateName ?? null)
+  host.handle(AppChannels.SAVE_SESSION_LAYOUT, (sessionId: string, layoutJson: string, launchConfigName?: string | null) => {
+    saveSessionLayout(sessionId, layoutJson, launchConfigName ?? null)
     return { ok: true }
   })
 
@@ -491,12 +491,12 @@ export function registerAppHandlers(host: BackendHost): void {
   })
 
   // Workspace config (per-project, stored in app support)
-  host.handle(AppChannels.GET_WORKSPACE_CONFIG, (projectPath: string) => {
-    return readWorkspaceConfig(projectPath)
+  host.handle(AppChannels.GET_LAUNCH_CONFIG, (projectPath: string) => {
+    return readLaunchConfig(projectPath)
   })
 
-  host.handle(AppChannels.SAVE_WORKSPACE_CONFIG, (projectPath: string, yamlContent: string) => {
-    writeWorkspaceConfig(projectPath, yamlContent)
+  host.handle(AppChannels.SAVE_LAUNCH_CONFIG, (projectPath: string, yamlContent: string) => {
+    writeLaunchConfig(projectPath, yamlContent)
     return { ok: true }
   })
 

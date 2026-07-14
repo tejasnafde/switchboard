@@ -19,7 +19,7 @@ const registry = new Map<string, TerminalInstance>()
 
 /**
  * Per-pane timestamp of the last PTY output byte. Used by the dirty-pane
- * check on `applyTemplate` - if a pane has produced output recently the
+ * check on `applyLaunchConfig` - if a pane has produced output recently the
  * user is about to kill something live (dev server, REPL, ssh session)
  * and we should confirm before tearing it down.
  *
@@ -33,7 +33,7 @@ const RECENT_OUTPUT_WINDOW_MS = 30_000
 
 /**
  * Returns the labels of panes that have produced PTY output in the last
- * 30 seconds. Used by `applyTemplate` to confirm before tearing down a
+ * 30 seconds. Used by `applyLaunchConfig` to confirm before tearing down a
  * session's panes.
  */
 export function getRecentOutputPaneLabels(
@@ -124,7 +124,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
   const cleanupFns: (() => void)[] = []
 
   // Wire PTY I/O. We also stamp `lastOutputAt` on every output chunk
-  // so the dirty-pane check on template-switch knows which panes are
+  // so the dirty-pane check on launch-config switch knows which panes are
   // "live". Cheap - a single Map.set per chunk.
   const removeOutput = window.api.terminal.onOutput((ptyId, data) => {
     if (ptyId === id) {

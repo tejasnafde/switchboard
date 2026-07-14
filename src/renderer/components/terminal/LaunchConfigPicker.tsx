@@ -1,30 +1,30 @@
 /**
- * Per-chat workspace-template selector.
+ * Per-chat launch-config selector.
  *
- * Renders a small chip in the terminal strip header - current template
+ * Renders a small chip in the terminal strip header - current launch config
  * name on the left, dropdown arrow on the right. Clicking opens a menu
- * of named templates from this project's `workspace.yaml`. Selecting
+ * of named configs from this project's `launch-config.yaml`. Selecting
  * one tears down the current panes and rehydrates from the chosen
- * template via `applyTemplate` (see `useTerminalLifecycle.ts`).
+ * launch config via `applyLaunchConfig` (see `useTerminalLifecycle.ts`).
  *
- * The pinned-template indicator (outline star) marks the template
- * explicitly bound to THIS chat - `session_layouts.template_name`.
- * Picking a template auto-pins it; the "Clear pin" footer action
+ * The pinned-launch config indicator (outline star) marks the launch config
+ * explicitly bound to THIS chat - `session_layouts.launch_config_name`.
+ * Picking a launch config auto-pins it; the "Clear pin" footer action
  * reverts to the implicit `default` fallback. Pinning is per-chat,
  * not per-project.
  *
  * Hidden in two cases:
  *   1. No active session.
- *   2. The project's workspace.yaml has zero templates beyond the
- *      implicit `default` (single template = nothing meaningful to
+ *   2. The project's launch-config.yaml has zero configs beyond the
+ *      implicit `default` (single launch config = nothing meaningful to
  *      switch to). Showing a one-option dropdown would be noise.
  */
 import { useEffect, useState } from 'react'
-import { parseWorkspaceConfig } from '@shared/workspace-config'
+import { parseLaunchConfigFile } from '@shared/launch-config'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useAgentStore } from '../../stores/agent-store'
-import { applyTemplate, clearTemplatePin, saveCurrentLayoutAsTemplate } from '../../hooks/useTerminalLifecycle'
-import { sortTemplatesByRecency } from '../../services/templateUsage'
+import { applyLaunchConfig, clearLaunchConfigPin, saveCurrentLayoutAsLaunchConfig } from '../../hooks/useTerminalLifecycle'
+import { sortLaunchConfigsByRecency } from '../../services/launchConfigUsage'
 
 /** Outline star - fills only when "active" (currently-pinned). */
 function StarIcon({ filled }: { filled: boolean }) {
@@ -41,43 +41,43 @@ function StarIcon({ filled }: { filled: boolean }) {
   )
 }
 
-export function TemplatePicker() {
+export function LaunchConfigPicker() {
   const activeSessionId = useTerminalStore((s) => s.activeSessionId)
   const session = useAgentStore((s) =>
     activeSessionId ? s.sessions.find((x) => x.id === activeSessionId) : undefined,
   )
   const projectPath = session?.projectPath
   const currentName = useTerminalStore((s) =>
-    activeSessionId ? s.templateNames[activeSessionId] ?? null : null,
+    activeSessionId ? s.launchConfigNames[activeSessionId] ?? null : null,
   )
 
-  const [templateNames, setTemplateNames] = useState<string[]>([])
+  const [launchConfigNames, setLaunchConfigNames] = useState<string[]>([])
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [savingName, setSavingName] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
 
-  // Refresh the template list whenever the active project changes or
-  // workspace.yaml is hot-reloaded. The picker is a passive read on
-  // the YAML - `applyTemplate` is what actually mutates state.
+  // Refresh the launch config list whenever the active project changes or
+  // launch-config.yaml is hot-reloaded. The picker is a passive read on
+  // the YAML - `applyLaunchConfig` is what actually mutates state.
   useEffect(() => {
     let cancelled = false
-    if (!projectPath) { setTemplateNames([]); return }
+    if (!projectPath) { setLaunchConfigNames([]); return }
 
     const refresh = async () => {
       try {
-        const yaml = await window.api.app.getWorkspaceConfig(projectPath)
+        const yaml = await window.api.app.getLaunchConfig(projectPath)
         if (cancelled) return
-        if (!yaml) { setTemplateNames([]); return }
-        const config = parseWorkspaceConfig(yaml)
-        setTemplateNames(Object.keys(config.templates ?? {}))
+        if (!yaml) { setLaunchConfigNames([]); return }
+        const config = parseLaunchConfigFile(yaml)
+        setLaunchConfigNames(Object.keys(config.configs ?? {}))
       } catch {
-        if (!cancelled) setTemplateNames([])
+        if (!cancelled) setLaunchConfigNames([])
       }
     }
     refresh()
 
-    const off = window.api.app.onWorkspaceChanged?.((changed) => {
+    const off = window.api.app.onLaunchConfigChanged?.((changed) => {
       if (changed === projectPath) refresh()
     })
     return () => {
@@ -95,27 +95,27 @@ export function TemplatePicker() {
   }, [feedback])
 
   if (!activeSessionId || !projectPath) return null
-  // We DO want to show the picker even with one template - it gates the
+  // We DO want to show the picker even with one launch config - it gates the
   // "Save current layout" affordance. Only hide when the project has
-  // literally zero templates (workspace.yaml absent / empty).
-  if (templateNames.length === 0) return null
+  // literally zero configs (launch-config.yaml absent / empty).
+  if (launchConfigNames.length === 0) return null
 
   const display = currentName ?? 'default'
-  const sortedNames = sortTemplatesByRecency(templateNames, projectPath)
+  const sortedNames = sortLaunchConfigsByRecency(launchConfigNames, projectPath)
 
   const onPick = async (name: string) => {
     setOpen(false)
     if (name === currentName || busy) return
     setBusy(true)
     try {
-      await applyTemplate(activeSessionId, name, projectPath)
+      await applyLaunchConfig(activeSessionId, name, projectPath)
     } finally {
       setBusy(false)
     }
   }
 
   const onClearPin = () => {
-    clearTemplatePin(activeSessionId)
+    clearLaunchConfigPin(activeSessionId)
     setFeedback({ kind: 'ok', text: 'Pin cleared - falls back to default.' })
   }
 
@@ -124,15 +124,15 @@ export function TemplatePicker() {
     const name = savingName
     setBusy(true)
     try {
-      const result = await saveCurrentLayoutAsTemplate(activeSessionId, projectPath, name)
+      const result = await saveCurrentLayoutAsLaunchConfig(activeSessionId, projectPath, name)
       if (result.ok) {
         setSavingName(null)
         setFeedback({ kind: 'ok', text: `Saved "${name}".` })
-        // Refresh template list so the new entry appears immediately.
-        const yaml = await window.api.app.getWorkspaceConfig(projectPath)
+        // Refresh launch config list so the new entry appears immediately.
+        const yaml = await window.api.app.getLaunchConfig(projectPath)
         if (yaml) {
-          const config = parseWorkspaceConfig(yaml)
-          setTemplateNames(Object.keys(config.templates ?? {}))
+          const config = parseLaunchConfigFile(yaml)
+          setLaunchConfigNames(Object.keys(config.configs ?? {}))
         }
       } else {
         setFeedback({ kind: 'err', text: result.error })
@@ -148,7 +148,7 @@ export function TemplatePicker() {
     <div style={{ position: 'relative', display: 'inline-flex' }}>
       <button
         onClick={() => setOpen((v) => !v)}
-        title="Switch terminal template for this chat"
+        title="Switch launch config for this chat"
         style={{
           background: 'var(--bg-tertiary)',
           color: 'var(--text-secondary)',
@@ -165,7 +165,7 @@ export function TemplatePicker() {
           opacity: busy ? 0.6 : 1,
         }}
       >
-        <span style={{ color: 'var(--text-muted)' }}>template:</span>
+        <span style={{ color: 'var(--text-muted)' }}>config:</span>
         {currentName && <StarIcon filled />}
         <span>{display}</span>
         <span style={{ color: 'var(--text-muted)', fontSize: '8px' }}>▾</span>
@@ -272,7 +272,7 @@ export function TemplatePicker() {
               <input
                 autoFocus
                 value={savingName}
-                placeholder="Template name"
+                placeholder="launch config name"
                 onChange={(e) => setSavingName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') { e.preventDefault(); void onSubmitSave() }

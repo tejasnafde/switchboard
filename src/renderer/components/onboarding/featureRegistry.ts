@@ -82,15 +82,15 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   },
   {
     id: 'terminal-templates',
-    title: 'Named terminal templates',
+    title: 'Named launch configs',
     description:
-      'Save the current terminal layout as a named template and apply it to any new chat - the last-applied template stays pinned per chat. Templates live in workspace.yaml so they sync across machines via git.',
+      'Save the current terminal layout as a named launch config and apply it to any new chat - the last-applied config stays pinned per chat. Launch configs live in launch-config.yaml so they sync across machines via git.',
   },
   {
-    id: 'workspace-config',
+    id: 'launch-config',
     title: 'Workspace config',
     description:
-      'Drop a .switchboard/workspace.yaml into any project to declare terminals and startup commands, so a workspace boots the same way every time.',
+      'Drop a .switchboard/launch-config.yaml into any project to declare terminals and startup commands, so a workspace boots the same way every time.',
   },
   {
     id: 'switch-agent',

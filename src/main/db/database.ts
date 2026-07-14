@@ -200,14 +200,21 @@ function migrate(db: Database.Database): void {
     }
   } catch { /* ignore */ }
 
-  // Migration (v0.1.20): track which workspace template a session
-  // hydrated from, so the per-chat picker can show the correct
-  // current selection and so hot-reloads of workspace.yaml know
-  // which named template to respawn.
+  // Migration (v0.1.20): track which launch config a session hydrated
+  // from, so the per-chat picker can show the correct current selection
+  // and so hot-reloads of launch-config.yaml know which named config to
+  // respawn. Originally added as `template_name`; renamed to
+  // `launch_config_name` when the feature moved off the old "workspace"/
+  // "template" names. We rename the existing column in place so pinned
+  // selections survive the upgrade.
   try {
     const cols = db.prepare("PRAGMA table_info(session_layouts)").all() as Array<{ name: string }>
-    if (!cols.some((c) => c.name === 'template_name')) {
-      db.exec('ALTER TABLE session_layouts ADD COLUMN template_name TEXT')
+    const hasNew = cols.some((c) => c.name === 'launch_config_name')
+    const hasOld = cols.some((c) => c.name === 'template_name')
+    if (!hasNew && hasOld) {
+      db.exec('ALTER TABLE session_layouts RENAME COLUMN template_name TO launch_config_name')
+    } else if (!hasNew) {
+      db.exec('ALTER TABLE session_layouts ADD COLUMN launch_config_name TEXT')
     }
   } catch { /* ignore */ }
 
@@ -1063,26 +1070,26 @@ export function removeSetting(key: string): void {
 
 export interface StoredSessionLayout {
   layoutJson: string
-  /** Name of the workspace template this layout was hydrated from. */
-  templateName: string | null
+  /** Name of the launch config this layout was hydrated from. */
+  launchConfigName: string | null
 }
 
 export function saveSessionLayout(
   sessionId: string,
   layoutJson: string,
-  templateName?: string | null,
+  launchConfigName?: string | null,
 ): void {
   getDb().prepare(
-    'INSERT OR REPLACE INTO session_layouts (session_id, layout_json, template_name, updated_at) VALUES (?, ?, ?, ?)'
-  ).run(sessionId, layoutJson, templateName ?? null, Date.now())
+    'INSERT OR REPLACE INTO session_layouts (session_id, layout_json, launch_config_name, updated_at) VALUES (?, ?, ?, ?)'
+  ).run(sessionId, layoutJson, launchConfigName ?? null, Date.now())
 }
 
 export function getSessionLayout(sessionId: string): StoredSessionLayout | null {
   const row = getDb().prepare(
-    'SELECT layout_json, template_name FROM session_layouts WHERE session_id = ?'
-  ).get(sessionId) as { layout_json: string; template_name: string | null } | undefined
+    'SELECT layout_json, launch_config_name FROM session_layouts WHERE session_id = ?'
+  ).get(sessionId) as { layout_json: string; launch_config_name: string | null } | undefined
   if (!row) return null
-  return { layoutJson: row.layout_json, templateName: row.template_name }
+  return { layoutJson: row.layout_json, launchConfigName: row.launch_config_name }
 }
 
 export function removeSessionLayout(sessionId: string): void {

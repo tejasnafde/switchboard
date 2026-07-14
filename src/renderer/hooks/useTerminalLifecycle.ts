@@ -1,11 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
-import { parseWorkspaceConfig, serializeWorkspaceConfig, type WorkspaceTemplate, type WorkspaceConfig } from '@shared/workspace-config'
-import { planTemplateSpawn, resolveTemplateFallback, resolveCwd, type SpawnOp } from '../services/templatePlanner'
-import { recordTemplateUsage } from '../services/templateUsage'
+import { parseLaunchConfigFile, serializeLaunchConfigFile, type LaunchConfig, type LaunchConfigFile } from '@shared/launch-config'
+import { planLaunchConfigSpawn, resolveLaunchConfigFallback, resolveCwd, type SpawnOp } from '../services/launchConfigPlanner'
+import { recordLaunchConfigUsage } from '../services/launchConfigUsage'
 import { getRecentOutputPaneLabels } from '../services/terminal-registry'
-import { templateListReducer } from '../services/templateListReducer'
+import { launchConfigListReducer } from '../services/launchConfigListReducer'
 
 /**
  * Manages terminal lifecycle tied to agent sessions.
@@ -14,16 +14,16 @@ import { templateListReducer } from '../services/templateListReducer'
  *
  * - No terminals on cold start (empty state)
  * - When a session is activated the FIRST time: load layout from SQLite →
- *   workspace.yaml → default (single window with one pane)
+ *   launch-config.yaml → default (single window with one pane)
  * - When switching sessions: PTYs STAY ALIVE - we just show/hide based on active session
  * - PTYs only killed when: user closes a pane or session is deleted
  *
- * workspace.yaml mapping (v0.1.20+):
- *   - Templates live under `templates: { default: { ... }, backend: { ... } }`
- *     in workspace.yaml. The legacy top-level `terminals:` / `rows:` keys
- *     materialize as `templates.default` for back-compat.
- *   - Each session records which template name it hydrated from in
- *     `session_layouts.template_name` so the picker chip + hot-reload
+ * launch-config.yaml mapping (v0.1.20+):
+ *   - Launch configs live under `configs: { default: { ... }, backend: { ... } }`
+ *     in launch-config.yaml. The legacy top-level `terminals:` / `rows:` keys
+ *     materialize as `configs.default` for back-compat.
+ *   - Each session records which launch config name it hydrated from in
+ *     `session_layouts.launch_config_name` so the picker chip + hot-reload
  *     know what's active.
  */
 export function useTerminalLifecycle() {
@@ -51,21 +51,21 @@ export function useTerminalLifecycle() {
     spawnTerminalsForSession(activeSessionId, session.worktreePath ?? session.projectPath)
   }, [activeSessionId])
 
-  // Watch for workspace.yaml changes to hot-reload
+  // Watch for launch-config.yaml changes to hot-reload
   useEffect(() => {
-    if (!window.api.app.onWorkspaceChanged) return
-    const cleanup = window.api.app.onWorkspaceChanged((projectPath) => {
+    if (!window.api.app.onLaunchConfigChanged) return
+    const cleanup = window.api.app.onLaunchConfigChanged((projectPath) => {
       const activeId = useAgentStore.getState().activeSessionId
       if (!activeId) return
 
       const session = useAgentStore.getState().sessions.find((s) => s.id === activeId)
       if (session && session.projectPath === projectPath) {
-        // Capture the session's current template name BEFORE clearing
+        // Capture the session's current launch config name BEFORE clearing
         // so the respawn can ask for the same one - the resolver will
         // fall back to default if the user just deleted it from YAML.
-        const currentTemplate = useTerminalStore.getState().getSessionTemplateName(activeId)
+        const currentLaunchConfig = useTerminalStore.getState().getSessionLaunchConfigName(activeId)
         useTerminalStore.getState().clearSessionLayout(activeId)
-        spawnTerminalsForSession(activeId, projectPath, true, currentTemplate)
+        spawnTerminalsForSession(activeId, projectPath, true, currentLaunchConfig)
       }
     })
     return cleanup
@@ -94,8 +94,8 @@ export function useTerminalLifecycle() {
             }),
           })),
         }
-        const templateName = useTerminalStore.getState().getSessionTemplateName?.(sessionId) ?? null
-        window.api.app.saveSessionLayout(sessionId, JSON.stringify(layoutData), templateName).catch(() => {})
+        const launchConfigName = useTerminalStore.getState().getSessionLaunchConfigName?.(sessionId) ?? null
+        window.api.app.saveSessionLayout(sessionId, JSON.stringify(layoutData), launchConfigName).catch(() => {})
       }
     }, 30000)
 
@@ -112,43 +112,43 @@ interface SavedRow { windows?: SavedWindow[]; panes?: SavedPane[] /* legacy */ }
 async function spawnTerminalsForSession(
   sessionId: string,
   projectPath?: string,
-  forceWorkspaceConfig = false,
-  requestedTemplate: string | null = null,
+  forceLaunchConfigFile = false,
+  requestedLaunchConfig: string | null = null,
 ) {
   const store = useTerminalStore.getState()
 
   // 1. Try SQLite - restore the prior live layout exactly. Picker
-  //    badge gets the saved template_name back so the user sees the
+  //    badge gets the saved launch_config_name back so the user sees the
   //    name they chose last session.
-  if (!forceWorkspaceConfig) {
+  if (!forceLaunchConfigFile) {
     try {
       const saved = await window.api.app.getSessionLayout(sessionId)
       if (saved && saved.layoutJson) {
         const parsed = JSON.parse(saved.layoutJson) as { rows?: SavedRow[] }
         if (parsed.rows && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
           restoreFromSaved(sessionId, parsed.rows, projectPath)
-          if (saved.templateName) useTerminalStore.getState().setSessionTemplateName(sessionId, saved.templateName)
+          if (saved.launchConfigName) useTerminalStore.getState().setSessionLaunchConfigName(sessionId, saved.launchConfigName)
           return
         }
       }
     } catch { /* fall through */ }
   }
 
-  // 2. Try workspace.yaml - hydrate from named template (or default).
+  // 2. Try launch-config.yaml - hydrate from named launch config (or default).
   if (projectPath) {
     try {
-      const yamlContent = await window.api.app.getWorkspaceConfig(projectPath)
+      const yamlContent = await window.api.app.getLaunchConfig(projectPath)
       if (yamlContent) {
-        const config = parseWorkspaceConfig(yamlContent)
-        const resolved = resolveTemplateFallback(config, requestedTemplate)
+        const config = parseLaunchConfigFile(yamlContent)
+        const resolved = resolveLaunchConfigFallback(config, requestedLaunchConfig)
         if (resolved) {
           if (resolved.fellBack && resolved.removedName) {
-            window.dispatchEvent(new CustomEvent('sb-template-fallback', {
-              detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.templateName },
+            window.dispatchEvent(new CustomEvent('sb-launch-config-fallback', {
+              detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.launchConfigName },
             }))
           }
-          spawnFromTemplate(sessionId, resolved.template, projectPath)
-          useTerminalStore.getState().setSessionTemplateName(sessionId, resolved.templateName)
+          spawnFromLaunchConfig(sessionId, resolved.launchConfig, projectPath)
+          useTerminalStore.getState().setSessionLaunchConfigName(sessionId, resolved.launchConfigName)
           return
         }
       }
@@ -221,9 +221,9 @@ function restoreFromSaved(sessionId: string, rows: SavedRow[], projectPath?: str
  * Walk a planner op list and dispatch each op to the terminal store.
  * Pure top-of-store - no PTY work happens here, just layout shape.
  */
-function spawnFromTemplate(sessionId: string, template: WorkspaceTemplate, projectPath: string) {
+function spawnFromLaunchConfig(sessionId: string, launchConfig: LaunchConfig, projectPath: string) {
   const store = useTerminalStore.getState()
-  const ops: SpawnOp[] = planTemplateSpawn(template, projectPath)
+  const ops: SpawnOp[] = planLaunchConfigSpawn(launchConfig, projectPath)
   for (const op of ops) {
     if (op.kind === 'addWindow') {
       store.addWindow(sessionId, op.opts)
@@ -235,29 +235,29 @@ function spawnFromTemplate(sessionId: string, template: WorkspaceTemplate, proje
   }
 }
 
-// ─── Public: switch the active template for a session ──────────────
+// ─── Public: switch the active launch config for a session ──────────────
 
 /**
  * Tear down the session's current panes and re-hydrate from a named
- * template. Called by the per-chat picker chip in the terminal strip
- * header. If the requested template doesn't exist (race with a save
+ * launch config. Called by the per-chat picker chip in the terminal strip
+ * header. If the requested launch config doesn't exist (race with a save
  * that just deleted it), falls back to `default` and dispatches the
- * `sb-template-fallback` event so the UI can toast.
+ * `sb-launch-config-fallback` event so the UI can toast.
  */
-export async function applyTemplate(
+export async function applyLaunchConfig(
   sessionId: string,
-  templateName: string,
+  launchConfigName: string,
   projectPath: string,
   options: { skipDirtyCheck?: boolean } = {},
 ): Promise<void> {
-  const yamlContent = await window.api.app.getWorkspaceConfig(projectPath)
+  const yamlContent = await window.api.app.getLaunchConfig(projectPath)
   if (!yamlContent) return
-  const config = parseWorkspaceConfig(yamlContent)
-  const resolved = resolveTemplateFallback(config, templateName)
+  const config = parseLaunchConfigFile(yamlContent)
+  const resolved = resolveLaunchConfigFallback(config, launchConfigName)
   if (!resolved) return
 
   // Dirty-pane check: warn if any pane in this session has produced output
-  // recently. Switching templates tears down all panes, so the user is
+  // recently. Switching configs tears down all panes, so the user is
   // about to kill anything running (dev server, REPL, ssh session).
   if (!options.skipDirtyCheck) {
     const layout = useTerminalStore.getState().getLayout(sessionId)
@@ -266,7 +266,7 @@ export async function applyTemplate(
     if (hot.length > 0) {
       const list = hot.map((l) => `  • ${l}`).join('\n')
       const ok = window.confirm(
-        `Switch to template "${resolved.templateName}"?\n\n` +
+        `Switch to launch config "${resolved.launchConfigName}"?\n\n` +
         `These panes have produced output in the last 30s and will be killed:\n${list}\n\n` +
         `Press OK to switch anyway.`,
       )
@@ -276,43 +276,43 @@ export async function applyTemplate(
 
   const store = useTerminalStore.getState()
   store.clearSessionLayout(sessionId)
-  spawnFromTemplate(sessionId, resolved.template, projectPath)
-  useTerminalStore.getState().setSessionTemplateName(sessionId, resolved.templateName)
-  recordTemplateUsage(projectPath, resolved.templateName)
+  spawnFromLaunchConfig(sessionId, resolved.launchConfig, projectPath)
+  useTerminalStore.getState().setSessionLaunchConfigName(sessionId, resolved.launchConfigName)
+  recordLaunchConfigUsage(projectPath, resolved.launchConfigName)
 
   if (resolved.fellBack && resolved.removedName) {
-    window.dispatchEvent(new CustomEvent('sb-template-fallback', {
-      detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.templateName },
+    window.dispatchEvent(new CustomEvent('sb-launch-config-fallback', {
+      detail: { sessionId, removedName: resolved.removedName, fallbackName: resolved.launchConfigName },
     }))
   }
 
   // Persist immediately so a relaunch picks up the new selection.
-  void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), resolved.templateName).catch(() => {})
+  void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), resolved.launchConfigName).catch(() => {})
 }
 
 /**
- * Clear the template pin on this session - the chat falls back to the
- * implicit `default` template on next activation. Doesn't tear down
+ * Clear the launch config pin on this session - the chat falls back to the
+ * implicit `default` launch config on next activation. Doesn't tear down
  * the current panes; just removes the explicit binding so a relaunch
  * picks `default` instead of the previously-pinned name.
  */
-export function clearTemplatePin(sessionId: string): void {
-  useTerminalStore.getState().setSessionTemplateName(sessionId, null)
+export function clearLaunchConfigPin(sessionId: string): void {
+  useTerminalStore.getState().setSessionLaunchConfigName(sessionId, null)
   void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), null).catch(() => {})
 }
 
 /**
- * Snapshot the session's current layout into a `WorkspaceTemplate`
- * suitable for serializing into workspace.yaml. CWDs are stored as
- * project-relative paths when possible (so the template is portable
+ * Snapshot the session's current layout into a `LaunchConfig`
+ * suitable for serializing into launch-config.yaml. CWDs are stored as
+ * project-relative paths when possible (so the launch config is portable
  * across machines that have the project at different absolute paths).
  *
  * Caveat: `on_start` is NOT captured - there's no sane way to read
- * back what command(s) the user typed into a live shell. Templates
+ * back what command(s) the user typed into a live shell. Launch configs
  * created via this snapshot start panes in a plain shell at the
  * recorded cwd; any startup commands need to be added by hand.
  */
-function snapshotCurrentAsTemplate(sessionId: string, projectPath: string): WorkspaceTemplate {
+function snapshotCurrentAsLaunchConfig(sessionId: string, projectPath: string): LaunchConfig {
   const layout = useTerminalStore.getState().getLayout(sessionId)
   const projectPrefix = projectPath.endsWith('/') ? projectPath : `${projectPath}/`
 
@@ -354,8 +354,8 @@ function snapshotCurrentAsTemplate(sessionId: string, projectPath: string): Work
 }
 
 /**
- * Save the session's current pane layout as a named template in the
- * project's workspace.yaml. If a template with that name already exists,
+ * Save the session's current pane layout as a named launch config in the
+ * project's launch-config.yaml. If a launch config with that name already exists,
  * the call is rejected - caller should rename via the Settings list
  * editor first.
  *
@@ -363,54 +363,54 @@ function snapshotCurrentAsTemplate(sessionId: string, projectPath: string): Work
  * validation / serialization failure. Does NOT swallow disk errors -
  * those propagate to the caller's catch.
  */
-export async function saveCurrentLayoutAsTemplate(
+export async function saveCurrentLayoutAsLaunchConfig(
   sessionId: string,
   projectPath: string,
   name: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const trimmed = name.trim()
-  if (!trimmed) return { ok: false, error: 'Template name is required.' }
+  if (!trimmed) return { ok: false, error: 'Launch config name is required.' }
 
-  const yamlContent = await window.api.app.getWorkspaceConfig(projectPath)
-  let config: WorkspaceConfig
+  const yamlContent = await window.api.app.getLaunchConfig(projectPath)
+  let config: LaunchConfigFile
   try {
-    config = yamlContent ? parseWorkspaceConfig(yamlContent) : { terminals: [], templates: { default: { terminals: [] } } }
+    config = yamlContent ? parseLaunchConfigFile(yamlContent) : { terminals: [], configs: { default: { terminals: [] } } }
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : 'Invalid workspace.yaml' }
+    return { ok: false, error: e instanceof Error ? e.message : 'Invalid launch-config.yaml' }
   }
   // Ensure `default` exists so the resulting file has a valid implicit
-  // fallback even when this is the first template the user creates.
-  const templates = config.templates ?? {}
-  if (!templates.default) {
+  // fallback even when this is the first launch config the user creates.
+  const configs = config.configs ?? {}
+  if (!configs.default) {
     config = {
       ...config,
-      templates: { default: { terminals: config.terminals ?? [] }, ...templates },
+      configs: { default: { terminals: config.terminals ?? [] }, ...configs },
     }
   } else {
-    config = { ...config, templates }
+    config = { ...config, configs }
   }
-  const currentTemplates = config.templates as Record<string, WorkspaceTemplate>
+  const currentLaunchConfigs = config.configs as Record<string, LaunchConfig>
 
-  const body = snapshotCurrentAsTemplate(sessionId, projectPath)
+  const body = snapshotCurrentAsLaunchConfig(sessionId, projectPath)
 
   // If the target name already exists, bail - overwrite would silently
   // lose the user's hand-written `on_start` directives.
-  if (currentTemplates[trimmed]) {
-    return { ok: false, error: `Template "${trimmed}" already exists. Pick a different name.` }
+  if (currentLaunchConfigs[trimmed]) {
+    return { ok: false, error: `Launch config "${trimmed}" already exists. Pick a different name.` }
   }
 
-  const added = templateListReducer(config, { type: 'addTemplate', name: trimmed })
+  const added = launchConfigListReducer(config, { type: 'addLaunchConfig', name: trimmed })
   if (!added.ok) return added
 
-  const replaced = templateListReducer(added.config, {
-    type: 'replaceTemplateBody',
+  const replaced = launchConfigListReducer(added.config, {
+    type: 'replaceLaunchConfigBody',
     name: trimmed,
     body,
   })
   if (!replaced.ok) return replaced
 
-  const text = serializeWorkspaceConfig(replaced.config)
-  await window.api.app.saveWorkspaceConfig(projectPath, text)
+  const text = serializeLaunchConfigFile(replaced.config)
+  await window.api.app.saveLaunchConfig(projectPath, text)
   return { ok: true }
 }
 

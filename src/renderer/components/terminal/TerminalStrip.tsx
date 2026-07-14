@@ -4,7 +4,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { TerminalWindow } from './TerminalWindow'
 import { PaneResizeHandle } from './PaneResizeHandle'
 import { focusTerminal } from '../../services/terminal-registry'
-import { TemplatePicker } from './TemplatePicker'
+import { LaunchConfigPicker } from './LaunchConfigPicker'
 
 function getSessionCwd(sessionId: string | null): string | undefined {
   if (!sessionId) return undefined
@@ -147,7 +147,7 @@ export function TerminalStrip() {
         <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: 600 }}>
           TERMINAL
         </span>
-        <TemplatePicker />
+        <LaunchConfigPicker />
         <div style={{ flex: 1 }} />
         {activeSessionId && (
           <>
