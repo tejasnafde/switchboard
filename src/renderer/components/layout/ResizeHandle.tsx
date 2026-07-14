@@ -1,4 +1,5 @@
 import { useRef, useEffect, type RefObject } from 'react'
+import { showDragOverlay, hideDragOverlay } from '../../services/dragOverlay'
 
 interface ResizeHandleProps {
   direction: 'horizontal' | 'vertical'
@@ -20,6 +21,8 @@ interface ResizeHandleProps {
   onResizing?: () => void
   /** Show/hide the handle */
   visible?: boolean
+  /** Stable identifier surfaced as `data-handle-id` (used by e2e selectors). */
+  handleId?: string
 }
 
 /**
@@ -33,10 +36,11 @@ export function ResizeHandle({
   prop = direction === 'horizontal' ? 'width' : 'height',
   invert = false,
   min = 100,
-  max = 9999,
+  max = Infinity,
   onResizeEnd,
   onResizing,
   visible = true,
+  handleId,
 }: ResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
@@ -65,6 +69,7 @@ export function ResizeHandle({
       if (a?.current) a.current.style.pointerEvents = ''
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      hideDragOverlay()
       if (handleRef.current) handleRef.current.dataset.active = ''
     }
 
@@ -86,6 +91,7 @@ export function ResizeHandle({
       if (a?.current) a.current.style.pointerEvents = 'none'
       document.body.style.cursor = h ? 'col-resize' : 'row-resize'
       document.body.style.userSelect = 'none'
+      showDragOverlay(h ? 'col-resize' : 'row-resize')
     }
 
     const onPointerMove = (e: PointerEvent) => {
@@ -121,12 +127,17 @@ export function ResizeHandle({
 
     const onPointerUp = (e: PointerEvent) => endDrag(e)
     const onPointerCancel = (e: PointerEvent) => endDrag(e)
+    // If capture is yanked away (pointer crossed into the IDE webview / another
+    // compositing surface), end the drag cleanly instead of leaving the divider
+    // frozen in resize mode with a stuck cursor + pointerEvents overrides.
+    const onLostCapture = (e: PointerEvent) => endDrag(e)
     const onBlur = () => endDrag()
 
     handle.addEventListener('pointerdown', onPointerDown)
     handle.addEventListener('pointermove', onPointerMove)
     handle.addEventListener('pointerup', onPointerUp)
     handle.addEventListener('pointercancel', onPointerCancel)
+    handle.addEventListener('lostpointercapture', onLostCapture)
     window.addEventListener('blur', onBlur)
 
     return () => {
@@ -134,6 +145,7 @@ export function ResizeHandle({
       handle.removeEventListener('pointermove', onPointerMove)
       handle.removeEventListener('pointerup', onPointerUp)
       handle.removeEventListener('pointercancel', onPointerCancel)
+      handle.removeEventListener('lostpointercapture', onLostCapture)
       window.removeEventListener('blur', onBlur)
       if (activePointerRef.current !== null) {
         activePointerRef.current = null
@@ -154,6 +166,7 @@ export function ResizeHandle({
     <div
       ref={handleRef}
       className="split-divider"
+      data-handle-id={handleId}
       style={{
         [isHorizontal ? 'width' : 'height']: '4px',
         cursor: isHorizontal ? 'col-resize' : 'row-resize',

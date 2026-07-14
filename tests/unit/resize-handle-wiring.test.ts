@@ -84,4 +84,55 @@ describe('App.tsx resize handle wiring', () => {
     expect(storeSrc).not.toMatch(/^\s*function applyPanelVisibility\b/m)
     expect(storeSrc).not.toMatch(/applyPanelVisibility\(/)
   })
+
+  // The user asked to lift the max width caps (⌘B / ⌘J hide panes entirely,
+  // so a hard cap adds no safety). The old fixed caps were 500 / 800.
+  it('main-pane handles no longer carry a fixed max cap', () => {
+    for (const h of handles) {
+      expect(h).not.toMatch(/max=\{\s*\d+\s*\}/) // no numeric literal max
+    }
+    const sidebar = handles.find((h) => h.includes('beforeRef={sidebarRef}'))!
+    const terminal = handles.find((h) => h.includes('afterRef={terminalRef}'))!
+    expect(sidebar).toContain('max={sidebarMax}')
+    expect(terminal).toContain('max={terminalMax}')
+  })
+
+  it('layout-store: no fixed SIDEBAR_MAX / TERMINAL_MAX constants remain', () => {
+    const STORE = resolve(__dirname, '../../src/renderer/stores/layout-store.ts')
+    const storeSrc = readFileSync(STORE, 'utf8')
+    expect(storeSrc).not.toMatch(/SIDEBAR_MAX/)
+    expect(storeSrc).not.toMatch(/TERMINAL_MAX/)
+    expect(storeSrc).toMatch(/export function paneMaxWidth/)
+  })
+})
+
+// Guards against the "boundary stuck in resize mode" regression: dragging a
+// divider and releasing over the IDE webview / xterm canvas left the drag
+// never ending. Every handle must (a) recover via `lostpointercapture` and
+// (b) raise the full-viewport drag overlay so the pointer can't reach a
+// child frame in the first place.
+describe('resize handles: stuck-drag hardening', () => {
+  const read = (p: string) => readFileSync(resolve(__dirname, p), 'utf8')
+
+  it('ResizeHandle listens for lostpointercapture and uses the drag overlay', () => {
+    const src = read('../../src/renderer/components/layout/ResizeHandle.tsx')
+    expect(src).toContain("addEventListener('lostpointercapture'")
+    expect(src).toContain('showDragOverlay(')
+    expect(src).toContain('hideDragOverlay(')
+  })
+
+  it('PaneResizeHandle listens for lostpointercapture and uses the drag overlay', () => {
+    const src = read('../../src/renderer/components/terminal/PaneResizeHandle.tsx')
+    expect(src).toContain("addEventListener('lostpointercapture'")
+    expect(src).toContain('showDragOverlay(')
+    expect(src).toContain('hideDragOverlay(')
+  })
+
+  it('ChatSplitHandle handles pointercancel + lostpointercapture + overlay', () => {
+    const src = read('../../src/renderer/App.tsx')
+    expect(src).toContain('onPointerCancel={() => endDrag()}')
+    expect(src).toContain('onLostPointerCapture={() => endDrag()}')
+    // and a window blur fallback for the dual-chat divider
+    expect(src).toMatch(/const onBlur = \(\) => endDrag\(\)/)
+  })
 })
