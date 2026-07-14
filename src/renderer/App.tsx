@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
-import { useLayoutStore, hydrateSidebarCollapse } from './stores/layout-store'
+import { useLayoutStore, hydrateSidebarCollapse, paneMaxWidth } from './stores/layout-store'
+import { showDragOverlay, hideDragOverlay } from './services/dragOverlay'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from './stores/agent-store'
 import { classifyCloseFocus, type ClosestEl } from './closeFocus'
 import { useBookmarkStore } from './stores/bookmark-store'
@@ -68,6 +69,18 @@ export function App() {
     toggleRightPaneMode,
     appView,
   } = useLayoutStore()
+
+  // Track viewport width so the panes' max width can be viewport-relative
+  // (no fixed cap) while still keeping the chat + the opposite pane's handle
+  // on screen. Updated on window resize.
+  const [viewportW, setViewportW] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1600))
+  useEffect(() => {
+    const onResize = () => setViewportW(window.innerWidth)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+  const sidebarMax = paneMaxWidth(140, terminalVisible ? terminalWidth : 0, viewportW)
+  const terminalMax = paneMaxWidth(200, sidebarVisible ? sidebarWidth : 0, viewportW)
 
   // Select actions individually (stable identities) so App does NOT subscribe
   // to the whole agent store - a bare useAgentStore() re-renders the entire
@@ -857,9 +870,10 @@ export function App() {
           direction="horizontal"
           beforeRef={sidebarRef}
           min={140}
-          max={500}
+          max={sidebarMax}
           onResizeEnd={handleSidebarResizeEnd}
           visible={sidebarVisible}
+          handleId="sidebar"
         />
 
         {/* Engineering view: chat + terminal stack. Hidden (not unmounted)
@@ -897,9 +911,10 @@ export function App() {
             afterRef={terminalRef}
             invert
             min={200}
-            max={800}
+            max={terminalMax}
             onResizeEnd={handleTerminalResizeEnd}
             visible={terminalVisible}
+            handleId="terminal"
           />
 
           {/* Right pane: terminal OR files (toggle via ⌘⇧E). Both stay mounted -
@@ -1146,21 +1161,54 @@ function ChatSplitHandle({
 }) {
   const activePointerRef = useRef<number | null>(null)
   const currentRatioRef = useRef(initialRatio)
+  const handleElRef = useRef<HTMLDivElement | null>(null)
+
+  // Single idempotent teardown so the divider can never get stuck in resize
+  // mode. Called from pointerup, pointercancel, lostpointercapture (pointer
+  // crossed into a ChatPanel webview and capture was yanked), and window blur.
+  const endDrag = useCallback(() => {
+    if (activePointerRef.current === null) return
+    const el = handleElRef.current
+    if (el) { try { el.releasePointerCapture(activePointerRef.current) } catch { /* ignore */ } }
+    activePointerRef.current = null
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    hideDragOverlay()
+    onCommit(currentRatioRef.current)
+  }, [onCommit])
+
+  useEffect(() => {
+    const onBlur = () => endDrag()
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('blur', onBlur)
+      // Unmounted mid-drag: clear the stuck cursor / overlay.
+      if (activePointerRef.current !== null) {
+        activePointerRef.current = null
+        document.body.style.cursor = ''
+        document.body.style.userSelect = ''
+        hideDragOverlay()
+      }
+    }
+  }, [endDrag])
 
   return (
     <div
+      ref={handleElRef}
       style={{
         width: '4px',
         flexShrink: 0,
         cursor: 'col-resize',
         background: 'var(--border)',
         position: 'relative',
+        touchAction: 'none',
       }}
       onPointerDown={(e) => {
-        ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+        try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
         activePointerRef.current = e.pointerId
         document.body.style.cursor = 'col-resize'
         document.body.style.userSelect = 'none'
+        showDragOverlay('col-resize')
       }}
       onPointerMove={(e) => {
         if (activePointerRef.current !== e.pointerId) return
@@ -1174,15 +1222,9 @@ function ChatSplitHandle({
         if (leftRef.current) leftRef.current.style.flex = `${ratio} 1 0%`
         if (rightRef.current) rightRef.current.style.flex = `${1 - ratio} 1 0%`
       }}
-      onPointerUp={(e) => {
-        if (activePointerRef.current !== e.pointerId) return
-        ;(e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId)
-        activePointerRef.current = null
-        document.body.style.cursor = ''
-        document.body.style.userSelect = ''
-        // Commit final ratio to store so it persists on remount.
-        onCommit(currentRatioRef.current)
-      }}
+      onPointerUp={() => endDrag()}
+      onPointerCancel={() => endDrag()}
+      onLostPointerCapture={() => endDrag()}
     />
   )
 }

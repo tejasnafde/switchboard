@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react'
+import { showDragOverlay, hideDragOverlay } from '../../services/dragOverlay'
 
 interface PaneResizeHandleProps {
   direction?: 'row' | 'column'
@@ -33,6 +34,7 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
     const resetStyle = () => {
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+      hideDragOverlay()
       if (handleRef.current) handleRef.current.dataset.active = ''
     }
 
@@ -45,6 +47,7 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
       handle.dataset.active = '1'
       document.body.style.cursor = isColumn ? 'col-resize' : 'row-resize'
       document.body.style.userSelect = 'none'
+      showDragOverlay(isColumn ? 'col-resize' : 'row-resize')
     }
 
     const onPointerMove = (e: PointerEvent) => {
@@ -69,12 +72,15 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
 
     const onPointerUp = (e: PointerEvent) => endDrag(e)
     const onPointerCancel = (e: PointerEvent) => endDrag(e)
+    // Recover if capture is yanked away over a webview / xterm canvas.
+    const onLostCapture = (e: PointerEvent) => endDrag(e)
     const onBlur = () => endDrag()
 
     handle.addEventListener('pointerdown', onPointerDown)
     handle.addEventListener('pointermove', onPointerMove)
     handle.addEventListener('pointerup', onPointerUp)
     handle.addEventListener('pointercancel', onPointerCancel)
+    handle.addEventListener('lostpointercapture', onLostCapture)
     window.addEventListener('blur', onBlur)
 
     return () => {
@@ -82,6 +88,7 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
       handle.removeEventListener('pointermove', onPointerMove)
       handle.removeEventListener('pointerup', onPointerUp)
       handle.removeEventListener('pointercancel', onPointerCancel)
+      handle.removeEventListener('lostpointercapture', onLostCapture)
       window.removeEventListener('blur', onBlur)
       // If unmounted mid-drag, clean up so cursor/overlay don't stick
       if (activePointerRef.current !== null) {

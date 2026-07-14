@@ -5,11 +5,26 @@ import { useAgentStore } from './agent-store'
 const log = createRendererLogger('store:layout')
 
 const SIDEBAR_MIN = 140
-const SIDEBAR_MAX = 500
 const SIDEBAR_DEFAULT = 220
 const TERMINAL_MIN = 200
-const TERMINAL_MAX = 800
 const TERMINAL_DEFAULT = 400
+
+/**
+ * Minimum breathing room (px) the center chat area keeps. There is no fixed
+ * upper bound on a pane's width anymore - you can stretch either pane as far
+ * as you like (⌘B / ⌘J hide them entirely) - but a pane can't grow so wide
+ * that it would push the chat (and the opposite pane's own resize handle) off
+ * screen. The cap is therefore relative to the viewport and the other pane's
+ * current width rather than a hard-coded number.
+ */
+const MIN_CHAT_WIDTH = 240
+
+/** Largest width a pane may take: viewport minus the other pane and the chat's
+ *  minimum. Falls back to a huge value when `window` is unavailable (tests). */
+export function paneMaxWidth(min: number, otherPaneWidth: number, viewportWidth?: number): number {
+  const vw = viewportWidth ?? (typeof window !== 'undefined' && window.innerWidth ? window.innerWidth : Number.MAX_SAFE_INTEGER)
+  return Math.max(min, vw - otherPaneWidth - MIN_CHAT_WIDTH)
+}
 
 export type RightPaneMode = 'terminal' | 'files'
 
@@ -245,15 +260,17 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   },
 
   setSidebarWidth: (width) => {
-    const clamped = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, width))
-    const { sidebarEl } = get()
+    const { sidebarEl, terminalVisible, terminalWidth } = get()
+    const max = paneMaxWidth(SIDEBAR_MIN, terminalVisible ? terminalWidth : 0)
+    const clamped = Math.max(SIDEBAR_MIN, Math.min(max, width))
     if (sidebarEl) sidebarEl.style.width = `${clamped}px`
     set({ sidebarWidth: clamped })
   },
 
   setTerminalWidth: (width) => {
-    const clamped = Math.max(TERMINAL_MIN, Math.min(TERMINAL_MAX, width))
-    const { terminalEl } = get()
+    const { terminalEl, sidebarVisible, sidebarWidth } = get()
+    const max = paneMaxWidth(TERMINAL_MIN, sidebarVisible ? sidebarWidth : 0)
+    const clamped = Math.max(TERMINAL_MIN, Math.min(max, width))
     if (terminalEl) terminalEl.style.width = `${clamped}px`
     set({ terminalWidth: clamped })
   },
