@@ -446,6 +446,10 @@ export function removeProject(path: string): void {
   getDb().prepare('DELETE FROM projects WHERE path = ?').run(path)
 }
 
+export function renameProject(path: string, name: string): void {
+  getDb().prepare('UPDATE projects SET name = ? WHERE path = ?').run(name, path)
+}
+
 // ─── Workspace CRUD ──────────────────────────────────────────────
 
 export interface WorkspaceRow {

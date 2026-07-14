@@ -62,6 +62,10 @@ export const AppChannels = {
   SET_CONVERSATION_WORKTREE: 'app:set-conversation-worktree',
   /** Add a project from an absolute directory path (remote add-project flow). */
   ADD_PROJECT_PATH: 'app:add-project-path',
+  /** Remove a project from the sidebar (cascades its conversations + kanban cards). */
+  REMOVE_PROJECT: 'app:remove-project',
+  /** Rename a project's display name (path/PK unchanged). */
+  RENAME_PROJECT: 'app:rename-project',
 } as const
 
 export const MachineChannels = {
