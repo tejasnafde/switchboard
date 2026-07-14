@@ -364,6 +364,17 @@ if (process.argv.includes('--smoke-test')) {
 
 app.whenReady().then(() => {
   if (process.argv.includes('--smoke-test')) return
+
+  // Route popups from the embedded code-server <webview> (extension
+  // "Open in browser" buttons, OAuth flows) to the system browser. A bare
+  // <webview> otherwise no-ops window.open, so auth flows can't even start.
+  app.on('web-contents-created', (_e, contents) => {
+    if (contents.getType() !== 'webview') return
+    contents.setWindowOpenHandler(({ url }) => {
+      if (/^https?:/.test(url)) shell.openExternal(url)
+      return { action: 'deny' }
+    })
+  })
   // Initialize database. getDb() self-heals a corrupt file (moves it aside,
   // recreates); if it still throws the disk itself is broken - tell the
   // user and quit instead of idling forever with no window.

@@ -400,6 +400,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 <DefaultEnvModeToggle />
               </SettingsSection>
 
+              {/* Embedded IDE - idle shutdown TTL */}
+              <SettingsSection title="Embedded IDE">
+                <IdeIdleTtlSetting />
+              </SettingsSection>
+
               {/* Responses - token-by-token streaming gate */}
               <SettingsSection title="Responses">
                 <StreamAssistantToggle />
@@ -854,6 +859,54 @@ function DefaultEnvModeToggle() {
         <option value="local">Local (project root)</option>
         <option value="worktree">New worktree</option>
       </select>
+    </div>
+  )
+}
+
+/**
+ * How long the embedded IDE (code-server) may sit hidden before Switchboard
+ * kills it to reclaim CPU/RAM. Relaunch on next open is ~2s. Stored as
+ * `ide.idleTtlMinutes`; IdePane re-reads on the `sb-ide-settings-changed`
+ * event so a change applies without a restart.
+ */
+function IdeIdleTtlSetting() {
+  const [minutes, setMinutes] = useState<string>('')
+  useEffect(() => {
+    window.api.settings.get('ide.idleTtlMinutes').then((v) => setMinutes(v ?? '5'))
+  }, [])
+  const onChange = async (raw: string) => {
+    setMinutes(raw)
+    const n = parseFloat(raw)
+    if (!Number.isFinite(n) || n <= 0) return
+    await window.api.settings.set('ide.idleTtlMinutes', String(n))
+    window.dispatchEvent(new Event('sb-ide-settings-changed'))
+  }
+  return (
+    <div>
+      <div style={{ fontSize: '12.5px', color: 'var(--text-primary)', marginBottom: '4px' }}>
+        Shut down when hidden after
+      </div>
+      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+        Idle minutes before the code-server workbench is killed to free CPU/RAM. Reopening (⌘⇧E) relaunches it in ~2s.
+      </div>
+      <input
+        type="number"
+        min={1}
+        step={1}
+        value={minutes}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          background: 'var(--bg-tertiary)',
+          color: 'var(--text-primary)',
+          border: '1px solid var(--border)',
+          borderRadius: '4px',
+          padding: '4px 8px',
+          fontSize: '12px',
+          width: '80px',
+          outline: 'none',
+        }}
+      />
+      <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '6px' }}>minutes</span>
     </div>
   )
 }
