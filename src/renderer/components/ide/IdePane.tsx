@@ -211,8 +211,10 @@ export function IdePane(): React.ReactElement {
           )}
         </div>
       )}
-      {/* Painted app-dark so the guest never flashes white while loading. */}
-      <webview ref={webviewRef} src={src} partition="persist:ide" style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
+      {/* Painted app-dark so the guest never flashes white while loading.
+          allowpopups lets window.open reach the main-process handler that
+          routes extension OAuth logins to the system browser. */}
+      <webview ref={webviewRef} src={src} partition="persist:ide" allowpopups style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
     </div>
   )
 }
