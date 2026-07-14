@@ -126,6 +126,10 @@ const api = {
     scanSessions: (projectPath: string) =>
       transport.invoke(AppChannels.SCAN_SESSIONS, projectPath),
     getProjects: () => transport.invoke(AppChannels.GET_PROJECTS),
+    removeProject: (projectPath: string): Promise<{ ok: true }> =>
+      transport.invoke(AppChannels.REMOVE_PROJECT, projectPath),
+    renameProject: (projectPath: string, name: string): Promise<{ ok: true }> =>
+      transport.invoke(AppChannels.RENAME_PROJECT, projectPath, name),
     createConversation: (params: CreateConversationParams) =>
       transport.invoke(AppChannels.CREATE_CONVERSATION, params),
     setConversationWorktree: (

@@ -494,6 +494,28 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     } catch { /* optimistic - next refresh will correct */ }
   }, [])
 
+  const handleRenameProject = useCallback(async (project: { path: string; name: string }) => {
+    const name = window.prompt('Rename project', project.name)?.trim()
+    if (!name || name === project.name) return
+    setProjects((prev) => prev.map((p) => p.path === project.path ? { ...p, name } : p))
+    try {
+      await window.api.app.renameProject(project.path, name)
+    } catch { /* optimistic - next refresh will correct */ }
+  }, [])
+
+  const handleRemoveProject = useCallback(async (project: { path: string; name: string }) => {
+    if (!window.confirm(`Remove "${project.name}"? This also deletes its conversations and kanban cards from Switchboard (the folder on disk is untouched).`)) return
+    setProjects((prev) => prev.filter((p) => p.path !== project.path))
+    // Tear down any open sessions rooted in this project before the cascade
+    // delete lands - otherwise activeSessionId points at a conversation row
+    // that no longer exists and the next turn writes against a dead FK parent.
+    const { sessions, removeSession } = useAgentStore.getState()
+    for (const s of sessions.filter((s) => s.projectPath === project.path)) removeSession(s.id)
+    try {
+      await window.api.app.removeProject(project.path)
+    } catch { /* best-effort - next refresh will restore if it failed */ }
+  }, [])
+
   const handleCreateWorkspaceFromProject = useCallback(async (projectPath: string) => {
     const name = window.prompt('New workspace name')
     if (!name?.trim()) return
@@ -1026,6 +1048,21 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
               label: 'Manage workspaces…',
               onClick: () => {
                 setManagerOpen(true)
+                setProjectMenu(null)
+              },
+            },
+            {
+              label: 'Rename project…',
+              onClick: () => {
+                void handleRenameProject(projectMenu.project)
+                setProjectMenu(null)
+              },
+            },
+            {
+              label: 'Remove project',
+              danger: true,
+              onClick: () => {
+                void handleRemoveProject(projectMenu.project)
                 setProjectMenu(null)
               },
             },

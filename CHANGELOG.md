@@ -2,6 +2,11 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-14 - Remove and rename projects
+
+### Added
+- **Remove and rename projects from the sidebar.** Right-click a project header for "Rename project…" (updates the display name; path stays the primary key so conversations and kanban cards keep their link) and "Remove project" (confirm-gated; the FK cascade drops the project's conversations and kanban cards, the folder on disk is untouched). Removing a project also tears down any open sessions rooted in it so the active chat can't write against a deleted conversation.
+
 ## 2026-07-11 - Remote chats survive reconnects; auth preflight; day-2 SSH batch (v0.6.3)
 
 ### Fixed

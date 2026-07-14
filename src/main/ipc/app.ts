@@ -9,6 +9,8 @@ import { homedir } from 'os'
 import { basename, join as joinPath } from 'path'
 import {
   addProject,
+  removeProject,
+  renameProject,
   getProjects,
   getSetting,
   setSetting,
@@ -201,6 +203,17 @@ export function registerAppHandlers(host: BackendHost): void {
     log.info(`add-project-path: found ${sessions.length} sessions for ${dirPath} (${rawSessions.length - sessions.length} archived)`)
 
     return { path: dirPath, name, sessions, workspaceId: null }
+  })
+
+  host.handle(AppChannels.REMOVE_PROJECT, (projectPath: string) => {
+    log.info(`remove-project: ${projectPath}`)
+    removeProject(projectPath) // FK cascade drops conversations + kanban cards
+    return { ok: true }
+  })
+
+  host.handle(AppChannels.RENAME_PROJECT, (projectPath: string, name: string) => {
+    renameProject(projectPath, name)
+    return { ok: true }
   })
 
   // ─── Workspaces (sidebar grouping) ─────────────────────────────
