@@ -17,6 +17,8 @@ interface WorkspaceManagerProps {
 export function WorkspaceManager({ workspaces, onClose, onMutated }: WorkspaceManagerProps) {
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState('')
+  const [renamingId, setRenamingId] = useState<string | null>(null)
+  const [renameValue, setRenameValue] = useState('')
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -37,10 +39,15 @@ export function WorkspaceManager({ workspaces, onClose, onMutated }: WorkspaceMa
     } catch { /* best-effort */ }
   }
 
-  const handleRename = async (w: Workspace) => {
-    const next = window.prompt('Rename workspace', w.name)
-    if (next == null) return
-    const trimmed = next.trim()
+  // Inline edit, not window.prompt - Electron renderers don't implement prompt().
+  const startRename = (w: Workspace) => {
+    setRenamingId(w.id)
+    setRenameValue(w.name)
+  }
+
+  const commitRename = async (w: Workspace) => {
+    const trimmed = renameValue.trim()
+    setRenamingId(null)
     if (!trimmed || trimmed === w.name) return
     await window.api.app.workspaces.rename(w.id, trimmed)
     onMutated()
@@ -184,17 +191,41 @@ export function WorkspaceManager({ workspaces, onClose, onMutated }: WorkspaceMa
                   borderRadius: '2px',
                   flexShrink: 0,
                 }} />
-                <span style={{
-                  flex: 1,
-                  color: 'var(--text-primary)',
-                  fontSize: '12.5px',
-                  fontWeight: 500,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>{w.name}</span>
+                {renamingId === w.id ? (
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); void commitRename(w) }
+                      if (e.key === 'Escape') { e.preventDefault(); setRenamingId(null) }
+                    }}
+                    onBlur={() => void commitRename(w)}
+                    style={{
+                      flex: 1,
+                      background: 'var(--bg-tertiary)',
+                      border: '1px solid var(--border)',
+                      borderRadius: '4px',
+                      padding: '4px 8px',
+                      color: 'var(--text-primary)',
+                      fontSize: '12.5px',
+                      outline: 'none',
+                      fontFamily: 'var(--font-sans)',
+                    }}
+                  />
+                ) : (
+                  <span style={{
+                    flex: 1,
+                    color: 'var(--text-primary)',
+                    fontSize: '12.5px',
+                    fontWeight: 500,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>{w.name}</span>
+                )}
                 <button
-                  onClick={() => void handleRename(w)}
+                  onClick={() => startRename(w)}
                   style={miniBtnStyle}
                   title="Rename"
                 >Rename</button>

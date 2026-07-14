@@ -24,6 +24,7 @@ import { serializeConversationToMarkdown, suggestedExportFilename } from '../../
 import { SidebarFilter } from './SidebarFilter'
 import { decideDragOutcome } from './dragLogic'
 import { WorkspaceManager } from './WorkspaceManager'
+import { PromptModal } from './PromptModal'
 import { MachineLayer } from './MachineLayer'
 import { AddMachineModal } from './AddMachineModal'
 import { ProjectFavicon } from './ProjectFavicon'
@@ -157,6 +158,9 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   const [scanning, setScanning] = useState<string | null>(null)
   const [scannedPaths, setScannedPaths] = useState<Set<string>>(new Set())
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [renamingProjectPath, setRenamingProjectPath] = useState<string | null>(null)
+  // Remote session rename uses a modal (MachineLayer rows have no inline-edit anchor).
+  const [remoteRename, setRemoteRename] = useState<{ machineId: string; session: SessionSummary } | null>(null)
   const [editValue, setEditValue] = useState('')
   const [filterQuery, setFilterQuery] = useState('')
   const [managerOpen, setManagerOpen] = useState(false)
@@ -277,6 +281,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   }, [toggleSidebarProject])
 
   const startRename = useCallback((session: SessionSummary) => {
+    setRenamingProjectPath(null)
     setEditingId(session.id)
     setEditValue(session.title)
     setTimeout(() => editRef.current?.select(), 0)
@@ -441,9 +446,8 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
 
   // Remote-session menu actions bind the session id to its machine first -
   // an unbound id silently routes local.
-  const handleRemoteRename = useCallback((menu: { machineId: string; session: SessionSummary }) => {
-    const title = window.prompt('Rename chat', menu.session.title)?.trim()
-    if (!title || title === menu.session.title) return
+  const commitRemoteRename = useCallback((menu: { machineId: string; session: SessionSummary }, title: string) => {
+    if (title === menu.session.title) return
     window.api.routing.bind(menu.session.id, menu.machineId)
     window.api.app.renameConversation(menu.session.id, title).catch(() => {
       // best-effort - next sync restores the real title
@@ -494,14 +498,24 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     } catch { /* optimistic - next refresh will correct */ }
   }, [])
 
-  const handleRenameProject = useCallback(async (project: { path: string; name: string }) => {
-    const name = window.prompt('Rename project', project.name)?.trim()
-    if (!name || name === project.name) return
-    setProjects((prev) => prev.map((p) => p.path === project.path ? { ...p, name } : p))
-    try {
-      await window.api.app.renameProject(project.path, name)
-    } catch { /* optimistic - next refresh will correct */ }
+  // Inline edit, not window.prompt - Electron renderers don't implement
+  // prompt() (returns null), so the prompt version silently did nothing.
+  const handleRenameProject = useCallback((project: { path: string; name: string }) => {
+    setEditingId(null)
+    setRenamingProjectPath(project.path)
+    setEditValue(project.name)
+    setTimeout(() => editRef.current?.select(), 0)
   }, [])
+
+  const commitProjectRename = useCallback((projectPath: string) => {
+    const name = editValue.trim()
+    setRenamingProjectPath(null)
+    if (!name) return
+    setProjects((prev) => prev.map((p) => p.path === projectPath ? { ...p, name } : p))
+    window.api.app.renameProject(projectPath, name).catch(() => {
+      // optimistic - next refresh will correct
+    })
+  }, [editValue])
 
   const handleRemoveProject = useCallback(async (project: { path: string; name: string }) => {
     if (!window.confirm(`Remove "${project.name}"? This also deletes its conversations and kanban cards from Switchboard (the folder on disk is untouched).`)) return
@@ -517,10 +531,11 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
   }, [])
 
   const handleCreateWorkspaceFromProject = useCallback(async (projectPath: string) => {
-    const name = window.prompt('New workspace name')
-    if (!name?.trim()) return
+    // Default the workspace name to the project's folder name (no window.prompt
+    // - Electron no-ops it). Rename later via Manage workspaces.
+    const name = projectPath.split('/').filter(Boolean).pop() || 'New workspace'
     try {
-      const w = await window.api.app.workspaces.create({ name: name.trim() })
+      const w = await window.api.app.workspaces.create({ name })
       setWorkspaces((prev) => [...prev, w])
       await handleAssignWorkspace(projectPath, w.id)
     } catch { /* best-effort */ }
@@ -631,9 +646,24 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
             {isCollapsed ? '\u25B6' : '\u25BC'}
           </span>
           <ProjectFavicon projectPath={project.path} />
-          <span className="sidebar-project-name">
-            {project.name}
-          </span>
+          {renamingProjectPath === project.path ? (
+            <input
+              ref={editRef}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitProjectRename(project.path)
+                if (e.key === 'Escape') setRenamingProjectPath(null)
+              }}
+              onBlur={() => commitProjectRename(project.path)}
+              onClick={(e) => e.stopPropagation()}
+              className="sidebar-rename-input"
+            />
+          ) : (
+            <span className="sidebar-project-name">
+              {project.name}
+            </span>
+          )}
           <GroupUnreadBadge
             sessionIds={project.sessions.map((s) => s.id)}
             expanded={!isCollapsed}
@@ -995,7 +1025,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           items={[
             {
               label: 'Rename',
-              onClick: () => { handleRemoteRename(remoteMenu); setRemoteMenu(null) },
+              onClick: () => { setRemoteRename({ machineId: remoteMenu.machineId, session: remoteMenu.session }); setRemoteMenu(null) },
             },
             {
               label: 'Export as Markdown',
@@ -1013,6 +1043,16 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
               },
             },
           ]}
+        />
+      )}
+
+      {remoteRename && (
+        <PromptModal
+          title="Rename chat"
+          initialValue={remoteRename.session.title}
+          submitLabel="Rename"
+          onSubmit={(title) => { commitRemoteRename(remoteRename, title); setRemoteRename(null) }}
+          onCancel={() => setRemoteRename(null)}
         />
       )}
 

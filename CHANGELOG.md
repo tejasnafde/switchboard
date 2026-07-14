@@ -2,6 +2,12 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-14 - Fix rename flows dead in Electron (window.prompt)
+
+### Fixed
+- **Rename project now works.** It was built on `window.prompt`, which Electron renderers don't implement (it returns `null` and opens no dialog), so the rename silently did nothing. Replaced with the same inline edit the session rename uses. The same dead-`prompt` bug is fixed in three more places: **rename workspace** (Manage workspaces modal, now inline), **new workspace from a project** (now defaults the name to the project's folder name), and **rename remote chat** (now a small in-app prompt modal).
+- Guard test (`no-window-prompt.test.ts`) fails the build if `window.prompt` reappears in the renderer.
+
 ## 2026-07-14 - Remove and rename projects
 
 ### Added
