@@ -15,7 +15,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ### Fixed
 - **Keeping the IDE pane (⌘⇧E) open while hopping across chats no longer thrashes CPU/RAM.** The webview's `?folder=` was re-pointed on every `activeSessionId` change, and each change fully reloads the workbench (a fresh extension host per folder). `IdePane` now debounces the navigated folder (500ms) and only advances it while the pane is visible, so fast chat-hopping collapses into a single navigation and hopping with the IDE hidden doesn't churn at all. (Deliberately visiting many distinct worktrees over a session can still accumulate extension hosts inside code-server - that reaping is code-server-side.)
 
-
+## 2026-07-14 - Worktree drift detects the EnterWorktree tool
 
 ### Fixed
 - **The "Agent is working in <branch> - Follow?" banner now fires when an agent calls Claude Code's `EnterWorktree` tool**, instead of only noticing a few commands later once the agent happened to *write* into the new worktree. `worktree-drift.ts` recognizes `EnterWorktree`, stashes its `name`, and resolves it against `git worktree list` (by branch or directory basename) on the next event. The detection is still deferred one event (Claude emits no `tool.completed`, and the worktree may have just been created), so a long agent pause can still delay the banner by the think time between tools - but reads now trigger it too, not just writes.
