@@ -15,7 +15,13 @@ import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('ide:pane')
 
-const IDLE_SHUTDOWN_MS = 15 * 60 * 1000
+/** Idle shutdown default (minutes); user-tunable via Settings → General. */
+const DEFAULT_IDLE_MINUTES = 5
+const IDLE_TTL_SETTING = 'ide.idleTtlMinutes'
+/** Recycle the single code-server after it has served this many distinct
+ *  folders, reclaiming the per-folder extension hosts it accumulates.
+ *  ponytail: fixed cap; make it a setting only if 5 turns out wrong. */
+const RECYCLE_AFTER_FOLDERS = 5
 
 type PaneState =
   | { kind: 'idle' }
@@ -33,6 +39,39 @@ export function IdePane(): React.ReactElement {
   const [retryNonce, setRetryNonce] = useState(0)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const webviewRef = useRef<HTMLElement>(null)
+  // Distinct folders the current server has served; drives the recycle cap.
+  const servedRef = useRef<Set<string>>(new Set())
+  // True while we're intentionally restarting the server (recycle), so the
+  // 'stopped' status push from that stop() isn't mistaken for a crash.
+  const recyclingRef = useRef(false)
+
+  // Idle shutdown TTL (ms), read from settings. Re-read when the user saves
+  // settings so it applies without a restart.
+  const [idleMs, setIdleMs] = useState(DEFAULT_IDLE_MINUTES * 60 * 1000)
+  useEffect(() => {
+    const load = () =>
+      window.api.settings.get(IDLE_TTL_SETTING).then((v) => {
+        const n = v ? parseFloat(v) : NaN
+        setIdleMs((Number.isFinite(n) && n > 0 ? n : DEFAULT_IDLE_MINUTES) * 60 * 1000)
+      })
+    void load()
+    const onChanged = () => void load()
+    window.addEventListener('sb-ide-settings-changed', onChanged)
+    return () => window.removeEventListener('sb-ide-settings-changed', onChanged)
+  }, [])
+
+  // The folder the webview actually points at. Changing `?folder=` fully
+  // reloads the workbench (new extension host per folder - code-server keeps
+  // the old ones around, so churn = CPU/RAM pileup). So debounce it and only
+  // advance while the pane is visible: fast chat-hopping collapses into a
+  // single navigation, and hopping with the IDE hidden doesn't churn at all.
+  const [navFolder, setNavFolder] = useState<string | null>(folder)
+  useEffect(() => {
+    if (!visible) return
+    if (folder === navFolder) return
+    const t = setTimeout(() => setNavFolder(folder), 500)
+    return () => clearTimeout(t)
+  }, [visible, folder, navFolder])
 
   // Focus follows the pane: when the workbench is shown and ready, move focus
   // INTO the webview so VS Code owns the keyboard - cmd+p (quick open), cmd+b
@@ -52,6 +91,11 @@ export function IdePane(): React.ReactElement {
         const suffix = pct !== undefined ? ` ${pct}%` : ''
         setState({ kind: 'booting', label: `Downloading VS Code workbench (one-time)…${suffix}` })
       } else if (status === 'stopped') {
+        // Intentional recycle restart, not a crash - swallow the one 'stopped'.
+        if (recyclingRef.current) {
+          recyclingRef.current = false
+          return
+        }
         setState((prev) =>
           prev.kind === 'ready' ? { kind: 'error', message: 'IDE server stopped unexpectedly.' } : prev
         )
@@ -73,28 +117,44 @@ export function IdePane(): React.ReactElement {
   // stays idle until the pane is explicitly opened. The 15-min idle shutdown
   // reclaims an unused prewarm.
   useEffect(() => {
-    if (!folder) return
+    if (!navFolder) return
     let cancelled = false
-    if (visible) {
-      setState((prev) => (prev.kind === 'ready' ? prev : { kind: 'booting', label: 'Starting IDE…' }))
-    }
-    void window.api.ide
-      .ensure(folder, { theme: useThemeStore.getState().theme, skipDownload: !visible })
-      .then((res) => {
-        if (cancelled) return
-        if (res.ok) {
-          setState({ kind: 'ready', port: res.port })
-        } else if (res.error === 'binary-not-installed' && !visible) {
-          // Prewarm on a cold install: silently stay idle.
-        } else {
-          log.warn('ide ensure failed', res.error)
-          setState({ kind: 'error', message: res.error })
+    void (async () => {
+      // Recycle: cap how many distinct folders one server accumulates. Past
+      // the cap, kill it (clearing every per-folder extension host) and let
+      // the ensure below respawn fresh - a ~2s relaunch, worth it vs pileup.
+      servedRef.current.add(navFolder)
+      if (servedRef.current.size > RECYCLE_AFTER_FOLDERS) {
+        log.info('ide recycle: served folder cap reached, restarting server')
+        recyclingRef.current = true
+        await window.api.ide.stop()
+        servedRef.current = new Set([navFolder])
+        if (cancelled) {
+          recyclingRef.current = false
+          return
         }
+      }
+      if (visible) {
+        setState((prev) => (prev.kind === 'ready' ? prev : { kind: 'booting', label: 'Starting IDE…' }))
+      }
+      const res = await window.api.ide.ensure(navFolder, {
+        theme: useThemeStore.getState().theme,
+        skipDownload: !visible,
       })
+      if (cancelled) return
+      if (res.ok) {
+        setState({ kind: 'ready', port: res.port })
+      } else if (res.error === 'binary-not-installed' && !visible) {
+        // Prewarm on a cold install: silently stay idle.
+      } else {
+        log.warn('ide ensure failed', res.error)
+        setState({ kind: 'error', message: res.error })
+      }
+    })()
     return () => {
       cancelled = true
     }
-  }, [visible, folder, retryNonce])
+  }, [visible, navFolder, retryNonce])
 
   // Idle shutdown: hidden long enough -> reclaim the server + guest renderer.
   useEffect(() => {
@@ -106,17 +166,18 @@ export function IdePane(): React.ReactElement {
     idleTimer.current = setTimeout(() => {
       log.info('ide idle shutdown after hidden timeout')
       void window.api.ide.stop()
+      servedRef.current = new Set()
       setState({ kind: 'idle' })
-    }, IDLE_SHUTDOWN_MS)
+    }, idleMs)
     return () => {
       if (idleTimer.current) clearTimeout(idleTimer.current)
       idleTimer.current = null
     }
-  }, [visible])
+  }, [visible, idleMs])
 
   const src =
-    state.kind === 'ready' && folder
-      ? `http://127.0.0.1:${state.port}/?folder=${encodeURIComponent(folder)}`
+    state.kind === 'ready' && navFolder
+      ? `http://127.0.0.1:${state.port}/?folder=${encodeURIComponent(navFolder)}`
       : 'about:blank'
 
   return (
