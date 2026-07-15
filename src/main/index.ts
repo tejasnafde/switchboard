@@ -45,6 +45,7 @@ let providerRegistry: ProviderRegistry | null = null
 // ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
 // a stray reload kills terminal panes and in-flight agent turns.
 const menuLog = createMainLogger('app:menu')
+const ideLog = createMainLogger('ide:popup')
 let reloadDialogOpen = false
 async function confirmReload(force: boolean): Promise<void> {
   const win = BrowserWindow.getFocusedWindow() ?? mainWindow
@@ -97,6 +98,30 @@ protocol.registerSchemesAsPrivileged([
     },
   },
 ])
+
+// Dev escape hatch: relocate userData so a second instance can run alongside
+// the installed app for testing (own profile => own single-instance lock).
+// Must run before requestSingleInstanceLock, which keys off the userData path.
+if (process.env.SB_USER_DATA) {
+  app.setPath('userData', process.env.SB_USER_DATA)
+}
+
+// Handle the code-oss:// scheme that the embedded code-server emits. Extension
+// post-OAuth "return to editor" deep links (e.g. atlascode's "Back to
+// code-server") use it; without a registered handler they dead-end in the
+// browser. We just focus the app - auth already completed via the extension's
+// own loopback server, so there's nothing to forward into the workbench.
+app.setAsDefaultProtocolClient('code-oss')
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  ideLog.info('open-url', { url })
+  const win = mainWindow
+  if (win) {
+    if (win.isMinimized()) win.restore()
+    win.focus()
+  }
+  app.focus({ steal: true })
+})
 
 // Single instance lock - prevent multiple windows
 const gotTheLock = app.requestSingleInstanceLock()
@@ -365,12 +390,33 @@ if (process.argv.includes('--smoke-test')) {
 app.whenReady().then(() => {
   if (process.argv.includes('--smoke-test')) return
 
-  // Route popups from the embedded code-server <webview> (extension
-  // "Open in browser" buttons, OAuth flows) to the system browser. A bare
-  // <webview> otherwise no-ops window.open, so auth flows can't even start.
+  // Send external links / OAuth opens from the embedded code-server <webview>
+  // to the system browser. Electron silently blocks window.open in a <webview>
+  // when allowpopups isn't honored, so the primary path overrides window.open
+  // inside the guest and forwards the URL out via the console channel (a
+  // preload with ipcRenderer.sendToHost would be cleaner if this turns flaky).
+  // setWindowOpenHandler below is a fallback for non-window.open opens (anchor
+  // target=_blank), gated by the allowpopups attribute set in IdePane.
+  const OPEN_MARKER = '__SB_OPEN_EXTERNAL__'
   app.on('web-contents-created', (_e, contents) => {
     if (contents.getType() !== 'webview') return
+    contents.on('dom-ready', () => {
+      contents
+        .executeJavaScript(
+          `(() => { if (window.__sbOpenHooked) return; window.__sbOpenHooked = true;
+             window.open = (u) => { if (u) console.info(${JSON.stringify(OPEN_MARKER)} + u); return null; }; })()`,
+        )
+        .catch((err) => ideLog.warn('inject window.open hook failed', err))
+    })
+    contents.on('console-message', (_ev, _level, message) => {
+      if (!message.startsWith(OPEN_MARKER)) return
+      const url = message.slice(OPEN_MARKER.length)
+      ideLog.info('window.open -> external', { url })
+      if (/^https?:/.test(url)) shell.openExternal(url)
+    })
+    // Fallback for any window.open that does slip through natively.
     contents.setWindowOpenHandler(({ url }) => {
+      ideLog.info('window.open (native) -> external', { url })
       if (/^https?:/.test(url)) shell.openExternal(url)
       return { action: 'deny' }
     })

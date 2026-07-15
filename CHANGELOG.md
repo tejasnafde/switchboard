@@ -2,6 +2,16 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-15 - Embedded IDE: extension OAuth login + reliable folder switching
+
+### Fixed
+- **Extension OAuth logins (Bitbucket / Atlassian atlascode, etc.) now work.** code-server's opener calls `window.open`, which Electron silently blocks in a `<webview>` unless `allowpopups` is honored - and React 19 was setting `allowpopups` as a property, not the attribute Electron reads, so the login never opened. Two fixes: `IdePane` sets `allowpopups` as a real DOM attribute via a callback ref, and the main process overrides `window.open` inside the guest and routes the URL to the system browser. The token exchange completes via the extension's own `127.0.0.1` loopback server.
+- **Switching chats now re-points the embedded IDE to the new project.** The `<webview>` only navigated via its React `src` attribute, which Electron ignores for same-origin `?folder=` changes after first load, so the workbench stayed pinned to the first folder. Navigation is now driven by `webview.loadURL()` on a `dom-ready`-guarded effect. (Shipped in 0.7.15.)
+
+### Added
+- **`code-oss://` deep-link handler.** Registers the app for the scheme code-server emits, so an extension's post-OAuth "return to editor" link focuses Switchboard instead of dead-ending in the browser. (Effective in packaged builds.)
+- **`SB_USER_DATA` env override** relocates `userData` before the single-instance lock, so a dev build can run alongside the installed app for testing.
+
 ## 2026-07-14 - Embedded IDE: TTL kill, server recycle, extension popups
 
 ### Added

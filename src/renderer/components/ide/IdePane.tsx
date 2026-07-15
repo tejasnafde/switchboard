@@ -7,7 +7,7 @@
  * new ?folder=. Hidden for 15 minutes -> kill the server and blank the webview
  * (about:blank releases the guest renderer); cold respawn is ~0.35s.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useThemeStore } from '../../stores/theme-store'
@@ -39,6 +39,14 @@ export function IdePane(): React.ReactElement {
   const [retryNonce, setRetryNonce] = useState(0)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const webviewRef = useRef<HTMLElement>(null)
+  // Callback ref: set allowpopups as a real DOM *attribute*. React 19 sets it
+  // as a property on the <webview> custom element, but Electron only honors the
+  // attribute (hasAttribute('allowpopups')) - without it window.open in the
+  // guest is silently cancelled, which kills extension OAuth "open in browser".
+  const setWebviewRef = useCallback((el: HTMLElement | null) => {
+    webviewRef.current = el
+    if (el) el.setAttribute('allowpopups', 'true')
+  }, [])
   // Last URL we explicitly navigated the webview to, so we don't reload the
   // same folder on every render.
   const lastNavRef = useRef<string | null>(null)
@@ -247,11 +255,10 @@ export function IdePane(): React.ReactElement {
         </div>
       )}
       {/* Painted app-dark so the guest never flashes white while loading.
-          allowpopups lets window.open reach the main-process handler that
-          routes extension OAuth logins to the system browser. */}
-      {/* src is a static bootstrap only; real navigation is driven by loadURL
+          allowpopups is set via setWebviewRef (attribute, not property).
+          src is a static bootstrap only; real navigation is driven by loadURL
           above (Electron webview won't re-navigate on attribute change). */}
-      <webview ref={webviewRef} src="about:blank" partition="persist:ide" allowpopups style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
+      <webview ref={setWebviewRef} src="about:blank" partition="persist:ide" style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
     </div>
   )
 }

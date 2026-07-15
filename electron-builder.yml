@@ -7,6 +7,14 @@
 appId: com.tejasnafde.switchboard
 productName: Switchboard
 copyright: Copyright © 2026 Tejas
+
+# code-oss:// deep links: the scheme the embedded code-server emits for
+# extension post-OAuth "return to editor" links. Registering it routes those
+# back into the app instead of dead-ending in the browser.
+protocols:
+  - name: Switchboard
+    schemes:
+      - code-oss
 directories:
   buildResources: resources/icons
   output: release
