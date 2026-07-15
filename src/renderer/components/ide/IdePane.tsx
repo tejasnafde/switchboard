@@ -39,6 +39,9 @@ export function IdePane(): React.ReactElement {
   const [retryNonce, setRetryNonce] = useState(0)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const webviewRef = useRef<HTMLElement>(null)
+  // Last URL we explicitly navigated the webview to, so we don't reload the
+  // same folder on every render.
+  const lastNavRef = useRef<string | null>(null)
   // Distinct folders the current server has served; drives the recycle cap.
   const servedRef = useRef<Set<string>>(new Set())
   // True while we're intentionally restarting the server (recycle), so the
@@ -180,6 +183,38 @@ export function IdePane(): React.ReactElement {
       ? `http://127.0.0.1:${state.port}/?folder=${encodeURIComponent(navFolder)}`
       : 'about:blank'
 
+  // Drive navigation via loadURL rather than the React `src` attribute:
+  // Electron's <webview> reliably navigates on first load but NOT when the
+  // attribute later changes to a same-origin, query-only different URL (the
+  // ?folder= switch), which is exactly the chat-switch case. dom-ready tells
+  // us the guest is attached (loadURL throws before that).
+  useEffect(() => {
+    const wv = webviewRef.current as (HTMLElement & {
+      loadURL?: (url: string) => Promise<void>
+    }) | null
+    if (!wv?.loadURL) return
+    let cancelled = false
+    const navigate = () => {
+      if (cancelled || lastNavRef.current === src) return
+      lastNavRef.current = src
+      try {
+        void wv.loadURL!(src).catch((err) => log.warn('ide webview navigate failed', err))
+      } catch (err) {
+        // loadURL throws synchronously if the guest isn't attached yet; clear
+        // the marker so the dom-ready firing below retries.
+        lastNavRef.current = null
+        log.warn('ide webview navigate deferred until dom-ready', err)
+      }
+    }
+    // If the guest is already attached, go now; otherwise wait for dom-ready.
+    wv.addEventListener('dom-ready', navigate)
+    navigate()
+    return () => {
+      cancelled = true
+      wv.removeEventListener('dom-ready', navigate)
+    }
+  }, [src])
+
   return (
     <div data-ide-pane style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
       {state.kind !== 'ready' && (
@@ -214,7 +249,9 @@ export function IdePane(): React.ReactElement {
       {/* Painted app-dark so the guest never flashes white while loading.
           allowpopups lets window.open reach the main-process handler that
           routes extension OAuth logins to the system browser. */}
-      <webview ref={webviewRef} src={src} partition="persist:ide" allowpopups style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
+      {/* src is a static bootstrap only; real navigation is driven by loadURL
+          above (Electron webview won't re-navigate on attribute change). */}
+      <webview ref={webviewRef} src="about:blank" partition="persist:ide" allowpopups style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
     </div>
   )
 }
