@@ -24,6 +24,18 @@ export function isTccProtectedPath(p: string, home: string = homedir()): boolean
   })
 }
 
+export class MissingCwdError extends Error {
+  readonly code = 'SWITCHBOARD_CWD_MISSING'
+  constructor(public readonly path: string) {
+    super(
+      `The project folder "${path}" no longer exists. If it was a worktree it may ` +
+        `have been removed or cleaned up. Reopen the project from an existing path ` +
+        `or recreate the worktree.`,
+    )
+    this.name = 'MissingCwdError'
+  }
+}
+
 export class TccAccessError extends Error {
   readonly code = 'SWITCHBOARD_TCC_DENIED'
   constructor(public readonly path: string) {
@@ -39,20 +51,23 @@ export class TccAccessError extends Error {
 }
 
 /**
- * Throws TccAccessError if `cwd` is a TCC-protected location that the
- * current process can't read. Resolves silently otherwise (including
- * non-darwin, non-protected paths, and paths that don't exist - those
- * surface as their own errors downstream).
+ * Throws MissingCwdError if `cwd` does not exist (node's spawn reports a
+ * missing cwd as ENOENT on the *command*, so downstream the SDK blames the
+ * claude binary instead of the folder). Throws TccAccessError if `cwd` is a
+ * TCC-protected location that the current process can't read. Resolves
+ * silently otherwise - other failure codes surface as their own errors
+ * downstream.
  */
 export async function assertCwdReadable(cwd: string): Promise<void> {
-  if (!isTccProtectedPath(cwd)) return
   try {
     await access(cwd, constants.R_OK)
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code
-    if (code === 'EPERM' || code === 'EACCES') {
+    if (code === 'ENOENT') {
+      throw new MissingCwdError(cwd)
+    }
+    if ((code === 'EPERM' || code === 'EACCES') && isTccProtectedPath(cwd)) {
       throw new TccAccessError(cwd)
     }
-    // ENOENT and friends fall through - adapter will report them.
   }
 }

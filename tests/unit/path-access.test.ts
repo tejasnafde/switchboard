@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isTccProtectedPath, assertCwdReadable, TccAccessError } from '../../src/main/path-access'
+import { isTccProtectedPath, assertCwdReadable, TccAccessError, MissingCwdError } from '../../src/main/path-access'
 import { mkdtemp, chmod, rm } from 'node:fs/promises'
 import { tmpdir, platform } from 'node:os'
 import { join } from 'node:path'
@@ -27,6 +27,15 @@ describe('isTccProtectedPath', () => {
 describe('assertCwdReadable', () => {
   it('passes for non-protected paths', async () => {
     await expect(assertCwdReadable('/tmp')).resolves.toBeUndefined()
+  })
+
+  it('throws MissingCwdError when the cwd does not exist', async () => {
+    // Regression: a deleted worktree cwd made node's spawn fail with ENOENT
+    // on the command, which the agent SDK reported as "Claude Code native
+    // binary not found" - the pre-flight must name the real cause.
+    const gone = join(tmpdir(), 'switchboard-missing-cwd-test-does-not-exist')
+    await expect(assertCwdReadable(gone)).rejects.toBeInstanceOf(MissingCwdError)
+    await expect(assertCwdReadable(gone)).rejects.toThrow(/no longer exists/)
   })
 
   if (platform() !== 'darwin') {
