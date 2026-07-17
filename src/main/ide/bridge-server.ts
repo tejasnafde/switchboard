@@ -110,6 +110,14 @@ export class BridgeServer {
     return sent
   }
 
+  /** Reveal the file explorer in the workbench serving `folder`. False if none is connected. */
+  focusExplorer(folder: string): boolean {
+    const socket = this.byFolder.get(folder)
+    if (!socket) return false
+    socket.send(JSON.stringify({ type: 'focusExplorer' }))
+    return true
+  }
+
   /** Route an open request to the extension host serving `folder`. False if none is connected. */
   openFile(folder: string, path: string, line?: number, endLine?: number): boolean {
     const socket = this.byFolder.get(folder)

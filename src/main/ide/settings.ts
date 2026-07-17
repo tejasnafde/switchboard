@@ -16,6 +16,10 @@ export const SEEDED_DEFAULTS: Record<string, unknown> = {
   // and Switchboard IS the chat surface - keep the workbench editor-first.
   'workbench.secondarySideBar.defaultVisibility': 'hidden',
   'chat.commandCenter.enabled': false,
+  // Third-party extensions (Atlassian, etc.) auto-pop a "Get started"
+  // walkthrough on activation, stealing the viewlet away from the file
+  // explorer. Suppress it - the workbench is embedded, not a fresh install.
+  'workbench.welcomePage.walkthroughs.openOnInstall': false,
 }
 
 export function themeToColorTheme(theme: string): string {

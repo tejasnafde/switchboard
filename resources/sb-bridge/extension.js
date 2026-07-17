@@ -76,6 +76,7 @@ function connect() {
     if (!msg) return
     if (msg.type === 'open') void handleOpen(msg)
     else if (msg.type === 'config') void handleConfig(msg)
+    else if (msg.type === 'focusExplorer') void vscode.commands.executeCommand('workbench.view.explorer')
   })
   ws.addEventListener('close', () => {
     socket = null

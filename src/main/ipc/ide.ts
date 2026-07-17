@@ -111,6 +111,13 @@ export function registerIdeHandlers(host: BackendHost): void {
         if (pending) {
           pendingOpens.delete(folder)
           bridge.openFile(folder, pending.path, pending.line, pending.endLine)
+        } else {
+          // Fresh workbench with no queued file: land on the file explorer.
+          // Otherwise VS Code restores the last-active viewlet, which a
+          // third-party extension (Atlassian/Bitbucket) may have grabbed.
+          // ponytail: viewlet is restore-based, so one focus on boot holds;
+          // if an extension actively re-steals, move this to a per-reveal push.
+          bridge.focusExplorer(folder)
         }
       },
     })

@@ -76,6 +76,12 @@ describe('terminal request (workbench terminal -> Switchboard terminal pane)', (
   })
 })
 
+describe('focusExplorer (main -> ext reveal file explorer)', () => {
+  it('accepts the bare focusExplorer frame', () => {
+    expect(parseMessage('{"type":"focusExplorer"}')).toEqual({ type: 'focusExplorer' })
+  })
+})
+
 describe('config messages (main -> ext live settings)', () => {
   it('accepts a config message with a settings object', () => {
     expect(parseMessage('{"type":"config","settings":{"workbench.colorTheme":"Default Light Modern"}}')).toEqual({
