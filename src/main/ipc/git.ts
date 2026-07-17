@@ -13,6 +13,7 @@
 import { userDataDir } from '../runtime'
 import type { BackendHost } from '../backend/host'
 import { execFile } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { GitChannels } from '@shared/ipc-channels'
 import { listRefs, switchRef, getCurrentBranch, type Ref } from '../git/refs'
@@ -54,7 +55,14 @@ export function registerGitHandlers(host: BackendHost): void {
 
   host.handle(
     GitChannels.CURRENT_BRANCH,
-    async (cwd: string): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> => {
+    async (
+      cwd: string,
+    ): Promise<{ ok: true; branch: string | null } | { ok: false; error: string; missing?: true }> => {
+      // A deleted cwd surfaces from spawn as a baffling 'spawn git ENOENT'.
+      // Name it: the renderer auto-heals orphaned worktree pointers off this.
+      if (!existsSync(cwd)) {
+        return { ok: false, error: `Folder no longer exists: ${cwd}`, missing: true }
+      }
       try {
         const branch = await getCurrentBranch(cwd)
         return { ok: true, branch }

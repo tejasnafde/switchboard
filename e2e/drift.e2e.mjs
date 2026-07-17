@@ -90,6 +90,20 @@ try {
     chipText = (await win.locator('button[title="Switch branch"]').first().textContent().catch(() => '')) ?? ''
   }
   check(chipText.includes('wt-e2e'), `branch chip follows the worktree (shows: ${chipText.trim()})`)
+
+  // Orphaned-worktree heal: an agent deletes the worktree the session
+  // follows (post-merge cleanup). The chip's poll sees the missing cwd and
+  // the pointer resets to the main clone - chip, IDE, terminals all recover.
+  const mainBranch = execFileSync('git', ['branch', '--show-current'], { cwd: project }).toString().trim()
+  rmSync(worktree, { recursive: true, force: true })
+  let healedChip = ''
+  for (let i = 0; i < 20 && !healedChip.includes(mainBranch); i++) {
+    await win.waitForTimeout(1000)
+    healedChip = (await win.locator('button[title="Switch branch"]').first().textContent().catch(() => '')) ?? ''
+  }
+  check(healedChip.includes(mainBranch), `deleted worktree heals back to the main clone (chip: ${healedChip.trim()})`)
+  const notice = await win.getByText('no longer exists - switched back').count()
+  check(notice > 0, 'chat shows a system notice about the switch')
 } finally {
   await app.close()
   rmSync(project, { recursive: true, force: true })

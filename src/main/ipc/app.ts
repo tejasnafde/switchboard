@@ -252,8 +252,10 @@ export function registerAppHandlers(host: BackendHost): void {
     ) => {
       setConversationWorktree(conversationId, worktreePath, worktreeBranch)
       // Live sessions share the conversation id as threadId: re-baseline the
-      // drift detector so reverse drift stays detectable after a Follow.
-      notifyWorktreeSwap(conversationId, worktreePath)
+      // drift detector so reverse drift stays detectable after a Follow. A
+      // null pointer (orphaned-worktree heal) re-baselines to the project
+      // root the session falls back to.
+      notifyWorktreeSwap(conversationId, worktreePath ?? getConversationById(conversationId)?.project_path ?? null)
       return { ok: true }
     },
   )

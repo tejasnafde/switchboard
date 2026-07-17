@@ -30,9 +30,11 @@ interface TriggerProps {
   onSwapWorktree?: (newCwd: string, branch: string) => void
   /** Called whenever the popover closes after a successful checkout. */
   onChanged?: () => void
+  /** The cwd itself no longer exists (deleted worktree) - owner can heal the pointer. */
+  onCwdMissing?: () => void
 }
 
-export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged }: TriggerProps) {
+export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissing }: TriggerProps) {
   const [open, setOpen] = useState(false)
   const [current, setCurrent] = useState<string | null>(null)
   const [isGitRepo, setIsGitRepo] = useState(true)
@@ -43,11 +45,17 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged }: TriggerP
     if (res.ok) {
       setCurrent(res.branch)
       setIsGitRepo(true)
+    } else if ((res as { missing?: boolean }).missing) {
+      // Deleted worktree: hide the chip and let the owner reset the session
+      // pointer back to the main clone instead of rendering spawn errors.
+      setCurrent(null)
+      setIsGitRepo(false)
+      onCwdMissing?.()
     } else {
       setCurrent(null)
       setIsGitRepo(!/not a git repository/i.test(res.error))
     }
-  }, [cwd])
+  }, [cwd, onCwdMissing])
 
   useEffect(() => {
     refresh()
