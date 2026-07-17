@@ -45,6 +45,23 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 
 ## Architecture
 
+### Backend transport seam (local in-process ↔ remote server)
+
+The renderer NEVER touches `ipcRenderer` directly - it calls `window.api.*` → a `Transport` (`src/shared/transport.ts`: `invoke/send/on`). The same backend handlers (`src/main/ipc/*` + `ProviderRegistry`) run behind one of two hosts (`src/main/backend/host.ts`):
+
+- **`ElectronIpcHost`** - default. Handlers run in the Electron main process, over `ipcMain`. Fully local, no network.
+- **`WsHost`** (`src/main/backend/ws-host.ts`) - the SAME handlers served over a `ws` WebSocket. Used by the standalone headless server.
+
+**Standalone server**: `src/server/index.ts` → bundled to `out/server/index.cjs` (`scripts/build-server.mjs`, esbuild, `electron` external). A headless Node process wrapping the identical handlers under `WsHost` (default `127.0.0.1:8765`, pidfile `~/.switchboard-server/server.pid`). Run via `npm run server`. This is what runs on a remote VM; PTYs/agents/git/fs spawn THERE and stream back.
+
+**Wire protocol**: `src/shared/ws-protocol.ts` - JSON frames `req/res/snd/evt` (`encodeFrame`/`decodeFrame`), `invoke`→req/res correlated by id.
+
+**Client transports** (`src/preload/`): `IpcTransport` (local), `WsTransport` (`src/shared/ws-transport.ts`, browser WebSocket + reconnect/outbox), `HybridTransport` (desktop-only channels → IPC, everything else → remote WS), `TransportRouter` + `routing-table.ts` (one transport per machine keyed by threadId/terminal id, so one window drives local + multiple remotes at once). `SWITCHBOARD_BACKEND_URL=ws://host:8765` flips the base transport to hybrid; unset = pure local.
+
+`src/shared/*` is the transport-agnostic contract layer (channels, wire protocol, transport interface, events, types) - **no `electron`, no `react` imports**. Consumed by preload AND both backend hosts.
+
+**Remote machines / SSH** (`src/main/machines/`): `sshTunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connectionManager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remoteExec.ts`/`reconnectBackoff.ts`/`sshConfig.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
+
 ### Window → Row → Window → Pane model (terminals)
 
 - `Row` = horizontal container (full-width stack of columns)
@@ -189,6 +206,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - Auto-title generation from first user message
 - Runtime mode selector (Plan/Sandbox/Accept-Edits/Full-Access) per-session, live-updates mid-turn
 - Tmux-style terminal windows + tabs + splits with proper cwd
+- **Remote backend over SSH**: a standalone headless server (`src/server`, `WsHost`) runs agents/PTYs/git/fs on a remote VM; the desktop app connects over an `ssh -L` tunnel via a `Transport` seam and drives local + remote sessions in the same window (`HybridTransport`/`TransportRouter`). Remote chats survive reconnects. See Backend transport seam above. (No mobile client, no cloud relay yet.)
 - Pre-commit hook + CI (GitHub Actions: typecheck + test + build)
 - **Slash command menu in chat input** with agent-skill exposure (2026-04-26): Claude SDK `init.commands` + Codex `skills/list` + OpenCode `available_commands_update` surfaced alongside Switchboard's 9 built-ins. Source-grouped sections in the menu; agent-source selections insert `/<name> ` for the user to fill in args.
 - **`⌘L` multi-source context bridge** (2026-04-29): single keybinding routes by the focused element's `data-context-source` attribute (`terminal | file-viewer | chat-message`). Terminal selection → fenced code block w/ pane label header (50k char cap). File-viewer selection → `@<path>:<start>-<end>` pill + fenced block. Chat-message selection → `> from <agent>: "..."` quoted block. All three append to the active session's draft via `useDraftStore.appendDraft`. Pure formatters (`formatTerminalContext`, `formatFileViewerContext`, `formatChatMessageContext`) are unit-tested.
@@ -269,8 +287,11 @@ If you touch the e2e scripts themselves, prefer fixing the leak at the source: r
 
 ```
 src/
+├── server/index.ts                    # Standalone headless backend (WsHost) for remote VMs → out/server/index.cjs
 ├── main/
 │   ├── index.ts                       # Electron main
+│   ├── backend/                       # host.ts (BackendHost: ElectronIpcHost | WsHost) · ws-host.ts
+│   ├── machines/                      # sshTunnel · connectionManager · provisioner · reconnectBackoff (remote-over-SSH)
 │   ├── agent/
 │   │   ├── agent-manager.ts           # Legacy --print agent (deprecated)
 │   │   ├── jsonl-parser.ts            # Source-aware (claude-code | codex) + image extraction
@@ -328,8 +349,10 @@ src/
 │   ├── hooks/                         # useTerminalLifecycle · useAgent · useTerminal
 │   ├── services/                      # terminal-registry · session-events · contextBridge · fuzzyScore · notifications
 │   └── stores/                        # agent · terminal · layout · theme · draft · kanban · provider-instance · skill · bookmark
+├── preload/                           # transport.ts (IpcTransport) · ws-transport (via shared) · hybrid-transport · transport-router · routing-table
 ├── shared/
 │   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · filePathRef.ts
+│   ├── transport.ts · ws-protocol.ts · ws-transport.ts · machines.ts   # backend transport seam (local ↔ remote)
 └── tests/unit/                        # ~1105 tests across 127 files
 ```
 

@@ -2,6 +2,12 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-17 - Embedded IDE: open on the file explorer, not a Bitbucket sign-in
+
+### Fixed
+- **Missing project folder no longer masquerades as a broken Claude install.** Starting or resuming a session whose cwd was deleted (e.g. a cleaned-up worktree) made node's spawn fail with ENOENT on the command, which the agent SDK surfaced as "Claude Code native binary not found at /opt/homebrew/bin/claude". The `assertCwdReadable` pre-flight now checks every cwd (not just TCC-protected ones) and throws `MissingCwdError` with a message that names the real cause and the fix.
+- **⌘⇧E now lands on the file explorer** instead of whatever viewlet a third-party extension grabbed. Extensions like Atlassian/Bitbucket auto-focus their own view (and pop a "Get started" walkthrough) on activation, and VS Code then restores that as the last-active viewlet. Two fixes: `workbench.welcomePage.walkthroughs.openOnInstall: false` in the seeded settings suppresses the walkthrough popup, and the bridge now sends a `focusExplorer` frame on each fresh workbench `hello` (no queued file), revealing the Explorer via `workbench.view.explorer`.
+
 ## 2026-07-15 - Embedded IDE: extension OAuth login + reliable folder switching
 
 ### Fixed
