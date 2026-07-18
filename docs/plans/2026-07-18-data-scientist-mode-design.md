@@ -312,8 +312,15 @@ Remote acceptance is part of every phase's definition of done, not a final phase
   (Atlassian re-onboarding, lost auth, forgotten kernel picks) every restart.
   Still open from phase 2: composer chip affordance, per-PROJECT usage-weighted sticky
   preference generalized across dev/PM/DS modes (current persistence is global).
-- **Phase 3 - SSH-first IDE**: code-server behind the backend seam, remote spawn via provisioner,
-  multi-port tunnel, remote bridge routing. One window, N client servers.
+- **Phase 3 - SSH-first IDE (core SHIPPED 2026-07-18)**: the provisioner installs code-server
+  (+ Jupyter/Python extensions) on the remote idempotently on every connect; the tunnel bootstrap
+  starts it (pidfile + stale-kill, loopback :8766); the ssh tunnel gained extraForwards and
+  carries a second -L to a per-machine STABLE persisted local port (`machines.idePort.<id>` -
+  origin-scoped IndexedDB again); status/getStatuses carry idePort into machine-store; IdePane
+  loads the forwarded remote workbench for machine-bound sessions (no local server involvement).
+  Verified live against geoiq-ssg-bot-stg-in via gcloud IAP (e2e/remote-ide.e2e.mjs).
+  Still open: sb-bridge extension on the remote (open-at-line/cmd+L from remote workbench),
+  remote bridge routing, per-machine workbench theme sync.
 - **Phase 4 - shared kernel**: per-project jupyter server (local or VM-side), workbench connects
   to it, MCP kernel tools for the agent, env picker with CellIQ's discovery.
 - **Phase 5 - polish**: `NotebookDiffCard` (cell grouping + AST badges), conflict re-baselining
