@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
+import { useMachineStore } from '../../stores/machine-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useThemeStore } from '../../stores/theme-store'
 import { createRendererLogger } from '../../logger'
@@ -26,7 +27,7 @@ const RECYCLE_AFTER_FOLDERS = 5
 type PaneState =
   | { kind: 'idle' }
   | { kind: 'booting'; label: string }
-  | { kind: 'ready'; port: number }
+  | { kind: 'ready'; port: number; remote?: boolean }
   | { kind: 'error'; message: string }
 
 export function IdePane(): React.ReactElement {
@@ -34,6 +35,15 @@ export function IdePane(): React.ReactElement {
     const session = s.sessions.find((x) => x.id === s.activeSessionId)
     return session?.worktreePath ?? session?.projectPath ?? null
   })
+  // Machine-bound sessions load the REMOTE workbench: code-server runs on the
+  // VM and is reached through the tunnel's forwarded local port. No local
+  // ensure/boot in that case - the ConnectionManager owns its lifecycle.
+  const sessionMachineId = useAgentStore((s) => {
+    const session = s.sessions.find((x) => x.id === s.activeSessionId)
+    const id = session?.machineId
+    return id && id !== 'local' ? id : null
+  })
+  const remoteIdePort = useMachineStore((s) => (sessionMachineId ? s.idePorts[sessionMachineId] ?? null : null))
   const visible = useLayoutStore((s) => s.rightPaneMode === 'files')
   const [state, setState] = useState<PaneState>({ kind: 'idle' })
   const [retryNonce, setRetryNonce] = useState(0)
@@ -107,8 +117,9 @@ export function IdePane(): React.ReactElement {
           recyclingRef.current = false
           return
         }
+        // Local-server signal only - a remote workbench rides the tunnel.
         setState((prev) =>
-          prev.kind === 'ready' ? { kind: 'error', message: 'IDE server stopped unexpectedly.' } : prev
+          prev.kind === 'ready' && !prev.remote ? { kind: 'error', message: 'IDE server stopped unexpectedly.' } : prev
         )
       }
     })
@@ -129,6 +140,13 @@ export function IdePane(): React.ReactElement {
   // reclaims an unused prewarm.
   useEffect(() => {
     if (!navFolder) return
+    // Remote session: the workbench is served by the machine's code-server
+    // through the tunnel. Point at the forwarded port; no local server work.
+    if (sessionMachineId) {
+      if (remoteIdePort) setState({ kind: 'ready', port: remoteIdePort, remote: true })
+      else setState({ kind: 'booting', label: 'Waiting for the remote IDE tunnel…' })
+      return
+    }
     let cancelled = false
     void (async () => {
       // Recycle: cap how many distinct folders one server accumulates. Past
@@ -165,7 +183,7 @@ export function IdePane(): React.ReactElement {
     return () => {
       cancelled = true
     }
-  }, [visible, navFolder, retryNonce])
+  }, [visible, navFolder, retryNonce, sessionMachineId, remoteIdePort])
 
   // Idle shutdown: hidden long enough -> reclaim the server + guest renderer.
   useEffect(() => {

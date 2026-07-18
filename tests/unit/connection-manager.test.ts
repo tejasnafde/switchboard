@@ -405,3 +405,48 @@ describe('ConnectionManager', () => {
     expect(mgr.statusOf('b')).toBe('offline')
   })
 })
+
+describe('remote IDE forward', () => {
+  it('allocates the machine-stable IDE port, forwards it, and exposes it when connected', async () => {
+    const spawned: string[][] = []
+    const d = deps({
+      allocateIdePort: async (id) => (id === 'm1' ? 41800 : 0),
+      remoteIdePort: 8766,
+      spawnTunnel: (_cmd, args) => {
+        spawned.push(args)
+        return fakeProc()
+      },
+    })
+    const mgr = new ConnectionManager(d)
+    await mgr.connect(machine())
+
+    const forwards = spawned[0].filter((_, i) => spawned[0][i - 1] === '-L')
+    expect(forwards).toEqual(['7681:127.0.0.1:8765', '41800:127.0.0.1:8766'])
+    expect(mgr.idePortOf('m1')).toBe(41800)
+    expect(mgr.statuses().m1.idePort).toBe(41800)
+  })
+
+  it('without allocateIdePort the tunnel keeps its single forward and idePort is null', async () => {
+    const spawned: string[][] = []
+    const mgr = new ConnectionManager(
+      deps({
+        spawnTunnel: (_cmd, args) => {
+          spawned.push(args)
+          return fakeProc()
+        },
+      })
+    )
+    await mgr.connect(machine())
+
+    expect(spawned[0].filter((a) => a === '-L')).toHaveLength(1)
+    expect(mgr.idePortOf('m1')).toBeNull()
+  })
+
+  it('idePort is not exposed while disconnected', async () => {
+    const d = deps({ allocateIdePort: async () => 41800, remoteIdePort: 8766 })
+    const mgr = new ConnectionManager(d)
+    await mgr.connect(machine())
+    await mgr.disconnect('m1')
+    expect(mgr.idePortOf('m1')).toBeNull()
+  })
+})

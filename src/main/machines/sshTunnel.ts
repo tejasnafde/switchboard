@@ -12,6 +12,8 @@ import { asUserScript } from './remoteExec'
 export interface TunnelOpts {
   localPort: number
   remotePort: number
+  /** Additional -L forwards riding the same tunnel (e.g. the remote IDE). */
+  extraForwards?: Array<{ localPort: number; remotePort: number }>
   remoteCommand: string
 }
 
@@ -79,6 +81,7 @@ export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { comman
     '-o', 'ServerAliveCountMax=2',
     '-o', 'ExitOnForwardFailure=yes',
     '-L', `${opts.localPort}:127.0.0.1:${opts.remotePort}`,
+    ...(opts.extraForwards ?? []).flatMap((f) => ['-L', `${f.localPort}:127.0.0.1:${f.remotePort}`]),
     ...sshHostArgs(machine),
     asUserScript(machine.remoteUser, opts.remoteCommand),
   ]

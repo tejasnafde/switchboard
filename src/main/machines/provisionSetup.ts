@@ -42,6 +42,30 @@ export function remoteInstallScript(): string {
 }
 
 /**
+ * Idempotent code-server install for the remote IDE (data scientist mode over
+ * SSH): download + extract the linux tarball once, seed workbench settings
+ * (workspace trust off - Restricted Mode disables extensions), and install
+ * the notebook extension stack from Open VSX. Exits 0 fast when the binary
+ * is already present. The tunnel bootstrap (connectDeps REMOTE_COMMAND)
+ * starts it; this script only installs.
+ */
+export function codeServerEnsureScript(codeServerVersion: string): string {
+  const dir = `${REMOTE_SERVER_DIR}/code-server`
+  return [
+    `D=${REMOTE_SERVER_DIR}`,
+    `if [ -x "${dir}/bin/code-server" ]; then exit 0; fi`,
+    'case "$(uname -m)" in x86_64) A=amd64 ;; aarch64|arm64) A=arm64 ;; *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;; esac',
+    `curl -fsSL -o "$D/cs.tar.gz" "https://github.com/coder/code-server/releases/download/v${codeServerVersion}/code-server-${codeServerVersion}-linux-$A.tar.gz"`,
+    `mkdir -p "${dir}" "$D/ide-data/User" "$D/ide-extensions"`,
+    `tar -xzf "$D/cs.tar.gz" -C "${dir}" --strip-components=1`,
+    `rm -f "$D/cs.tar.gz"`,
+    // Trust prompt off (Restricted Mode blocks extensions), no welcome tab.
+    `printf '%s' '{"security.workspace.trust.enabled": false, "workbench.startupEditor": "none", "telemetry.telemetryLevel": "off", "files.autoSave": "afterDelay"}' > "$D/ide-data/User/settings.json"`,
+    `"${dir}/bin/code-server" --extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" --install-extension ms-toolsai.jupyter --install-extension ms-python.python`,
+  ].join(' && ')
+}
+
+/**
  * Symlink the SDK-bundled claude CLI onto PATH so remote shells can run
  * `claude` directly. npm installs exactly one platform package via the SDK's
  * optionalDependencies; prefer the glibc dir and fall back to musl, mirroring

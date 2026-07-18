@@ -13,10 +13,38 @@ import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachi
 import type { MachineSnapshot } from '@shared/machines'
 import { parseSshConfig } from '../machines/sshConfig'
 import { ConnectionManager } from '../machines/connectionManager'
-import { allocatePort, spawnTunnel, waitForHealth, REMOTE_PORT, REMOTE_COMMAND } from '../machines/connectDeps'
+import { allocatePort, spawnTunnel, waitForHealth, REMOTE_PORT, REMOTE_COMMAND, REMOTE_IDE_PORT } from '../machines/connectDeps'
 import { makeProvision } from '../machines/provisionDeps'
+import { getSetting, setSetting } from '../db/database'
+import { createServer } from 'node:net'
 
 const log = createMainLogger('ipc:machines')
+
+/**
+ * Stable local forward port for a machine's code-server, persisted per
+ * machine: the workbench origin (http://127.0.0.1:<port>) scopes extension
+ * state in IndexedDB, so the port must survive reconnects AND app restarts
+ * or remote extension auth/state is orphaned every time. Falls back to a
+ * fresh port (and re-persists) only when the stored one is taken.
+ */
+async function stableIdePort(machineId: string): Promise<number> {
+  const key = `machines.idePort.${machineId}`
+  const stored = Number(getSetting(key))
+  if (Number.isInteger(stored) && stored > 1024 && stored < 65536 && (await portFree(stored))) {
+    return stored
+  }
+  const fresh = await allocatePort()
+  setSetting(key, String(fresh))
+  return fresh
+}
+
+function portFree(port: number): Promise<boolean> {
+  return new Promise((resolvePromise) => {
+    const srv = createServer()
+    srv.once('error', () => resolvePromise(false))
+    srv.listen(port, '127.0.0.1', () => srv.close(() => resolvePromise(true)))
+  })
+}
 
 // Hoisted to module scope: registerMachineHandlers runs again on macOS
 // 'activate' (window reopened after all windows closed), and a fresh
@@ -31,6 +59,8 @@ export function registerMachineHandlers(host: BackendHost): void {
   if (!connections) {
     connections = new ConnectionManager({
       allocatePort,
+      allocateIdePort: stableIdePort,
+      remoteIdePort: REMOTE_IDE_PORT,
       spawnTunnel,
       waitForHealth,
       remotePort: REMOTE_PORT,
@@ -38,9 +68,9 @@ export function registerMachineHandlers(host: BackendHost): void {
       provision: makeProvision((msg) => log.info(msg)),
       maxReconnects: 5,
       onLog: (msg) => log.error(msg),
-      onStatus: (machineId, status, url, reason, willRetry) => {
-        log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}${willRetry ? ' (will retry)' : ''}`)
-        currentHost?.emit(MachineChannels.STATUS, machineId, status, url, reason, willRetry)
+      onStatus: (machineId, status, url, reason, willRetry, idePort) => {
+        log.info(`status ${machineId}: ${status}${url ? ` (${url})` : ''}${reason ? ` - ${reason}` : ''}${willRetry ? ' (will retry)' : ''}${idePort ? ` idePort=${idePort}` : ''}`)
+        currentHost?.emit(MachineChannels.STATUS, machineId, status, url, reason, willRetry, idePort)
       },
     })
   }

@@ -93,3 +93,25 @@ describe('buildTunnelCommand', () => {
     ).toThrow(/unsafe ssh user/)
   })
 })
+
+describe('extra forwards (remote IDE)', () => {
+  it('emits one -L per extra forward after the primary', () => {
+    const { args } = buildTunnelCommand(mk({ sshAlias: 'stg' }), {
+      localPort: 50001,
+      remotePort: 8765,
+      extraForwards: [{ localPort: 50002, remotePort: 8766 }],
+      remoteCommand: 'run',
+    })
+    const forwards = args.filter((_, i) => args[i - 1] === '-L')
+    expect(forwards).toEqual(['50001:127.0.0.1:8765', '50002:127.0.0.1:8766'])
+  })
+
+  it('omitting extraForwards keeps the single-forward shape', () => {
+    const { args } = buildTunnelCommand(mk({ sshAlias: 'stg' }), {
+      localPort: 50001,
+      remotePort: 8765,
+      remoteCommand: 'run',
+    })
+    expect(args.filter((a) => a === '-L')).toHaveLength(1)
+  })
+})

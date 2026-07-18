@@ -33,11 +33,13 @@ function runner(probe: Record<string, unknown>) {
 const full = { node: 'v20', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16' }
 
 describe('provisionRemote', () => {
-  it('ready: probes only, no upload/install', async () => {
+  it('ready: probes + IDE ensure only, no upload/install', async () => {
     const r = runner(full)
     const res = await provisionRemote(machine, inputs, r)
     expect(res.action).toBe('ready')
-    expect(r.exec).toHaveBeenCalledTimes(1)
+    // probe + the idempotent remote-IDE ensure (fast no-op when installed)
+    expect(r.exec).toHaveBeenCalledTimes(2)
+    expect(decode(r.calls[1].args[r.calls[1].args.length - 1])).toContain('code-server')
   })
 
   it('no-node: stops after the probe', async () => {
@@ -53,14 +55,15 @@ describe('provisionRemote', () => {
     expect(res.action).toBe('install')
     const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
     expect(remotes[0]).toContain('node -e')
-    expect(remotes[1]).toMatch(/mkdir -p/)
-    expect(remotes[2]).toMatch(/cat > .*index\.cjs/)
-    expect(remotes[3]).toMatch(/cat > .*package\.json/)
-    expect(remotes[4]).toMatch(/npm install/)
-    expect(remotes[5]).toMatch(/ln -sf .*\.local\/bin\/claude/)
-    expect(remotes[6]).toMatch(/printf %s 0\.4\.16 > version/)
-    expect(r.calls[2].stdin).toEqual({ file: '/fake/out/server/index.cjs' })
-    expect(r.calls[3].stdin).toContain('better-sqlite3')
+    expect(remotes[1]).toContain('code-server') // remote IDE ensure rides every connect
+    expect(remotes[2]).toMatch(/mkdir -p/)
+    expect(remotes[3]).toMatch(/cat > .*index\.cjs/)
+    expect(remotes[4]).toMatch(/cat > .*package\.json/)
+    expect(remotes[5]).toMatch(/npm install/)
+    expect(remotes[6]).toMatch(/ln -sf .*\.local\/bin\/claude/)
+    expect(remotes[7]).toMatch(/printf %s 0\.4\.16 > version/)
+    expect(r.calls[3].stdin).toEqual({ file: '/fake/out/server/index.cjs' })
+    expect(r.calls[4].stdin).toContain('better-sqlite3')
   })
 
   it('writes the version marker as the very last step so a half-finished install never probes ready', async () => {
@@ -136,6 +139,7 @@ describe('provisionRemote', () => {
     await provisionRemote(machine, inputs, r, undefined, (label) => steps.push(label))
     expect(steps).toEqual([
       'checking remote',
+      'ensure remote IDE (one-time download)',
       'mkdir server dir',
       'upload server bundle',
       'upload package.json',
@@ -145,11 +149,11 @@ describe('provisionRemote', () => {
     ])
   })
 
-  it('fires only the probe step when the remote is already ready', async () => {
+  it('fires only the probe + IDE steps when the remote is already ready', async () => {
     const steps: string[] = []
     const r = runner(full)
     await provisionRemote(machine, inputs, r, undefined, (label) => steps.push(label))
-    expect(steps).toEqual(['checking remote'])
+    expect(steps).toEqual(['checking remote', 'ensure remote IDE (one-time download)'])
   })
 
   it('accepts node versions at or above the minimum', async () => {

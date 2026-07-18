@@ -20,6 +20,10 @@ const log = createMainLogger('machines:tunnel')
 
 export const REMOTE_PORT = 8765
 
+/** Remote code-server binds here (loopback-only; reached via the tunnel's
+ *  second -L forward). Same private-convention family as REMOTE_PORT. */
+export const REMOTE_IDE_PORT = 8766
+
 // Duplicated in src/server/index.ts - that file can't be imported here since
 // it boots a WebSocketServer as a side effect of module load. Keep the two
 // literals in sync.
@@ -31,9 +35,19 @@ export const SERVER_VERSION_CHANNEL = 'server:version'
 // Guard the kill on the pid actually being our server (its /proc cmdline names
 // index.cjs) so a crashed server whose pid got recycled to an unrelated process
 // is never signalled.
+// The bootstrap also (re)starts the remote code-server when the provisioner
+// has installed it - nohup'd with its own pidfile, same stale-pid guard. A
+// machine without code-server skips the block and the tunnel still works;
+// the extra -L forward binds regardless (ssh only dials the remote port on
+// first use).
 export const REMOTE_COMMAND =
   `D=${REMOTE_SERVER_DIR}; P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
   `if [ -n "$P" ] && grep -qsa index.cjs "/proc/$P/cmdline"; then kill "$P" 2>/dev/null; sleep 1; fi; ` +
+  `IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
+  `if [ -n "$IP" ] && grep -qsa code-server "/proc/$IP/cmdline"; then kill "$IP" 2>/dev/null; sleep 1; fi; ` +
+  `if [ -x "$D/code-server/bin/code-server" ]; then ` +
+  `nohup "$D/code-server/bin/code-server" --auth none --bind-addr 127.0.0.1:${REMOTE_IDE_PORT} ` +
+  `--extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" > "$D/ide.log" 2>&1 & echo $! > "$D/ide.pid"; fi; ` +
   `SWITCHBOARD_REMOTE=1 PORT=${REMOTE_PORT} node $D/index.cjs`
 
 export function allocatePort(): Promise<number> {

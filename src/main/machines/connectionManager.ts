@@ -20,6 +20,15 @@ export interface TunnelProcess {
 
 export interface ConnectionManagerDeps {
   allocatePort: () => Promise<number>
+  /**
+   * Local port to forward to the remote code-server, STABLE per machine
+   * (callers persist it): the workbench origin scopes extension state in
+   * IndexedDB, so a fresh port per connect would orphan auth/state each time.
+   * Omitted = no IDE forward (tests, feature off).
+   */
+  allocateIdePort?: (machineId: string) => Promise<number>
+  /** Remote port the machine's code-server binds (connectDeps.REMOTE_IDE_PORT). */
+  remoteIdePort?: number
   spawnTunnel: (command: string, args: string[]) => TunnelProcess
   /** Resolves ok once the remote backend answers over the tunnel; reason carries the last failure (version mismatch, timeout). */
   waitForHealth: (url: string) => Promise<{ ok: boolean; reason?: string }>
@@ -32,7 +41,14 @@ export interface ConnectionManagerDeps {
    * auto-reconnect is about to retry, so the UI can show "reconnecting" instead
    * of a dead-end failure.
    */
-  onStatus: (machineId: string, status: ConnectionStatus, url: string | null, reason?: string, willRetry?: boolean) => void
+  onStatus: (
+    machineId: string,
+    status: ConnectionStatus,
+    url: string | null,
+    reason?: string,
+    willRetry?: boolean,
+    idePort?: number | null
+  ) => void
   /** Install/upgrade the remote backend before the tunnel. 'no-node' aborts. onStep reports progress labels. */
   provision?: (machine: Machine, onStep?: (label: string) => void) => Promise<{ action: string }>
   /** Auto-reconnect a dropped tunnel this many times before giving up (default 0). */
@@ -51,6 +67,8 @@ interface Conn {
    *  can grab the freed port between attempts, burning the retry budget;
    *  a manual connect() clears it and re-allocates. */
   port: number | null
+  /** Local forward to the machine's code-server, when the IDE forward is on. */
+  idePort: number | null
   proc: TunnelProcess | null
   attempts: number
   intentional: boolean
@@ -71,10 +89,16 @@ export class ConnectionManager {
     return conn?.status === 'connected' ? conn.url : null
   }
 
+  /** Local forwarded port of the machine's code-server, when connected. */
+  idePortOf(machineId: string): number | null {
+    const conn = this.conns.get(machineId)
+    return conn?.status === 'connected' ? conn.idePort : null
+  }
+
   /** Snapshot of every tracked connection, for a reloaded renderer to resync from. */
-  statuses(): Record<string, { status: ConnectionStatus; url: string | null }> {
-    const out: Record<string, { status: ConnectionStatus; url: string | null }> = {}
-    for (const [id, conn] of this.conns) out[id] = { status: conn.status, url: this.urlOf(id) }
+  statuses(): Record<string, { status: ConnectionStatus; url: string | null; idePort: number | null }> {
+    const out: Record<string, { status: ConnectionStatus; url: string | null; idePort: number | null }> = {}
+    for (const [id, conn] of this.conns) out[id] = { status: conn.status, url: this.urlOf(id), idePort: this.idePortOf(id) }
     return out
   }
 
@@ -117,6 +141,7 @@ export class ConnectionManager {
       status: prev?.status ?? 'offline',
       url: prev?.url ?? '',
       port: prev?.port ?? null,
+      idePort: prev?.idePort ?? null,
       proc: null,
       attempts: prev?.attempts ?? 0,
       intentional: false,
@@ -126,10 +151,14 @@ export class ConnectionManager {
 
     try {
       const port = this.conns.get(machine.id)?.port ?? (await this.deps.allocatePort())
+      const idePort =
+        this.conns.get(machine.id)?.idePort ??
+        (this.deps.allocateIdePort ? await this.deps.allocateIdePort(machine.id) : null)
       const claimed = this.conns.get(machine.id)
       if (!claimed || claimed.epoch !== epoch) return
       const url = `ws://127.0.0.1:${port}`
       claimed.port = port
+      claimed.idePort = idePort
       claimed.url = url
 
       if (this.deps.provision) {
@@ -154,6 +183,9 @@ export class ConnectionManager {
       const { command, args } = buildTunnelCommand(machine, {
         localPort: port,
         remotePort: this.deps.remotePort,
+        ...(idePort && this.deps.remoteIdePort
+          ? { extraForwards: [{ localPort: idePort, remotePort: this.deps.remoteIdePort }] }
+          : {}),
         remoteCommand: this.deps.remoteCommand,
       })
       const proc = this.deps.spawnTunnel(command, args)
@@ -223,6 +255,6 @@ export class ConnectionManager {
     const next = nextConnectionStatus(conn.status, event)
     if (next === conn.status) return
     conn.status = next
-    this.deps.onStatus(machineId, next, this.urlOf(machineId), reason, willRetry)
+    this.deps.onStatus(machineId, next, this.urlOf(machineId), reason, willRetry, this.idePortOf(machineId))
   }
 }

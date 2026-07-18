@@ -39,6 +39,8 @@ interface MachineStore {
   remotes: Machine[]
   /** machineId -> live connection status (absent = offline). */
   connections: Record<string, MachineStatus>
+  /** Local forwarded port of each connected machine's code-server (remote IDE). */
+  idePorts: Record<string, number>
   /** Which machine the active chat is attached to. 'local' by default. */
   activeMachineId: string
   /** Collapsed machine nodes in the sidebar (ids). */
@@ -82,6 +84,7 @@ interface MachineStore {
 export const useMachineStore = create<MachineStore>((set, get) => ({
   remotes: [],
   connections: {},
+  idePorts: {},
   activeMachineId: 'local',
   collapsed: new Set(),
   sshHosts: [],
@@ -106,7 +109,8 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     try {
       const statuses = await api.getStatuses()
       const connections = { ...get().connections }
-      for (const [machineId, { status, url }] of Object.entries(statuses)) {
+      const idePorts = { ...get().idePorts }
+      for (const [machineId, { status, url, idePort }] of Object.entries(statuses)) {
         // Only dial when the store didn't know about the connection (i.e. a
         // reload wiped the transports). hydrate() also runs after add/update/
         // remove, and connectMachine tears down + replaces the socket - doing
@@ -116,8 +120,9 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
           bindSnapshotPaths(machineId, get().snapshots[machineId])
         }
         connections[machineId] = toMachineStatus(status)
+        if (status === 'connected' && idePort) idePorts[machineId] = idePort
       }
-      set({ connections })
+      set({ connections, idePorts })
     } catch (err) {
       log.warn('status resync failed', err)
     }
@@ -275,7 +280,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   },
 
   subscribeStatus: () =>
-    window.api.machines.onStatus((id, status, url, reason, willRetry) => {
+    window.api.machines.onStatus((id, status, url, reason, willRetry, idePort) => {
       if (status === 'connected' && url) {
         // connectMachine() replaces a stale transport in place, covering reconnect-after-error.
         window.api.routing.connectMachine(id, url)
@@ -305,7 +310,10 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
           progress[id] = null
           reconnecting[id] = false
         }
-        return { connections: { ...s.connections, [id]: toMachineStatus(status) }, lastError, progress, reconnecting }
+        const idePorts = { ...s.idePorts }
+        if (status === 'connected' && idePort) idePorts[id] = idePort
+        else if (status === 'offline') delete idePorts[id]
+        return { connections: { ...s.connections, [id]: toMachineStatus(status) }, idePorts, lastError, progress, reconnecting }
       })
     }),
 

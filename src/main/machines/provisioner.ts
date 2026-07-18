@@ -3,7 +3,8 @@ import type { Machine } from '@shared/machines'
 import { buildProbeCommand, buildRemoteShellCommand, REMOTE_SERVER_DIR } from './provisionCommands'
 import { parseProbeOutput } from './remoteProbe'
 import { planProvision, type ProvisionAction } from './provisionPlan'
-import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript } from './provisionSetup'
+import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript, codeServerEnsureScript } from './provisionSetup'
+import { CODE_SERVER_VERSION } from '../ide/code-server-manager'
 import { asUserScript, asUserUpload } from './remoteExec'
 import { summarizeSshError } from './sshError'
 
@@ -67,8 +68,6 @@ export async function provisionRemote(
   const plan = planProvision(probe, inputs.appVersion)
   log?.(`provision ${machine.id}: ${plan.action} (${plan.reason})`)
 
-  if (plan.action === 'ready' || plan.action === 'no-node') return plan
-
   const run = async (label: string, remoteCommand: string, stdin?: string | { file: string }) => {
     log?.(`provision ${machine.id}: ${label}`)
     onStep?.(label)
@@ -78,6 +77,20 @@ export async function provisionRemote(
   }
 
   const u = machine.remoteUser
+
+  // Remote IDE (code-server) rides every connect, including already-'ready'
+  // machines that predate the feature. Idempotent (exits fast when present)
+  // and non-fatal: agents and terminals must connect even if the IDE install
+  // fails (offline registry, unsupported arch).
+  if (plan.action !== 'no-node') {
+    try {
+      await run('ensure remote IDE (one-time download)', asUserScript(u, codeServerEnsureScript(CODE_SERVER_VERSION)))
+    } catch (err) {
+      log?.(`provision ${machine.id}: remote IDE install failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  if (plan.action === 'ready' || plan.action === 'no-node') return plan
   await run('mkdir server dir', asUserScript(u, `mkdir -p ${REMOTE_SERVER_DIR}`))
   await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), { file: inputs.bundlePath })
   await run(
