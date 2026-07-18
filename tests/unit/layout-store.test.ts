@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { paneMaxWidth } from '../../src/renderer/stores/layout-store'
+import { paneMaxWidth, useLayoutStore } from '../../src/renderer/stores/layout-store'
 
 /**
  * Test the layout store's state transitions.
@@ -130,5 +130,21 @@ describe('layout store state transitions', () => {
     state = toggleTerminal(state)
     expect(state.sidebarVisible).toBe(false)
     expect(state.terminalVisible).toBe(false)
+  })
+})
+
+describe('data scientist mode', () => {
+  it('toggling on forces the workbench into the wide slot (rightPaneMode files)', () => {
+    useLayoutStore.setState({ dataScienceMode: false, rightPaneMode: 'terminal' })
+    useLayoutStore.getState().toggleDataScienceMode()
+    expect(useLayoutStore.getState().dataScienceMode).toBe(true)
+    expect(useLayoutStore.getState().rightPaneMode).toBe('files')
+  })
+
+  it('toggling off keeps the current right-pane mode', () => {
+    useLayoutStore.setState({ dataScienceMode: true, rightPaneMode: 'files' })
+    useLayoutStore.getState().toggleDataScienceMode()
+    expect(useLayoutStore.getState().dataScienceMode).toBe(false)
+    expect(useLayoutStore.getState().rightPaneMode).toBe('files')
   })
 })

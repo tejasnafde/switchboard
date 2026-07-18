@@ -37,9 +37,11 @@ describe('App.tsx resize handle wiring', () => {
     expect(sidebar!).not.toContain('terminalRef')
   })
 
-  it('terminal handle: afterRef=terminalRef + invert, and does NOT reference sidebarRef', () => {
-    const terminal = handles.find((h) => h.includes('afterRef={terminalRef}'))
-    expect(terminal, 'expected a handle with afterRef={terminalRef}').toBeDefined()
+  it('terminal handle: afterRef targets the fixed-width pane (mode-aware) + invert, and does NOT reference sidebarRef', () => {
+    // Data scientist mode swaps which pane is fixed-width, so the handle
+    // targets dsChatRef there and terminalRef otherwise.
+    const terminal = handles.find((h) => h.includes('afterRef={dataScienceMode ? dsChatRef : terminalRef}'))
+    expect(terminal, 'expected a handle with the mode-aware afterRef').toBeDefined()
     expect(terminal!).toMatch(/\binvert\b/)
     // The recurring bug: copy-pasting the sidebar handle leaves
     // beforeRef={sidebarRef} on the terminal divider, which causes
@@ -92,7 +94,7 @@ describe('App.tsx resize handle wiring', () => {
       expect(h).not.toMatch(/max=\{\s*\d+\s*\}/) // no numeric literal max
     }
     const sidebar = handles.find((h) => h.includes('beforeRef={sidebarRef}'))!
-    const terminal = handles.find((h) => h.includes('afterRef={terminalRef}'))!
+    const terminal = handles.find((h) => h.includes('afterRef={dataScienceMode ? dsChatRef : terminalRef}'))!
     expect(sidebar).toContain('max={sidebarMax}')
     expect(terminal).toContain('max={terminalMax}')
   })

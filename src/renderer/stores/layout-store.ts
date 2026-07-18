@@ -58,6 +58,15 @@ interface LayoutStore {
    * for "All workspaces" / unassigned. `kanbanProjectFilter` further
    * narrows to a single project path; null = every project in scope.
    */
+  /**
+   * Data scientist mode (⌘⇧J): the IDE workbench takes the wide center slot
+   * and the chat column docks to the right edge. Pure CSS order/size swap -
+   * every pane stays mounted, so webview/xterm/chat state survives toggles.
+   * Persisted via settings DB so DS-heavy users reopen straight into it.
+   */
+  dataScienceMode: boolean
+  toggleDataScienceMode: () => void
+
   appView: AppView
   setAppView: (v: AppView) => void
   toggleAppView: () => void
@@ -123,6 +132,7 @@ const COLLAPSE_PROJECTS_KEY = 'sidebar.collapsed.projects'
 const COLLAPSE_WORKSPACES_KEY = 'sidebar.collapsed.workspaces'
 const RIGHT_PANE_MODE_KEY = 'layout.rightPaneMode'
 const APP_VIEW_KEY = 'layout.appView'
+const DATA_SCIENCE_MODE_KEY = 'layout.dataScienceMode'
 const KANBAN_WS_FILTER_KEY = 'layout.kanbanWorkspaceFilter'
 const KANBAN_PROJECT_FILTER_KEY = 'layout.kanbanProjectFilter'
 
@@ -161,6 +171,20 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     const next: RightPaneMode = cur === 'terminal' ? 'files' : 'terminal'
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, next) } catch { /* ignore */ }
     set({ rightPaneMode: next })
+  },
+
+  dataScienceMode: false,
+  toggleDataScienceMode: () => {
+    const next = !get().dataScienceMode
+    try { void window.api?.settings?.set(DATA_SCIENCE_MODE_KEY, String(next)) } catch { /* ignore */ }
+    // Entering DS mode surfaces the workbench in the wide slot; leaving it
+    // keeps whatever right-pane mode the user last had.
+    if (next) {
+      try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
+      set({ dataScienceMode: true, rightPaneMode: 'files' })
+    } else {
+      set({ dataScienceMode: false })
+    }
   },
 
   appView: 'chats',
@@ -315,13 +339,14 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr] = await Promise.all([
+    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr, dsModeStr] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
       window.api.settings.get(RIGHT_PANE_MODE_KEY),
       window.api.settings.get(APP_VIEW_KEY),
       window.api.settings.get(KANBAN_WS_FILTER_KEY),
       window.api.settings.get(KANBAN_PROJECT_FILTER_KEY),
+      window.api.settings.get(DATA_SCIENCE_MODE_KEY),
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
@@ -330,13 +355,17 @@ export async function hydrateSidebarCollapse(): Promise<void> {
     }
     const mode: RightPaneMode = modeStr === 'files' ? 'files' : 'terminal'
     const appView: AppView = appViewStr === 'kanban' ? 'kanban' : 'chats'
+    const dataScienceMode = dsModeStr === 'true'
     useLayoutStore.setState({
       sidebarCollapsedProjects: parse(projJson),
       sidebarCollapsedWorkspaces: parse(wsJson),
-      rightPaneMode: mode,
+      // DS mode needs the workbench in the wide slot regardless of the
+      // persisted right-pane mode.
+      rightPaneMode: dataScienceMode ? 'files' : mode,
       appView,
       kanbanWorkspaceFilter: kanbanWsStr || null,
       kanbanProjectFilter: kanbanProjStr || null,
+      dataScienceMode,
     })
   } catch { /* silent */ }
 }

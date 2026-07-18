@@ -1,4 +1,4 @@
-import { useRef, useEffect, type RefObject } from 'react'
+import { useRef, useEffect, type CSSProperties, type RefObject } from 'react'
 import { showDragOverlay, hideDragOverlay } from '../../services/dragOverlay'
 
 interface ResizeHandleProps {
@@ -23,6 +23,8 @@ interface ResizeHandleProps {
   visible?: boolean
   /** Stable identifier surfaced as `data-handle-id` (used by e2e selectors). */
   handleId?: string
+  /** Extra styles merged onto the handle root (e.g. flex `order` swaps). */
+  style?: CSSProperties
 }
 
 /**
@@ -41,6 +43,7 @@ export function ResizeHandle({
   onResizing,
   visible = true,
   handleId,
+  style,
 }: ResizeHandleProps) {
   const handleRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef(0)
@@ -175,6 +178,7 @@ export function ResizeHandle({
         touchAction: 'none',
         position: 'relative',
         zIndex: 10,
+        ...style,
       }}
     >
       {/* Expanded hit target - transparent background so it's still

@@ -48,6 +48,9 @@ function agentTypeForSource(source: SessionSummary['source']): 'claude-code' | '
 export function App() {
   const sidebarRef = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<HTMLDivElement>(null)
+  // Chat column wrapper - the resize target while data scientist mode has
+  // the chat docked right (the right pane is flex:1 then, not resizable).
+  const dsChatRef = useRef<HTMLDivElement>(null)
 
   const {
     sidebarWidth,
@@ -68,6 +71,7 @@ export function App() {
     rightPaneMode,
     toggleRightPaneMode,
     appView,
+    dataScienceMode,
   } = useLayoutStore()
 
   // Track viewport width so the panes' max width can be viewport-relative
@@ -584,6 +588,12 @@ export function App() {
         if (e.key === 'b' || e.key === 'B') {
           e.preventDefault()
           toggleSidebar()
+        }
+        // ⌘+Shift+J - data scientist mode: workbench center, chat docked right
+        else if ((e.key === 'j' || e.key === 'J') && e.shiftKey) {
+          e.preventDefault()
+          useLayoutStore.getState().toggleDataScienceMode()
+          if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
         } else if (e.key === 'j' || e.key === 'J') {
           e.preventDefault()
           toggleTerminal()
@@ -891,16 +901,35 @@ export function App() {
           {/* Chat - fills remaining space. In dual mode, renders two
               ChatPanels side-by-side with a draggable divider.
               Ratio lives in refs during drag for perf; on release we commit
-              to the store so it persists on layout changes / remount. */}
-          {activeTerminalPaneId ? (
-            <TerminalSessionPane paneId={activeTerminalPaneId} />
-          ) : dualChat && rightSessionId ? (
-            <DualChatPanels rightSessionId={rightSessionId} />
-          ) : (
-            <div style={{ flex: '1 1 0%', display: 'flex', minWidth: 0, overflow: 'hidden' }}>
+              to the store so it persists on layout changes / remount.
+              Data scientist mode (⌘⇧J) swaps the size + flex-order roles
+              with the right pane: the workbench takes the wide slot and this
+              chat column docks to the right edge. CSS-only, so every pane
+              stays mounted. */}
+          <div
+            ref={dsChatRef}
+            style={
+              dataScienceMode
+                ? {
+                    width: terminalVisible ? `${terminalWidth}px` : '0px',
+                    visibility: terminalVisible ? 'visible' : 'hidden',
+                    flexShrink: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    order: 3,
+                    borderLeft: terminalVisible ? '1px solid var(--border)' : 'none',
+                  }
+                : { flex: '1 1 0%', display: 'flex', minWidth: 0, overflow: 'hidden' }
+            }
+          >
+            {activeTerminalPaneId ? (
+              <TerminalSessionPane paneId={activeTerminalPaneId} />
+            ) : dualChat && rightSessionId ? (
+              <DualChatPanels rightSessionId={rightSessionId} />
+            ) : (
               <ChatPanel />
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Terminal divider - `beforeRef` intentionally omitted; the chat
               panel between sidebar and terminal is flex:1, no width to pin.
@@ -908,29 +937,42 @@ export function App() {
               bug; pinned by tests/unit/resize-handle-wiring.test.ts. */}
           <ResizeHandle
             direction="horizontal"
-            afterRef={terminalRef}
+            afterRef={dataScienceMode ? dsChatRef : terminalRef}
             invert
             min={200}
             max={terminalMax}
             onResizeEnd={handleTerminalResizeEnd}
             visible={terminalVisible}
             handleId="terminal"
+            {...(dataScienceMode ? { style: { order: 2 } } : {})}
           />
 
           {/* Right pane: terminal OR files (toggle via ⌘⇧E). Both stay mounted -
                hiding instead of unmounting preserves xterm/pty state and Shiki
-               cache between toggles, matching the terminal-registry pattern. */}
+               cache between toggles, matching the terminal-registry pattern.
+               In data scientist mode this pane takes the wide center slot. */}
           <div
             ref={terminalRef}
-            style={{
-              width: terminalVisible ? `${terminalWidth}px` : '0px',
-              visibility: terminalVisible ? 'visible' : 'hidden',
-              flexShrink: 0,
-              overflow: 'hidden',
-              display: 'flex',
-              borderLeft: terminalVisible ? '1px solid var(--border)' : 'none',
-              position: 'relative',
-            }}
+            style={
+              dataScienceMode
+                ? {
+                    flex: '1 1 0%',
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    order: 1,
+                    position: 'relative',
+                  }
+                : {
+                    width: terminalVisible ? `${terminalWidth}px` : '0px',
+                    visibility: terminalVisible ? 'visible' : 'hidden',
+                    flexShrink: 0,
+                    overflow: 'hidden',
+                    display: 'flex',
+                    borderLeft: terminalVisible ? '1px solid var(--border)' : 'none',
+                    position: 'relative',
+                  }
+            }
           >
             <div
               style={{
