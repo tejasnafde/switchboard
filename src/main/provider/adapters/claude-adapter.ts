@@ -207,7 +207,8 @@ export {
   denialMessage,
   type PermissionDecision,
 } from '../policy'
-import { decidePermission, CUSTOM_UI_TOOLS, denialMessage } from '../policy'
+import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect } from '../policy'
+import { notebookManager } from '../../notebooks/manager'
 import { applyEnvOverlay } from '../env-overlay'
 import {
   migrateClaudeSession,
@@ -646,9 +647,6 @@ export class ClaudeAdapter implements ProviderAdapter {
       const currentMode = active.session.runtimeMode
       const policy = decidePermission(currentMode, toolName)
 
-      if (policy === 'allow') {
-        return { behavior: 'allow', updatedInput: toolInput } as PermissionResult
-      }
       if (policy === 'deny') {
         const reason = denialMessage(currentMode, toolName)
         // Emit a UI-facing event so the renderer can show a denial pill in
@@ -665,6 +663,31 @@ export class ClaudeAdapter implements ProviderAdapter {
           behavior: 'deny',
           message: reason,
         } as PermissionResult
+      }
+      // ── Notebook guardrail ───────────────────────────────────
+      // Writes that would otherwise proceed (allow or prompt) never touch
+      // .ipynb JSON - the denial names the .py mirror so the agent
+      // self-corrects, and the mirror is created on demand so the very next
+      // tool call can succeed. Runs after the mode policy so plan mode's
+      // blanket denial keeps precedence. Paths resolve against the repo
+      // root the notebook manager attached at (the git toplevel), not the
+      // session cwd, so subdir-rooted sessions get correct mirror paths.
+      const notebookRoot = notebookManager.rootFor(threadId) ?? active.session.cwd
+      const redirect = notebookWriteRedirect(toolName, toolInput, notebookRoot)
+      if (redirect) {
+        if (redirect.notebookRelPath) notebookManager.ensureMirrorFor(threadId, redirect.notebookRelPath)
+        active.onEvent({
+          type: 'tool.denied',
+          threadId,
+          toolName,
+          reason: redirect.message,
+          mode: currentMode,
+        })
+        return { behavior: 'deny', message: redirect.message } as PermissionResult
+      }
+
+      if (policy === 'allow') {
+        return { behavior: 'allow', updatedInput: toolInput } as PermissionResult
       }
       // 'prompt' - fall through to approval request flow below
 
@@ -696,9 +719,15 @@ export class ClaudeAdapter implements ProviderAdapter {
     const claudeBin = findClaudeBin()
     const env = buildClaudeQueryEnv(buildClaudeCliEnv(), active.instanceEnv, active.instanceOauthDir)
 
+    // Notebook workspaces get the mirror-format guidance. The SDK default for
+    // an unset systemPrompt is the EMPTY string (verified against sdk.mjs), so
+    // passing a plain string adds exactly this text and nothing else.
+    const notebookPrompt = notebookManager.systemPromptFor(threadId)
+
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,
       ...(active.session.model ? { model: active.session.model } : {}),
+      ...(notebookPrompt ? { systemPrompt: notebookPrompt } : {}),
       permissionMode,
       // Always enable the dangerously-skip-permissions CLI flag so the user
       // can toggle to Full Access mid-session. Our `canUseTool` is the

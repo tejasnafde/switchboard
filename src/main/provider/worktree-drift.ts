@@ -122,7 +122,7 @@ export interface WorktreeRef {
 /** All comparisons happen in posix form - Windows mixes drive-letter
  *  backslash paths (fs APIs) with forward slashes (git porcelain), and
  *  prefix matching must not care which producer a path came from. */
-const toPosix = (p: string): string => p.replace(/\\/g, '/')
+export const toPosix = (p: string): string => p.replace(/\\/g, '/')
 
 const isUnder = (path: string, root: string): boolean => path === root || path.startsWith(root + '/')
 

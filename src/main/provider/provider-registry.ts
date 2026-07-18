@@ -15,6 +15,8 @@ import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { CheckpointTracker } from './checkpoint-tracker'
+import { notebookManager } from '../notebooks/manager'
+import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
 import { recordThreadSession, updateConversationSessionId } from '../db/database'
 import { defaultClaudeDir } from './claude-session-migrate'
@@ -80,6 +82,9 @@ export class ProviderRegistry {
     ])
     this.bus = new RuntimeEventBus()
     this.rendererUnsub = this.bus.subscribe((event) => this.forwardToRenderer(event))
+    // Invalid mirror edits are fs-watch findings with no tool result to ride
+    // on - surface them in chat as error events through this registry's bus.
+    notebookManager.setPublisher((event) => this.publish(event))
   }
 
   getAdapter(provider: ProviderKind): ProviderAdapter | undefined {
@@ -149,6 +154,31 @@ export class ProviderRegistry {
     if (!this.sessionCwd.has(threadId)) return
     this.sessionCwd.set(threadId, cwd)
     this.driftWatcher.onSessionMoved(threadId)
+    // Re-root the notebook mirror system on the new tree, otherwise the
+    // watcher stays on the abandoned worktree and diff-card filtering keys
+    // off the old cwd.
+    notebookManager.detach(threadId)
+    void this.attachNotebooks(threadId, cwd)
+  }
+
+  /** Notebook mirrors are rooted at the git toplevel because checkpoint diff
+   *  relPaths are always toplevel-relative, even for subdir-rooted sessions. */
+  private async attachNotebooks(threadId: string, cwd: string): Promise<void> {
+    try {
+      const root = await this.gitToplevel(cwd)
+      notebookManager.attach(threadId, cwd, root)
+    } catch (err) {
+      log.warn(`notebook attach failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  private async gitToplevel(cwd: string): Promise<string> {
+    try {
+      const { stdout } = await promisify(execFile)('git', ['rev-parse', '--show-toplevel'], { cwd })
+      return stdout.trim() || cwd
+    } catch {
+      return cwd // not a git repo - root at the session folder
+    }
   }
 
   private async listWorktrees(repoFolder: string, fresh = false): Promise<WorktreeRef[]> {
@@ -182,8 +212,14 @@ export class ProviderRegistry {
 
   private async emitFileEdits(threadId: string): Promise<void> {
     try {
-      const events = await this.checkpoints.finishTurn(threadId)
-      for (const ev of events) this.bus.publish(ev)
+      // Notebook hygiene: checkpoint diffs the mirror system already covers
+      // (mirror-path events, engine-performed .ipynb writes) are dropped -
+      // the synthetic mirror events drained below are their card source.
+      // Direct .ipynb edits that bypassed the mirror stay visible.
+      const events = filterNotebookFileEdits(await this.checkpoints.finishTurn(threadId), (ev) =>
+        notebookManager.explainsFileEdit(ev)
+      )
+      for (const ev of [...events, ...notebookManager.drainTurnEdits(threadId)]) this.bus.publish(ev)
     } catch (err) {
       log.warn(`emitFileEdits failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -261,6 +297,7 @@ export class ProviderRegistry {
       if (instance) session.instanceId = instance.id
       this.sessionAdapters.set(opts.threadId, adapter)
       this.sessionCwd.set(opts.threadId, session.cwd)
+      await this.attachNotebooks(opts.threadId, session.cwd)
       return session
     })
 
@@ -275,6 +312,7 @@ export class ProviderRegistry {
       // diff isolates exactly this turn's changes. No-op for non-git dirs.
       const cwd = this.sessionCwd.get(threadId)
       if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
+      notebookManager.beginTurn(threadId)
       await adapter.sendTurn(threadId, message, runtimeMode, images)
     })
 
@@ -346,6 +384,7 @@ export class ProviderRegistry {
       this.sessionCwd.delete(threadId)
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
+      notebookManager.detach(threadId)
     })
 
     log.info('IPC handlers registered')

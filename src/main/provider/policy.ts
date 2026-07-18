@@ -14,6 +14,8 @@
  */
 
 import type { RuntimeMode } from '@shared/provider-events'
+import { mirrorRelPathFor } from '../notebooks/mirror-format'
+import { extractWritePaths, toPosix } from './worktree-drift'
 
 /**
  * Read-only tools allowed in Plan mode. Mutations (Edit/Write/MultiEdit/
@@ -102,4 +104,78 @@ export function denialMessage(mode: RuntimeMode, _toolName: string): string {
     return 'Plan mode - tool execution is blocked. Use ExitPlanMode to propose your plan, or switch to Sandbox/Accept-Edits to execute.'
   }
   return 'Denied by permission policy'
+}
+
+export interface NotebookRedirect {
+  /** Repo-relative notebook path, or null when the write is outside the repo. */
+  notebookRelPath: string | null
+  /** Repo-relative mirror path, or null when the write is outside the repo. */
+  mirrorRelPath: string | null
+  /** Denial copy that teaches the agent the mirror path - self-healing. */
+  message: string
+}
+
+/**
+ * Collapse '.' and '..' segments without touching the filesystem. Returns
+ * null when '..' underflows past the root - callers treat that as outside
+ * the repo. Preserves a leading '/' or drive-letter prefix.
+ */
+function normalizePosix(p: string): string | null {
+  const lead = p.startsWith('/') ? '/' : ''
+  const out: string[] = []
+  for (const seg of p.split('/')) {
+    if (seg === '' || seg === '.') continue
+    if (seg === '..') {
+      // A drive-letter prefix ('C:') is a root and cannot be popped.
+      if (out.length === 0 || /^[A-Za-z]:$/.test(out[out.length - 1])) return null
+      out.pop()
+    } else {
+      out.push(seg)
+    }
+  }
+  return lead + out.join('/')
+}
+
+/**
+ * The .ipynb guardrail. Edit tools never touch notebook JSON directly - the
+ * denial names the .py mirror so the agent self-corrects without any prompt
+ * engineering. Reads pass through (extractWritePaths only matches write
+ * tools), so agents can still inspect outputs and tracebacks.
+ *
+ * Paths are '..'-normalized BEFORE the repo prefix check - a raw string
+ * prefix test would let '<root>/../../x.ipynb' pass as in-repo and the
+ * mirror machinery would then read/write outside the repo.
+ */
+export function notebookWriteRedirect(
+  toolName: string,
+  input: unknown,
+  repoRoot: string
+): NotebookRedirect | null {
+  const target = extractWritePaths(toolName, input)
+    .map(toPosix)
+    .find((p) => p.endsWith('.ipynb'))
+  if (!target) return null
+
+  const root = normalizePosix(toPosix(repoRoot).replace(/\/$/, '')) ?? ''
+  const isAbs = target.startsWith('/') || /^[A-Za-z]:\//.test(target)
+  const abs = normalizePosix(isAbs ? target : `${root}/${target}`)
+  if (!root || !abs || !abs.startsWith(`${root}/`)) {
+    return {
+      notebookRelPath: null,
+      mirrorRelPath: null,
+      message:
+        'Notebook .ipynb files are never edited directly in this workspace. Edit the notebook\'s .py mirror instead - mirrors live under .switchboard/notebooks/ in the repo the notebook belongs to.',
+    }
+  }
+
+  const notebookRelPath = abs.slice(root.length + 1)
+  const mirrorRelPath = mirrorRelPathFor(notebookRelPath)
+  return {
+    notebookRelPath,
+    mirrorRelPath,
+    message:
+      `Notebook .ipynb files are never edited directly in this workspace. Edit ${mirrorRelPath} instead - ` +
+      `it is the canonical .py mirror of ${notebookRelPath} and syncs back automatically. ` +
+      `Read it first to see the cell markers, keep every [cellbridge_id=...] marker intact, and prefix markdown cell lines with "# ".`,
+  }
 }
