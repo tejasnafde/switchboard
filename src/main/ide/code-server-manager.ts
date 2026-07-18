@@ -3,7 +3,7 @@
  * bridge-extension seeding for the single per-app server.
  * See docs/plans/2026-07-10-embedded-ide-design.md.
  */
-import { cpSync, mkdirSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 
 /** Folder name follows VS Code's <publisher>.<name>-<version> install convention. */
@@ -23,6 +23,26 @@ export function seedBridgeExtension(bundledDir: string, extensionsDir: string): 
 }
 
 export const CODE_SERVER_VERSION = '4.127.0'
+
+/**
+ * Notebook stack seeded from Open VSX for data scientist mode: the Jupyter
+ * extension gives .ipynb render + execute in the workbench, ms-python
+ * provides interpreter/venv discovery for its kernel picker. Installed via
+ * `code-server --install-extension` on boot when missing (spike-verified,
+ * dependency chain auto-resolves).
+ */
+export const JUPYTER_EXTENSION_IDS = ['ms-toolsai.jupyter', 'ms-python.python']
+
+/** True when the Jupyter stack has not been installed into extensionsDir yet. */
+export function needsJupyterSeed(extensionsDir: string): boolean {
+  let entries: string[]
+  try {
+    entries = readdirSync(extensionsDir)
+  } catch {
+    return true // dir missing entirely - fresh install
+  }
+  return !JUPYTER_EXTENSION_IDS.every((id) => entries.some((e) => e.startsWith(`${id}-`)))
+}
 
 /** GitHub release asset suffix per (platform, arch). Windows has no standalone build. */
 const ASSET_SUFFIX: Record<string, string> = {
@@ -88,6 +108,15 @@ export interface ManagerConfig {
   extensionsDir: string
   userDataDir: string
   env: NodeJS.ProcessEnv
+  /**
+   * Port to try FIRST, before falling back to dynamic allocation. The
+   * workbench origin must stay stable across app restarts - extension
+   * globalState/secrets live in the webview's IndexedDB, scoped to
+   * scheme+host+PORT - so callers persist the last bound port and pass it
+   * back in. A random port per launch orphans all extension state (atlascode
+   * re-onboarding, lost auth, forgotten kernel picks) on every restart.
+   */
+  preferredPort?: number
   /** Fired when a READY server exits on its own (not via stop()) - the
    *  renderer must learn the webview now points at a dead port. */
   onExit?: () => void
@@ -130,7 +159,10 @@ export class CodeServerManager {
   private async boot(): Promise<number> {
     let lastErr: Error = new Error('code-server failed to start')
     for (let attempt = 0; attempt < SPAWN_ATTEMPTS; attempt++) {
-      const port = await this.deps.allocatePort()
+      // First attempt honors the stable preferred port; the retry (its
+      // early-exit means EADDRINUSE) falls back to a fresh dynamic port.
+      const port =
+        attempt === 0 && this.cfg.preferredPort ? this.cfg.preferredPort : await this.deps.allocatePort()
       let exited = false
       const child = this.deps.spawn(
         this.cfg.binaryPath,

@@ -13,14 +13,64 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { WebSocketServer } from 'ws'
 import type { BackendHost } from '../backend/host'
 import { IdeChannels } from '@shared/ipc-channels'
-import { CodeServerManager, seedBridgeExtension, type IdeStatus } from '../ide/code-server-manager'
+import { CodeServerManager, seedBridgeExtension, needsJupyterSeed, JUPYTER_EXTENSION_IDS, type IdeStatus } from '../ide/code-server-manager'
 import { mergeUserSettings, themeToColorTheme } from '../ide/settings'
 import { ensureBinary } from '../ide/binary'
 import { BridgeServer } from '../ide/bridge-server'
 import { allocatePort } from '../machines/connectDeps'
 import { assertCwdReadable } from '../path-access'
 import { writeFileSafe } from '../files/writing'
+import { getSetting, setSetting } from '../db/database'
 import { createMainLogger } from '../logger'
+
+/** Last port the workbench served on - reused across restarts so the
+ *  origin-scoped IndexedDB (extension auth/state) survives. */
+const IDE_PORT_SETTING = 'ide.port'
+
+function storedIdePort(): number | undefined {
+  const raw = Number(getSetting(IDE_PORT_SETTING))
+  return Number.isInteger(raw) && raw > 1024 && raw < 65536 ? raw : undefined
+}
+
+function rememberIdePort(port: number): void {
+  if (storedIdePort() !== port) setSetting(IDE_PORT_SETTING, String(port))
+}
+
+/**
+ * One-time install of the notebook stack (Jupyter + Python extensions) from
+ * Open VSX, for data scientist mode. Runs during boot so the first workbench
+ * paint already renders .ipynb files; a failure (offline, registry down)
+ * only logs - the IDE must still boot, notebooks just open as JSON until a
+ * later boot succeeds.
+ */
+async function seedJupyterExtensions(binaryPath: string, extensionsDir: string): Promise<void> {
+  if (!needsJupyterSeed(extensionsDir)) return
+  log.info('seeding notebook extensions', { ids: JUPYTER_EXTENSION_IDS })
+  await new Promise<void>((resolvePromise) => {
+    const args = [
+      '--extensions-dir',
+      extensionsDir,
+      ...JUPYTER_EXTENSION_IDS.flatMap((id) => ['--install-extension', id]),
+    ]
+    const child = spawn(binaryPath, args, { env: process.env })
+    const timeout = setTimeout(() => {
+      log.warn('notebook extension seed timed out - continuing boot')
+      child.kill()
+    }, 180_000)
+    child.stderr.on('data', (d) => log.debug(`ext-seed err: ${String(d).trimEnd()}`))
+    child.on('error', (err) => {
+      log.warn('notebook extension seed failed to spawn', err)
+      clearTimeout(timeout)
+      resolvePromise()
+    })
+    child.on('exit', (code) => {
+      clearTimeout(timeout)
+      if (code !== 0) log.warn(`notebook extension seed exited ${code}`)
+      else log.info('notebook extensions installed')
+      resolvePromise()
+    })
+  })
+}
 
 const log = createMainLogger('ipc:ide')
 
@@ -94,6 +144,7 @@ export function registerIdeHandlers(host: BackendHost): void {
 
     const extensionsDir = join(userDataRoot, 'code-server', 'extensions')
     seedBridgeExtension(bundledExtensionDir(), extensionsDir)
+    await seedJupyterExtensions(binaryPath, extensionsDir)
 
     const bridgePort = await allocatePort()
     const bridgeToken = randomUUID()
@@ -147,6 +198,9 @@ export function registerIdeHandlers(host: BackendHost): void {
         extensionsDir,
         userDataDir: join(userDataRoot, 'code-server', 'data'),
         env: { SB_BRIDGE_PORT: String(bridgePort), SB_BRIDGE_TOKEN: bridgeToken },
+        // Stable workbench origin across restarts: extension state (auth,
+        // onboarding flags, kernel picks) lives in origin-scoped IndexedDB.
+        ...(storedIdePort() ? { preferredPort: storedIdePort() } : {}),
         // Crash after ready must reach the renderer - a webview pointed at a
         // dead port with no retry affordance is the worst failure mode.
         onExit: () => pushStatus('stopped'),
@@ -185,6 +239,7 @@ export function registerIdeHandlers(host: BackendHost): void {
         }
         pushStatus('starting')
         const port = await runtime.manager.ensureStarted()
+        rememberIdePort(port)
         pushStatus('ready', port)
         return { ok: true as const, port }
       } catch (err) {
