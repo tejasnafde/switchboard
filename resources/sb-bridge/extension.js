@@ -27,6 +27,12 @@ function workspaceFolder() {
 
 async function handleOpen(msg) {
   try {
+    // Notebooks must go through the editor-association path - forcing a text
+    // document renders the raw ipynb JSON instead of the notebook editor.
+    if (msg.path.endsWith('.ipynb')) {
+      await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(msg.path))
+      return
+    }
     const doc = await vscode.workspace.openTextDocument(msg.path)
     const editor = await vscode.window.showTextDocument(doc)
     if (msg.line !== undefined) {
@@ -108,6 +114,12 @@ function requestSwitchboardTerminal() {
   }
 }
 
+function requestDataScienceMode() {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({ type: 'dsmode' }))
+  }
+}
+
 function activate(context) {
   context.subscriptions.push(
     vscode.commands.registerCommand('switchboard.sendSelection', () => sendSelection()),
@@ -116,7 +128,8 @@ function activate(context) {
     // cmd+j, cmd+shift+e in package.json). Terminals opened programmatically
     // (tasks, debug, extensions) are left alone - disposing them killed task
     // runs mid-flight.
-    vscode.commands.registerCommand('switchboard.openTerminal', requestSwitchboardTerminal)
+    vscode.commands.registerCommand('switchboard.openTerminal', requestSwitchboardTerminal),
+    vscode.commands.registerCommand('switchboard.dsMode', requestDataScienceMode)
   )
   connect()
 }

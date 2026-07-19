@@ -133,6 +133,15 @@ export function App() {
       if (pid) setTimeout(() => focusTerminal(pid), 40)
     }), [])
 
+  // cmd+shift+J inside the workbench webview: VS Code owns the keys there, so
+  // the sb-bridge forwards the intent and we toggle data scientist mode here.
+  useEffect(() =>
+    window.api.ide.onDsModeRequest(() => {
+      const layout = useLayoutStore.getState()
+      layout.toggleDataScienceMode()
+      if (!layout.terminalVisible) layout.toggleTerminal()
+    }), [])
+
   // Workbench selections: cmd+l appends a draft pill; cmd+k (intent 'edit')
   // opens the quick prompt pre-filled with the selection - Cursor-style, but
   // the edit runs through the active agent + in-chat diff review.

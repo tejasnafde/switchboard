@@ -24,6 +24,10 @@
       {
         "command": "switchboard.openTerminal",
         "title": "Switchboard: Open Terminal"
+      },
+      {
+        "command": "switchboard.dsMode",
+        "title": "Switchboard: Toggle Data Scientist Mode"
       }
     ],
     "keybindings": [
@@ -52,6 +56,11 @@
       {
         "command": "switchboard.openTerminal",
         "key": "ctrl+`"
+      },
+      {
+        "command": "switchboard.dsMode",
+        "key": "ctrl+shift+j",
+        "mac": "cmd+shift+j"
       }
     ],
     "themes": [

@@ -33,6 +33,7 @@ const isSettingsObj = (v) => typeof v === 'object' && v !== null && !Array.isArr
 const VALIDATORS = {
   hello: (m) => isStr(m.folder),
   terminal: () => true,
+  dsmode: () => true,
   focusExplorer: () => true,
   config: (m) => isSettingsObj(m.settings),
   open: (m) => isStr(m.path) && (m.line === undefined || isNum(m.line)) && (m.endLine === undefined || isNum(m.endLine)),

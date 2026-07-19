@@ -568,6 +568,9 @@ const api = {
     /** ctrl+` or cmd+j inside the workbench - open Switchboard's terminal pane instead. */
     onTerminalRequest: (callback: () => void): (() => void) =>
       transport.on(IdeChannels.TERMINAL_REQUEST, () => callback()),
+    /** cmd+shift+J pressed inside the workbench webview. */
+    onDsModeRequest: (callback: () => void): (() => void) =>
+      transport.on(IdeChannels.DS_MODE_REQUEST, () => callback()),
     /** Follow the app theme - written into the workbench settings, applied live. */
     setTheme: (theme: string): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.SET_THEME, theme),
     onStatus: (

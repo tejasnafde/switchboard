@@ -30,7 +30,11 @@ interface TerminalRequestMessage {
   type: 'terminal'
 }
 
-type InboundMessage = HelloMessage | SelectionMessage | TerminalRequestMessage
+interface DsModeRequestMessage {
+  type: 'dsmode'
+}
+
+type InboundMessage = HelloMessage | SelectionMessage | TerminalRequestMessage | DsModeRequestMessage
 
 /** Minimal socket surface: real ws.WebSocket satisfies it, tests fake it. */
 export interface BridgeSocket {
@@ -48,6 +52,8 @@ export interface BridgeCallbacks {
   onSelection(msg: SelectionMessage): void
   /** The user asked for a terminal inside the workbench - open Switchboard's. */
   onTerminalRequest(): void
+  /** cmd+shift+J inside the workbench - toggle data scientist mode. */
+  onDsModeRequest?(): void
   /** A workbench ext host registered for `folder` (used to flush queued opens). */
   onHello?(folder: string): void
 }
@@ -68,6 +74,7 @@ function parseInbound(raw: string): InboundMessage | null {
     return { type: 'hello', folder: msg.folder }
   }
   if (msg.type === 'terminal') return { type: 'terminal' }
+  if (msg.type === 'dsmode') return { type: 'dsmode' }
   if (
     msg.type === 'selection' &&
     isStr(msg.path) &&
@@ -147,6 +154,8 @@ export class BridgeServer {
         this.callbacks.onHello?.(msg.folder)
       } else if (msg.type === 'terminal') {
         this.callbacks.onTerminalRequest()
+      } else if (msg.type === 'dsmode') {
+        this.callbacks.onDsModeRequest?.()
       } else {
         this.callbacks.onSelection(msg)
       }

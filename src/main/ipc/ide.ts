@@ -155,6 +155,10 @@ export function registerIdeHandlers(host: BackendHost): void {
         log.info('workbench terminal intent forwarded')
         host.emit(IdeChannels.TERMINAL_REQUEST)
       },
+      onDsModeRequest: () => {
+        log.info('workbench data-scientist-mode intent forwarded')
+        host.emit(IdeChannels.DS_MODE_REQUEST)
+      },
       // Pill clicks while the workbench is still booting are stashed and
       // flushed when its extension host dials home.
       onHello: (folder) => {
