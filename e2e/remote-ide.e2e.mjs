@@ -117,7 +117,7 @@ try {
   check(healthy, 'remote code-server answers /healthz through the tunnel')
 
   // Extension stack landed on the VM.
-  const remoteExts = execFileSync('ssh', ['-o', 'BatchMode=yes', alias, 'ls ~/.switchboard-server/ide-extensions 2>/dev/null'], {
+  const remoteExts = execFileSync('ssh', ['-o', 'BatchMode=yes', '-o', 'StrictHostKeyChecking=accept-new', alias, 'ls ~/.switchboard-server/ide-extensions 2>/dev/null'], {
     timeout: 60_000,
   }).toString()
   check(remoteExts.includes('ms-toolsai.jupyter-'), 'jupyter extension installed on the remote')

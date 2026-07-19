@@ -449,4 +449,28 @@ describe('remote IDE forward', () => {
     await mgr.disconnect('m1')
     expect(mgr.idePortOf('m1')).toBeNull()
   })
+
+  it('rotates the IDE port after a tunnel failure instead of colliding forever', async () => {
+    let idePortCalls = 0
+    let proc: ReturnType<typeof fakeProc>
+    const d = deps({
+      allocateIdePort: async () => 41800 + idePortCalls++,
+      remoteIdePort: 8766,
+      maxReconnects: 1,
+      reconnectDelayMs: () => 0,
+      setTimer: (fn) => void fn(),
+      spawnTunnel: () => {
+        proc = fakeProc()
+        return proc
+      },
+      waitForHealth: async () => {
+        proc.fireExit() // tunnel dies (e.g. ExitOnForwardFailure on the IDE port)
+        return { ok: false, reason: 'tunnel exited' }
+      },
+    })
+    const mgr = new ConnectionManager(d)
+    await mgr.connect(machine())
+
+    expect(idePortCalls).toBeGreaterThanOrEqual(2) // re-allocated, not reused
+  })
 })

@@ -48,21 +48,29 @@ async function seedJupyterExtensions(binaryPath: string, extensionsDir: string):
       ...JUPYTER_EXTENSION_IDS.flatMap((id) => ['--install-extension', id]),
     ]
     const child = spawn(binaryPath, args, { env: process.env })
+    let settled = false
+    const settle = (): void => {
+      if (!settled) {
+        settled = true
+        resolvePromise()
+      }
+    }
     const timeout = setTimeout(() => {
       log.warn('notebook extension seed timed out - continuing boot')
       child.kill()
+      settle()
     }, 180_000)
     child.stderr.on('data', (d) => log.debug(`ext-seed err: ${String(d).trimEnd()}`))
     child.on('error', (err) => {
       log.warn('notebook extension seed failed to spawn', err)
       clearTimeout(timeout)
-      resolvePromise()
+      settle()
     })
     child.on('exit', (code) => {
       clearTimeout(timeout)
       if (code !== 0) log.warn(`notebook extension seed exited ${code}`)
       else log.info('notebook extensions installed')
-      resolvePromise()
+      settle()
     })
   })
 }
@@ -138,8 +146,11 @@ export function registerIdeHandlers(host: BackendHost): void {
     patchUserSettings({})
 
     const extensionsDir = join(userDataRoot, 'code-server', 'extensions')
-    seedBridgeExtension(bundledExtensionDir(), extensionsDir)
+    // Jupyter first: --install-extension rewrites extensions.json, and the
+    // bridge seeder's manifest clear must run LAST so code-server rescans
+    // every folder (a manifest missing sb-bridge marks it removed).
     await seedJupyterExtensions(binaryPath, extensionsDir)
+    seedBridgeExtension(bundledExtensionDir(), extensionsDir)
 
     const bridgePort = await allocatePort()
     const bridgeToken = randomUUID()

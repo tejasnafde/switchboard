@@ -1,6 +1,7 @@
 /** The package.json + install script we drop on a VM to run the backend there. */
 export { REMOTE_SERVER_DIR } from './provisionCommands'
 import { REMOTE_SERVER_DIR } from './provisionCommands'
+import { JUPYTER_EXTENSION_IDS } from '../ide/code-server-manager'
 
 // Fork that ships the linux prebuilds upstream node-pty omits. Bump + validate
 // on a VM if our node-pty API surface outgrows what the fork tracks.
@@ -42,12 +43,12 @@ export function remoteInstallScript(): string {
 }
 
 /** Idempotent remote code-server install: tarball once, trust-off settings,
- *  notebook extensions. The tunnel bootstrap starts it; this only installs. */
+ *  notebook extensions guarded SEPARATELY so a failed extension install is
+ *  retried on the next connect instead of being masked by the existing
+ *  binary. The tunnel bootstrap starts it; this only installs. */
 export function codeServerEnsureScript(codeServerVersion: string): string {
   const dir = `${REMOTE_SERVER_DIR}/code-server`
-  return [
-    `D=${REMOTE_SERVER_DIR}`,
-    `if [ -x "${dir}/bin/code-server" ]; then exit 0; fi`,
+  const installBinary = [
     'case "$(uname -m)" in x86_64) A=amd64 ;; aarch64|arm64) A=arm64 ;; *) echo "unsupported arch $(uname -m)" >&2; exit 1 ;; esac',
     `curl -fsSL -o "$D/cs.tar.gz" "https://github.com/coder/code-server/releases/download/v${codeServerVersion}/code-server-${codeServerVersion}-linux-$A.tar.gz"`,
     `mkdir -p "${dir}" "$D/ide-data/User" "$D/ide-extensions"`,
@@ -55,7 +56,15 @@ export function codeServerEnsureScript(codeServerVersion: string): string {
     `rm -f "$D/cs.tar.gz"`,
     // Trust prompt off (Restricted Mode blocks extensions), no welcome tab.
     `printf '%s' '{"security.workspace.trust.enabled": false, "workbench.startupEditor": "none", "telemetry.telemetryLevel": "off", "files.autoSave": "afterDelay"}' > "$D/ide-data/User/settings.json"`,
-    `"${dir}/bin/code-server" --extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" --install-extension ms-toolsai.jupyter --install-extension ms-python.python`,
+  ].join(' && ')
+  const installExtensions =
+    `ls "$D/ide-extensions" 2>/dev/null | grep -q "^${JUPYTER_EXTENSION_IDS[0]}-" || ` +
+    `"${dir}/bin/code-server" --extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" ` +
+    JUPYTER_EXTENSION_IDS.map((id) => `--install-extension ${id}`).join(' ')
+  return [
+    `D=${REMOTE_SERVER_DIR}`,
+    `if [ -x "${dir}/bin/code-server" ]; then :; else ${installBinary}; fi`,
+    installExtensions,
   ].join(' && ')
 }
 

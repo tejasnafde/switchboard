@@ -163,7 +163,9 @@ export function IdePane(): React.ReactElement {
         }
       }
       if (visible) {
-        setState((prev) => (prev.kind === 'ready' ? prev : { kind: 'booting', label: 'Starting IDE…' }))
+        // A lingering REMOTE-ready state is stale here (session switched
+        // remote -> local) - never keep it pointing at the forwarded port.
+        setState((prev) => (prev.kind === 'ready' && !prev.remote ? prev : { kind: 'booting', label: 'Starting IDE…' }))
       }
       const res = await window.api.ide.ensure(navFolder, {
         theme: useThemeStore.getState().theme,

@@ -214,6 +214,10 @@ export class ConnectionManager {
     conn.epoch++ // any later callback from this attempt is now stale
     conn.proc?.kill()
     conn.proc = null
+    // The optional IDE forward rides the same tunnel under
+    // ExitOnForwardFailure - if its local port was taken, the whole tunnel
+    // died. Re-allocate on the next attempt instead of colliding again.
+    conn.idePort = null
 
     const max = this.deps.maxReconnects ?? 0
     if (conn.attempts < max) {

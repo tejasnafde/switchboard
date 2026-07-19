@@ -42,7 +42,7 @@ export const REMOTE_COMMAND =
   `D=${REMOTE_SERVER_DIR}; P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
   `if [ -n "$P" ] && grep -qsa index.cjs "/proc/$P/cmdline"; then kill "$P" 2>/dev/null; sleep 1; fi; ` +
   `IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
-  `if [ -n "$IP" ] && grep -qsa code-server "/proc/$IP/cmdline"; then kill "$IP" 2>/dev/null; sleep 1; fi; ` +
+  `if [ -n "$IP" ] && grep -qsa switchboard-server/code-server "/proc/$IP/cmdline"; then kill "$IP" 2>/dev/null; sleep 1; fi; ` +
   `if [ -x "$D/code-server/bin/code-server" ]; then ` +
   `nohup "$D/code-server/bin/code-server" --auth none --bind-addr 127.0.0.1:${REMOTE_IDE_PORT} ` +
   `--extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" > "$D/ide.log" 2>&1 & echo $! > "$D/ide.pid"; fi; ` +

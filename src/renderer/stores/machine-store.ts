@@ -311,8 +311,10 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
           reconnecting[id] = false
         }
         const idePorts = { ...s.idePorts }
+        // A dead tunnel means a dead forward - IdePane must fall back to its
+        // waiting state, not render a webview at a dead port.
         if (status === 'connected' && idePort) idePorts[id] = idePort
-        else if (status === 'offline') delete idePorts[id]
+        else delete idePorts[id]
         return { connections: { ...s.connections, [id]: toMachineStatus(status) }, idePorts, lastError, progress, reconnecting }
       })
     }),
