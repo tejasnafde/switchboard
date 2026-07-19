@@ -78,10 +78,8 @@ export async function provisionRemote(
 
   const u = machine.remoteUser
 
-  // Remote IDE (code-server) rides every connect, including already-'ready'
-  // machines that predate the feature. Idempotent (exits fast when present)
-  // and non-fatal: agents and terminals must connect even if the IDE install
-  // fails (offline registry, unsupported arch).
+  // Rides every connect (idempotent, fast when installed). Non-fatal: agents
+  // and terminals must connect even if the IDE install fails.
   if (plan.action !== 'no-node') {
     try {
       await run('ensure remote IDE (one-time download)', asUserScript(u, codeServerEnsureScript(CODE_SERVER_VERSION)))

@@ -20,12 +20,9 @@ export interface TunnelProcess {
 
 export interface ConnectionManagerDeps {
   allocatePort: () => Promise<number>
-  /**
-   * Local port to forward to the remote code-server, STABLE per machine
-   * (callers persist it): the workbench origin scopes extension state in
-   * IndexedDB, so a fresh port per connect would orphan auth/state each time.
-   * Omitted = no IDE forward (tests, feature off).
-   */
+  /** Stable-per-machine local forward for the remote code-server (callers
+   *  persist it - the webview origin scopes extension state). Omitted = no
+   *  IDE forward. */
   allocateIdePort?: (machineId: string) => Promise<number>
   /** Remote port the machine's code-server binds (connectDeps.REMOTE_IDE_PORT). */
   remoteIdePort?: number

@@ -108,14 +108,8 @@ export interface ManagerConfig {
   extensionsDir: string
   userDataDir: string
   env: NodeJS.ProcessEnv
-  /**
-   * Port to try FIRST, before falling back to dynamic allocation. The
-   * workbench origin must stay stable across app restarts - extension
-   * globalState/secrets live in the webview's IndexedDB, scoped to
-   * scheme+host+PORT - so callers persist the last bound port and pass it
-   * back in. A random port per launch orphans all extension state (atlascode
-   * re-onboarding, lost auth, forgotten kernel picks) on every restart.
-   */
+  /** Tried first, before dynamic allocation. Extension state lives in the
+   *  webview's origin-scoped IndexedDB, so the port must survive restarts. */
   preferredPort?: number
   /** Fired when a READY server exits on its own (not via stop()) - the
    *  renderer must learn the webview now points at a dead port. */

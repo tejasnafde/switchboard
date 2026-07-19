@@ -20,13 +20,9 @@ import { createServer } from 'node:net'
 
 const log = createMainLogger('ipc:machines')
 
-/**
- * Stable local forward port for a machine's code-server, persisted per
- * machine: the workbench origin (http://127.0.0.1:<port>) scopes extension
- * state in IndexedDB, so the port must survive reconnects AND app restarts
- * or remote extension auth/state is orphaned every time. Falls back to a
- * fresh port (and re-persists) only when the stored one is taken.
- */
+/** Per-machine persisted local forward for the remote code-server - the
+ *  webview origin scopes extension state, so the port must survive restarts.
+ *  Re-allocates (and re-persists) only when the stored port is taken. */
 async function stableIdePort(machineId: string): Promise<number> {
   const key = `machines.idePort.${machineId}`
   const stored = Number(getSetting(key))

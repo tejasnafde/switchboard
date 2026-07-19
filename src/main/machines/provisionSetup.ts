@@ -41,14 +41,8 @@ export function remoteInstallScript(): string {
   ].join(' && ')
 }
 
-/**
- * Idempotent code-server install for the remote IDE (data scientist mode over
- * SSH): download + extract the linux tarball once, seed workbench settings
- * (workspace trust off - Restricted Mode disables extensions), and install
- * the notebook extension stack from Open VSX. Exits 0 fast when the binary
- * is already present. The tunnel bootstrap (connectDeps REMOTE_COMMAND)
- * starts it; this script only installs.
- */
+/** Idempotent remote code-server install: tarball once, trust-off settings,
+ *  notebook extensions. The tunnel bootstrap starts it; this only installs. */
 export function codeServerEnsureScript(codeServerVersion: string): string {
   const dir = `${REMOTE_SERVER_DIR}/code-server`
   return [

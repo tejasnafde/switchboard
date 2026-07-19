@@ -58,12 +58,8 @@ interface LayoutStore {
    * for "All workspaces" / unassigned. `kanbanProjectFilter` further
    * narrows to a single project path; null = every project in scope.
    */
-  /**
-   * Data scientist mode (⌘⇧J): the IDE workbench takes the wide center slot
-   * and the chat column docks to the right edge. Pure CSS order/size swap -
-   * every pane stays mounted, so webview/xterm/chat state survives toggles.
-   * Persisted via settings DB so DS-heavy users reopen straight into it.
-   */
+  /** Data scientist mode (⌘⇧J): workbench takes the wide center slot, chat
+   *  docks right. CSS order/size swap only - every pane stays mounted. */
   dataScienceMode: boolean
   toggleDataScienceMode: () => void
 

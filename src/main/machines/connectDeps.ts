@@ -35,11 +35,9 @@ export const SERVER_VERSION_CHANNEL = 'server:version'
 // Guard the kill on the pid actually being our server (its /proc cmdline names
 // index.cjs) so a crashed server whose pid got recycled to an unrelated process
 // is never signalled.
-// The bootstrap also (re)starts the remote code-server when the provisioner
-// has installed it - nohup'd with its own pidfile, same stale-pid guard. A
-// machine without code-server skips the block and the tunnel still works;
-// the extra -L forward binds regardless (ssh only dials the remote port on
-// first use).
+// The bootstrap also (re)starts the remote code-server when installed -
+// nohup'd, own pidfile, same stale-pid guard. Missing binary = skipped;
+// the tunnel still works.
 export const REMOTE_COMMAND =
   `D=${REMOTE_SERVER_DIR}; P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
   `if [ -n "$P" ] && grep -qsa index.cjs "/proc/$P/cmdline"; then kill "$P" 2>/dev/null; sleep 1; fi; ` +

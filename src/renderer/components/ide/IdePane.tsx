@@ -35,9 +35,8 @@ export function IdePane(): React.ReactElement {
     const session = s.sessions.find((x) => x.id === s.activeSessionId)
     return session?.worktreePath ?? session?.projectPath ?? null
   })
-  // Machine-bound sessions load the REMOTE workbench: code-server runs on the
-  // VM and is reached through the tunnel's forwarded local port. No local
-  // ensure/boot in that case - the ConnectionManager owns its lifecycle.
+  // Machine-bound sessions load the REMOTE workbench through the tunnel's
+  // forwarded port - the ConnectionManager owns that lifecycle, not us.
   const sessionMachineId = useAgentStore((s) => {
     const session = s.sessions.find((x) => x.id === s.activeSessionId)
     const id = session?.machineId

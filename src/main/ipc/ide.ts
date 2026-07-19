@@ -36,13 +36,8 @@ function rememberIdePort(port: number): void {
   if (storedIdePort() !== port) setSetting(IDE_PORT_SETTING, String(port))
 }
 
-/**
- * One-time install of the notebook stack (Jupyter + Python extensions) from
- * Open VSX, for data scientist mode. Runs during boot so the first workbench
- * paint already renders .ipynb files; a failure (offline, registry down)
- * only logs - the IDE must still boot, notebooks just open as JSON until a
- * later boot succeeds.
- */
+/** One-time Open VSX install of the notebook stack during boot. Failure only
+ *  logs - the IDE must still boot (notebooks open as JSON until a later boot). */
 async function seedJupyterExtensions(binaryPath: string, extensionsDir: string): Promise<void> {
   if (!needsJupyterSeed(extensionsDir)) return
   log.info('seeding notebook extensions', { ids: JUPYTER_EXTENSION_IDS })

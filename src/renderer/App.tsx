@@ -907,14 +907,9 @@ export function App() {
             position: 'relative',
           }}
         >
-          {/* Chat - fills remaining space. In dual mode, renders two
-              ChatPanels side-by-side with a draggable divider.
-              Ratio lives in refs during drag for perf; on release we commit
-              to the store so it persists on layout changes / remount.
-              Data scientist mode (⌘⇧J) swaps the size + flex-order roles
-              with the right pane: the workbench takes the wide slot and this
-              chat column docks to the right edge. CSS-only, so every pane
-              stays mounted. */}
+          {/* Chat - fills remaining space; dual mode renders two ChatPanels.
+              Data scientist mode (⌘⇧J) swaps size + flex-order with the right
+              pane (CSS-only, panes stay mounted). */}
           <div
             ref={dsChatRef}
             style={
@@ -956,10 +951,8 @@ export function App() {
             {...(dataScienceMode ? { style: { order: 2 } } : {})}
           />
 
-          {/* Right pane: terminal OR files (toggle via ⌘⇧E). Both stay mounted -
-               hiding instead of unmounting preserves xterm/pty state and Shiki
-               cache between toggles, matching the terminal-registry pattern.
-               In data scientist mode this pane takes the wide center slot. */}
+          {/* Right pane: terminal OR files (⌘⇧E), both stay mounted. Takes
+               the wide center slot in data scientist mode. */}
           <div
             ref={terminalRef}
             style={
