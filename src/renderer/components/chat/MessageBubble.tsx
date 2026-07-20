@@ -55,6 +55,35 @@ export function resolveBubbleProjectPath(
   return sessions.find((s) => s.id === preferredId)?.projectPath
 }
 
+/**
+ * Quiet-gap debounce for the DOM post-processing effects (copy buttons +
+ * file pills). Streaming commits land ~every 33ms, so the timer keeps
+ * resetting until the stream pauses/ends; static bubbles pay one
+ * imperceptible delay.
+ */
+const POST_PROCESS_DEBOUNCE_MS = 120
+
+// files:resolve is IPC; existing paths are stable for the window's lifetime,
+// so cache positives. Negatives are evicted so a file the agent creates
+// later in the turn still upgrades to a chip on the next render pass.
+const fileResolveCache = new Map<string, Promise<boolean>>()
+
+function resolveFileCached(projectPath: string, path: string): Promise<boolean> {
+  // No resolve API (alternate transport, teardown): keep the optimistic
+  // chip rather than throwing inside the enhancement pass.
+  if (typeof window.api?.files?.resolve !== 'function') return Promise.resolve(true)
+  const key = `${projectPath}\0${path}`
+  let cached = fileResolveCache.get(key)
+  if (!cached) {
+    cached = window.api.files.resolve(projectPath, path).then((res: { exists: boolean }) => !!res?.exists)
+    cached.then((exists) => {
+      if (!exists) fileResolveCache.delete(key)
+    }).catch(() => fileResolveCache.delete(key))
+    fileResolveCache.set(key, cached)
+  }
+  return cached
+}
+
 export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageBubbleProps) {
   const renderedContent = useMemo(() => {
     if (!message.content) return ''
@@ -81,92 +110,100 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // landed without forcing them to dig into the sidebar's secondary line.
   const [forkToast, setForkToast] = useState<string | null>(null)
 
-  // Inject copy buttons on each <pre> code block after markdown renders
+  // Inject copy buttons on each <pre> code block after markdown renders.
+  // Debounced: during streaming this effect used to re-run the DOM walk on
+  // every content commit; deferring until a quiet gap runs it once per
+  // message in practice (the timer resets while content keeps changing).
   useEffect(() => {
-    const root = markdownRef.current
-    if (!root) return
-    const pres = root.querySelectorAll('pre')
-    pres.forEach((pre) => {
-      // Skip if already processed
-      if (pre.querySelector(':scope > .code-copy-btn')) return
-      pre.style.position = 'relative'
-      const btn = document.createElement('button')
-      btn.className = 'code-copy-btn'
-      btn.type = 'button'
-      btn.textContent = 'Copy'
-      btn.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        const code = pre.querySelector('code')
-        const text = code?.textContent ?? pre.textContent ?? ''
-        navigator.clipboard.writeText(text).then(() => {
-          btn.textContent = 'Copied'
-          btn.classList.add('copied')
-          setTimeout(() => {
-            btn.textContent = 'Copy'
-            btn.classList.remove('copied')
-          }, 1500)
-        }).catch(() => {})
+    const timer = setTimeout(() => {
+      const root = markdownRef.current
+      if (!root) return
+      const pres = root.querySelectorAll('pre')
+      pres.forEach((pre) => {
+        // Skip if already processed
+        if (pre.querySelector(':scope > .code-copy-btn')) return
+        pre.style.position = 'relative'
+        const btn = document.createElement('button')
+        btn.className = 'code-copy-btn'
+        btn.type = 'button'
+        btn.textContent = 'Copy'
+        btn.addEventListener('click', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          const code = pre.querySelector('code')
+          const text = code?.textContent ?? pre.textContent ?? ''
+          navigator.clipboard.writeText(text).then(() => {
+            btn.textContent = 'Copied'
+            btn.classList.add('copied')
+            setTimeout(() => {
+              btn.textContent = 'Copy'
+              btn.classList.remove('copied')
+            }, 1500)
+          }).catch(() => {})
+        })
+        pre.appendChild(btn)
       })
-      pre.appendChild(btn)
-    })
+    }, POST_PROCESS_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
   }, [renderedContent])
 
   // Inline file-pill enhancement: replace `<code>src/foo.ts:42-58</code>`
   // with clickable chips that open the file viewer at that line range.
   // Verifies existence on disk via debounced files:resolve before swapping
   // - paths the agent hallucinated stay as plain code.
+  // Debounced like the copy-button effect above: the TreeWalker pass plus
+  // per-path resolve IPC used to fire on every streaming commit.
   useEffect(() => {
-    const root = markdownRef.current
-    if (!root) return
-    const store = useAgentStore.getState()
-    const projectPath = resolveBubbleProjectPath(store.sessions, sessionId, store.activeSessionId)
-    if (!projectPath) return
+    const timer = setTimeout(() => {
+      const root = markdownRef.current
+      if (!root) return
+      const store = useAgentStore.getState()
+      const projectPath = resolveBubbleProjectPath(store.sessions, sessionId, store.activeSessionId)
+      if (!projectPath) return
 
-    enhanceFilePills(root, (ref: FilePathRef, originalText: string) => {
-      const span = document.createElement('span')
-      span.className = 'file-chip'
-      span.style.cssText = [
-        'display:inline-flex',
-        'align-items:center',
-        'gap:4px',
-        'padding:1px 6px',
-        'margin:0 1px',
-        'border:1px solid var(--border)',
-        'border-radius:4px',
-        'background:var(--bg-tertiary)',
-        'font-family:var(--font-mono)',
-        'font-size:12px',
-        'cursor:pointer',
-        'vertical-align:baseline',
-      ].join(';')
-      span.textContent = originalText
-      span.title = `Open ${formatFilePathRef(ref)}`
-      span.setAttribute('data-context-source', 'file-chip')
-      span.addEventListener('click', (e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        useLayoutStore.getState().openInViewer(
-          ref.path,
-          ref.startLine && ref.endLine
-            ? { start: ref.startLine, end: ref.endLine }
-            : null,
-        )
-      })
+      enhanceFilePills(root, (ref: FilePathRef, originalText: string) => {
+        const span = document.createElement('span')
+        span.className = 'file-chip'
+        span.style.cssText = [
+          'display:inline-flex',
+          'align-items:center',
+          'gap:4px',
+          'padding:1px 6px',
+          'margin:0 1px',
+          'border:1px solid var(--border)',
+          'border-radius:4px',
+          'background:var(--bg-tertiary)',
+          'font-family:var(--font-mono)',
+          'font-size:12px',
+          'cursor:pointer',
+          'vertical-align:baseline',
+        ].join(';')
+        span.textContent = originalText
+        span.title = `Open ${formatFilePathRef(ref)}`
+        span.setAttribute('data-context-source', 'file-chip')
+        span.addEventListener('click', (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          useLayoutStore.getState().openInViewer(
+            ref.path,
+            ref.startLine && ref.endLine
+              ? { start: ref.startLine, end: ref.endLine }
+              : null,
+          )
+        })
 
-      // Async existence check - if the file doesn't resolve, revert to plain code.
-      const api = window.api
-      if (api?.files?.resolve) {
-        api.files.resolve(projectPath, ref.path).then((res: { exists: boolean }) => {
-          if (!res?.exists) {
+        // Async existence check - if the file doesn't resolve, revert to plain code.
+        resolveFileCached(projectPath, ref.path).then((exists) => {
+          if (!exists) {
             const code = document.createElement('code')
             code.textContent = originalText
             span.replaceWith(code)
           }
         }).catch(() => { /* ignore - leave optimistic chip */ })
-      }
-      return span
-    })
+        return span
+      })
+    }, POST_PROCESS_DEBOUNCE_MS)
+    return () => clearTimeout(timer)
   }, [renderedContent])
 
   const isUser = message.role === 'user'
