@@ -17,7 +17,7 @@ process.on('unhandledRejection', (reason) => {
 
 import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, protocol, net, screen } from 'electron'
 import { join, basename } from 'path'
-import { registerTerminalHandlers } from './ipc/terminal'
+import { registerTerminalHandlers, shutdownTerminals } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerAppHandlers } from './ipc/app'
 import { registerAppDesktopHandlers } from './ipc/app-desktop'
@@ -564,6 +564,9 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
+  // PTYs first: their node-pty callbacks must drain on a live event loop,
+  // not during env teardown (SIGABRT on quit otherwise - see 0.7.19 crash).
+  shutdownTerminals()
   providerRegistry?.stopAll()
   void stopAllMachineConnections()
   closeDb()
