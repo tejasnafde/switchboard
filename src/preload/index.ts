@@ -331,6 +331,12 @@ const api = {
       cwd: string,
     ): Promise<{ ok: true; branch: string | null } | { ok: false; error: string }> =>
       transport.invoke(GitChannels.CURRENT_BRANCH, cwd),
+    watchHead: (cwd: string): Promise<{ ok: boolean }> =>
+      transport.invoke(GitChannels.WATCH_HEAD, cwd),
+    unwatchHead: (cwd: string): Promise<{ ok: boolean }> =>
+      transport.invoke(GitChannels.UNWATCH_HEAD, cwd),
+    onHeadChanged: (callback: (cwd: string) => void) =>
+      transport.on<[string]>(GitChannels.HEAD_CHANGED, (cwd) => callback(cwd)),
     createSessionWorktree: (args: {
       projectPath: string
       branchSlug: string
