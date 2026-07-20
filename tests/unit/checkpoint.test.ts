@@ -54,6 +54,43 @@ describe('createCheckpoint', () => {
     const res = await createCheckpoint('/repo', runner)
     expect(res.ok).toBe(false)
   })
+
+  it('clean-tree fast path uses HEAD^{tree} and skips the add -A rehash', async () => {
+    const calls: string[][] = []
+    const runner: CheckpointGitRunner = async (args) => {
+      calls.push(args)
+      if (args[0] === 'status') return { stdout: '', stderr: '' }
+      if (args[0] === 'rev-parse') return { stdout: 'HEADTREE\n', stderr: '' }
+      throw new Error('unexpected ' + args.join(' '))
+    }
+    const res = await createCheckpoint('/repo', runner)
+    expect(res).toEqual({ ok: true, tree: 'HEADTREE' })
+    expect(calls.some((c) => c[0] === 'add')).toBe(false)
+  })
+
+  it('dirty tree falls back to the full add -A snapshot', async () => {
+    const runner: CheckpointGitRunner = async (args) => {
+      if (args[0] === 'status') return { stdout: ' M a.txt\n', stderr: '' }
+      if (args[0] === 'add') return { stdout: '', stderr: '' }
+      if (args[0] === 'write-tree') return { stdout: 'deadbeef\n', stderr: '' }
+      throw new Error('unexpected ' + args.join(' '))
+    }
+    const res = await createCheckpoint('/repo', runner)
+    expect(res).toEqual({ ok: true, tree: 'deadbeef' })
+  })
+
+  it('diffCheckpoint short-circuits when start and end trees are identical', async () => {
+    const calls: string[][] = []
+    const runner: CheckpointGitRunner = async (args) => {
+      calls.push(args)
+      if (args[0] === 'status') return { stdout: '', stderr: '' }
+      if (args[0] === 'rev-parse') return { stdout: 'SAMETREE\n', stderr: '' }
+      throw new Error('unexpected ' + args.join(' '))
+    }
+    const res = await diffCheckpoint('/repo', 'SAMETREE', runner)
+    expect(res).toEqual({ ok: true, files: [] })
+    expect(calls.some((c) => c[0] === 'diff')).toBe(false)
+  })
 })
 
 describe('diffCheckpoint', () => {

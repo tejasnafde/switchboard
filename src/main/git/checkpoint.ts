@@ -117,6 +117,10 @@ export async function diffCheckpoint(
   const endTree = await writeWorkingTree(repoRoot, runner)
   if (endTree == null) return { ok: false, error: 'failed to write end-checkpoint snapshot' }
 
+  // Identical trees diff to nothing - skip the spawn (common on turns that
+  // wrote no files).
+  if (endTree === startTree) return { ok: true, files: [] }
+
   let nameStatus: string
   try {
     const { stdout } = await runner(
@@ -131,16 +135,52 @@ export async function diffCheckpoint(
 
   const entries = parseNameStatusZ(nameStatus)
   const files: CheckpointFileDiff[] = []
-  for (const { changeKind, relPath } of entries) {
-    const oldContent = changeKind === 'add' ? '' : await showContent(repoRoot, startTree, relPath, runner)
-    const newContent = changeKind === 'delete' ? '' : await showContent(repoRoot, endTree, relPath, runner)
-    files.push({ relPath, changeKind, oldContent, newContent })
+  // Fetch both sides of each file with bounded concurrency instead of the
+  // old fully-serial 2N `git show` chain. Order of `files` is preserved.
+  // ponytail: still 2 spawns per changed file; `git cat-file --batch` (one
+  // long-lived process) is the upgrade path if many-file turns get slow.
+  const CONTENT_CONCURRENCY = 8
+  for (let i = 0; i < entries.length; i += CONTENT_CONCURRENCY) {
+    const batch = entries.slice(i, i + CONTENT_CONCURRENCY)
+    const resolved = await Promise.all(
+      batch.map(async ({ changeKind, relPath }) => {
+        const [oldContent, newContent] = await Promise.all([
+          changeKind === 'add' ? '' : showContent(repoRoot, startTree, relPath, runner),
+          changeKind === 'delete' ? '' : showContent(repoRoot, endTree, relPath, runner),
+        ])
+        return { relPath, changeKind, oldContent, newContent }
+      }),
+    )
+    files.push(...resolved)
   }
   return { ok: true, files }
 }
 
-/** Stage all working-tree changes into a temp index and write a tree object. */
+/**
+ * Stage all working-tree changes into a temp index and write a tree object.
+ *
+ * Fast path: when the working tree is clean relative to HEAD, HEAD's tree
+ * IS the snapshot - `rev-parse HEAD^{tree}` replaces the `add -A` pass,
+ * which rehashes every file in the repo into a fresh temp index and was the
+ * dominant per-turn cost. Read-only / chat-only turns on a clean tree now
+ * cost two cheap stat-walks instead of two full rehashes.
+ */
 async function writeWorkingTree(repoRoot: string, runner: CheckpointGitRunner): Promise<string | null> {
+  try {
+    // --ignore-submodules=none: a submodule.<name>.ignore=all config would
+    // otherwise hide a moved gitlink and wrongly take the fast path.
+    const { stdout: status } = await runner(['status', '--porcelain', '--ignore-submodules=none'], repoRoot)
+    if (status.trim() === '') {
+      const { stdout } = await runner(['rev-parse', 'HEAD^{tree}'], repoRoot)
+      const tree = stdout.trim()
+      if (tree) return tree
+    }
+  } catch (err) {
+    // Expected for a fresh repo without HEAD; the full snapshot below is
+    // the fallback either way.
+    log.debug('clean-tree fast path unavailable', { repoRoot, err: err instanceof Error ? err.message : String(err) })
+  }
+
   const indexPath = freshTempIndexPath()
   const env = { GIT_INDEX_FILE: indexPath }
   try {
