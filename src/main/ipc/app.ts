@@ -1,5 +1,5 @@
 import type { BackendHost } from '../backend/host'
-import { readFile, stat } from 'fs/promises'
+import { stat } from 'fs/promises'
 import { notifyWorktreeSwap } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
@@ -23,6 +23,7 @@ import {
   updateConversationTitle,
   saveMessage,
   getConversationsForProject,
+  getConversationsForProjects,
   saveSessionLayout,
   getSessionLayout,
   searchMessages,
@@ -60,7 +61,7 @@ import { listOauthDirsForAgent } from '../db/providerInstances'
 import { defaultClaudeDir } from '../provider/claude-session-migrate'
 import { listRemoteClaudeConfigDirs } from '../provider/remote-gate'
 import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
-import { JsonlParser } from '../agent/jsonl-parser'
+import { loadJsonlCached } from '../agent/jsonl-cache'
 import { forkConversation } from '../conversations/fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
@@ -145,12 +146,15 @@ export function registerAppHandlers(host: BackendHost): void {
     const childSet = getChildSessionIds()
     const syntheticParents = getSyntheticParentMap()
     const candidateDirs = claudeCandidateDirs()
+    // One IN query for all projects' conversations instead of one query per
+    // project inside the loop.
+    const convsByProject = getConversationsForProjects(rows.map((r) => r.path))
     // Scan projects concurrently - each scanAllSessions is independent I/O and
     // was previously awaited one project at a time, serializing every sidebar/
     // settings/kanban refresh over the full session filesystem.
     const projects: Project[] = await Promise.all(rows.map(async (row) => {
       const sessions = await scanAllSessions(row.path, candidateDirs)
-      const dbConversations = getConversationsForProject(row.path)
+      const dbConversations = convsByProject.get(row.path) ?? []
       const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
       const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
       const worktreeMap = new Map(
@@ -286,11 +290,11 @@ export function registerAppHandlers(host: BackendHost): void {
   ) => {
     log.info(`loading session: ${filePath} source=${source ?? 'claude-code'}`)
     try {
-      const raw = await readFile(filePath, 'utf-8')
-      const messages: ChatMessage[] = []
-      const parser = new JsonlParser((msg) => messages.push(msg), source ?? 'claude-code')
-      parser.feed(raw)
-      parser.flush()
+      const messages = await loadJsonlCached(filePath, source ?? 'claude-code')
+      if (!messages) {
+        log.warn(`failed to load session (missing file): ${filePath}`)
+        return []
+      }
       log.info(`parsed ${messages.length} messages from ${filePath}`)
 
       // Index messages for search (best-effort)
@@ -345,15 +349,10 @@ export function registerAppHandlers(host: BackendHost): void {
       for (const sid of sessionIds) {
         for (const dir of candidateDirs) {
           const filePath = joinPath(dir, 'projects', encoded, `${sid}.jsonl`)
-          try {
-            const raw = await readFile(filePath, 'utf-8')
-            const parser = new JsonlParser((msg) => all.push(msg), 'claude-code')
-            parser.feed(raw)
-            parser.flush()
-          } catch {
-            // Session_id might not have a jsonl in this profile (rotation
-            // didn't migrate it, or session never ran here).
-          }
+          // null = no jsonl in this profile (rotation didn't migrate it, or
+          // session never ran here) - a cheap stat miss, not a throw.
+          const msgs = await loadJsonlCached(filePath, 'claude-code')
+          if (msgs) all.push(...msgs)
         }
       }
       // Merge in timestamp order so fragments interleave correctly.
@@ -398,10 +397,8 @@ export function registerAppHandlers(host: BackendHost): void {
       for (const sid of sessionIds) {
         const match = sessions.find((s) => s.id === sid)
         if (!match?.filePath) continue
-        const raw = await readFile(match.filePath, 'utf-8')
-        const parser = new JsonlParser((msg) => all.push(msg), 'codex')
-        parser.feed(raw)
-        parser.flush()
+        const msgs = await loadJsonlCached(match.filePath, 'codex')
+        if (msgs) all.push(...msgs)
       }
       all.sort((a, b) => a.timestamp - b.timestamp)
       const seenCodex = new Set<string>()
