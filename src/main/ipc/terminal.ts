@@ -10,6 +10,19 @@ const log = createLogger('ipc:terminal')
 let ptyManager: PtyManager | null = null
 let outputCoalescer: OutputCoalescer | null = null
 
+/**
+ * Kill every pty and flush buffered output. MUST run in `before-quit`:
+ * a live node-pty ThreadSafeFunction callback that lands during Node
+ * environment teardown throws into a dying env and abort()s the whole
+ * process (the 0.7.19 crash-on-quit). Killing here lets the native
+ * callbacks drain while the event loop is still alive.
+ */
+export function shutdownTerminals(): void {
+  outputCoalescer?.flushAll()
+  ptyManager?.killAll()
+  ptyManager = null
+}
+
 export function registerTerminalHandlers(host: BackendHost): void {
   // Clean up the previous instance (e.g. on macOS activate); the host
   // re-registers handlers idempotently. Flush the outgoing coalescer first
