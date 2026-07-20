@@ -222,6 +222,14 @@ export function ChatInput({
   const [atActiveIdx, setAtActiveIdx] = useState(0)
   const [atFiles, setAtFiles] = useState<string[]>([])
   const [atLoading, setAtLoading] = useState(false)
+  // Single fuzzy scan per keystroke, shared by the keyboard handler and the
+  // menu. Previously the keydown handler re-ran filterAtMatches (a full-list
+  // fuzzyScore pass, 10k+ files) unmemoized on every keydown, on top of the
+  // menu's own memoized copy.
+  const atMatches = useMemo(
+    () => (atQuery !== null ? filterAtMatches(atQuery, atFiles) : []),
+    [atQuery, atFiles],
+  )
   const atRangeRef = useRef<{ start: number; end: number } | null>(null)
   // Per-instance file-list cache, mirroring QuickOpenModal's per-mount ref.
   // Dies with ChatInput, so a closed-and-reopened chat picks up tree changes
@@ -604,11 +612,10 @@ export function ChatInput({
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       // @-mention branch takes precedence when open.
       if (atQuery !== null) {
-        const matches = filterAtMatches(atQuery, atFiles)
         // Empty match list: only Escape is meaningful. Letting Enter fall
         // through means the user can still send the typed `@query` literally
         // (matches the slash menu's behaviour at the same code path).
-        if (matches.length === 0 && e.key !== 'Escape') return
+        if (atMatches.length === 0 && e.key !== 'Escape') return
         if (e.key === 'ArrowDown') {
           e.preventDefault()
           setAtActiveIdx((i) => i + 1)
@@ -629,7 +636,7 @@ export function ChatInput({
         if (e.key === 'Enter' || e.key === 'Tab') {
           e.preventDefault()
           e.stopPropagation()
-          const pick = matches[atActiveIdx] ?? matches[0]
+          const pick = atMatches[atActiveIdx] ?? atMatches[0]
           if (pick) runAtMention(pick)
           return
         }
@@ -660,7 +667,7 @@ export function ChatInput({
         dismissSlash()
       }
     },
-    [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands, atQuery, atFiles, atActiveIdx, dismissAt, runAtMention],
+    [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands, atQuery, atMatches, atActiveIdx, dismissAt, runAtMention],
   )
 
   const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -816,7 +823,7 @@ export function ChatInput({
         {atQuery !== null && (
           <AtMentionMenu
             query={atQuery}
-            files={atFiles}
+            matches={atMatches}
             loading={atLoading}
             onSelect={runAtMention}
             onDismiss={dismissAt}

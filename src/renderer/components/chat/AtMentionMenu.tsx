@@ -1,9 +1,14 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { filterAtMatches } from './atMention'
+import { useEffect, useRef } from 'react'
 
 interface AtMentionMenuProps {
   query: string
-  files: string[]
+  /**
+   * Precomputed matches from the parent (ChatInput). The parent needs the
+   * same list for its keyboard handler, so the fuzzy scan over the full
+   * file list runs once per keystroke instead of twice - and the menu can
+   * never desync from what Enter commits.
+   */
+  matches: string[]
   loading?: boolean
   onSelect: (path: string) => void
   onDismiss: () => void
@@ -22,15 +27,13 @@ interface AtMentionMenuProps {
  */
 export function AtMentionMenu({
   query,
-  files,
+  matches,
   loading,
   onSelect,
   onDismiss,
   activeIndex,
   onActiveIndexChange,
 }: AtMentionMenuProps) {
-  const matches = useMemo(() => filterAtMatches(query, files), [files, query])
-
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([])
   useEffect(() => {
     const el = itemRefs.current[activeIndex]
