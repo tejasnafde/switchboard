@@ -20,6 +20,8 @@ import {
   createStreamingBuffer,
   drainTurn,
 } from '../../services/streamingBuffer'
+import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
+import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
 
@@ -32,6 +34,27 @@ interface ChatPanelProps {
   sessionIdOverride?: string | null
   /** Optional close button for the right-hand panel in dual mode. */
   onClose?: () => void
+}
+
+/**
+ * Update a streamed assistant message's content if it exists, else append a
+ * fresh bubble. Shared by the streaming-ON coalescer commit and the
+ * streaming-OFF drainTurn flush so the two paths can't drift.
+ */
+function upsertAssistantContent(threadId: string, messageId: string, text: string): void {
+  const store = useAgentStore.getState()
+  const session = store.sessions.find((s) => s.id === threadId)
+  const existing = session?.messages.find((m) => m.id === messageId)
+  if (existing) {
+    store.updateMessage(threadId, messageId, { content: text })
+  } else {
+    store.appendMessage(threadId, {
+      id: messageId,
+      role: 'assistant',
+      content: text,
+      timestamp: Date.now(),
+    })
+  }
 }
 
 export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
@@ -235,6 +258,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     })
   }, [])
 
+  // Streaming-ON path: coalesce cumulative content snapshots to ~30fps
+  // before they hit the store (per-token commits re-rendered the streaming
+  // bubble per delta). Ordering contract lives in services/contentCoalescer.
+  const contentCoalescerRef = useRef<ContentCoalescer | null>(null)
+  if (!contentCoalescerRef.current) {
+    contentCoalescerRef.current = createContentCoalescer(({ threadId, messageId, text }) =>
+      upsertAssistantContent(threadId, messageId, text),
+    )
+  }
+  useEffect(() => () => contentCoalescerRef.current?.dispose(), [])
+
   useEffect(() => {
     if (!window.api.provider?.onEvent) {
       return
@@ -245,25 +279,20 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       const tid = event.threadId
       if (!tid) return
 
+      // Any non-content event must land AFTER whatever content is pending
+      // for this thread, or message order flips (e.g. a buffered first
+      // snapshot appending after a tool.started that arrived later).
+      if (event.type !== 'content') {
+        contentCoalescerRef.current?.flushThread(tid)
+      }
+
       switch (event.type) {
         case 'content': {
           if (!streamingEnabledRef.current) {
             bufferContent(streamingBufferRef.current, tid, event.messageId, event.text)
             break
           }
-          const sessions = useAgentStore.getState().sessions
-          const session = sessions.find((s) => s.id === tid)
-          const existing = session?.messages.find((m) => m.id === event.messageId)
-          if (existing) {
-            updateMessage(tid, event.messageId, { content: event.text })
-          } else {
-            appendMessage(tid, {
-              id: event.messageId,
-              role: 'assistant',
-              content: event.text,
-              timestamp: Date.now(),
-            })
-          }
+          contentCoalescerRef.current?.push(tid, event.messageId, event.text)
           break
         }
         case 'tool.started': {
@@ -344,19 +373,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           if (!streamingEnabledRef.current) {
             const drained = drainTurn(streamingBufferRef.current, tid)
             for (const entry of drained) {
-              const sessions = useAgentStore.getState().sessions
-              const session = sessions.find((s) => s.id === tid)
-              const existing = session?.messages.find((m) => m.id === entry.messageId)
-              if (existing) {
-                updateMessage(tid, entry.messageId, { content: entry.text })
-              } else {
-                appendMessage(tid, {
-                  id: entry.messageId,
-                  role: 'assistant',
-                  content: entry.text,
-                  timestamp: Date.now(),
-                })
-              }
+              upsertAssistantContent(tid, entry.messageId, entry.text)
             }
           }
           // Token usage comes from context_window events only - this event's
@@ -674,19 +691,32 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     ) => {
       if (!sessionId) return
 
-      // Convert attached images to data URLs so they survive session reloads
+      // Convert attached images to data URLs so they survive session reloads.
+      // Downscaled first (longest edge 1920px, JPEG for opaque sources): the
+      // base64 body is copied across every hop (store → IPC → DB → adapter
+      // → SDK), so a raw multi-MB screenshot multiplied through the whole
+      // pipeline. Falls back to the original bytes if decode fails.
       let messageImages: import('@shared/types').MessageImage[] | undefined
       if (images && images.length > 0) {
         const urls = await Promise.all(images.map(async (img) => {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(reader.result as string)
-            reader.onerror = () => reject(reader.error)
-            reader.readAsDataURL(img.file)
-          })
+          let dataUrl: string
+          try {
+            dataUrl = (await downscaleImage(img.file)).dataUrl
+          } catch (err) {
+            log.warn('image downscale failed, sending original bytes', err)
+            dataUrl = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader()
+              reader.onload = () => resolve(reader.result as string)
+              reader.onerror = () => reject(reader.error)
+              reader.readAsDataURL(img.file)
+            })
+          }
+          // Recompression can change the container (PNG → JPEG); trust the
+          // data URL's own prefix over the source file's type.
+          const mimeType = dataUrl.slice(5, dataUrl.indexOf(';')) || img.file.type
           return {
             url: dataUrl,
-            mimeType: img.file.type,
+            mimeType,
             name: img.file.name,
           }
         }))

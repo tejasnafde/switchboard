@@ -17,6 +17,7 @@ import { existsSync } from 'node:fs'
 import { promisify } from 'node:util'
 import { GitChannels } from '@shared/ipc-channels'
 import { listRefs, switchRef, getCurrentBranch, type Ref } from '../git/refs'
+import { watchHead, unwatchHead } from '../git/headWatcher'
 import { createSessionWorktree } from '../worktree'
 import { createMainLogger } from '../logger'
 
@@ -38,6 +39,16 @@ export function registerGitHandlers(host: BackendHost): void {
       }
     },
   )
+
+  host.handle(GitChannels.WATCH_HEAD, async (cwd: string): Promise<{ ok: boolean }> => {
+    await watchHead(cwd, (changed) => host.emit(GitChannels.HEAD_CHANGED, changed))
+    return { ok: true }
+  })
+
+  host.handle(GitChannels.UNWATCH_HEAD, (cwd: string): { ok: boolean } => {
+    unwatchHead(cwd)
+    return { ok: true }
+  })
 
   host.handle(
     GitChannels.SWITCH_REF,

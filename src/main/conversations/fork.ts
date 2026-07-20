@@ -12,7 +12,7 @@ import {
   messageRowsToChatMessages,
 } from '../db/database'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
-import { JsonlParser } from '../agent/jsonl-parser'
+import { loadJsonlCached } from '../agent/jsonl-cache'
 import {
   truncateCodexJsonl,
   assembleClaudeFork,
@@ -441,19 +441,17 @@ async function loadSourceMessages(
     // instead of returning empty.
     const paths = await listClaudeFragmentPaths(dir, source.id)
     for (const path of paths) {
-      const raw = await readFile(path, 'utf-8').catch(() => null)
-      if (raw === null) continue
-      const parser = new JsonlParser((m) => all.push(m), 'claude-code')
-      parser.feed(raw); parser.flush()
+      // Shared (mtime,size) cache with the LOAD_SESSION handlers - a fork
+      // usually follows a load of the same transcript moments earlier.
+      const msgs = await loadJsonlCached(path, 'claude-code')
+      if (msgs) all.push(...msgs)
     }
   } else if (source.agent_type === 'codex') {
     for (const sid of sessionIds) {
       const path = await findCodexRollout(sid)
       if (!path) continue
-      const raw = await readFile(path, 'utf-8').catch(() => null)
-      if (raw === null) continue
-      const parser = new JsonlParser((m) => all.push(m), 'codex')
-      parser.feed(raw); parser.flush()
+      const msgs = await loadJsonlCached(path, 'codex')
+      if (msgs) all.push(...msgs)
     }
   }
   if (all.length > 0) {

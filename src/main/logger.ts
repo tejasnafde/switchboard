@@ -10,6 +10,7 @@
 
 import { join } from 'path'
 import { mkdirSync, appendFileSync, readdirSync, unlinkSync, statSync } from 'fs'
+import { appendFile } from 'fs/promises'
 import { userDataDir } from './runtime'
 
 const RETENTION_DAYS = 7
@@ -30,6 +31,11 @@ function init(): void {
     const date = new Date().toISOString().slice(0, 10) // 2026-04-20
     const time = new Date().toISOString().slice(11, 19).replace(/:/g, '') // 020530
     logFilePath = join(logDir, `switchboard-${date}-${time}-${process.pid}.log`)
+
+    // Crash-adjacent lines are the ones you need: drain the async buffer
+    // synchronously on exit (also fires after uncaughtException's default
+    // handler). Hard kills (SIGKILL/segfault) lose at most one tick of lines.
+    process.on('exit', flushLogsSync)
 
     // Write header
     writeRaw(`=== Switchboard log started ${new Date().toISOString()} pid=${process.pid} ===\n`)
@@ -57,10 +63,63 @@ function pruneOldLogs(): void {
   } catch { /* ignore */ }
 }
 
+// Buffered async sink. `appendFileSync` per log line used to block the main
+// event loop once per call - and the provider adapters log per streamed
+// frame, so a busy turn paid a sync disk write per token. Lines now buffer
+// in memory and flush on the next tick via async appendFile; ordering is
+// preserved by the single in-flight `flushing` gate.
+const MAX_BUFFERED_LINES = 10_000
+let buffer: string[] = []
+let dropped = 0
+let flushScheduled = false
+let flushing = false
+
 function writeRaw(line: string): void {
   if (!logFilePath) return
+  if (buffer.length >= MAX_BUFFERED_LINES) {
+    // ponytail: drop-newest under a stuck disk; a counter line records the gap
+    dropped += 1
+    return
+  }
+  buffer.push(line)
+  scheduleFlush()
+}
+
+function scheduleFlush(): void {
+  if (flushScheduled) return
+  flushScheduled = true
+  setImmediate(() => {
+    flushScheduled = false
+    void flushAsync()
+  })
+}
+
+function drainBuffer(): string {
+  let chunk = buffer.join('')
+  buffer = []
+  if (dropped > 0) {
+    chunk += `[logger] dropped ${dropped} lines (buffer full)\n`
+    dropped = 0
+  }
+  return chunk
+}
+
+async function flushAsync(): Promise<void> {
+  if (flushing || !logFilePath || buffer.length === 0) return
+  flushing = true
+  const chunk = drainBuffer()
   try {
-    appendFileSync(logFilePath, line)
+    await appendFile(logFilePath, chunk)
+  } catch { /* ignore write failures */ }
+  flushing = false
+  if (buffer.length > 0) scheduleFlush()
+}
+
+/** Synchronously drain any buffered lines to disk. Called on process exit. */
+export function flushLogsSync(): void {
+  if (!logFilePath || buffer.length === 0) return
+  try {
+    appendFileSync(logFilePath, drainBuffer())
   } catch { /* ignore write failures */ }
 }
 

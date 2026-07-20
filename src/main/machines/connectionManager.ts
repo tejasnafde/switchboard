@@ -223,7 +223,7 @@ export class ConnectionManager {
     if (conn.attempts < max) {
       conn.attempts++
       this.transition(machine.id, 'fail', reason, true)
-      const delay = (this.deps.reconnectDelayMs ?? ((n) => reconnectDelay(n, { baseMs: 1000, capMs: 30_000 })))(conn.attempts)
+      const delay = (this.deps.reconnectDelayMs ?? ((n) => reconnectDelay(n, { baseMs: 1000, capMs: 30_000, jitter: 0.25 })))(conn.attempts)
       // A manual connect/disconnect in the meantime bumps the epoch (or flips
       // status); this timer must then no-op instead of firing an interleaved attempt.
       const scheduledEpoch = conn.epoch

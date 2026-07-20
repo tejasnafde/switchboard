@@ -127,6 +127,15 @@ export const GitChannels = {
   SWITCH_REF: 'git:switch-ref',
   CURRENT_BRANCH: 'git:current-branch',
   /**
+   * Push-based branch-chip updates: WATCH_HEAD starts a refcounted
+   * fs-watcher on the repo's git dir; HEAD_CHANGED is emitted with the
+   * watched cwd whenever HEAD moves (checkout - including ones made in a
+   * terminal pane). UNWATCH_HEAD releases the reference.
+   */
+  WATCH_HEAD: 'git:watch-head',
+  UNWATCH_HEAD: 'git:unwatch-head',
+  HEAD_CHANGED: 'git:head-changed',
+  /**
    * Create a deterministic-path worktree under userData/worktrees for a
    * new chat session and return its absolute path + the branch we
    * created. Caller stamps the result onto the session's `worktreePath`

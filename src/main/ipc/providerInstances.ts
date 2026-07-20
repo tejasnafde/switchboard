@@ -8,7 +8,7 @@
  */
 
 import type { BackendHost } from '../backend/host'
-import { spawnSync } from 'child_process'
+import { execFile } from 'child_process'
 import { mkdirSync } from 'fs'
 import { homedir } from 'os'
 import { ProviderInstanceChannels } from '@shared/ipc-channels'
@@ -77,6 +77,47 @@ function createOauthDir(dir: string): { ok: boolean; path?: string; error?: stri
   }
 }
 
+interface ProbeResult {
+  status: number | null
+  stdout: string
+  stderr: string
+  error?: Error
+}
+
+/**
+ * Async replacement for the old `spawnSync` probes, mirroring spawnSync's
+ * result shape so the branch logic below is unchanged. spawnSync froze the
+ * whole main-process event loop for up to the probe timeout (5-8s) - every
+ * PTY and streaming turn stalled while a Settings "Test" ran.
+ */
+function runProbe(
+  bin: string,
+  args: string[],
+  env: Record<string, string>,
+  timeoutMs: number,
+): Promise<ProbeResult> {
+  return new Promise((resolve) => {
+    execFile(bin, args, { env, timeout: timeoutMs, encoding: 'utf-8' }, (err, stdout, stderr) => {
+      if (!err) {
+        resolve({ status: 0, stdout, stderr })
+        return
+      }
+      const e = err as NodeJS.ErrnoException & { killed?: boolean }
+      // Timeout: execFile kills the child and sets .killed.
+      if (e.killed) {
+        resolve({ status: null, stdout, stderr, error: new Error(`timed out after ${timeoutMs}ms`) })
+        return
+      }
+      // Non-zero exit: numeric .code. Spawn failure (ENOENT etc.): string .code.
+      if (typeof e.code === 'number') {
+        resolve({ status: e.code, stdout, stderr })
+        return
+      }
+      resolve({ status: null, stdout, stderr, error: e })
+    })
+  })
+}
+
 /**
  * Probe an instance's credentials with a no-op call. Each agent kind
  * has its own cheap "is this binary installed and authenticated" check:
@@ -104,7 +145,7 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
     if (instance.agentType === 'claude-code') {
       const bin = findClaudeBin()
       if (!bin) return { ok: false, message: 'claude binary not found - install Claude Code and ensure it is on PATH' }
-      const out = spawnSync(bin, ['auth', 'status'], { env, timeout: 7000, encoding: 'utf-8' })
+      const out = await runProbe(bin, ['auth', 'status'], env, 7000)
       if (out.error) return { ok: false, message: `claude error: ${out.error.message}` }
       if (out.status !== 0) {
         const stderr = out.stderr?.trim() || out.stdout?.trim() || `exit ${out.status}`
@@ -119,7 +160,7 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
     if (instance.agentType === 'codex') {
       const codexBin = findCodexPath()
       if (!codexBin) return { ok: false, message: 'codex binary not found - install Codex and ensure it is on PATH' }
-      const out = spawnSync(codexBin, ['login', 'status'], { env, timeout: 5000, encoding: 'utf-8' })
+      const out = await runProbe(codexBin, ['login', 'status'], env, 5000)
       if (out.error) return { ok: false, message: `codex error: ${out.error.message}` }
       // `codex login status` exits 0 when logged in; non-zero means not logged in.
       if (out.status !== 0) {
@@ -136,7 +177,7 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
       const overlay: Record<string, string> = {}
       applyEnvOverlay(overlay, instance.env)
       const probeEnv = buildOpencodeEnv(overlay)
-      const out = spawnSync(bin, ['models'], { env: probeEnv, timeout: 8000, encoding: 'utf-8' })
+      const out = await runProbe(bin, ['models'], probeEnv, 8000)
       if (out.error) return { ok: false, message: out.error.message }
       if (out.status !== 0) return { ok: false, message: out.stderr?.trim() || `exit ${out.status}` }
       const lines = (out.stdout ?? '').split('\n').filter((l) => l.trim().length > 0)

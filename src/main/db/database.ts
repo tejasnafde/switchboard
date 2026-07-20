@@ -166,6 +166,11 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'archived')) {
       db.exec('ALTER TABLE conversations ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
     }
+    // getArchivedConversationIds() runs on every sidebar scan / project
+    // expand; without an index leading on `archived` it full-scans the
+    // conversations table each time. Partial index keeps it tiny (only
+    // archived rows are indexed).
+    db.exec('CREATE INDEX IF NOT EXISTS idx_conversations_archived ON conversations(archived) WHERE archived = 1;')
     // Migration (2026-05-04): persist the per-conversation runtime mode
     // (plan / sandbox / accept-edits / full-access) so reopening a chat -
     // especially via a kanban card click - restores the user's actual
@@ -576,6 +581,29 @@ export function getConversationsForProject(projectPath: string): ConversationRow
   ).all(projectPath) as ConversationRow[]
 }
 
+/**
+ * Batched variant of getConversationsForProject: one IN query for all
+ * projects instead of one query per project (GET_PROJECTS runs on every
+ * sidebar / settings / kanban refresh). Every requested path is present in
+ * the result, mapped to [] when it has no conversations. Per-project row
+ * order matches getConversationsForProject (updated_at DESC).
+ */
+export function getConversationsForProjects(projectPaths: string[]): Map<string, ConversationRow[]> {
+  const result = new Map<string, ConversationRow[]>()
+  for (const p of projectPaths) result.set(p, [])
+  const db = getDb()
+  const CHUNK = 500 // stay well under SQLite's bound-parameter cap
+  for (let i = 0; i < projectPaths.length; i += CHUNK) {
+    const chunk = projectPaths.slice(i, i + CHUNK)
+    const placeholders = chunk.map(() => '?').join(',')
+    const rows = db.prepare(
+      `SELECT * FROM conversations WHERE project_path IN (${placeholders}) ORDER BY updated_at DESC`
+    ).all(...chunk) as ConversationRow[]
+    for (const row of rows) result.get(row.project_path)?.push(row)
+  }
+  return result
+}
+
 export interface ConversationRow {
   id: string
   project_path: string
@@ -916,6 +944,45 @@ export function bulkSaveMessages(
 
 // ─── Message CRUD ───────────────────────────────────────────────
 
+// saveMessage runs once per chat message on the streaming path. Statements
+// are prepared once per db handle (tests open fresh DBs, so key on the
+// instance), and the two writes share one transaction - previously each was
+// its own implicit transaction, i.e. two WAL fsyncs per message.
+interface SaveMessageArgs {
+  id: string
+  conversationId: string
+  role: string
+  content: string
+  toolCalls: string | null
+  images: string | null
+  now: number
+  displayBody: string | null
+  pillsMeta: string | null
+}
+let saveMsg: {
+  db: Database.Database
+  convExists: Database.Statement
+  write: Database.Transaction<(args: SaveMessageArgs) => void>
+} | null = null
+
+function saveMessageStmts(db: Database.Database) {
+  if (saveMsg?.db !== db) {
+    const convExists = db.prepare('SELECT 1 FROM conversations WHERE id = ?')
+    const insert = db.prepare(
+      `INSERT OR REPLACE INTO messages
+         (id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    const touch = db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?')
+    const write = db.transaction((a: SaveMessageArgs) => {
+      insert.run(a.id, a.conversationId, a.role, a.content, a.toolCalls, a.images, a.now, a.displayBody, a.pillsMeta)
+      touch.run(a.now, a.conversationId)
+    })
+    saveMsg = { db, convExists, write }
+  }
+  return saveMsg
+}
+
 export function saveMessage(
   id: string,
   conversationId: string,
@@ -927,31 +994,25 @@ export function saveMessage(
   pillsMeta?: string,
 ): { ok: boolean; reason?: 'conversation-missing' } {
   const now = Date.now()
-  const db = getDb()
+  const stmts = saveMessageStmts(getDb())
 
   // Skip silently if the conversation row doesn't exist - happens when a session
   // was imported (scanned from JSONL) but never persisted to the conversations
   // table. The renderer will call createConversation on session activation, but
   // this guard protects against race/edge cases so we don't throw.
-  const convExists = db.prepare('SELECT 1 FROM conversations WHERE id = ?').get(conversationId)
-  if (!convExists) {
+  if (!stmts.convExists.get(conversationId)) {
     log.warn(`saveMessage: conversation ${conversationId} not found, skipping`)
     return { ok: false, reason: 'conversation-missing' }
   }
 
-  db.prepare(
-    `INSERT OR REPLACE INTO messages
-       (id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
+  stmts.write({
     id, conversationId, role, content,
-    toolCalls ?? null, images ?? null, now,
-    displayBody ?? null, pillsMeta ?? null,
-  )
-
-  db.prepare(
-    'UPDATE conversations SET updated_at = ? WHERE id = ?'
-  ).run(now, conversationId)
+    toolCalls: toolCalls ?? null,
+    images: images ?? null,
+    now,
+    displayBody: displayBody ?? null,
+    pillsMeta: pillsMeta ?? null,
+  })
   return { ok: true }
 }
 

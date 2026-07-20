@@ -195,7 +195,10 @@ export function registerIdeHandlers(host: BackendHost): void {
         allocatePort,
         probeHealth: async (url) => {
           try {
-            const res = await fetch(url)
+            // Timeout guards a code-server that binds the port but never
+            // responds - an un-aborted fetch here hung the ENSURE handler
+            // forever (the health poll awaits each probe).
+            const res = await fetch(url, { signal: AbortSignal.timeout(1000) })
             return res.ok
           } catch {
             return false

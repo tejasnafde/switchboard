@@ -86,6 +86,13 @@ function truncateLogPayload(value: string): string {
     : value
 }
 
+/**
+ * Per-frame wire logging is off by default: the app-server streams one
+ * JSON-RPC notification per delta during a turn, and logging each one wrote
+ * a line to disk per token. Set SB_CODEX_WIRE_LOG=1 to debug the protocol.
+ */
+const WIRE_LOG = process.env.SB_CODEX_WIRE_LOG === '1'
+
 interface JsonRpcRequest {
   jsonrpc: '2.0'
   id: number
@@ -379,7 +386,7 @@ export class CodexAdapter implements ProviderAdapter {
     const rl = createInterface({ input: child.stdout })
     rl.on('line', (line) => {
       if (!line.trim()) return
-      log.debug(`codex -> ${truncateLogPayload(line)}`)
+      if (WIRE_LOG) log.debug(`codex -> ${truncateLogPayload(line)}`)
       try {
         const parsed = JSON.parse(line)
         this.handleMessage(opts.threadId, active, parsed)
@@ -704,7 +711,7 @@ export class CodexAdapter implements ProviderAdapter {
   private writeMessage(active: ActiveSession, msg: unknown): void {
     if (!active.child?.stdin?.writable) return
     const line = JSON.stringify(msg)
-    log.debug(`codex <- ${truncateLogPayload(line)}`)
+    if (WIRE_LOG) log.debug(`codex <- ${truncateLogPayload(line)}`)
     active.child.stdin.write(line + '\n')
   }
 
@@ -834,7 +841,7 @@ export class CodexAdapter implements ProviderAdapter {
 
     // JSON-RPC notification (stream events)
     if (parsed.method) {
-      log.debug(`codex notification: ${parsed.method}`)
+      if (WIRE_LOG) log.debug(`codex notification: ${parsed.method}`)
       this.handleNotification(threadId, active, parsed)
       return
     }
@@ -940,7 +947,7 @@ export class CodexAdapter implements ProviderAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw JSON-RPC notification from codex app-server; method-dependent payload shape
   private handleNotification(threadId: string, active: ActiveSession, notification: any): void {
     const method = notification.method as string
-    log.debug(`handling codex notification ${method}: ${truncateLogPayload(JSON.stringify(notification.params ?? {}))}`)
+    if (WIRE_LOG) log.debug(`handling codex notification ${method}: ${truncateLogPayload(JSON.stringify(notification.params ?? {}))}`)
 
     if (method === 'item/reasoning/summaryTextDelta' || method === 'item/reasoning/textDelta') {
       const text = notification.params?.delta ?? notification.params?.text ?? ''

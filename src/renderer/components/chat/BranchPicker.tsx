@@ -17,7 +17,10 @@
  * so callers can compare them against the session's worktreePath exactly.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { createRendererLogger } from '../../logger'
 import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branchPickerPolicy'
+
+const log = createRendererLogger('chat:branch-picker')
 
 interface TriggerProps {
   cwd: string | null
@@ -59,12 +62,25 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissi
 
   useEffect(() => {
     refresh()
-    // External checkouts (e.g. `git switch` in a terminal pane) emit no event,
-    // so poll while visible. ponytail: 5s subprocess poll per visible chip -
-    // a main-side .git/HEAD watcher is the upgrade if this ever shows up in profiles.
-    const timer = setInterval(() => { if (!document.hidden) refresh() }, 5000)
-    return () => clearInterval(timer)
-  }, [refresh])
+    if (!cwd) return
+    // Push-based: main watches the repo's HEAD and emits on checkout,
+    // covering `git switch` in a terminal pane. The old 5s subprocess poll
+    // stays only as a slow fallback for what fs.watch can miss (network
+    // mounts, watcher errors).
+    let disposed = false
+    const api = window.api.git
+    api.watchHead?.(cwd).catch((err) => log.warn('watch-head register failed, falling back to poll', err))
+    const offHeadChanged = api.onHeadChanged?.((changed) => {
+      if (!disposed && changed === cwd) refresh()
+    })
+    const timer = setInterval(() => { if (!document.hidden) refresh() }, 60_000)
+    return () => {
+      disposed = true
+      offHeadChanged?.()
+      api.unwatchHead?.(cwd).catch((err) => log.warn('unwatch-head failed (watcher may linger)', err))
+      clearInterval(timer)
+    }
+  }, [refresh, cwd])
 
   if (!cwd || !isGitRepo) return null
 
