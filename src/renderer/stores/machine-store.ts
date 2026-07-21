@@ -9,7 +9,7 @@
  */
 import { create } from 'zustand'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
-import type { Project } from '@shared/types'
+import type { Project, SessionSummary } from '@shared/types'
 import { AppChannels } from '@shared/ipc-channels'
 import type { MachineStatus } from '../components/sidebar/machineList'
 import { projectsToSnapshot } from '../components/sidebar/machineSnapshot'
@@ -232,14 +232,19 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   reorderMachineProjects: async (machineId, paths) => {
     // Optimistic local reorder; persistence goes to the machine's own DB so
     // the order survives reconnects and is per-machine, not per-desktop.
-    set((s) => {
-      const current = s.projects[machineId]
-      if (!current) return {}
-      const byPath = new Map(current.map((p) => [p.path, p]))
-      const next = paths.map((p) => byPath.get(p)).filter((p): p is Project => !!p)
-      return { projects: { ...s.projects, [machineId]: next } }
-    })
+    // The offline snapshot is reordered too, or a disconnect before the next
+    // sync would show the pre-drag order.
+    const current = get().projects[machineId]
+    if (!current) return
+    const byPath = new Map(current.map((p) => [p.path, p]))
+    const next = paths.map((p) => byPath.get(p)).filter((p): p is Project => !!p)
+    const snapshot = projectsToSnapshot(next, get().snapshots[machineId]?.syncedAt ?? Date.now())
+    set((s) => ({
+      projects: { ...s.projects, [machineId]: next },
+      snapshots: { ...s.snapshots, [machineId]: snapshot },
+    }))
     try {
+      await window.api.machines.saveSnapshot(machineId, snapshot)
       await window.api.routing.invokeOn(machineId, 'settings:set', 'projectOrder', JSON.stringify(paths))
     } catch (err) {
       log.warn('remote project reorder persist failed', err)
@@ -255,7 +260,29 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
           ? { ...p, sessions: [{ id: session.id, title: session.title, agentType: session.agentType ?? null }, ...p.sessions] }
           : p,
       )
-      return { snapshots: { ...s.snapshots, [machineId]: { ...snap, projects } } }
+      // Mirror onto the live tree too - a connected machine renders
+      // s.projects, so patching only the snapshot would hide the new row
+      // until the next full sync.
+      const liveTree = s.projects[machineId]
+      const live = liveTree?.some((p) => p.path === projectPath)
+        ? liveTree.map((p) => {
+            if (p.path !== projectPath || p.sessions.some((x) => x.id === session.id)) return p
+            const summary: SessionSummary = {
+              id: session.id,
+              title: session.title,
+              source: session.agentType === 'codex' ? 'codex' : session.agentType === 'opencode' ? 'opencode' : 'claude-code',
+              agentType: session.agentType ?? null,
+              startedAt: Date.now(),
+              messageCount: 0,
+              filePath: '',
+            }
+            return { ...p, sessions: [summary, ...p.sessions] }
+          })
+        : liveTree
+      return {
+        snapshots: { ...s.snapshots, [machineId]: { ...snap, projects } },
+        ...(live ? { projects: { ...s.projects, [machineId]: live } } : {}),
+      }
     }),
 
   renameSnapshotSession: (sessionId, title) =>
@@ -274,7 +301,18 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
           ),
         }
       }
-      return changed ? { snapshots } : {}
+      // Mirror onto whichever live tree holds the session (see addSnapshotSession).
+      const projects = { ...s.projects }
+      for (const [machineId, tree] of Object.entries(s.projects)) {
+        if (!tree.some((p) => p.sessions.some((x) => x.id === sessionId))) continue
+        changed = true
+        projects[machineId] = tree.map((p) =>
+          p.sessions.some((x) => x.id === sessionId)
+            ? { ...p, sessions: p.sessions.map((x) => (x.id === sessionId ? { ...x, title } : x)) }
+            : p,
+        )
+      }
+      return changed ? { snapshots, projects } : {}
     }),
 
   removeSnapshotSession: (machineId, sessionId) =>
@@ -286,7 +324,17 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
           ? { ...p, sessions: p.sessions.filter((x) => x.id !== sessionId) }
           : p,
       )
-      return { snapshots: { ...s.snapshots, [machineId]: { ...snap, projects } } }
+      // Mirror onto the live tree (see addSnapshotSession).
+      const liveTree = s.projects[machineId]
+      const live = liveTree?.map((p) =>
+        p.sessions.some((x) => x.id === sessionId)
+          ? { ...p, sessions: p.sessions.filter((x) => x.id !== sessionId) }
+          : p,
+      )
+      return {
+        snapshots: { ...s.snapshots, [machineId]: { ...snap, projects } },
+        ...(live ? { projects: { ...s.projects, [machineId]: live } } : {}),
+      }
     }),
 
   connect: async (id) => {

@@ -27,6 +27,18 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 - `npm run build:fast` - escape hatch, skips the gate
 - `npm run rebuild` - rebuild `node-pty` + `better-sqlite3` for Electron
 
+## Shipping checklist (MANDATORY, 2026-07-21)
+
+Nothing merges to main or ships in a release without, in order:
+
+1. `/deslop` - strip AI slop from the branch diff
+2. `/review` (code review) - finder + verify pass over the diff; every CONFIRMED finding gets fixed or an explicit written deferral
+3. `/deslop` again over the review fixes
+4. Full gate green: `npm run typecheck` + `npm test`
+
+Applies to every batch including "small" fixes. Releases additionally
+require green CI on main first (see docs/releasing.md).
+
 ## Build gate (2026-04-20)
 
 `npm run build` fails the entire build if typecheck or tests fail. The `prebuild` npm lifecycle hook chains `typecheck && test` before `electron-vite build`. This caught real regressions on the first run - see CHANGELOG.md.
