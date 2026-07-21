@@ -16,6 +16,13 @@ describe('applyProjectOrder', () => {
     expect(applyProjectOrder(projects, [])).toBe(projects)
   })
 
+  it('non-array order (corrupt persisted setting) returns the input untouched', () => {
+    const projects = [p('/b'), p('/a')]
+    expect(applyProjectOrder(projects, 5 as unknown as string[])).toBe(projects)
+    expect(applyProjectOrder(projects, {} as unknown as string[])).toBe(projects)
+    expect(applyProjectOrder(projects, 'x' as unknown as string[])).toBe(projects)
+  })
+
   it('order entries for removed projects are ignored', () => {
     const projects = [p('/b'), p('/a')]
     const out = applyProjectOrder(projects, ['/gone', '/a', '/b'])

@@ -12,7 +12,10 @@ import type { Project, SessionSummary, Workspace } from '@shared/types'
  * (same key on the remote's own DB).
  */
 export function applyProjectOrder<T extends { path: string }>(projects: T[], order: string[] | null): T[] {
-  if (!order || order.length === 0) return projects
+  // `order` comes from a persisted setting - a corrupt row can hold valid
+  // JSON that isn't an array. Guard here so every caller falls back to scan
+  // order instead of throwing outside its parse try/catch.
+  if (!Array.isArray(order) || order.length === 0) return projects
   const idx = new Map(order.map((p, i) => [p, i]))
   return [...projects].sort((a, b) => {
     const ai = idx.get(a.path) ?? -1

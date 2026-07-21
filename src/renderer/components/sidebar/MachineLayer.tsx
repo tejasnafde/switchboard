@@ -74,7 +74,8 @@ function RemoteProject({
   onContextMenu?: (e: MouseEvent, session: SessionSummary) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.path })
-  const sessions = [...project.sessions].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
+  // Scanner output is already newest-first; the local sidebar trusts it too.
+  const sessions = project.sessions
   return (
     <div
       ref={setNodeRef}
