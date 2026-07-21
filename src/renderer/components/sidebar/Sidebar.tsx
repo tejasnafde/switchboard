@@ -32,6 +32,8 @@ import {
   groupProjectsByWorkspace,
   applySidebarFilter,
   colorTokenForWorkspace,
+  applyProjectOrder,
+  formatRelativeTime,
   type WorkspaceGroup,
 } from './sidebar-helpers'
 import type { Workspace } from '@shared/types'
@@ -232,20 +234,13 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
 
         window.api.settings.get('projectOrder').then((orderJson: string | null) => {
           if (orderJson) {
+            let order: string[] | null = null
             try {
-              const order: string[] = JSON.parse(orderJson)
-              const sorted = [...saved].sort((a, b) => {
-                const ai = order.indexOf(a.path)
-                const bi = order.indexOf(b.path)
-                if (ai === -1 && bi === -1) return 0
-                if (ai === -1) return 1
-                if (bi === -1) return -1
-                return ai - bi
-              })
-              setProjects(sorted)
+              order = JSON.parse(orderJson)
             } catch {
-              setProjects(saved)
+              order = null // corrupt setting - fall back to scan order
             }
+            setProjects(applyProjectOrder(saved, order))
           } else {
             setProjects(saved)
           }
@@ -1447,18 +1442,3 @@ function SavedItem({
   )
 }
 
-function formatRelativeTime(timestamp: number): string {
-  const diff = Date.now() - timestamp
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'now'
-  if (mins < 60) return `${mins}m`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours}h`
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days}d`
-  const weeks = Math.floor(days / 7)
-  const months = Math.floor(days / 30)
-  // 28-30 days: already "4w" but not yet a full month - keep weeks, never "0mo".
-  if (months < 1) return `${weeks}w`
-  return `${months}mo`
-}

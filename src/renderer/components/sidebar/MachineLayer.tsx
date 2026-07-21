@@ -5,7 +5,7 @@
  * src/main/machines/); offline remotes show a cached read-only snapshot.
  */
 import { useState, type MouseEvent, type ReactNode } from 'react'
-import type { SessionSummary } from '@shared/types'
+import type { Project, SessionSummary } from '@shared/types'
 import type { Machine } from '@shared/machines'
 import { DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable'
@@ -15,6 +15,8 @@ import { useMachineStore } from '../../stores/machine-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { buildMachineList, type MachineNode, type MachineStatus } from './machineList'
 import { syncedAgoLabel, cachedProjects } from './machineSnapshot'
+import { formatRelativeTime } from './sidebar-helpers'
+import { ProjectFavicon } from './ProjectFavicon'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 
 const PIP_COLOR: Record<MachineStatus, string> = {
@@ -48,6 +50,109 @@ function SortableMachine({
   )
 }
 
+/**
+ * One project section on a CONNECTED remote - same classes and shape as the
+ * local sidebar's project sections (favicon falls back to the folder glyph
+ * because sb-favicon:// resolves against the local disk). Offline machines
+ * keep the trimmed read-only snapshot list instead.
+ */
+function RemoteProject({
+  project,
+  collapsed,
+  onToggle,
+  activeSessionId,
+  onOpen,
+  onNewChat,
+  onContextMenu,
+}: {
+  project: Project
+  collapsed: boolean
+  onToggle: () => void
+  activeSessionId: string | null
+  onOpen?: (session: SessionSummary) => void
+  onNewChat?: () => void
+  onContextMenu?: (e: MouseEvent, session: SessionSummary) => void
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.path })
+  const sessions = [...project.sessions].sort((a, b) => (b.startedAt ?? 0) - (a.startedAt ?? 0))
+  return (
+    <div
+      ref={setNodeRef}
+      className="sidebar-project"
+      style={{
+        transform: CSS.Translate.toString(transform),
+        transition,
+        opacity: isDragging ? 0.7 : 1,
+      }}
+    >
+      <div className="sidebar-project-header" onClick={() => !isDragging && onToggle()}>
+        <span
+          {...attributes}
+          {...listeners}
+          className="sidebar-drag-handle"
+          style={{
+            cursor: 'grab',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 2px',
+            color: 'var(--text-muted)',
+            opacity: 0,
+            transition: 'opacity 0.12s',
+          }}
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
+            <circle cx="2" cy="2" r="1.2" />
+            <circle cx="6" cy="2" r="1.2" />
+            <circle cx="2" cy="6" r="1.2" />
+            <circle cx="6" cy="6" r="1.2" />
+            <circle cx="2" cy="10" r="1.2" />
+            <circle cx="6" cy="10" r="1.2" />
+          </svg>
+        </span>
+        <span className="sidebar-chevron">{collapsed ? '▶' : '▼'}</span>
+        <ProjectFavicon projectPath={project.path} />
+        <span className="sidebar-project-name">{project.name}</span>
+        <span className="sidebar-project-count">{project.sessions.length || ''}</span>
+        {onNewChat && (
+          <button
+            className="sidebar-project-compose"
+            onClick={(e) => {
+              e.stopPropagation()
+              onNewChat()
+            }}
+            title="New thread in this project"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+          </button>
+        )}
+      </div>
+      {!collapsed && (
+        <div className="sidebar-threads">
+          {sessions.map((s) => {
+            const isActive = activeSessionId === s.id
+            return (
+              <div
+                key={s.id}
+                className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''}`}
+                onClick={() => onOpen?.(s)}
+                onContextMenu={onContextMenu ? (e) => onContextMenu(e, s) : undefined}
+              >
+                <span className={`sidebar-thread-dot ${isActive ? 'sidebar-thread-dot-active' : ''}`} />
+                <span className="sidebar-thread-title">{s.title}</span>
+                <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function MachineLayer({
   children,
   onAddMachine,
@@ -70,6 +175,8 @@ export function MachineLayer({
   const remove = useMachineStore((s) => s.remove)
   const reorder = useMachineStore((s) => s.reorder)
   const snapshots = useMachineStore((s) => s.snapshots)
+  const machineProjects = useMachineStore((s) => s.projects)
+  const reorderMachineProjects = useMachineStore((s) => s.reorderMachineProjects)
   const connect = useMachineStore((s) => s.connect)
   const disconnect = useMachineStore((s) => s.disconnect)
   const lastError = useMachineStore((s) => s.lastError)
@@ -77,6 +184,27 @@ export function MachineLayer({
   const reconnecting = useMachineStore((s) => s.reconnecting)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
   const [addProjectFor, setAddProjectFor] = useState<string | null>(null)
+  // Per-remote-project collapse, keyed `${machineId}\0${path}`. Session-local
+  // (not persisted) - matches how little we persist for remote view state.
+  const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(new Set())
+  const toggleProject = (machineId: string, path: string) => {
+    setCollapsedProjects((prev) => {
+      const key = `${machineId}\0${path}`
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  const handleProjectDragEnd = (machineId: string, live: Project[], e: DragEndEvent) => {
+    const { active, over } = e
+    if (!over || active.id === over.id) return
+    const paths = live.map((p) => p.path)
+    const from = paths.indexOf(String(active.id))
+    const to = paths.indexOf(String(over.id))
+    if (from === -1 || to === -1) return
+    void reorderMachineProjects(machineId, arrayMove(paths, from, to))
+  }
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
   const nodes = buildMachineList(remotes, { localName: 'This Mac', connections })
@@ -96,6 +224,10 @@ export function MachineLayer({
   const renderRemoteBody = (node: MachineNode) => {
     const snap = snapshots[node.id]
     const projects = cachedProjects(snap)
+    // Connected machines render the full live tree (same sections as the
+    // local sidebar); the trimmed snapshot list is the offline fallback and
+    // the brief connected-but-not-yet-synced window.
+    const live = node.status === 'connected' ? machineProjects[node.id] : undefined
     const isReconnecting = node.status === 'error' && reconnecting[node.id]
     const offline = node.status === 'offline' || node.status === 'error'
     return (
@@ -132,7 +264,36 @@ export function MachineLayer({
         {node.status === 'error' && !isReconnecting && lastError[node.id] && (
           <div className="machine-error-reason">{lastError[node.id]}</div>
         )}
-        {projects.length === 0 ? (
+        {live && live.length > 0 ? (
+          <DndContext
+            sensors={sensors}
+            modifiers={[restrictToVerticalAxis]}
+            onDragEnd={(e) => handleProjectDragEnd(node.id, live, e)}
+          >
+            <SortableContext items={live.map((p) => p.path)} strategy={verticalListSortingStrategy}>
+              {live.map((p) => (
+                <RemoteProject
+                  key={p.path}
+                  project={p}
+                  collapsed={collapsedProjects.has(`${node.id}\0${p.path}`)}
+                  onToggle={() => toggleProject(node.id, p.path)}
+                  activeSessionId={activeSessionId}
+                  onOpen={onOpenRemoteSession ? (s) => onOpenRemoteSession(node.id, p.path, s) : undefined}
+                  onNewChat={onNewRemoteChat ? () => onNewRemoteChat(node.id, p.path) : undefined}
+                  onContextMenu={
+                    onSessionContextMenu
+                      ? (e, s) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          onSessionContextMenu(e, node.id, p.path, s)
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </SortableContext>
+          </DndContext>
+        ) : projects.length === 0 ? (
           <div className="sidebar-machine-empty">
             {node.status === 'connected'
               ? 'No projects on this machine yet.'
