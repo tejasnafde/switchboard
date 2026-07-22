@@ -772,8 +772,23 @@ export class ClaudeAdapter implements ProviderAdapter {
       const e = err as { message?: string; stack?: string; cause?: unknown; name?: string }
       log.error(`query failed: ${threadId}`, e?.message ?? err, e?.stack ?? '', e?.cause ?? '')
 
-      // If resume failed, retry without resume (fresh session, same project)
-      if (active.session.sessionId && /exited with code/i.test(e?.message ?? '')) {
+      // Transcript isn't under the active profile's CLAUDE_CONFIG_DIR (started
+      // on another profile). Don't start fresh - that abandons the resume id
+      // and loses the thread even on switch-back. Keep sessionId and tell the
+      // user to switch back.
+      if (/no conversation found/i.test(e?.message ?? '')) {
+        log.warn(`resume transcript not under active profile for ${threadId} - preserving resume id so switch-back works`)
+        active.session.status = 'idle'
+        active.onEvent({
+          type: 'error',
+          threadId,
+          message:
+            'This conversation was started under a different profile and its history isn\'t available here. Your context is safe - switch back to the original profile to resume it.',
+        })
+        active.onEvent({ type: 'status', threadId, status: 'idle' })
+      } else if (active.session.sessionId && /exited with code/i.test(e?.message ?? '')) {
+        // Resume failed with a subprocess crash (or an imported conversation
+        // that never had a Claude transcript) - retry without --resume.
         log.warn(`retrying without --resume for ${threadId}`)
         active.session.sessionId = undefined
         const retryOptions: Record<string, unknown> = { ...queryOptions }

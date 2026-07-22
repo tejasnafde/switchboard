@@ -26,6 +26,20 @@ describe('session scanner - Claude Code paths', () => {
     expect(encoded).toBe('-Users-tejas-radicalize-me-public')
   })
 
+  it('encodes dots to dashes - worktree paths (regression: profile-switch resume)', () => {
+    // A `.claude/worktrees/<name>` cwd must collapse `/.` into `--`, matching
+    // real Claude Code. The old `/[/_]/g` left the dot, writing the migrated
+    // transcript to a dir the SDK never reads → "No conversation found".
+    const encoded = encodeClaudeProjectPath(
+      '/Users/tejas/Desktop/work/ssg/geoiq-lk-ssg-bot-v2/.claude/worktrees/eval-suite',
+    )
+    expect(encoded).toBe(
+      '-Users-tejas-Desktop-work-ssg-geoiq-lk-ssg-bot-v2--claude-worktrees-eval-suite',
+    )
+    // Never emits the buggy single-dash-dot form.
+    expect(encoded).not.toContain('.')
+  })
+
   it('filters JSONL files from directory listing', () => {
     const files = ['session1.jsonl', 'session2.jsonl', 'sessions-index.json', '.DS_Store', 'notes.md']
     const jsonlFiles = files.filter((f) => f.endsWith('.jsonl'))

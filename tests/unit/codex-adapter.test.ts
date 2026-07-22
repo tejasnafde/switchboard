@@ -232,6 +232,24 @@ function makeChild(): MockChild {
           }) + '\n')
         })
       }
+      if (message.method === 'turn/steer') {
+        queueMicrotask(() => {
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            result: { turnId: 'turn-1' },
+          }) + '\n')
+        })
+      }
+      if (message.method === 'turn/interrupt') {
+        queueMicrotask(() => {
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            result: {},
+          }) + '\n')
+        })
+      }
     }),
   }
   child.kill = vi.fn()
@@ -497,6 +515,58 @@ describe('CodexAdapter', () => {
       text: 'Hello from Codex',
       streamKind: 'assistant',
     }))
+  })
+
+  it('steers a running turn with turn/steer instead of a concurrent turn/start', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    // First turn starts turn-1; the mock never emits turn/completed, so the
+    // turn stays active and the next send must steer it.
+    await adapter.sendTurn('thread-1', 'hello codex')
+    writes.length = 0
+    await adapter.sendTurn('thread-1', 'actually, focus on the parser')
+
+    const frames = writes.map((w) => JSON.parse(w))
+    const steer = frames.find((m) => m.method === 'turn/steer')
+    expect(steer).toBeTruthy()
+    expect(steer.params).toMatchObject({
+      threadId: 'codex-thread-1',
+      expectedTurnId: 'turn-1',
+      input: [{ type: 'text', text: 'actually, focus on the parser' }],
+    })
+    // Must not open a second concurrent turn.
+    expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
+  })
+
+  it('starts a fresh turn (not a steer) after an interrupt clears the active turn id', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.interruptTurn('thread-1')
+    writes.length = 0
+    await adapter.sendTurn('thread-1', 'new direction after stopping')
+
+    const frames = writes.map((w) => JSON.parse(w))
+    // The interrupted turn is dead, so this must be a fresh turn/start, not a
+    // steer against a stale expectedTurnId.
+    expect(frames.some((m) => m.method === 'turn/start')).toBe(true)
+    expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
   })
 
   it('accumulates reasoning deltas (not just final text) per itemId', async () => {
