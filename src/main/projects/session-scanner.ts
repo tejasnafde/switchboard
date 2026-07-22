@@ -16,7 +16,10 @@ const log = createMainLogger('projects:scanner')
  * semantics (exact match vs substring) are unambiguous and regression-testable.
  */
 export function encodeClaudeProjectPath(projectPath: string): string {
-  return projectPath.replace(/[/_]/g, '-')
+  // Match Claude Code: every non-alphanumeric char becomes '-'. Must include
+  // '.', or worktree cwds (`.../.claude/worktrees/<name>`) encode to a dir the
+  // SDK never reads and resume fails with "No conversation found".
+  return projectPath.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
 /**

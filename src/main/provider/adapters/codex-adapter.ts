@@ -138,6 +138,12 @@ interface ActiveSession {
   skills: ProviderSkill[] | null
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
+  /** Active codex turn id (from turn/start response or turn/started); null
+   * when idle. Required as `expectedTurnId` to steer a running turn. */
+  activeTurnId: string | null
+  /** Set once turn/steer returns method-not-found so we stop attempting it on
+   * codex builds that predate the RPC (installed 0.144.1 supports it). */
+  steerUnsupported: boolean
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -361,6 +367,8 @@ export class CodexAdapter implements ProviderAdapter {
       threadId: resumeThreadId,
       skills: null,
       turnStartedAt: null,
+      activeTurnId: null,
+      steerUnsupported: false,
     }
 
     this.sessions.set(opts.threadId, active)
@@ -519,12 +527,6 @@ export class CodexAdapter implements ProviderAdapter {
       active.session.runtimeMode = runtimeMode
     }
 
-    active.session.status = 'running'
-    active.turnStartedAt = Date.now()
-    active.onEvent({ type: 'status', threadId, status: 'running' })
-
-    const approvalPolicy = RUNTIME_MODE_TO_CODEX_POLICY[active.session.runtimeMode] ?? 'on-request'
-
     // Build current Codex app-server v2 user input blocks.
     const content: Array<Record<string, unknown>> = []
     if (message) {
@@ -537,6 +539,39 @@ export class CodexAdapter implements ProviderAdapter {
       }
     }
 
+    // Mid-turn send with a live turn id → steer it (inject into the running
+    // turn) rather than starting a concurrent one. Only a fresh turn resets
+    // status/timestamp; steering leaves the in-flight turn's clock alone.
+    const steering = active.activeTurnId != null && !active.steerUnsupported
+    if (steering) {
+      try {
+        const steered = await this.sendRpc(active, 'turn/steer', {
+          threadId: active.threadId,
+          input: content,
+          expectedTurnId: active.activeTurnId,
+        })
+        // Track the (possibly advanced) turn id so a follow-up steer targets
+        // the right turn.
+        const steeredTurnId = (steered as { turnId?: string } | null)?.turnId
+        if (typeof steeredTurnId === 'string') active.activeTurnId = steeredTurnId
+        return
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        // Any steer failure - method missing on old builds, or the turn ended
+        // between our state and the request (stale expectedTurnId) - must not
+        // drop the message. Clear the turn id and fall through to a fresh
+        // turn/start; only -32601 disables steering for the rest of the session.
+        if (/-32601|method not found|unknown method/i.test(msg)) active.steerUnsupported = true
+        active.activeTurnId = null
+        log.warn(`codex turn/steer failed, starting a fresh turn instead: ${msg}`)
+      }
+    }
+
+    active.session.status = 'running'
+    active.turnStartedAt = Date.now()
+    active.onEvent({ type: 'status', threadId, status: 'running' })
+
+    const approvalPolicy = RUNTIME_MODE_TO_CODEX_POLICY[active.session.runtimeMode] ?? 'on-request'
     const reasoningEffort = active.session.reasoningEffort
     const sandbox = RUNTIME_MODE_TO_CODEX_THREAD_SANDBOX[active.session.runtimeMode] ?? 'read-only'
     const sandboxPolicy = RUNTIME_MODE_TO_CODEX_TURN_SANDBOX[active.session.runtimeMode] ?? { type: 'readOnly' }
@@ -558,7 +593,7 @@ export class CodexAdapter implements ProviderAdapter {
         active.onEvent({ type: 'session', threadId, sessionId: active.threadId })
       }
 
-      await this.sendRpc(active, 'turn/start', {
+      const started = await this.sendRpc(active, 'turn/start', {
         threadId: active.threadId,
         input: content,
         approvalPolicy,
@@ -567,6 +602,8 @@ export class CodexAdapter implements ProviderAdapter {
         ...(active.session.model ? { model: active.session.model } : {}),
         ...(reasoningEffort ? { effort: reasoningEffort } : {}),
       })
+      const startedTurnId = (started as { turn?: { id?: string } } | null)?.turn?.id
+      if (typeof startedTurnId === 'string') active.activeTurnId = startedTurnId
     } catch (err) {
       active.session.status = 'error'
       active.onEvent({
@@ -607,6 +644,9 @@ export class CodexAdapter implements ProviderAdapter {
     const active = this.sessions.get(threadId)
     if (!active?.child || !active.threadId) return
 
+    // The interrupted turn is no longer steerable; clear the id so the next
+    // send starts a fresh turn instead of steering a dead one.
+    active.activeTurnId = null
     try {
       await this.sendRpc(active, 'turn/interrupt', { threadId: active.threadId })
     } catch {
@@ -977,7 +1017,7 @@ export class CodexAdapter implements ProviderAdapter {
           streamKind: 'plan',
         })
       }
-    } else if (method === 'item/agentMessage/delta' || method.includes('delta')) {
+    } else if (method === 'item/agentMessage/delta') {
       const text = notification.params?.delta
         || notification.params?.text
         || notification.params?.content
@@ -1039,9 +1079,12 @@ export class CodexAdapter implements ProviderAdapter {
       active.assistantMessageText.clear()
       active.toolOutputText.clear()
       active.startedSyntheticTools.clear()
+      active.activeTurnId = null
     } else if (method === 'turn/started') {
       active.session.status = 'running'
       if (active.turnStartedAt == null) active.turnStartedAt = Date.now()
+      const startedTurnId = notification.params?.turnId ?? notification.params?.turn?.id
+      if (typeof startedTurnId === 'string') active.activeTurnId = startedTurnId
       active.onEvent({ type: 'status', threadId, status: 'running' })
     } else if (method === 'thread/status/changed') {
       const statusType = notification.params?.status?.type

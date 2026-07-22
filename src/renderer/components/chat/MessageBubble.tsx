@@ -98,6 +98,12 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   const bookmarkId = useBookmarkStore((s) => s.idFor(sessionId ?? '', message.timestamp))
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const markdownRef = useRef<HTMLDivElement>(null)
+  // While a turn streams, marked re-parses each snapshot: an unterminated ```
+  // fence or a 4-space-indented line renders as a transient <pre> that reflows
+  // away when more tokens land. Gate DOM decoration on this so copy buttons
+  // (and file pills) aren't attached to code blocks that vanish a frame later.
+  const sessionStatus = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
+  const isStreaming = sessionStatus === 'running' || sessionStatus === 'thinking'
   // Right-click → Fork popover. Anchored at the click coordinates;
   // dismisses on click-outside / Escape. We resolve the fork's source
   // conversation lazily off `useAgentStore.getState()` at click time so
@@ -115,6 +121,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // every content commit; deferring until a quiet gap runs it once per
   // message in practice (the timer resets while content keeps changing).
   useEffect(() => {
+    // Skip while streaming; the effect re-runs when isStreaming flips false
+    // and decorates the settled <pre> blocks then.
+    if (isStreaming) return
     const timer = setTimeout(() => {
       const root = markdownRef.current
       if (!root) return
@@ -145,7 +154,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       })
     }, POST_PROCESS_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [renderedContent])
+  }, [renderedContent, isStreaming])
 
   // Inline file-pill enhancement: replace `<code>src/foo.ts:42-58</code>`
   // with clickable chips that open the file viewer at that line range.
@@ -154,6 +163,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // Debounced like the copy-button effect above: the TreeWalker pass plus
   // per-path resolve IPC used to fire on every streaming commit.
   useEffect(() => {
+    if (isStreaming) return
     const timer = setTimeout(() => {
       const root = markdownRef.current
       if (!root) return
@@ -204,7 +214,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       })
     }, POST_PROCESS_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [renderedContent])
+  }, [renderedContent, isStreaming, sessionId])
 
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'

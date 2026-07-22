@@ -83,6 +83,20 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   const removeSession = useAgentStore((s) => s.removeSession)
   const providerStartedRef = useRef<Set<string>>(new Set())
   const pendingNoteRef = useRef<{ sessionId: string; text: string } | null>(null)
+  // Mid-turn sends wait here and flush FIFO when the turn ends. Without this,
+  // each provider diverged: Codex fired a concurrent turn/start, OpenCode
+  // silently dropped the message. Queued items replay through handleSend.
+  const messageQueueRef = useRef<
+    Array<{
+      sessionId: string
+      message: string
+      images?: Array<{ file: File; previewUrl: string }>
+      extras?: {
+        displayBody?: string
+        pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
+      }
+    }>
+  >([])
   const agentStartedRef = useRef<Set<string>>(new Set())
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
 
@@ -654,6 +668,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // handleSend isn't in deps since we don't want to re-fire - it's called once
   }, [status, sessionId])
 
+  // Flush the next queued mid-turn message when the turn ends. One per idle
+  // tick: the replayed send flips status back to running, so the rest keep
+  // waiting until their turn (FIFO). handleSend deliberately omitted from deps.
+  useEffect(() => {
+    if (status !== 'idle') return
+    const idx = messageQueueRef.current.findIndex((item) => item.sessionId === sessionId)
+    if (idx === -1) return
+    const [item] = messageQueueRef.current.splice(idx, 1)
+    setTimeout(() => handleSend(item.message, undefined, item.images, item.extras), 50)
+  }, [status, sessionId])
+
   // ── Rename handler ────────────────────────────────────────────
   const startRename = useCallback(() => {
     setEditTitleValue(chatTitle)
@@ -690,6 +715,18 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       },
     ) => {
       if (!sessionId) return
+
+      // Mid-turn send routing. Claude pushes into its native CLI prompt queue
+      // and Codex uses turn/steer - both handled in their adapters, so let them
+      // fall through to the normal send. OpenCode ACP is strictly one-prompt-
+      // per-turn with no steer primitive, so hold the message and flush it as a
+      // fresh turn once this one ends. Status is read live (closure can be stale).
+      const liveStatus = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.status
+      const busy = liveStatus === 'running' || liveStatus === 'thinking'
+      if (busy && agentType === 'opencode') {
+        messageQueueRef.current.push({ sessionId, message, images, extras })
+        return
+      }
 
       // Convert attached images to data URLs so they survive session reloads.
       // Downscaled first (longest edge 1920px, JPEG for opaque sources): the
