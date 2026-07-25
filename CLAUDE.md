@@ -43,40 +43,26 @@ require green CI on main first (see docs/releasing.md).
 
 `npm run build` fails the entire build if typecheck or tests fail. The `prebuild` npm lifecycle hook chains `typecheck && test` before `electron-vite build`. This caught real regressions on the first run - see CHANGELOG.md.
 
-## Google Cloud (mobile pairing / IAP) - which account, always
+## Google Cloud, OAuth branding, Secret Manager
 
-Two GCP identities are in play and mixing them up breaks things in confusing
-ways. The shell's ACTIVE gcloud configuration is `work` (`tejas@geoiq.io`), so
-Switchboard's own resources are NOT the default.
+@/Users/tejas/Desktop/projects/CLAUDE.local.md
 
-- **Switchboard's own GCP resources live in the PERSONAL project**
-  (`teejayproject`, `tejas@glycocare.in`). **Every** gcloud command touching them
-  must pass `--configuration=personal`, e.g.
-  `gcloud --configuration=personal secrets versions access latest --secret=switchboard-oauth-client`.
-  Forgetting the flag silently targets the work project and fails with
-  NOT_FOUND / PERMISSION_DENIED.
-- **IAP tunnels to GeoIQ VMs use the WORK account** (`tejas@geoiq.io`) - that is
-  where the VMs and `roles/iap.tunnelResourceAccessor` live. Do NOT
-  `--configuration=personal` an IAP tunnel command.
+Shared across every project under `~/Desktop/projects` - read that file for the
+rules. The ones that bite most often:
 
-Mnemonic: personal = our credentials/secrets; work = the machines we reach.
+- Personal GCP resources (our OAuth client, secrets) live in `teejayproject` and
+  **every** gcloud command touching them needs `--configuration=personal`. IAP
+  tunnels to GeoIQ VMs use the WORK account instead - no flag.
+- The OAuth consent screen is per-PROJECT, so all personal apps share one brand:
+  **Toolmaker** / `toolmaker.dev`. Do not rename it to "Switchboard".
+- The mobile OAuth client is Secret Manager secret `switchboard-oauth-client`.
+  Never hardcode it.
+- IAP relay requires `Origin: bot:iap-tunneler` or it silently sends nothing.
 
-gcloud on this Mac needs `CLOUDSDK_PYTHON=~/.config/gcloud/virtenv/bin/python3`
-and lives at `~/Downloads/google-cloud-sdk/bin/gcloud` (not on PATH for
-non-interactive shells).
-
-### Secret Manager contents (personal project `teejayproject`)
-
-| Secret | Payload | Used by |
-|---|---|---|
-| `switchboard-oauth-client` | JSON `{"client_id","client_secret"}` for the "Switchboard desktop app" OAuth 2.0 client (Desktop-app type, created 2026-07-25) | The mobile app's Google sign-in, to obtain a user access token with `https://www.googleapis.com/auth/cloud-platform` scope for IAP tunneling |
-
-Read it with:
-`gcloud --configuration=personal secrets versions access latest --secret=switchboard-oauth-client`
-
-Never hardcode the client secret in the repo. Note a Desktop-type client secret
-is not a real trust boundary (it ships inside apps by design); PKCE is what
-actually protects the flow.
+Switchboard-specific: `src/shared/iap-tunnel.ts` is the IAP codec and
+`scripts/iap-probe.mjs` is the live smoke test (validated end to end against
+`geoiq-ssg-dev-in` on 2026-07-25). Design notes in
+`docs/plans/2026-07-22-mobile-app.md`.
 
 ## Known gotchas
 
