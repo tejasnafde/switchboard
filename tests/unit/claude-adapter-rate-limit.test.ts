@@ -19,6 +19,8 @@ function makeActive(onEvent = vi.fn()) {
     pendingApprovals: new Map(),
     pendingQuestions: new Map(),
     currentMessageId: null,
+    currentReasoningMessageId: null,
+    partialMessageText: new Map(),
     draining: false,
     turnStartedAt: null,
     skills: [],
@@ -36,26 +38,30 @@ function dispatch(msg: object) {
 }
 
 describe('rate_limit_event', () => {
-  it('emits error then status:error on rejected with rateLimitType and resetsAt', () => {
+  // A rejection produces no `result` message, so the handler ends the turn
+  // itself: error -> turn.completed (the end indicator) -> status:error.
+  it('emits error, turn.completed, then status:error on rejected with rateLimitType and resetsAt', () => {
     const resetsAt = Math.floor(Date.now() / 1000) + 3600
     const events = dispatch({
       type: 'rate_limit_event',
       rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', resetsAt },
     })
-    expect(events).toHaveLength(2)
+    expect(events).toHaveLength(3)
     expect(events[0].type).toBe('error')
     expect((events[0] as { type: 'error'; message: string }).message).toContain('seven-day')
-    expect(events[1]).toMatchObject({ type: 'status', status: 'error' })
+    expect(events[1].type).toBe('turn.completed')
+    expect(events[2]).toMatchObject({ type: 'status', status: 'error' })
   })
 
-  it('emits error then status:error on rejected with no optional fields', () => {
+  it('emits error, turn.completed, then status:error on rejected with no optional fields', () => {
     const events = dispatch({
       type: 'rate_limit_event',
       rate_limit_info: { status: 'rejected' },
     })
-    expect(events).toHaveLength(2)
+    expect(events).toHaveLength(3)
     expect(events[0].type).toBe('error')
-    expect(events[1]).toMatchObject({ type: 'status', status: 'error' })
+    expect(events[1].type).toBe('turn.completed')
+    expect(events[2]).toMatchObject({ type: 'status', status: 'error' })
   })
 
   it('emits nothing on allowed', () => {
