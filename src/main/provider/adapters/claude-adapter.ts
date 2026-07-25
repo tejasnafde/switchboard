@@ -8,10 +8,11 @@
  * Promise until the user decides.
  */
 
-import { execSync } from 'child_process'
+import { execSync, execFile } from 'child_process'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
+import { promisify } from 'util'
 import { createMainLogger as createLogger } from '../../logger'
 import { recordThreadSession, listSessionIdsForThread } from '../../db/database'
 
@@ -58,6 +59,7 @@ import type {
   ApprovalDecision,
 } from '../types'
 import type { ProviderSkill } from '@shared/types'
+import { formatClaudeAuthStatus } from '@shared/provider-auth-format'
 
 const log = createLogger('provider:claude')
 
@@ -112,6 +114,35 @@ function claudeCredsKnownPresent(env: Record<string, string>): boolean {
     return existsSync(join(configDir, '.credentials.json'))
   } catch {
     return false
+  }
+}
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Preflight login state under the resolved CLAUDE_CONFIG_DIR before spawning a
+ * session. `claude auth status` is a local credential read that prints JSON
+ * (`loggedIn:false` when the profile is logged out). Spawning the real query
+ * against a logged-out config dir hangs with no `system/init` and no error
+ * (confirmed 2026-07-26), so we fail fast with the re-login command instead.
+ * Fails OPEN: any probe error/timeout returns ok, so a possibly-valid session
+ * is never blocked (a generic startup hang is a separate concern).
+ */
+async function probeClaudeLogin(
+  bin: string,
+  env: Record<string, string>,
+  oauthDir: string | null,
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const { stdout } = await execFileAsync(bin, ['auth', 'status'], {
+      env,
+      timeout: 7000,
+      maxBuffer: 1024 * 1024,
+    })
+    return formatClaudeAuthStatus(stdout, oauthDir)
+  } catch (err) {
+    log.warn(`auth preflight probe failed, proceeding: ${err instanceof Error ? err.message : String(err)}`)
+    return { ok: true, message: '' }
   }
 }
 
@@ -718,6 +749,29 @@ export class ClaudeAdapter implements ProviderAdapter {
 
     const claudeBin = findClaudeBin()
     const env = buildClaudeQueryEnv(buildClaudeCliEnv(), active.instanceEnv, active.instanceOauthDir)
+
+    // Auth preflight - see probeClaudeLogin. Spawning against a logged-out
+    // profile otherwise hangs indefinitely with no events and no error.
+    if (claudeBin) {
+      const auth = await probeClaudeLogin(claudeBin, env, active.instanceOauthDir)
+      if (!auth.ok) {
+        active.onEvent({ type: 'error', threadId, message: auth.message })
+        const durationMs = active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
+        active.turnStartedAt = null
+        active.currentMessageId = null
+        active.currentReasoningMessageId = null
+        active.partialMessageText.clear()
+        active.onEvent({
+          type: 'turn.completed',
+          threadId,
+          ...(durationMs !== undefined ? { durationMs } : {}),
+        })
+        active.onEvent({ type: 'status', threadId, status: 'error' })
+        // Let a later send re-drain (e.g. after the user re-logs in).
+        active.draining = false
+        return
+      }
+    }
 
     // Notebook workspaces get the mirror-format guidance. The SDK default for
     // an unset systemPrompt is the EMPTY string (verified against sdk.mjs), so

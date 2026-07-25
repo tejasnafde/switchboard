@@ -5,7 +5,8 @@
 import { describe, it, expect, vi } from 'vitest'
 import { buildClaudeQueryEnv } from '../../src/main/provider/adapters/claude-adapter'
 
-vi.mock('child_process', () => ({
+vi.mock('child_process', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('child_process')>()),
   execSync: vi.fn(() => '/usr/local/bin/claude\n'),
 }))
 
