@@ -400,7 +400,7 @@ const ApprovalItem = memo(function ApprovalItem({
   return (
     <View style={[styles.itemBlock, styles.approvalCard, !pending && styles.cardResolved]}>
       <Text style={styles.approvalTitle}>
-        {pending ? 'Approval needed' : item.state === 'approve' ? '✓ Approved' : '✕ Denied'}
+        {pending ? 'Approval needed' : item.state === 'approve' ? 'Approved' : 'Denied'}
       </Text>
       <Text style={styles.toolName}>{item.toolName}</Text>
       <Text style={styles.toolOutput} numberOfLines={6}>
@@ -480,7 +480,7 @@ const QuestionItem = memo(function QuestionItem({
                     <Text style={styles.optionDesc}>{opt.description}</Text>
                   ) : null}
                 </View>
-                {selected && <Text style={styles.optionCheck}>{'✓'}</Text>}
+                {selected && <Text style={styles.optionCheck}>{'[x]'}</Text>}
               </Pressable>
             )
           })}

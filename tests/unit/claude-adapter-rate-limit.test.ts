@@ -19,6 +19,10 @@ function makeActive(onEvent = vi.fn()) {
     pendingApprovals: new Map(),
     pendingQuestions: new Map(),
     currentMessageId: null,
+    // Present on the real ActiveSession; the rejection path clears both when it
+    // ends the stuck turn, so the fake has to carry them too.
+    currentReasoningMessageId: null,
+    partialMessageText: new Map<string, string>(),
     draining: false,
     turnStartedAt: null,
     skills: [],
@@ -42,10 +46,11 @@ describe('rate_limit_event', () => {
       type: 'rate_limit_event',
       rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', resetsAt },
     })
-    expect(events).toHaveLength(2)
-    expect(events[0].type).toBe('error')
+    // A rejection yields no `result` message, so the adapter ends the turn
+    // itself: error, then turn.completed (unsticks 'running'), then status.
+    expect(events.map((e) => e.type)).toEqual(['error', 'turn.completed', 'status'])
     expect((events[0] as { type: 'error'; message: string }).message).toContain('seven-day')
-    expect(events[1]).toMatchObject({ type: 'status', status: 'error' })
+    expect(events[2]).toMatchObject({ type: 'status', status: 'error' })
   })
 
   it('emits error then status:error on rejected with no optional fields', () => {
@@ -53,9 +58,8 @@ describe('rate_limit_event', () => {
       type: 'rate_limit_event',
       rate_limit_info: { status: 'rejected' },
     })
-    expect(events).toHaveLength(2)
-    expect(events[0].type).toBe('error')
-    expect(events[1]).toMatchObject({ type: 'status', status: 'error' })
+    expect(events.map((e) => e.type)).toEqual(['error', 'turn.completed', 'status'])
+    expect(events[2]).toMatchObject({ type: 'status', status: 'error' })
   })
 
   it('emits nothing on allowed', () => {

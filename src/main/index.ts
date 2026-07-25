@@ -23,7 +23,9 @@ import { registerAppHandlers } from './ipc/app'
 import { registerAppDesktopHandlers } from './ipc/app-desktop'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
-import { ElectronIpcHost } from './backend/host'
+import { ElectronIpcHost, type BackendHost } from './backend/host'
+import { MultiHost } from './backend/multi-host'
+import { startMobileServer, type MobileServer } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
 import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
@@ -41,6 +43,8 @@ import type { AgentType } from '@shared/types'
 
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
+/** Mobile pairing WS endpoint (null when no token is configured). */
+let mobileServer: MobileServer | null = null
 
 // ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
 // a stray reload kills terminal panes and in-flight agent turns.
@@ -503,7 +507,13 @@ app.whenReady().then(() => {
   mainWindow = createWindow()
 
   // Handlers migrating to the BackendHost seam (remote-ready); rest take the window.
-  const backendHost = new ElectronIpcHost(mainWindow)
+  // When mobile pairing is configured we ALSO serve those same handlers over a
+  // WebSocket, fanned through a MultiHost - so a paired phone drives the very
+  // same ProviderRegistry and session pool as this window.
+  mobileServer = startMobileServer()
+  const backendHost: BackendHost = mobileServer
+    ? new MultiHost(new ElectronIpcHost(mainWindow), mobileServer.host)
+    : new ElectronIpcHost(mainWindow)
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)
@@ -539,7 +549,11 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow()
-      const reactivatedHost = new ElectronIpcHost(mainWindow)
+      // Re-point the renderer half at the new window; the mobile endpoint is
+      // already listening, so reuse it rather than binding the port again.
+      const reactivatedHost: BackendHost = mobileServer
+        ? new MultiHost(new ElectronIpcHost(mainWindow), mobileServer.host)
+        : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
       registerAgentHandlers(reactivatedHost)
       registerAppHandlers(reactivatedHost)
@@ -569,5 +583,6 @@ app.on('before-quit', () => {
   shutdownTerminals()
   providerRegistry?.stopAll()
   void stopAllMachineConnections()
+  mobileServer?.close()
   closeDb()
 })

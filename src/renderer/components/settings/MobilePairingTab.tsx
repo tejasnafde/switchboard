@@ -321,10 +321,14 @@ export function MobilePairingTab() {
         </button>
       </div>
       <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.6 }}>
-        On this Mac, run it from the Switchboard repo root. On a VM, the server
-        bundle (<code style={{ fontFamily: 'var(--font-mono)' }}>out/server/index.cjs</code>)
-        must be present there first; launch it with the same env vars. The server
-        exits at startup if <code style={{ fontFamily: 'var(--font-mono)' }}>SWITCHBOARD_TOKEN</code>{' '}
+        You do not need this command for THIS computer: once a token is saved,
+        Switchboard itself serves the paired endpoint on the port above after a
+        restart, and the phone sees the same chats and sessions as this window.
+        The command is for a machine with no Switchboard app running - a VM,
+        where the server bundle
+        (<code style={{ fontFamily: 'var(--font-mono)' }}>out/server/index.cjs</code>)
+        must be present first. The server exits at startup if{' '}
+        <code style={{ fontFamily: 'var(--font-mono)' }}>SWITCHBOARD_TOKEN</code>{' '}
         is missing while bound beyond loopback.
       </div>
     </div>

@@ -1238,8 +1238,20 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
 
       case 'rate_limit_event': {
+        // Keep the shape aligned with SDKRateLimitInfo (sdk.d.ts). We log the
+        // WHOLE object below, so include the overage fields - an empty
+        // {rateLimitType,resetsAt} rejection is usually an overage/credit block,
+        // not a five-hour window. See docs/notes/rate-limit-debugging.md.
         type RateLimitMsg = SDKMessage & {
-          rate_limit_info?: { status?: string; rateLimitType?: string; resetsAt?: number }
+          rate_limit_info?: {
+            status?: string
+            rateLimitType?: string
+            resetsAt?: number
+            utilization?: number
+            overageStatus?: string
+            overageDisabledReason?: string
+            isUsingOverage?: boolean
+          }
         }
         const rl = (msg as RateLimitMsg).rate_limit_info
         if (rl?.status === 'rejected') {
@@ -1252,8 +1264,26 @@ export class ClaudeAdapter implements ProviderAdapter {
             threadId,
             message: `Claude Code rate limit reached${windowPart}.${resetPart} Switch to another provider or instance, or wait for the window to reset.`,
           })
+          // A rejection produces no `result` message, so without an explicit
+          // turn end the panel stays stuck on 'running' with no duration badge -
+          // this is the "no response, nothing" symptom from the 2026-07-25
+          // investigation. Mirror the `result` case: clear turn state and emit
+          // turn.completed, then flag the error status.
+          const durationMs = active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
+          active.turnStartedAt = null
+          active.currentMessageId = null
+          active.currentReasoningMessageId = null
+          active.partialMessageText.clear()
+          active.onEvent({
+            type: 'turn.completed',
+            threadId,
+            ...(durationMs !== undefined ? { durationMs } : {}),
+          })
           active.onEvent({ type: 'status', threadId, status: 'error' })
-          log.warn(`rate_limit rejected for ${threadId}`, { rateLimitType: rl.rateLimitType, resetsAt: rl.resetsAt })
+          // Log the FULL rate_limit_info. The old line dropped everything except
+          // rateLimitType/resetsAt, so an empty-payload rejection logged as `{}`
+          // and hid whether it was overage vs a real window - see the doc above.
+          log.warn(`rate_limit rejected for ${threadId}`, rl)
         }
         break
       }
