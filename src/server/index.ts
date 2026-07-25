@@ -1,7 +1,9 @@
 /**
  * Standalone headless backend: the same handlers + ProviderRegistry over a
  * WsHost, for running on a VM. Desktop-only handlers are omitted.
- * Env: PORT, SWITCHBOARD_DATA_DIR, SWITCHBOARD_SECRET.
+ * Env: PORT, HOST, SWITCHBOARD_DATA_DIR, SWITCHBOARD_SECRET (env-blob
+ * passphrase), SWITCHBOARD_TOKEN (WS connection auth - required when binding
+ * beyond loopback, e.g. HOST=0.0.0.0 for LAN/tailnet mobile clients).
  */
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -41,8 +43,13 @@ try {
 
 const port = Number(process.env.PORT ?? 8765)
 const bindHost = process.env.HOST ?? '127.0.0.1'
+const token = process.env.SWITCHBOARD_TOKEN
+if (bindHost !== '127.0.0.1' && bindHost !== 'localhost' && !token) {
+  log.error(`refusing to bind ${bindHost} without SWITCHBOARD_TOKEN - set it or bind loopback`)
+  process.exit(1)
+}
 const wss = new WebSocketServer({ port, host: bindHost })
-const host = new WsHost(wss)
+const host = new WsHost(wss, token)
 
 registerAppHandlers(host)
 registerFilesHandlers(host)

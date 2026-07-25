@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Switchboard",
+    "slug": "switchboard-mobile",
+    "version": "0.1.0",
+    "scheme": "switchboard",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#0d0f12",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "app.switchboard.mobile"
+    },
+    "android": {
+      "package": "app.switchboard.mobile",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Switchboard scans a QR code shown by the desktop app to pair with a backend."
+        }
+      ]
+    ]
+  }
+}

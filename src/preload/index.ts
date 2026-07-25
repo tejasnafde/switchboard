@@ -130,6 +130,9 @@ const api = {
       transport.invoke(AppChannels.REMOVE_PROJECT, projectPath),
     renameProject: (projectPath: string, name: string): Promise<{ ok: true }> =>
       transport.invoke(AppChannels.RENAME_PROJECT, projectPath, name),
+    /** External IPv4 addresses of this machine (mobile pairing host picker). */
+    lanAddresses: (): Promise<Array<{ iface: string; address: string }>> =>
+      transport.invoke(AppChannels.LAN_ADDRESSES),
     createConversation: (params: CreateConversationParams) =>
       transport.invoke(AppChannels.CREATE_CONVERSATION, params),
     setConversationWorktree: (

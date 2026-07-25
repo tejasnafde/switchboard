@@ -3,20 +3,51 @@
  * under ElectronIpcHost run here unchanged. emit broadcasts to all connected
  * clients (one expected).
  */
+import { timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
+import type { IncomingMessage } from 'node:http'
 import { encodeFrame, decodeFrame, type WsFrame } from '@shared/ws-protocol'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 
 const log = createLogger('backend:ws-host')
 
+/** Constant-time token compare; length mismatch short-circuits (length leaks anyway). */
+function tokenMatches(expected: string, presented: string | null): boolean {
+  if (presented === null) return false
+  const a = Buffer.from(expected)
+  const b = Buffer.from(presented)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
 export class WsHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
   private readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>()
   private readonly clients = new Set<WebSocket>()
 
-  constructor(private readonly wss: WebSocketServer) {
-    this.wss.on('connection', (socket) => {
+  /**
+   * `token` (SWITCHBOARD_TOKEN on the server) gates connections when set:
+   * clients dial `ws://host:port/?token=<token>`. Unset preserves the
+   * loopback/SSH-tunnel trust model (no in-band auth).
+   */
+  constructor(
+    private readonly wss: WebSocketServer,
+    token?: string,
+  ) {
+    this.wss.on('connection', (socket, req: IncomingMessage) => {
+      if (token) {
+        let presented: string | null = null
+        try {
+          presented = new URL(req.url ?? '/', 'ws://localhost').searchParams.get('token')
+        } catch (err) {
+          log.warn('unparseable upgrade url', err)
+        }
+        if (!tokenMatches(token, presented)) {
+          log.warn(`rejected connection with ${presented === null ? 'missing' : 'bad'} token`)
+          socket.close(4001, 'unauthorized')
+          return
+        }
+      }
       this.clients.add(socket)
       log.info(`client connected (${this.clients.size} total)`)
       socket.on('message', (data) => this.onMessage(socket, data.toString()))

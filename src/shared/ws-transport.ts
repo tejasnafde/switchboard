@@ -31,6 +31,11 @@ export interface WsReconnectOptions {
   budgetMs?: number
 }
 
+/** WsHost's auth rejection close code - a server verdict, not a blip. */
+const CLOSE_UNAUTHORIZED = 4001
+
+export type WsTransportState = 'connected' | 'reconnecting' | 'closed'
+
 interface PendingInvoke {
   resolve: (v: unknown) => void
   reject: (e: Error) => void
@@ -62,8 +67,15 @@ export class WsTransport implements Transport {
   private readonly listeners = new Map<string, Set<(...args: unknown[]) => void>>()
   private readonly outbox: QueuedFrame[] = []
   private open = false
-  /** Terminal: deliberate close() or exhausted reconnect budget. Never unset. */
+  /** Terminal: deliberate close(), auth rejection, or exhausted budget. Never unset. */
   private closed = false
+  /** Set when the server closed us with 4001 - surfaced so UIs can say "bad token"
+   *  instead of spinning on "connecting". */
+  authRejected = false
+  /** Optional liveness observer - fired on open / unexpected close / terminal
+   *  shutdown. Assign after construction; connection stores use this instead
+   *  of probing. */
+  onStateChange: ((state: WsTransportState) => void) | null = null
   private reconnecting = false
   private reconnectAttempt = 0
   private reconnectStartedAt = 0
@@ -102,6 +114,7 @@ export class WsTransport implements Transport {
         this.reconnecting = false
         this.reconnectAttempt = 0
       }
+      this.onStateChange?.('connected')
       for (const frame of this.outbox.splice(0)) {
         sock.send(frame.encoded)
         if (frame.id !== undefined) {
@@ -120,7 +133,7 @@ export class WsTransport implements Transport {
     // first failed dial silently killed the whole re-dial chain. Spec-compliant
     // impls fire both for one failure, hence the settled guard.
     let settled = false
-    const onDead = (): void => {
+    const onDead = (ev?: CloseEvent): void => {
       if (settled || sock !== this.ws || this.closed) return
       settled = true
       this.open = false
@@ -132,10 +145,20 @@ export class WsTransport implements Transport {
         entry.reject(new Error('WebSocket closed'))
         this.pending.delete(id)
       }
+      // 4001 is the server's auth verdict - re-dialing would loop against a
+      // rejection forever. Terminal shutdown; the owner re-pairs with a new token.
+      if (ev?.code === CLOSE_UNAUTHORIZED) {
+        log.error('server rejected token (4001), closing transport', this.url)
+        this.authRejected = true
+        this.shutdown()
+        this.onStateChange?.('closed')
+        return
+      }
       this.scheduleRedial()
+      this.onStateChange?.('reconnecting')
     }
     sock.addEventListener('close', onDead)
-    sock.addEventListener('error', onDead)
+    sock.addEventListener('error', () => onDead())
   }
 
   private scheduleRedial(): void {
@@ -258,6 +281,7 @@ export class WsTransport implements Transport {
   close(): void {
     if (this.closed) return
     this.shutdown()
+    this.onStateChange?.('closed')
     try {
       this.ws.close()
     } catch (err) {

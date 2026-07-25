@@ -16,6 +16,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { buildMachineList, type MachineNode, type MachineStatus } from './machineList'
 import { syncedAgoLabel, cachedProjects } from './machineSnapshot'
 import { formatRelativeTime } from './sidebar-helpers'
+import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { ProjectFavicon } from './ProjectFavicon'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 
@@ -115,6 +116,7 @@ function RemoteProject({
         <span className="sidebar-chevron">{collapsed ? '▶' : '▼'}</span>
         <ProjectFavicon projectPath={project.path} />
         <span className="sidebar-project-name">{project.name}</span>
+        <GroupUnreadBadge sessionIds={project.sessions.map((s) => s.id)} expanded={!collapsed} />
         <span className="sidebar-project-count">{project.sessions.length || ''}</span>
         {onNewChat && (
           <button
@@ -144,6 +146,7 @@ function RemoteProject({
               >
                 <span className={`sidebar-thread-dot ${isActive ? 'sidebar-thread-dot-active' : ''}`} />
                 <span className="sidebar-thread-title">{s.title}</span>
+                <UnreadBadge sessionId={s.id} />
                 <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
               </div>
             )

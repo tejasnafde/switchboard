@@ -56,3 +56,5 @@ playwright-report/
 coverage/
 .vitest-cache/
 mockups/
+.expo/
+apps/mobile/node_modules/

@@ -5,7 +5,7 @@ import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
 import { synthesizeDbOnlySessions, stampAgentTypes } from './terminal-sessions'
-import { homedir } from 'os'
+import { homedir, networkInterfaces } from 'os'
 import { basename, join as joinPath } from 'path'
 import {
   addProject,
@@ -130,6 +130,20 @@ export function registerAppHandlers(host: BackendHost): void {
     const result = [...filtered, ...dbOnlySessions]
     log.info(`scan complete: ${result.length} visible (${sessions.length - filtered.length} archived/child, ${dbOnlySessions.length} db-only)`)
     return result
+  })
+
+  // External IPv4 addresses - host candidates for the mobile pairing QR.
+  // Skips loopback/internal interfaces and 169.254.* link-local self-assigns.
+  host.handle(AppChannels.LAN_ADDRESSES, (): Array<{ iface: string; address: string }> => {
+    const results: Array<{ iface: string; address: string }> = []
+    for (const [iface, addrs] of Object.entries(networkInterfaces())) {
+      for (const addr of addrs ?? []) {
+        if (addr.family !== 'IPv4' || addr.internal) continue
+        if (addr.address.startsWith('169.254.')) continue
+        results.push({ iface, address: addr.address })
+      }
+    }
+    return results
   })
 
   // Settings

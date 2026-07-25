@@ -1,16 +1,10 @@
 import { memo } from 'react'
+import { formatTokens } from '@shared/format'
 
 export interface ContextWindowUsage {
   usedTokens: number
   maxTokens: number | null
   totalProcessedTokens?: number
-}
-
-function formatTokens(tokens: number | null): string {
-  if (tokens === null) return '?'
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
-  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
-  return String(tokens)
 }
 
 /**

@@ -25,6 +25,7 @@ import type { AgentType } from '@shared/types'
 import type {
   ProviderAdapter,
   ProviderKind,
+  ProviderSession,
   RuntimeEvent,
   SessionStartOpts,
   ApprovalDecision,
@@ -248,6 +249,22 @@ export class ProviderRegistry {
     this.host.handle(ProviderChannels.START_SESSION, async (opts: SessionStartOpts) => {
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
+
+      // Idempotent re-attach: a second START_SESSION for a live thread (screen
+      // remount, second client on the same backend) must not spawn a second
+      // adapter process over the same JSONL - it would orphan the first one's
+      // cleanup. Return a descriptor of the running session instead.
+      if (this.sessionAdapters.has(opts.threadId)) {
+        log.info(`startSession ${opts.threadId} already live - re-attaching`)
+        return {
+          threadId: opts.threadId,
+          provider: opts.provider,
+          status: 'idle',
+          runtimeMode: opts.runtimeMode ?? 'sandbox',
+          cwd: this.sessionCwd.get(opts.threadId) ?? opts.cwd,
+          createdAt: Date.now(),
+        } satisfies ProviderSession
+      }
 
       // On a remote VM only Claude Code runs. Reject Codex / OpenCode with a
       // readable message the chat surfaces instead of a deep adapter failure.

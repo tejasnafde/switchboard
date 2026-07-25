@@ -66,6 +66,8 @@ export const AppChannels = {
   REMOVE_PROJECT: 'app:remove-project',
   /** Rename a project's display name (path/PK unchanged). */
   RENAME_PROJECT: 'app:rename-project',
+  /** External IPv4 addresses of this machine - mobile pairing QR host picker. */
+  LAN_ADDRESSES: 'app:lan-addresses',
 } as const
 
 export const MachineChannels = {

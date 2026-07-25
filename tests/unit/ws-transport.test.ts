@@ -347,3 +347,39 @@ describe('WsTransport (fake socket)', () => {
     expect(sock.sent.length).toBe(sentBefore)
   })
 })
+
+describe('auth rejection (4001)', () => {
+  it('a 4001 close is terminal: no re-dial, authRejected set, state observer told', async () => {
+    const server = new WebSocketServer({ port: 0 })
+    wss = server
+    // Token-gated host; the client dials without a token.
+    new WsHost(server, 's3cret')
+    await new Promise<void>((res) => server.on('listening', () => res()))
+    const port = (server.address() as AddressInfo).port
+
+    const states: string[] = []
+    client = new WsTransport(`ws://localhost:${port}`, 500, { baseMs: 10, capMs: 20 })
+    client.onStateChange = (s) => states.push(s)
+    await tick()
+    await tick()
+
+    expect(client.authRejected).toBe(true)
+    expect(client.isAlive()).toBe(false)
+    expect(states).toContain('closed')
+    // Terminal means invokes reject immediately instead of queueing forever.
+    await expect(client.invoke('anything')).rejects.toThrow('transport closed')
+  })
+
+  it('a token-bearing dial against the same host connects', async () => {
+    const server = new WebSocketServer({ port: 0 })
+    wss = server
+    const host = new WsHost(server, 's3cret')
+    host.handle('ping', () => 'pong')
+    await new Promise<void>((res) => server.on('listening', () => res()))
+    const port = (server.address() as AddressInfo).port
+
+    client = new WsTransport(`ws://localhost:${port}/?token=s3cret`)
+    expect(await client.invoke('ping')).toBe('pong')
+    expect(client.authRejected).toBe(false)
+  })
+})
