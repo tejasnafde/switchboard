@@ -11,15 +11,16 @@ let ptyManager: PtyManager | null = null
 let outputCoalescer: OutputCoalescer | null = null
 
 /**
- * Kill every pty and flush buffered output. MUST run in `before-quit`:
- * a live node-pty ThreadSafeFunction callback that lands during Node
+ * Kill every pty, flush buffered output, and wait for the ptys to
+ * actually exit before returning. MUST be awaited by `before-quit`
+ * (with `event.preventDefault()`) before the app is allowed to quit: a
+ * live node-pty ThreadSafeFunction callback that lands during Node
  * environment teardown throws into a dying env and abort()s the whole
- * process (the 0.7.19 crash-on-quit). Killing here lets the native
- * callbacks drain while the event loop is still alive.
+ * process (the 0.7.19/0.7.21 crash-on-quit).
  */
-export function shutdownTerminals(): void {
+export async function shutdownTerminals(): Promise<void> {
   outputCoalescer?.flushAll()
-  ptyManager?.killAll()
+  await ptyManager?.killAll()
   ptyManager = null
 }
 
@@ -28,7 +29,7 @@ export function registerTerminalHandlers(host: BackendHost): void {
   // re-registers handlers idempotently. Flush the outgoing coalescer first
   // so buffered tail output isn't stranded on a timer aimed at the old host.
   outputCoalescer?.flushAll()
-  ptyManager?.killAll()
+  void ptyManager?.killAll() // not on the quit path - fire-and-forget is fine here
 
   // Batch pty chunks (~8ms) so high-throughput output doesn't emit one
   // IPC/WS frame per chunk. EXIT flushes first so tail output isn't lost.

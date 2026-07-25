@@ -193,10 +193,36 @@ export class PtyManager {
     this.ptys.delete(id)
   }
 
-  killAll(): void {
-    for (const [id] of this.ptys) {
+  /**
+   * Kill every pty and wait for each to actually exit (bounded by a
+   * timeout per pty so one wedged shell can't hang app quit forever).
+   * `kill()` only sends the signal - the OS reaps the child and
+   * node-pty's native thread fires `onExit` asynchronously, so callers
+   * MUST await this before tearing down the Node environment or that
+   * callback lands on a dying env and abort()s the process.
+   */
+  async killAll(): Promise<void> {
+    const ids = [...this.ptys.keys()]
+    const exits = ids.map((id) => {
+      const managed = this.ptys.get(id)!
+      return new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          // ponytail: bounded wait, don't hang quit on a stuck shell - logged
+          // because it means the crash this method exists to prevent is
+          // still possible for this one pty (see class doc comment above).
+          log.warn(`pty ${id} did not exit within 1500ms of kill(), abandoning wait`)
+          resolve()
+        }, 1500)
+        managed.pty.onExit(() => {
+          clearTimeout(timer)
+          resolve()
+        })
+      })
+    })
+    for (const id of ids) {
       this.kill(id)
     }
+    await Promise.all(exits)
   }
 
   has(id: string): boolean {

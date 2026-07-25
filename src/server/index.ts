@@ -13,7 +13,7 @@ import { registerFilesHandlers } from '../main/ipc/files'
 import { registerGitHandlers } from '../main/ipc/git'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
 import { registerProviderInstanceHandlers } from '../main/ipc/providerInstances'
-import { registerTerminalHandlers } from '../main/ipc/terminal'
+import { registerTerminalHandlers, shutdownTerminals } from '../main/ipc/terminal'
 import { registerAgentHandlers } from '../main/ipc/agent'
 import { ProviderRegistry } from '../main/provider/provider-registry'
 import { createMainLogger as createLogger } from '../main/logger'
@@ -69,6 +69,9 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     } catch (err) {
       log.warn('failed to remove pid file', err)
     }
-    void registry.stopAll().finally(() => wss.close(() => process.exit(0)))
+    // Same crash class as the desktop app's before-quit fix: a live
+    // node-pty native callback firing during process teardown aborts the
+    // process, so PTYs must actually exit before we process.exit().
+    void Promise.all([shutdownTerminals(), registry.stopAll()]).finally(() => wss.close(() => process.exit(0)))
   })
 }
