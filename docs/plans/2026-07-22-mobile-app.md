@@ -73,6 +73,70 @@ Token auth end-to-end in all paths.
 Reference exploration (t3code `pingdotgg/t3code`, and local `someday` / `scout`
 self-updating APKs) lives in `/Users/tejas/Desktop/projects/.repo-explore-t3code/`.
 
+## Reaching work VMs: IAP, not SSH (2026-07-25)
+
+Every GeoIQ VM is reached through `gcloud compute start-iap-tunnel` (see the
+ProxyCommand blocks in `~/.ssh/config` and the aliases in `~/.zshrc`), never a
+routable SSH port. IAP TCP forwarding is a WebSocket relay at
+`tunnel.cloudproxy.app` over 443, which means:
+
+- it works from ANY network (cellular, home wifi) with no VPN and no laptop, and
+- it forwards an ARBITRARY port, so the phone can tunnel straight to the
+  Switchboard backend (8765) instead of to sshd. No SSH keys on the phone.
+
+`src/shared/iap-tunnel.ts` implements the URL builder + subprotocol codec,
+ported from the local gcloud SDK (`iap_tunnel_websocket_utils.py`): uint16 tag,
+then uint32-prefixed body for DATA/CONNECT_SUCCESS_SID and uint64 for
+ACK/RECONNECT_SUCCESS_ACK, all big-endian, 16 KB max DATA frame. 12 unit tests
+cover split/merged relay messages and chunk reassembly.
+
+`scripts/iap-probe.mjs` opens a real tunnel and prints the first bytes from the
+far port (use port 22 - sshd banners unprompted, so it is a self-evident smoke
+test).
+
+### Design wrinkle: WebSocket inside a TCP tunnel
+
+IAP yields a raw TCP stream, but the backend speaks WebSocket. Rather than
+implement an RFC6455 client inside the tunnel, add a newline-delimited-JSON
+listener to the server (our frames are already JSON, so the WS framing is
+incidental). Then `IapTransport implements Transport` exactly like
+`WsTransport`, and every line of existing mobile app code works unchanged.
+
+### Auth: what someday's Google sign-in does and does NOT give us
+
+Checked against the real code (someday-app/screens/SignIn.tsx,
+lib/supabase.ts). someday uses **Supabase as the OAuth broker**:
+`supabase.auth.signInWithOAuth({ provider: 'google', redirectTo: 'someday://' })`
+-> `supabase.auth.exchangeCodeForSession(code)`. No `scopes` or `queryParams`
+are passed anywhere, and `provider_token` is never captured, so the app ends up
+holding a **Supabase session JWT** (PKCE is between app and Supabase). That
+authenticates someday's own API and CANNOT call googleapis.com.
+
+IAP needs a third thing: a **Google-issued access token with `cloud-platform`
+scope**, for the WORK account. So Switchboard's mobile sign-in must talk to
+`accounts.google.com` DIRECTLY (expo-auth-session, our own client id from
+Secret Manager, PKCE, `access_type=offline` for a refresh token) - Supabase is
+not in the path.
+
+What IS worth copying from someday (already-debugged plumbing):
+- `WebBrowser.openAuthSessionAsync` result AND a `Linking` 'url' listener both
+  deliver the callback; a `handledCodes` Set makes the loser a no-op (otherwise
+  two exchanges race and one fails "invalid flow state").
+- Android resolves as `dismiss` while the listener is still in flight: a ref'd
+  4s timeout clears the spinner and is cancelled if the listener wins.
+- `WebBrowser.maybeCompleteAuthSession()` at module scope.
+- SecureStore adapter (Keychain / Keystore) for token storage, never
+  AsyncStorage.
+
+### Open risk
+
+Whether the org permits a CUSTOM OAuth client to obtain `cloud-platform` tokens
+for `tejas@geoiq.io`. `/tmp/sb-iap-test.sh` tests it end to end (consent ->
+token -> real tunnel) in an isolated `CLOUDSDK_CONFIG` so the real gcloud setup
+is untouched. If the org blocks it, fall back to Termux running gcloud on the
+phone. If the consent screen is External+Testing, `tejas@geoiq.io` must be added
+as a Test user first.
+
 ---
 
 ## TL;DR

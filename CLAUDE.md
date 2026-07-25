@@ -43,6 +43,41 @@ require green CI on main first (see docs/releasing.md).
 
 `npm run build` fails the entire build if typecheck or tests fail. The `prebuild` npm lifecycle hook chains `typecheck && test` before `electron-vite build`. This caught real regressions on the first run - see CHANGELOG.md.
 
+## Google Cloud (mobile pairing / IAP) - which account, always
+
+Two GCP identities are in play and mixing them up breaks things in confusing
+ways. The shell's ACTIVE gcloud configuration is `work` (`tejas@geoiq.io`), so
+Switchboard's own resources are NOT the default.
+
+- **Switchboard's own GCP resources live in the PERSONAL project**
+  (`teejayproject`, `tejas@glycocare.in`). **Every** gcloud command touching them
+  must pass `--configuration=personal`, e.g.
+  `gcloud --configuration=personal secrets versions access latest --secret=switchboard-oauth-client`.
+  Forgetting the flag silently targets the work project and fails with
+  NOT_FOUND / PERMISSION_DENIED.
+- **IAP tunnels to GeoIQ VMs use the WORK account** (`tejas@geoiq.io`) - that is
+  where the VMs and `roles/iap.tunnelResourceAccessor` live. Do NOT
+  `--configuration=personal` an IAP tunnel command.
+
+Mnemonic: personal = our credentials/secrets; work = the machines we reach.
+
+gcloud on this Mac needs `CLOUDSDK_PYTHON=~/.config/gcloud/virtenv/bin/python3`
+and lives at `~/Downloads/google-cloud-sdk/bin/gcloud` (not on PATH for
+non-interactive shells).
+
+### Secret Manager contents (personal project `teejayproject`)
+
+| Secret | Payload | Used by |
+|---|---|---|
+| `switchboard-oauth-client` | JSON `{"client_id","client_secret"}` for the "Switchboard desktop app" OAuth 2.0 client (Desktop-app type, created 2026-07-25) | The mobile app's Google sign-in, to obtain a user access token with `https://www.googleapis.com/auth/cloud-platform` scope for IAP tunneling |
+
+Read it with:
+`gcloud --configuration=personal secrets versions access latest --secret=switchboard-oauth-client`
+
+Never hardcode the client secret in the repo. Note a Desktop-type client secret
+is not a real trust boundary (it ships inside apps by design); PKCE is what
+actually protects the flow.
+
 ## Known gotchas
 
 - `ELECTRON_RUN_AS_NODE=1` is set by Claude Code's shell - `dev` script unsets it explicitly
