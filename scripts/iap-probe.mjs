@@ -29,8 +29,14 @@ const q = new URLSearchParams({
 })
 const url = `wss://tunnel.cloudproxy.app/v4/connect?${q}`
 
+// Origin is load-bearing: without `bot:iap-tunneler` the relay completes the
+// handshake and then sends nothing at all (gcloud's TUNNEL_CLOUDPROXY_ORIGIN).
 const ws = new WebSocket(url, ['relay.tunnel.cloudproxy.app'], {
-  headers: { 'User-Agent': 'switchboard-iap-probe/1', Authorization: `Bearer ${token}` },
+  headers: {
+    'User-Agent': 'switchboard-iap-probe/1',
+    Origin: 'bot:iap-tunneler',
+    Authorization: `Bearer ${token}`,
+  },
 })
 
 let buf = Buffer.alloc(0)

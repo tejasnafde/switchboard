@@ -128,14 +128,40 @@ What IS worth copying from someday (already-debugged plumbing):
 - SecureStore adapter (Keychain / Keystore) for token storage, never
   AsyncStorage.
 
-### Open risk
+### VALIDATED END TO END (2026-07-25)
 
-Whether the org permits a CUSTOM OAuth client to obtain `cloud-platform` tokens
-for `tejas@geoiq.io`. `/tmp/sb-iap-test.sh` tests it end to end (consent ->
-token -> real tunnel) in an isolated `CLOUDSDK_CONFIG` so the real gcloud setup
-is untouched. If the org blocks it, fall back to Termux running gcloud on the
-phone. If the consent screen is External+Testing, `tejas@geoiq.io` must be added
-as a Test user first.
+Proven against the live service, not reasoned about:
+
+1. The custom OAuth client (`switchboard-oauth-client`, Desktop type, personal
+   project) obtained a `cloud-platform` access token for `tejas@geoiq.io`. The
+   consent screen appeared normally - **the org does NOT block third-party OAuth
+   clients**, which was the one risk that could have killed this design.
+2. That token opened a real IAP tunnel to `geoiq-ssg-dev-in:22` and returned
+   `SSH-2.0-OpenSSH_9.6p1 Ubuntu-3ubuntu13.18`, parsed by our own codec with no
+   gcloud and no ssh client in the loop.
+
+So: phone -> Google IAP -> VM works with a token the phone can mint itself. No
+laptop, any network.
+
+**`Origin: bot:iap-tunneler` is mandatory.** Without it the relay completes the
+WebSocket handshake and then sends NOTHING - no CONNECT_SUCCESS_SID, no error,
+just silence until timeout. Cost an hour to find; gcloud calls it
+`TUNNEL_CLOUDPROXY_ORIGIN` (iap_tunnel_websocket_helper.py:34).
+
+Other gotchas banked while proving it:
+- ESM ignores `NODE_PATH`, so run the probe from the repo root (or any dir where
+  `ws` resolves) rather than /tmp.
+- `gcloud auth application-default login --client-id-file=... --scopes=...` is
+  the quickest way to exercise a custom client; point `CLOUDSDK_CONFIG` at a
+  throwaway dir so the real gcloud/ADC setup is untouched.
+
+### Cosmetic follow-up: consent screen says "Someday"
+
+OAuth consent-screen branding is per GCP PROJECT, not per client. The client was
+created in `teejayproject`, whose consent screen is named "Someday", so the
+prompt reads "Someday wants access to your Google Account". Fix before shipping
+by creating a dedicated `switchboard` GCP project with its own consent screen
+(renaming teejayproject's would rename someday's too). Function is unaffected.
 
 ---
 
