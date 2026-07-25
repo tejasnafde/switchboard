@@ -39,6 +39,7 @@ const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
 
+const quitLog = createMainLogger('app:quit')
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
 
@@ -273,7 +274,14 @@ function createWindow(): BrowserWindow {
   // the user clicks "Restart to update" after the updater reports
   // `downloaded`.
   ipcMain.removeAllListeners('app:quit-and-install')
+  let installing = false
   ipcMain.on('app:quit-and-install', () => {
+    if (installing) return // guards a double-click double-firing quitAndInstall
+    installing = true
+    // Safety valve: if quitAndInstall() silently no-ops (e.g. install()
+    // rejects the update file) instead of actually quitting, don't leave
+    // every future click permanently swallowed.
+    setTimeout(() => { installing = false }, 3_000)
     quitAndInstall()
   })
 
@@ -563,11 +571,30 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
+let quitting = false
+app.on('before-quit', (event) => {
+  if (quitting) return
+  quitting = true
   // PTYs first: their node-pty callbacks must drain on a live event loop,
-  // not during env teardown (SIGABRT on quit otherwise - see 0.7.19 crash).
-  shutdownTerminals()
-  providerRegistry?.stopAll()
-  void stopAllMachineConnections()
-  closeDb()
+  // not during env teardown (SIGABRT on quit otherwise - see 0.7.19/0.7.21
+  // crash). shutdownTerminals() now actually waits for exit, so we have to
+  // hold the quit open (preventDefault) until it resolves, then re-quit.
+  // The three teardown steps are independent subsystems (PTYs, agent
+  // sessions, SSH tunnels) so they run concurrently; the whole chain is
+  // capped at 5s and wrapped in try/finally so a stuck or throwing step
+  // can never leave the app permanently unquittable.
+  event.preventDefault()
+  void (async () => {
+    try {
+      await Promise.race([
+        Promise.all([shutdownTerminals(), providerRegistry?.stopAll(), stopAllMachineConnections()]),
+        new Promise((resolve) => setTimeout(resolve, 5_000)),
+      ])
+      closeDb()
+    } catch (err) {
+      quitLog.error('teardown before quit failed, quitting anyway', err)
+    } finally {
+      app.quit()
+    }
+  })()
 })

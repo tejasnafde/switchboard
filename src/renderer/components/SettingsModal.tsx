@@ -1175,11 +1175,20 @@ function UpdateCheckRow() {
   // launch-time auto-check, so by the time this mounts there may
   // already be a `checking` or `up-to-date` event in flight; we'll
   // pick up the next one.
+  const [restarting, setRestarting] = useState(false)
+
   useEffect(() => {
     const api = window.api.app as unknown as {
       onUpdateStatus: (cb: (s: UpdateStatus) => void) => () => void
     }
-    return api.onUpdateStatus(setStatus)
+    // Any status update means the app didn't actually quit (a real quit
+    // kills the renderer, so no more events could arrive) - clear the
+    // restarting latch so a failed/no-op install doesn't leave the button
+    // stuck disabled forever the next time it's shown.
+    return api.onUpdateStatus((s) => {
+      setRestarting(false)
+      setStatus(s)
+    })
   }, [])
 
   const check = useCallback(async () => {
@@ -1196,9 +1205,11 @@ function UpdateCheckRow() {
   }, [])
 
   const restart = useCallback(() => {
+    if (restarting) return
+    setRestarting(true)
     const api = window.api.app as unknown as { quitAndInstall: () => void }
     api.quitAndInstall()
-  }, [])
+  }, [restarting])
 
   const label = (() => {
     switch (status.kind) {
@@ -1245,6 +1256,7 @@ function UpdateCheckRow() {
           <button
             type="button"
             onClick={restart}
+            disabled={restarting}
             style={{
               padding: '6px 14px',
               background: 'var(--accent)',
@@ -1253,10 +1265,11 @@ function UpdateCheckRow() {
               color: 'var(--bg)',
               fontSize: '12px',
               fontWeight: 600,
-              cursor: 'pointer',
+              cursor: restarting ? 'default' : 'pointer',
+              opacity: restarting ? 0.6 : 1,
             }}
           >
-            Restart and install
+            {restarting ? 'Restarting…' : 'Restart and install'}
           </button>
         )}
       </div>
