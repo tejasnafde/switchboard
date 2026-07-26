@@ -59,14 +59,23 @@ const wsHost = new WsHost(wss, token)
 // and hands the client a RAW TCP stream, so there is no WebSocket to speak.
 // Same handlers, same frames, different framing. Off unless TCP_PORT is set.
 const tcpPortRaw = process.env.TCP_PORT
-const tcpServer = tcpPortRaw ? createServer() : null
+// IAP forwards to the VM's INTERNAL interface, so this listener cannot be
+// loopback-only or the relay finds nothing. It therefore always requires a
+// token, independently of the WebSocket listener (which stays on 127.0.0.1
+// behind the desktop's ssh -L tunnel - do not widen that).
+const tcpEnabled = Boolean(tcpPortRaw) && Boolean(token)
+if (tcpPortRaw && !token) {
+  log.error('TCP_PORT set without SWITCHBOARD_TOKEN - refusing to expose the ndjson listener')
+}
+const tcpServer = tcpEnabled ? createServer() : null
 const tcpHost = tcpServer ? new TcpHost(tcpServer, token) : null
 const host = tcpHost ? new MultiHost(wsHost, tcpHost) : wsHost
 if (tcpServer) {
   const tcpPort = Number(tcpPortRaw) || 8766
+  const tcpBind = process.env.TCP_HOST ?? '0.0.0.0'
   tcpServer.on('error', (err) => log.error('tcp listener error', err))
-  tcpServer.listen(tcpPort, bindHost, () =>
-    log.info(`ndjson/tcp listening on ${bindHost}:${tcpPort} (for IAP-tunnelled clients)`),
+  tcpServer.listen(tcpPort, tcpBind, () =>
+    log.info(`ndjson/tcp listening on ${tcpBind}:${tcpPort} (for IAP-tunnelled clients)`),
   )
 }
 

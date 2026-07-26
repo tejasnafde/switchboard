@@ -94,6 +94,26 @@ cover split/merged relay messages and chunk reassembly.
 far port (use port 22 - sshd banners unprompted, so it is a self-evident smoke
 test).
 
+### Prerequisites on the VM side (not yet automated)
+
+1. Launch the server with `TCP_PORT=8766 SWITCHBOARD_TOKEN=<token>`. The TCP
+   listener binds `0.0.0.0` because IAP connects to the VM's INTERNAL
+   interface - a loopback-only listener is invisible to the relay. It refuses
+   to start without a token, and the WebSocket listener stays on `127.0.0.1`
+   behind the desktop's ssh tunnel (do not widen that).
+2. Allow IAP ingress to that port. IAP forwards from a fixed range:
+   ```sh
+   gcloud compute firewall-rules create allow-iap-switchboard \
+     --project <PROJECT> --direction=INGRESS --action=allow \
+     --rules=tcp:8766 --source-ranges=35.235.240.0/20
+   ```
+   Port 22 already works because IAP SSH is in daily use; 8766 needs its own
+   rule. This is a work-infra change, so it may need approval.
+3. Still to wire: `connectDeps.ts` REMOTE_COMMAND passes only
+   `SWITCHBOARD_REMOTE=1 PORT=...`, so a desktop-provisioned VM is not yet
+   phone-reachable automatically. Making REMOTE_COMMAND a function that
+   injects `TCP_PORT` + the pairing token is the remaining step.
+
 ### Design wrinkle: WebSocket inside a TCP tunnel
 
 IAP yields a raw TCP stream, but the backend speaks WebSocket. Rather than
