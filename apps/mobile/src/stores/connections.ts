@@ -7,16 +7,53 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import type { WsTransport } from '@shared/ws-transport'
+import { createLogger } from '@shared/logger'
 import { SwitchboardClient } from '../lib/api'
+import { IapTransport } from '../lib/iap-transport'
 import { useChatStore } from './chat'
 
-export interface ConnectionConfig {
+const log = createLogger('store:connections')
+
+/**
+ * Supplies a current Google OAuth access token (cloud-platform scope) for IAP
+ * connections. Set once by the auth layer at startup; kept as a getter so the
+ * store never holds a stale token across a silent refresh.
+ */
+let getGoogleAccessToken: (() => string | null) | null = null
+export function setGoogleTokenProvider(fn: () => string | null): void {
+  getGoogleAccessToken = fn
+}
+
+/**
+ * Two ways to reach a backend:
+ *   'ws'  - a ws:// URL (LAN, tailnet, or a tunnel someone else set up)
+ *   'iap' - a work VM through Google IAP, which needs no inbound reachability
+ *           at all and works from any network with the laptop closed
+ */
+export interface WsConnectionConfig {
   id: string
   label: string
+  kind: 'ws'
   /** ws://host:port - token travels separately, appended at dial time. */
   url: string
   token?: string
 }
+
+export interface IapConnectionConfig {
+  id: string
+  label: string
+  kind: 'iap'
+  project: string
+  zone: string
+  instance: string
+  /** VM port running TcpHost (the server's TCP_PORT). */
+  port: number
+  /** SWITCHBOARD_TOKEN on that VM. */
+  token?: string
+}
+
+export type ConnectionConfig = WsConnectionConfig | IapConnectionConfig
 
 export type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error'
 
@@ -33,7 +70,7 @@ interface ConnectionsState {
   /** Runtime status per connection id (rebuilt on app start, not persisted). */
   status: Record<string, ConnectionStatus>
   addConnection: (config: ConnectionConfig) => void
-  updateConnection: (id: string, patch: Partial<Omit<ConnectionConfig, 'id'>>) => void
+  updateConnection: (id: string, patch: Partial<ConnectionConfig>) => void
   removeConnection: (id: string) => void
   connect: (id: string) => void
   disconnect: (id: string) => void
@@ -50,7 +87,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
 
       updateConnection: (id, patch) =>
         set((s) => ({
-          configs: s.configs.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+          configs: s.configs.map((c) => (c.id === id ? ({ ...c, ...patch } as ConnectionConfig) : c)),
         })),
 
       removeConnection: (id) => {
@@ -66,20 +103,48 @@ export const useConnectionsStore = create<ConnectionsState>()(
         const config = get().configs.find((c) => c.id === id)
         if (!config || clients.has(id)) return
         get().setStatus(id, 'connecting')
-        const client = new SwitchboardClient(config.url, config.token)
+
+        let client: SwitchboardClient
+        if (config.kind === 'iap') {
+          // Needs a fresh Google access token; the caller must have signed in.
+          const accessToken = getGoogleAccessToken?.()
+          if (!accessToken) {
+            get().setStatus(id, 'error')
+            log.warn('iap connection needs a Google sign-in first', config.label)
+            return
+          }
+          const transport = new IapTransport({
+            target: {
+              project: config.project,
+              zone: config.zone,
+              instance: config.instance,
+              port: config.port,
+            },
+            accessToken,
+            backendToken: config.token,
+          })
+          transport.onStateChange = (state) =>
+            get().setStatus(id, state === 'connected' ? 'connected' : 'disconnected')
+          client = new SwitchboardClient(transport)
+        } else {
+          const wsClient = SwitchboardClient.overWs(config.url, config.token)
+          const transport = wsClient.transport as WsTransport
+          // Status rides the transport's own lifecycle - open/reconnect/terminal
+          // all reflect live, so a dropped tunnel can't leave a stale green dot.
+          transport.onStateChange = (state) => {
+            if (state === 'connected') get().setStatus(id, 'connected')
+            else if (state === 'reconnecting') get().setStatus(id, 'connecting')
+            // authRejected = server said 4001 (bad token): error, not merely off.
+            else get().setStatus(id, transport.authRejected ? 'error' : 'disconnected')
+          }
+          client = wsClient
+        }
+
         clients.set(id, client)
         eventUnsubs.set(
           id,
           client.onEvent((event) => useChatStore.getState().ingest(id, event)),
         )
-        // Status rides the transport's own lifecycle - open/reconnect/terminal
-        // all reflect live, so a dropped tunnel can't leave a stale green dot.
-        client.transport.onStateChange = (state) => {
-          if (state === 'connected') get().setStatus(id, 'connected')
-          else if (state === 'reconnecting') get().setStatus(id, 'connecting')
-          // authRejected = server said 4001 (bad token): error, not merely off.
-          else get().setStatus(id, client.transport.authRejected ? 'error' : 'disconnected')
-        }
       },
 
       disconnect: (id) => {

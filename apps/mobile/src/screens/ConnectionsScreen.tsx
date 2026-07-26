@@ -13,6 +13,13 @@ import { useConnectionsStore, type ConnectionConfig } from '../stores/connection
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
 
+/** One-line target summary for either connection kind. */
+function describeTarget(config: ConnectionConfig): string {
+  return config.kind === 'iap'
+    ? `IAP ${config.instance}:${config.port} (${config.zone})`
+    : config.url
+}
+
 export default function ConnectionsScreen() {
   const navigation = useNavigation<Nav>()
   const configs = useConnectionsStore((s) => s.configs)
@@ -41,7 +48,7 @@ export default function ConnectionsScreen() {
     const store = useConnectionsStore.getState()
     const current = store.status[config.id] ?? 'disconnected'
     const isLive = current === 'connected' || current === 'connecting'
-    Alert.alert(config.label, config.url, [
+    Alert.alert(config.label, describeTarget(config), [
       {
         text: 'Edit',
         onPress: () => navigation.navigate('Pair', { editId: config.id }),
@@ -81,7 +88,7 @@ export default function ConnectionsScreen() {
             {item.label}
           </Text>
           <Text style={styles.rowUrl} numberOfLines={1}>
-            {item.url}
+            {describeTarget(item)}
           </Text>
         </View>
       </Pressable>

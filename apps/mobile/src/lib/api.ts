@@ -4,6 +4,7 @@
  * types come from src/shared, so this stays in lockstep with the server.
  */
 import { WsTransport } from '@shared/ws-transport'
+import type { Transport } from '@shared/transport'
 import { AppChannels, ProviderChannels } from '@shared/ipc-channels'
 import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '@shared/provider-events'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage } from '@shared/types'
@@ -38,11 +39,16 @@ export interface LoadedSession {
 }
 
 export class SwitchboardClient {
-  readonly transport: WsTransport
+  /**
+   * Any Transport: WsTransport for a LAN/tunnelled backend, IapTransport for a
+   * work VM reached through Google IAP. Everything below is framing-agnostic.
+   */
+  constructor(readonly transport: Transport) {}
 
-  constructor(url: string, token?: string) {
+  /** LAN / tunnelled backend over WebSocket. */
+  static overWs(url: string, token?: string): SwitchboardClient {
     const dialUrl = token ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : url
-    this.transport = new WsTransport(dialUrl)
+    return new SwitchboardClient(new WsTransport(dialUrl))
   }
 
   // ── app ──
@@ -105,6 +111,7 @@ export class SwitchboardClient {
   }
 
   close(): void {
-    this.transport.close()
+    // Transport itself has no close(); both concrete transports do.
+    ;(this.transport as { close?: () => void }).close?.()
   }
 }

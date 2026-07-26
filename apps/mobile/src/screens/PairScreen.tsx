@@ -35,7 +35,7 @@ export default function PairScreen() {
     : undefined
 
   const [label, setLabel] = useState(editConfig?.label ?? '')
-  const [url, setUrl] = useState(editConfig?.url ?? '')
+  const [url, setUrl] = useState(editConfig?.kind === 'ws' ? editConfig.url : '')
   const [token, setToken] = useState(editConfig?.token ?? '')
   const [scanning, setScanning] = useState(!editConfig)
 
@@ -88,7 +88,7 @@ export default function PairScreen() {
       store.connect(editId)
     } else {
       const id = `c-${Date.now()}`
-      store.addConnection({ id, ...saved })
+      store.addConnection({ id, kind: 'ws', ...saved })
       store.connect(id)
     }
     navigation.goBack()
