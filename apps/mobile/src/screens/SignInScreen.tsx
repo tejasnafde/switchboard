@@ -3,8 +3,9 @@
  * dial a work VM, so signing in here is the difference between the app working
  * from a phone and needing the laptop open.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { CameraView, useCameraPermissions } from 'expo-camera'
 import { createLogger } from '@shared/logger'
 import { colors } from '../theme'
 import { getSignedInEmail, importCredentials, parseCredentialBlob, signOut } from '../lib/google-auth'
@@ -16,6 +17,10 @@ export default function SignInScreen() {
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
   const [blob, setBlob] = useState('')
+  const [scanning, setScanning] = useState(false)
+  const [permission, requestPermission] = useCameraPermissions()
+  // A QR fires repeatedly while it stays in frame; the first accepted scan wins.
+  const scannedRef = useRef(false)
 
   const load = useCallback(async () => {
     try {
@@ -31,10 +36,13 @@ export default function SignInScreen() {
     void load()
   }, [load])
 
-  const handleImport = async () => {
-    const creds = parseCredentialBlob(blob)
+  const adopt = async (raw: string) => {
+    const creds = parseCredentialBlob(raw)
     if (!creds) {
       setError('That does not look like the blob the mint script printed.')
+      // Unlatch so the same scan session can try again; otherwise a bad QR
+      // wedges the scanner until the user cancels out of it.
+      scannedRef.current = false
       return
     }
     setBusy(true)
@@ -42,6 +50,7 @@ export default function SignInScreen() {
     try {
       const result = await importCredentials(creds)
       setBlob('')
+      setScanning(false)
       if (result === null) {
         // Credentials were accepted but no email claim came back; re-read state
         // rather than guessing.
@@ -52,9 +61,31 @@ export default function SignInScreen() {
     } catch (err) {
       log.error('credential import failed', err)
       setError(err instanceof Error ? err.message : 'Import failed. Please try again.')
+      scannedRef.current = false
     } finally {
       setBusy(false)
     }
+  }
+
+  const handleImport = () => void adopt(blob)
+
+  const handleScanned = ({ data }: { data: string }) => {
+    if (scannedRef.current) return
+    scannedRef.current = true
+    void adopt(data)
+  }
+
+  const startScanning = async () => {
+    setError('')
+    if (!permission?.granted) {
+      const next = await requestPermission()
+      if (!next.granted) {
+        setError('Camera access is needed to scan the QR from your terminal.')
+        return
+      }
+    }
+    scannedRef.current = false
+    setScanning(true)
   }
 
   const handleSignOut = async () => {
@@ -117,10 +148,36 @@ export default function SignInScreen() {
           </Text>
           <Text style={styles.code}>node scripts/google-mint-token.mjs</Text>
           <Text style={styles.stepBody}>
-            Sign in as the account that reaches your VMs, then paste the printed blob
-            here. After this the phone renews its own access tokens and does not need
-            the Mac again.
+            Sign in as the account that reaches your VMs. It prints a QR - scan that
+            rather than typing the blob. After this the phone renews its own access
+            tokens and does not need the Mac again.
           </Text>
+
+          {scanning ? (
+            <View style={styles.scanBox}>
+              <CameraView
+                style={styles.camera}
+                facing="back"
+                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                onBarcodeScanned={handleScanned}
+              />
+              <Pressable
+                onPress={() => setScanning(false)}
+                style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.secondaryButtonText}>Cancel scan</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable
+              onPress={startScanning}
+              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+            >
+              <Text style={styles.primaryButtonText}>Scan QR from terminal</Text>
+            </Pressable>
+          )}
+
+          <Text style={styles.orText}>or paste it</Text>
           <TextInput
             style={styles.blobInput}
             value={blob}
@@ -154,6 +211,22 @@ export default function SignInScreen() {
 }
 
 const styles = StyleSheet.create({
+  scanBox: {
+    marginBottom: 12,
+  },
+  camera: {
+    height: 260,
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  orText: {
+    color: colors.textFaint,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 14,
+    marginBottom: 8,
+  },
   stepTitle: {
     color: colors.text,
     fontSize: 15,

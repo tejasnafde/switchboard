@@ -16,6 +16,7 @@
  * Prints a JSON blob to paste into the phone: Account -> Import from desktop.
  */
 import { createServer } from 'node:http'
+import QRCode from 'qrcode'
 import { execFileSync } from 'node:child_process'
 import { randomBytes, createHash } from 'node:crypto'
 
@@ -134,10 +135,19 @@ const server = createServer(async (req, res) => {
     process.exit(1)
   }
 
-  res.end('Done. Return to the terminal, then paste the blob into the phone.')
-  const blob = { clientId, clientSecret, refreshToken: tokens.refresh_token }
-  console.log('\nPaste this into the phone (Account -> Import from desktop):\n')
-  console.log(JSON.stringify(blob))
+  res.end('Done. Return to the terminal, then scan the QR with the phone.')
+  const blob = JSON.stringify({ clientId, clientSecret, refreshToken: tokens.refresh_token })
+
+  // A QR beats typing ~200 characters on a phone, and beats routing a live
+  // credential through a messaging app to get it there.
+  console.log('\nScan this in the app (Account -> Scan from desktop):\n')
+  try {
+    console.log(await QRCode.toString(blob, { type: 'terminal', small: true, errorCorrectionLevel: 'L' }))
+  } catch (err) {
+    console.log('(could not render a QR: ' + err.message + ')')
+  }
+  console.log('Or paste this instead:\n')
+  console.log(blob)
   console.log('\nTreat it like a password: it grants cloud-platform access as you.')
   server.close()
   process.exit(0)

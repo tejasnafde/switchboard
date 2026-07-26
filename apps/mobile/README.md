@@ -120,6 +120,15 @@ broker: a broker's session JWT cannot call googleapis.com) and stores the refres
 token in the device keychain via `expo-secure-store`.
 
 - Screen: Connections -> "Account" in the header.
+- Getting credentials onto the phone: run `node scripts/google-mint-token.mjs`
+  from the repo root, consent as the account that reaches your VMs, then SCAN the
+  QR it prints in the terminal. Pasting the blob also works but it is ~260
+  characters. The QR keeps a live credential off your clipboard and out of any
+  messaging app.
+- Consent happens on the DESKTOP, not in the app: Google no longer allows custom
+  URI scheme redirects on Android, so the phone cannot run its own
+  authorization-code flow. It inherits the refresh token and renews access tokens
+  itself from then on, so the Mac is needed once rather than per session.
 - Scope: `https://www.googleapis.com/auth/cloud-platform` plus `openid email`.
 - Client id/secret come from `app.json` -> `extra.googleClientId` /
   `extra.googleClientSecret`. Real values live in Secret Manager secret
