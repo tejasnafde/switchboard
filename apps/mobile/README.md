@@ -79,6 +79,38 @@ The connection kind is fixed once saved. Editing a saved backend shows the kind
 as text instead of the tab control; to switch kinds, remove the backend and add
 it again.
 
+## Android OAuth client (one-time, console only)
+
+There is NO gcloud/API path for this. `gcloud iap oauth-clients create` only
+creates web clients locked to IAP usage; Android/iOS/Desktop client types are
+Cloud Console only. So this is a manual step by necessity.
+
+EAS account `tejasnafde`, project `switchboard-mobile`
+(id `efbb89d9-210f-4584-bf62-8186cd5fb476`).
+
+| Field | Value |
+|---|---|
+| Client type | Android |
+| Package name | `app.switchboard.mobile` |
+| SHA-1 (EAS-managed **development** keystore) | `4A:A2:A4:44:8C:80:9C:93:29:11:0D:52:6A:A5:23:F0:E3:EC:F3:46` |
+
+A SHA-1 fingerprint is not a secret - it is extractable from any APK - so it is
+recorded here deliberately. The client SECRET is the sensitive one and lives only
+in Secret Manager.
+
+Steps in GCP project `teejayproject`: APIs & Services -> Credentials -> Create
+credentials -> OAuth client ID -> Android -> paste the package name and SHA-1.
+Then put the client id into `app.json` -> `extra.googleClientId` and leave
+`googleClientSecret` empty (Android clients have no secret).
+
+Also add `tejas@geoiq.io` under OAuth consent screen -> Test users, or sign-in
+fails with `access_denied` while the app is in External + Testing.
+
+**When you later ship a production APK**, its keystore differs from the
+development one, so its SHA-1 differs too. Add the production fingerprint to the
+SAME OAuth client (Google allows several per client) or sign-in will work in the
+dev build and fail in the released APK.
+
 ## Google sign-in (needed for IAP connections)
 
 An `iap` connection reaches a work VM through `tunnel.cloudproxy.app`, and the
