@@ -18,9 +18,7 @@
     "android": {
       "package": "app.switchboard.mobile",
       "edgeToEdgeEnabled": true,
-      "permissions": [
-        "REQUEST_INSTALL_PACKAGES"
-      ]
+      "permissions": ["REQUEST_INSTALL_PACKAGES", "android.permission.CAMERA"]
     },
     "plugins": [
       [
@@ -31,10 +29,17 @@
       ]
     ],
     "extra": {
-      "//updates": "OTA is INERT until someone with the EAS account runs `npx eas update:configure` from apps/mobile. That command writes `updates.url` here and `extra.eas.projectId`, which are account-specific and deliberately NOT invented by hand - a wrong projectId fails at build time with a confusing ownership error. Until then Updates.isEnabled is false and src/lib/otaUpdate.ts no-ops, while the APK lane (src/lib/selfUpdate.ts, GitHub Releases) works on its own. `runtimeVersion.policy: appVersion` above pins each OTA bundle to a matching native binary, so a JS bundle can never be served to an APK that lacks the native modules it needs. `android.permissions: [REQUEST_INSTALL_PACKAGES]` is what lets the app hand a downloaded APK to Android's package installer.",
+      "//updates": "OTA is live: `eas init` + `eas update:configure` were run on 2026-07-27 against EAS account tejasnafde, which wrote `updates.url` and `extra.eas.projectId` below. `runtimeVersion.policy: appVersion` pins each OTA bundle to a matching native binary, so a JS bundle can never be served to an APK missing native modules it needs. `REQUEST_INSTALL_PACKAGES` is what lets the app hand a downloaded APK to Android's package installer (src/lib/selfUpdate.ts); CAMERA is for the pairing QR scanner. Do NOT add RECORD_AUDIO until voice input actually ships - an unused permission shows up in the install prompt for nothing.",
       "//": "Google OAuth client for the direct accounts.google.com PKCE flow (src/lib/google-auth.ts). Real values live in Secret Manager secret 'switchboard-oauth-client' in GCP project teejayproject: gcloud --configuration=personal secrets versions access latest --secret=switchboard-oauth-client. NEVER commit real values here. The stored client is Desktop-type, which works for the loopback probe but is REJECTED for custom-scheme redirects on device: shipping needs an Android-type client (package app.switchboard.mobile + signing SHA-1) and an iOS-type client. Those have no secret, so googleClientSecret stays empty for device builds.",
       "googleClientId": "REPLACE_ME.apps.googleusercontent.com",
-      "googleClientSecret": ""
+      "googleClientSecret": "",
+      "eas": {
+        "projectId": "efbb89d9-210f-4584-bf62-8186cd5fb476"
+      }
+    },
+    "owner": "tejasnafde",
+    "updates": {
+      "url": "https://u.expo.dev/efbb89d9-210f-4584-bf62-8186cd5fb476"
     }
   }
 }

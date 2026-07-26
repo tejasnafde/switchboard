@@ -1,35 +1,31 @@
 {
-  "//": "EAS build profiles. All three produce an APK, never an AAB: Switchboard self-distributes through GitHub Releases and updates itself in-app (src/lib/selfUpdate.ts), so there is no Play Store upload that would need an AAB. Requires an EAS account plus repo secret EXPO_TOKEN for CI.",
   "cli": {
     "version": ">= 12.0.0",
     "appVersionSource": "local"
   },
   "build": {
     "development": {
-      "//": "THIS is the profile needed to test Google sign-in. Sign-in cannot work in Expo Go at all: it needs an Android-type OAuth client bound to the package (app.switchboard.mobile) AND the build's signing SHA-1, and Expo Go's redirect is exp://, which Google rejects for custom-scheme flows. Install this build on the device, then register its SHA-1 (`eas credentials`) on the Android OAuth client. Everything except sign-in still runs in Expo Go.",
       "developmentClient": true,
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "channel": "development"
     },
     "preview": {
-      "//": "Release-mode build for testing the real thing off-CI. Same artifact shape as production, so it also exercises the self-update code path.",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
-      "//": "What .github/workflows/mobile-release.yml builds and attaches to the GitHub Release. autoIncrement is off on purpose: expo.version in app.json is the single source of truth, hand-bumped in the commit, and both the release tag and the OTA runtimeVersion are derived from it. Auto-incrementing would desync the tag from the binary.",
       "distribution": "internal",
       "autoIncrement": false,
       "android": {
         "buildType": "apk"
-      }
+      },
+      "channel": "production"
     }
-  },
-  "submit": {
-    "//": "No submit profiles. Nothing is submitted to a store; releases go out as GitHub Release assets."
   }
 }

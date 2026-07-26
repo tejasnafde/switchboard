@@ -159,6 +159,20 @@ desktop release workflow. Because desktop releases far outnumber mobile ones,
 an `.apk` rather than calling `/releases/latest`, which would nearly always
 return a desktop release with no APK attached.
 
+### EAS build profiles
+
+`eas.json` is schema-validated, so it cannot carry comments. What the profiles mean:
+
+| Profile | Purpose |
+|---|---|
+| `development` | `developmentClient: true`. **This is the profile that can test Google sign-in.** Sign-in cannot work in Expo Go at all: it needs an Android-type OAuth client bound to the package (`app.switchboard.mobile`) AND the build's signing SHA-1, and Expo Go's redirect is `exp://`, which Google rejects. Install this build, then register its SHA-1 (`eas credentials`) on the Android OAuth client. |
+| `preview` | Release-mode build for testing off-CI. Same artifact shape as production, so it also exercises the self-update path. |
+| `production` | What `mobile-release.yml` builds and attaches to the GitHub Release. `autoIncrement` is off on purpose: `expo.version` in `app.json` is the single source of truth, and both the tag and the OTA `runtimeVersion` derive from it. Auto-incrementing would desync the tag from the binary. |
+
+All three produce an **APK, never an AAB**: Switchboard self-distributes via GitHub
+Releases and updates itself in-app, so there is no Play Store upload needing an AAB.
+There are no `submit` profiles for the same reason.
+
 ### One-time setup
 
 1. **EAS account.** Someone with the Expo account runs this once from
