@@ -6,8 +6,8 @@
  * beyond loopback, e.g. HOST=0.0.0.0 for LAN/tailnet mobile clients).
  */
 import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { writeFileSync, unlinkSync, readFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { writeFileSync, unlinkSync, readFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { WebSocketServer } from 'ws'
 import { WsHost } from '../main/backend/ws-host'
@@ -39,6 +39,11 @@ const log = createLogger('server')
 // pid is recorded here before launching a fresh server.
 const PID_FILE = join(homedir(), '.switchboard-server', 'server.pid')
 try {
+  // The dir exists on a provisioned VM (the uploader creates it) but not on a
+  // machine running the bundle straight from a checkout, where the write used
+  // to ENOENT. connectDeps kills stale servers by this pidfile, so a missing
+  // one silently loses that protection.
+  mkdirSync(dirname(PID_FILE), { recursive: true })
   writeFileSync(PID_FILE, String(process.pid))
 } catch (err) {
   log.warn('failed to write pid file', err)
