@@ -8,13 +8,19 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "backgroundColor": "#0d0f12",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.switchboard.mobile"
     },
     "android": {
       "package": "app.switchboard.mobile",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "REQUEST_INSTALL_PACKAGES"
+      ]
     },
     "plugins": [
       [
@@ -25,6 +31,7 @@
       ]
     ],
     "extra": {
+      "//updates": "OTA is INERT until someone with the EAS account runs `npx eas update:configure` from apps/mobile. That command writes `updates.url` here and `extra.eas.projectId`, which are account-specific and deliberately NOT invented by hand - a wrong projectId fails at build time with a confusing ownership error. Until then Updates.isEnabled is false and src/lib/otaUpdate.ts no-ops, while the APK lane (src/lib/selfUpdate.ts, GitHub Releases) works on its own. `runtimeVersion.policy: appVersion` above pins each OTA bundle to a matching native binary, so a JS bundle can never be served to an APK that lacks the native modules it needs. `android.permissions: [REQUEST_INSTALL_PACKAGES]` is what lets the app hand a downloaded APK to Android's package installer.",
       "//": "Google OAuth client for the direct accounts.google.com PKCE flow (src/lib/google-auth.ts). Real values live in Secret Manager secret 'switchboard-oauth-client' in GCP project teejayproject: gcloud --configuration=personal secrets versions access latest --secret=switchboard-oauth-client. NEVER commit real values here. The stored client is Desktop-type, which works for the loopback probe but is REJECTED for custom-scheme redirects on device: shipping needs an Android-type client (package app.switchboard.mobile + signing SHA-1) and an iOS-type client. Those have no secret, so googleClientSecret stays empty for device builds.",
       "googleClientId": "REPLACE_ME.apps.googleusercontent.com",
       "googleClientSecret": ""

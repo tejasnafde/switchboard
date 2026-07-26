@@ -61,6 +61,11 @@ token in the device keychain via `expo-secure-store`.
 
 - `src/lib/api.ts` - SwitchboardClient: typed invoke/event wrapper over
   `src/shared/ws-transport` (imported from the repo root via `@shared`)
+- `src/lib/selfUpdate.ts` - APK self-update off GitHub Releases; `selfCheck()`
+  asserts the version comparison and release picking offline
+- `src/lib/otaUpdate.ts` - expo-updates OTA check on mount and on foreground
+- `src/components/UpdateBanner.tsx` - bottom banner for both update lanes,
+  mounted once in `App.tsx` over the navigator
 - `src/lib/google-auth.ts` - direct Google PKCE sign-in, keychain-backed token
   cache with single-flight silent refresh; `selfCheck()` asserts the
   expiry/refresh decisions offline
@@ -69,9 +74,93 @@ token in the device keychain via `expo-secure-store`.
 - `src/screens/` - Connections, SignIn, Pair (QR), Projects, Conversations,
   Thread, NewSession
 
+## Releasing
+
+Two lanes. Pick by asking one question: **does the native binary change?**
+
+| Change | Lane | Workflow | User experience |
+|---|---|---|---|
+| JS, TSX, assets, `src/shared` | OTA | `mobile-ota.yml` | Banner on next foreground, tap Restart |
+| New native module, new Android permission, Expo SDK bump, `app.json` native keys | APK | `mobile-release.yml` | Banner, tap Install, Android install prompt |
+
+Both workflows trigger on push to `main` under `apps/mobile/**` and can be run
+by hand from the Actions tab.
+
+### Bumping the version
+
+`expo.version` in `app.json` is the single source of truth. The release tag, the
+APK filename, and the OTA `runtimeVersion` all derive from it.
+
+```sh
+# apps/mobile/app.json -> expo.version: "0.1.0" becomes "0.2.0"
+```
+
+Then push to `main`. `mobile-release.yml` builds `mobile-v0.2.0` and attaches
+`switchboard-0.2.0.apk`. It is idempotent: if a release for that tag already
+exists it logs a notice and skips before spending any EAS build minutes, so a
+re-run on an unchanged version is free. **An APK only goes out when you bump the
+version.**
+
+Do NOT bump the version for a JS-only change. `runtimeVersion` is pinned to
+`appVersion`, so bumping it parks the OTA lane until the matching APK is
+published, and installed phones see nothing in the meantime.
+
+### Tag namespace
+
+Mobile releases are tagged `mobile-v<version>`, not `v<version>`. The Electron
+desktop app already owns `v*` (see `.github/workflows/release.yml`, currently at
+`v0.7.x`); sharing that namespace would collide on tag names and fire the
+desktop release workflow. Because desktop releases far outnumber mobile ones,
+`selfUpdate.ts` reads the releases *list* and picks the newest release carrying
+an `.apk` rather than calling `/releases/latest`, which would nearly always
+return a desktop release with no APK attached.
+
+### One-time setup
+
+1. **EAS account.** Someone with the Expo account runs this once from
+   `apps/mobile`:
+
+   ```sh
+   npx eas login
+   npx eas init                # writes extra.eas.projectId into app.json
+   npx eas update:configure    # writes updates.url into app.json
+   ```
+
+   Until `eas update:configure` has run, `Updates.isEnabled` is false and the
+   OTA lane is completely inert (the app no-ops and logs nothing noisy). The APK
+   lane works without it. These values are account-specific and are deliberately
+   not hardcoded here; a wrong `projectId` fails the build with a confusing
+   ownership error. See `extra["//updates"]` in `app.json`.
+
+2. **`EXPO_TOKEN` repo secret.** Create an access token at
+   <https://expo.dev/settings/access-tokens> and add it under Settings ->
+   Secrets and variables -> Actions. Both workflows need it. `GITHUB_TOKEN` is
+   automatic and needs no setup.
+
+3. **Android OAuth client** if you want Google sign-in in the build: register
+   the build's signing SHA-1 (`npx eas credentials`) against an Android-type
+   OAuth client for package `app.switchboard.mobile`. See the sign-in section
+   above.
+
+### The first install is manual
+
+Self-update cannot bootstrap itself. For the very first install, download the
+APK from the GitHub Release onto the phone and open it. Android will block it
+until you grant "install unknown apps" to whatever opened it (Chrome, Files,
+Drive) under Settings -> Apps -> Special app access -> Install unknown apps.
+
+After that, Switchboard updates itself: `REQUEST_INSTALL_PACKAGES` in `app.json`
+lets it hand a downloaded APK to the package installer, and the install prompt
+comes from Switchboard itself rather than a browser. Sideloaded APKs also do not
+auto-update in the background; the user always taps Install.
+
+`eas.json` builds an APK in every profile, never an AAB, because we
+self-distribute rather than upload to the Play Store. Use the `development`
+profile for a device build that can exercise Google sign-in, which cannot work
+in Expo Go at all.
+
 ## Not yet
 
-- Self-update APK channel (someday-style GitHub Releases flow) - packaging step
 - Terminals, embedded IDE, image attachments, pill chips
 - Mac desktop-app sessions (it runs ElectronIpcHost; run `npm run server` on
   the Mac for a phone-visible session pool)
