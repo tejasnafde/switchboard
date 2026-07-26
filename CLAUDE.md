@@ -54,7 +54,8 @@ rules. The ones that bite most often:
   **every** gcloud command touching them needs `--configuration=personal`. IAP
   tunnels to GeoIQ VMs use the WORK account instead - no flag.
 - The OAuth consent screen is per-PROJECT, so all personal apps share one brand:
-  **Toolmaker** / `toolmaker.dev`. Do not rename it to "Switchboard".
+  **Solve It Once** / `sio.dev` (projects live at `<name>.sio.dev`, e.g.
+  `switchboard.sio.dev`). Do not rename it to "Switchboard".
 - The mobile OAuth client is Secret Manager secret `switchboard-oauth-client`.
   Never hardcode it.
 - IAP relay requires `Origin: bot:iap-tunneler` or it silently sends nothing.
