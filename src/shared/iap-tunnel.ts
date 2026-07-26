@@ -117,7 +117,7 @@ export type IapFrame =
  * order and drain the returned frames.
  */
 export class IapFrameParser {
-  private buf = new Uint8Array(0)
+  private buf: Uint8Array<ArrayBufferLike> = new Uint8Array(0)
 
   push(chunk: Uint8Array): IapFrame[] {
     if (this.buf.length > 0) {

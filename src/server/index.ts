@@ -8,8 +8,11 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { writeFileSync, unlinkSync, readFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { WebSocketServer } from 'ws'
 import { WsHost } from '../main/backend/ws-host'
+import { TcpHost } from '../main/backend/tcp-host'
+import { MultiHost } from '../main/backend/multi-host'
 import { registerAppHandlers } from '../main/ipc/app'
 import { registerFilesHandlers } from '../main/ipc/files'
 import { registerGitHandlers } from '../main/ipc/git'
@@ -49,7 +52,23 @@ if (bindHost !== '127.0.0.1' && bindHost !== 'localhost' && !token) {
   process.exit(1)
 }
 const wss = new WebSocketServer({ port, host: bindHost })
-const host = new WsHost(wss, token)
+const wsHost = new WsHost(wss, token)
+
+// Second listener speaking newline-delimited JSON over raw TCP. This is what a
+// phone reaches through Google's IAP relay: IAP forwards an arbitrary VM port
+// and hands the client a RAW TCP stream, so there is no WebSocket to speak.
+// Same handlers, same frames, different framing. Off unless TCP_PORT is set.
+const tcpPortRaw = process.env.TCP_PORT
+const tcpServer = tcpPortRaw ? createServer() : null
+const tcpHost = tcpServer ? new TcpHost(tcpServer, token) : null
+const host = tcpHost ? new MultiHost(wsHost, tcpHost) : wsHost
+if (tcpServer) {
+  const tcpPort = Number(tcpPortRaw) || 8766
+  tcpServer.on('error', (err) => log.error('tcp listener error', err))
+  tcpServer.listen(tcpPort, bindHost, () =>
+    log.info(`ndjson/tcp listening on ${bindHost}:${tcpPort} (for IAP-tunnelled clients)`),
+  )
+}
 
 registerAppHandlers(host)
 registerFilesHandlers(host)
