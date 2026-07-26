@@ -9,6 +9,7 @@ import { useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { RootStackParamList } from '../../App'
 import { colors, statusColor } from '../theme'
+import { warmUpGoogleAuth } from '../lib/google-auth'
 import { useConnectionsStore, type ConnectionConfig } from '../stores/connections'
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
@@ -26,12 +27,31 @@ export default function ConnectionsScreen() {
   const status = useConnectionsStore((s) => s.status)
 
   useEffect(() => {
-    const store = useConnectionsStore.getState()
-    for (const config of store.configs) store.connect(config.id)
+    let cancelled = false
+    // IAP configs need a Google token in hand before dialling, so wait for the
+    // silent refresh. ws:// configs do not care, and the wait is a no-op once
+    // the keychain read is cached.
+    void warmUpGoogleAuth().then(() => {
+      if (cancelled) return
+      const store = useConnectionsStore.getState()
+      for (const config of store.configs) store.connect(config.id)
+    })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeft: () => (
+        <Pressable
+          onPress={() => navigation.navigate('SignIn')}
+          hitSlop={12}
+          style={({ pressed }) => [styles.accountButton, pressed && styles.pressed]}
+        >
+          <Text style={styles.accountButtonText}>Account</Text>
+        </Pressable>
+      ),
       headerRight: () => (
         <Pressable
           onPress={() => navigation.navigate('Pair')}
@@ -161,6 +181,13 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
     marginLeft: 38,
+  },
+  accountButton: {
+    paddingHorizontal: 4,
+  },
+  accountButtonText: {
+    color: colors.accent,
+    fontSize: 15,
   },
   addButton: {
     paddingHorizontal: 4,

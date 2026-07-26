@@ -23,6 +23,11 @@
           "cameraPermission": "Switchboard scans a QR code shown by the desktop app to pair with a backend."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "//": "Google OAuth client for the direct accounts.google.com PKCE flow (src/lib/google-auth.ts). Real values live in Secret Manager secret 'switchboard-oauth-client' in GCP project teejayproject: gcloud --configuration=personal secrets versions access latest --secret=switchboard-oauth-client. NEVER commit real values here. The stored client is Desktop-type, which works for the loopback probe but is REJECTED for custom-scheme redirects on device: shipping needs an Android-type client (package app.switchboard.mobile + signing SHA-1) and an iOS-type client. Those have no secret, so googleClientSecret stays empty for device builds.",
+      "googleClientId": "REPLACE_ME.apps.googleusercontent.com",
+      "googleClientSecret": ""
+    }
   }
 }

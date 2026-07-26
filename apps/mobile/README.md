@@ -35,14 +35,39 @@ npx expo start          # scan the Metro QR with Expo Go
 In the app: "+" -> scan the pairing QR from desktop Settings -> Mobile (or type
 `ws://host:8765` + token manually).
 
+## Google sign-in (needed for IAP connections)
+
+An `iap` connection reaches a work VM through `tunnel.cloudproxy.app`, and the
+relay only forwards for a signed-in Google identity. `src/lib/google-auth.ts`
+runs a PKCE authorization-code flow against **accounts.google.com directly** (no
+broker: a broker's session JWT cannot call googleapis.com) and stores the refresh
+token in the device keychain via `expo-secure-store`.
+
+- Screen: Connections -> "Account" in the header.
+- Scope: `https://www.googleapis.com/auth/cloud-platform` plus `openid email`.
+- Client id/secret come from `app.json` -> `extra.googleClientId` /
+  `extra.googleClientSecret`. Real values live in Secret Manager secret
+  `switchboard-oauth-client` (project `teejayproject`, needs
+  `--configuration=personal`) and must never be committed here.
+- The client TYPE matters. The Desktop-type client works for the loopback probe
+  in `scripts/iap-probe.mjs` only; on device Google rejects custom-scheme
+  redirects, so an Android-type client (package `app.switchboard.mobile` + the
+  signing SHA-1) is required.
+- Because of that, sign-in needs a development build, not Expo Go: Expo Go's
+  redirect is `exp://…`, which Google will not accept. Everything else in the app
+  still runs in Expo Go.
+
 ## Layout
 
 - `src/lib/api.ts` - SwitchboardClient: typed invoke/event wrapper over
   `src/shared/ws-transport` (imported from the repo root via `@shared`)
+- `src/lib/google-auth.ts` - direct Google PKCE sign-in, keychain-backed token
+  cache with single-flight silent refresh; `selfCheck()` asserts the
+  expiry/refresh decisions offline
 - `src/stores/connections.ts` - saved backends (AsyncStorage) + live client pool
 - `src/stores/chat.ts` - RuntimeEvent -> feed-item reducer, unread counts
-- `src/screens/` - Connections, Pair (QR), Projects, Conversations, Thread,
-  NewSession
+- `src/screens/` - Connections, SignIn, Pair (QR), Projects, Conversations,
+  Thread, NewSession
 
 ## Not yet
 
