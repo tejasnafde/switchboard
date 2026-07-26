@@ -4,10 +4,10 @@
  * from a phone and needing the laptop open.
  */
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { createLogger } from '@shared/logger'
 import { colors } from '../theme'
-import { getRedirectUri, getSignedInEmail, signIn, signOut } from '../lib/google-auth'
+import { getSignedInEmail, importCredentials, parseCredentialBlob, signOut } from '../lib/google-auth'
 
 const log = createLogger('screen:sign-in')
 
@@ -15,6 +15,7 @@ export default function SignInScreen() {
   const [email, setEmail] = useState<string | null>(null)
   const [busy, setBusy] = useState(true)
   const [error, setError] = useState('')
+  const [blob, setBlob] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -30,21 +31,27 @@ export default function SignInScreen() {
     void load()
   }, [load])
 
-  const handleSignIn = async () => {
+  const handleImport = async () => {
+    const creds = parseCredentialBlob(blob)
+    if (!creds) {
+      setError('That does not look like the blob the mint script printed.')
+      return
+    }
     setBusy(true)
     setError('')
     try {
-      const result = await signIn()
+      const result = await importCredentials(creds)
+      setBlob('')
       if (result === null) {
-        // Either cancelled or the id_token carried no email claim; re-read the
-        // stored session rather than guessing which.
+        // Credentials were accepted but no email claim came back; re-read state
+        // rather than guessing.
         await load()
         return
       }
       setEmail(result)
     } catch (err) {
-      log.error('google sign-in failed', err)
-      setError(err instanceof Error ? err.message : 'Sign-in failed. Please try again.')
+      log.error('credential import failed', err)
+      setError(err instanceof Error ? err.message : 'Import failed. Please try again.')
     } finally {
       setBusy(false)
     }
@@ -101,26 +108,90 @@ export default function SignInScreen() {
           <Text style={styles.secondaryButtonText}>Sign out</Text>
         </Pressable>
       ) : (
-        <Pressable
-          onPress={handleSignIn}
-          style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.primaryButtonText}>Sign in with Google</Text>
-        </Pressable>
+        <View>
+          <Text style={styles.stepTitle}>Import from desktop</Text>
+          <Text style={styles.stepBody}>
+            Google no longer allows an app like this to run its own browser sign-in on
+            Android, so consent happens once on your Mac instead. From the switchboard
+            repo run:
+          </Text>
+          <Text style={styles.code}>node scripts/google-mint-token.mjs</Text>
+          <Text style={styles.stepBody}>
+            Sign in as the account that reaches your VMs, then paste the printed blob
+            here. After this the phone renews its own access tokens and does not need
+            the Mac again.
+          </Text>
+          <TextInput
+            style={styles.blobInput}
+            value={blob}
+            onChangeText={setBlob}
+            placeholder='{"clientId":"...","refreshToken":"1//..."}'
+            placeholderTextColor={colors.textFaint}
+            autoCapitalize="none"
+            autoCorrect={false}
+            multiline
+          />
+          <Pressable
+            onPress={handleImport}
+            disabled={!blob.trim()}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              !blob.trim() && styles.buttonDisabled,
+              pressed && styles.pressed,
+            ]}
+          >
+            <Text style={styles.primaryButtonText}>Import credentials</Text>
+          </Pressable>
+          <Text style={styles.redirectHint}>
+            Treat the blob like a password: it grants cloud-platform access as you. It is
+            validated against Google before being saved, and stored in the device keychain.
+          </Text>
+        </View>
       )}
 
-      <Text style={styles.redirect} numberOfLines={2}>
-        Redirect URI: {getRedirectUri()}
-      </Text>
-      <Text style={styles.redirectHint}>
-        This exact value must be registered on the OAuth client, or Google answers
-        redirect_uri_mismatch.
-      </Text>
     </ScrollView>
   )
 }
 
 const styles = StyleSheet.create({
+  stepTitle: {
+    color: colors.text,
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  stepBody: {
+    color: colors.textDim,
+    fontSize: 13,
+    lineHeight: 20,
+    marginBottom: 8,
+  },
+  code: {
+    color: colors.accent,
+    fontSize: 13,
+    fontFamily: 'monospace',
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  blobInput: {
+    color: colors.text,
+    fontSize: 12,
+    fontFamily: 'monospace',
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 92,
+    textAlignVertical: 'top',
+    marginBottom: 12,
+  },
+  buttonDisabled: {
+    opacity: 0.4,
+  },
   content: {
     padding: 20,
     gap: 14,

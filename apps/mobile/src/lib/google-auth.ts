@@ -77,6 +77,8 @@ const KEY_REFRESH_TOKEN = 'sb.google.refresh_token'
 const KEY_ACCESS_TOKEN = 'sb.google.access_token'
 const KEY_EXPIRES_AT = 'sb.google.expires_at'
 const KEY_EMAIL = 'sb.google.email'
+const KEY_CLIENT_ID = 'sb.google.client_id'
+const KEY_CLIENT_SECRET = 'sb.google.client_secret'
 
 interface GoogleClientConfig {
   clientId: string
@@ -102,6 +104,12 @@ interface GoogleClientConfig {
  * optional here.
  */
 function readClientConfig(): GoogleClientConfig | null {
+  // Credentials imported from the desktop win: that flow uses the Desktop-type
+  // client over a loopback redirect, which is the only browser flow Google
+  // still permits for this app (custom URI schemes are blocked on Android).
+  if (storedClientId) {
+    return { clientId: storedClientId, clientSecret: storedClientSecret ?? undefined }
+  }
   const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, unknown>
   const clientId = typeof extra.googleClientId === 'string' ? extra.googleClientId.trim() : ''
   const clientSecret =
@@ -185,19 +193,26 @@ interface CachedToken {
 let cached: CachedToken | null = null
 let refreshTokenValue: string | null = null
 let signedInEmail: string | null = null
+/** Client credentials imported from the desktop, which win over app.json. */
+let storedClientId: string | null = null
+let storedClientSecret: string | null = null
 /** Single-flight guards: one hydrate, one refresh, however many callers. */
 let hydration: Promise<void> | null = null
 let refreshInFlight: Promise<string | null> | null = null
 
 async function readKeys(): Promise<void> {
-  const [refresh, access, expires, email] = await Promise.all([
+  const [refresh, access, expires, email, clientId, clientSecret] = await Promise.all([
     SecureStore.getItemAsync(KEY_REFRESH_TOKEN),
     SecureStore.getItemAsync(KEY_ACCESS_TOKEN),
     SecureStore.getItemAsync(KEY_EXPIRES_AT),
     SecureStore.getItemAsync(KEY_EMAIL),
+    SecureStore.getItemAsync(KEY_CLIENT_ID),
+    SecureStore.getItemAsync(KEY_CLIENT_SECRET),
   ])
   refreshTokenValue = refresh
   signedInEmail = email
+  storedClientId = clientId
+  storedClientSecret = clientSecret
   const expiresAt = expires ? Number(expires) : NaN
   cached = access && Number.isFinite(expiresAt) ? { accessToken: access, expiresAt } : null
 }
@@ -242,8 +257,17 @@ async function clearStoredCredentials(): Promise<void> {
   cached = null
   refreshTokenValue = null
   signedInEmail = null
+  storedClientId = null
+  storedClientSecret = null
   hydration = Promise.resolve()
-  for (const key of [KEY_ACCESS_TOKEN, KEY_EXPIRES_AT, KEY_REFRESH_TOKEN, KEY_EMAIL]) {
+  for (const key of [
+    KEY_ACCESS_TOKEN,
+    KEY_EXPIRES_AT,
+    KEY_REFRESH_TOKEN,
+    KEY_EMAIL,
+    KEY_CLIENT_ID,
+    KEY_CLIENT_SECRET,
+  ]) {
     try {
       await SecureStore.deleteItemAsync(key)
     } catch (err) {
@@ -487,6 +511,93 @@ export async function signIn(): Promise<string | null> {
 }
 
 /** Revoke at Google (best effort) and wipe local credentials unconditionally. */
+/**
+ * Shape of the blob the desktop minting script prints. Parsed leniently so a
+ * stray newline or wrapping whitespace from a copy-paste does not fail.
+ */
+export interface ImportedCredentials {
+  clientId: string
+  clientSecret?: string
+  refreshToken: string
+}
+
+/**
+ * Parse the pasted credential blob. Accepts the JSON the mint script emits, or
+ * a bare refresh token when the client id is already configured in app.json.
+ */
+export function parseCredentialBlob(raw: string): ImportedCredentials | null {
+  const text = raw.trim()
+  if (!text) return null
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>
+      const clientId = typeof parsed.clientId === 'string' ? parsed.clientId.trim() : ''
+      const refreshToken =
+        typeof parsed.refreshToken === 'string' ? parsed.refreshToken.trim() : ''
+      const clientSecret =
+        typeof parsed.clientSecret === 'string' ? parsed.clientSecret.trim() : ''
+      if (!clientId || !refreshToken) return null
+      return { clientId, refreshToken, clientSecret: clientSecret || undefined }
+    } catch {
+      return null
+    }
+  }
+  // Bare refresh token: Google's look like "1//0g..." - require the prefix so a
+  // mis-paste of some other string fails here instead of at the token endpoint.
+  if (!text.startsWith('1//')) return null
+  const fallback = readClientConfig()
+  if (!fallback) return null
+  return { clientId: fallback.clientId, clientSecret: fallback.clientSecret, refreshToken: text }
+}
+
+/**
+ * Adopt credentials minted on the desktop (scripts/google-mint-token.mjs).
+ *
+ * Why this exists instead of an in-app browser flow: Google no longer permits
+ * custom URI scheme redirects on Android, so the app cannot legally complete an
+ * authorization-code flow itself. The desktop CAN, over a loopback redirect with
+ * the Desktop-type client. So consent happens once on the Mac and the phone
+ * inherits the refresh token, after which it renews access tokens on its own
+ * forever - no laptop involved again.
+ *
+ * Validates by performing a real refresh BEFORE persisting, so a bad paste is
+ * rejected immediately rather than looking fine until the first tunnel dial.
+ */
+export async function importCredentials(creds: ImportedCredentials): Promise<string | null> {
+  await hydrate()
+  const previous = { storedClientId, storedClientSecret, refreshTokenValue }
+  storedClientId = creds.clientId
+  storedClientSecret = creds.clientSecret ?? null
+  refreshTokenValue = creds.refreshToken
+  refreshInFlight = null
+
+  try {
+    const token = await refreshAccessToken()
+    if (!token) throw new Error('Google rejected these credentials.')
+  } catch (err) {
+    storedClientId = previous.storedClientId
+    storedClientSecret = previous.storedClientSecret
+    refreshTokenValue = previous.refreshTokenValue
+    log.error('credential import failed', err)
+    throw err instanceof Error ? err : new Error('Could not import credentials.')
+  }
+
+  try {
+    await Promise.all([
+      SecureStore.setItemAsync(KEY_CLIENT_ID, creds.clientId),
+      creds.clientSecret
+        ? SecureStore.setItemAsync(KEY_CLIENT_SECRET, creds.clientSecret)
+        : SecureStore.deleteItemAsync(KEY_CLIENT_SECRET),
+      SecureStore.setItemAsync(KEY_REFRESH_TOKEN, creds.refreshToken),
+    ])
+  } catch (err) {
+    // The refresh already succeeded, so the session works until app exit.
+    log.error('persisting imported credentials failed', err)
+  }
+  log.info('imported google credentials from desktop')
+  return signedInEmail
+}
+
 export async function signOut(): Promise<void> {
   const token = refreshTokenValue ?? cached?.accessToken
   if (token) {
