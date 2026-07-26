@@ -45,9 +45,24 @@ export const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke'
  */
 export const SCOPES = ['https://www.googleapis.com/auth/cloud-platform', 'openid', 'email']
 
-/** Must match the `scheme` in app.json, and the redirect registered on the client. */
-const APP_SCHEME = 'switchboard'
+/**
+ * Google REJECTS an arbitrary custom scheme for installed apps: sending
+ * `switchboard://oauth2redirect` fails with "Access blocked: Authorization
+ * Error / Error 400: invalid_request" before the consent screen even renders.
+ * An Android or iOS client must redirect to the REVERSED client id, i.e.
+ * `com.googleusercontent.apps.<id-without-the-suffix>:/oauth2redirect`.
+ *
+ * Derived from the configured client id rather than hardcoded, so rotating the
+ * client cannot leave a stale scheme behind. `app.json` registers the same
+ * value in its `scheme` array - that part is native, so changing the client id
+ * needs a rebuild, not just an OTA.
+ */
 const REDIRECT_PATH = 'oauth2redirect'
+
+export function reversedClientScheme(clientId: string): string {
+  const bare = clientId.replace(/\.apps\.googleusercontent\.com$/, '')
+  return `com.googleusercontent.apps.${bare}`
+}
 
 /** Treat a token as stale this long before its real expiry. */
 export const EXPIRY_SKEW_MS = 60_000
@@ -385,7 +400,12 @@ export async function getSignedInEmail(): Promise<string | null> {
  * a redirect_uri_mismatch is the single most common first-run failure.
  */
 export function getRedirectUri(): string {
-  return AuthSession.makeRedirectUri({ scheme: APP_SCHEME, path: REDIRECT_PATH })
+  const config = readClientConfig()
+  if (!config) return ''
+  return AuthSession.makeRedirectUri({
+    scheme: reversedClientScheme(config.clientId),
+    path: REDIRECT_PATH,
+  })
 }
 
 /**
@@ -420,7 +440,7 @@ export async function signIn(): Promise<string | null> {
   const authUrl = await request.makeAuthUrlAsync({ authorizationEndpoint: AUTHORIZATION_ENDPOINT })
   log.info('starting google sign-in', redirectUri)
 
-  const callbackUrl = await promptForCallback(authUrl)
+  const callbackUrl = await promptForCallback(authUrl, reversedClientScheme(config.clientId))
   if (!callbackUrl) return null // user cancelled
 
   const error = extractAuthError(callbackUrl)
@@ -496,7 +516,7 @@ export async function signOut(): Promise<void> {
  */
 const handledCodes = new Set<string>()
 
-function promptForCallback(authUrl: string): Promise<string | null> {
+function promptForCallback(authUrl: string, callbackScheme: string): Promise<string | null> {
   return new Promise<string | null>((resolve) => {
     let settled = false
     let graceTimer: ReturnType<typeof setTimeout> | null = null
@@ -521,13 +541,17 @@ function promptForCallback(authUrl: string): Promise<string | null> {
       finish(url)
     }
 
+    // callbackScheme is the reversed client id, not the app's own scheme,
+    // because that is the only redirect Google accepts for an installed client.
+    // app.json registers both.
     const subscription = Linking.addEventListener('url', (event) => {
-      if (event.url.startsWith(`${APP_SCHEME}:`)) accept(event.url)
+      if (event.url.startsWith(`${callbackScheme}:`)) accept(event.url)
     })
 
-    // Pass "switchboard:" rather than the full redirect URI: Android strips the
-    // slashes off the return scheme, so the longer form never matches there.
-    WebBrowser.openAuthSessionAsync(authUrl, `${APP_SCHEME}:`)
+    // Pass the bare "<scheme>:" rather than the full redirect URI: Android
+    // strips the slashes off the return scheme, so the longer form never
+    // matches there.
+    WebBrowser.openAuthSessionAsync(authUrl, `${callbackScheme}:`)
       .then((result) => {
         if (result.type === 'success') {
           accept(result.url)

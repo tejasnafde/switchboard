@@ -3,7 +3,10 @@
     "name": "Switchboard",
     "slug": "switchboard-mobile",
     "version": "0.1.0",
-    "scheme": "switchboard",
+    "scheme": [
+      "switchboard",
+      "com.googleusercontent.apps.974343814740-be31f3e59stdql81uke54r62aodb5c7q"
+    ],
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
