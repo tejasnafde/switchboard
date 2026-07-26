@@ -9,8 +9,10 @@ import {
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,12 +22,16 @@ import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
 import type { ChatMessage } from '@shared/types'
+import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
+import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, statusColor } from '../theme'
 import { getClient, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { ModePicker } from '../components/ModePicker'
+
+const log = createLogger('screen:thread')
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Thread'>
 
@@ -90,6 +96,9 @@ export default function ThreadScreen({ route }: Props) {
 
   const [draft, setDraft] = useState('')
   const composerRef = useRef<TextInput>(null)
+  const [models, setModels] = useState<ModelOption[]>([])
+  const [model, setModel] = useState('')
+  const [modelPickerOpen, setModelPickerOpen] = useState(false)
 
   // useFocusEffect (not useEffect) so activeKey tracks push/pop: pushing
   // another screen on top blurs this one and re-focusing restores it.
@@ -153,12 +162,42 @@ export default function ThreadScreen({ route }: Props) {
     })()
   }, [connectionId, threadId, projectPath, key, isNew, reportError])
 
+  // Live model list for this thread. It stays empty until the adapter can
+  // answer (Claude's SDK query only exists once a turn has begun, so the fetch
+  // is re-run on every status change until a list lands) and an empty list
+  // means "this provider has no model picker" - the chip stays hidden.
+  useEffect(() => {
+    if (models.length > 0) return
+    const client = getClient(connectionId)
+    if (!client) return
+    let cancelled = false
+    client
+      .listModels(threadId)
+      .then((rows) => {
+        if (cancelled || !rows || rows.length === 0) return
+        setModels(rows)
+      })
+      .catch((err) => log.warn('listModels failed - hiding the model chip', err))
+    return () => {
+      cancelled = true
+    }
+  }, [connectionId, threadId, thread.status, models.length])
+
   const reversedItems = useMemo(() => [...thread.items].reverse(), [thread.items])
 
   const setMode = (mode: RuntimeMode) => {
     useChatStore.getState().setRuntimeMode(key, mode)
     getClient(connectionId)?.setRuntimeMode(threadId, mode).catch(reportError)
   }
+
+  // Optimistic like setMode: the chip updates now, a rejection lands in the feed.
+  const chooseModel = (id: string) => {
+    setModelPickerOpen(false)
+    setModel(id)
+    getClient(connectionId)?.setModel(threadId, id).catch(reportError)
+  }
+
+  const modelLabel = models.find((m) => m.id === model)?.label ?? 'Default'
 
   const send = () => {
     const text = draft.trim()
@@ -290,9 +329,53 @@ export default function ThreadScreen({ route }: Props) {
         }
       />
 
+      {/* Model picker. Hidden entirely when the provider reports no models, so
+          Claude-only setups do not get a chip that cannot do anything. */}
+      <Modal
+        visible={modelPickerOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setModelPickerOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setModelPickerOpen(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <Text style={styles.modalTitle}>Model</Text>
+            <ScrollView>
+              {models.map((m) => {
+                const active = m.id === model
+                return (
+                  <Pressable
+                    key={m.id}
+                    onPress={() => chooseModel(m.id)}
+                    style={({ pressed }) => [styles.modelRow, pressed && styles.pressed]}
+                  >
+                    <Text style={[styles.modelRowText, active && styles.modelRowTextActive]}>
+                      {m.label}
+                    </Text>
+                    {active && <Text style={styles.modelRowMark}>current</Text>}
+                  </Pressable>
+                )
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {/* Composer */}
       <View style={styles.composer}>
-        <ModePicker value={thread.runtimeMode} onChange={setMode} />
+        <View style={styles.composerControls}>
+          <ModePicker value={thread.runtimeMode} onChange={setMode} />
+          {models.length > 0 && (
+            <Pressable
+              onPress={() => setModelPickerOpen(true)}
+              style={({ pressed }) => [styles.modelChip, pressed && styles.pressed]}
+            >
+              <Text style={styles.modelChipText} numberOfLines={1}>
+                {modelLabel}
+              </Text>
+            </Pressable>
+          )}
+        </View>
         <View style={styles.inputRow}>
           <TextInput
             ref={composerRef}
@@ -925,6 +1008,71 @@ const styles = StyleSheet.create({
     marginVertical: 4,
     color: colors.red,
     fontSize: 13,
+  },
+  pressed: {
+    opacity: 0.6,
+  },
+  composerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  modelChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
+    maxWidth: 140,
+  },
+  modelChipText: {
+    color: colors.textDim,
+    fontSize: 12,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    paddingHorizontal: 28,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    maxHeight: '70%',
+  },
+  modalTitle: {
+    color: colors.textDim,
+    fontSize: 12,
+    fontWeight: '600',
+    paddingHorizontal: 10,
+    paddingBottom: 8,
+  },
+  modelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 11,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+  },
+  modelRowText: {
+    color: colors.text,
+    fontSize: 15,
+    flex: 1,
+  },
+  modelRowTextActive: {
+    color: colors.accent,
+    fontWeight: '600',
+  },
+  modelRowMark: {
+    color: colors.textFaint,
+    fontSize: 11,
+    marginLeft: 10,
   },
   composer: {
     borderTopWidth: StyleSheet.hairlineWidth,

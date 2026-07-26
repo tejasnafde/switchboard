@@ -5,9 +5,10 @@
  */
 import { WsTransport } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
-import { AppChannels, ProviderChannels } from '@shared/ipc-channels'
+import { AppChannels, ProviderChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '@shared/provider-events'
-import type { Project, ConversationRow, CreateConversationParams, ChatMessage } from '@shared/types'
+import type { ModelOption } from '@shared/models'
+import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance } from '@shared/types'
 
 export interface StartSessionOpts {
   threadId: string
@@ -98,12 +99,40 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.SET_RUNTIME_MODE, threadId, mode)
   }
 
+  /**
+   * The live session adapter's model list. Thread-bound: the handler resolves
+   * the adapter out of the registry's started-session map, so it returns null
+   * for an unknown thread or an adapter without `listModels`, and [] while the
+   * adapter has no live query yet (Claude only answers once a turn has begun).
+   */
+  listModels(threadId: string): Promise<ModelOption[] | null> {
+    return this.transport.invoke(ProviderChannels.LIST_MODELS, threadId)
+  }
+
+  /** Switch the model on a live thread. No-op server-side if the thread is
+   *  unknown or the adapter has no setModel. */
+  setModel(threadId: string, model: string): Promise<void> {
+    return this.transport.invoke(ProviderChannels.SET_MODEL, threadId, model)
+  }
+
   respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
     return this.transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision)
   }
 
   answerQuestion(threadId: string, requestId: string, answers: string[][]): Promise<void> {
     return this.transport.invoke(ProviderChannels.ANSWER_QUESTION, threadId, requestId, answers)
+  }
+
+  // ── provider instances (OAuth profiles / named credential sets) ──
+  /**
+   * Every instance across all agent types, oldest-first within a type. Callers
+   * filter by agentType themselves (mirrors the desktop picker). The wire shape
+   * carries env KEY NAMES only - the handler strips values server-side, so no
+   * credential ever reaches the phone. Never rejects: the handler logs and
+   * returns [] on failure.
+   */
+  listInstances(): Promise<ProviderInstance[]> {
+    return this.transport.invoke(ProviderInstanceChannels.LIST)
   }
 
   onEvent(handler: (event: RuntimeEvent) => void): () => void {
