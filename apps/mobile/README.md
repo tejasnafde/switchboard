@@ -15,7 +15,12 @@ phone ──ws──> VM:8765            (VM runs tailscale, direct)
 phone ──ws──> mac:8765           (Mac on LAN/tailnet, npm run server)
 phone ──ws──> mac:<fwd> ──ssh──> VM   (VM without tailscale: Mac relays via
                                        its existing ssh -L tunnel)
+phone ──wss─> tunnel.cloudproxy.app ──tcp──> VM:8766   (kind 'iap': no inbound
+                                       port on the VM, no Mac in the loop)
 ```
+
+The IAP lane speaks the same frames over a different pipe - see
+`src/lib/iap-transport.ts` and "Adding an IAP connection" below.
 
 ## Run it (dev, Expo Go)
 
@@ -32,8 +37,47 @@ npm install
 npx expo start          # scan the Metro QR with Expo Go
 ```
 
-In the app: "+" -> scan the pairing QR from desktop Settings -> Mobile (or type
-`ws://host:8765` + token manually).
+In the app: "+" -> the "WebSocket" tab -> scan the pairing QR from desktop
+Settings -> Mobile (or type `ws://host:8765` + token manually).
+
+## Adding an IAP connection
+
+The "+" screen has two tabs: **WebSocket** and **Google IAP**. Pick Google IAP
+for a work VM that exposes no inbound port at all - the tunnel runs out to
+`tunnel.cloudproxy.app` over 443, so it works on any network with your laptop
+closed and no `ssh -L` relay in the middle.
+
+There is no QR for this kind (a pairing QR carries a `ws://` URL, which an IAP
+target does not have), so all five fields are typed:
+
+| Field | Example |
+|---|---|
+| Label | `Dev VM` |
+| GCP project | `prj-geoiq-decisioniq-in-prod` |
+| Zone | `asia-south1-b` |
+| Instance name | `geoiq-ssg-dev-in` |
+| Port | `8766` (the server's `TCP_PORT`) |
+| Backend token | the VM's `SWITCHBOARD_TOKEN` |
+
+Three prerequisites, each of which fails in its own way if missed:
+
+1. **Google sign-in.** Connections -> "Account" in the header. Without a token
+   the store refuses to dial and the row goes red (see the sign-in section
+   below).
+2. **The VM runs the server with `TCP_PORT` set**, plus `SWITCHBOARD_TOKEN`
+   matching the token you typed:
+
+   ```sh
+   SWITCHBOARD_TOKEN=<token> TCP_PORT=8766 npm run server
+   ```
+
+3. **A firewall rule allowing `35.235.240.0/20` to that port.** That is IAP's
+   forwarding range. Without it the tunnel completes its handshake and then
+   sends nothing at all, which looks like a hang rather than a refusal.
+
+The connection kind is fixed once saved. Editing a saved backend shows the kind
+as text instead of the tab control; to switch kinds, remove the backend and add
+it again.
 
 ## Google sign-in (needed for IAP connections)
 
