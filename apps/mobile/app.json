@@ -24,7 +24,11 @@
       "permissions": [
         "REQUEST_INSTALL_PACKAGES",
         "android.permission.CAMERA"
-      ]
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a0a"
+      }
     },
     "plugins": [
       [
@@ -48,6 +52,7 @@
     "owner": "tejasnafde",
     "updates": {
       "url": "https://u.expo.dev/efbb89d9-210f-4584-bf62-8186cd5fb476"
-    }
+    },
+    "icon": "./assets/icon.png"
   }
 }

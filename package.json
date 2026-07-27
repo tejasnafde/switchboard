@@ -35,7 +35,8 @@
     "dist:mac": "npm run build && electron-builder --mac --arm64",
     "dist:win": "npm run build && electron-builder --win --x64",
     "dist:publish": "npm run build && electron-builder --mac --arm64 --publish always",
-    "dist:publish:win": "npm run build && electron-builder --win --x64 --publish always"
+    "dist:publish:win": "npm run build && electron-builder --win --x64 --publish always",
+    "seed:demo": "ELECTRON_RUN_AS_NODE=1 electron scripts/seed-mobile-demo.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",
