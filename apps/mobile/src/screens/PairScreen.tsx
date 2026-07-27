@@ -140,10 +140,17 @@ export default function PairScreen() {
   }, [kind])
 
   const saveWs = (rawUrl: string, rawToken: string, rawLabel?: string) => {
+    // The server prints a full `ws://host:port?token=...`, so pasting that whole
+    // string into Address is the obvious move. Parse it FIRST and prefer the
+    // token it carries; blindly appending the token field produced
+    // `?token=abc?token=xyz`, which parses as the token "abc?token=xyz" and
+    // fails auth for a reason nothing on screen explains.
+    const fromUrl = parsePairingUrl(rawUrl.trim())
     const trimmedToken = rawToken.trim()
-    const parsed = parsePairingUrl(
-      trimmedToken ? `${rawUrl.trim()}?token=${encodeURIComponent(trimmedToken)}` : rawUrl.trim(),
-    )
+    const parsed =
+      fromUrl?.token || !trimmedToken
+        ? fromUrl
+        : parsePairingUrl(`${fromUrl?.url ?? rawUrl.trim()}?token=${encodeURIComponent(trimmedToken)}`)
     if (!parsed) {
       Alert.alert('Not a machine address', 'Expected something like ws://192.168.1.8:8765')
       return

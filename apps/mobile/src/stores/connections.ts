@@ -175,6 +175,8 @@ export function parsePairingUrl(raw: string): { url: string; token?: string } | 
     u.search = ''
     return { url: u.toString().replace(/\/$/, ''), token }
   } catch {
+    // Validator, not an error path: malformed input is the expected case and the
+    // caller shows the message. Logging here would fire on every keystroke.
     return null
   }
 }

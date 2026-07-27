@@ -527,6 +527,8 @@ export function parseCredentialBlob(raw: string): ImportedCredentials | null {
       if (!clientId || !refreshToken) return null
       return { clientId, refreshToken, clientSecret: clientSecret || undefined }
     } catch {
+      // Validator, not an error path: a half-pasted blob is expected, and the
+      // screen reports it. Logging would risk echoing credential fragments.
       return null
     }
   }
