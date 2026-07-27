@@ -3,6 +3,12 @@ import { StyleSheet, View } from 'react-native'
 import { NavigationContainer, DarkTheme } from '@react-navigation/native'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { StatusBar } from 'expo-status-bar'
+import { useFonts } from 'expo-font'
+import {
+  InstrumentSans_600SemiBold,
+  InstrumentSans_700Bold,
+} from '@expo-google-fonts/instrument-sans'
+import { GeistMono_400Regular, GeistMono_500Medium } from '@expo-google-fonts/geist-mono'
 import { createLogger } from '@shared/logger'
 import { colors } from './src/theme'
 import { getCachedAccessToken, warmUpGoogleAuth } from './src/lib/google-auth'
@@ -48,11 +54,24 @@ const theme = {
 setGoogleTokenProvider(getCachedAccessToken)
 
 export default function App() {
+  // Display grotesque + technical mono. Names must match src/theme.ts `fonts`.
+  const [fontsLoaded] = useFonts({
+    InstrumentSans_600SemiBold,
+    InstrumentSans_700Bold,
+    GeistMono_400Regular,
+    GeistMono_500Medium,
+  })
+
   useEffect(() => {
     // Silent refresh on start: hydrates the keychain and renews the token if it
     // is close to expiry, so the first IAP dial does not have to wait.
     void warmUpGoogleAuth().catch((err) => log.warn('google auth warm-up failed', err))
   }, [])
+
+  // Hold the first paint until the faces are in memory. Rendering early would
+  // lay text out in the system face and reflow it, which is more jarring than a
+  // brief hold. Painted in the app background so there is no white flash.
+  if (!fontsLoaded) return <View style={{ flex: 1, backgroundColor: colors.bg }} />
 
   return (
     // The update banners sit OUTSIDE NavigationContainer so they overlay every

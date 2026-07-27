@@ -10,6 +10,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@expo-google-fonts/geist-mono": "^0.4.3",
+    "@expo-google-fonts/instrument-sans": "^0.4.2",
     "@react-native-async-storage/async-storage": "~2.2.0",
     "@react-navigation/native": "^7.1.8",
     "@react-navigation/native-stack": "^7.3.13",
@@ -22,6 +24,7 @@
     "expo-crypto": "^57.0.1",
     "expo-dev-client": "~57.0.9",
     "expo-file-system": "~57.0.1",
+    "expo-font": "~57.0.1",
     "expo-intent-launcher": "~57.0.1",
     "expo-linking": "^57.0.4",
     "expo-secure-store": "^57.0.1",

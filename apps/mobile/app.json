@@ -33,7 +33,8 @@
           "cameraPermission": "Switchboard scans a QR code shown by the desktop app to pair with a backend."
         }
       ],
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-font"
     ],
     "extra": {
       "//updates": "OTA is live: `eas init` + `eas update:configure` were run on 2026-07-27 against EAS account tejasnafde, which wrote `updates.url` and `extra.eas.projectId` below. `runtimeVersion.policy: appVersion` pins each OTA bundle to a matching native binary, so a JS bundle can never be served to an APK missing native modules it needs. `REQUEST_INSTALL_PACKAGES` is what lets the app hand a downloaded APK to Android's package installer (src/lib/selfUpdate.ts); CAMERA is for the pairing QR scanner. Do NOT add RECORD_AUDIO until voice input actually ships - an unused permission shows up in the install prompt for nothing.",
