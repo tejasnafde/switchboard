@@ -29,6 +29,21 @@ export function getDb(): Database.Database {
   try {
     db = openAndMigrate(dbPath)
   } catch (err) {
+    // A native binding that will not load says NOTHING about the database file.
+    // Moving it aside here destroyed a perfectly good DB whenever
+    // better-sqlite3 was built for a different ABI than the running runtime -
+    // e.g. `npm run rebuild` targets Electron (module version 130) while the
+    // headless server runs under system node (137). Fail loudly with the fix
+    // instead of eating the data.
+    const code = (err as NodeJS.ErrnoException | undefined)?.code
+    if (code === 'ERR_DLOPEN_FAILED' || code === 'MODULE_NOT_FOUND') {
+      log.error(`better-sqlite3 could not load - NOT touching ${dbPath}`, err)
+      throw new Error(
+        'better-sqlite3 failed to load: it was built for a different runtime than the one ' +
+          'running now. For the Electron app run `npm run rebuild`; for the headless server ' +
+          'run it under Electron as node (`npm run server`) or rebuild for plain node.',
+      )
+    }
     // A corrupt/unopenable DB used to throw uncaught here, leaving the app
     // running with no window and no explanation. Move the bad file aside
     // (preserved for manual recovery), start fresh, and tell the user.

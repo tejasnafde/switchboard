@@ -6,7 +6,17 @@ import { homedir } from 'os'
 import { join } from 'path'
 import type { SafeStorage } from 'electron'
 
-export const isElectron = !!process.versions.electron
+/**
+ * True only in a REAL Electron runtime, where app/safeStorage exist.
+ *
+ * process.versions.electron is also set under ELECTRON_RUN_AS_NODE, where the
+ * electron module exports no runtime APIs at all - so testing that alone sent
+ * this shim down the Electron branch and blew up on `app.getPath` being
+ * undefined. That mode is not hypothetical: `npm run server` uses it so the
+ * native modules match the ABI `npm run rebuild` produced, and Claude Code's
+ * shell sets it too (hence `dev` unsetting it).
+ */
+export const isElectron = !!process.versions.electron && !process.env.ELECTRON_RUN_AS_NODE
 
 // Only reached when isElectron; electron is external in both build targets, so
 // this require never resolves in a plain-Node process.
