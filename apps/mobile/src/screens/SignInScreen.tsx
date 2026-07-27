@@ -140,18 +140,10 @@ export default function SignInScreen() {
         </Pressable>
       ) : (
         <View>
-          <Text style={styles.stepTitle}>Import from desktop</Text>
-          <Text style={styles.stepBody}>
-            Google no longer allows an app like this to run its own browser sign-in on
-            Android, so consent happens once on your Mac instead. From the switchboard
-            repo run:
-          </Text>
+          <Text style={styles.stepTitle}>Connect your Google account</Text>
+          <Text style={styles.stepBody}>Needed only to reach work VMs over IAP.</Text>
           <Text style={styles.code}>node scripts/google-mint-token.mjs</Text>
-          <Text style={styles.stepBody}>
-            Sign in as the account that reaches your VMs. It prints a QR - scan that
-            rather than typing the blob. After this the phone renews its own access
-            tokens and does not need the Mac again.
-          </Text>
+          <Text style={styles.stepBody}>Run that on your Mac, then scan the QR it prints.</Text>
 
           {scanning ? (
             <View style={styles.scanBox}>
@@ -199,10 +191,7 @@ export default function SignInScreen() {
           >
             <Text style={styles.primaryButtonText}>Import credentials</Text>
           </Pressable>
-          <Text style={styles.redirectHint}>
-            Treat the blob like a password: it grants cloud-platform access as you. It is
-            validated against Google before being saved, and stored in the device keychain.
-          </Text>
+          <Text style={styles.redirectHint}>Stored in the device keychain. Treat it like a password.</Text>
         </View>
       )}
 

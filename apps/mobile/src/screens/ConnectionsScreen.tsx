@@ -1,7 +1,11 @@
 /**
- * Connections: the app's home, and a glanceable status board rather than a list
- * of settings. Answers three questions without a tap - which backends are alive,
+ * Machines: the app's home, and a glanceable status board rather than a list of
+ * settings. Answers three questions without a tap - which machines are alive,
  * which have unread activity, and what each one actually is.
+ *
+ * "Machines" matches the desktop's own vocabulary (the machines table,
+ * MachineChannels, MachineLayer); "backends" was a second name for the same
+ * thing.
  *
  * Rows are cards with a status rail down the left edge, coloured by liveness, so
  * state reads peripherally without a legend. Machine-produced detail (urls,
@@ -122,9 +126,10 @@ export default function ConnectionsScreen() {
         <Pressable
           onPress={() => navigation.navigate('SignIn')}
           hitSlop={12}
-          style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
+          accessibilityLabel="Google account"
+          style={({ pressed }) => [styles.headerAvatar, pressed && styles.pressed]}
         >
-          <Text style={styles.headerActionText}>Account</Text>
+          <Text style={styles.headerAvatarText}>TN</Text>
         </Pressable>
       ),
       headerRight: () => (
@@ -154,7 +159,7 @@ export default function ConnectionsScreen() {
           text: 'Remove',
           style: 'destructive',
           onPress: () =>
-            Alert.alert('Remove backend?', `"${config.label}" will be forgotten on this device.`, [
+            Alert.alert('Remove machine?', `"${config.label}" will be forgotten on this device.`, [
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Remove',
@@ -177,7 +182,7 @@ export default function ConnectionsScreen() {
       <View style={styles.emptyWrap}>
         <Text style={styles.emptyTitle}>Nothing paired yet</Text>
         <Text style={styles.emptyBody}>
-          Start a backend, then scan the QR it prints. Everything it can reach shows up here.
+          Start Switchboard on a machine, then scan the QR it prints. Everything it can reach shows up here.
         </Text>
         <View style={styles.emptyCode}>
           <Text style={styles.emptyCodeText}>npm run dev</Text>
@@ -206,7 +211,7 @@ export default function ConnectionsScreen() {
       contentContainerStyle={styles.list}
       ListHeaderComponent={
         <View style={styles.listHeader}>
-          <Text style={styles.overline}>BACKENDS</Text>
+          <Text style={styles.overline}>MACHINES</Text>
           <Text style={styles.count}>
             {ready ? `${liveCount} of ${configs.length} live` : 'connecting'}
           </Text>
@@ -312,9 +317,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: space.xs,
   },
-  headerActionText: {
-    ...type.bodySm,
-    color: colors.accent,
+  // An avatar chip rather than blue link text: it stopped competing with the
+  // title and stopped looking like a second, differently-styled action.
+  headerAvatar: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerAvatarText: {
+    fontFamily: fonts.display,
+    fontSize: 11,
+    color: colors.textDim,
+    letterSpacing: 0.5,
   },
   headerAdd: {
     color: colors.accent,
