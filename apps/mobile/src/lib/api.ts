@@ -5,10 +5,11 @@
  */
 import { WsTransport } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
-import { AppChannels, ProviderChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance } from '@shared/types'
+import type { SshIapTarget } from '@shared/machines'
 
 export interface StartSessionOpts {
   threadId: string
@@ -71,6 +72,16 @@ export class SwitchboardClient {
 
   serverVersion(): Promise<string> {
     return this.transport.invoke('server:version')
+  }
+
+  /**
+   * IAP VMs this backend can see in its ~/.ssh/config, so the user never types
+   * project / zone / instance. Only the DESKTOP app registers the machine
+   * handlers (the ssh config lives there), so a headless server answers with a
+   * no-handler rejection - callers treat any failure as "none discovered".
+   */
+  listIapTargets(): Promise<SshIapTarget[]> {
+    return this.transport.invoke(MachineChannels.LIST_IAP_TARGETS)
   }
 
   // ── provider ──

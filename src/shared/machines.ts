@@ -44,3 +44,17 @@ export interface MachineSnapshot {
   syncedAt: number
   projects: CachedProject[]
 }
+
+/**
+ * A VM reachable through a `gcloud compute start-iap-tunnel` ProxyCommand in
+ * ~/.ssh/config. Lets the mobile app offer IAP targets instead of making the
+ * user retype project / zone / instance it could have discovered.
+ */
+export interface SshIapTarget {
+  /** The Host alias as written in ssh config. */
+  alias: string
+  /** The GCE instance name (%h expansion). */
+  instance: string
+  project: string
+  zone: string
+}

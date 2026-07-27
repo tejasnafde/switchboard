@@ -5,7 +5,7 @@
  * passphrase), SWITCHBOARD_TOKEN (WS connection auth - required when binding
  * beyond loopback, e.g. HOST=0.0.0.0 for LAN/tailnet mobile clients).
  */
-import { homedir } from 'node:os'
+import { homedir, networkInterfaces } from 'node:os'
 import { join, dirname } from 'node:path'
 import { writeFileSync, unlinkSync, readFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -96,7 +96,46 @@ host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 const registry = new ProviderRegistry(host)
 registry.registerIpcHandlers()
 
-wss.on('listening', () => log.info(`switchboard backend listening on ${bindHost}:${port} (v${__SERVER_VERSION__})`))
+wss.on('listening', () => {
+  log.info(`switchboard backend listening on ${bindHost}:${port} (v${__SERVER_VERSION__})`)
+  void printPairingInfo()
+})
+
+/**
+ * Print everything a phone needs to pair, including a scannable QR.
+ *
+ * Without this the operator has to reconstruct the URL by hand and, if the
+ * token came from a shell substitution, they never saw it at all. Only runs when
+ * bound beyond loopback, because a loopback-only server is not pairable anyway.
+ * The token is printed deliberately: it is the pairing secret and this is the
+ * operator's own terminal, which is the only place it can usefully appear.
+ */
+async function printPairingInfo(): Promise<void> {
+  if (!token || bindHost === '127.0.0.1' || bindHost === 'localhost') return
+  const addresses: string[] = []
+  for (const [, addrs] of Object.entries(networkInterfaces())) {
+    for (const addr of addrs ?? []) {
+      if (addr.family !== 'IPv4' || addr.internal) continue
+      if (addr.address.startsWith('169.254.')) continue
+      addresses.push(addr.address)
+    }
+  }
+  if (addresses.length === 0) {
+    log.warn('no external IPv4 address found, cannot suggest a pairing URL')
+    return
+  }
+  const url = `ws://${addresses[0]}:${port}?token=${token}`
+  console.log('\nPair this backend in the mobile app (+ -> WebSocket -> Scan):\n')
+  try {
+    const QRCode = (await import('qrcode')).default
+    console.log(await QRCode.toString(url, { type: 'terminal', small: true, errorCorrectionLevel: 'L' }))
+  } catch (err) {
+    log.warn('could not render the pairing QR', err)
+  }
+  console.log(`  URL:   ${url}`)
+  if (addresses.length > 1) console.log(`  other addresses: ${addresses.slice(1).join(', ')}`)
+  console.log(`  token: ${token}\n`)
+}
 wss.on('error', (err) => log.error('server error', err))
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {

@@ -78,6 +78,12 @@ export const MachineChannels = {
   REORDER: 'machines:reorder',
   /** Parse ~/.ssh/config into host candidates for the "Add machine" picker. */
   LIST_SSH_HOSTS: 'machines:list-ssh-hosts',
+  /**
+   * IAP tunnel targets discovered from ~/.ssh/config ProxyCommand lines, so a
+   * paired phone can offer VMs instead of asking for project/zone/instance by
+   * hand. Served by whichever backend holds the ssh config.
+   */
+  LIST_IAP_TARGETS: 'machines:list-iap-targets',
   /** Cached per-remote tree snapshots for offline read-only browse. */
   GET_SNAPSHOTS: 'machines:get-snapshots',
   /** Persist a freshly-scanned remote tree snapshot. */

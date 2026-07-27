@@ -25,9 +25,10 @@ import {
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera'
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
+import type { SshIapTarget } from '@shared/machines'
 import type { RootStackParamList } from '../../App'
 import { colors } from '../theme'
-import { parsePairingUrl, useConnectionsStore, type ConnectionConfig } from '../stores/connections'
+import { getClient, parsePairingUrl, useConnectionsStore, type ConnectionConfig } from '../stores/connections'
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Pair'>
 type Route = RouteProp<RootStackParamList, 'Pair'>
@@ -63,7 +64,46 @@ export default function PairScreen() {
   )
   const [scanning, setScanning] = useState(!editConfig)
 
+  const [discovered, setDiscovered] = useState<SshIapTarget[]>([])
   const [permission, requestPermission] = useCameraPermissions()
+
+  // Ask every connected backend what IAP VMs it can see. Only the desktop app
+  // registers the machine handlers (the ssh config lives there), so a headless
+  // server rejects with no-handler and is simply skipped. This is why nobody has
+  // to retype project / zone / instance: the ProxyCommand lines already have it.
+  useEffect(() => {
+    if (kind !== 'iap') return
+    let cancelled = false
+    const configs = useConnectionsStore.getState().configs
+    void Promise.all(
+      configs.map((c) =>
+        getClient(c.id)
+          ?.listIapTargets()
+          .catch(() => [] as SshIapTarget[]) ?? Promise.resolve([] as SshIapTarget[]),
+      ),
+    ).then((lists) => {
+      if (cancelled) return
+      const seen = new Set<string>()
+      const merged: SshIapTarget[] = []
+      for (const target of lists.flat()) {
+        const key = `${target.project}/${target.zone}/${target.instance}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        merged.push(target)
+      }
+      setDiscovered(merged)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [kind])
+
+  const applyTarget = (target: SshIapTarget) => {
+    setProject(target.project)
+    setZone(target.zone)
+    setInstance(target.instance)
+    if (!label.trim()) setLabel(target.alias)
+  }
   const scannedRef = useRef(false)
 
   useEffect(() => {
@@ -388,6 +428,40 @@ export default function PairScreen() {
 }
 
 const styles = StyleSheet.create({
+  discoverBox: {
+    marginBottom: 18,
+  },
+  discoverTitle: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  discoverHint: {
+    color: colors.textDim,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 10,
+  },
+  discoverRow: {
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  discoverAlias: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  discoverMeta: {
+    color: colors.textFaint,
+    fontSize: 11,
+    marginTop: 2,
+  },
   flex: {
     flex: 1,
   },
