@@ -10,7 +10,7 @@ import {
 } from '@expo-google-fonts/instrument-sans'
 import { GeistMono_400Regular, GeistMono_500Medium } from '@expo-google-fonts/geist-mono'
 import { createLogger } from '@shared/logger'
-import { colors } from './src/theme'
+import { colors, fonts } from './src/theme'
 import { getCachedAccessToken, warmUpGoogleAuth } from './src/lib/google-auth'
 import { setGoogleTokenProvider } from './src/stores/connections'
 import { UpdateBanner } from './src/components/UpdateBanner'

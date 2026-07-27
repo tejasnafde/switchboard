@@ -26,7 +26,7 @@ import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
-import { colors, statusColor } from '../theme'
+import { colors, radius, space, statusColor, type } from '../theme'
 import { getClient, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { ModePicker } from '../components/ModePicker'
@@ -645,12 +645,10 @@ const styles = StyleSheet.create({
   statusBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.surface,
+    gap: space.sm,
+    paddingHorizontal: space.lg,
+    paddingBottom: space.sm,
+    backgroundColor: colors.bg,
   },
   statusDot: {
     width: 8,
@@ -706,39 +704,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   itemBlock: {
-    marginHorizontal: 14,
-    marginVertical: 4,
+    marginHorizontal: space.lg,
+    marginVertical: space.sm,
   },
   userRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    marginHorizontal: 14,
-    marginVertical: 4,
+    marginHorizontal: space.lg,
+    marginTop: space.lg,
+    marginBottom: space.xs,
   },
+  // The old bubble was near-black navy on near-black: technically present,
+  // practically invisible. A lighter raised surface plus a left accent edge
+  // reads as "you said this" without shouting.
   userBubble: {
-    maxWidth: '85%',
-    backgroundColor: 'rgba(79, 142, 247, 0.16)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(79, 142, 247, 0.4)',
-    borderRadius: 14,
-    borderBottomRightRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    maxWidth: '82%',
+    backgroundColor: colors.surfaceRaised,
+    borderLeftWidth: 2,
+    borderLeftColor: colors.accent,
+    borderTopRightRadius: radius.md,
+    borderBottomRightRadius: radius.md,
+    borderTopLeftRadius: 3,
+    borderBottomLeftRadius: 3,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm + 2,
   },
   userText: {
+    ...type.bodySm,
     color: colors.text,
-    fontSize: 15,
-    lineHeight: 21,
   },
+  // Prose is the hero: it gets the widest measure and the most contrast, while
+  // tool cards below deliberately recede.
   assistantText: {
+    ...type.body,
     color: colors.text,
-    fontSize: 15,
-    lineHeight: 22,
   },
   durationText: {
-    marginTop: 4,
+    marginTop: space.xs,
+    ...type.monoSm,
     color: colors.textFaint,
-    fontSize: 11,
   },
   reasoningText: {
     color: colors.textDim,
@@ -765,12 +769,13 @@ const styles = StyleSheet.create({
     fontFamily: mono,
   },
   toolCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: 'transparent',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
-    borderRadius: 8,
-    padding: 10,
-    gap: 4,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm + 2,
+    gap: 3,
   },
   toolHeader: {
     flexDirection: 'row',
@@ -778,15 +783,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   toolName: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: '700',
-    fontFamily: mono,
+    ...type.monoSm,
+    color: colors.textDim,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
   },
   toolInput: {
-    color: colors.textDim,
-    fontSize: 11.5,
-    fontFamily: mono,
+    ...type.monoSm,
+    color: colors.textFaint,
   },
   toolOutput: {
     color: colors.textDim,
