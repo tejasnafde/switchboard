@@ -1,25 +1,13 @@
 /**
- * Self-update over GitHub Releases (Android sideload lane).
+ * APK self-update off GitHub Releases, for native changes an OTA cannot carry.
  *
- * Switchboard mobile is not on the Play Store, so the APK is published as a
- * GitHub Release asset by `.github/workflows/mobile-release.yml` and the app
- * updates itself: read the latest release, compare its tag to the running
- * binary's version, download the `.apk` into the cache dir, and hand it to
- * Android's package installer. This lane is for NATIVE changes (new native
- * module, permission, SDK bump). JS-only changes go out over the OTA lane in
- * `otaUpdate.ts`, which does not require the user to tap through an install.
+ * Reads the releases LIST, not /releases/latest: this repo also publishes the
+ * Electron app under `v*` tags, so "latest" is usually a desktop release with no
+ * .apk attached. Mobile tags are `mobile-v<version>`.
  *
- * The first install is always manual: the user has to sideload one APK and
- * grant "install unknown apps" before this code can take over.
- *
- * Why `expo-file-system/legacy` and not the modern `File`/`Directory` API:
- * in SDK 57 the modern API has no `getContentUriAsync`, and that call is not
- * optional here. Android 7+ blocks `file://` URIs crossing a process boundary
- * (`FileUriExposedException`), so the package installer can only read the APK
- * through a FileProvider `content://` URI. `getContentUriAsync` plus
- * `downloadAsync` both still live in the legacy module, so this file uses it
- * deliberately rather than by inertia. Revisit when the modern API grows a
- * content-URI equivalent.
+ * Uses expo-file-system/legacy because downloadAsync and getContentUriAsync live
+ * there in SDK 57; the new File API has no getContentUriAsync, and the package
+ * installer cannot read file:// URIs on Android 7+.
  */
 import { Platform } from 'react-native'
 import * as Application from 'expo-application'

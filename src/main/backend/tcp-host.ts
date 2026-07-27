@@ -1,19 +1,13 @@
 /**
- * BackendHost over a raw TCP socket, newline-delimited JSON.
+ * BackendHost over raw TCP, newline-delimited JSON.
  *
- * Why this exists alongside WsHost: a phone reaches a work VM through Google's
- * IAP TCP-forwarding relay, which yields a RAW TCP stream to a VM port. Speaking
- * WebSocket inside that stream would mean implementing an RFC6455 client on the
- * phone for no benefit - our wire frames are already JSON, so the WebSocket
- * framing was incidental. One frame per line is enough.
+ * IAP forwards an arbitrary VM port and hands the client a RAW TCP stream, so a
+ * phone tunnelling in has no WebSocket to speak. Our frames were already JSON,
+ * so one per line is enough and no RFC6455 client is needed. Safe because
+ * JSON.stringify escapes newlines inside strings.
  *
- * Safe because JSON.stringify escapes newlines inside strings, so a literal
- * '\n' only ever appears as a frame delimiter.
- *
- * Auth: when a token is configured the client's FIRST line must be
- * {"k":"auth","token":"..."} or the socket is destroyed. IAP already proves the
- * caller holds a Google identity with tunnel access; the token additionally
- * proves it is this user's Switchboard.
+ * With a token set, the first line must be {"k":"auth","token":...} or the
+ * socket is destroyed, and emit() never reaches an unauthenticated client.
  */
 import { timingSafeEqual } from 'node:crypto'
 import type { Server, Socket } from 'node:net'

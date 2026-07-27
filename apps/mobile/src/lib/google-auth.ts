@@ -1,25 +1,13 @@
 /**
- * Google sign-in that yields a real GOOGLE CLOUD access token.
+ * Google sign-in that yields a real cloud-platform access token.
  *
- * This talks to accounts.google.com DIRECTLY - no broker, no Supabase. A broker
- * would hand back its own session JWT, which cannot call googleapis.com; the IAP
- * relay (see src/lib/iap-transport.ts) needs a Google-issued bearer token with
- * the cloud-platform scope, so the app has to be the OAuth client itself.
+ * Talks to accounts.google.com directly: a broker (Supabase et al) hands back
+ * its own session JWT, which cannot call googleapis.com, and the IAP relay needs
+ * a Google-issued bearer token.
  *
- * Flow: PKCE authorization code (RFC 7636).
- *   1. expo-auth-session builds the authorize URL + code_verifier/challenge.
- *   2. The system browser (expo-web-browser) collects consent.
- *   3. The callback comes back on the app's custom scheme, and we exchange the
- *      code for access + refresh tokens at Google's token endpoint over fetch.
- *
- * Endpoints are hardcoded rather than pulled from Google's OpenID discovery
- * document (https://accounts.google.com/.well-known/openid-configuration).
- * They have been stable for a decade and fetching discovery would add a network
- * round trip to every cold start, including the silent-refresh path that runs
- * before the first screen paints.
- *
- * Storage is expo-secure-store (Keychain / Android Keystore), never
- * AsyncStorage - a refresh token in plaintext app storage is a credential leak.
+ * Endpoints are inline rather than fetched from OpenID discovery, to keep a
+ * network round trip off the cold-start path. Tokens live in expo-secure-store,
+ * never AsyncStorage.
  */
 import Constants from 'expo-constants'
 import * as AuthSession from 'expo-auth-session'

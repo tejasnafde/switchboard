@@ -1,13 +1,9 @@
 /**
- * The desktop app's own WebSocket endpoint for paired mobile clients.
+ * The desktop app's own WebSocket endpoint for paired phones. Fanned into a
+ * MultiHost beside the ElectronIpcHost so both share one ProviderRegistry and
+ * one session pool: no `npm run server` needed on the desktop.
  *
- * This is what makes the phone a peer of the desktop rather than a separate
- * world: the returned WsHost is fanned into a MultiHost alongside the
- * ElectronIpcHost, so both surfaces share one ProviderRegistry and one session
- * pool. No `npm run server` needed on the desktop.
- *
- * Gated on a token existing in settings (Settings -> Mobile generates one).
- * Without a token we do not listen at all - we never expose an unauthenticated
+ * Gated on a token existing in settings - we never expose an unauthenticated
  * socket beyond loopback.
  */
 import { WebSocketServer } from 'ws'

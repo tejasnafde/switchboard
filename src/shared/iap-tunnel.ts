@@ -1,21 +1,15 @@
 /**
- * Google Cloud IAP TCP-forwarding relay: URL building + subprotocol framing.
+ * Google Cloud IAP TCP-forwarding relay: URL building and subprotocol framing.
  *
- * Why this exists: every GeoIQ VM is reached through
- * `gcloud compute start-iap-tunnel` (see ~/.ssh/config ProxyCommands), never a
- * routable SSH port. IAP is a WebSocket relay at tunnel.cloudproxy.app over
- * 443, so a phone holding a Google OAuth access token can reach a VM port from
- * ANY network, with no laptop and no VPN. The relay forwards an arbitrary port,
- * so we tunnel straight to the Switchboard backend rather than to sshd.
+ * Every GeoIQ VM is reached through `gcloud compute start-iap-tunnel`, never a
+ * routable SSH port. IAP is a WebSocket relay on 443, so a phone holding a
+ * Google OAuth token reaches a VM port from any network with no laptop and no
+ * VPN, and it forwards an ARBITRARY port - so we target the backend, not sshd.
  *
- * Wire format mirrored from the gcloud SDK
- * (googlecloudsdk/api_lib/compute/iap_tunnel_websocket_utils.py):
- *   frame = uint16 tag, then a tag-specific body
- *     0x0001 CONNECT_SUCCESS_SID     uint32 len + bytes (session id)
- *     0x0002 RECONNECT_SUCCESS_ACK   uint64 ack
- *     0x0004 DATA                    uint32 len + bytes
- *     0x0007 ACK                     uint64 total bytes received
- * All integers big-endian. Pure module: no network, no platform APIs.
+ * Frame layout mirrored from the gcloud SDK
+ * (googlecloudsdk/api_lib/compute/iap_tunnel_websocket_utils.py): uint16 tag,
+ * then uint32-prefixed bytes for DATA/CONNECT_SUCCESS_SID and uint64 for
+ * ACK/RECONNECT_SUCCESS_ACK, big-endian throughout.
  */
 
 export const IAP_URL_HOST = 'tunnel.cloudproxy.app'

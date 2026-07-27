@@ -1,19 +1,8 @@
 /**
- * Over-the-air JS updates (expo-updates lane).
- *
- * This is the fast lane: any change that is pure JS/TS or an asset ships as an
- * OTA bundle, so users get it on their next foreground with no APK download and
- * no install prompt. NATIVE changes (a new native module, a new permission, an
- * SDK bump) cannot ride this lane and go out as a new APK instead - see
- * `selfUpdate.ts`.
- *
- * `runtimeVersion: { policy: "appVersion" }` in app.json is what keeps the two
- * lanes from crossing: a bundle is only ever served to a binary whose version
- * matches, so an OTA can never land on a native binary that lacks the modules
- * it needs.
- *
- * Until `npx eas update:configure` has written an `updates.url` into app.json,
- * `Updates.isEnabled` is false and every function here is an inert no-op.
+ * expo-updates OTA for JS-only changes. Inert in dev and whenever
+ * Updates.isEnabled is false, so a checkout without EAS configured stays quiet.
+ * runtimeVersion is pinned to appVersion, so a bundle can never reach an APK
+ * missing native modules it needs.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AppState } from 'react-native'

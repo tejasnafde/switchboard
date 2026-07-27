@@ -1,12 +1,8 @@
 /**
- * Fan-out BackendHost: registers one set of handlers on several hosts at once
- * so the desktop app can serve its renderer (ElectronIpcHost) AND paired mobile
- * clients (WsHost) from a SINGLE ProviderRegistry / handler set. That shared
- * registry is the point: sessions started on the phone and sessions started on
- * the desktop live in the same pool, and every runtime event reaches both.
- *
- * emit() broadcasts to all hosts. handle() registers the same fn everywhere, so
- * whichever transport a request arrives on runs identical code.
+ * Fan-out BackendHost: one handler set registered on several hosts, so the
+ * desktop serves its renderer and paired phones from a SINGLE ProviderRegistry.
+ * That shared registry is the point - sessions started anywhere land in the same
+ * pool, and events reach both.
  */
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'

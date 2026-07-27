@@ -1,21 +1,13 @@
 /**
- * Transport that reaches a work VM's backend through Google Cloud IAP.
+ * Transport reaching a work VM's backend through Google Cloud IAP:
+ * app -> wss://tunnel.cloudproxy.app (443) -> raw TCP to <vm>:<port> -> TcpHost.
+ * Implements the same Transport interface as WsTransport, so screens and stores
+ * are unaware of which one they have.
  *
- * The chain: this app -> wss://tunnel.cloudproxy.app (443, works on any network)
- * -> raw TCP to <vm>:<tcpPort> -> the server's TcpHost. Because it implements
- * the same `Transport` interface as WsTransport, every screen, store and the
- * SwitchboardClient work against it unchanged.
- *
- * Two layers of framing stack here, which is the whole subtlety:
- *   outer - IAP subprotocol frames (tag + length), see @shared/iap-tunnel
- *   inner - our newline-delimited JSON frames, see @shared/ws-protocol
- * So: JSON frame -> +'\n' -> utf8 bytes -> chunked to 16 KB -> IAP DATA frames.
- * Inbound is the reverse, and either layer can split mid-item, so both are
- * buffered.
- *
- * The relay also requires periodic ACKs of total bytes received; without them it
- * eventually stops sending. And `Origin: bot:iap-tunneler` is mandatory or the
- * relay accepts the socket then says nothing at all.
+ * Two framings stack, and either can split mid-item, so both are buffered: IAP
+ * subprotocol frames outside (see @shared/iap-tunnel), our newline-delimited
+ * JSON inside. The relay needs periodic ACKs or it stalls, and
+ * `Origin: bot:iap-tunneler` or it accepts the socket then says nothing.
  */
 import {
   IapFrameParser,
