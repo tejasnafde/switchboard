@@ -17,11 +17,9 @@ import {
   Alert,
   FlatList,
   LayoutAnimation,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
-  UIManager,
   View,
 } from 'react-native'
 import { useNavigation } from '@react-navigation/native'
@@ -32,10 +30,6 @@ import { warmUpGoogleAuth } from '../lib/google-auth'
 import { useConnectionsStore, type ConnectionConfig, type ConnectionStatus } from '../stores/connections'
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true)
-}
 
 /** One-line target summary for either connection kind, in the mono face. */
 function describeTarget(config: ConnectionConfig): string {

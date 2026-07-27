@@ -6,6 +6,7 @@
  * beyond loopback, e.g. HOST=0.0.0.0 for LAN/tailnet mobile clients).
  */
 import { homedir, networkInterfaces } from 'node:os'
+import { randomBytes } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import { writeFileSync, unlinkSync, readFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
@@ -51,11 +52,38 @@ try {
 
 const port = Number(process.env.PORT ?? 8765)
 const bindHost = process.env.HOST ?? '127.0.0.1'
-const token = process.env.SWITCHBOARD_TOKEN
-if (bindHost !== '127.0.0.1' && bindHost !== 'localhost' && !token) {
-  log.error(`refusing to bind ${bindHost} without SWITCHBOARD_TOKEN - set it or bind loopback`)
-  process.exit(1)
+const isLoopback = bindHost === '127.0.0.1' || bindHost === 'localhost'
+
+/**
+ * A token generated per launch (`SWITCHBOARD_TOKEN=$(openssl rand -hex 12)`)
+ * invalidates every phone that already paired, and the failure looks like a
+ * network fault rather than an auth one. So when binding beyond loopback without
+ * an explicit token, persist one and reuse it across restarts.
+ *
+ * Deliberately NOT done for a loopback bind: the desktop dials its ssh-tunnelled
+ * remotes with no token at all, and switching that on would break the existing
+ * remote-machines flow.
+ */
+function stableToken(): string {
+  const file = join(homedir(), '.switchboard-server', 'token')
+  try {
+    const existing = readFileSync(file, 'utf8').trim()
+    if (existing) return existing
+  } catch {
+    // No token file yet, which is the normal first-run case.
+  }
+  const fresh = randomBytes(12).toString('hex')
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, fresh, { mode: 0o600 })
+    log.info(`generated a pairing token and saved it to ${file}`)
+  } catch (err) {
+    log.warn('could not persist the pairing token, it will change on restart', err)
+  }
+  return fresh
 }
+
+const token = process.env.SWITCHBOARD_TOKEN ?? (isLoopback ? undefined : stableToken())
 const wss = new WebSocketServer({ port, host: bindHost })
 const wsHost = new WsHost(wss, token)
 
@@ -111,7 +139,15 @@ wss.on('listening', () => {
  * operator's own terminal, which is the only place it can usefully appear.
  */
 async function printPairingInfo(): Promise<void> {
-  if (!token || bindHost === '127.0.0.1' || bindHost === 'localhost') return
+  if (isLoopback) {
+    // Silently binding loopback looks healthy while being unreachable from a
+    // phone, which reads as a network fault. Say so.
+    log.warn(
+      `listening on ${bindHost} only - phones cannot reach this. Restart with HOST=0.0.0.0 to pair a device.`,
+    )
+    return
+  }
+  if (!token) return
   const addresses: string[] = []
   for (const [, addrs] of Object.entries(networkInterfaces())) {
     for (const addr of addrs ?? []) {
