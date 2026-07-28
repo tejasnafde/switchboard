@@ -23,6 +23,12 @@ const REQUEST_TIMEOUT_MS = 8000
 const EXPIRY_SKEW_MS = 60_000
 /** The endpoint is gated on this scope; without it the API reports no limits. */
 const REQUIRED_SCOPE = 'user:profile'
+const RETRY_DELAY_MS = 400
+/** Socket-level codes worth one more attempt. */
+const TRANSIENT_CODES = new Set([
+  'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT', 'EAI_AGAIN',
+  'ENOTFOUND', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT',
+])
 
 /**
  * Env vars that mean plan limits do not apply. Checked against the resolved
@@ -37,6 +43,101 @@ const NON_SUBSCRIPTION_ENV: Array<[string, string]> = [
   ['CLAUDE_CODE_USE_BEDROCK', 'this instance runs through Amazon Bedrock'],
   ['CLAUDE_CODE_USE_VERTEX', 'this instance runs through Google Vertex AI'],
 ]
+
+/**
+ * undici reports every transport failure as the bare string "fetch failed"
+ * and puts the actual reason on `.cause`, so surfacing only `err.message`
+ * leaves the user (and the log) with nothing to act on. Happy-eyeballs
+ * failures arrive as an AggregateError whose `.errors` hold the per-address
+ * codes, which is the case that matters for a DNS or IPv6 problem.
+ */
+function describeFetchError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err)
+  const parts: string[] = [err.message]
+  const cause = (err as Error & { cause?: unknown }).cause
+  if (cause instanceof Error) {
+    const code = (cause as NodeJS.ErrnoException).code
+    parts.push(code ? `${code}: ${cause.message}` : cause.message)
+    const inner = (cause as { errors?: unknown }).errors
+    if (Array.isArray(inner)) {
+      const codes = inner
+        .map((e) => (e instanceof Error ? (e as NodeJS.ErrnoException).code ?? e.message : String(e)))
+        .filter(Boolean)
+      if (codes.length > 0) parts.push(`[${[...new Set(codes)].join(', ')}]`)
+    }
+  } else if (typeof cause === 'string') {
+    parts.push(cause)
+  }
+  return parts.join(' - ')
+}
+
+const DNS_CODES = new Set(['ENOTFOUND', 'EAI_AGAIN'])
+
+function causeCode(err: unknown): string | undefined {
+  if (!(err instanceof Error)) return undefined
+  const cause = (err as Error & { cause?: unknown }).cause
+  if (!(cause instanceof Error)) return undefined
+  const direct = (cause as NodeJS.ErrnoException).code
+  if (direct) return direct
+  const inner = (cause as { errors?: unknown }).errors
+  if (Array.isArray(inner)) {
+    for (const e of inner) {
+      const c = e instanceof Error ? (e as NodeJS.ErrnoException).code : undefined
+      if (c) return c
+    }
+  }
+  return undefined
+}
+
+/**
+ * A resolution failure here is usually macOS having negative-cached an empty
+ * answer (mDNSResponder holds it for the zone's SOA TTL, ~30 min), which no
+ * retry can outwait. The flush is the actual fix, so name it.
+ */
+function dnsHint(err: unknown): string {
+  if (!DNS_CODES.has(causeCode(err) ?? '')) return ''
+  return ' DNS lookup failed - macOS may have cached an empty answer. Try:'
+    + ' sudo dscacheutil -flushcache && sudo killall -HUP mDNSResponder'
+}
+
+/** True for failures that a second attempt can plausibly fix. */
+function isTransient(err: unknown): boolean {
+  if (!(err instanceof Error)) return false
+  // A timeout was already given the full budget; retrying just doubles the wait.
+  if (err.name === 'TimeoutError') return false
+  const cause = (err as Error & { cause?: unknown }).cause
+  const code = cause instanceof Error ? (cause as NodeJS.ErrnoException).code : undefined
+  return err.message === 'fetch failed' || TRANSIENT_CODES.has(code ?? '')
+}
+
+/**
+ * One retry, because undici keeps a process-lifetime connection pool: after
+ * the machine sleeps, the first request through a stale keep-alive socket
+ * fails even though the network is fine. Switchboard's main process runs for
+ * days, so this is the common case rather than an edge one.
+ */
+async function requestUsage(accessToken: string): Promise<Response> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await fetch(USAGE_URL, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          'anthropic-beta': 'oauth-2025-04-20',
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      lastErr = err
+      if (attempt === 1 || !isTransient(err)) break
+      log.debug(`usage request failed (${describeFetchError(err)}), retrying once`)
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+    }
+  }
+  throw lastErr
+}
 
 function base(instanceId: string, fetchedAtMs: number): ProviderUsage {
   return {
@@ -109,20 +210,17 @@ export async function fetchClaudeUsage(
 
   let response: Response
   try {
-    response = await fetch(USAGE_URL, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        'anthropic-beta': 'oauth-2025-04-20',
-      },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
+    response = await requestUsage(accessToken)
   } catch (err) {
     // Redacted: this message is not ours, and it is rendered in the UI.
-    const message = redactSecrets(err instanceof Error ? err.message : String(err))
+    const message = redactSecrets(describeFetchError(err))
     log.warn(`usage request failed: ${message}`)
-    return { ...result, status: 'error', plan, message: `Could not reach the usage endpoint: ${message}` }
+    return {
+      ...result,
+      status: 'error',
+      plan,
+      message: `Could not reach the usage endpoint: ${message}${dnsHint(err)}`,
+    }
   }
 
   if (response.status === 401 || response.status === 403) {
