@@ -457,6 +457,8 @@ const api = {
       transport.invoke(ProviderInstanceChannels.DELETE, id),
     test: (id: string): Promise<{ ok: boolean; message: string }> =>
       transport.invoke(ProviderInstanceChannels.TEST, id),
+    usage: (id: string, opts?: { force?: boolean }): Promise<import('@shared/provider-usage').ProviderUsage> =>
+      transport.invoke(ProviderInstanceChannels.USAGE, id, opts),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
       transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
   },

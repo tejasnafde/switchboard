@@ -2,8 +2,9 @@
  * Providers tab - CRUD UI for named provider instances per agent kind.
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AgentType, ProviderInstance } from '@shared/types'
+import type { ProviderUsage } from '@shared/provider-usage'
 import { agentLabel, defaultInstanceId } from '@shared/types'
 import { providerInstanceInitials } from '@shared/providerInstanceInitials'
 import {
@@ -13,6 +14,7 @@ import {
   suggestedOauthDir,
 } from '@shared/provider-auth-format'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
+import { ProviderUsagePanel } from './ProviderUsagePanel'
 import type { ProviderInstanceUpsertInput } from '../../../preload'
 
 const AGENT_KINDS: Array<'claude-code' | 'codex' | 'opencode'> = ['claude-code', 'codex', 'opencode']
@@ -166,21 +168,54 @@ function ProviderInstanceCard({
 }) {
   const remove = useProviderInstanceStore((s) => s.remove)
   const test = useProviderInstanceStore((s) => s.test)
+  const fetchUsage = useProviderInstanceStore((s) => s.usage)
   const accent = instance.accentColor ?? 'var(--accent)'
   const initials = providerInstanceInitials(instance.displayName)
   const def = isDefault(instance)
   const [probe, setProbe] = useState<{ ok: boolean; message: string } | null>(null)
   const [probing, setProbing] = useState(false)
+  const [usage, setUsage] = useState<ProviderUsage | null>(null)
+  const [usageOpen, setUsageOpen] = useState(false)
+  const [usageLoading, setUsageLoading] = useState(false)
+
+  // A Codex probe can run for seconds; the Settings modal may close first.
+  // The effect body must re-arm the flag: StrictMode runs mount -> cleanup ->
+  // mount, and refs survive that, so a cleanup-only effect would leave this
+  // false for the component's whole life and swallow every setState.
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   async function handleTest() {
     setProbing(true)
     setProbe(null)
     try {
       const result = await test(instance.id)
-      setProbe(result)
+      if (mounted.current) setProbe(result)
     } finally {
-      setProbing(false)
+      if (mounted.current) setProbing(false)
     }
+  }
+
+  async function loadUsage(force: boolean) {
+    setUsageLoading(true)
+    try {
+      const result = await fetchUsage(instance.id, force ? { force: true } : undefined)
+      if (mounted.current) setUsage(result)
+    } finally {
+      if (mounted.current) setUsageLoading(false)
+    }
+  }
+
+  function handleUsageClick() {
+    if (usageOpen) {
+      setUsageOpen(false)
+      return
+    }
+    setUsageOpen(true)
+    if (!usage) void loadUsage(false)
   }
 
   return (
@@ -243,6 +278,21 @@ function ProviderInstanceCard({
         )}
       </div>
       <button
+        onClick={handleUsageClick}
+        aria-expanded={usageOpen}
+        style={{
+          fontSize: '11px',
+          padding: '3px 8px',
+          border: '1px solid var(--border)',
+          borderRadius: '4px',
+          background: 'transparent',
+          color: 'var(--text-secondary)',
+          cursor: 'pointer',
+        }}
+      >
+        {usageLoading && !usage ? 'Loading…' : usageOpen ? 'Usage ⌃' : 'Usage'}
+      </button>
+      <button
         onClick={handleTest}
         disabled={probing}
         style={{
@@ -290,6 +340,13 @@ function ProviderInstanceCard({
         >
           Delete
         </button>
+      )}
+      {usageOpen && (
+        <ProviderUsagePanel
+          usage={usage}
+          loading={usageLoading}
+          onRefresh={() => void loadUsage(true)}
+        />
       )}
     </div>
   )

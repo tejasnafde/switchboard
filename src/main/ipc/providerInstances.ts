@@ -21,10 +21,12 @@ import {
   getProviderInstanceFull,
   type ProviderInstanceUpsertInput,
 } from '../db/providerInstances'
-import { findClaudeBin, buildClaudeCliEnv } from '../provider/adapters/claude-adapter'
-import { findCodexPath, buildCodexCliEnv } from '../provider/adapters/codex-adapter'
+import { findClaudeBin } from '../provider/adapters/claude-adapter'
+import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { applyEnvOverlay } from '../provider/env-overlay'
+import { resolveInstanceEnv } from '../provider/instance-env'
+import { fetchInstanceUsage, invalidateUsage } from '../provider/usage'
 
 const log = createLogger('ipc:provider-instances')
 
@@ -40,16 +42,24 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
 
   host.handle(ProviderInstanceChannels.UPSERT, (input: ProviderInstanceUpsertInput) => {
     log.info(`upsert ${input.id ?? '(new)'} agent=${input.agentType} name="${input.displayName}"`)
-    return upsertProviderInstance(input)
+    const saved = upsertProviderInstance(input)
+    // An edited oauth dir or env overlay points at a different credential.
+    invalidateUsage(saved.id)
+    return saved
   })
 
   host.handle(ProviderInstanceChannels.DELETE, (id: string) => {
     log.info(`delete ${id}`)
+    invalidateUsage(id)
     return deleteProviderInstance(id)
   })
 
   host.handle(ProviderInstanceChannels.TEST, async (id: string) => {
     return testInstance(id)
+  })
+
+  host.handle(ProviderInstanceChannels.USAGE, async (id: string, opts?: { force?: boolean }) => {
+    return fetchInstanceUsage(id, opts)
   })
 
   host.handle(ProviderInstanceChannels.CREATE_OAUTH_DIR, (dir: string) => {
@@ -130,16 +140,7 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
   const instance = getProviderInstanceFull(id)
   if (!instance) return { ok: false, message: 'Instance not found.' }
 
-  const env: Record<string, string> = instance.agentType === 'codex'
-    ? buildCodexCliEnv()
-    : instance.agentType === 'claude-code'
-      ? buildClaudeCliEnv()
-      : { ...(process.env as Record<string, string>) }
-  applyEnvOverlay(env, instance.env)
-  if (instance.oauthDir && instance.oauthDir.length > 0) {
-    if (instance.agentType === 'claude-code') env.CLAUDE_CONFIG_DIR = instance.oauthDir
-    if (instance.agentType === 'codex') env.CODEX_HOME = instance.oauthDir
-  }
+  const env = resolveInstanceEnv(instance)
 
   try {
     if (instance.agentType === 'claude-code') {

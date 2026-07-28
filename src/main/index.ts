@@ -31,6 +31,7 @@ import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { resolveProviderInstance } from './db/providerInstances'
 import { registerAutoUpdater, quitAndInstall } from './updater'
 import { ProviderRegistry } from './provider/provider-registry'
+import { disposeUsageProbes } from './provider/usage'
 import { getDb, closeDb, getSetting, setSetting, getProjects } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
@@ -568,6 +569,7 @@ app.on('before-quit', () => {
   // not during env teardown (SIGABRT on quit otherwise - see 0.7.19 crash).
   shutdownTerminals()
   providerRegistry?.stopAll()
+  disposeUsageProbes()
   void stopAllMachineConnections()
   closeDb()
 })
