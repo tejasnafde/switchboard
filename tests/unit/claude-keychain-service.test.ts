@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest'
+import { createHash } from 'crypto'
+import { join, normalize } from 'path'
 import {
   claudeKeychainServiceCandidates,
   keychainAccountCandidates,
@@ -6,6 +8,16 @@ import {
 } from '../../src/main/provider/usage/claude-keychain'
 
 const BASE = 'Claude Code-credentials'
+
+/**
+ * Expected service name for a dir. Used where the dir goes through `join` or
+ * `normalize` first, since those emit backslashes on Windows and so produce a
+ * different digest for the same logical path - the assertion has to be
+ * computed with the same primitives rather than hardcoded to POSIX.
+ */
+function serviceFor(dir: string): string {
+  return `${BASE}-${createHash('sha256').update(dir.normalize('NFC')).digest('hex').slice(0, 8)}`
+}
 
 describe('claudeKeychainServiceCandidates', () => {
   it('uses the bare service name only when CLAUDE_CONFIG_DIR is unset', () => {
@@ -48,12 +60,12 @@ describe('claudeKeychainServiceCandidates', () => {
     // the spawn env and would have been hashed that way at login time.
     const candidates = claudeKeychainServiceCandidates('~/.claude-tejas', '/Users/tejas')
     expect(candidates).toContain(`${BASE}-d2b02557`) // hash of the literal string
-    expect(candidates).toContain(`${BASE}-43660b83`) // hash of the expanded path
+    expect(candidates).toContain(serviceFor(join('/Users/tejas', '.claude-tejas')))
   })
 
   it('covers an unnormalised path', () => {
-    expect(claudeKeychainServiceCandidates('/Users/tejas//.claude-tejas'))
-      .toContain(`${BASE}-43660b83`)
+    const messy = '/Users/tejas//.claude-tejas'
+    expect(claudeKeychainServiceCandidates(messy)).toContain(serviceFor(normalize(messy)))
   })
 
   it('covers NFD-composed non-ASCII directory names', () => {
