@@ -23,7 +23,7 @@ import { modelsForAgent } from '@shared/models'
 import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
-import { colors } from '../theme'
+import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { ModePicker } from '../components/ModePicker'
@@ -257,7 +257,7 @@ export default function NewSessionScreen({ route, navigation }: Props) {
 
       <Pressable style={[styles.startButton, busy && styles.startButtonDisabled]} onPress={() => void start()} disabled={busy}>
         {busy ? (
-          <ActivityIndicator size="small" color="#fff" />
+          <ActivityIndicator size="small" color="#08131f" />
         ) : (
           <Text style={styles.startLabel}>Start session</Text>
         )}
@@ -272,85 +272,82 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   content: {
-    padding: 16,
-    gap: 8,
+    padding: space.lg,
+    gap: space.sm,
   },
   projectName: {
+    ...type.heading,
+    fontFamily: fonts.displayBold,
     color: colors.text,
-    fontSize: 18,
-    fontWeight: '700',
   },
   projectPath: {
+    ...type.mono,
     color: colors.textFaint,
-    fontSize: 12,
-    marginBottom: 8,
+    marginBottom: space.sm,
   },
   sectionLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '600',
+    ...type.label,
+    color: colors.textFaint,
     textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginTop: 12,
+    marginTop: space.md,
   },
   providerList: {
-    gap: 8,
+    gap: space.sm,
   },
   providerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    padding: 14,
-    borderRadius: 10,
+    gap: space.md,
+    padding: space.md,
+    minHeight: HIT,
+    borderRadius: radius.md,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
   },
   providerRowActive: {
     borderColor: colors.accent,
-    backgroundColor: 'rgba(79, 142, 247, 0.08)',
+    backgroundColor: colors.accentWash,
   },
   providerBody: {
     flex: 1,
     gap: 2,
   },
   providerLabel: {
+    ...type.heading,
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
   },
   providerLabelActive: {
     color: colors.accent,
   },
   providerBlurb: {
+    ...type.bodySm,
     color: colors.textDim,
-    fontSize: 12,
   },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: space.sm,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     maxWidth: '100%',
-    paddingHorizontal: 12,
+    paddingHorizontal: space.md,
     paddingVertical: 6,
-    borderRadius: 12,
+    borderRadius: radius.pill,
     backgroundColor: colors.surfaceRaised,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   chipActive: {
-    backgroundColor: 'rgba(79, 142, 247, 0.18)',
+    backgroundColor: colors.accentWash,
     borderColor: colors.accent,
   },
   chipText: {
+    ...type.mono,
     color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '500',
     flexShrink: 1,
   },
   chipTextActive: {
@@ -359,12 +356,12 @@ const styles = StyleSheet.create({
   instanceDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: radius.pill,
   },
   radio: {
     width: 20,
     height: 20,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     borderWidth: 2,
     borderColor: colors.border,
     alignItems: 'center',
@@ -376,48 +373,49 @@ const styles = StyleSheet.create({
   radioDot: {
     width: 10,
     height: 10,
-    borderRadius: 5,
+    borderRadius: radius.pill,
     backgroundColor: colors.accent,
   },
   input: {
+    ...type.body,
     minHeight: 88,
     maxHeight: 180,
-    padding: 12,
-    borderRadius: 10,
+    padding: space.md,
+    borderRadius: radius.md,
     backgroundColor: colors.surface,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     color: colors.text,
-    fontSize: 15,
     textAlignVertical: 'top',
   },
   voiceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    gap: 8,
+    gap: space.sm,
   },
   voiceSpacer: {
     flex: 1,
   },
   errorText: {
+    ...type.bodySm,
     color: colors.red,
-    fontSize: 13,
-    marginTop: 4,
+    marginTop: space.xs,
   },
   startButton: {
-    marginTop: 16,
-    paddingVertical: 14,
-    borderRadius: 10,
+    marginTop: space.lg,
+    minHeight: HIT + 4,
+    borderRadius: radius.md,
     backgroundColor: colors.accent,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   startButtonDisabled: {
     opacity: 0.6,
   },
   startLabel: {
-    color: '#fff',
+    fontFamily: fonts.display,
     fontSize: 15,
-    fontWeight: '700',
+    color: '#08131f',
   },
 })

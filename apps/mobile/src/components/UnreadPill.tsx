@@ -1,6 +1,6 @@
 /** Accent unread-count badge shared by the project and conversation lists. */
 import { StyleSheet, Text, View } from 'react-native'
-import { colors } from '../theme'
+import { colors, fonts, radius, type } from '../theme'
 
 export function UnreadPill({ count }: { count: number }) {
   if (count === 0) return null
@@ -16,13 +16,13 @@ const styles = StyleSheet.create({
     minWidth: 20,
     paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 10,
+    borderRadius: radius.pill,
     backgroundColor: colors.accent,
     alignItems: 'center',
   },
   text: {
+    ...type.monoSm,
+    fontFamily: fonts.monoMedium,
     color: colors.bg,
-    fontSize: 11,
-    fontWeight: '700',
   },
 })

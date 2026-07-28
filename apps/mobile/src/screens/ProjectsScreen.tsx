@@ -16,7 +16,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { Project } from '@shared/types'
 import type { RootStackParamList } from '../../App'
-import { colors } from '../theme'
+import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
@@ -159,42 +159,44 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 8,
+    padding: space.xl,
+    gap: space.sm,
   },
   emptyContainer: {
     flexGrow: 1,
   },
   listContent: {
-    paddingVertical: 4,
+    paddingVertical: space.xs,
   },
   stateTitle: {
+    ...type.heading,
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
   },
   stateDetail: {
+    ...type.bodySm,
     color: colors.textDim,
-    fontSize: 13,
     textAlign: 'center',
   },
   retryButton: {
-    marginTop: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    marginTop: space.md,
+    minHeight: HIT,
+    paddingHorizontal: space.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
     backgroundColor: colors.surfaceRaised,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   retryLabel: {
+    fontFamily: fonts.display,
+    fontSize: 15,
     color: colors.accent,
-    fontSize: 14,
-    fontWeight: '600',
   },
   row: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: HIT,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
@@ -207,20 +209,19 @@ const styles = StyleSheet.create({
   titleLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.sm,
   },
   name: {
     flexShrink: 1,
+    ...type.heading,
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
   },
   meta: {
+    ...type.bodySm,
     color: colors.textDim,
-    fontSize: 13,
   },
   path: {
+    ...type.mono,
     color: colors.textFaint,
-    fontSize: 12,
   },
 })

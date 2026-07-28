@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
 import { createLogger } from '@shared/logger'
-import { colors } from '../theme'
+import { colors, fonts, radius, space, type } from '../theme'
 import { checkForApkUpdate, downloadAndInstall, type ApkUpdate } from '../lib/selfUpdate'
 import { useOtaUpdate } from '../lib/otaUpdate'
 
@@ -133,21 +133,21 @@ function Banner({ title, subtitle, actionLabel, busy, error, onPress }: BannerPr
 const styles = StyleSheet.create({
   host: {
     position: 'absolute',
-    left: 12,
-    right: 12,
+    left: space.md,
+    right: space.md,
     // Clear of the Android gesture bar without pulling in a safe-area provider,
     // which the navigator owns and this overlay sits outside of.
     bottom: 28,
-    gap: 8,
+    gap: space.sm,
   },
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
+    gap: space.md,
+    paddingVertical: space.sm + 2,
+    paddingHorizontal: space.md,
+    borderRadius: radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     backgroundColor: colors.surfaceRaised,
     // Keeps the banner legible over a scrolling message list.
@@ -162,13 +162,12 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   title: {
+    ...type.heading,
     color: colors.text,
-    fontSize: 14,
-    fontWeight: '600',
   },
   subtitle: {
+    ...type.bodySm,
     color: colors.textDim,
-    fontSize: 12,
   },
   subtitleError: {
     color: colors.red,
@@ -176,9 +175,10 @@ const styles = StyleSheet.create({
   action: {
     minWidth: 78,
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
+    justifyContent: 'center',
+    paddingVertical: space.sm,
+    paddingHorizontal: space.md,
+    borderRadius: radius.md,
     backgroundColor: colors.accent,
   },
   actionPressed: {
@@ -188,8 +188,8 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
   actionText: {
-    color: colors.bg,
+    fontFamily: fonts.display,
     fontSize: 13,
-    fontWeight: '700',
+    color: '#08131f',
   },
 })

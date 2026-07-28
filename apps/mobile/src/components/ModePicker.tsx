@@ -2,7 +2,7 @@
  * composer and the new-session form. */
 import { Pressable, StyleSheet, Text, View } from 'react-native'
 import type { RuntimeMode } from '@shared/provider-events'
-import { colors } from '../theme'
+import { colors, fonts, radius, space } from '../theme'
 
 const MODE_CHIPS: { mode: RuntimeMode; label: string }[] = [
   { mode: 'plan', label: 'Plan' },
@@ -33,24 +33,24 @@ export function ModePicker({ value, onChange }: { value: RuntimeMode; onChange: 
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    gap: 6,
+    gap: space.sm,
   },
   chip: {
-    paddingHorizontal: 12,
+    paddingHorizontal: space.md,
     paddingVertical: 5,
-    borderRadius: 12,
+    borderRadius: radius.pill,
     backgroundColor: colors.surfaceRaised,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   chipActive: {
-    backgroundColor: 'rgba(79, 142, 247, 0.18)',
+    backgroundColor: colors.accentWash,
     borderColor: colors.accent,
   },
   chipText: {
-    color: colors.textDim,
+    fontFamily: fonts.display,
     fontSize: 12,
-    fontWeight: '500',
+    color: colors.textDim,
   },
   chipTextActive: {
     color: colors.accent,

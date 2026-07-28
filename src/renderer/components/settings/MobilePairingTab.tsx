@@ -21,6 +21,9 @@ const SETTINGS_KEYS = {
 const DEFAULT_PORT = '8765'
 const CUSTOM_HOST = '__custom__'
 
+/** Worker `switchboard-apk`: 302s to the newest APK release asset on GitHub. */
+const APK_DOWNLOAD_URL = 'https://switchboard.tn07.dev/apk'
+
 interface LanAddress {
   iface: string
   address: string
@@ -48,6 +51,7 @@ export function MobilePairingTab() {
   const [loaded, setLoaded] = useState(false)
   const [customHost, setCustomHost] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [apkQrDataUrl, setApkQrDataUrl] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
   // Load detected addresses + persisted fields once per mount.
@@ -104,6 +108,15 @@ export function MobilePairingTab() {
       })
     return () => { cancelled = true }
   }, [pairingUrl])
+
+  // The download QR encodes a static URL, so render it once per mount.
+  useEffect(() => {
+    let cancelled = false
+    QRCode.toDataURL(APK_DOWNLOAD_URL, { margin: 1, width: 160 })
+      .then((dataUrl) => { if (!cancelled) setApkQrDataUrl(dataUrl) })
+      .catch((err) => log.warn('APK QR generation failed', err))
+    return () => { cancelled = true }
+  }, [])
 
   const serverCommand = token
     ? `SWITCHBOARD_TOKEN=${token} HOST=0.0.0.0 npm run server`
@@ -330,6 +343,45 @@ export function MobilePairingTab() {
         must be present first. The server exits at startup if{' '}
         <code style={{ fontFamily: 'var(--font-mono)' }}>SWITCHBOARD_TOKEN</code>{' '}
         is missing while bound beyond loopback.
+      </div>
+
+      {/* APK download QR - static URL, resolved to the newest release by the Worker */}
+      <div style={{
+        display: 'flex',
+        gap: '14px',
+        alignItems: 'center',
+        padding: '12px 14px',
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        background: 'var(--bg-tertiary)',
+        marginTop: '14px',
+      }}>
+        {apkQrDataUrl && (
+          <img
+            src={apkQrDataUrl}
+            alt="Android app download QR code"
+            width={100}
+            height={100}
+            style={{ borderRadius: '4px', background: '#fff', flexShrink: 0 }}
+          />
+        )}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '4px' }}>
+            Get the app
+          </div>
+          <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+            Scan to download the Android app
+          </div>
+          <div style={{
+            fontSize: '11px',
+            fontFamily: 'var(--font-mono)',
+            color: 'var(--text-primary)',
+            wordBreak: 'break-all',
+            marginTop: '6px',
+          }}>
+            {APK_DOWNLOAD_URL}
+          </div>
+        </div>
       </div>
     </div>
   )

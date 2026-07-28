@@ -17,7 +17,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import { agentShortLabel, isAgentType, type ConversationRow } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
 import type { RootStackParamList } from '../../App'
-import { colors, statusColor } from '../theme'
+import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
@@ -89,6 +89,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         <Pressable
           hitSlop={12}
           onPress={() => navigation.navigate('NewSession', { connectionId, projectPath, projectName })}
+          style={({ pressed }) => [styles.headerAction, pressed && styles.pressed]}
         >
           <Text style={styles.headerPlus}>+</Text>
         </Pressable>
@@ -170,48 +171,58 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 8,
+    padding: space.xl,
+    gap: space.sm,
   },
   emptyContainer: {
     flexGrow: 1,
   },
   listContent: {
-    paddingVertical: 4,
+    paddingVertical: space.xs,
   },
   stateTitle: {
+    ...type.heading,
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
   },
   stateDetail: {
+    ...type.bodySm,
     color: colors.textDim,
-    fontSize: 13,
     textAlign: 'center',
   },
   retryButton: {
-    marginTop: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
+    marginTop: space.md,
+    minHeight: HIT,
+    paddingHorizontal: space.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.md,
     backgroundColor: colors.surfaceRaised,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   retryLabel: {
+    fontFamily: fonts.display,
+    fontSize: 15,
     color: colors.accent,
-    fontSize: 14,
-    fontWeight: '600',
+  },
+  headerAction: {
+    minHeight: HIT,
+    justifyContent: 'center',
+    paddingHorizontal: space.xs,
   },
   headerPlus: {
     color: colors.accent,
-    fontSize: 28,
-    fontWeight: '400',
-    lineHeight: 30,
+    fontSize: 27,
+    lineHeight: 31,
+    fontWeight: '300',
+  },
+  pressed: {
+    opacity: 0.55,
   },
   row: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    minHeight: HIT,
+    paddingHorizontal: space.lg,
+    paddingVertical: space.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
   },
@@ -219,44 +230,42 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   rowBody: {
-    gap: 6,
+    gap: space.xs,
   },
   titleLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.sm,
   },
   statusDot: {
     width: 8,
     height: 8,
-    borderRadius: 4,
+    borderRadius: radius.pill,
   },
   title: {
     flex: 1,
+    ...type.heading,
     color: colors.text,
-    fontSize: 15,
-    fontWeight: '600',
   },
   metaLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: space.sm,
   },
   agentChip: {
-    paddingHorizontal: 8,
+    paddingHorizontal: space.sm,
     paddingVertical: 2,
-    borderRadius: 6,
+    borderRadius: radius.sm,
     backgroundColor: colors.surfaceRaised,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
   agentChipText: {
+    ...type.monoSm,
     color: colors.textDim,
-    fontSize: 11,
-    fontWeight: '600',
   },
   time: {
+    ...type.monoSm,
     color: colors.textFaint,
-    fontSize: 12,
   },
 })
