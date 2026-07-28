@@ -28,6 +28,7 @@
     "expo-intent-launcher": "~57.0.1",
     "expo-linking": "^57.0.4",
     "expo-secure-store": "^57.0.1",
+    "expo-speech-recognition": "^56.0.1",
     "expo-status-bar": "~57.0.1",
     "expo-updates": "~57.0.10",
     "expo-web-browser": "^57.0.2",

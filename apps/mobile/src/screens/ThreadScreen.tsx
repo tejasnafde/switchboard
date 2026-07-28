@@ -30,6 +30,7 @@ import { colors, radius, space, statusColor, type } from '../theme'
 import { getClient, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { ModePicker } from '../components/ModePicker'
+import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
 
 const log = createLogger('screen:thread')
 
@@ -95,6 +96,7 @@ export default function ThreadScreen({ route }: Props) {
     useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ?? 'backend'
 
   const [draft, setDraft] = useState('')
+  const [voiceNote, setVoiceNote] = useState<VoiceNote | null>(null)
   const composerRef = useRef<TextInput>(null)
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState('')
@@ -208,6 +210,7 @@ export default function ThreadScreen({ route }: Props) {
       return
     }
     setDraft('')
+    setVoiceNote(null)
     useChatStore.getState().addUserMessage(key, text)
     client.sendTurn(threadId, text, thread.runtimeMode).catch(reportError)
   }
@@ -376,6 +379,7 @@ export default function ThreadScreen({ route }: Props) {
             </Pressable>
           )}
         </View>
+        {voiceNote && <VoiceNoteBar note={voiceNote} />}
         <View style={styles.inputRow}>
           <TextInput
             ref={composerRef}
@@ -386,6 +390,7 @@ export default function ThreadScreen({ route }: Props) {
             placeholderTextColor={colors.textFaint}
             multiline
           />
+          <MicButton draft={draft} onDraft={setDraft} onNote={setVoiceNote} />
           {thread.status === 'running' ? (
             <Pressable style={[styles.sendButton, styles.stopButton]} onPress={stop}>
               <Text style={styles.sendLabel}>Stop</Text>

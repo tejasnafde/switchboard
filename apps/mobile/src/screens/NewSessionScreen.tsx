@@ -27,6 +27,7 @@ import { colors } from '../theme'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { ModePicker } from '../components/ModePicker'
+import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
 
 const log = createLogger('screen:new-session')
 
@@ -48,6 +49,7 @@ export default function NewSessionScreen({ route, navigation }: Props) {
   const [provider, setProvider] = useState<ProviderKind>('claude')
   const [mode, setMode] = useState<RuntimeMode>('sandbox')
   const [firstMessage, setFirstMessage] = useState('')
+  const [voiceNote, setVoiceNote] = useState<VoiceNote | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [instances, setInstances] = useState<ProviderInstance[]>([])
@@ -246,6 +248,10 @@ export default function NewSessionScreen({ route, navigation }: Props) {
         placeholderTextColor={colors.textFaint}
         multiline
       />
+      <View style={styles.voiceRow}>
+        {voiceNote ? <VoiceNoteBar note={voiceNote} /> : <View style={styles.voiceSpacer} />}
+        <MicButton draft={firstMessage} onDraft={setFirstMessage} onNote={setVoiceNote} />
+      </View>
 
       {error && <Text style={styles.errorText}>{error}</Text>}
 
@@ -384,6 +390,15 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     textAlignVertical: 'top',
+  },
+  voiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  voiceSpacer: {
+    flex: 1,
   },
   errorText: {
     color: colors.red,

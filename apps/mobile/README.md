@@ -24,7 +24,8 @@ The IAP lane speaks the same frames over a different pipe - see
 
 ## Run it (dev, Expo Go)
 
-No native modules - Expo Go works.
+Expo Go works for everything except Google sign-in and voice input, which need
+native modules (see the dev build notes below).
 
 ```sh
 # 1. On the backend machine (Mac or VM), from the repo root:
@@ -142,6 +143,12 @@ token in the device keychain via `expo-secure-store`.
   redirect is `exp://…`, which Google will not accept. Everything else in the app
   still runs in Expo Go.
 
+## Voice input
+
+The composer mic (dictation via `expo-speech-recognition`) needs the dev build
+or APK; in Expo Go the native module is absent, so the mic is hidden and
+everything else works.
+
 ## Layout
 
 - `src/lib/api.ts` - SwitchboardClient: typed invoke/event wrapper over
@@ -154,6 +161,9 @@ token in the device keychain via `expo-secure-store`.
 - `src/lib/google-auth.ts` - direct Google PKCE sign-in, keychain-backed token
   cache with single-flight silent refresh; `selfCheck()` asserts the
   expiry/refresh decisions offline
+- `src/lib/voice.ts` - dictation wrapper over expo-speech-recognition; the
+  require is guarded so Expo Go (no native module) reports "unavailable"
+  instead of crashing, and `src/components/MicButton.tsx` hides itself
 - `src/stores/connections.ts` - saved backends (AsyncStorage) + live client pool
 - `src/stores/chat.ts` - RuntimeEvent -> feed-item reducer, unread counts
 - `src/screens/` - Connections, SignIn, Pair (QR), Projects, Conversations,

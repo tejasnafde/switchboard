@@ -22,6 +22,7 @@ import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
+import { UpdateToast } from './components/UpdateToast'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
@@ -1072,6 +1073,7 @@ export function App() {
           {launchConfigToast}
         </div>
       )}
+      <UpdateToast />
     </div>
   )
 }
