@@ -125,3 +125,78 @@ describe('fetchClaudeUsage never leaks the access token', () => {
     expect(JSON.stringify(usage)).not.toContain('sk-ant-api-key')
   })
 })
+
+describe('fetchClaudeUsage network diagnostics', () => {
+  const originalFetch = globalThis.fetch
+
+  beforeEach(() => {
+    readClaudeCredential.mockReset()
+    readClaudeCredential.mockResolvedValue(liveCredential)
+  })
+  afterEach(() => { globalThis.fetch = originalFetch })
+
+  function undiciStyle(code: string): Error {
+    // undici reports every transport failure as the bare string "fetch failed"
+    // and hides the reason on .cause.
+    const err = new Error('fetch failed')
+    ;(err as Error & { cause?: unknown }).cause = Object.assign(new Error('connect error'), { code })
+    return err
+  }
+
+  it('surfaces the cause code instead of a bare "fetch failed"', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(undiciStyle('ENOTFOUND')) as unknown as typeof fetch
+    const usage = await fetchClaudeUsage('inst', {}, null)
+    expect(usage.status).toBe('error')
+    expect(usage.message).toContain('ENOTFOUND')
+  })
+
+  it('unwraps a happy-eyeballs AggregateError to its per-address codes', async () => {
+    const err = new Error('fetch failed')
+    ;(err as Error & { cause?: unknown }).cause = Object.assign(new AggregateError(
+      [Object.assign(new Error('v6'), { code: 'ENETUNREACH' }), Object.assign(new Error('v4'), { code: 'ECONNREFUSED' })],
+      'all attempts failed',
+    ))
+    globalThis.fetch = vi.fn().mockRejectedValue(err) as unknown as typeof fetch
+    const usage = await fetchClaudeUsage('inst', {}, null)
+    expect(usage.message).toContain('ENETUNREACH')
+    expect(usage.message).toContain('ECONNREFUSED')
+  })
+
+  it('names the macOS DNS flush only for resolution failures', async () => {
+    globalThis.fetch = vi.fn().mockRejectedValue(undiciStyle('ENOTFOUND')) as unknown as typeof fetch
+    expect((await fetchClaudeUsage('i', {}, null)).message).toContain('mDNSResponder')
+
+    globalThis.fetch = vi.fn().mockRejectedValue(undiciStyle('ECONNREFUSED')) as unknown as typeof fetch
+    expect((await fetchClaudeUsage('i', {}, null)).message).not.toContain('mDNSResponder')
+  })
+
+  it('retries once on a transient failure and uses the second result', async () => {
+    // A stale keep-alive socket after the machine sleeps fails on first use.
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(undiciStyle('ECONNRESET'))
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ five_hour: { utilization: 7 } }) })
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const usage = await fetchClaudeUsage('inst', {}, null)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(usage.status).toBe('ok')
+    expect(usage.windows[0]?.usedPercent).toBe(7)
+  })
+
+  it('does not retry a timeout, which already consumed the full budget', async () => {
+    const timeout = Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' })
+    const fetchMock = vi.fn().mockRejectedValue(timeout)
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const usage = await fetchClaudeUsage('inst', {}, null)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(usage.status).toBe('error')
+  })
+
+  it('gives up after one retry rather than looping', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(undiciStyle('ECONNRESET'))
+    globalThis.fetch = fetchMock as unknown as typeof fetch
+    const usage = await fetchClaudeUsage('inst', {}, null)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(usage.status).toBe('error')
+    expectNoToken(usage)
+  })
+})

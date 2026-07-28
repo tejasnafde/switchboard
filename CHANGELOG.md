@@ -2,6 +2,12 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-29 - Usage limits: say why the request failed
+
+### Fixed
+- **A failed usage request now names its cause.** undici reports every transport failure as the bare string `fetch failed` and puts the real reason on `.cause`, which was discarded - so a DNS or socket problem rendered as "Could not reach the usage endpoint: fetch failed" with nothing to act on. The cause code is now included, happy-eyeballs `AggregateError`s are unwrapped to their per-address codes, and a resolution failure additionally names the macOS DNS flush.
+- **One retry on a transient transport failure.** undici keeps a process-lifetime connection pool, so after the machine sleeps the first request through a stale keep-alive socket fails even though the network is fine. Switchboard's main process runs for days, which makes that the common case. Timeouts are not retried - they already consumed the full budget.
+
 ## 2026-07-28 - Per-instance subscription usage limits in Settings → Providers
 
 ### Added
