@@ -184,9 +184,12 @@ export const ProviderInstanceChannels = {
   LIST: 'provider-instances:list',
   UPSERT: 'provider-instances:upsert',
   DELETE: 'provider-instances:delete',
-  /** Probe the credentials with a no-op call (claude --version, codex
-   *  login check, opencode models). Returns `{ ok, message }`. */
+  /** Probe the credentials with a no-op call (claude auth status, codex
+   *  login status, opencode models). Returns `{ ok, message }`. */
   TEST: 'provider-instances:test',
+  /** Read this instance's subscription usage limits. Returns ProviderUsage;
+   *  never throws, reports failures via its `status` field. */
+  USAGE: 'provider-instances:usage',
   CREATE_OAUTH_DIR: 'provider-instances:create-oauth-dir',
   /** Local-only: resolve an instance's oauth_dir absolute path (not a secret,
    *  just a path). Used to forward the dir NAME to a remote at session start. */

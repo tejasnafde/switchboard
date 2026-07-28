@@ -2,6 +2,20 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-28 - Per-instance subscription usage limits in Settings → Providers
+
+### Added
+- **A "Usage" button on every provider instance row** (Settings → Providers) showing that instance's subscription limits: for Claude the 5-hour session window, the weekly all-models window, and the per-model weekly window; for Codex its rolling window(s), plan type and credits. Limits are read per credential, so two profiles pointing at different logins report different numbers.
+- Rendered as aligned bars in a full-width disclosure panel, with relative reset times ("in 4h 12m") and the absolute timestamp on hover. Severity colours reuse the `ContextWindowMeter` thresholds so a filling bar means the same thing in Settings as in the chat header.
+- Results are cached for 45s, deduped per instance, and Codex probes are serialised so fan-clicking a list of instances cannot spawn several 260MB `app-server` children at once.
+
+### Notes
+- **Claude's per-model weekly limit is not `seven_day_opus`/`seven_day_sonnet`.** Those are legacy and null on current accounts; the live value comes from `limits[]` as `kind: "weekly_scoped"`, labelled from `scope.model.display_name`. Reading the Agent SDK's `rateLimitType` enum instead would silently show nothing for that row.
+- **Overage is a separate row and never folded into a window meter.** An account can sit at 100% `extra_usage` with `org_spend_cap_reached` while both real windows are still `allowed`; merging them would render a healthy account as cut off.
+- **No OAuth token is ever refreshed.** The Claude CLI rotates the token and writes it back, and clears a dead refresh token, so refreshing here would race it and could log the user out. An expired credential is reported as `expired` with the login command instead. The keychain service name is derived per instance as `Claude Code-credentials-<sha256(CLAUDE_CONFIG_DIR)[0..8]>`, with candidates covering trailing separators, unexpanded tildes and NFD.
+- Nothing in the adapters' turn-handling path changed. Codex's `account/rateLimits/updated` push is still discarded in `codex-adapter.ts`; caching it there is a follow-up.
+- `--danger` is not defined in `global.css`, so the existing `var(--danger, #d04848)` uses in `ProvidersTab.tsx` all run on their fallback. The new panel uses the real `--error` token rather than propagating that.
+
 ## 2026-07-17 - Embedded IDE: open on the file explorer, not a Bitbucket sign-in
 
 ### Fixed

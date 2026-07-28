@@ -16,6 +16,7 @@ import { registerProviderInstanceHandlers } from '../main/ipc/providerInstances'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
 import { registerAgentHandlers } from '../main/ipc/agent'
 import { ProviderRegistry } from '../main/provider/provider-registry'
+import { disposeUsageProbes } from '../main/provider/usage'
 import { createMainLogger as createLogger } from '../main/logger'
 
 // esbuild `define` in scripts/build-server.mjs stamps this with the app
@@ -69,6 +70,8 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     } catch (err) {
       log.warn('failed to remove pid file', err)
     }
+    // process.exit skips the probe's own `finally`, so kill any survivor here.
+    disposeUsageProbes()
     void registry.stopAll().finally(() => wss.close(() => process.exit(0)))
   })
 }
