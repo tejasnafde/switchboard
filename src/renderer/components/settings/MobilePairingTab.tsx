@@ -39,6 +39,38 @@ export function generatePairingToken(): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_')
 }
 
+/**
+ * Compact "?" that carries a long explanation in a native tooltip. The panel
+ * had grown four paragraphs of prose nobody reads twice; the detail is still
+ * one hover away.
+ */
+function InfoHint({ text }: { text: string }) {
+  return (
+    <span
+      title={text}
+      aria-label={text}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '13px',
+        height: '13px',
+        marginLeft: '5px',
+        borderRadius: '50%',
+        border: '1px solid var(--border)',
+        color: 'var(--text-muted)',
+        fontSize: '9px',
+        lineHeight: 1,
+        cursor: 'help',
+        verticalAlign: 'middle',
+        flexShrink: 0,
+      }}
+    >
+      ?
+    </span>
+  )
+}
+
 function isValidPort(raw: string): boolean {
   const n = Number(raw)
   return Number.isInteger(n) && n >= 1 && n <= 65535
@@ -180,10 +212,8 @@ export function MobilePairingTab() {
   return (
     <div>
       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.6 }}>
-        Pair the Switchboard mobile app with a headless backend. Start the server
-        with the command below, then scan the QR from the mobile app. The token
-        gates every WebSocket connection when the server is reachable beyond
-        loopback.
+        Scan the QR below from the mobile app to pair it with this computer.
+        <InfoHint text="Switchboard serves the paired endpoint itself on the port below, as soon as a token is saved. The phone then sees the same chats and sessions as this window. The token gates every connection, since the endpoint is reachable beyond loopback." />
       </div>
 
       {/* Connection fields */}
@@ -368,15 +398,8 @@ export function MobilePairingTab() {
         </button>
       </div>
       <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.6 }}>
-        You do not need this command for THIS computer: once a token is saved,
-        Switchboard itself serves the paired endpoint on the port above after a
-        restart, and the phone sees the same chats and sessions as this window.
-        The command is for a machine with no Switchboard app running - a VM,
-        where the server bundle
-        (<code style={{ fontFamily: 'var(--font-mono)' }}>out/server/index.cjs</code>)
-        must be present first. The server exits at startup if{' '}
-        <code style={{ fontFamily: 'var(--font-mono)' }}>SWITCHBOARD_TOKEN</code>{' '}
-        is missing while bound beyond loopback.
+        Only for a machine with no Switchboard app running, such as a VM.
+        <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and the server exits at startup if SWITCHBOARD_TOKEN is missing while bound beyond loopback. Running it here as well would take the port and stop the app from serving." />
       </div>
 
       {/* APK download QR - static URL, resolved to the newest release by the Worker */}

@@ -15,6 +15,7 @@ const log = createLogger('screen:sign-in')
 export default function SignInScreen() {
   const [email, setEmail] = useState<string | null>(null)
   const [busy, setBusy] = useState(true)
+  const [showWhy, setShowWhy] = useState(false)
   const [error, setError] = useState('')
   const [blob, setBlob] = useState('')
   const [scanning, setScanning] = useState(false)
@@ -105,16 +106,20 @@ export default function SignInScreen() {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <Text style={styles.title}>Google account</Text>
-      <Text style={styles.body}>
-        Switchboard reaches work VMs through Google Cloud IAP, a relay that needs no VPN and no
-        inbound port. IAP will only forward a connection for a signed-in Google identity, so this
-        app asks Google directly for an access token with cloud-platform scope. With one, a phone can
-        drive a VM backend with the laptop closed.
-      </Text>
-      <Text style={styles.bodyDim}>
-        The token is stored in the device keychain, never in app storage, and is refreshed silently.
-        Sign-out revokes it at Google.
-      </Text>
+      <Text style={styles.body}>Needed to reach work VMs with your laptop closed.</Text>
+      {/* The full rationale is worth having, but not worth reading twice - RN has
+          no tooltip, so it collapses behind a disclosure instead. */}
+      <Pressable onPress={() => setShowWhy((v) => !v)} hitSlop={8}>
+        <Text style={styles.whyToggle}>{showWhy ? 'Hide details' : 'Why this is needed'}</Text>
+      </Pressable>
+      {showWhy ? (
+        <Text style={styles.bodyDim}>
+          Work VMs are reached through Google Cloud IAP, a relay needing no VPN and no inbound port.
+          IAP only forwards for a signed-in Google identity, so the app asks Google directly for an
+          access token with cloud-platform scope. The token lives in the device keychain, never in app
+          storage, and refreshes silently. Signing out revokes it at Google.
+        </Text>
+      ) : null}
 
       {email ? (
         <View style={styles.accountCard}>
@@ -265,6 +270,11 @@ const styles = StyleSheet.create({
   bodyDim: {
     ...type.bodySm,
     color: colors.textFaint,
+  },
+  whyToggle: {
+    ...type.bodySm,
+    color: colors.accent,
+    marginTop: space.xs,
   },
   accountCard: {
     backgroundColor: colors.surfaceRaised,
