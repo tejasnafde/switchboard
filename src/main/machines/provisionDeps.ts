@@ -4,6 +4,7 @@ import { createReadStream, existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Machine } from '@shared/machines'
 import { appRootDir, appVersion } from '../runtime'
+import { bundledBridgeFiles } from '../ide/bundled'
 import { provisionRemote, type ProcRunner } from './provisioner'
 
 // Cap on captured child output. `cat > file` produces no stdout, but a
@@ -93,6 +94,7 @@ export function makeProvision(log?: (msg: string) => void) {
         betterSqliteVersion: depVersion('better-sqlite3'),
         claudeSdkVersion: depVersion('@anthropic-ai/claude-agent-sdk'),
         bundlePath: readServerBundlePath(),
+        bridgeFiles: bundledBridgeFiles(),
       },
       { exec: execProc },
       log,

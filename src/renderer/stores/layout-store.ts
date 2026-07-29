@@ -219,12 +219,13 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
       const session = agent.sessions.find((x) => x.id === agent.activeSessionId)
       const folder = session?.worktreePath ?? session?.projectPath
       if (folder) {
-        void window.api?.ide?.open({
-          folder,
-          path,
-          line: lineRange?.start,
-          endLine: lineRange?.end,
-        })
+        // A remote session's workbench (and the file) live on that machine;
+        // `folder` is not a routing key, so name the backend explicitly.
+        // The invoke rejects if that machine went offline between the click and
+        // here, which the surrounding try cannot catch.
+        window.api?.ide
+          ?.open({ folder, path, line: lineRange?.start, endLine: lineRange?.end, machineId: session?.machineId })
+          .catch((err) => log.warn('openInViewer open failed', err))
       }
     } catch (err) {
       log.warn('openInViewer routing failed', err)

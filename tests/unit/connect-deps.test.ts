@@ -70,6 +70,7 @@ let waitForHealth: typeof import('../../src/main/machines/connectDeps').waitForH
 let spawnTunnel: typeof import('../../src/main/machines/connectDeps').spawnTunnel
 let allocatePort: typeof import('../../src/main/machines/connectDeps').allocatePort
 let REMOTE_COMMAND: typeof import('../../src/main/machines/connectDeps').REMOTE_COMMAND
+let REMOTE_BRIDGE_PORT: typeof import('../../src/main/machines/connectDeps').REMOTE_BRIDGE_PORT
 let SERVER_VERSION_CHANNEL: typeof import('../../src/main/machines/connectDeps').SERVER_VERSION_CHANNEL
 
 const LOCAL_VERSION = '1.2.3'
@@ -78,7 +79,7 @@ beforeEach(async () => {
   vi.useFakeTimers()
   FakeWebSocket.instances = []
   process.env.npm_package_version = LOCAL_VERSION
-  ;({ waitForHealth, spawnTunnel, allocatePort, REMOTE_COMMAND, SERVER_VERSION_CHANNEL } = await import('../../src/main/machines/connectDeps'))
+  ;({ waitForHealth, spawnTunnel, allocatePort, REMOTE_COMMAND, REMOTE_BRIDGE_PORT, SERVER_VERSION_CHANNEL } = await import('../../src/main/machines/connectDeps'))
 })
 
 afterEach(() => {
@@ -229,6 +230,38 @@ describe('REMOTE_COMMAND', () => {
   it('only kills the pid when it is actually our server (guards against a recycled pid)', () => {
     expect(REMOTE_COMMAND).toContain('/proc/$P/cmdline')
     expect(REMOTE_COMMAND).toContain('grep -qsa index.cjs')
+  })
+
+  // Without a token shared by BOTH remote processes the workbench bridge can
+  // never authenticate, and every in-workbench keybinding (cmd+shift+E back to
+  // the terminal, cmd+l, cmd+k) dies silently inside the guest.
+  it('exports one freshly minted bridge token before launching either process', () => {
+    const tokenAt = REMOTE_COMMAND.indexOf('export SB_BRIDGE_TOKEN')
+    const portAt = REMOTE_COMMAND.indexOf('export SB_BRIDGE_PORT')
+    const codeServerAt = REMOTE_COMMAND.indexOf('nohup "$D/code-server/bin/code-server"')
+    const nodeAt = REMOTE_COMMAND.indexOf('node $D/index.cjs')
+
+    expect(tokenAt).toBeGreaterThan(-1)
+    expect(portAt).toBeGreaterThan(-1)
+    // Exported before both launches, so code-server's extension hosts and the
+    // backend that hosts the bridge inherit the same values.
+    expect(tokenAt).toBeLessThan(codeServerAt)
+    expect(tokenAt).toBeLessThan(nodeAt)
+    expect(portAt).toBeLessThan(codeServerAt)
+    expect(portAt).toBeLessThan(nodeAt)
+  })
+
+  it('mints the token from the kernel, with a urandom fallback', () => {
+    expect(REMOTE_COMMAND).toContain('/proc/sys/kernel/random/uuid')
+    expect(REMOTE_COMMAND).toContain('/dev/urandom')
+    // The fallback must not smuggle newlines into an exported env var.
+    expect(REMOTE_COMMAND).toContain("tr -dc 'a-f0-9'")
+  })
+
+  it('binds the bridge to the documented loopback port', () => {
+    expect(REMOTE_COMMAND).toContain(`SB_BRIDGE_PORT=${REMOTE_BRIDGE_PORT}`)
+    // Never tunneled - intents ride the existing backend socket instead.
+    expect(REMOTE_COMMAND).not.toContain(`-L ${REMOTE_BRIDGE_PORT}`)
   })
 })
 

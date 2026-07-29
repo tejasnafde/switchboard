@@ -128,8 +128,10 @@ export function IdePane(): React.ReactElement {
   // code-server's settings.json, which its file watcher applies live.
   const theme = useThemeStore((s) => s.theme)
   useEffect(() => {
-    if (state.kind === 'ready') void window.api.ide.setTheme(theme)
-  }, [theme, state.kind])
+    // sessionMachineId routes this to the backend that actually runs the
+    // workbench - a remote one's settings.json lives on the VM, not here.
+    if (state.kind === 'ready') void window.api.ide.setTheme(theme, sessionMachineId ?? undefined)
+  }, [theme, state.kind, sessionMachineId])
 
   // Boot / re-point the workbench. Runs even while HIDDEN (prewarm): the
   // server spawns and the webview loads the workbench in the background, so

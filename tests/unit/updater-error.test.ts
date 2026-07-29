@@ -1,11 +1,33 @@
 import { describe, it, expect } from 'vitest'
-import { friendlyUpdateError } from '../../src/main/updater-error'
+import { friendlyUpdateError, isStaleDownloadError } from '../../src/main/updater-error'
+
+/** Verbatim from a real 0.7.27 failure - the staging file was purged mid-download. */
+const STALE_RENAME =
+  "ENOENT: no such file or directory, rename '/Users/x/Library/Caches/switchboard-updater/pending/temp-Switchboard-0.7.27-arm64-mac.zip' -> '/Users/x/Library/Caches/switchboard-updater/pending/Switchboard-0.7.27-arm64-mac.zip'"
+
+describe('isStaleDownloadError', () => {
+  it('recognises the purged-staging-file rename failure', () => {
+    expect(isStaleDownloadError(STALE_RENAME)).toBe(true)
+  })
+
+  it('ignores unrelated ENOENT and unrelated rename failures', () => {
+    // A missing app-update.yml is a config problem, not a retryable download.
+    expect(isStaleDownloadError("ENOENT: no such file or directory, open 'app-update.yml'")).toBe(false)
+    // A rename that is not of a `temp-` staging file is not this bug.
+    expect(isStaleDownloadError("EPERM: operation not permitted, rename '/a' -> '/b'")).toBe(false)
+    expect(isStaleDownloadError('HttpError: 404 Not Found')).toBe(false)
+  })
+})
 
 describe('friendlyUpdateError', () => {
   it('maps offline / network errors to a clean message', () => {
     expect(friendlyUpdateError('net::ERR_INTERNET_DISCONNECTED')).toBe('No internet connection')
     expect(friendlyUpdateError('getaddrinfo ENOTFOUND github.com')).toBe('No internet connection')
     expect(friendlyUpdateError('request to https://… failed, reason: ETIMEDOUT')).toBe('No internet connection')
+  })
+
+  it('replaces the raw staging-file errno with something actionable', () => {
+    expect(friendlyUpdateError(STALE_RENAME)).toBe('Update download was interrupted - try again')
   })
 
   it('passes through non-network errors unchanged', () => {
