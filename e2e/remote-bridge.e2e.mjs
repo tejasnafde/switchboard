@@ -14,19 +14,33 @@
  *   - an intent sent from the VM reaches the DESKTOP renderer's handlers:
  *     terminal (the reported bug), dsmode, and selection
  *   - ide:open carrying machineId routes to the REMOTE bridge, not the local one
+ *   - and finally, with the stand-in gone: a real workbench over the tunnel
+ *     activates the SEEDED extension, and every real chord pressed in it
+ *     (cmd+shift+E, cmd+shift+J, ctrl+`) reaches the desktop
  *
- * The workbench itself is stood in for by a WebSocket client run on the VM with
- * code-server's own bundled node (v24, global WebSocket) speaking the same
- * protocol as resources/sb-bridge/extension.js. That exercises the whole path
- * under test - bridge -> WsHost.emit -> ssh tunnel -> WsTransport ->
- * TransportRouter -> renderer - without needing to synthesize a keystroke
- * inside a guest renderer.
+ * Two phases, deliberately. First a stand-in: a WebSocket client run on the VM
+ * with code-server's own bundled node (v24, global WebSocket) speaking the same
+ * protocol as resources/sb-bridge/extension.js. It isolates the transport -
+ * bridge -> WsHost.emit -> ssh tunnel -> WsTransport -> TransportRouter ->
+ * renderer - and can assert payloads precisely.
+ *
+ * Then the real thing, with the stand-in killed: a browser on the tunneled port
+ * boots the actual remote workbench, whose extension host loads the SEEDED
+ * extension and dials the same bridge. Pressing the real chord there is what
+ * proves the two links the stand-in cannot: that code-server picks the
+ * extension up at all, and that VS Code dispatches the chords to it. The
+ * extension host runs on the VM either way, so this is the same path the app's
+ * own <webview> drives.
+ *
+ * Chords are pressed in a retry loop after a settle delay: the first press can
+ * land before the workbench's keybinding service is listening, which reads as a
+ * routing failure and is not one.
  *
  * Needs SSH access (gcloud IAP for GeoIQ hosts). Run explicitly:
  *   SB_LIVE_REMOTE=1 SB_REMOTE_ALIAS=geoiq-ssg-bot-prod-in SB_REMOTE_USER=ubuntu \
  *     node e2e/remote-bridge.e2e.mjs
  */
-import { _electron as electron } from 'playwright'
+import { _electron as electron, chromium } from 'playwright'
 import { mkdtempSync, rmSync, existsSync } from 'node:fs'
 import { execFileSync, spawn } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -97,10 +111,12 @@ const app = await electron.launch({
 })
 
 let relay = null
+let browser = null
 try {
   const win = await app.firstWindow()
   await win.waitForFunction(() => !!window.api?.machines, null, { timeout: 20_000 })
 
+  const folder = '/home/' + (remoteUser || 'ubuntu')
   const created = await win.evaluate(
     (m) => window.api.machines.create({ name: 'e2e-bridge', sshAlias: m.alias, sshHost: m.alias, remoteUser: m.remoteUser }),
     { alias, remoteUser }
@@ -195,7 +211,6 @@ try {
   check(listening.includes('127.0.0.1'), '  bound to loopback only (never tunneled)')
 
   // ── The reported bug: an intent from the VM must reach the desktop ───────
-  const folder = '/home/' + (remoteUser || 'ubuntu')
   const clientSrc = `
     const ws = new WebSocket('ws://127.0.0.1:${bridgePort}/?token=${bridgeToken}')
     ws.onopen = () => {
@@ -252,9 +267,74 @@ try {
   )
   check(openedLocal?.ok === false, '  and without machineId it does NOT (stays local, as before)')
 
+  // ── The real thing: the seeded extension, activated by a real workbench,
+  //    reacting to real keystrokes ─────────────────────────────────────────
+  // Everything above used a stand-in client, which proves the bridge but not
+  // that code-server actually loads the seeded extension or that VS Code
+  // dispatches the chord to it. Kill the stand-in so nothing it registered can
+  // be mistaken for the real extension, then boot the REMOTE workbench over the
+  // tunnel. Its extension host runs on the VM and dials the same bridge,
+  // exactly as it does when the workbench is hosted in the app's own <webview>.
+  relay.kill()
+  relay = null
+  await win.waitForTimeout(1000)
+
+  const idePort = connected.idePort
+  browser = await chromium.launch()
+  const wb = await browser.newPage()
+  await wb.goto(`http://127.0.0.1:${idePort}/?folder=${encodeURIComponent(folder)}`, { timeout: 120_000 })
+  await wb.waitForSelector('.monaco-workbench', { timeout: 180_000 })
+  check(true, 'remote workbench renders over the tunnel')
+
+  // The seeded extension announcing its folder is what makes ide:open routable.
+  // Nothing else can answer for this folder now that the stand-in is gone.
+  let realHello = false
+  for (let i = 0; i < 90 && !realHello; i++) {
+    await win.waitForTimeout(1000)
+    const res = await win.evaluate(
+      (a) => window.api.ide.open({ folder: a.folder, path: a.folder, machineId: a.machineId }),
+      { folder, machineId: created.id }
+    )
+    realHello = res?.ok === true
+  }
+  check(realHello, 'the SEEDED extension activated and dialed the remote bridge')
+
+  // The reported bug, with a real keystroke.
+  await win.evaluate(() => {
+    window.__ide = { terminal: 0, dsmode: 0, selections: [] }
+  })
+  await wb.locator('.monaco-workbench').click()
+  await wb.waitForTimeout(1500)
+
+  /** Press `chord` in the workbench until `read` reports a hit, or give up. */
+  const chordReaches = async (chord, read) => {
+    for (let i = 0; i < 6; i++) {
+      await wb.keyboard.press(chord)
+      for (let j = 0; j < 6; j++) {
+        await win.waitForTimeout(500)
+        if (((await win.evaluate(read)) ?? 0) > 0) return i + 1
+      }
+    }
+    return 0
+  }
+
+  const ePresses = await chordReaches('Meta+Shift+E', () => window.__ide.terminal)
+  check(ePresses > 0, `REAL cmd+shift+E in the remote workbench reached the desktop${ePresses > 1 ? ` (took ${ePresses} presses)` : ''}`)
+
+  const jPresses = await chordReaches('Meta+Shift+J', () => window.__ide.dsmode)
+  check(jPresses > 0, `REAL cmd+shift+J in the remote workbench reached the desktop${jPresses > 1 ? ` (took ${jPresses} presses)` : ''}`)
+
+  // ctrl+` is the third terminal-intent chord and the one the local e2e covers.
+  await win.evaluate(() => {
+    window.__ide.terminal = 0
+  })
+  const backtickPresses = await chordReaches('Control+`', () => window.__ide.terminal)
+  check(backtickPresses > 0, 'REAL ctrl+` in the remote workbench reached the desktop')
+
   await win.evaluate((id) => window.api.machines.disconnect(id), created.id)
 } finally {
   relay?.kill()
+  await browser?.close()
   await app.close()
 }
 
