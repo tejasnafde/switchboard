@@ -36,7 +36,7 @@ function fakeCard(over: Partial<KanbanCard> = {}): KanbanCard {
 beforeEach(() => {
   // Reset the store between tests - Zustand is module-level so leaks
   // between tests would be subtle.
-  useKanbanStore.setState({ byProject: {}, busy: false })
+  useKanbanStore.setState({ byProject: {}, busy: false, launchingCardIds: new Set() })
 
   // Mock the renderer IPC surface; tests don't care about return shape
   // beyond `update` echoing back the patched card so the non-optimistic
@@ -93,5 +93,37 @@ describe('move (optimistic)', () => {
     await useKanbanStore.getState().move('not-a-real-card', 'done')
     // Original card untouched.
     expect(useKanbanStore.getState().byProject['/p'][0].status).toBe('in_progress')
+  })
+})
+
+describe('card launch guard', () => {
+  // A second ▶ click while launchCardChat is in flight mints a new agent
+  // session id and overwrites card.conversationId, orphaning the first
+  // provider process. beginCardLaunch is the synchronous take-the-lock
+  // primitive both KanbanView and CardModal share.
+  it('beginCardLaunch marks the card as launching and returns true', () => {
+    expect(useKanbanStore.getState().beginCardLaunch('card_a')).toBe(true)
+    expect(useKanbanStore.getState().launchingCardIds.has('card_a')).toBe(true)
+  })
+
+  it('beginCardLaunch returns false while a launch is already in flight', () => {
+    expect(useKanbanStore.getState().beginCardLaunch('card_a')).toBe(true)
+    expect(useKanbanStore.getState().beginCardLaunch('card_a')).toBe(false)
+    // Still marked launching - the losing call must not clear the flag.
+    expect(useKanbanStore.getState().launchingCardIds.has('card_a')).toBe(true)
+  })
+
+  it('endCardLaunch releases the guard so a later launch can proceed', () => {
+    useKanbanStore.getState().beginCardLaunch('card_a')
+    useKanbanStore.getState().endCardLaunch('card_a')
+    expect(useKanbanStore.getState().launchingCardIds.has('card_a')).toBe(false)
+    expect(useKanbanStore.getState().beginCardLaunch('card_a')).toBe(true)
+  })
+
+  it('is per-card: launching one card does not block another', () => {
+    expect(useKanbanStore.getState().beginCardLaunch('card_a')).toBe(true)
+    expect(useKanbanStore.getState().beginCardLaunch('card_b')).toBe(true)
+    useKanbanStore.getState().endCardLaunch('card_a')
+    expect(useKanbanStore.getState().launchingCardIds.has('card_b')).toBe(true)
   })
 })

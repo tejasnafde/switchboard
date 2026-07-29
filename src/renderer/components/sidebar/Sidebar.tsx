@@ -25,7 +25,7 @@ import { SidebarFilter } from './SidebarFilter'
 import { decideDragOutcome } from './dragLogic'
 import { WorkspaceManager } from './WorkspaceManager'
 import { PromptModal } from './PromptModal'
-import { MachineLayer } from './MachineLayer'
+import { MachineLayer, ComposeSpinner } from './MachineLayer'
 import { AddMachineModal } from './AddMachineModal'
 import { ProjectFavicon } from './ProjectFavicon'
 import {
@@ -116,6 +116,8 @@ import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/typ
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
   onNewChat?: (projectPath: string, machineId?: string) => void
+  /** True while a New Chat create is in flight for that project + machine. */
+  isNewChatPending?: (projectPath: string, machineId?: string) => boolean
 }
 
 // ── Sortable project wrapper ─────────────────────────────────────
@@ -154,7 +156,7 @@ function SortableProject({
 
 // ── Main Sidebar ─────────────────────────────────────────────────
 
-export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
+export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: SidebarProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [scanning, setScanning] = useState<string | null>(null)
@@ -603,6 +605,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     dragHandleProps: Record<string, unknown>,
   ) => {
     const isCollapsed = isProjectCollapsed(project.path)
+    const composePending = isNewChatPending?.(project.path) ?? false
     return (
       <div className="sidebar-project">
         <div
@@ -668,15 +671,23 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           </span>
           <button
             className="sidebar-project-compose"
+            disabled={composePending}
+            // Hover-revealed button: keep it visible while pending so the
+            // spinner shows even after the pointer leaves the header.
+            style={composePending ? { opacity: 1 } : undefined}
             onClick={(e) => {
               e.stopPropagation()
               onNewChat?.(project.path)
             }}
             title="New thread in this project"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
+            {composePending ? (
+              <ComposeSpinner />
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            )}
           </button>
         </div>
 
@@ -779,6 +790,12 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
     )
   }
 
+  // The header button always targets projects[0], so it mirrors that
+  // project's pending state.
+  const headerComposePending = projects[0]
+    ? isNewChatPending?.(projects[0].path) ?? false
+    : false
+
   return (
     <div className="sidebar-root">
       {/* Header */}
@@ -790,12 +807,16 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
             const project = projects[0]
             if (project) onNewChat?.(project.path)
           }}
-          disabled={projects.length === 0}
+          disabled={projects.length === 0 || headerComposePending}
           title="New thread"
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-          </svg>
+          {headerComposePending ? (
+            <ComposeSpinner />
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
+          )}
         </button>
       </div>
 
@@ -867,6 +888,7 @@ export function Sidebar({ onSessionSelect, onNewChat }: SidebarProps) {
           onEditMachine={(machine) => setEditMachine(machine)}
           onOpenRemoteSession={(machineId, projectPath, session) => onSessionSelect?.(session, projectPath, machineId)}
           onNewRemoteChat={(machineId, projectPath) => onNewChat?.(projectPath, machineId)}
+          isNewChatPending={isNewChatPending}
           onSessionContextMenu={(e, machineId, projectPath, session) =>
             setRemoteMenu({ x: e.clientX, y: e.clientY, machineId, projectPath, session })}
         >

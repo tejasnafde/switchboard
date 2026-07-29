@@ -2,6 +2,23 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-30 - Quit stops crashing, and slow buttons admit they are working
+
+### Fixed
+- **"Restart and install" had no idempotency guard of any kind.** No disabled state, no spinner, no label change, and `app:quit-and-install` is a fire-and-forget `send` with no return value, so every click re-fired it. The button now latches on a ref (StrictMode cannot double-send), disables, shows a spinner and reads "Restarting…". Main drops repeat fires independently and broadcasts a new `installing` status, so closing and reopening Settings mid-install still shows the pending state instead of offering a button whose clicks are dropped.
+- **The app aborted with SIGABRT on quit, again.** `before-quit` killed the PTYs synchronously, but `pty.kill()` returns before node-pty delivers its exit callback through a napi ThreadSafeFunction, and a callback that lands once `node::FreeEnvironment` is under way throws into a dying environment and `abort()`s the process. This is the 0.7.19 crash restored by a fix that only looked synchronous. Quit now prevents itself once, awaits an exit drain capped at 1.5s, then re-requests the quit.
+- **The install path must not have its quit prevented.** `autoUpdater.quitAndInstall()` triggers its own quit to run the install, so the drain runs ahead of it via `prepare()` and that quit passes straight through. Draining inside `before-quit` instead would cancel the install. If the process is somehow still alive 15s later the install never started, so the latch releases with an actionable message rather than a dead button.
+- **A turn that went silent showed the user nothing.** No `turn.completed`, no `error`, just a spinner that never resolved, with the only evidence in the `claude` subprocess's stderr in the dev log. Unexplained silence longer than three minutes now posts to the chat and quotes the recent stderr tail, which is buffered on the session instead of only logged. Tool runs and prompts awaiting an answer are bracketed, so silence that is legitimate stays quiet.
+- **Double-fire guards across every control that mutates something.** A new thread ran a real `git worktree add` with no guard, so a second click during those seconds produced two worktrees and two conversation rows; a kanban card launch minted a second session id and overwrote `card.conversationId`, orphaning the first provider process; `⌘Enter` in the card modal bypassed the button's own `disabled` because the keydown closure captured a stale flag; approve/deny, question submit, plan implement and the file-diff actions all stayed live until their event round-tripped.
+- **Failures that were previously silent now surface.** `respondToRequest` had no `.catch` at all and `answerQuestion` had `.catch(() => {})`; both now report in chat and re-enable their card. File-diff write failures show inline on the card, which stays actionable. A worktree fallback raises a toast, and a kanban launch failure raises a dismissible banner.
+
+### Notes
+- **A turn killed mid-tool leaves an unmatched suspension, which would disable the stall watchdog permanently and silently.** Any interrupt or error between `tool_use` and `tool_result` leaks one suspend, and the counter never returned to zero, so a watchdog built to catch silent hangs would itself go quiet for the rest of the session. A new turn resets it: no tool from a finished turn can still be running.
+- **Adding `installing` to `UpdateStatus` left the status-line switch non-exhaustive, and TypeScript allowed it.** The label was an un-annotated IIFE, so the inferred return became `string | undefined` and the missing case rendered a blank line on exactly the remount the status was added for. The label is now a pure function annotated `: string`, so the next status kind fails typecheck instead of shipping an empty line.
+- The stall threshold is deliberately generous. Builds and test suites are quiet for minutes, and a false alarm costs a line of text while a spinner with no explanation costs the user their confidence in the app.
+- Button-state rules and the status copy live in a pure module with unit tests, because the renderer has no jsdom and components cannot be rendered in this suite. Anything with a rule worth trusting was moved out of the component.
+- Verification limit worth stating plainly: the crash-on-quit fix and the install path can only be fully proven in a packaged build. `npm run dev` exercises the PTY drain, but `quitAndInstall` is a no-op when `app.isPackaged` is false.
+
 ## 2026-07-29 - Remote workbench: keybindings inside it reach Switchboard again
 
 ### Fixed

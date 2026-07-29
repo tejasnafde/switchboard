@@ -1,4 +1,4 @@
-import { useMemo, useRef, useEffect } from 'react'
+import { useMemo, useRef, useEffect, useState } from 'react'
 import { marked } from 'marked'
 import type { PlanAttachment } from '@shared/types'
 
@@ -15,6 +15,9 @@ interface PlanCardProps {
 export function PlanCard({ plan, onApprove, onReject }: PlanCardProps) {
   const rendered = useMemo(() => marked.parse(plan.markdown, { async: false }) as string, [plan.markdown])
   const ref = useRef<HTMLDivElement>(null)
+  // Approving sends the turn on a 50ms timer, so nothing on the card changes
+  // for long enough that a double-click lands two turns.
+  const [approving, setApproving] = useState(false)
 
   // Attach per-code-block copy buttons (same as MessageBubble)
   useEffect(() => {
@@ -94,19 +97,25 @@ export function PlanCard({ plan, onApprove, onReject }: PlanCardProps) {
         }}>
           {onApprove && (
             <button
-              onClick={onApprove}
+              onClick={() => {
+                if (approving) return
+                setApproving(true)
+                onApprove()
+              }}
+              disabled={approving}
               style={{
                 padding: '5px 14px',
                 borderRadius: '4px',
                 border: 'none',
                 background: 'var(--accent)',
                 color: '#fff',
-                cursor: 'pointer',
+                cursor: approving ? 'default' : 'pointer',
                 fontSize: '11.5px',
                 fontWeight: 600,
+                opacity: approving ? 0.7 : 1,
               }}
             >
-              Implement Plan
+              {approving ? 'Starting…' : 'Implement Plan'}
             </button>
           )}
           {onReject && (

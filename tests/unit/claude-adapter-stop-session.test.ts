@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ClaudeAdapter } from '../../src/main/provider/adapters/claude-adapter'
+import { TurnWatchdog, StderrTail } from '../../src/main/provider/turn-watchdog'
 
 /**
  * Regression (2026-06-10): stopSession never called query.close(), so each
@@ -28,6 +29,8 @@ function makeActive(query: unknown) {
     skills: [],
     instanceEnv: {},
     instanceOauthDir: null,
+    watchdog: new TurnWatchdog(180_000, () => {}),
+    stderrTail: new StderrTail(2_000),
   }
 }
 

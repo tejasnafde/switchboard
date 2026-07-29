@@ -29,7 +29,8 @@ import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
 import { resolveProviderInstance } from './db/providerInstances'
-import { registerAutoUpdater, quitAndInstall } from './updater'
+import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
+import { QuitCoordinator } from './quit-coordinator'
 import { ProviderRegistry } from './provider/provider-registry'
 import { disposeUsageProbes } from './provider/usage'
 import { getDb, closeDb, getSetting, setSetting, getProjects } from './db/database'
@@ -42,6 +43,8 @@ import type { AgentType } from '@shared/types'
 
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
+/** True once the user has asked for restart-and-install; repeats are dropped. */
+let installRequested = false
 
 // ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
 // a stray reload kills terminal panes and in-flight agent turns.
@@ -270,12 +273,28 @@ function createWindow(): BrowserWindow {
     window.close()
   })
 
-  // Quit + relaunch into a downloaded update. Renderer fires this when
-  // the user clicks "Restart to update" after the updater reports
-  // `downloaded`.
+  // Quit + relaunch into a downloaded update. Repeat clicks are dropped.
   ipcMain.removeAllListeners('app:quit-and-install')
   ipcMain.on('app:quit-and-install', () => {
-    quitAndInstall()
+    if (installRequested) return
+    installRequested = true
+    reportInstallStatus(window, { kind: 'installing' })
+    // prepare(), not a bare teardown: it marks quit as already-drained, so
+    // the before-quit hook below won't preventDefault the quit Squirrel
+    // fires to run the install.
+    void quitCoordinator.prepare().then(() => quitAndInstall())
+    // quitAndInstall replaces the process; if we are still here the install
+    // never took (purged staging file, spawn failure). Un-latch so a retry
+    // isn't silently dropped - teardown is idempotent.
+    setTimeout(() => {
+      if (!installRequested) return
+      installRequested = false
+      log.warn('still running after quitAndInstall - install did not start')
+      reportInstallStatus(window, {
+        kind: 'error',
+        message: 'The update could not start. Quit and reopen the app, then check for updates again.',
+      })
+    }, 15_000)
   })
 
   // Expose log paths for Settings/About
@@ -564,12 +583,21 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
-  // PTYs first: their node-pty callbacks must drain on a live event loop,
-  // not during env teardown (SIGABRT on quit otherwise - see 0.7.19 crash).
-  shutdownTerminals()
-  providerRegistry?.stopAll()
-  disposeUsageProbes()
-  void stopAllMachineConnections()
-  closeDb()
+// PTYs first, and awaited - see shutdownTerminals for why the old
+// synchronous kill still crashed on quit.
+const quitCoordinator = new QuitCoordinator(
+  async () => {
+    await shutdownTerminals()
+    providerRegistry?.stopAll()
+    disposeUsageProbes()
+    void stopAllMachineConnections()
+    closeDb()
+  },
+  () => app.quit(),
+)
+
+app.on('before-quit', (event) => {
+  if (quitCoordinator.handleBeforeQuit()) {
+    event.preventDefault()
+  }
 })

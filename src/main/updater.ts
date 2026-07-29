@@ -168,3 +168,8 @@ export function quitAndInstall(): void {
   if (!app.isPackaged) return
   autoUpdater.quitAndInstall()
 }
+
+/** Record + broadcast a status, so a remounted Settings row sees it too. */
+export function reportInstallStatus(window: BrowserWindow, status: UpdateStatus): void {
+  send(window, status)
+}

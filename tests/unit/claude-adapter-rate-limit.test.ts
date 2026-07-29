@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ClaudeAdapter } from '../../src/main/provider/adapters/claude-adapter'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
+import { TurnWatchdog, StderrTail } from '../../src/main/provider/turn-watchdog'
 
 function makeActive(onEvent = vi.fn()) {
   return {
@@ -26,6 +27,8 @@ function makeActive(onEvent = vi.fn()) {
     skills: [],
     instanceEnv: {},
     instanceOauthDir: null,
+    watchdog: new TurnWatchdog(180_000, () => {}),
+    stderrTail: new StderrTail(2_000),
   }
 }
 

@@ -4,6 +4,7 @@ import { userDataDir, appRootDir } from '../runtime'
 import type { IPty } from 'node-pty'
 import type { TerminalCreateOptions } from '@shared/types'
 import { createMainLogger as createLogger } from '../logger'
+import { ExitDrain, type DrainResult } from './exit-drain'
 
 const log = createLogger('pty')
 
@@ -92,6 +93,8 @@ export class PtyManager {
   private ptys = new Map<string, ManagedPty>()
   private onData: PtyDataCallback
   private onExit: PtyExitCallback
+  /** `kill()` returns before node-pty delivers the exit; `disposeAll` waits. */
+  private exitDrain = new ExitDrain()
 
   constructor(onData: PtyDataCallback, onExit: PtyExitCallback) {
     this.onData = onData
@@ -138,6 +141,7 @@ export class PtyManager {
 
     const managed: ManagedPty = { pty: instance, id: opts.id, waitFor: opts.waitFor, initialCommand: opts.initialCommand }
     this.ptys.set(opts.id, managed)
+    this.exitDrain.track(opts.id)
 
     instance.onData((data) => {
       this.onData(opts.id, data)
@@ -145,6 +149,7 @@ export class PtyManager {
     })
     instance.onExit(({ exitCode, signal }) => {
       this.ptys.delete(opts.id)
+      this.exitDrain.settle(opts.id)
       this.onExit(opts.id, exitCode, signal)
     })
 
@@ -197,6 +202,15 @@ export class PtyManager {
     for (const [id] of this.ptys) {
       this.kill(id)
     }
+  }
+
+  /**
+   * Kill every pty and wait for their exit callbacks (or `timeoutMs`, so a
+   * hung process can't block quit). Quit-path only.
+   */
+  disposeAll(timeoutMs = 1500): Promise<DrainResult> {
+    this.killAll()
+    return this.exitDrain.wait(timeoutMs)
   }
 
   has(id: string): boolean {

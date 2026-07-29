@@ -17,6 +17,14 @@ interface KanbanStore {
   byProject: Record<string, KanbanCard[]>
   /** Set while a hydrate / create / update is inflight, so the UI can dim or block actions. */
   busy: boolean
+  /** Card ids with a `launchCardChat` in flight. Shared between KanbanView
+   *  and CardModal so a double-fire from either surface is blocked. */
+  launchingCardIds: ReadonlySet<string>
+  /** Take the per-card launch lock. Returns false when a launch is already
+   *  in flight - a second launch would mint a new session id and overwrite
+   *  card.conversationId, orphaning the first provider process. */
+  beginCardLaunch: (id: string) => boolean
+  endCardLaunch: (id: string) => void
   hydrate: (projectPath: string) => Promise<void>
   create: (input: KanbanCardCreate) => Promise<KanbanCard | null>
   update: (id: string, patch: KanbanCardUpdate) => Promise<void>
@@ -31,6 +39,21 @@ interface KanbanStore {
 export const useKanbanStore = create<KanbanStore>((set, get) => ({
   byProject: {},
   busy: false,
+  launchingCardIds: new Set<string>(),
+
+  beginCardLaunch: (id) => {
+    if (get().launchingCardIds.has(id)) return false
+    set((s) => ({ launchingCardIds: new Set(s.launchingCardIds).add(id) }))
+    return true
+  },
+
+  endCardLaunch: (id) => {
+    set((s) => {
+      const next = new Set(s.launchingCardIds)
+      next.delete(id)
+      return { launchingCardIds: next }
+    })
+  },
 
   hydrate: async (projectPath) => {
     const api = window.api?.kanban

@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { emitSessionRename } from '../services/session-events'
 import { FEATURE_TOUR_STEPS } from './onboarding/featureRegistry'
 import type { UpdateStatus } from '@shared/update-status'
+import { updateRowView, updateStatusLabel } from './settings/updateRowModel'
 import {
   parseLaunchConfigFile,
   serializeLaunchConfigFile,
@@ -1170,6 +1171,9 @@ function TourTab({ onClose }: { onClose: () => void }) {
 function UpdateCheckRow() {
   const [status, setStatus] = useState<UpdateStatus>({ kind: 'idle' })
   const [busy, setBusy] = useState(false)
+  const [restarting, setRestarting] = useState(false)
+  // Main drops repeat fires too; this keeps the UI honest while teardown runs.
+  const restartFired = useRef(false)
 
   // Subscribe to live status events from main. Coexists with the
   // launch-time auto-check, so by the time this mounts there may
@@ -1179,7 +1183,15 @@ function UpdateCheckRow() {
     const api = window.api.app as unknown as {
       onUpdateStatus: (cb: (s: UpdateStatus) => void) => () => void
     }
-    return api.onUpdateStatus(setStatus)
+    return api.onUpdateStatus((s) => {
+      setStatus(s)
+      // Main un-latches and reports an error when the install never starts.
+      // Clear the optimistic flag too, or the button stays dead for good.
+      if (s.kind === 'error') {
+        restartFired.current = false
+        setRestarting(false)
+      }
+    })
   }, [])
 
   const check = useCallback(async () => {
@@ -1196,22 +1208,18 @@ function UpdateCheckRow() {
   }, [])
 
   const restart = useCallback(() => {
+    if (restartFired.current) return
+    restartFired.current = true
+    setRestarting(true)
     const api = window.api.app as unknown as { quitAndInstall: () => void }
     api.quitAndInstall()
   }, [])
 
-  const label = (() => {
-    switch (status.kind) {
-      case 'idle': return 'Idle.'
-      case 'checking': return 'Checking…'
-      case 'up-to-date': return `You're on the latest version (${status.version}).`
-      case 'available': return `Update available - downloading ${status.version}…`
-      case 'downloading': return `Downloading… ${status.percent}%`
-      case 'downloaded': return `Update ready: ${status.version}. Restart to install.`
-      case 'error': return `Couldn't check: ${status.message}`
-      case 'unsupported': return status.reason
-    }
-  })()
+  const view = updateRowView(status, { checking: busy, restarting })
+
+  const label = restarting
+    ? updateStatusLabel({ kind: 'installing' })
+    : updateStatusLabel(status)
 
   const labelColor = status.kind === 'error'
     ? 'var(--error, #f85149)'
@@ -1228,7 +1236,7 @@ function UpdateCheckRow() {
         <button
           type="button"
           onClick={check}
-          disabled={busy || status.kind === 'checking' || status.kind === 'downloading'}
+          disabled={view.checkDisabled}
           style={{
             padding: '6px 14px',
             background: 'var(--bg-tertiary)',
@@ -1236,16 +1244,21 @@ function UpdateCheckRow() {
             borderRadius: '5px',
             color: 'var(--text-primary)',
             fontSize: '12px',
-            cursor: busy ? 'default' : 'pointer',
+            cursor: view.checkDisabled ? 'default' : 'pointer',
+            opacity: view.checkDisabled ? 0.6 : 1,
           }}
         >
           Check for updates
         </button>
-        {status.kind === 'downloaded' && (
+        {view.showRestart && (
           <button
             type="button"
             onClick={restart}
+            disabled={view.restartDisabled}
             style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
               padding: '6px 14px',
               background: 'var(--accent)',
               border: '1px solid var(--accent)',
@@ -1253,10 +1266,24 @@ function UpdateCheckRow() {
               color: 'var(--bg)',
               fontSize: '12px',
               fontWeight: 600,
-              cursor: 'pointer',
+              cursor: view.restartDisabled ? 'default' : 'pointer',
+              opacity: view.restartDisabled ? 0.7 : 1,
             }}
           >
-            Restart and install
+            {view.restartSpinning && (
+              <span
+                aria-hidden
+                style={{
+                  width: '11px',
+                  height: '11px',
+                  border: '2px solid currentColor',
+                  borderTopColor: 'transparent',
+                  borderRadius: '50%',
+                  animation: 'sb-spin 720ms linear infinite',
+                }}
+              />
+            )}
+            {view.restartLabel}
           </button>
         )}
       </div>

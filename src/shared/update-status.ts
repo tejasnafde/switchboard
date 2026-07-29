@@ -12,6 +12,8 @@ export type UpdateStatus =
   | { kind: 'available'; version: string }
   | { kind: 'downloading'; percent: number }
   | { kind: 'downloaded'; version: string }
+  /** User asked to restart-and-install; main has latched the request. */
+  | { kind: 'installing' }
   | { kind: 'error'; message: string }
   /** Dev / non-packaged build - updater can't run, surfaced as info. */
   | { kind: 'unsupported'; reason: string }

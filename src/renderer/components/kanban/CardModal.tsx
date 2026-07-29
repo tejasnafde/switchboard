@@ -76,6 +76,11 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     card?.runtimeMode ?? KANBAN_DEFAULT_RUNTIME_MODE,
   )
   const [submitting, setSubmitting] = useState(false)
+  // The ⌘Enter keydown closure captures a stale `submitting`, so a held
+  // ⌘Enter fired handleSubmit repeatedly - each call creating a worktree
+  // and launching a chat.
+  const submittingRef = useRef(false)
+  const [worktreeBusy, setWorktreeBusy] = useState<'attach' | 'detach' | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Locally-tracked project selection. In `edit` mode the project never
   // changes - moving cards across projects would invalidate worktrees
@@ -144,10 +149,12 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   }, [title, description, tagsInput, status, costCapInput, withWorktree, runtimeMode])
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return
     if (!title.trim()) {
       setError('Title is required')
       return
     }
+    submittingRef.current = true
     setSubmitting(true)
     setError(null)
     try {
@@ -155,7 +162,6 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
       const costCapUsd = costCapInput.trim() === '' ? null : Number(costCapInput)
       if (costCapUsd != null && (Number.isNaN(costCapUsd) || costCapUsd < 0)) {
         setError('Cost cap must be a non-negative number')
-        setSubmitting(false)
         return
       }
       if (mode === 'create') {
@@ -174,9 +180,17 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
         // click ▶ separately. Foreground users who just want a row in
         // the backlog leave `withWorktree` off.
         if (newCard && withWorktree) {
-          const result = await launchCardChat(newCard, { openChat: false })
-          if (!result.reused && newCard.status === 'backlog') {
-            void useKanbanStore.getState().move(newCard.id, 'in_progress')
+          // The new card is already visible on the board while this launch
+          // is in flight - take the same per-card lock the board ▶ uses.
+          if (useKanbanStore.getState().beginCardLaunch(newCard.id)) {
+            try {
+              const result = await launchCardChat(newCard, { openChat: false })
+              if (!result.reused && newCard.status === 'backlog') {
+                void useKanbanStore.getState().move(newCard.id, 'in_progress')
+              }
+            } finally {
+              useKanbanStore.getState().endCardLaunch(newCard.id)
+            }
           }
         }
       } else if (card) {
@@ -192,13 +206,16 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
 
   const handleDelete = async () => {
+    if (submittingRef.current) return
     if (!card) return
     const removeWt = !!card.worktreePath && confirm('Also delete the linked git worktree?')
+    submittingRef.current = true
     setSubmitting(true)
     try {
       await remove(card.id, { removeWorktree: removeWt, force: removeWt })
@@ -206,7 +223,35 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
+    }
+  }
+
+  const handleAttachWorktree = async () => {
+    if (!card) return
+    setWorktreeBusy('attach')
+    setError(null)
+    try {
+      await attachWorktree(card.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setWorktreeBusy(null)
+    }
+  }
+
+  const handleDetachWorktree = async () => {
+    if (!card) return
+    if (!confirm('Detach + delete worktree? Uncommitted work will be lost.')) return
+    setWorktreeBusy('detach')
+    setError(null)
+    try {
+      await detachWorktree(card.id, { force: true })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setWorktreeBusy(null)
     }
   }
 
@@ -347,22 +392,17 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
                 <>
                   <span>Worktree: <code style={codeStyle}>{card.worktreePath}</code></span>
                   <button
-                    onClick={async () => {
-                      if (!confirm('Detach + delete worktree? Uncommitted work will be lost.')) return
-                      try { await detachWorktree(card.id, { force: true }) }
-                      catch (err) { setError(err instanceof Error ? err.message : String(err)) }
-                    }}
+                    onClick={() => { void handleDetachWorktree() }}
+                    disabled={worktreeBusy !== null || submitting}
                     style={dangerBtnStyle}
-                  >Detach</button>
+                  >{worktreeBusy === 'detach' ? 'Detaching…' : 'Detach'}</button>
                 </>
               ) : (
                 <button
-                  onClick={async () => {
-                    try { await attachWorktree(card.id) }
-                    catch (err) { setError(err instanceof Error ? err.message : String(err)) }
-                  }}
+                  onClick={() => { void handleAttachWorktree() }}
+                  disabled={worktreeBusy !== null || submitting}
                   style={secondaryBtnStyle}
-                >Attach worktree</button>
+                >{worktreeBusy === 'attach' ? 'Attaching…' : 'Attach worktree'}</button>
               )}
             </div>
           )}
@@ -372,11 +412,11 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
 
         <div style={footerStyle}>
           {mode === 'edit' && (
-            <button onClick={handleDelete} disabled={submitting} style={dangerBtnStyle}>Delete</button>
+            <button onClick={handleDelete} disabled={submitting || worktreeBusy !== null} style={dangerBtnStyle}>Delete</button>
           )}
           <div style={{ flex: 1 }} />
           <button onClick={onClose} disabled={submitting} style={secondaryBtnStyle}>Cancel</button>
-          <button onClick={handleSubmit} disabled={submitting} style={primaryBtnStyle}>
+          <button onClick={handleSubmit} disabled={submitting || worktreeBusy !== null} style={primaryBtnStyle}>
             {mode === 'create' ? 'Create' : 'Save'} {submitting && '…'}
           </button>
         </div>
