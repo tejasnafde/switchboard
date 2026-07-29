@@ -2,6 +2,21 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-29 - Remote workbench: keybindings inside it reach Switchboard again
+
+### Fixed
+- **`cmd+shift+E` inside a remote workbench toggled the IDE pane on but never back off.** On an SSH-backed machine the VM's code-server had no sb-bridge extension at all: the provisioner only ever seeded it for the LOCAL workbench, and the remote code-server was started by a raw `nohup` line in the ssh bootstrap with no `SB_BRIDGE_PORT`/`SB_BRIDGE_TOKEN` and no bridge listening on the VM. `extension.js` stays idle without those, so every key pressed inside the remote workbench died in the guest. Toggling *on* worked only because focus was still in Switchboard's own document, where the app's document listener sees the chord. `cmd+l`, `cmd+k`, `cmd+shift+J` and the Charcoal theme were dead on remote for the same reason.
+- The extension is now provisioned onto the VM, the ssh bootstrap mints one `SB_BRIDGE_TOKEN` in the single shell that starts both remote processes (so they agree without the token ever reaching this machine's logs), and the headless backend runs the bridge. Intents ride `WsHost.emit` over the backend socket the desktop already holds - no extra tunnel, no extra forward.
+- **`ide:open` and `ide:set-theme` now carry `machineId`.** `folder` is not a routing key, so a pill click in a remote session was resolving to the local backend and silently queueing there.
+- **An interrupted update download is retried once.** `~/Library/Caches` is purgeable, and electron-updater only retries `EBUSY` on its temp-to-final rename - so a single purge mid-download lost the download and surfaced a raw `ENOENT ... rename '.../temp-Switchboard-X.Y.Z-arm64-mac.zip'` in the UI.
+
+### Notes
+- **The `extensions.json` clear must run on every connect, not just when seeding.** code-server's `--install-extension` (the Jupyter step) rewrites that manifest, and a manifest that omits sb-bridge marks it *removed* - the extension sits on disk and never activates. Confirmed on a live VM whose manifest listed 8 extensions without it. The clear therefore lives in `codeServerEnsureScript`, which runs unconditionally, rather than in the gated seed.
+- **Any ssh upload to an IAP-tunneled host costs ~2 minutes regardless of size.** Measured: 2.0s for a tiny argv vs 2m01s for 27KB, and the same ~2m for the 1.1MB server bundle - a per-upload stall, not bandwidth. Shipping the ~20KB extension payload on every connect added ~2 minutes to every connect and reconnect, so the seed is gated on a payload marker the ssh probe now reports alongside the server version. Steady-state connect is back to ~30s. `ControlMaster`/`ControlPersist` in `SSH_COMMON_OPTS` would collapse all six provisioning connections onto one and is the larger win, left as follow-up.
+- **The seed marker is a hash of the payload, not the app version.** `seedBridgeExtension` re-copies on every local boot, so keying the remote on `appVersion` would leave a VM running a stale extension, with no signal, until the next release.
+- The bridge's wire behaviour (the callback set, one-pending-open-per-folder, theme write precedence) is shared by both hosts in `ide/bridge-channels.ts`; only the lifecycle differs, since a remote has no binary to download or idle-shutdown to run.
+- Verified end to end against a live VM by `e2e/remote-bridge.e2e.mjs` (`npm run test:e2e:remote-bridge`), including real `cmd+shift+E` / `cmd+shift+J` / `ctrl+\`` keystrokes in a real remote workbench. Chords are pressed in a retry loop: the first press can land before the workbench's keybinding service is listening, which reads as a routing failure and is not one.
+
 ## 2026-07-29 - Usage limits: say why the request failed
 
 ### Fixed
