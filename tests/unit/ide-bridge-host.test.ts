@@ -12,7 +12,7 @@ import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { IdeChannels } from '@shared/ipc-channels'
 
 class FakeSocket extends EventEmitter {
@@ -134,7 +134,10 @@ describe('startBridgeHost', () => {
     expect(res).toEqual({ ok: true })
     expect(JSON.parse(socket.sent[socket.sent.length - 1])).toEqual({
       type: 'open',
-      path: `${FOLDER}/src/a.ts`,
+      // Resolved against `folder`, not the cwd. Built with resolve() rather
+      // than a literal because the separator is platform-native: this host
+      // resolves paths for whatever machine it runs on.
+      path: resolve(FOLDER, 'src/a.ts'),
       line: 12,
     })
   })
