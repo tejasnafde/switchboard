@@ -322,6 +322,10 @@ const styles = StyleSheet.create({
     borderColor: colors.borderStrong,
     alignItems: 'center',
     justifyContent: 'center',
+    // On Android the native header lays the title immediately after headerLeft,
+    // so without this the title crowds the avatar. headerRight gets the same
+    // breathing room from headerAction's paddingHorizontal.
+    marginRight: space.sm,
   },
   headerAvatarText: {
     fontFamily: fonts.display,
