@@ -7,6 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { MobilePairingStatus } from '@shared/types'
 import QRCode from 'qrcode'
 import { createRendererLogger } from '../../logger'
 
@@ -53,6 +54,9 @@ export function MobilePairingTab() {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [apkQrDataUrl, setApkQrDataUrl] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // Whether the desktop is actually serving this QR. Without it a stale QR
+  // looks identical to a dead port, which is exactly how it fails in practice.
+  const [endpoint, setEndpoint] = useState<MobilePairingStatus | null>(null)
 
   // Load detected addresses + persisted fields once per mount.
   useEffect(() => {
@@ -78,14 +82,23 @@ export function MobilePairingTab() {
     return () => { cancelled = true }
   }, [])
 
-  // Persist on change (post-load only, so defaults don't clobber saved values).
+  // Persist on change (post-load only, so defaults don't clobber saved values),
+  // then re-apply the endpoint so the QR is live the moment it renders - no
+  // restart. The endpoint reads token/port back from settings, hence the order.
   useEffect(() => {
     if (!loaded) return
+    let cancelled = false
     Promise.all([
       window.api.settings.set(SETTINGS_KEYS.host, host),
       window.api.settings.set(SETTINGS_KEYS.port, port),
       window.api.settings.set(SETTINGS_KEYS.token, token),
-    ]).catch((err) => log.warn('failed to persist pairing settings', err))
+    ])
+      .then(() => window.api.app.mobilePairingApply())
+      .then((status) => {
+        if (!cancelled) setEndpoint(status)
+      })
+      .catch((err) => log.warn('failed to persist/apply pairing settings', err))
+    return () => { cancelled = true }
   }, [loaded, host, port, token])
 
   const pairingUrl = useMemo(() => {
@@ -292,6 +305,27 @@ export function MobilePairingTab() {
           <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '6px', lineHeight: 1.5 }}>
             Scan from the mobile app. The QR re-renders on every field change.
           </div>
+          {endpoint && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              marginTop: '8px',
+              fontSize: '10.5px',
+              color: endpoint.listening ? 'var(--text-secondary)' : 'var(--error, #e5544a)',
+            }}>
+              <span style={{
+                width: '6px',
+                height: '6px',
+                borderRadius: '3px',
+                flexShrink: 0,
+                background: endpoint.listening ? 'var(--success, #3dd17a)' : 'var(--error, #e5544a)',
+              }} />
+              {endpoint.listening
+                ? `Serving this QR on port ${endpoint.port}`
+                : `Not serving: ${endpoint.reason ?? 'unknown'}`}
+            </div>
+          )}
         </div>
       </div>
 

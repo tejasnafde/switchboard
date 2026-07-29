@@ -25,7 +25,7 @@ import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machin
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
 import { MultiHost } from './backend/multi-host'
-import { startMobileServer, type MobileServer } from './backend/mobile-server'
+import { MobileEndpoint } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
 import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
@@ -44,7 +44,7 @@ import type { AgentType } from '@shared/types'
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
 /** Mobile pairing WS endpoint (null when no token is configured). */
-let mobileServer: MobileServer | null = null
+let mobileEndpoint: MobileEndpoint | null = null
 
 // ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
 // a stray reload kills terminal panes and in-flight agent turns.
@@ -507,13 +507,13 @@ app.whenReady().then(() => {
   mainWindow = createWindow()
 
   // Handlers migrating to the BackendHost seam (remote-ready); rest take the window.
-  // When mobile pairing is configured we ALSO serve those same handlers over a
-  // WebSocket, fanned through a MultiHost - so a paired phone drives the very
-  // same ProviderRegistry and session pool as this window.
-  mobileServer = startMobileServer()
-  const backendHost: BackendHost = mobileServer
-    ? new MultiHost(new ElectronIpcHost(mainWindow), mobileServer.host)
-    : new ElectronIpcHost(mainWindow)
+  // The mobile endpoint is ALWAYS in the fan-out; whether it actually listens is
+  // decided by apply() from the saved token - and re-decided live whenever
+  // Settings > Mobile saves, so a fresh QR is never a lie about a dead port.
+  mobileEndpoint = new MobileEndpoint()
+  const backendHost: BackendHost = new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
+  backendHost.handle(AppChannels.MOBILE_PAIRING_APPLY, () => mobileEndpoint!.apply())
+  backendHost.handle(AppChannels.MOBILE_PAIRING_STATUS, () => mobileEndpoint!.status())
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)
@@ -546,13 +546,17 @@ app.whenReady().then(() => {
   providerRegistry = new ProviderRegistry(backendHost)
   providerRegistry.registerIpcHandlers()
 
+  // All handlers are recorded on the endpoint now; start listening if a token
+  // is already saved. Later Settings saves re-apply() live over IPC.
+  mobileEndpoint.apply()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow()
       // Re-point the renderer half at the new window; the mobile endpoint is
       // already listening, so reuse it rather than binding the port again.
-      const reactivatedHost: BackendHost = mobileServer
-        ? new MultiHost(new ElectronIpcHost(mainWindow), mobileServer.host)
+      const reactivatedHost: BackendHost = mobileEndpoint
+        ? new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
         : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
       registerAgentHandlers(reactivatedHost)
@@ -583,6 +587,6 @@ app.on('before-quit', () => {
   shutdownTerminals()
   providerRegistry?.stopAll()
   void stopAllMachineConnections()
-  mobileServer?.close()
+  mobileEndpoint?.close()
   closeDb()
 })

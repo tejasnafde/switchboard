@@ -354,6 +354,18 @@ export interface SaveMessageParams {
   pillsMeta?: string
 }
 
+/**
+ * Whether the desktop app is actually serving the mobile pairing endpoint.
+ * Surfaced in Settings > Mobile so a QR can never silently point at a dead
+ * port (the usual cause being `npm run server` already holding it).
+ */
+export interface MobilePairingStatus {
+  listening: boolean
+  port: number | null
+  /** Human-readable reason when not listening. */
+  reason: string | null
+}
+
 export interface ConversationRow {
   id: string
   project_path: string

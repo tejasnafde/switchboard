@@ -66,6 +66,10 @@ export const AppChannels = {
   REMOVE_PROJECT: 'app:remove-project',
   /** Rename a project's display name (path/PK unchanged). */
   RENAME_PROJECT: 'app:rename-project',
+  /** (Re)start the mobile pairing endpoint from saved settings; returns status. */
+  MOBILE_PAIRING_APPLY: 'mobile-pairing:apply',
+  /** Current mobile pairing endpoint status without changing anything. */
+  MOBILE_PAIRING_STATUS: 'mobile-pairing:status',
   /** External IPv4 addresses of this machine - mobile pairing QR host picker. */
   LAN_ADDRESSES: 'app:lan-addresses',
 } as const

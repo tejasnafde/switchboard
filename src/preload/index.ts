@@ -14,6 +14,7 @@ import type {
   AgentSendPayload,
   CreateConversationParams,
   SaveMessageParams,
+  MobilePairingStatus,
 } from '@shared/types'
 import type { RuntimeEvent, RuntimeMode, ApprovalDecision } from '@shared/provider-events'
 import { createRendererLogger } from '../renderer/logger'
@@ -133,6 +134,12 @@ const api = {
     /** External IPv4 addresses of this machine (mobile pairing host picker). */
     lanAddresses: (): Promise<Array<{ iface: string; address: string }>> =>
       transport.invoke(AppChannels.LAN_ADDRESSES),
+    /** (Re)start the pairing endpoint from saved settings; resolves to its status. */
+    mobilePairingApply: (): Promise<MobilePairingStatus> =>
+      transport.invoke(AppChannels.MOBILE_PAIRING_APPLY),
+    /** Current pairing endpoint status, without restarting it. */
+    mobilePairingStatus: (): Promise<MobilePairingStatus> =>
+      transport.invoke(AppChannels.MOBILE_PAIRING_STATUS),
     createConversation: (params: CreateConversationParams) =>
       transport.invoke(AppChannels.CREATE_CONVERSATION, params),
     setConversationWorktree: (
