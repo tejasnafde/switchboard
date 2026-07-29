@@ -6,32 +6,32 @@ install instructions live in `README.md`.
 ## TL;DR
 
 ```bash
-# 1. Bump version in package.json (must match the tag without `v`)
-# Convention: `patch` for iterative work INCLUDING feature batches
-# (0.6.3 shipped the SSH day-2 batch); reserve `minor` for headline
-# surface changes (0.7.0 = the embedded IDE replaced the editor).
 npm version patch          # or minor / major
-git push && git push --tags
-
-# 2. Wait ~10 min - GitHub Actions builds for macOS arm64 + Windows x64
-#    in parallel and publishes both to the same Release.
-
-# 3. Verify the Release page contains:
-#    - Switchboard-X.Y.Z-arm64-mac.zip   ← macOS install + auto-update source
-#    - Switchboard-X.Y.Z-arm64-mac.zip.blockmap
-#    - latest-mac.yml          ← required for macOS auto-update
-#    - Switchboard Setup X.Y.Z.exe
-#    - Switchboard-X.Y.Z-win.zip
-#    - latest.yml              ← required for Windows auto-update
+git push --follow-tags
 ```
+
+That is the whole procedure. Everything the operator used to verify by hand
+is a job in `release.yml`, so a green run means it was checked:
+
+| Job | Enforces |
+|---|---|
+| `gate` | Calls `ci.yml`. A tag cannot publish a tree that fails typecheck, tests or build on ubuntu + macOS + Windows. |
+| `build` | Packages and publishes macOS arm64 + Windows x64 in parallel to the one Release. |
+| `verify` | Fails the run unless all six install / auto-update assets exist AND both `latest*.yml` declare the version being released. |
+
+The only judgment left to a human is the bump itself: **`patch` for iterative
+work including feature batches** (0.6.3 shipped the SSH day-2 batch); reserve
+`minor` for headline surface changes (0.7.0 = the embedded IDE replaced the
+editor). Write the CHANGELOG entry before tagging.
+
+If `verify` fails, the Release is partial and clients will not see the version.
+Re-run the failed matrix job from the Actions UI; it is safe to re-run because
+electron-builder dedups uploads by name.
 
 Note: macOS ships as a `.zip` (not `.dmg`) - `dmg-builder` crashes on the
 `macos-14` CI runner (`hdiutil: create failed - Device not configured`).
 Users drag `Switchboard.app` from the zip to `/Applications` on first install.
 Auto-update uses the zip directly and works without the DMG.
-
-If any of those are missing, the auto-updater will silently fail to
-detect the new version. Re-run the failing matrix job.
 
 ---
 
@@ -55,48 +55,38 @@ a real `.zip` / `.exe`.
 
 ---
 
-## Release dance, in detail
+## What the pipeline enforces, and why
 
-### 1. Pre-flight
+Each of these was once a bullet an operator was asked to remember. They are
+listed here as rationale, not as steps to perform.
 
-- Make sure `main` is green on CI (`.github/workflows/ci.yml`).
-- Make sure `package.json#version` matches what you want to publish.
-  electron-builder will refuse to publish if the version doesn't match
-  the git tag (sans `v` prefix).
-- Make sure no secrets are about to land - `git diff` for any
-  `ANTHROPIC_API_KEY`, `GH_TOKEN`, `.env*`, `*.pem`, `*.key` etc.
+- **`--follow-tags`.** `release.yml` triggers only on a `v*` tag push. Pushing
+  the commit without the tag builds nothing, which reads as a hung release.
+- **The version must match the tag** (sans `v`). `npm version` guarantees it by
+  bumping, committing and tagging atomically; electron-builder refuses to
+  publish on a mismatch.
+- **CI must pass the tagged tree.** The `gate` job calls `ci.yml`, so this is
+  now an ordering property of the pipeline. A tag pushed from a branch whose CI
+  never ran cannot publish.
+- **All six assets must land.** The `verify` job asserts them by name. Two
+  parallel build jobs mean one platform can fail while the other publishes, and
+  a Release missing a `latest*.yml` makes every client report "up to date" with
+  no error anywhere. That silence is why this is a job and not a checklist.
+- **Both manifests must declare the released version.** A `latest*.yml` naming
+  the wrong version is indistinguishable from no release at all to a client:
+  the version compare finds nothing newer and the check succeeds.
 
-### 2. Cut the version
+Asset names in `verify` are asserted against electron-builder's real output.
+Until 0.7.29 this doc claimed `Switchboard Setup X.Y.Z.exe`; the real name is
+`Switchboard-Setup-X.Y.Z.exe`. A prose checklist cannot notice its own drift.
 
-`npm version <patch|minor|major>` does three things atomically:
+### Post-release smoke test (still manual, on purpose)
 
-- bumps `package.json#version`
-- commits with message `vX.Y.Z`
-- creates an annotated tag `vX.Y.Z`
+Nothing in CI can prove the update actually installs, because that needs a
+packaged app replacing itself on a real machine. Install the previous version,
+relaunch, and confirm the prompt appears within ~30 seconds. If it does not:
 
-```bash
-npm version patch
-git push origin main --follow-tags
-```
-
-`--follow-tags` (or two pushes - `git push && git push --tags`) is
-mandatory; the workflow only triggers on tag pushes.
-
-### 3. Watch the build
-
-Open `https://github.com/tejasnafde/switchboard/actions`. Two parallel
-jobs (macos-14, windows-latest) run for ~8–12 minutes. If one fails,
-the Release will only contain the other platform's artifacts and
-that platform's users won't auto-update. Re-run the failed job from
-the Actions UI.
-
-### 4. Verify the Release
-
-Check the Release page for the six artifacts listed in the TL;DR.
-Install the previous version manually, relaunch, and confirm the
-update prompt appears within ~30 seconds. If it doesn't:
-
-- Open Settings → About → Check for updates and look at the status line.
+- Open Settings → About → Check for updates and read the status line.
 - Tail the app log at `~/Library/Application Support/switchboard/logs/`
   on macOS (or `%APPDATA%\switchboard\logs\` on Windows). Lines tagged
   `[updater]` show what electron-updater saw.
@@ -107,7 +97,7 @@ update prompt appears within ~30 seconds. If it doesn't:
 
 ```bash
 npm run dist:mac   # → release/Switchboard-X.Y.Z-arm64-mac.zip
-npm run dist:win   # → release/Switchboard Setup X.Y.Z.exe (Windows host only)
+npm run dist:win   # → release/Switchboard-Setup-X.Y.Z.exe (Windows host only)
 ```
 
 These don't touch GitHub - useful for one-off testing.

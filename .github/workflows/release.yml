@@ -37,8 +37,18 @@ permissions:
   contents: write
 
 jobs:
+  # The gate that used to be a line in docs/releasing.md ("make sure main is
+  # green on CI"). A tag can be pushed at any moment, including from a branch
+  # whose CI never ran, so the ordering has to be a property of the pipeline
+  # rather than of whoever cut the release. Costs a few minutes and re-covers
+  # the ubuntu leg that the build matrix (macos + windows) does not.
+  gate:
+    name: Gate
+    uses: ./.github/workflows/ci.yml
+
   build:
     name: Build & publish (${{ matrix.os }})
+    needs: gate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -101,3 +111,82 @@ jobs:
           # this it can hang on macOS waiting for an Apple ID prompt
           # that will never come (we have no developer cert).
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+  # A partial Release is the worst outcome this pipeline can produce: the
+  # install artifacts are useless without their `latest*.yml`, and a missing
+  # one makes every client's update check quietly report "up to date". That
+  # used to be a "verify the Release page" bullet in docs/releasing.md, which
+  # is a check nobody performs on a green build. It fails the run instead.
+  #
+  # Asset names are asserted against what electron-builder actually produces,
+  # not against the doc - the doc said `Switchboard Setup X.Y.Z.exe` while the
+  # real name is hyphenated, so a check copied from the prose would have failed
+  # a healthy release.
+  verify:
+    name: Verify published assets
+    needs: build
+    # A manual dispatch builds without publishing, so there is nothing to check.
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Assert every install + auto-update asset is present
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          V="${TAG#v}"
+          REQUIRED="Switchboard-${V}-arm64-mac.zip
+          Switchboard-${V}-arm64-mac.zip.blockmap
+          latest-mac.yml
+          Switchboard-Setup-${V}.exe
+          Switchboard-${V}-win.zip
+          latest.yml"
+
+          # Both build jobs have finished by now, but the Releases API reads
+          # through a cache, so retry briefly rather than fail a good release.
+          missing=""
+          for attempt in 1 2 3; do
+            names="$(gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name')"
+            missing=""
+            while read -r want; do
+              want="$(echo "$want" | xargs)"
+              [ -z "$want" ] && continue
+              grep -Fxq "$want" <<< "$names" || missing="$missing $want"
+            done <<< "$REQUIRED"
+            [ -z "$missing" ] && break
+            echo "attempt $attempt: not yet present:$missing"
+            sleep 15
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error::Release $TAG is missing:$missing"
+            echo "Clients will not see this version. Re-run the failed matrix job."
+            exit 1
+          fi
+          echo "All required assets present:"
+          echo "$names"
+
+      - name: Assert the update manifests name this version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          V="${TAG#v}"
+          tmp="$(mktemp -d)"
+          gh release download "$TAG" --repo "$REPO" --dir "$tmp" --pattern 'latest*.yml' --clobber
+          # A manifest that names the wrong version is indistinguishable from
+          # a broken release to a client: the version compare finds nothing
+          # newer and the update check reports success.
+          for y in "$tmp"/latest*.yml; do
+            if ! grep -q "^version: ${V}$" "$y"; then
+              echo "::error::$(basename "$y") does not declare version ${V}"
+              cat "$y"
+              exit 1
+            fi
+            echo "$(basename "$y") declares version ${V}"
+          done
