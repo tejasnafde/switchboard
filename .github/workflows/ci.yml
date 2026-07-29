@@ -12,8 +12,13 @@ on:
 
 # Cancel superseded runs on the same branch / PR — saves CI minutes when
 # someone pushes a fixup commit before the previous run finishes.
+#
+# `github.workflow` is part of the key because it resolves to the CALLER for a
+# reusable workflow. Without it, release.yml's `gate` job shares a group with
+# the push-triggered run for the same ref and cancels it, so a release (or a
+# validation dispatch) on a branch wipes that branch's own CI record.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
