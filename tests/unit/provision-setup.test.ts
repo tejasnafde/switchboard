@@ -1,6 +1,6 @@
 /** Remote setup payload: the package.json + install script we drop on a VM. */
 import { describe, it, expect } from 'vitest'
-import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript, bridgeSeedScript, REMOTE_SERVER_DIR } from '../../src/main/machines/provisionSetup'
+import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript, bridgeSeedScript, bridgeMarker, codeServerEnsureScript, REMOTE_SERVER_DIR } from '../../src/main/machines/provisionSetup'
 import { BRIDGE_EXTENSION_DIRNAME } from '../../src/main/ide/code-server-manager'
 
 describe('remotePackageJson', () => {
@@ -56,6 +56,38 @@ describe('versionMarkerScript', () => {
 
   it('chains cd with && so a missing dir never writes a stray marker', () => {
     expect(script).toMatch(/cd .* && printf/)
+  })
+})
+
+describe('codeServerEnsureScript manifest clear', () => {
+  const script = codeServerEnsureScript('4.127.0')
+
+  it('clears extensions.json on EVERY connect, after the extension install', () => {
+    // --install-extension rewrites extensions.json, and a manifest that omits
+    // sb-bridge marks it removed - the extension sits on disk and never
+    // activates. This lives here, not in the seed, because the seed is gated on
+    // the probe marker and so does not run on a steady-state connect.
+    const installAt = script.indexOf('--install-extension')
+    const clearAt = script.indexOf('rm -f "$D/ide-extensions/extensions.json" "$D/ide-extensions/.obsolete"')
+    expect(clearAt).toBeGreaterThan(-1)
+    expect(clearAt).toBeGreaterThan(installAt)
+  })
+})
+
+describe('bridgeMarker', () => {
+  const files = [{ relPath: 'a.js', base64: 'YQ==' }]
+
+  it('is stable for the same payload and changes with it', () => {
+    expect(bridgeMarker(files)).toBe(bridgeMarker([...files]))
+    expect(bridgeMarker([{ relPath: 'a.js', base64: 'Yg==' }])).not.toBe(bridgeMarker(files))
+  })
+
+  it('changes when only a path changes, so a renamed file re-seeds', () => {
+    expect(bridgeMarker([{ relPath: 'b.js', base64: 'YQ==' }])).not.toBe(bridgeMarker(files))
+  })
+
+  it('matches the marker the seed script writes and compares (that is the gate)', () => {
+    expect(bridgeSeedScript(files)).toContain(bridgeMarker(files))
   })
 })
 
@@ -146,12 +178,6 @@ describe('bridgeSeedScript', () => {
 
   it('replaces the directory wholesale so a dropped file cannot linger', () => {
     expect(script).toContain(`rm -rf "${extDir}"`)
-  })
-
-  it('clears the stale extension manifest so code-server rescans the folder', () => {
-    // A leftover extensions.json marks folders it does not list as removed -
-    // the extension would be present on disk and still never activate.
-    expect(script).toContain('rm -f "$D/ide-extensions/extensions.json" "$D/ide-extensions/.obsolete"')
   })
 
   it('writes the marker LAST so an interrupted seed re-runs', () => {

@@ -10,9 +10,11 @@ export interface RemoteProbe {
   arch: string | null
   abi: string | null
   server: string | null
+  /** Payload marker of the sb-bridge extension installed on the remote. */
+  bridge: string | null
 }
 
-const EMPTY: RemoteProbe = { node: null, platform: null, arch: null, abi: null, server: null }
+const EMPTY: RemoteProbe = { node: null, platform: null, arch: null, abi: null, server: null, bridge: null }
 
 export function parseProbeOutput(stdout: string): RemoteProbe {
   const start = stdout.indexOf('{')
@@ -31,5 +33,6 @@ export function parseProbeOutput(stdout: string): RemoteProbe {
     arch: parsed.arch ?? null,
     abi: parsed.abi ?? null,
     server: parsed.server ?? null,
+    bridge: parsed.bridge ?? null,
   }
 }

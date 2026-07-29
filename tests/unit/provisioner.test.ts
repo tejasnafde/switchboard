@@ -1,6 +1,7 @@
 /** provisionRemote: probe -> plan -> (upload + install) over a faked runner. */
 import { describe, it, expect, vi } from 'vitest'
 import { provisionRemote } from '../../src/main/machines/provisioner'
+import { bridgeMarker } from '../../src/main/machines/provisionSetup'
 import { execProc } from '../../src/main/machines/provisionDeps'
 import type { Machine } from '@shared/machines'
 
@@ -203,9 +204,9 @@ describe('provisionRemote bridge extension seeding', () => {
     expect(res.action).toBe('ready')
     const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
     expect(remotes[1]).toContain('code-server')
-    // .sb-marker is unique to the bridge seed - the code-server ensure script
-    // also mentions ide-extensions (it passes --extensions-dir).
-    expect(remotes[2]).toContain('.sb-marker')
+    // `base64 -d >` is unique to the seed: the probe also reads .sb-marker and
+    // the ensure script also mentions ide-extensions.
+    expect(remotes[2]).toContain('base64 -d >')
     expect(remotes[2]).toContain('base64 -d')
   })
 
@@ -220,8 +221,28 @@ describe('provisionRemote bridge extension seeding', () => {
     const logs: string[] = []
     await provisionRemote(machine, { ...inputs, bridgeFiles: [] }, r, (m) => logs.push(m))
     const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
-    expect(remotes.some((s) => s.includes('.sb-marker'))).toBe(false)
+    expect(remotes.some((s) => s.includes('base64 -d >'))).toBe(false)
     expect(logs.some((l) => l.includes('no bundled bridge extension'))).toBe(true)
+  })
+
+  it('does NOT ship the payload when the probe says the remote marker already matches', async () => {
+    // The gate that matters for connect time: an upload to an IAP-tunneled host
+    // costs ~2 minutes regardless of size, so a steady-state connect must send
+    // nothing. Measured on a real VM before this gate existed.
+    const marker = bridgeMarker(withBridge.bridgeFiles)
+    const logs = []
+    const r = runner({ ...full, bridge: marker })
+    await provisionRemote(machine, withBridge, r, (m) => logs.push(m))
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((s) => s.includes('base64 -d >'))).toBe(false)
+    expect(logs.some((l) => l.includes('bridge extension already current'))).toBe(true)
+  })
+
+  it('ships the payload when the remote marker is stale (edited extension)', async () => {
+    const r = runner({ ...full, bridge: 'deadbeefdeadbeef' })
+    await provisionRemote(machine, withBridge, r)
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((s) => s.includes('base64 -d >'))).toBe(true)
   })
 
   it('is non-fatal: a failed seed still leaves a connectable backend', async () => {
@@ -230,7 +251,7 @@ describe('provisionRemote bridge extension seeding', () => {
     r.exec.mockImplementation(async (_cmd: string, args: string[]) => {
       const remote = decode(args[args.length - 1])
       if (remote.includes('node -e')) return { code: 0, stdout: JSON.stringify({ ...full, server: null }), stderr: '' }
-        if (remote.includes('.sb-marker')) return { code: 1, stdout: '', stderr: 'disk full' }
+          if (remote.includes('base64 -d >')) return { code: 1, stdout: '', stderr: 'disk full' }
       return { code: 0, stdout: '', stderr: '' }
     })
     const res = await provisionRemote(machine, { ...withBridge, appVersion: '0.4.16' }, r, (m) => logs.push(m))

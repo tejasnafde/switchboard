@@ -23,6 +23,7 @@
     "test:e2e": "node e2e/backend-host.e2e.mjs",
     "test:e2e:remote": "node e2e/remote-transport.e2e.mjs",
     "test:e2e:machines": "node e2e/machine-layer.e2e.mjs",
+    "test:e2e:remote-bridge": "node e2e/remote-bridge.e2e.mjs",
     "test:coverage": "vitest run --coverage",
     "build:server": "node scripts/build-server.mjs",
     "server": "node out/server/index.cjs",

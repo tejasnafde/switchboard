@@ -8,8 +8,11 @@
  * because focus was inside the workbench webview and there was no bridge on the
  * remote to forward the intent. These tests pin the relay, not the transport.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterAll, vi } from 'vitest'
 import { EventEmitter } from 'node:events'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { IdeChannels } from '@shared/ipc-channels'
 
 class FakeSocket extends EventEmitter {
@@ -52,6 +55,10 @@ function fakeHost() {
 
 const TOKEN = 'remote-token'
 const FOLDER = '/home/tejas/repo'
+// startBridgeHost seeds first-run settings into userDataDir, so give it a real
+// scratch dir rather than letting it write to a fixed path under /tmp.
+const userDataDir = mkdtempSync(join(tmpdir(), 'sb-bridge-host-test-'))
+afterAll(() => rmSync(userDataDir, { recursive: true, force: true }))
 
 let startBridgeHost: typeof import('../../src/main/ide/bridge-host').startBridgeHost
 
@@ -66,7 +73,7 @@ function start(): {
   connectAndHello: (folder?: string) => FakeSocket
 } {
   const ctx = fakeHost()
-  startBridgeHost({ host: ctx.host, port: 8767, token: TOKEN, userDataDir: '/tmp/sb-ide-data' })
+  startBridgeHost({ host: ctx.host, port: 8767, token: TOKEN, userDataDir })
   const wss = FakeWss.instances[0]
   const connectAndHello = (folder = FOLDER): FakeSocket => {
     const socket = new FakeSocket()

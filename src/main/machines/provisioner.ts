@@ -3,7 +3,7 @@ import type { Machine } from '@shared/machines'
 import { buildProbeCommand, buildRemoteShellCommand, REMOTE_SERVER_DIR } from './provisionCommands'
 import { parseProbeOutput } from './remoteProbe'
 import { planProvision, type ProvisionAction } from './provisionPlan'
-import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript, codeServerEnsureScript, bridgeSeedScript, type BridgeFile } from './provisionSetup'
+import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript, codeServerEnsureScript, bridgeSeedScript, bridgeMarker, type BridgeFile } from './provisionSetup'
 import { CODE_SERVER_VERSION } from '../ide/code-server-manager'
 import { asUserScript, asUserUpload } from './remoteExec'
 import { summarizeSshError } from './sshError'
@@ -94,14 +94,20 @@ export async function provisionRemote(
     // on the next connect rather than masked by an already-present code-server.
     // Also non-fatal: a bridge-less workbench still edits files, it just can't
     // route keybindings or selections back to Switchboard.
-    if (inputs.bridgeFiles.length > 0) {
+    //
+    // Gated on the probe's marker: shipping the ~20KB payload costs ~2 minutes
+    // on an IAP-tunneled host (measured - the penalty is per-upload, not per
+    // byte), which would otherwise be added to every single connect.
+    if (inputs.bridgeFiles.length === 0) {
+      log?.(`provision ${machine.id}: no bundled bridge extension found - remote workbench keybindings will not reach Switchboard`)
+    } else if (probe.bridge === bridgeMarker(inputs.bridgeFiles)) {
+      log?.(`provision ${machine.id}: bridge extension already current (${probe.bridge})`)
+    } else {
       try {
         await run('seed workbench bridge extension', asUserScript(u, bridgeSeedScript(inputs.bridgeFiles)))
       } catch (err) {
         log?.(`provision ${machine.id}: bridge extension seed failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
       }
-    } else {
-      log?.(`provision ${machine.id}: no bundled bridge extension found - remote workbench keybindings will not reach Switchboard`)
     }
   }
 
