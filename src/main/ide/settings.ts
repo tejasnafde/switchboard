@@ -6,6 +6,9 @@
  * Existing user settings are never clobbered - defaults seed once, only the
  * explicitly-patched keys are overwritten after that.
  */
+import { mkdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { writeFileSafe } from '../files/writing'
 
 export const SEEDED_DEFAULTS: Record<string, unknown> = {
   'files.autoSave': 'afterDelay',
@@ -48,4 +51,33 @@ export function mergeUserSettings(existingJson: string | null, patch: Record<str
     if (!existing || typeof existing !== 'object') return null
   }
   return JSON.stringify({ ...SEEDED_DEFAULTS, ...(existing ?? {}), ...patch }, null, 2)
+}
+
+/**
+ * Read, merge and write the workbench's settings.json. Shared by the local
+ * workbench (ipc/ide.ts) and a remote one (ide/bridge-host.ts) so both agree on
+ * the two rules that matter: never clobber unparseable JSONC, and never let
+ * code-server's file watcher observe a torn write.
+ */
+export async function patchWorkbenchSettings(
+  settingsPath: string,
+  patch: Record<string, unknown>,
+  log: { warn(msg: string, err?: unknown): void },
+): Promise<void> {
+  mkdirSync(join(settingsPath, '..'), { recursive: true })
+  let existing: string | null = null
+  try {
+    existing = readFileSync(settingsPath, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') log.warn('settings read failed', err)
+  }
+  const merged = mergeUserSettings(existing, patch)
+  if (merged === null) {
+    // Unparseable (JSONC hand edits) - never clobber; a bridge push still
+    // applies live changes through the workbench's own config service.
+    log.warn(`settings.json unparseable - skipping file write: ${settingsPath}`)
+    return
+  }
+  const res = await writeFileSafe(settingsPath, merged, {})
+  if (!res.ok) log.warn('settings write failed', res.error)
 }

@@ -1,6 +1,7 @@
 /** provisionRemote: probe -> plan -> (upload + install) over a faked runner. */
 import { describe, it, expect, vi } from 'vitest'
 import { provisionRemote } from '../../src/main/machines/provisioner'
+import { bridgeMarker } from '../../src/main/machines/provisionSetup'
 import { execProc } from '../../src/main/machines/provisionDeps'
 import type { Machine } from '@shared/machines'
 
@@ -8,7 +9,7 @@ const machine: Machine = {
   id: 'm1', name: 'prod', sshAlias: 'prod-vm', sshHost: 'h', sshUser: 'u',
   sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0,
 }
-const inputs = { appVersion: '0.4.16', betterSqliteVersion: '12.9.0', claudeSdkVersion: '0.2.114', bundlePath: '/fake/out/server/index.cjs' }
+const inputs = { appVersion: '0.4.16', betterSqliteVersion: '12.9.0', claudeSdkVersion: '0.2.114', bundlePath: '/fake/out/server/index.cjs', bridgeFiles: [] }
 
 // Every remote command (probe or step) is now wrapped through
 // `printf %s '<b64>' | base64 -d | bash`, since asUserScript wraps the
@@ -183,5 +184,81 @@ describe('execProc (real child processes)', () => {
     const res = await execProc('sh', ['-c', 'printf ok'], undefined, 5000)
     expect(res.code).toBe(0)
     expect(res.stdout).toBe('ok')
+  })
+})
+
+/**
+ * Seeding sb-bridge onto the remote is what makes the VM's workbench able to
+ * talk back to Switchboard at all. It rides every connect (like the code-server
+ * install) because a version bump must reach an already-provisioned machine.
+ */
+describe('provisionRemote bridge extension seeding', () => {
+  const withBridge = {
+    ...inputs,
+    bridgeFiles: [{ relPath: 'package.json', base64: 'cGtn' }],
+  }
+
+  it('seeds the bridge on an already-ready remote, right after the code-server ensure', async () => {
+    const r = runner(full)
+    const res = await provisionRemote(machine, withBridge, r)
+    expect(res.action).toBe('ready')
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes[1]).toContain('code-server')
+    // `base64 -d >` is unique to the seed: the probe also reads .sb-marker and
+    // the ensure script also mentions ide-extensions.
+    expect(remotes[2]).toContain('base64 -d >')
+    expect(remotes[2]).toContain('base64 -d')
+  })
+
+  it('marks the seed with a payload hash so an edited extension re-seeds', async () => {
+    const r = runner(full)
+    await provisionRemote(machine, withBridge, r)
+    expect(decode(r.calls[2].args[r.calls[2].args.length - 1])).toMatch(/\.sb-marker" 2>\/dev\/null\)" = "[a-f0-9]{16}"/)
+  })
+
+  it('skips the step entirely when the build has no bundled extension', async () => {
+    const r = runner(full)
+    const logs: string[] = []
+    await provisionRemote(machine, { ...inputs, bridgeFiles: [] }, r, (m) => logs.push(m))
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((s) => s.includes('base64 -d >'))).toBe(false)
+    expect(logs.some((l) => l.includes('no bundled bridge extension'))).toBe(true)
+  })
+
+  it('does NOT ship the payload when the probe says the remote marker already matches', async () => {
+    // The gate that matters for connect time: an upload to an IAP-tunneled host
+    // costs ~2 minutes regardless of size, so a steady-state connect must send
+    // nothing. Measured on a real VM before this gate existed.
+    const marker = bridgeMarker(withBridge.bridgeFiles)
+    const logs = []
+    const r = runner({ ...full, bridge: marker })
+    await provisionRemote(machine, withBridge, r, (m) => logs.push(m))
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((s) => s.includes('base64 -d >'))).toBe(false)
+    expect(logs.some((l) => l.includes('bridge extension already current'))).toBe(true)
+  })
+
+  it('ships the payload when the remote marker is stale (edited extension)', async () => {
+    const r = runner({ ...full, bridge: 'deadbeefdeadbeef' })
+    await provisionRemote(machine, withBridge, r)
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((s) => s.includes('base64 -d >'))).toBe(true)
+  })
+
+  it('is non-fatal: a failed seed still leaves a connectable backend', async () => {
+    const logs: string[] = []
+    const r = runner({ ...full, server: null })
+    r.exec.mockImplementation(async (_cmd: string, args: string[]) => {
+      const remote = decode(args[args.length - 1])
+      if (remote.includes('node -e')) return { code: 0, stdout: JSON.stringify({ ...full, server: null }), stderr: '' }
+          if (remote.includes('base64 -d >')) return { code: 1, stdout: '', stderr: 'disk full' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    const res = await provisionRemote(machine, { ...withBridge, appVersion: '0.4.16' }, r, (m) => logs.push(m))
+    expect(res.action).toBe('install')
+    expect(logs.some((l) => l.includes('bridge extension seed failed (non-fatal)'))).toBe(true)
+    // The version marker is still the final step, so the remote probes ready.
+    const remotes = r.exec.mock.calls.map(([, args]) => decode(args[args.length - 1]))
+    expect(remotes[remotes.length - 1]).toContain('> version')
   })
 })
