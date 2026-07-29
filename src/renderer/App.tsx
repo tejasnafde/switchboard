@@ -28,11 +28,15 @@ import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelec
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated, onSessionRename } from './services/session-events'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
+import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
 import { shouldEvictMessages, needsMessageReload } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 
 const log = createRendererLogger('app')
+
+const WORKTREE_FALLBACK_TOAST =
+  'Could not create a worktree. This chat runs in the project folder instead.'
 
 /** Map a SessionSummary's provider `source` to the agent-store's `AgentType`. */
 function agentTypeForSource(source: SessionSummary['source']): 'claude-code' | 'codex' | 'opencode' {
@@ -111,7 +115,7 @@ export function App() {
     picker: sessionPickerOpen,
     quickPrompt: quickPromptOpen,
   }
-  const [launchConfigToast, setLaunchConfigToast] = useState<string | null>(null)
+  const [appToast, setAppToast] = useState<string | null>(null)
   const [tourOpen, setTourOpen] = useState(false)
   const [tourStartAt, setTourStartAt] = useState(0)
 
@@ -217,17 +221,17 @@ export function App() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ removedName: string; fallbackName: string }>).detail
       if (!detail) return
-      setLaunchConfigToast(`Launch config "${detail.removedName}" was removed; using ${detail.fallbackName}`)
+      setAppToast(`Launch config "${detail.removedName}" was removed; using ${detail.fallbackName}`)
     }
     window.addEventListener('sb-launch-config-fallback', handler)
     return () => window.removeEventListener('sb-launch-config-fallback', handler)
   }, [])
 
   useEffect(() => {
-    if (!launchConfigToast) return
-    const t = setTimeout(() => setLaunchConfigToast(null), 4000)
+    if (!appToast) return
+    const t = setTimeout(() => setAppToast(null), 4000)
     return () => clearTimeout(t)
-  }, [launchConfigToast])
+  }, [appToast])
 
   // Load bookmarks on mount
   useEffect(() => { void useBookmarkStore.getState().load() }, [])
@@ -386,68 +390,99 @@ export function App() {
   // default workspace mode is "worktree", shell out to `git worktree
   // add` first and stamp the result on `worktreePath`; `projectPath`
   // stays the parent repo so the sidebar groups correctly. A failed
-  // worktree create falls back to local mode with a console warn.
+  // worktree create falls back to local mode with a warn + toast.
+  // Ref guards (synchronous); state mirrors it for the sidebar spinner.
+  const newChatPending = useRef(new Set<string>())
+  const [pendingNewChats, setPendingNewChats] = useState<ReadonlySet<string>>(new Set())
   const handleNewChat = useCallback(
     async (projectPath: string, machineId: string = 'local') => {
-      useLayoutStore.getState().setAppView('chats')
-      const id = `agent_${Date.now()}`
-      const title = 'New conversation'
+      // Worktree creation takes seconds (longer over SSH), so the buttons
+      // look dead and users click again, getting duplicate worktrees and
+      // conversation rows. Keyed per project + machine so A never blocks B.
+      const guardKey = newChatKey(projectPath, machineId)
+      if (newChatPending.current.has(guardKey)) return
+      newChatPending.current.add(guardKey)
+      setPendingNewChats(new Set(newChatPending.current))
+      try {
+        useLayoutStore.getState().setAppView('chats')
+        const id = `agent_${Date.now()}`
+        const title = 'New conversation'
 
-      // Route every backend call for this chat (worktree, createConversation,
-      // startSession) to its machine before the first one fires.
-      window.api.routing.bind(id, machineId)
+        // Route every backend call for this chat (worktree, createConversation,
+        // startSession) to its machine before the first one fires.
+        window.api.routing.bind(id, machineId)
 
-      let worktreePath: string | null = null
-      let worktreeBranch: string | null = null
-      const mode = await getDefaultSessionEnvMode()
-      if (mode === 'worktree') {
-        const branchSlug = `thread-${Date.now().toString(36)}`
-        const res = await window.api.git.createSessionWorktree({
-          projectPath,
-          branchSlug,
-          machineId,
-        })
-        if (res.ok) {
-          worktreePath = res.path
-          worktreeBranch = res.branch
-        } else {
-          log.warn('worktree create failed:', res.error)
+        let worktreePath: string | null = null
+        let worktreeBranch: string | null = null
+        const mode = await getDefaultSessionEnvMode()
+        if (mode === 'worktree') {
+          const branchSlug = `thread-${Date.now().toString(36)}`
+          // A failed worktree create deliberately falls back to running the
+          // chat in the project folder; the toast keeps that fallback honest.
+          try {
+            const res = await window.api.git.createSessionWorktree({
+              projectPath,
+              branchSlug,
+              machineId,
+            })
+            if (res.ok) {
+              worktreePath = res.path
+              worktreeBranch = res.branch
+            } else {
+              log.warn('worktree create failed:', res.error)
+              setAppToast(WORKTREE_FALLBACK_TOAST)
+            }
+          } catch (err) {
+            log.warn('worktree create failed:', err)
+            setAppToast(WORKTREE_FALLBACK_TOAST)
+          }
         }
-      }
 
-      addSession({
-        id,
-        type: 'claude-code',
-        status: 'idle',
-        projectPath,
-        machineId,
-        worktreePath,
-        worktreeBranch,
-        title,
-      })
-      setActiveSession(id)
+        addSession({
+          id,
+          type: 'claude-code',
+          status: 'idle',
+          projectPath,
+          machineId,
+          worktreePath,
+          worktreeBranch,
+          title,
+        })
+        setActiveSession(id)
 
-      // Persist to DB (best-effort). `projectPath` is the parent repo;
-      // `worktreePath` (if set) is the actual cwd the agent runs in.
-      window.api.app.createConversation({
-        id,
-        projectPath,
-        agentType: 'claude-code',
-        title,
-        worktreePath,
-        worktreeBranch,
-      }).catch(() => {})
+        // Persist to DB (best-effort). `projectPath` is the parent repo;
+        // `worktreePath` (if set) is the actual cwd the agent runs in.
+        window.api.app.createConversation({
+          id,
+          projectPath,
+          agentType: 'claude-code',
+          title,
+          worktreePath,
+          worktreeBranch,
+        }).catch((err) => {
+          log.warn('createConversation persist failed:', err)
+        })
 
-      // Local chats show in the workspace tree via the sidebar event; remote
-      // chats live in their machine's tree. Inject the row optimistically - a
-      // rescan (syncMachine) can't see a brand-new empty conversation yet.
-      if (machineId === 'local') {
-        emitSessionCreated({ id, projectPath, title, startedAt: Date.now(), source: 'switchboard' })
-      } else {
-        useMachineStore.getState().addSnapshotSession(machineId, projectPath, { id, title, agentType: 'claude-code' })
+        // Local chats show in the workspace tree via the sidebar event; remote
+        // chats live in their machine's tree. Inject the row optimistically - a
+        // rescan (syncMachine) can't see a brand-new empty conversation yet.
+        if (machineId === 'local') {
+          emitSessionCreated({ id, projectPath, title, startedAt: Date.now(), source: 'switchboard' })
+        } else {
+          useMachineStore.getState().addSnapshotSession(machineId, projectPath, { id, title, agentType: 'claude-code' })
+        }
+      } finally {
+        newChatPending.current.delete(guardKey)
+        setPendingNewChats(new Set(newChatPending.current))
       }
     },
     [addSession, setActiveSession],
+  )
+
+  const isNewChatPending = useCallback(
+    (projectPath: string, machineId: string = 'local') =>
+      pendingNewChats.has(newChatKey(projectPath, machineId)),
+    [pendingNewChats],
   )
 
   // Click a session in sidebar - load its messages from disk. If we're
@@ -882,7 +917,7 @@ export function App() {
             borderRight: sidebarVisible ? '1px solid var(--border)' : 'none',
           }}
         >
-          <Sidebar onNewChat={handleNewChat} onSessionSelect={handleSessionSelect} />
+          <Sidebar onNewChat={handleNewChat} onSessionSelect={handleSessionSelect} isNewChatPending={isNewChatPending} />
         </div>
 
         {/* Sidebar divider */}
@@ -1052,7 +1087,7 @@ export function App() {
         startAt={tourStartAt}
         onTryIt={handleTryIt}
       />
-      {launchConfigToast && (
+      {appToast && (
         <div
           style={{
             position: 'fixed',
@@ -1070,7 +1105,7 @@ export function App() {
             maxWidth: '480px',
           }}
         >
-          {launchConfigToast}
+          {appToast}
         </div>
       )}
       <UpdateToast />

@@ -8,6 +8,7 @@
 
 import { create } from 'zustand'
 import { defaultInstanceId, type ProviderInstance, type AgentType } from '@shared/types'
+import type { ProviderUsage } from '@shared/provider-usage'
 import type { ProviderInstanceUpsertInput } from '../../preload'
 
 interface ProviderInstanceStore {
@@ -20,6 +21,9 @@ interface ProviderInstanceStore {
   upsert: (input: ProviderInstanceUpsertInput) => Promise<ProviderInstance>
   remove: (id: string) => Promise<boolean>
   test: (id: string) => Promise<{ ok: boolean; message: string }>
+  /** Subscription usage for one instance. Never throws; failures come back
+   *  as a ProviderUsage with a non-'ok' status. */
+  usage: (id: string, opts?: { force?: boolean }) => Promise<ProviderUsage>
   clearError: () => void
   /** Helper: instances filtered to a given agent kind, in a stable order
    *  (default first, then alpha). Used by both the picker and the
@@ -76,6 +80,24 @@ export const useProviderInstanceStore = create<ProviderInstanceStore>((set, get)
       return await window.api.providerInstances.test(id)
     } catch (err) {
       return { ok: false, message: asMessage(err) }
+    }
+  },
+
+  usage: async (id, opts) => {
+    try {
+      return await window.api.providerInstances.usage(id, opts)
+    } catch (err) {
+      return {
+        instanceId: id,
+        agentType: get().instances.find((i) => i.id === id)?.agentType ?? 'claude-code',
+        status: 'error' as const,
+        plan: null,
+        account: null,
+        windows: [],
+        overage: [],
+        message: asMessage(err),
+        fetchedAtMs: Date.now(),
+      }
     }
   },
 

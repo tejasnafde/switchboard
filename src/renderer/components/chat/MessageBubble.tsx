@@ -39,11 +39,13 @@ interface MessageBubbleProps {
    * rather than risk a false positive.
    */
   knownSkillNames?: Set<string>
-  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void
-  onAnswerQuestion?: (requestId: string, answers: string[][]) => void
+  // These return promises so the cards can re-enable themselves (and show an
+  // inline error) when the underlying IPC rejects.
+  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void | Promise<void>
+  onAnswerQuestion?: (requestId: string, answers: string[][]) => void | Promise<void>
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
   /** Resolve a file-diff card: write the chosen content back + persist status. */
-  onFileDiffResolve?: (messageId: string, status: FileDiffResolveStatus, contentToWrite: string | null) => void
+  onFileDiffResolve?: (messageId: string, status: FileDiffResolveStatus, contentToWrite: string | null) => void | Promise<void>
 }
 
 export function resolveBubbleProjectPath(

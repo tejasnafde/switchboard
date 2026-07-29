@@ -44,6 +44,9 @@ import type { AgentStatus, Project, Workspace } from '@shared/types'
 import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
 import { launchCardChat } from './cardLaunch'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('kanban:view')
 
 const RUNTIME_MODE_BADGE: Record<RuntimeMode, string> = {
   plan: 'plan',
@@ -70,6 +73,7 @@ export function KanbanView(): React.ReactElement {
   const [managingWorktrees, setManagingWorktrees] = useState(false)
   const [filter, setFilter] = useState('')
   const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [launchError, setLaunchError] = useState<string | null>(null)
 
   // 5px activation distance keeps clicks (open edit modal) distinct
   // from drags. Without it every mousedown becomes a drag.
@@ -147,26 +151,52 @@ export function KanbanView(): React.ReactElement {
   //   ↗  (open)       - start (or jump-to) and switch to chats view.
   // Both go through the shared `launchCardChat` so the persistence /
   // provider-bridge wiring stays in one place.
+  // A second launch would mint a new session id, overwrite
+  // card.conversationId, and orphan the first provider process.
   const startCardBackground = useCallback(
     async (card: KanbanCard) => {
-      const result = await launchCardChat(card, { openChat: false })
-      if (!result.reused && card.status === 'backlog') {
-        // Background launch implies "start the work"; promote to in_progress
-        // so the column reflects reality without a separate drag.
-        void move(card.id, 'in_progress')
+      if (!useKanbanStore.getState().beginCardLaunch(card.id)) return
+      setLaunchError(null)
+      try {
+        const result = await launchCardChat(card, { openChat: false })
+        if (!result.reused && card.status === 'backlog') {
+          // Background launch implies "start the work"; promote to in_progress
+          // so the column reflects reality without a separate drag.
+          void move(card.id, 'in_progress')
+        } else if (!result.reused) {
+          // move() refetches the card; without one the tile keeps a stale
+          // empty conversationId and offers the play button again.
+          void hydrate(card.projectPath)
+        }
+      } catch (err) {
+        log.error('card launch failed', { cardId: card.id, err: String(err) })
+        setLaunchError(`Could not start "${card.title}": ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        useKanbanStore.getState().endCardLaunch(card.id)
       }
     },
-    [move],
+    [move, hydrate],
   )
   const startCardAndOpen = useCallback(
     async (card: KanbanCard) => {
-      const result = await launchCardChat(card, { openChat: true })
-      if (!result.reused && card.status === 'backlog') {
-        void move(card.id, 'in_progress')
+      if (!useKanbanStore.getState().beginCardLaunch(card.id)) return
+      setLaunchError(null)
+      try {
+        const result = await launchCardChat(card, { openChat: true })
+        if (!result.reused && card.status === 'backlog') {
+          void move(card.id, 'in_progress')
+        } else if (!result.reused) {
+          void hydrate(card.projectPath)
+        }
+        setAppView('chats')
+      } catch (err) {
+        log.error('card launch failed', { cardId: card.id, err: String(err) })
+        setLaunchError(`Could not start "${card.title}": ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        useKanbanStore.getState().endCardLaunch(card.id)
       }
-      setAppView('chats')
     },
-    [move, setAppView],
+    [move, setAppView, hydrate],
   )
 
   const editingCard = editingId ? allCards.find((c) => c.id === editingId) ?? null : null
@@ -261,6 +291,13 @@ export function KanbanView(): React.ReactElement {
           ✕ Close
         </button>
       </div>
+
+      {launchError && (
+        <div style={launchErrStyle}>
+          <span style={{ flex: 1 }}>{launchError}</span>
+          <button onClick={() => setLaunchError(null)} style={closeErrBtnStyle} title="Dismiss">✕</button>
+        </div>
+      )}
 
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
         <div style={columnsStyle}>
@@ -435,6 +472,7 @@ function CardTilePresentation({
   onStart?: () => void
   onStartAndOpen?: () => void
 }): React.ReactElement {
+  const launching = useKanbanStore((s) => s.launchingCardIds.has(card.id))
   // Subscribed only when a session is linked, so cardless tiles skip the lookup.
   const liveStatus = useAgentStore((s) =>
     card.conversationId
@@ -467,7 +505,11 @@ function CardTilePresentation({
             {/* When the card already has a linked session there's only
                 one sensible CTA: jump into it. The background-vs-open
                 split only matters at first-launch. */}
-            {hasSession ? (
+            {launching ? (
+              <button disabled title="Launching…" style={startBtnStyle}>
+                <Spinner />
+              </button>
+            ) : hasSession ? (
               onStartAndOpen && (
                 <button
                   onMouseDown={(e) => e.stopPropagation()}
@@ -535,6 +577,22 @@ function CardTilePresentation({
   )
 }
 
+function Spinner(): React.ReactElement {
+  return (
+    <span
+      aria-label="Launching"
+      style={{
+        display: 'inline-block',
+        width: 10, height: 10,
+        border: '2px solid var(--border)',
+        borderTopColor: 'var(--accent, #2563eb)',
+        borderRadius: '50%',
+        animation: 'sb-spin 720ms linear infinite',
+      }}
+    />
+  )
+}
+
 function SessionLiveness({ status }: { status: AgentStatus | undefined }): React.ReactElement | null {
   if (!status || status === 'exited') return null
   const active = status === 'running' || status === 'thinking'
@@ -576,6 +634,15 @@ const primaryBtnStyle: CSSProperties = {
 const secondaryBtnStyle: CSSProperties = {
   fontSize: 12, padding: '4px 10px', background: 'transparent', color: 'var(--fg)',
   border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer',
+}
+const launchErrStyle: CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+  fontSize: 12, color: 'var(--red, #d73a49)',
+  borderBottom: '1px solid var(--border)', background: 'rgba(215,58,73,0.08)',
+}
+const closeErrBtnStyle: CSSProperties = {
+  background: 'transparent', border: 'none', color: 'var(--red, #d73a49)',
+  cursor: 'pointer', fontSize: 12, padding: 0,
 }
 const columnsStyle: CSSProperties = {
   flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, padding: 12, overflow: 'auto',

@@ -7,6 +7,23 @@
 const NETWORK_RE =
   /ERR_INTERNET_DISCONNECTED|ERR_NAME_NOT_RESOLVED|ERR_NETWORK_CHANGED|ERR_CONNECTION|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNREFUSED|ECONNRESET|getaddrinfo|net::ERR/i
 
+/**
+ * The download landed but its `temp-<asset>` file was gone by the time
+ * electron-updater renamed it into place. That staging area lives under
+ * `~/Library/Caches/switchboard-updater/pending`, which macOS is free to purge
+ * under disk pressure - and a full update asset sits there for the whole
+ * download. electron-updater only retries EBUSY on that rename
+ * (AppUpdater.executeDownload), so a single vanish loses the download and
+ * surfaces the raw errno. Transient by nature: re-downloading fixes it.
+ */
+const STALE_DOWNLOAD_RE = /ENOENT[\s\S]*rename[\s\S]*temp-/i
+
+export function isStaleDownloadError(raw: string): boolean {
+  return STALE_DOWNLOAD_RE.test(raw)
+}
+
 export function friendlyUpdateError(raw: string): string {
-  return NETWORK_RE.test(raw) ? 'No internet connection' : raw
+  if (NETWORK_RE.test(raw)) return 'No internet connection'
+  if (isStaleDownloadError(raw)) return 'Update download was interrupted - try again'
+  return raw
 }

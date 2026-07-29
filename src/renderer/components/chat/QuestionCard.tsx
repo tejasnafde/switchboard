@@ -1,9 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import type { QuestionAttachment } from '@shared/types'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('chat:question-card')
 
 interface QuestionCardProps {
   question: QuestionAttachment
-  onAnswer?: (answers: string[][]) => void
+  onAnswer?: (answers: string[][]) => void | Promise<void>
 }
 
 /**
@@ -29,6 +32,8 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
     () => question.questions.map(() => false)
   )
   const autoAdvanceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const submitRef = useRef(false)
+  const [submitting, setSubmitting] = useState(false)
 
   const activeQ = question.questions[qIdx]
   const isLast = qIdx === question.questions.length - 1
@@ -38,6 +43,11 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
 
   const submitAll = (all: string[][]) => {
     if (answered) return
+    // `answered` only flips when the question.answered event round-trips, so
+    // without this the Submit button and the auto-advance timer can both fire.
+    if (submitRef.current) return
+    submitRef.current = true
+    setSubmitting(true)
     // If a question has a non-empty free-text answer, use that as the
     // sole "selection" - agent sees the typed string instead of the
     // picked option(s). Lets users escape out of fixed-choice questions.
@@ -46,7 +56,12 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
       if (text) return [text]
       return picks
     })
-    onAnswer?.(resolved)
+    Promise.resolve(onAnswer?.(resolved)).catch((err) => {
+      // Parent surfaced the failure in chat; re-enable so the user can retry.
+      log.warn('answer submit failed, re-enabling card', err)
+      submitRef.current = false
+      setSubmitting(false)
+    })
   }
 
   const advance = (all: string[][]) => {
@@ -363,10 +378,10 @@ export function QuestionCard({ question, onAnswer }: QuestionCardProps) {
           )}
           <button
             onClick={() => advance(selections)}
-            disabled={!canAdvance}
-            style={canAdvance ? btnPrimary : btnDisabled}
+            disabled={!canAdvance || submitting}
+            style={canAdvance && !submitting ? btnPrimary : btnDisabled}
           >
-            {isLast ? 'Submit' : 'Next'}
+            {submitting ? 'Submitting…' : isLast ? 'Submit' : 'Next'}
           </button>
         </div>
       )}

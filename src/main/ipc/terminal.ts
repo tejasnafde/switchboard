@@ -11,16 +11,21 @@ let ptyManager: PtyManager | null = null
 let outputCoalescer: OutputCoalescer | null = null
 
 /**
- * Kill every pty and flush buffered output. MUST run in `before-quit`:
- * a live node-pty ThreadSafeFunction callback that lands during Node
- * environment teardown throws into a dying env and abort()s the whole
- * process (the 0.7.19 crash-on-quit). Killing here lets the native
- * callbacks drain while the event loop is still alive.
+ * Kill every pty, flush buffered output, and WAIT for node-pty's exit
+ * callbacks to land. MUST complete before quit continues: a callback that
+ * lands during Node environment teardown throws into a dying env and
+ * abort()s the process. The pre-0.7.28 version killed synchronously and
+ * returned before the callbacks drained, so it still crashed.
  */
-export function shutdownTerminals(): void {
+export async function shutdownTerminals(): Promise<void> {
   outputCoalescer?.flushAll()
-  ptyManager?.killAll()
+  const manager = ptyManager
   ptyManager = null
+  if (!manager) return
+  const result = await manager.disposeAll()
+  if (result === 'timed-out') {
+    log.warn('pty exit drain timed out - continuing quit anyway')
+  }
 }
 
 export function registerTerminalHandlers(host: BackendHost): void {
@@ -45,8 +50,11 @@ export function registerTerminalHandlers(host: BackendHost): void {
 
   host.handle(TerminalChannels.CREATE, async (opts: TerminalCreateOptions) => {
     log.info('create', opts.id, { cwd: opts.cwd, cols: opts.cols, rows: opts.rows })
+    // `shutdownTerminals` clears the manager while the renderer is still
+    // live, so late writes/resizes below no-op rather than throw.
     try {
-      await ptyManager!.create(opts)
+      if (!ptyManager) throw new Error('terminal backend is shutting down')
+      await ptyManager.create(opts)
       log.info('created', opts.id)
       return { id: opts.id }
     } catch (err) {
@@ -56,14 +64,14 @@ export function registerTerminalHandlers(host: BackendHost): void {
   })
 
   host.on(TerminalChannels.DATA, (payload: TerminalDataPayload) => {
-    ptyManager!.write(payload.id, payload.data)
+    ptyManager?.write(payload.id, payload.data)
   })
 
   host.on(TerminalChannels.RESIZE, (payload: TerminalResizePayload) => {
-    ptyManager!.resize(payload.id, payload.cols, payload.rows)
+    ptyManager?.resize(payload.id, payload.cols, payload.rows)
   })
 
   host.on(TerminalChannels.KILL, (id: string) => {
-    ptyManager!.kill(id)
+    ptyManager?.kill(id)
   })
 }

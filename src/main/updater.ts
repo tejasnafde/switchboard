@@ -27,7 +27,7 @@ import { autoUpdater } from 'electron-updater'
 import { AppChannels } from '@shared/ipc-channels'
 import type { UpdateStatus } from '@shared/update-status'
 import { createMainLogger } from './logger'
-import { friendlyUpdateError } from './updater-error'
+import { friendlyUpdateError, isStaleDownloadError } from './updater-error'
 
 const log = createMainLogger('updater')
 
@@ -36,6 +36,8 @@ export type { UpdateStatus }
 
 let registered = false
 let lastStatus: UpdateStatus = { kind: 'idle' }
+/** Guards the one-shot re-download after a purged staging file. */
+let staleDownloadRetried = false
 
 function send(window: BrowserWindow, status: UpdateStatus): void {
   lastStatus = status
@@ -112,9 +114,12 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   autoUpdater.on('download-progress', (p) =>
     send(window, { kind: 'downloading', percent: Math.round(p.percent ?? 0) }),
   )
-  autoUpdater.on('update-downloaded', (info) =>
-    send(window, { kind: 'downloaded', version: info?.version ?? 'unknown' }),
-  )
+  autoUpdater.on('update-downloaded', (info) => {
+    // A download that completes re-arms the stale-cache retry below, so a
+    // later update in the same session gets its own attempt.
+    staleDownloadRetried = false
+    send(window, { kind: 'downloaded', version: info?.version ?? 'unknown' })
+  })
   autoUpdater.on('error', (err) => {
     const msg = err.message ?? String(err)
     // A 404 on latest-mac.yml / latest.yml just means no release artifact
@@ -123,6 +128,21 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     if (msg.includes('latest-mac.yml') || msg.includes('latest.yml')) {
       log.info('no release artifact found - skipping update check')
       send(window, { kind: 'up-to-date', version: app.getVersion() })
+      return
+    }
+    // The staging file was purged mid-download (see isStaleDownloadError).
+    // electron-updater has already emptied the pending dir by the time it
+    // reports this, so a fresh check re-downloads cleanly. Retry once per
+    // successful download so a genuinely broken cache can't loop forever.
+    if (isStaleDownloadError(msg) && !staleDownloadRetried) {
+      staleDownloadRetried = true
+      log.warn('update staging file vanished mid-download - retrying once')
+      send(window, { kind: 'checking' })
+      autoUpdater.checkForUpdates().catch((retryErr) => {
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
+        log.error(`stale-download retry failed: ${retryMsg}`)
+        send(window, { kind: 'error', message: friendlyUpdateError(retryMsg) })
+      })
       return
     }
     send(window, { kind: 'error', message: friendlyUpdateError(msg) })
@@ -147,4 +167,9 @@ export function registerAutoUpdater(window: BrowserWindow): void {
 export function quitAndInstall(): void {
   if (!app.isPackaged) return
   autoUpdater.quitAndInstall()
+}
+
+/** Record + broadcast a status, so a remounted Settings row sees it too. */
+export function reportInstallStatus(window: BrowserWindow, status: UpdateStatus): void {
+  send(window, status)
 }

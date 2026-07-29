@@ -8,10 +8,11 @@
  * Promise until the user decides.
  */
 
-import { execSync } from 'child_process'
+import { execSync, execFile } from 'child_process'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
+import { promisify } from 'util'
 import { createMainLogger as createLogger } from '../../logger'
 import { recordThreadSession, listSessionIdsForThread } from '../../db/database'
 
@@ -58,6 +59,7 @@ import type {
   ApprovalDecision,
 } from '../types'
 import type { ProviderSkill } from '@shared/types'
+import { formatClaudeAuthStatus } from '@shared/provider-auth-format'
 
 const log = createLogger('provider:claude')
 
@@ -112,6 +114,35 @@ function claudeCredsKnownPresent(env: Record<string, string>): boolean {
     return existsSync(join(configDir, '.credentials.json'))
   } catch {
     return false
+  }
+}
+
+const execFileAsync = promisify(execFile)
+
+/**
+ * Preflight login state under the resolved CLAUDE_CONFIG_DIR before spawning a
+ * session. `claude auth status` is a local credential read that prints JSON
+ * (`loggedIn:false` when the profile is logged out). Spawning the real query
+ * against a logged-out config dir hangs with no `system/init` and no error
+ * (confirmed 2026-07-26), so we fail fast with the re-login command instead.
+ * Fails OPEN: any probe error/timeout returns ok, so a possibly-valid session
+ * is never blocked (a generic startup hang is a separate concern).
+ */
+async function probeClaudeLogin(
+  bin: string,
+  env: Record<string, string>,
+  oauthDir: string | null,
+): Promise<{ ok: boolean; message: string }> {
+  try {
+    const { stdout } = await execFileAsync(bin, ['auth', 'status'], {
+      env,
+      timeout: 7000,
+      maxBuffer: 1024 * 1024,
+    })
+    return formatClaudeAuthStatus(stdout, oauthDir)
+  } catch (err) {
+    log.warn(`auth preflight probe failed, proceeding: ${err instanceof Error ? err.message : String(err)}`)
+    return { ok: true, message: '' }
   }
 }
 
@@ -217,6 +248,16 @@ import {
   defaultClaudeDir,
 } from '../claude-session-migrate'
 import { shapeQuestionAnswers } from './question-answers'
+import { TurnWatchdog, StderrTail, countToolBrackets } from '../turn-watchdog'
+
+/**
+ * Silence this long inside a turn is reported to the UI. Generous because
+ * long tool runs are legitimately quiet, but a spinner that never explains
+ * itself is worse than a false alarm.
+ */
+const TURN_STALL_MS = 180_000
+const STALL_CHECK_INTERVAL_MS = 20_000
+const STDERR_TAIL_CHARS = 2_000
 
 // ─── Prompt queue - push new SDKUserMessages into a running query ──
 
@@ -368,9 +409,26 @@ interface ActiveSession {
   instanceEnv: Record<string, string>
   /** Per-instance CLAUDE_CONFIG_DIR (set when auth_mode='oauth_dir'). */
   instanceOauthDir: string | null
+  /** Reports turns that go silent with no terminal event (see TURN_STALL_MS). */
+  watchdog: TurnWatchdog
+  /** Rolling tail of the claude subprocess's stderr, attached to stall/error messages. */
+  stderrTail: StderrTail
 }
 
 export class ClaudeAdapter implements ProviderAdapter {
+  /** Drives every session's TurnWatchdog; unref'd so it never holds the process open. */
+  private stallTimer: ReturnType<typeof setInterval> | null = null
+
+  private ensureStallTimer(): void {
+    if (this.stallTimer) return
+    this.stallTimer = setInterval(() => {
+      for (const active of this.sessions.values()) {
+        active.watchdog.check(Date.now())
+      }
+    }, STALL_CHECK_INTERVAL_MS)
+    this.stallTimer.unref?.()
+  }
+
   readonly provider = 'claude' as const
   private sessions = new Map<string, ActiveSession>()
   /**
@@ -468,6 +526,21 @@ export class ClaudeAdapter implements ProviderAdapter {
       instanceId: opts.instanceId,
     }
 
+    const stderrTail = new StderrTail(STDERR_TAIL_CHARS)
+    const watchdog = new TurnWatchdog(TURN_STALL_MS, (idleMs) => {
+      const idleMin = Math.round(idleMs / 60_000)
+      const tail = stderrTail.tail().trim()
+      log.warn(`turn stalled: ${opts.threadId} no SDK events for ${Math.round(idleMs / 1000)}s`)
+      onEvent({
+        type: 'error',
+        threadId: opts.threadId,
+        message:
+          `No response from Claude for ${idleMin} minute${idleMin === 1 ? '' : 's'}. ` +
+          'It may still be working on a long operation. If it seems stuck, press Stop and resend.' +
+          (tail ? `\n\nRecent claude stderr:\n${tail}` : ''),
+      })
+    })
+
     const active: ActiveSession = {
       session,
       query: null,
@@ -485,9 +558,12 @@ export class ClaudeAdapter implements ProviderAdapter {
       turnStartedAt: null,
       instanceEnv: opts.resolvedEnv ?? {},
       instanceOauthDir: opts.resolvedOauthDir ?? null,
+      watchdog,
+      stderrTail,
     }
 
     this.sessions.set(opts.threadId, active)
+    this.ensureStallTimer()
     onEvent({ type: 'status', threadId: opts.threadId, status: 'idle' })
     log.info(`session started: ${opts.threadId} cwd=${opts.cwd}`)
     return session
@@ -556,6 +632,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     // The user-perceived "Worked for X" should include any queueing delay
     // - that's the experience they're judging.
     active.turnStartedAt = Date.now()
+    active.watchdog.turnStarted(Date.now())
 
     // If we haven't started the SDK query yet, kick it off now
     if (!active.draining) {
@@ -621,9 +698,12 @@ export class ClaudeAdapter implements ProviderAdapter {
             requestId,
             questions,
           })
+          // Waiting on the user - expected silence, hold stall reports.
+          active.watchdog.suspend()
           const userAnswers = await new Promise<string[][]>((resolve) => {
             active.pendingQuestions.set(requestId, { requestId, resolve })
           })
+          active.watchdog.resume(Date.now())
           active.onEvent({ type: 'question.answered', threadId, requestId, answers: userAnswers })
 
           // Shape into the SDK's wire contract: answers keyed by question
@@ -705,9 +785,12 @@ export class ClaudeAdapter implements ProviderAdapter {
         detail,
       })
 
+      // Waiting on the user - expected silence, hold stall reports.
+      active.watchdog.suspend()
       const decision = await new Promise<ApprovalDecision>((resolve) => {
         active.pendingApprovals.set(requestId, { requestId, resolve })
       })
+      active.watchdog.resume(Date.now())
 
       active.onEvent({ type: 'request.closed', threadId, requestId, decision })
 
@@ -718,6 +801,30 @@ export class ClaudeAdapter implements ProviderAdapter {
 
     const claudeBin = findClaudeBin()
     const env = buildClaudeQueryEnv(buildClaudeCliEnv(), active.instanceEnv, active.instanceOauthDir)
+
+    // Auth preflight - see probeClaudeLogin. Spawning against a logged-out
+    // profile otherwise hangs indefinitely with no events and no error.
+    if (claudeBin) {
+      const auth = await probeClaudeLogin(claudeBin, env, active.instanceOauthDir)
+      if (!auth.ok) {
+        active.onEvent({ type: 'error', threadId, message: auth.message })
+        const durationMs = active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
+        active.turnStartedAt = null
+        active.watchdog.turnEnded()
+        active.currentMessageId = null
+        active.currentReasoningMessageId = null
+        active.partialMessageText.clear()
+        active.onEvent({
+          type: 'turn.completed',
+          threadId,
+          ...(durationMs !== undefined ? { durationMs } : {}),
+        })
+        active.onEvent({ type: 'status', threadId, status: 'error' })
+        // Let a later send re-drain (e.g. after the user re-logs in).
+        active.draining = false
+        return
+      }
+    }
 
     // Notebook workspaces get the mirror-format guidance. The SDK default for
     // an unset systemPrompt is the EMPTY string (verified against sdk.mjs), so
@@ -742,9 +849,11 @@ export class ClaudeAdapter implements ProviderAdapter {
       ...(claudeBin ? { pathToClaudeCodeExecutable: claudeBin } : {}),
       env,
       includePartialMessages: true,
-      // Capture stderr from the spawned claude process for debugging
+      // Buffered as well as logged, so a stall message can quote what the
+      // subprocess actually said instead of leaving it in the dev log.
       stderr: (data: string) => {
         log.warn(`claude stderr: ${data.slice(0, 500)}`)
+        active.stderrTail.push(data)
       },
     }
 
@@ -843,6 +952,9 @@ export class ClaudeAdapter implements ProviderAdapter {
       active.currentReasoningMessageId = null
       active.partialMessageText.clear()
       active.draining = false
+      // The query loop is gone, so nothing can arrive for this turn - stop
+      // the stall clock even on the paths that never reached `result`.
+      active.watchdog.turnEnded()
     }
   }
 
@@ -967,6 +1079,8 @@ export class ClaudeAdapter implements ProviderAdapter {
       active.query = null
     }
 
+    active.watchdog.turnEnded()
+
     // Close the prompt queue so the SDK generator finishes naturally
     active.prompt.close()
 
@@ -1000,6 +1114,11 @@ export class ClaudeAdapter implements ProviderAdapter {
     active: ActiveSession,
     msg: SDKMessage,
   ): void {
+    // Any message counts as life, including types this switch ignores.
+    active.watchdog.activity(Date.now())
+    // Auto-approved tools never hit the pendingApprovals path, so this is
+    // the only place their (legitimately silent) run gets bracketed.
+    countToolBrackets(msg, active.watchdog, Date.now())
     switch (msg.type) {
       case 'system': {
         const sys = msg as SDKMessage & Record<string, unknown>
@@ -1203,6 +1322,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         const durationMs =
           active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
         active.turnStartedAt = null
+        active.watchdog.turnEnded()
         active.onEvent({
           type: 'turn.completed',
           threadId,
@@ -1271,6 +1391,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // turn.completed, then flag the error status.
           const durationMs = active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
           active.turnStartedAt = null
+          active.watchdog.turnEnded()
           active.currentMessageId = null
           active.currentReasoningMessageId = null
           active.partialMessageText.clear()

@@ -14,7 +14,7 @@ describe('parseProbeOutput', () => {
 
   it('parses the probe JSON line', () => {
     expect(parseProbeOutput(line)).toEqual({
-      node: 'v20.11.0', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16',
+      node: 'v20.11.0', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16', bridge: null,
     })
   })
 
@@ -24,10 +24,18 @@ describe('parseProbeOutput', () => {
   })
 
   it('returns all-null when node is absent (empty / garbage output)', () => {
-    expect(parseProbeOutput('')).toEqual({ node: null, platform: null, arch: null, abi: null, server: null })
+    expect(parseProbeOutput('')).toEqual({ node: null, platform: null, arch: null, abi: null, server: null, bridge: null })
     expect(parseProbeOutput('bash: node: command not found')).toEqual({
-      node: null, platform: null, arch: null, abi: null, server: null,
+      node: null, platform: null, arch: null, abi: null, server: null, bridge: null,
     })
+  })
+
+  it('reads the sb-bridge payload marker, which gates re-shipping the extension', () => {
+    // Absent on a remote that has never been seeded, which is what makes the
+    // provisioner ship the payload exactly once per extension change.
+    expect(parseProbeOutput(line).bridge).toBeNull()
+    const withBridge = JSON.stringify({ node: 'v20.11.0', server: '0.4.16', bridge: 'a1b2c3d4e5f60718' })
+    expect(parseProbeOutput(withBridge).bridge).toBe('a1b2c3d4e5f60718')
   })
 
   it('reads a null server marker when only node is present', () => {

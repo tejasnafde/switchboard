@@ -2,6 +2,58 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-07-30 - Quit stops crashing, and slow buttons admit they are working
+
+### Fixed
+- **"Restart and install" had no idempotency guard of any kind.** No disabled state, no spinner, no label change, and `app:quit-and-install` is a fire-and-forget `send` with no return value, so every click re-fired it. The button now latches on a ref (StrictMode cannot double-send), disables, shows a spinner and reads "Restarting…". Main drops repeat fires independently and broadcasts a new `installing` status, so closing and reopening Settings mid-install still shows the pending state instead of offering a button whose clicks are dropped.
+- **The app aborted with SIGABRT on quit, again.** `before-quit` killed the PTYs synchronously, but `pty.kill()` returns before node-pty delivers its exit callback through a napi ThreadSafeFunction, and a callback that lands once `node::FreeEnvironment` is under way throws into a dying environment and `abort()`s the process. This is the 0.7.19 crash restored by a fix that only looked synchronous. Quit now prevents itself once, awaits an exit drain capped at 1.5s, then re-requests the quit.
+- **The install path must not have its quit prevented.** `autoUpdater.quitAndInstall()` triggers its own quit to run the install, so the drain runs ahead of it via `prepare()` and that quit passes straight through. Draining inside `before-quit` instead would cancel the install. If the process is somehow still alive 15s later the install never started, so the latch releases with an actionable message rather than a dead button.
+- **A turn that went silent showed the user nothing.** No `turn.completed`, no `error`, just a spinner that never resolved, with the only evidence in the `claude` subprocess's stderr in the dev log. Unexplained silence longer than three minutes now posts to the chat and quotes the recent stderr tail, which is buffered on the session instead of only logged. Tool runs and prompts awaiting an answer are bracketed, so silence that is legitimate stays quiet.
+- **Double-fire guards across every control that mutates something.** A new thread ran a real `git worktree add` with no guard, so a second click during those seconds produced two worktrees and two conversation rows; a kanban card launch minted a second session id and overwrote `card.conversationId`, orphaning the first provider process; `⌘Enter` in the card modal bypassed the button's own `disabled` because the keydown closure captured a stale flag; approve/deny, question submit, plan implement and the file-diff actions all stayed live until their event round-tripped.
+- **Failures that were previously silent now surface.** `respondToRequest` had no `.catch` at all and `answerQuestion` had `.catch(() => {})`; both now report in chat and re-enable their card. File-diff write failures show inline on the card, which stays actionable. A worktree fallback raises a toast, and a kanban launch failure raises a dismissible banner.
+
+### Notes
+- **A turn killed mid-tool leaves an unmatched suspension, which would disable the stall watchdog permanently and silently.** Any interrupt or error between `tool_use` and `tool_result` leaks one suspend, and the counter never returned to zero, so a watchdog built to catch silent hangs would itself go quiet for the rest of the session. A new turn resets it: no tool from a finished turn can still be running.
+- **Adding `installing` to `UpdateStatus` left the status-line switch non-exhaustive, and TypeScript allowed it.** The label was an un-annotated IIFE, so the inferred return became `string | undefined` and the missing case rendered a blank line on exactly the remount the status was added for. The label is now a pure function annotated `: string`, so the next status kind fails typecheck instead of shipping an empty line.
+- The stall threshold is deliberately generous. Builds and test suites are quiet for minutes, and a false alarm costs a line of text while a spinner with no explanation costs the user their confidence in the app.
+- Button-state rules and the status copy live in a pure module with unit tests, because the renderer has no jsdom and components cannot be rendered in this suite. Anything with a rule worth trusting was moved out of the component.
+- Verification limit worth stating plainly: the crash-on-quit fix and the install path can only be fully proven in a packaged build. `npm run dev` exercises the PTY drain, but `quitAndInstall` is a no-op when `app.isPackaged` is false.
+
+## 2026-07-29 - Remote workbench: keybindings inside it reach Switchboard again
+
+### Fixed
+- **`cmd+shift+E` inside a remote workbench toggled the IDE pane on but never back off.** On an SSH-backed machine the VM's code-server had no sb-bridge extension at all: the provisioner only ever seeded it for the LOCAL workbench, and the remote code-server was started by a raw `nohup` line in the ssh bootstrap with no `SB_BRIDGE_PORT`/`SB_BRIDGE_TOKEN` and no bridge listening on the VM. `extension.js` stays idle without those, so every key pressed inside the remote workbench died in the guest. Toggling *on* worked only because focus was still in Switchboard's own document, where the app's document listener sees the chord. `cmd+l`, `cmd+k`, `cmd+shift+J` and the Charcoal theme were dead on remote for the same reason.
+- The extension is now provisioned onto the VM, the ssh bootstrap mints one `SB_BRIDGE_TOKEN` in the single shell that starts both remote processes (so they agree without the token ever reaching this machine's logs), and the headless backend runs the bridge. Intents ride `WsHost.emit` over the backend socket the desktop already holds - no extra tunnel, no extra forward.
+- **`ide:open` and `ide:set-theme` now carry `machineId`.** `folder` is not a routing key, so a pill click in a remote session was resolving to the local backend and silently queueing there.
+- **An interrupted update download is retried once.** `~/Library/Caches` is purgeable, and electron-updater only retries `EBUSY` on its temp-to-final rename - so a single purge mid-download lost the download and surfaced a raw `ENOENT ... rename '.../temp-Switchboard-X.Y.Z-arm64-mac.zip'` in the UI.
+
+### Notes
+- **The `extensions.json` clear must run on every connect, not just when seeding.** code-server's `--install-extension` (the Jupyter step) rewrites that manifest, and a manifest that omits sb-bridge marks it *removed* - the extension sits on disk and never activates. Confirmed on a live VM whose manifest listed 8 extensions without it. The clear therefore lives in `codeServerEnsureScript`, which runs unconditionally, rather than in the gated seed.
+- **Any ssh upload to an IAP-tunneled host costs ~2 minutes regardless of size.** Measured: 2.0s for a tiny argv vs 2m01s for 27KB, and the same ~2m for the 1.1MB server bundle - a per-upload stall, not bandwidth. Shipping the ~20KB extension payload on every connect added ~2 minutes to every connect and reconnect, so the seed is gated on a payload marker the ssh probe now reports alongside the server version. Steady-state connect is back to ~30s. `ControlMaster`/`ControlPersist` in `SSH_COMMON_OPTS` would collapse all six provisioning connections onto one and is the larger win, left as follow-up.
+- **The seed marker is a hash of the payload, not the app version.** `seedBridgeExtension` re-copies on every local boot, so keying the remote on `appVersion` would leave a VM running a stale extension, with no signal, until the next release.
+- The bridge's wire behaviour (the callback set, one-pending-open-per-folder, theme write precedence) is shared by both hosts in `ide/bridge-channels.ts`; only the lifecycle differs, since a remote has no binary to download or idle-shutdown to run.
+- Verified end to end against a live VM by `e2e/remote-bridge.e2e.mjs` (`npm run test:e2e:remote-bridge`), including real `cmd+shift+E` / `cmd+shift+J` / `ctrl+\`` keystrokes in a real remote workbench. Chords are pressed in a retry loop: the first press can land before the workbench's keybinding service is listening, which reads as a routing failure and is not one.
+
+## 2026-07-29 - Usage limits: say why the request failed
+
+### Fixed
+- **A failed usage request now names its cause.** undici reports every transport failure as the bare string `fetch failed` and puts the real reason on `.cause`, which was discarded - so a DNS or socket problem rendered as "Could not reach the usage endpoint: fetch failed" with nothing to act on. The cause code is now included, happy-eyeballs `AggregateError`s are unwrapped to their per-address codes, and a resolution failure additionally names the macOS DNS flush.
+- **One retry on a transient transport failure.** undici keeps a process-lifetime connection pool, so after the machine sleeps the first request through a stale keep-alive socket fails even though the network is fine. Switchboard's main process runs for days, which makes that the common case. Timeouts are not retried - they already consumed the full budget.
+
+## 2026-07-28 - Per-instance subscription usage limits in Settings → Providers
+
+### Added
+- **A "Usage" button on every provider instance row** (Settings → Providers) showing that instance's subscription limits: for Claude the 5-hour session window, the weekly all-models window, and the per-model weekly window; for Codex its rolling window(s), plan type and credits. Limits are read per credential, so two profiles pointing at different logins report different numbers.
+- Rendered as aligned bars in a full-width disclosure panel, with relative reset times ("in 4h 12m") and the absolute timestamp on hover. Severity colours reuse the `ContextWindowMeter` thresholds so a filling bar means the same thing in Settings as in the chat header.
+- Results are cached for 45s, deduped per instance, and Codex probes are serialised so fan-clicking a list of instances cannot spawn several 260MB `app-server` children at once.
+
+### Notes
+- **Claude's per-model weekly limit is not `seven_day_opus`/`seven_day_sonnet`.** Those are legacy and null on current accounts; the live value comes from `limits[]` as `kind: "weekly_scoped"`, labelled from `scope.model.display_name`. Reading the Agent SDK's `rateLimitType` enum instead would silently show nothing for that row.
+- **Overage is a separate row and never folded into a window meter.** An account can sit at 100% `extra_usage` with `org_spend_cap_reached` while both real windows are still `allowed`; merging them would render a healthy account as cut off.
+- **No OAuth token is ever refreshed.** The Claude CLI rotates the token and writes it back, and clears a dead refresh token, so refreshing here would race it and could log the user out. An expired credential is reported as `expired` with the login command instead. The keychain service name is derived per instance as `Claude Code-credentials-<sha256(CLAUDE_CONFIG_DIR)[0..8]>`, with candidates covering trailing separators, unexpanded tildes and NFD.
+- Nothing in the adapters' turn-handling path changed. Codex's `account/rateLimits/updated` push is still discarded in `codex-adapter.ts`; caching it there is a follow-up.
+- `--danger` is not defined in `global.css`, so the existing `var(--danger, #d04848)` uses in `ProvidersTab.tsx` all run on their fallback. The new panel uses the real `--error` token rather than propagating that.
+
 ## 2026-07-17 - Embedded IDE: open on the file explorer, not a Bitbucket sign-in
 
 ### Fixed

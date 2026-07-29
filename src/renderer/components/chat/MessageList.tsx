@@ -9,14 +9,16 @@ interface MessageListProps {
   messages: ChatMessage[]
   sessionId?: string | null
   agentType?: AgentType
-  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void
-  onAnswerQuestion?: (requestId: string, answers: string[][]) => void
+  // Promise-returning so the cards downstream can re-enable themselves when
+  // the underlying IPC rejects.
+  onApproval?: (requestId: string, decision: 'approve' | 'deny', note?: string) => void | Promise<void>
+  onAnswerQuestion?: (requestId: string, answers: string[][]) => void | Promise<void>
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
   onFileDiffResolve?: (
     messageId: string,
     status: 'accepted' | 'rejected' | 'partial',
     contentToWrite: string | null,
-  ) => void
+  ) => void | Promise<void>
 }
 
 /**

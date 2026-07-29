@@ -467,6 +467,8 @@ const api = {
       transport.invoke(ProviderInstanceChannels.DELETE, id),
     test: (id: string): Promise<{ ok: boolean; message: string }> =>
       transport.invoke(ProviderInstanceChannels.TEST, id),
+    usage: (id: string, opts?: { force?: boolean }): Promise<import('@shared/provider-usage').ProviderUsage> =>
+      transport.invoke(ProviderInstanceChannels.USAGE, id, opts),
     createOauthDir: (dir: string): Promise<{ ok: boolean; path?: string; error?: string }> =>
       transport.invoke(ProviderInstanceChannels.CREATE_OAUTH_DIR, dir),
   },
@@ -576,8 +578,10 @@ const api = {
       opts?: { theme?: string; skipDownload?: boolean },
     ): Promise<{ ok: true; port: number } | { ok: false; error: string }> =>
       transport.invoke(IdeChannels.ENSURE, folder, opts),
-    /** Route an open-at-line to the workbench serving `folder`. */
-    open: (args: { folder: string; path: string; line?: number; endLine?: number }): Promise<{ ok: boolean }> =>
+    /** Route an open-at-line to the workbench serving `folder`. `machineId` picks
+     *  the backend: a remote session's workbench runs on that machine, and
+     *  `folder` is not a routing key, so without it the call would go local. */
+    open: (args: { folder: string; path: string; line?: number; endLine?: number; machineId?: string }): Promise<{ ok: boolean }> =>
       transport.invoke(IdeChannels.OPEN, args),
     /** Idle shutdown - kill the server, renderer blanks the webview. */
     stop: (): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.STOP),
@@ -587,8 +591,11 @@ const api = {
     /** cmd+shift+J pressed inside the workbench webview. */
     onDsModeRequest: (callback: () => void): (() => void) =>
       transport.on(IdeChannels.DS_MODE_REQUEST, () => callback()),
-    /** Follow the app theme - written into the workbench settings, applied live. */
-    setTheme: (theme: string): Promise<{ ok: boolean }> => transport.invoke(IdeChannels.SET_THEME, theme),
+    /** Follow the app theme - written into the workbench settings, applied live.
+     *  Object-shaped so `machineId` can route it to a remote workbench (the
+     *  router reads routing keys off args[0]). */
+    setTheme: (theme: string, machineId?: string): Promise<{ ok: boolean }> =>
+      transport.invoke(IdeChannels.SET_THEME, { theme, machineId }),
     onStatus: (
       callback: (payload: { status: 'stopped' | 'starting' | 'downloading' | 'ready' | 'error'; port?: number; pct?: number }) => void,
     ): (() => void) =>

@@ -1,6 +1,6 @@
 {
   "name": "switchboard",
-  "version": "0.7.23",
+  "version": "0.7.29",
   "description": "The unified workspace for developers who run agents, terminals, and chats.",
   "license": "MIT",
   "author": "Tejas Nafde",
@@ -23,6 +23,7 @@
     "test:e2e": "node e2e/backend-host.e2e.mjs",
     "test:e2e:remote": "node e2e/remote-transport.e2e.mjs",
     "test:e2e:machines": "node e2e/machine-layer.e2e.mjs",
+    "test:e2e:remote-bridge": "node e2e/remote-bridge.e2e.mjs",
     "test:coverage": "vitest run --coverage",
     "build:server": "node scripts/build-server.mjs",
     "server": "ELECTRON_RUN_AS_NODE=1 electron out/server/index.cjs",

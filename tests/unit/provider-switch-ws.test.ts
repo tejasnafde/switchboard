@@ -9,7 +9,7 @@
  * transport + registry + adapter wiring, not SQLite.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocketServer, type AddressInfo } from 'ws'
@@ -88,9 +88,13 @@ class MockEchoAdapter implements ProviderAdapter {
 let wss: WebSocketServer | null = null
 let client: WsTransport | null = null
 let registry: ProviderRegistry | null = null
+/** Scratch cwds this file created, removed in afterEach so repeated runs do not
+ *  pile up dirs under TMPDIR. */
+const scratchDirs: string[] = []
 
 async function setup() {
   const cwd = mkdtempSync(join(tmpdir(), 'sb-prov-'))
+  scratchDirs.push(cwd)
   wss = new WebSocketServer({ port: 0 })
   const host = new WsHost(wss)
   registry = new ProviderRegistry(host, new Map([['claude', new MockEchoAdapter()]]))
@@ -113,6 +117,7 @@ afterEach(async () => {
   registry = null
   await new Promise<void>((res) => (wss ? wss.close(() => res()) : res()))
   wss = null
+  while (scratchDirs.length) rmSync(scratchDirs.pop()!, { recursive: true, force: true })
 })
 
 describe('provider switching over the WebSocket boundary', () => {

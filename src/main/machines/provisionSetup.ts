@@ -1,7 +1,9 @@
 /** The package.json + install script we drop on a VM to run the backend there. */
 export { REMOTE_SERVER_DIR } from './provisionCommands'
+import { createHash } from 'node:crypto'
+import { posix } from 'node:path'
 import { REMOTE_SERVER_DIR } from './provisionCommands'
-import { JUPYTER_EXTENSION_IDS } from '../ide/code-server-manager'
+import { JUPYTER_EXTENSION_IDS, BRIDGE_EXTENSION_DIRNAME } from '../ide/code-server-manager'
 
 // Fork that ships the linux prebuilds upstream node-pty omits. Bump + validate
 // on a VM if our node-pty API surface outgrows what the fork tracks.
@@ -65,6 +67,61 @@ export function codeServerEnsureScript(codeServerVersion: string): string {
     `D=${REMOTE_SERVER_DIR}`,
     `if [ -x "${dir}/bin/code-server" ]; then :; else ${installBinary}; fi`,
     installExtensions,
+    // Clear the manifest LAST, on every connect: --install-extension above
+    // rewrites extensions.json, and a manifest that omits sb-bridge marks it
+    // removed - so the extension would sit on disk and never activate. Cheap
+    // (no payload), and code-server rebuilds it from a folder scan on boot.
+    `rm -f "$D/ide-extensions/extensions.json" "$D/ide-extensions/.obsolete"`,
+  ].join(' && ')
+}
+
+/** One bundled sb-bridge file, base64'd so it survives ssh + sudo + bash. */
+export interface BridgeFile {
+  /** Path relative to resources/sb-bridge, POSIX separators (e.g. `themes/x.json`). */
+  relPath: string
+  base64: string
+}
+
+/**
+ * Install the sb-bridge extension onto the remote's --extensions-dir. This is
+ * the remote counterpart of seedBridgeExtension() (which cpSync's it locally):
+ * without it the VM's code-server has no bridge extension at all, so nothing
+ * inside the remote workbench can reach Switchboard.
+ *
+ * Only reached when the probe says the remote's marker differs (see
+ * provisioner.ts): the payload is ~20KB and an upload to an IAP-tunneled host
+ * costs ~2 minutes regardless of size, so this must not ride every connect.
+ *
+ * The marker is a hash of the PAYLOAD, not the app version: `seedBridgeExtension`
+ * re-copies unconditionally on every local boot, so editing
+ * resources/sb-bridge and reconnecting must re-seed the remote too. Keying on
+ * appVersion would leave the VM on a stale extension, with no signal, until the
+ * next release - the same silent no-bridge failure this whole path exists to fix.
+ */
+export function bridgeMarker(files: BridgeFile[]): string {
+  return createHash('sha256')
+    .update(files.map((f) => `${f.relPath}:${f.base64}`).join('\n'))
+    .digest('hex')
+    .slice(0, 16)
+}
+
+export function bridgeSeedScript(files: BridgeFile[]): string {
+  if (files.length === 0) throw new Error('bridgeSeedScript: no extension files to seed')
+  const extDir = `$D/ide-extensions/${BRIDGE_EXTENSION_DIRNAME}`
+  const marker = bridgeMarker(files)
+  // Every distinct parent dir, so nested payloads (themes/) land in place.
+  const dirs = [...new Set(files.map((f) => posix.join(extDir, posix.dirname(f.relPath))))]
+  return [
+    `D=${REMOTE_SERVER_DIR}`,
+    // Backstop for the probe-side gate in provisioner.ts: re-running this after
+    // an interrupted seed must be a no-op once the payload is complete.
+    `if [ "$(cat "${extDir}/.sb-marker" 2>/dev/null)" = "${marker}" ]; then exit 0; fi`,
+    // Replace wholesale so a file dropped from a later build cannot linger.
+    `rm -rf "${extDir}"`,
+    `mkdir -p ${dirs.map((d) => `"${d}"`).join(' ')}`,
+    ...files.map((f) => `printf %s '${f.base64}' | base64 -d > "${extDir}/${f.relPath}"`),
+    // Marker last: an interrupted seed must re-run on the next connect.
+    `printf %s '${marker}' > "${extDir}/.sb-marker"`,
   ].join(' && ')
 }
 

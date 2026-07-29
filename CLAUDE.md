@@ -20,7 +20,7 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 ## Commands
 
 - `npm run dev` - launches Electron (auto-unsets `ELECTRON_RUN_AS_NODE`)
-- `npm test` - vitest (~1105 tests across 127 files)
+- `npm test` - vitest (~1429 tests across 152 files)
 - `npm run test:watch` - vitest in watch mode
 - `npm run typecheck` - main + renderer tsc
 - `npm run build` - **gated build**: `prebuild` runs typecheck + test before the actual build fires; `postbuild` runs `scripts/smoke-test.mjs`
@@ -183,6 +183,12 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - IPC (`ProviderInstanceChannels`): `LIST` (secrets stripped), `UPSERT` (plaintext env in, encrypted at rest), `DELETE` (refuses last-of-kind), `TEST` (probes creds via `claude auth status` / `codex login status` / `opencode models`), `CREATE_OAUTH_DIR`.
 - Registry resolves the instance at `startSession` (`resolveProviderInstance(agentType, instanceId)`), falling back requested → default → any enabled; applies the env overlay + oauth_dir at spawn.
 - UI: `UnifiedProviderPicker` (drop-up: agent tabs → instance rail → model search) in the chat composer; `ProvidersTab` in Settings. Renderer cache in `provider-instance-store`.
+- **Usage limits** (`ProviderInstanceChannels.USAGE` → `src/main/provider/usage/`): a per-row "Usage" button reads that instance's subscription quota. Claude via `GET /api/oauth/usage` with the instance's own keychain token; Codex via a short-lived `codex app-server` speaking `account/rateLimits/read`; OpenCode is not-applicable (own API keys). Normalised to `ProviderUsage` (`shared/provider-usage.ts`): `usedPercent` 0-100, `resetsAtMs` epoch ms. Traps:
+  - Claude's per-model weekly limit is in `limits[]` as `kind: "weekly_scoped"`, **not** `seven_day_opus`/`seven_day_sonnet` (legacy, null). `is_active` marks which limit is *binding*, not whether it exists - never filter on it.
+  - Codex's app-server wire is camelCase and `resetsAt` is unix **seconds**; the snake_case form belongs to `codex exec --json`. `account/read` needs an explicit `params`.
+  - Keychain service = `Claude Code-credentials-<sha256(CLAUDE_CONFIG_DIR)[0..8]>`, derived from the **effective env value**, which is what makes lookup per-instance.
+  - Never reuse `runProbe` to read credentials: `security ... -w` prints the token on stdout, and `runProbe`'s callers surface stdout to the UI.
+  - Tokens are never refreshed here - the CLI rotates and writes back, and racing it can log the user out. Expiry is checked locally.
 
 ### Embedded IDE (code-server) + file IPC
 
@@ -290,7 +296,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
 
-## Test suite (~1105 tests across 127 files)
+## Test suite (~1429 tests across 152 files)
 
 Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
@@ -353,6 +359,8 @@ src/
 │   │   ├── policy.ts                  # decidePermission/denialMessage/PLAN_READ_ONLY_TOOLS/CUSTOM_UI_TOOLS
 │   │   ├── event-bus.ts               # RuntimeEventBus (decoupled fan-out)
 │   │   ├── env-overlay.ts             # instance env merge · claude-session-migrate.ts # oauth_dir rotation
+│   │   ├── instance-env.ts            # resolveInstanceEnv (shared by Test + usage probes)
+│   │   ├── usage/                     # claude-keychain · claude-usage (HTTP) · codex-usage (app-server probe) · index (dispatch/cache)
 │   │   ├── types.ts                   # ProviderAdapter + re-exports from shared/provider-events
 │   │   └── adapters/
 │   │       ├── claude-adapter.ts      # SDK integration, canUseTool, image blocks
@@ -367,7 +375,7 @@ src/
 │   ├── App.tsx                        # Flat flex-row layout, all keybindings, view switching
 │   ├── components/
 │   │   ├── CommandPalette.tsx (⌘⇧P) · QuickPromptModal.tsx (⌘K) · SearchModal.tsx (⌘⇧F)
-│   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · SessionPickerModal.tsx
+│   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · settings/ProviderUsagePanel.tsx · SessionPickerModal.tsx
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
 │   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slashCommands.ts
@@ -386,8 +394,9 @@ src/
 ├── preload/                           # transport.ts (IpcTransport) · ws-transport (via shared) · hybrid-transport · transport-router · routing-table
 ├── shared/
 │   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · filePathRef.ts
+│   ├── provider-usage.ts · claude-usage-parse.ts · codex-usage-parse.ts   # normalised subscription usage limits
 │   ├── transport.ts · ws-protocol.ts · ws-transport.ts · machines.ts   # backend transport seam (local ↔ remote)
-└── tests/unit/                        # ~1105 tests across 127 files
+└── tests/unit/                        # ~1429 tests across 152 files
 ```
 
 ## Logging conventions

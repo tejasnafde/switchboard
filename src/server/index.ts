@@ -22,6 +22,8 @@ import { registerProviderInstanceHandlers } from '../main/ipc/providerInstances'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
 import { registerAgentHandlers } from '../main/ipc/agent'
 import { ProviderRegistry } from '../main/provider/provider-registry'
+import { disposeUsageProbes } from '../main/provider/usage'
+import { startBridgeHost } from '../main/ide/bridge-host'
 import { createMainLogger as createLogger } from '../main/logger'
 
 // esbuild `define` in scripts/build-server.mjs stamps this with the app
@@ -38,7 +40,10 @@ const log = createLogger('server')
 // Same dir as the uploaded bundle. A lingering process from an ungraceful
 // tunnel drop can hold the port; connectDeps.ts REMOTE_COMMAND kills whatever
 // pid is recorded here before launching a fresh server.
-const PID_FILE = join(homedir(), '.switchboard-server', 'server.pid')
+/** Matches provisionCommands.REMOTE_SERVER_DIR, which is the shell form of this
+ *  path and so cannot be imported here. */
+const SERVER_HOME = join(homedir(), '.switchboard-server')
+const PID_FILE = join(SERVER_HOME, 'server.pid')
 try {
   // The dir exists on a provisioned VM (the uploader creates it) but not on a
   // machine running the bundle straight from a checkout, where the write used
@@ -124,6 +129,20 @@ host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 const registry = new ProviderRegistry(host)
 registry.registerIpcHandlers()
 
+// The workbench bridge, when the ssh bootstrap minted a token for us (see
+// machines/connectDeps.ts REMOTE_COMMAND). Absent env = this server was started
+// by hand without a code-server alongside it, so there is nothing to bridge.
+// The port range is validated here rather than defended inside startBridgeHost:
+// `ws` throws synchronously on an out-of-range port, which would take the whole
+// backend down at module load.
+const bridgePort = Number(process.env.SB_BRIDGE_PORT)
+const bridgeToken = process.env.SB_BRIDGE_TOKEN
+if (Number.isInteger(bridgePort) && bridgePort > 1024 && bridgePort < 65536 && bridgeToken) {
+  startBridgeHost({ host, port: bridgePort, token: bridgeToken, userDataDir: join(SERVER_HOME, 'ide-data') })
+} else {
+  log.info('no usable SB_BRIDGE_PORT/SB_BRIDGE_TOKEN - workbench bridge disabled')
+}
+
 wss.on('listening', () => {
   log.info(`switchboard backend listening on ${bindHost}:${port} (v${__SERVER_VERSION__})`)
   void printPairingInfo()
@@ -184,6 +203,8 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     } catch (err) {
       log.warn('failed to remove pid file', err)
     }
+    // process.exit skips the probe's own `finally`, so kill any survivor here.
+    disposeUsageProbes()
     void registry.stopAll().finally(() => wss.close(() => process.exit(0)))
   })
 }

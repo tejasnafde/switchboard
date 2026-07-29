@@ -25,7 +25,7 @@ interface Props {
    * to write to disk, or null when no write is needed (kept as-is). The parent
    * persists the new status on the message.
    */
-  onResolve?: (status: FileDiffResolveStatus, contentToWrite: string | null) => void
+  onResolve?: (status: FileDiffResolveStatus, contentToWrite: string | null) => void | Promise<void>
 }
 
 const KIND_LABEL: Record<FileDiffAttachment['changeKind'], string> = {
@@ -55,6 +55,8 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
   // Resolved cards start collapsed - decision is made, they're just history.
   // Pending cards start expanded so the user sees what needs reviewing.
   const [collapsed, setCollapsed] = useState(resolved)
+  const [writing, setWriting] = useState<'keep' | 'reject' | 'apply' | null>(null)
+  const [writeError, setWriteError] = useState<string | null>(null)
 
   const hunkCount = metadata?.hunks.length ?? 0
 
@@ -75,15 +77,25 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
     return { content, status: allReverted ? 'rejected' : 'partial' }
   }
 
-  const apply = (reverts: Record<number, boolean>) => {
+  // Live buttons during a write invite a write-then-delete race on the same
+  // file. On failure the card stays actionable, but now says why.
+  const apply = (which: 'keep' | 'reject' | 'apply', reverts: Record<number, boolean>) => {
+    if (writing) return
+    setWriting(which)
+    setWriteError(null)
     const { content, status: s } = computeResolved(reverts)
     // Accepted = disk already holds newContent → no write needed (null).
-    onResolve?.(s, s === 'accepted' ? null : content)
-    setCollapsed(true)
+    Promise.resolve(onResolve?.(s, s === 'accepted' ? null : content))
+      .then(() => setCollapsed(true))
+      .catch((err) => {
+        log.warn('resolve failed, card stays actionable', { relPath, err })
+        setWriteError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => setWriting(null))
   }
 
-  const keepAll = () => apply({})
-  const rejectAll = () => apply(Object.fromEntries(Array.from({ length: hunkCount }, (_, i) => [i, true])))
+  const keepAll = () => apply('keep', {})
+  const rejectAll = () => apply('reject', Object.fromEntries(Array.from({ length: hunkCount }, (_, i) => [i, true])))
   const toggleHunk = (i: number) => setReverted((r) => ({ ...r, [i]: !r[i] }))
 
   return (
@@ -136,20 +148,35 @@ export function FileDiffCard({ fileDiff, onResolve }: Props): React.ReactElement
         ) : (
           // stopPropagation so clicking a button doesn't also toggle collapse
           <div style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
-            <button style={btnStyle} onClick={keepAll}>
-              Keep all
+            <button style={btnStyle} onClick={keepAll} disabled={writing !== null}>
+              {writing === 'keep' ? 'Keeping…' : 'Keep all'}
             </button>
-            <button style={btnStyle} onClick={rejectAll}>
-              Reject all
+            <button style={btnStyle} onClick={rejectAll} disabled={writing !== null}>
+              {writing === 'reject' ? 'Rejecting…' : 'Reject all'}
             </button>
             {Object.values(reverted).some(Boolean) && (
-              <button style={{ ...btnStyle, borderColor: 'var(--accent)', color: 'var(--accent)' }} onClick={() => apply(reverted)}>
-                Apply
+              <button
+                style={{ ...btnStyle, borderColor: 'var(--accent)', color: 'var(--accent)' }}
+                onClick={() => apply('apply', reverted)}
+                disabled={writing !== null}
+              >
+                {writing === 'apply' ? 'Applying…' : 'Apply'}
               </button>
             )}
           </div>
         )}
       </div>
+
+      {writeError && (
+        <div style={{
+          padding: '5px 10px',
+          borderBottom: '1px solid var(--border)',
+          color: 'var(--error, #f85149)',
+          fontSize: 11,
+        }}>
+          Could not save: {writeError}
+        </div>
+      )}
 
       {/* Collapsible body - grid trick animates height without knowing it */}
       <div style={{

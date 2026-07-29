@@ -7,14 +7,21 @@
 import type { Machine } from '@shared/machines'
 import { sshHostArgs, SSH_COMMON_OPTS } from './sshTunnel'
 import { asUserScript } from './remoteExec'
+import { BRIDGE_EXTENSION_DIRNAME } from '../ide/code-server-manager'
 
 /** Where the provisioned server + its version marker live on the remote. */
 export const REMOTE_SERVER_DIR = '$HOME/.switchboard-server'
 
 const PROBE_SOURCE =
-  "const fs=require('fs');" +
-  "let s=null;try{s=fs.readFileSync((process.env.HOME||'')+'/.switchboard-server/version','utf8').trim()}catch(e){}" +
-  'process.stdout.write(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,abi:process.versions.modules,server:s}))'
+  "const fs=require('fs');const H=process.env.HOME||'';" +
+  "const rd=p=>{try{return fs.readFileSync(H+p,'utf8').trim()}catch(e){return null}};" +
+  "let s=rd('/.switchboard-server/version');" +
+  // The sb-bridge payload marker. Read here so provisioning can skip shipping
+  // the extension when the remote already has it: the payload is ~20KB, and on
+  // an IAP-tunneled host any upload costs ~2 minutes regardless of size, so
+  // shipping it on every connect would tax every reconnect.
+  `let b=rd('/.switchboard-server/ide-extensions/${BRIDGE_EXTENSION_DIRNAME}/.sb-marker');` +
+  'process.stdout.write(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,abi:process.versions.modules,server:s,bridge:b}))'
 
 export function buildProbeCommand(machine: Machine): { command: string; args: string[] } {
   return {

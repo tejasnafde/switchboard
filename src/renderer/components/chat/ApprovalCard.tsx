@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('chat:approval-card')
 
 interface ApprovalCardProps {
   message: ChatMessage
-  onDecide: (requestId: string, decision: 'approve' | 'deny', note?: string) => void
+  onDecide: (requestId: string, decision: 'approve' | 'deny', note?: string) => void | Promise<void>
 }
 
 /**
@@ -21,6 +24,10 @@ interface ApprovalCardProps {
 export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
   const [noteMode, setNoteMode] = useState<null | 'approve' | 'deny'>(null)
   const [note, setNote] = useState('')
+  // `pending` only flips when the request.closed event round-trips, so the
+  // buttons stay live long enough to double-approve without this.
+  const submitRef = useRef(false)
+  const [submitting, setSubmitting] = useState<null | 'approve' | 'deny'>(null)
 
   if (!message.approval) return null
 
@@ -38,10 +45,21 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
       : 'rgba(248, 81, 73, 0.05)'
 
   const commit = (decision: 'approve' | 'deny') => {
+    if (submitRef.current) return
+    submitRef.current = true
+    setSubmitting(decision)
     const trimmed = note.trim()
-    onDecide(reqId, decision, trimmed || undefined)
-    setNoteMode(null)
-    setNote('')
+    Promise.resolve(onDecide(reqId, decision, trimmed || undefined))
+      .then(() => {
+        setNoteMode(null)
+        setNote('')
+      })
+      .catch((err) => {
+        // Parent surfaced the failure in chat; re-enable so the user can retry.
+        log.warn('decision failed, re-enabling card', { reqId, decision, err })
+        submitRef.current = false
+        setSubmitting(null)
+      })
   }
 
   return (
@@ -136,15 +154,19 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
               <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
                 <button
                   onClick={() => { setNoteMode(null); setNote('') }}
-                  style={btnStyles.ghost}
+                  disabled={submitting !== null}
+                  style={withDisabled(btnStyles.ghost, submitting !== null)}
                 >
                   Cancel
                 </button>
                 <button
                   onClick={() => commit(noteMode)}
-                  style={noteMode === 'approve' ? btnStyles.primary : btnStyles.danger}
+                  disabled={submitting !== null}
+                  style={withDisabled(noteMode === 'approve' ? btnStyles.primary : btnStyles.danger, submitting !== null)}
                 >
-                  {noteMode === 'approve' ? 'Approve with note' : 'Deny with note'}
+                  {submitting
+                    ? submitting === 'approve' ? 'Approving\u2026' : 'Denying\u2026'
+                    : noteMode === 'approve' ? 'Approve with note' : 'Deny with note'}
                 </button>
               </div>
             </>
@@ -152,13 +174,15 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
               <button
                 onClick={() => commit('approve')}
-                style={btnStyles.primary}
+                disabled={submitting !== null}
+                style={withDisabled(btnStyles.primary, submitting !== null)}
               >
-                <CheckIcon /> Approve
+                {submitting === 'approve' ? 'Approving\u2026' : (<><CheckIcon /> Approve</>)}
               </button>
               <button
                 onClick={() => setNoteMode('approve')}
-                style={btnStyles.secondary}
+                disabled={submitting !== null}
+                style={withDisabled(btnStyles.secondary, submitting !== null)}
                 title="Approve and add extra instructions"
               >
                 {'Yes, and\u2026'}
@@ -166,16 +190,18 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
               <span style={{ flex: 1 }} />
               <button
                 onClick={() => setNoteMode('deny')}
-                style={btnStyles.secondary}
+                disabled={submitting !== null}
+                style={withDisabled(btnStyles.secondary, submitting !== null)}
                 title="Deny and tell agent what to do instead"
               >
                 {'No, do\u2026'}
               </button>
               <button
                 onClick={() => commit('deny')}
-                style={btnStyles.danger}
+                disabled={submitting !== null}
+                style={withDisabled(btnStyles.danger, submitting !== null)}
               >
-                <XIcon /> Deny
+                {submitting === 'deny' ? 'Denying\u2026' : <><XIcon /> Deny</>}
               </button>
             </div>
           )}
@@ -212,6 +238,10 @@ function XIcon() {
 }
 
 // ─── Button styles ─────────────────────────────────────────────
+
+function withDisabled(style: React.CSSProperties, disabled: boolean): React.CSSProperties {
+  return disabled ? { ...style, opacity: 0.6, cursor: 'default' } : style
+}
 
 const btnBase: React.CSSProperties = {
   padding: '5px 12px',

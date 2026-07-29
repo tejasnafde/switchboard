@@ -587,21 +587,48 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   }, [appendMessage, updateMessage, updateStatus])
 
   // ── Approval handler ──────────────────────────────────────────
-  const handleApproval = useCallback((requestId: string, decision: 'approve' | 'deny', note?: string) => {
+  // Rejections propagate to the card so it can re-enable its buttons.
+  const handleApproval = useCallback(async (requestId: string, decision: 'approve' | 'deny', note?: string) => {
     if (!sessionId) return
-    ;window.api.provider?.respondToRequest(sessionId, requestId, decision)
+    try {
+      await window.api.provider?.respondToRequest(sessionId, requestId, decision)
+    } catch (err) {
+      log.warn('respondToRequest failed', { requestId, decision, err })
+      appendMessage(sessionId, {
+        id: `error_${Date.now()}`,
+        role: 'system',
+        content: `Failed to ${decision === 'approve' ? 'approve' : 'deny'} the request: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+      throw err
+    }
+    // Queue the note only once the decision landed - a failed decision
+    // with a queued note would send a dangling follow-up message.
     if (note) {
       pendingNoteRef.current = { sessionId, text: note }
     }
-  }, [sessionId])
+  }, [sessionId, appendMessage])
 
-  const handleAnswerQuestion = useCallback((requestId: string, answers: string[][]) => {
+  const handleAnswerQuestion = useCallback(async (requestId: string, answers: string[][]) => {
     if (!sessionId) return
-    ;window.api.provider?.answerQuestion?.(sessionId, requestId, answers).catch(() => {})
-  }, [sessionId])
+    try {
+      await window.api.provider?.answerQuestion?.(sessionId, requestId, answers)
+    } catch (err) {
+      log.warn('answerQuestion failed', { requestId, err })
+      appendMessage(sessionId, {
+        id: `error_${Date.now()}`,
+        role: 'system',
+        content: `Failed to submit answer: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+      throw err
+    }
+  }, [sessionId, appendMessage])
 
+  // Rejections propagate to the card, which shows the inline error and
+  // stays actionable so the user can retry.
   const handleFileDiffResolve = useCallback(
-    (messageId: string, status: 'accepted' | 'rejected' | 'partial', contentToWrite: string | null) => {
+    async (messageId: string, status: 'accepted' | 'rejected' | 'partial', contentToWrite: string | null) => {
       if (!sessionId) return
       const sess = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
       const fd = sess?.messages.find((m) => m.id === messageId)?.fileDiff
@@ -618,21 +645,28 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         fd.changeKind === 'add' && status === 'rejected'
           ? window.api.files.deleteFile(fd.repoRoot, fd.relPath)
           : window.api.files.writeFile(fd.repoRoot, fd.relPath, contentToWrite)
-      void writeBack
-        .then((res) => {
-          if (!res.ok) {
-            // Don't persist the status - leave the card actionable so the user
-            // can retry rather than silently believing the revert landed.
-            log.warn('file-diff write-back failed', {
-              relPath: fd.relPath,
-              conflict: 'conflict' in res ? res.conflict : undefined,
-              error: res.error,
-            })
-            return
-          }
-          persist()
+      let res: Awaited<typeof writeBack>
+      try {
+        res = await writeBack
+      } catch (err) {
+        log.warn('file-diff write-back threw', { relPath: fd.relPath, err })
+        throw err
+      }
+      if (!res.ok) {
+        // Don't persist the status - leave the card actionable so the user
+        // can retry rather than silently believing the revert landed.
+        log.warn('file-diff write-back failed', {
+          relPath: fd.relPath,
+          conflict: 'conflict' in res ? res.conflict : undefined,
+          error: res.error,
         })
-        .catch((err) => log.warn('file-diff write-back threw', { relPath: fd.relPath, err }))
+        throw new Error(
+          'conflict' in res && res.conflict
+            ? 'file changed on disk after the diff was captured'
+            : res.error,
+        )
+      }
+      persist()
     },
     [sessionId, updateMessage],
   )
@@ -642,7 +676,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // Switch session out of plan mode and send an appropriate follow-up
     if (action === 'implement') {
       storeSetRuntimeMode(sessionId, 'sandbox')
-      ;window.api.provider?.setRuntimeMode?.(sessionId, 'sandbox').catch(() => {})
+      ;window.api.provider?.setRuntimeMode?.(sessionId, 'sandbox').catch((err) => {
+        log.warn('setRuntimeMode failed before implementing plan', err)
+      })
       setTimeout(() => handleSend('Implement the plan you proposed.'), 50)
     } else {
       setTimeout(() => {

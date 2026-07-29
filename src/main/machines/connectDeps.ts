@@ -24,6 +24,13 @@ export const REMOTE_PORT = 8765
  *  second -L forward). Same private-convention family as REMOTE_PORT. */
 export const REMOTE_IDE_PORT = 8766
 
+/**
+ * The remote sb-bridge WebSocket. Never tunneled: only the VM's own
+ * code-server extension hosts dial it, and the intents they send travel on to
+ * the desktop over the EXISTING backend socket (WsHost.emit). Loopback-only.
+ */
+export const REMOTE_BRIDGE_PORT = 8767
+
 // Duplicated in src/server/index.ts - that file can't be imported here since
 // it boots a WebSocketServer as a side effect of module load. Keep the two
 // literals in sync.
@@ -38,11 +45,24 @@ export const SERVER_VERSION_CHANNEL = 'server:version'
 // The bootstrap also (re)starts the remote code-server when installed -
 // nohup'd, own pidfile, same stale-pid guard. Missing binary = skipped;
 // the tunnel still works.
+//
+// SB_BRIDGE_PORT/SB_BRIDGE_TOKEN are exported BEFORE both launches so the
+// code-server tree (its extension hosts inherit the env, which is how
+// resources/sb-bridge/extension.js finds the socket) and the backend that
+// hosts the bridge agree on one token. Minting it here, in the single shell
+// that starts both, is what keeps them in sync - a token generated
+// independently on either side could never match. Without this the remote
+// workbench runs bridge-less: every in-workbench keybinding (cmd+shift+E back
+// to the terminal, cmd+l, cmd+k) is swallowed by the guest with nothing to
+// forward it to the desktop.
 export const REMOTE_COMMAND =
   `D=${REMOTE_SERVER_DIR}; P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
   `if [ -n "$P" ] && grep -qsa index.cjs "/proc/$P/cmdline"; then kill "$P" 2>/dev/null; sleep 1; fi; ` +
   `IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
   `if [ -n "$IP" ] && grep -qsa switchboard-server/code-server "/proc/$IP/cmdline"; then kill "$IP" 2>/dev/null; sleep 1; fi; ` +
+  `SB_BRIDGE_PORT=${REMOTE_BRIDGE_PORT}; export SB_BRIDGE_PORT; ` +
+  `SB_BRIDGE_TOKEN="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || ` +
+  `od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')"; export SB_BRIDGE_TOKEN; ` +
   `if [ -x "$D/code-server/bin/code-server" ]; then ` +
   `nohup "$D/code-server/bin/code-server" --auth none --bind-addr 127.0.0.1:${REMOTE_IDE_PORT} ` +
   `--extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" > "$D/ide.log" 2>&1 & echo $! > "$D/ide.pid"; fi; ` +

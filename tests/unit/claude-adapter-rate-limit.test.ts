@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { ClaudeAdapter } from '../../src/main/provider/adapters/claude-adapter'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
+import { TurnWatchdog, StderrTail } from '../../src/main/provider/turn-watchdog'
 
 function makeActive(onEvent = vi.fn()) {
   return {
@@ -28,6 +29,8 @@ function makeActive(onEvent = vi.fn()) {
     skills: [],
     instanceEnv: {},
     instanceOauthDir: null,
+    watchdog: new TurnWatchdog(180_000, () => {}),
+    stderrTail: new StderrTail(2_000),
   }
 }
 
@@ -40,20 +43,21 @@ function dispatch(msg: object) {
 }
 
 describe('rate_limit_event', () => {
-  it('emits error then status:error on rejected with rateLimitType and resetsAt', () => {
+  // A rejection produces no `result` message, so the handler ends the turn
+  // itself: error -> turn.completed (the end indicator) -> status:error.
+  it('emits error, turn.completed, then status:error on rejected with rateLimitType and resetsAt', () => {
     const resetsAt = Math.floor(Date.now() / 1000) + 3600
     const events = dispatch({
       type: 'rate_limit_event',
       rate_limit_info: { status: 'rejected', rateLimitType: 'seven_day', resetsAt },
     })
-    // A rejection yields no `result` message, so the adapter ends the turn
-    // itself: error, then turn.completed (unsticks 'running'), then status.
+    // Asserting the whole sequence, not just lengths: order is the point.
     expect(events.map((e) => e.type)).toEqual(['error', 'turn.completed', 'status'])
     expect((events[0] as { type: 'error'; message: string }).message).toContain('seven-day')
     expect(events[2]).toMatchObject({ type: 'status', status: 'error' })
   })
 
-  it('emits error then status:error on rejected with no optional fields', () => {
+  it('emits error, turn.completed, then status:error on rejected with no optional fields', () => {
     const events = dispatch({
       type: 'rate_limit_event',
       rate_limit_info: { status: 'rejected' },
