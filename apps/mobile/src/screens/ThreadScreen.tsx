@@ -33,6 +33,13 @@ import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/c
 import { ModePicker } from '../components/ModePicker'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
 
+/**
+ * How much of a long thread to pull on open. Enough that scrolling back feels
+ * normal, small enough that a 2800-message thread paints promptly over a phone
+ * connection. The backend reports the true total and the feed says so.
+ */
+const HISTORY_WINDOW = 250
+
 const log = createLogger('screen:thread')
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Thread'>
@@ -142,11 +149,21 @@ export default function ThreadScreen({ route }: Props) {
     void (async () => {
       let provider: ProviderKind = 'claude'
       try {
-        const loaded = await client.loadSessionById(threadId)
+        const loaded = await client.loadSessionById(threadId, HISTORY_WINDOW)
         provider = providerFromAgentType(loaded.meta?.agentType)
         const store = useChatStore.getState()
         if ((store.threads[key]?.items.length ?? 0) === 0 && loaded.messages.length > 0) {
-          store.seedItems(key, historyToItems(loaded.messages))
+          const seeded = historyToItems(loaded.messages)
+          // Say what is being withheld. A long thread silently starting
+          // mid-conversation reads as lost history.
+          if (loaded.truncated && loaded.total) {
+            seeded.unshift({
+              kind: 'notice',
+              id: 'history-window',
+              text: `Showing the last ${loaded.messages.length} of ${loaded.total} messages`,
+            })
+          }
+          store.seedItems(key, seeded)
         }
       } catch (err) {
         reportError(err)
@@ -189,7 +206,13 @@ export default function ThreadScreen({ route }: Props) {
     }
   }, [connectionId, threadId, thread.status, models.length])
 
+  // FlatList passes its OWN getItem/getItemCount after {...restProps}, so a
+  // zero-copy accessor is impossible here - it would be silently ignored and the
+  // feed would render oldest-first inside an inverted list. Reversing a copy is
+  // the supported route; the cost that actually mattered was re-rendering every
+  // row per token, which the memoized rows below fix.
   const reversedItems = useMemo(() => [...thread.items].reverse(), [thread.items])
+  const itemCount = reversedItems.length
 
   const setMode = (mode: RuntimeMode) => {
     useChatStore.getState().setRuntimeMode(key, mode)
@@ -286,6 +309,12 @@ export default function ThreadScreen({ route }: Props) {
           return <PlanItem item={item} onImplement={implementPlan} onIterate={focusComposer} />
         case 'fileEdit':
           return <FileEditItem item={item} backendLabel={backendLabel} />
+        case 'notice':
+          return (
+            <View style={styles.noticeRow}>
+              <Text style={styles.noticeText}>{item.text}</Text>
+            </View>
+          )
         case 'error':
           return <Text style={styles.errorText}>{item.message}</Text>
       }
@@ -327,7 +356,7 @@ export default function ThreadScreen({ route }: Props) {
       {/* Rendered OUTSIDE the list on purpose. An inverted FlatList applies a
           flip to the container and cancels it per cell, but ListEmptyComponent
           gets no counter-transform, so anything placed there renders mirrored. */}
-      {reversedItems.length === 0 ? (
+      {itemCount === 0 ? (
         <View style={styles.emptyWrap}>
           {!isNew && <ActivityIndicator size="small" color={colors.textDim} />}
           <Text style={styles.emptyText}>
@@ -341,6 +370,11 @@ export default function ThreadScreen({ route }: Props) {
           keyExtractor={(i) => i.id}
           renderItem={renderItem}
           contentContainerStyle={styles.feedContent}
+          // Long threads: keep far fewer rows realised and recycle aggressively.
+          windowSize={9}
+          maxToRenderPerBatch={8}
+          initialNumToRender={12}
+          removeClippedSubviews
         />
       )}
 
@@ -815,6 +849,8 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontFamily: mono,
   },
+  noticeRow: { alignItems: 'center', paddingVertical: space.md },
+  noticeText: { color: colors.textDim, ...type.monoSm },
   denialPill: {
     alignSelf: 'flex-start',
     marginHorizontal: 14,

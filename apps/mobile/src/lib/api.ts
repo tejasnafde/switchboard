@@ -38,6 +38,10 @@ export interface StartedSession {
 export interface LoadedSession {
   messages: ChatMessage[]
   meta: { id: string; title: string; projectPath: string; agentType: string } | null
+  /** Full message count on the backend, which may exceed `messages.length`. */
+  total?: number
+  /** True when `messages` is only the newest window of the thread. */
+  truncated?: boolean
 }
 
 export class SwitchboardClient {
@@ -62,8 +66,13 @@ export class SwitchboardClient {
     return this.transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath)
   }
 
-  loadSessionById(conversationId: string): Promise<LoadedSession> {
-    return this.transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId)
+  /**
+   * `limit` returns only the newest N messages. Long threads otherwise push
+   * megabytes over the socket before the screen can paint; the result carries
+   * `total`/`truncated` so the UI can say what it is not showing.
+   */
+  loadSessionById(conversationId: string, limit?: number): Promise<LoadedSession> {
+    return this.transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, { limit })
   }
 
   createConversation(params: CreateConversationParams): Promise<void> {

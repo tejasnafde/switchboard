@@ -84,6 +84,26 @@ export function claudeCandidateDirs(): string[] {
 
 // Data handlers - transport-agnostic, run on either ElectronIpcHost or WsHost.
 // Native-dialog / window / app-lifecycle handlers live in app-desktop.ts.
+/**
+ * Tail-slice an assembled history for clients that cannot afford the whole
+ * thing. Fragments still have to be parsed in full to dedupe and order them, so
+ * this saves WIRE bytes, not parse time - which is the cost that matters for the
+ * mobile client pulling a 2800-message thread over a WebSocket.
+ *
+ * `total` and `truncated` travel with the result so the caller can SAY it is
+ * showing a window instead of silently pretending the thread is short. Omitting
+ * `limit` returns everything, so existing desktop callers are unaffected.
+ */
+function capTail<T extends { messages: ChatMessage[] }>(
+  result: T,
+  opts?: { limit?: number },
+): T & { total: number; truncated: boolean } {
+  const total = result.messages.length
+  const limit = opts?.limit
+  if (!limit || limit <= 0 || total <= limit) return { ...result, total, truncated: false }
+  return { ...result, messages: result.messages.slice(total - limit), total, truncated: true }
+}
+
 export function registerAppHandlers(host: BackendHost): void {
   setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
 
@@ -342,12 +362,15 @@ export function registerAppHandlers(host: BackendHost): void {
   // in chronological order. One click in the sidebar → one coherent
   // conversation, regardless of how many .jsonl files it actually spans.
   host.handle(AppChannels.LOAD_SESSION_BY_ID, async (conversationId: string,
+    opts?: { limit?: number },
   ): Promise<{
     messages: ChatMessage[]
     meta: { id: string; title: string; projectPath: string; agentType: string } | null
+    total: number
+    truncated: boolean
   }> => {
     const row = getConversationById(conversationId)
-    if (!row) return { messages: [], meta: null }
+    if (!row) return capTail({ messages: [], meta: null }, opts)
     const source: 'claude-code' | 'codex' = row.agent_type === 'codex' ? 'codex' : 'claude-code'
     const meta = { id: row.id, title: row.title, projectPath: row.project_path, agentType: row.agent_type }
 
@@ -386,7 +409,7 @@ export function registerAppHandlers(host: BackendHost): void {
         const dbMsgs = messageRowsToChatMessages(getMessagesForConversation(conversationId))
         if (dbMsgs.length > 0) {
           log.info(`load-by-id: ${conversationId} → no JSONL, recovered ${dbMsgs.length} messages from DB`)
-          return { messages: dbMsgs, meta }
+          return capTail({ messages: dbMsgs, meta }, opts)
         }
       }
       const enriched = enrichMessagesWithDisplayBody(deduped, getDisplayBodyEnrichments(conversationId))
@@ -401,7 +424,7 @@ export function registerAppHandlers(host: BackendHost): void {
       }))
       const merged = [...enriched, ...markers].sort((a, b) => a.timestamp - b.timestamp)
       log.info(`load-by-id: ${conversationId} → ${deduped.length} messages (${all.length - deduped.length} dupes removed) across ${sessionIds.length} fragment(s), +${markers.length} marker(s)`)
-      return { messages: merged, meta }
+      return capTail({ messages: merged, meta }, opts)
     }
 
     // Codex fallback - scan all sessions for this project, find matching id(s)
@@ -425,7 +448,7 @@ export function registerAppHandlers(host: BackendHost): void {
         const dbMsgs = messageRowsToChatMessages(getMessagesForConversation(conversationId))
         if (dbMsgs.length > 0) {
           log.info(`load-by-id (codex): ${conversationId} → no JSONL, recovered ${dbMsgs.length} messages from DB`)
-          return { messages: dbMsgs, meta }
+          return capTail({ messages: dbMsgs, meta }, opts)
         }
       }
       const enrichedCodex = enrichMessagesWithDisplayBody(dedupedCodex, getDisplayBodyEnrichments(conversationId))
@@ -436,10 +459,10 @@ export function registerAppHandlers(host: BackendHost): void {
         timestamp: m.timestamp,
       }))
       const mergedCodex = [...enrichedCodex, ...markersCodex].sort((a, b) => a.timestamp - b.timestamp)
-      return { messages: mergedCodex, meta }
+      return capTail({ messages: mergedCodex, meta }, opts)
     } catch (err) {
       log.warn(`load-by-id (codex) failed for ${conversationId}: ${err}`)
-      return { messages: [], meta }
+      return capTail({ messages: [], meta }, opts)
     }
   })
 
