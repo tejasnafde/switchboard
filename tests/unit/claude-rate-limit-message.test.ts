@@ -4,6 +4,20 @@ import {
   classifyOverageScope,
   isOverageRejection,
 } from '../../src/shared/claude-rate-limit'
+import { fmtResetsAt } from '../../src/shared/provider-usage'
+
+/**
+ * Locale-proof: `fmtResetsAt` renders via `toLocaleString([])`, so hardcoding
+ * "Aug 1" passed on a US CI runner and failed elsewhere with "1 Aug". What
+ * matters is that a DATE is present, since the shipped bug rendered only a time.
+ */
+function expectCarriesAbsoluteDate(msg: string, resetsAtSeconds: number) {
+  const absolute = fmtResetsAt(resetsAtSeconds * 1000)
+  expect(msg).toContain(absolute)
+  const timeOnly = new Date(resetsAtSeconds * 1000)
+    .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  expect(absolute).not.toBe(timeOnly)
+}
 
 /**
  * The exact `rate_limit_info` logged on 2026-07-31 at 17:47:01Z, when the user
@@ -157,7 +171,7 @@ describe('buildRateLimitMessage: reset timestamps', () => {
     // The shipped bug: toLocaleTimeString alone rendered "Resets 05:30 AM" for
     // a reset 6.2 hours away on 1 Aug, which reads as "later today".
     const msg = buildRateLimitMessage(LIVE_ORG_REJECTION, LIVE_NOW_MS)
-    expect(msg).toMatch(/Aug 1/)
+    expectCarriesAbsoluteDate(msg, 1785542400)
     expect(msg).toMatch(/Resets in 6h 12m/)
   })
 
@@ -173,7 +187,7 @@ describe('buildRateLimitMessage: reset timestamps', () => {
       { ...LIVE_ORG_REJECTION, resetsAt },
       Date.parse('2026-08-01T00:00:00Z'),
     )
-    expect(msg).toMatch(/Sep 1/)
+    expectCarriesAbsoluteDate(msg, resetsAt)
   })
 
   it('omits the reset sentence entirely when resetsAt is absent', () => {

@@ -2,6 +2,22 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-08-01 - Chats that switched profiles showed every old message N times
+
+### Fixed
+- **A chat that had rotated provider profiles rendered its older messages once per profile.** Rotating instance copies the session JSONL into the new `oauth_dir` so resume survives the credential switch, and `load-by-id` therefore unions that session id from EVERY profile dir, deduping by message id. The id came from `msg_${Date.now()}_${++counter}`, so the same line read out of two directories produced two different ids and nothing ever collapsed. The dedupe was inert from the day it was written: across every log on this machine, all 232 loads reported "0 dupes removed" and not one reported more. Ids now come from the JSONL line's own `uuid`.
+- Measured on a real four-profile chat before the fix: 236 messages concatenated against 120 unique, a 1.97x inflation. 27 messages appeared four times, 16 three times and 3 twice, which accounts for the 116 duplicates the same load now removes. Older messages duplicated the most, because each rotation copied them into one more directory.
+
+### Notes
+- The dedupe moved out of the `load-by-id` handler into `src/main/agent/dedupe-messages.ts` and is now tested. The defect lived in the seam between the parser's id and this filter's key, and inline in the handler that seam could not be reached by a test: the loader could have been re-keyed to `content` with every test still green. Both wrong fixes are now killed by mutation, and so is the `message.id` key.
+- It also returns a conflict count, and the loader warns when it is non-zero. Profile copies are byte-prefixes of one another, so two copies of one id should always agree; if that ever stops being true, "first wins" would silently discard a differing version, and the old log line reported only a count. `listOauthDirsForAgent` has no `ORDER BY`, so which copy survives is not specified.
+- **The key is `uuid` and deliberately not `message.id`.** One assistant `message.id` spans a separate JSONL line per content block, measured up to 7 lines on a real file, so keying on it would have merged a turn's text, thinking and `tool_use` into a single message and silently dropped content. `uuid` is per line and was unique 252 of 252 times on that file. A fix that looked more natural would have traded visible duplication for invisible data loss.
+- The parser reads a top-level `id` that Claude Code JSONL does not have, which is why the fallback fired for every message including assistant turns. That field is kept as a secondary fallback because it costs nothing, but `uuid` is checked first.
+- Codex is unaffected and was left alone. `claude-session-migrate.ts` only copies Claude sessions, and every Codex rollout file on disk exists exactly once, so its synthesized ids have no union to break.
+- **Locale-dependent tests from 0.7.30 are fixed here too.** Two assertions hardcoded "Aug 1", but `fmtResetsAt` renders through `toLocaleString([])`, i.e. the host locale, which produces "1 Aug" elsewhere. They passed on the US-locale CI runner and would have failed on any other. They now assert the message embeds `fmtResetsAt`'s own output and that it differs from a time-only render, which is the behaviour that actually matters, and they pass under `LANG=en_GB.UTF-8`.
+- Not addressed: a session copied into 13 profile directories is still parsed 13 times on open, and the largest such file here is 7.7 MB. Deduping candidate paths by size and mtime would risk dropping a genuinely divergent copy for a speed win, so correctness was left in front.
+- Also seen on disk and left alone: one project directory encoded with the dot intact (`-.claude-worktrees-`) beside the correct `--claude-worktrees-`. That is the stale `encodeClaudeProjectPath` artifact already described in CLAUDE.md. The loader joins one exact encoded name, so it is unreachable data rather than a second duplication source.
+
 ## 2026-08-01 - A rate-limit error that sent you the wrong way, and the model it never named
 
 ### Fixed
