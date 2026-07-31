@@ -27,10 +27,13 @@ import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
-import { colors, radius, space, statusColor, type } from '../theme'
+import { colors, radius, space, type } from '../theme'
+import { Markdown } from '../components/Markdown'
+import { summarizeTool } from '../lib/toolSummary'
 import { getClient, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { ModePicker } from '../components/ModePicker'
+import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
 
 /**
@@ -78,25 +81,7 @@ function historyToItems(messages: ChatMessage[]): FeedItem[] {
   return items
 }
 
-function truncate(s: string, max: number): string {
-  return s.length > max ? `${s.slice(0, max - 1)}…` : s
-}
-
-function summarizeInput(input: unknown): string {
-  if (input == null) return ''
-  const raw = typeof input === 'string' ? input : JSON.stringify(input)
-  return truncate(raw.replace(/\s+/g, ' '), 120)
-}
-
-/** Minimal markdown flattening for plan text - strip headings and bold marks. */
-function stripMarkdown(md: string): string {
-  return md
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/\*\*([^*]+)\*\*/g, '$1')
-    .replace(/__([^_]+)__/g, '$1')
-}
-
-export default function ThreadScreen({ route }: Props) {
+export default function ThreadScreen({ route, navigation }: Props) {
   const { connectionId, threadId, projectPath, isNew } = route.params
   const key = threadKey(connectionId, threadId)
   const thread = useChatStore((s) => s.threads[key]) ?? emptyThread()
@@ -112,6 +97,16 @@ export default function ThreadScreen({ route }: Props) {
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState('')
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
+  const [statusOpen, setStatusOpen] = useState(false)
+
+  // Status lives in the header, not in a row of its own. The accessory
+  // subscribes to the store directly, so this runs once per thread rather than
+  // once per streamed token.
+  useEffect(() => {
+    navigation.setOptions({
+      headerRight: () => <ThreadHeaderStatus threadKey={key} onPress={() => setStatusOpen((v) => !v)} />,
+    })
+  }, [navigation, key])
 
   // useFocusEffect (not useEffect) so activeKey tracks push/pop: pushing
   // another screen on top blurs this one and re-focusing restores it.
@@ -334,24 +329,23 @@ export default function ThreadScreen({ route }: Props) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={headerHeight}
     >
-      {/* Status header */}
-      <View style={styles.statusBar}>
-        <View
-          style={[styles.statusDot, { backgroundColor: statusColor[thread.status] ?? colors.textFaint }]}
-        />
-        <Text style={styles.statusText}>{thread.status}</Text>
-        {contextPct != null && thread.usedTokens != null && thread.maxTokens != null && (
-          <View style={styles.contextWrap}>
-            <View style={styles.contextTrack}>
-              <View style={[styles.contextFill, { width: `${Math.round(contextPct * 100)}%` }]} />
+      {/* Expanded detail, shown only when the header accessory is tapped. */}
+      {statusOpen && (
+        <View style={styles.statusBar}>
+          <Text style={styles.statusText}>{thread.status}</Text>
+          {contextPct != null && thread.usedTokens != null && thread.maxTokens != null && (
+            <View style={styles.contextWrap}>
+              <View style={styles.contextTrack}>
+                <View style={[styles.contextFill, { width: `${Math.round(contextPct * 100)}%` }]} />
+              </View>
+              <Text style={styles.contextText}>
+                {formatTokens(thread.usedTokens)} / {formatTokens(thread.maxTokens)}
+              </Text>
             </View>
-            <Text style={styles.contextText}>
-              {formatTokens(thread.usedTokens)} / {formatTokens(thread.maxTokens)}
-            </Text>
-          </View>
-        )}
-        {thread.costUsd != null && <Text style={styles.costText}>${thread.costUsd.toFixed(2)}</Text>}
-      </View>
+          )}
+          {thread.costUsd != null && <Text style={styles.costText}>${thread.costUsd.toFixed(2)}</Text>}
+        </View>
+      )}
 
       {/* Rendered OUTSIDE the list on purpose. An inverted FlatList applies a
           flip to the container and cancels it per cell, but ListEmptyComponent
@@ -477,14 +471,14 @@ const TextItem = memo(function TextItem({ item }: { item: Extract<FeedItem, { ki
   if (item.stream === 'plan') {
     return (
       <View style={[styles.itemBlock, styles.planStreamBox]}>
-        <Text style={styles.monoText}>{item.text}</Text>
+        <Markdown text={item.text} />
       </View>
     )
   }
 
   return (
     <View style={styles.itemBlock}>
-      <Text style={styles.assistantText}>{item.text}</Text>
+      <Markdown text={item.text} />
       {item.done && item.durationMs != null && (
         <Text style={styles.durationText}>Worked for {fmtDuration(item.durationMs)}</Text>
       )}
@@ -494,6 +488,7 @@ const TextItem = memo(function TextItem({ item }: { item: Extract<FeedItem, { ki
 
 const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedItem, { kind: 'tool' }> }) {
   const [expanded, setExpanded] = useState(false)
+  const summary = useMemo(() => summarizeTool(item.toolName, item.input), [item.toolName, item.input])
   const outputLines = (item.output ?? '').split('\n')
   const shown = expanded ? outputLines : outputLines.slice(0, 6)
   const hiddenCount = outputLines.length - 6
@@ -501,12 +496,14 @@ const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedItem, { ki
   return (
     <View style={[styles.itemBlock, styles.toolCard]}>
       <View style={styles.toolHeader}>
-        <Text style={styles.toolName}>{item.toolName}</Text>
+        <Text style={styles.toolName}>{summary.title}</Text>
         {item.state === 'running' && <ActivityIndicator size="small" color={colors.accent} />}
       </View>
-      <Text style={styles.toolInput} numberOfLines={1}>
-        {summarizeInput(item.input)}
-      </Text>
+      {summary.detail.length > 0 && (
+        <Text style={summary.mono ? styles.toolInput : styles.toolInputProse} numberOfLines={2}>
+          {summary.detail}
+        </Text>
+      )}
       {item.state === 'done' && item.output != null && item.output.length > 0 && (
         <>
           <Text style={styles.toolOutput}>{shown.join('\n')}</Text>
@@ -645,7 +642,7 @@ const PlanItem = memo(function PlanItem({
   return (
     <View style={[styles.itemBlock, styles.planCard]}>
       <Text style={styles.planHeader}>Proposed Plan</Text>
-      <Text style={styles.monoText}>{stripMarkdown(item.markdown)}</Text>
+      <Markdown text={item.markdown} />
       <View style={styles.buttonRow}>
         <Pressable style={[styles.actionButton, styles.implementButton]} onPress={onImplement}>
           <Text style={styles.actionLabel}>Implement Plan</Text>
@@ -700,11 +697,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.lg,
     paddingBottom: space.sm,
     backgroundColor: colors.bg,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
   },
   statusText: {
     color: colors.textDim,
@@ -851,6 +843,7 @@ const styles = StyleSheet.create({
   },
   noticeRow: { alignItems: 'center', paddingVertical: space.md },
   noticeText: { color: colors.textDim, ...type.monoSm },
+  toolInputProse: { color: colors.textDim, ...type.bodySm },
   denialPill: {
     alignSelf: 'flex-start',
     marginHorizontal: 14,
