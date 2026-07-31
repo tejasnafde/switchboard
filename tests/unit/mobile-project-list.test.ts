@@ -3,6 +3,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { parseOrder, matchesQuery } from '../../apps/mobile/src/lib/projectList'
+import { initialsFromEmail } from '../../apps/mobile/src/lib/account'
 
 describe('parseOrder', () => {
   it('reads a JSON array of paths', () => {
@@ -53,5 +54,32 @@ describe('matchesQuery', () => {
 
   it('ignores surrounding whitespace in the query', () => {
     expect(matchesQuery(project, '  switch  ')).toBe(true)
+  })
+})
+
+describe('initialsFromEmail', () => {
+  it('takes initials from a dotted local part', () => {
+    expect(initialsFromEmail('tejas.nafde@geoiq.io')).toBe('TN')
+    expect(initialsFromEmail('ada_lovelace@x.dev')).toBe('AL')
+    expect(initialsFromEmail('grace-hopper@navy.mil')).toBe('GH')
+  })
+
+  it('uses the first two letters of a single-word local part', () => {
+    expect(initialsFromEmail('tejas@geoiq.io')).toBe('TE')
+  })
+
+  it('ignores a plus-address suffix as a separate word only when it has content', () => {
+    expect(initialsFromEmail('tejas+switchboard@x.io')).toBe('TS')
+  })
+
+  it('returns a neutral dash rather than wrong initials', () => {
+    expect(initialsFromEmail(null)).toBe('-')
+    expect(initialsFromEmail(undefined)).toBe('-')
+    expect(initialsFromEmail('')).toBe('-')
+    expect(initialsFromEmail('...@x.io')).toBe('-')
+  })
+
+  it('handles a one-letter local part without padding it', () => {
+    expect(initialsFromEmail('t@x.io')).toBe('T')
   })
 })

@@ -32,6 +32,7 @@ import { Markdown } from '../components/Markdown'
 import { summarizeTool } from '../lib/toolSummary'
 import { getClient, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
+import { usePrefsStore } from '../stores/prefs'
 import { ModePicker } from '../components/ModePicker'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
@@ -182,6 +183,31 @@ export default function ThreadScreen({ route, navigation }: Props) {
     })()
   }, [connectionId, threadId, projectPath, key, isNew, reportError])
 
+  // Restore what the user last chose for this thread. Runs once per thread and
+  // pushes the mode to the backend too, so the adapter and the chip agree - a
+  // restored chip that the backend does not know about would be a lie.
+  const restoredKeyRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (restoredKeyRef.current === key) return
+    const saved = usePrefsStore.getState().threads[key]
+    const mode = saved?.mode ?? (isNew ? usePrefsStore.getState().defaultMode : undefined)
+    if (mode === undefined && saved?.model === undefined) {
+      restoredKeyRef.current = key
+      return
+    }
+    const client = getClient(connectionId)
+    if (!client) return // Retry on a later render, once the client exists.
+    restoredKeyRef.current = key
+    if (mode !== undefined) {
+      useChatStore.getState().setRuntimeMode(key, mode)
+      client.setRuntimeMode(threadId, mode).catch((err) => log.warn('restore mode failed', err))
+    }
+    if (saved?.model !== undefined) {
+      setModel(saved.model)
+      client.setModel(threadId, saved.model).catch((err) => log.warn('restore model failed', err))
+    }
+  }, [connectionId, threadId, key, isNew])
+
   // Live model list for this thread. It stays empty until the adapter can
   // answer (Claude's SDK query only exists once a turn has begun, so the fetch
   // is re-run on every status change until a list lands) and an empty list
@@ -213,6 +239,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const setMode = (mode: RuntimeMode) => {
     useChatStore.getState().setRuntimeMode(key, mode)
+    usePrefsStore.getState().rememberMode(key, mode)
     getClient(connectionId)?.setRuntimeMode(threadId, mode).catch(reportError)
   }
 
@@ -220,6 +247,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const chooseModel = (id: string) => {
     setModelPickerOpen(false)
     setModel(id)
+    usePrefsStore.getState().rememberModel(key, id)
     getClient(connectionId)?.setModel(threadId, id).catch(reportError)
   }
 

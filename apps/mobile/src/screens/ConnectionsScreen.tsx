@@ -22,11 +22,12 @@ import {
   Text,
   View,
 } from 'react-native'
-import { useNavigation } from '@react-navigation/native'
+import { useFocusEffect, useNavigation } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
-import { warmUpGoogleAuth } from '../lib/google-auth'
+import { getSignedInEmail, warmUpGoogleAuth } from '../lib/google-auth'
+import { initialsFromEmail } from '../lib/account'
 import { useConnectionsStore, type ConnectionConfig, type ConnectionStatus } from '../stores/connections'
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
@@ -96,6 +97,10 @@ export default function ConnectionsScreen() {
   const configs = useConnectionsStore((s) => s.configs)
   const status = useConnectionsStore((s) => s.status)
   const [ready, setReady] = useState(false)
+  // Avatar monogram from the signed-in account rather than a hardcoded one.
+  // Null until the keychain read resolves; the avatar shows a dash meanwhile.
+  const [email, setEmail] = useState<string | null>(null)
+  const initials = initialsFromEmail(email)
 
   useEffect(() => {
     let cancelled = false
@@ -114,6 +119,19 @@ export default function ConnectionsScreen() {
     }
   }, [])
 
+  // Re-read on focus: signing in or out happens on another screen.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false
+      void getSignedInEmail().then((value) => {
+        if (!cancelled) setEmail(value)
+      })
+      return () => {
+        cancelled = true
+      }
+    }, []),
+  )
+
   useLayoutEffect(() => {
     navigation.setOptions({
       headerLeft: () => (
@@ -123,7 +141,7 @@ export default function ConnectionsScreen() {
           accessibilityLabel="Google account"
           style={({ pressed }) => [styles.headerAvatar, pressed && styles.pressed]}
         >
-          <Text style={styles.headerAvatarText}>TN</Text>
+          <Text style={styles.headerAvatarText}>{initials}</Text>
         </Pressable>
       ),
       headerRight: () => (
@@ -136,7 +154,7 @@ export default function ConnectionsScreen() {
         </Pressable>
       ),
     })
-  }, [navigation])
+  }, [navigation, initials])
 
   const showRowActions = useCallback(
     (config: ConnectionConfig) => {
