@@ -35,6 +35,7 @@ import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/c
 import { ModePicker } from '../components/ModePicker'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
+import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 
 /**
  * How much of a long thread to pull on open. Enough that scrolling back feels
@@ -93,6 +94,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const headerHeight = useHeaderHeight()
   const [draft, setDraft] = useState('')
   const [voiceNote, setVoiceNote] = useState<VoiceNote | null>(null)
+  const [attachments, setAttachments] = useState<Attachment[]>([])
   const composerRef = useRef<TextInput>(null)
   const [models, setModels] = useState<ModelOption[]>([])
   const [model, setModel] = useState('')
@@ -225,17 +227,34 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const send = () => {
     const text = draft.trim()
-    if (!text) return
+    // An image with no caption is a legitimate turn - "what is wrong with this
+    // screenshot" is most of the reason to attach one from a phone.
+    if (!text && attachments.length === 0) return
     const client = getClient(connectionId)
     if (!client) {
       reportError(new Error('Backend not connected.'))
       return
     }
+    const images = attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
     setDraft('')
     setVoiceNote(null)
-    useChatStore.getState().addUserMessage(key, text)
-    client.sendTurn(threadId, text, thread.runtimeMode).catch(reportError)
+    setAttachments([])
+    useChatStore.getState().addUserMessage(
+      key,
+      text || `[${images.length} ${images.length === 1 ? 'image' : 'images'}]`,
+    )
+    client
+      .sendTurn(threadId, text, thread.runtimeMode, images.length > 0 ? images : undefined)
+      .catch(reportError)
   }
+
+  const addAttachments = useCallback((added: Attachment[]) => {
+    setAttachments((prev) => [...prev, ...added])
+  }, [])
+
+  const removeAttachment = useCallback((id: string) => {
+    setAttachments((prev) => prev.filter((a) => a.id !== id))
+  }, [])
 
   const stop = () => {
     getClient(connectionId)?.interrupt(threadId).catch(reportError)
@@ -317,15 +336,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
     [decideApproval, submitAnswers, implementPlan, focusComposer, backendLabel],
   )
 
+  const canSend = draft.trim().length > 0 || attachments.length > 0
+
   const contextPct =
     thread.usedTokens != null && thread.maxTokens ? Math.min(1, thread.usedTokens / thread.maxTokens) : null
 
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      // Android needs a real behaviour too: app.json sets edgeToEdgeEnabled, and
-      // under edge-to-edge the window is no longer resized for the keyboard, so
-      // `undefined` left the composer covered. Offset accounts for the header.
+      // Android needs a real behaviour too. Edge-to-edge is unconditional in
+      // SDK 57, and under it the window is no longer resized for the keyboard,
+      // so `undefined` left the composer covered. Offset accounts for the header.
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={headerHeight}
     >
@@ -420,6 +441,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           )}
         </View>
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
+        <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
         <View style={styles.inputRow}>
           <TextInput
             ref={composerRef}
@@ -430,6 +452,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
             placeholderTextColor={colors.textFaint}
             multiline
           />
+          <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
           <MicButton draft={draft} onDraft={setDraft} onNote={setVoiceNote} />
           {thread.status === 'running' ? (
             <Pressable style={[styles.sendButton, styles.stopButton]} onPress={stop}>
@@ -437,9 +460,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </Pressable>
           ) : (
             <Pressable
-              style={[styles.sendButton, !draft.trim() && styles.sendButtonDisabled]}
+              style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
               onPress={send}
-              disabled={!draft.trim()}
+              disabled={!canSend}
             >
               <Text style={styles.sendLabel}>Send</Text>
             </Pressable>

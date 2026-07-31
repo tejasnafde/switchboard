@@ -120,8 +120,19 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.START_SESSION, opts)
   }
 
-  sendTurn(threadId: string, message: string, runtimeMode?: RuntimeMode): Promise<void> {
-    return this.transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode)
+  /**
+   * `images` are data URLs (`data:image/jpeg;base64,…`) with an explicit
+   * mimeType, matching what the desktop composer sends. The adapters strip the
+   * prefix and build provider-native image blocks, so the phone needs no
+   * per-provider knowledge.
+   */
+  sendTurn(
+    threadId: string,
+    message: string,
+    runtimeMode?: RuntimeMode,
+    images?: Array<{ url: string; mimeType?: string }>,
+  ): Promise<void> {
+    return this.transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images)
   }
 
   interrupt(threadId: string): Promise<void> {
