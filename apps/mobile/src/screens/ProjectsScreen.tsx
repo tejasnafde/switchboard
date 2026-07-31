@@ -2,19 +2,22 @@
  * Project list for one paired backend. Fetches on focus, pull-to-refresh,
  * and shows a per-project unread pill summed from the chat store's threads.
  */
-import { memo, useCallback, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   RefreshControl,
+  SectionList,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import type { Project } from '@shared/types'
+import type { Project, Workspace } from '@shared/types'
+import { applyProjectOrder, groupProjectsByWorkspace } from '@shared/projectGrouping'
+import { matchesQuery, parseOrder } from '../lib/projectList'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { getClient } from '../stores/connections'
@@ -45,6 +48,9 @@ const ProjectUnread = memo(function ProjectUnread({
 export default function ProjectsScreen({ route, navigation }: Props) {
   const { connectionId } = route.params
   const [projects, setProjects] = useState<Project[] | null>(null)
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([])
+  const [order, setOrder] = useState<string[] | null>(null)
+  const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
 
@@ -58,8 +64,19 @@ export default function ProjectsScreen({ route, navigation }: Props) {
         return
       }
       try {
-        const result = await client.getProjects()
+        // Workspaces and the saved order come from the SAME backend tables the
+        // desktop sidebar reads, so grouping matches the Mac rather than
+        // approximating it. Neither is essential: a backend that cannot answer
+        // (older server, or the settings row was never written) still lists
+        // projects, just ungrouped.
+        const [result, ws, orderJson] = await Promise.all([
+          client.getProjects(),
+          client.listWorkspaces().catch(() => [] as Workspace[]),
+          client.getSetting('projectOrder').catch(() => null),
+        ])
         setProjects(result)
+        setWorkspaces(ws)
+        setOrder(parseOrder(orderJson))
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -75,6 +92,20 @@ export default function ProjectsScreen({ route, navigation }: Props) {
       void load()
     }, [load]),
   )
+
+  const sections = useMemo(() => {
+    if (projects === null) return []
+    const filtered = projects.filter((p) => matchesQuery(p, query))
+    const ordered = applyProjectOrder(filtered, order)
+    return groupProjectsByWorkspace(ordered, workspaces)
+      // A workspace with no matches is noise while searching.
+      .filter((g) => g.projects.length > 0)
+      .map((g) => ({
+        title: g.workspace?.name ?? 'Ungrouped',
+        workspaceId: g.workspace?.id ?? null,
+        data: g.projects,
+      }))
+  }, [projects, workspaces, order, query])
 
   if (projects === null && error !== null) {
     // The transport may still be dialing (reconnects are internal to it), so
@@ -101,10 +132,37 @@ export default function ProjectsScreen({ route, navigation }: Props) {
   }
 
   return (
-    <FlatList
-      data={projects}
+    <SectionList
+      sections={sections}
       keyExtractor={(p) => p.path}
-      contentContainerStyle={projects.length === 0 ? styles.emptyContainer : styles.listContent}
+      contentContainerStyle={sections.length === 0 ? styles.emptyContainer : styles.listContent}
+      keyboardShouldPersistTaps="handled"
+      stickySectionHeadersEnabled={false}
+      // Only worth a header when there is more than one group; a lone
+      // "Ungrouped" label above every project is pure clutter.
+      renderSectionHeader={({ section }) =>
+        sections.length > 1 ? (
+          <Text style={styles.sectionHeader}>{section.title.toUpperCase()}</Text>
+        ) : null
+      }
+      ListHeaderComponent={
+        // Hidden until there are enough projects for finding one to be work.
+        (projects?.length ?? 0) > 6 || query !== '' ? (
+          <View style={styles.searchWrap}>
+            <TextInput
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search projects"
+              placeholderTextColor={colors.textFaint}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+            />
+          </View>
+        ) : null
+      }
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -114,8 +172,12 @@ export default function ProjectsScreen({ route, navigation }: Props) {
       }
       ListEmptyComponent={
         <View style={styles.center}>
-          <Text style={styles.stateTitle}>No projects</Text>
-          <Text style={styles.stateDetail}>Add a project on the desktop app to see it here.</Text>
+          <Text style={styles.stateTitle}>{query === '' ? 'No projects' : 'No matches'}</Text>
+          <Text style={styles.stateDetail}>
+            {query === ''
+              ? 'Add a project on the desktop app to see it here.'
+              : `Nothing matches "${query.trim()}".`}
+          </Text>
         </View>
       }
       renderItem={({ item }) => {
@@ -155,6 +217,23 @@ export default function ProjectsScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  searchWrap: { paddingBottom: space.sm },
+  searchInput: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.sm,
+    color: colors.text,
+    paddingHorizontal: space.md,
+    minHeight: HIT,
+    ...type.body,
+  },
+  sectionHeader: {
+    color: colors.textFaint,
+    ...type.label,
+    marginTop: space.md,
+    marginBottom: space.xs,
+  },
   center: {
     flex: 1,
     alignItems: 'center',

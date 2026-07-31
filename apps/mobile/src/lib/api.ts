@@ -8,7 +8,7 @@ import type { Transport } from '@shared/transport'
 import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
-import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance } from '@shared/types'
+import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
 
 export interface StartSessionOpts {
@@ -64,6 +64,23 @@ export class SwitchboardClient {
 
   getConversations(projectPath: string): Promise<ConversationRow[]> {
     return this.transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath)
+  }
+
+  /** Sidebar workspaces, so the phone groups projects the way the Mac does. */
+  listWorkspaces(): Promise<Workspace[]> {
+    return this.transport.invoke(AppChannels.WORKSPACE_LIST)
+  }
+
+  /**
+   * Backend settings table. The same store the desktop uses, so a preference
+   * read here is the one the user set there - `projectOrder` in particular.
+   */
+  getSetting(key: string): Promise<string | null> {
+    return this.transport.invoke('settings:get', key)
+  }
+
+  setSetting(key: string, value: string): Promise<unknown> {
+    return this.transport.invoke('settings:set', key, value)
   }
 
   /**

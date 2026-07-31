@@ -2,7 +2,7 @@
  * Conversation list for one project on a paired backend. Fetches on focus,
  * newest first, with live status dots and unread badges from the chat store.
  */
-import { memo, useCallback, useLayoutEffect, useState } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -10,6 +10,7 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
@@ -54,6 +55,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
   const [rows, setRows] = useState<ConversationRow[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const [query, setQuery] = useState('')
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -97,6 +99,12 @@ export default function ConversationsScreen({ route, navigation }: Props) {
     })
   }, [navigation, connectionId, projectPath, projectName])
 
+  const visibleRows = useMemo(() => {
+    const needle = query.trim().toLowerCase()
+    if (needle === '' || rows === null) return rows ?? []
+    return rows.filter((r) => r.title.toLowerCase().includes(needle))
+  }, [rows, query])
+
   if (rows === null && error !== null) {
     return (
       <View style={styles.center}>
@@ -121,9 +129,29 @@ export default function ConversationsScreen({ route, navigation }: Props) {
 
   return (
     <FlatList
-      data={rows}
+      data={visibleRows}
       keyExtractor={(r) => r.id}
-      contentContainerStyle={rows.length === 0 ? styles.emptyContainer : styles.listContent}
+      contentContainerStyle={visibleRows.length === 0 ? styles.emptyContainer : styles.listContent}
+      keyboardShouldPersistTaps="handled"
+      ListHeaderComponent={
+        // Long-lived projects accumulate hundreds of threads; short ones do not
+        // need a search field taking up the first row.
+        rows.length > 8 || query !== '' ? (
+          <View style={styles.searchWrap}>
+            <TextInput
+              style={styles.searchInput}
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search conversations"
+              placeholderTextColor={colors.textFaint}
+              autoCorrect={false}
+              autoCapitalize="none"
+              returnKeyType="search"
+              clearButtonMode="while-editing"
+            />
+          </View>
+        ) : null
+      }
       refreshControl={
         <RefreshControl
           refreshing={refreshing}
@@ -133,8 +161,12 @@ export default function ConversationsScreen({ route, navigation }: Props) {
       }
       ListEmptyComponent={
         <View style={styles.center}>
-          <Text style={styles.stateTitle}>No conversations</Text>
-          <Text style={styles.stateDetail}>Tap + to start a new session in {projectName}.</Text>
+          <Text style={styles.stateTitle}>{query === '' ? 'No conversations' : 'No matches'}</Text>
+          <Text style={styles.stateDetail}>
+            {query === ''
+              ? `Tap + to start a new session in ${projectName}.`
+              : `No conversation title matches "${query.trim()}".`}
+          </Text>
         </View>
       }
       renderItem={({ item }) => {
@@ -167,6 +199,17 @@ export default function ConversationsScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  searchWrap: { paddingBottom: space.sm },
+  searchInput: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radius.sm,
+    color: colors.text,
+    paddingHorizontal: space.md,
+    minHeight: HIT,
+    ...type.body,
+  },
   center: {
     flex: 1,
     alignItems: 'center',
