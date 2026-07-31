@@ -60,6 +60,8 @@ import type {
 } from '../types'
 import type { ProviderSkill } from '@shared/types'
 import { formatClaudeAuthStatus } from '@shared/provider-auth-format'
+import { buildRateLimitMessage, classifyOverageScope, isOverageRejection } from '@shared/claude-rate-limit'
+import { unixSecondsToMs } from '@shared/provider-usage'
 
 const log = createLogger('provider:claude')
 
@@ -393,6 +395,12 @@ interface ActiveSession {
    */
   turnStartedAt: number | null
   /**
+   * Effective model id from the last `getContextUsage()` poll, e.g.
+   * `claude-fable-5`. The rejection payload never carries the model, yet the
+   * model is usually the cause - see docs/notes/rate-limit-debugging.md.
+   */
+  lastKnownModel: string | null
+  /**
    * Slash commands the SDK exposes for this session - captured from the
    * `system/init` event's `slash_commands` field. Surfaced to the renderer
    * via `listSkills()` so the chat-input slash menu can include
@@ -556,6 +564,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       skills: [],
       models: [],
       turnStartedAt: null,
+      lastKnownModel: null,
       instanceEnv: opts.resolvedEnv ?? {},
       instanceOauthDir: opts.resolvedOauthDir ?? null,
       watchdog,
@@ -1139,11 +1148,13 @@ export class ClaudeAdapter implements ProviderAdapter {
           // show the renderer's rough estimate until the next turn ends.
           if (active.query) {
             active.query.getContextUsage().then((ctx) => {
+              if (ctx.model) active.lastKnownModel = ctx.model
               active.onEvent({
                 type: 'context_window',
                 threadId,
                 usedTokens: ctx.totalTokens,
                 maxTokens: ctx.maxTokens,
+                ...(ctx.model ? { model: ctx.model } : {}),
               })
             }).catch((err) => {
               log.warn(`getContextUsage at init failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
@@ -1178,11 +1189,13 @@ export class ClaudeAdapter implements ProviderAdapter {
           log.info(`compaction completed: ${threadId}`)
           if (active.query) {
             active.query.getContextUsage().then((ctx) => {
+              if (ctx.model) active.lastKnownModel = ctx.model
               active.onEvent({
                 type: 'context_window',
                 threadId,
                 usedTokens: ctx.totalTokens,
                 maxTokens: ctx.maxTokens,
+                ...(ctx.model ? { model: ctx.model } : {}),
               })
             }).catch((err) => {
               log.warn(`getContextUsage after compaction failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
@@ -1339,11 +1352,13 @@ export class ClaudeAdapter implements ProviderAdapter {
         // Poll real context window usage from SDK after turn completes
         if (active.query) {
           active.query.getContextUsage().then((ctx) => {
+            if (ctx.model) active.lastKnownModel = ctx.model
             active.onEvent({
               type: 'context_window',
               threadId,
               usedTokens: ctx.totalTokens,
               maxTokens: ctx.maxTokens,
+              ...(ctx.model ? { model: ctx.model } : {}),
             })
             log.info(`context: ${ctx.totalTokens}/${ctx.maxTokens} (${Math.round(ctx.percentage)}%) model=${ctx.model}`)
           }).catch((err) => {
@@ -1375,15 +1390,29 @@ export class ClaudeAdapter implements ProviderAdapter {
         }
         const rl = (msg as RateLimitMsg).rate_limit_info
         if (rl?.status === 'rejected') {
-          const windowPart = rl.rateLimitType ? ` (${rl.rateLimitType.replace(/_/g, '-')} window)` : ''
-          const resetPart = rl.resetsAt
-            ? ` Resets ${new Date(rl.resetsAt * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.`
-            : ''
+          // Copy branches in shared/claude-rate-limit.ts: an overage rejection
+          // is a spend cap, not a window.
           active.onEvent({
             type: 'error',
             threadId,
-            message: `Claude Code rate limit reached${windowPart}.${resetPart} Switch to another provider or instance, or wait for the window to reset.`,
+            message: buildRateLimitMessage(rl, Date.now(), active.lastKnownModel),
           })
+          // Spend blocks only: a real window is not model-specific, so
+          // recording one would warn about a model that is fine after it rolls.
+          if (isOverageRejection(rl) && active.lastKnownModel) {
+            const scope = classifyOverageScope(rl.overageDisabledReason)
+            if (scope === 'org' || scope === 'account') {
+              active.onEvent({
+                type: 'spend.blocked',
+                threadId,
+                instanceId: active.session.instanceId ?? null,
+                model: active.lastKnownModel,
+                reason: rl.overageDisabledReason ?? null,
+                scope,
+                resetsAtMs: unixSecondsToMs(rl.resetsAt),
+              })
+            }
+          }
           // A rejection produces no `result` message, so without an explicit
           // turn end the panel stays stuck on 'running' with no duration badge -
           // this is the "no response, nothing" symptom from the 2026-07-25

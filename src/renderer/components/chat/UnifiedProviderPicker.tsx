@@ -51,6 +51,12 @@ interface UnifiedProviderPickerProps {
   onModelChange: (model: string) => void
   /** Dynamic model list (OpenCode CLI / Claude SDK; overrides static when provided). */
   dynamicModels?: ModelOption[] | null
+  /**
+   * Model the backend resolved to when the user pinned nothing. Used for the
+   * trigger label only, so an unpinned session names its real model instead of
+   * the useless "Default" that hid `claude-fable-5` on 2026-07-31.
+   */
+  resolvedModel?: string
 }
 
 const AGENTS: Array<{ value: AgentType; label: string }> = [
@@ -77,6 +83,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
     model,
     onModelChange,
     dynamicModels,
+    resolvedModel,
   } = props
 
   const [open, setOpen] = useState(false)
@@ -162,12 +169,16 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const initials = effectiveInstance ? providerInstanceInitials(effectiveInstance.displayName) : '··'
   const showInstanceBadge = instances.length >= 2
 
-  // Trigger label: "Claude · Sonnet 4.5" (or just "Claude · Default" when no model).
+  // Trigger label: "Claude · Sonnet 4.5". An unpinned session shows the model
+  // the backend resolved to, falling back to "Default" only before the first
+  // turn reports one - a bare "Default" hid the model that caused the
+  // 2026-07-31 spend rejection.
   const modelLabel = useMemo(() => {
-    if (!model) return 'Default'
-    const found = models.find((m) => m.id === model)
-    return found?.label ?? model
-  }, [models, model])
+    const effective = model || resolvedModel
+    if (!effective) return 'Default'
+    const found = models.find((m) => m.id === effective)
+    return found?.label ?? effective
+  }, [models, model, resolvedModel])
 
   return (
     <>

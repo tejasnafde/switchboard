@@ -60,6 +60,12 @@ interface AgentSession {
   /** Model identifier (provider-specific - e.g. 'claude-opus-4-5' or 'gpt-5') */
   model?: string
   /**
+   * Model the backend actually RESOLVED to, reported by `context_window`.
+   * Distinct from `model`, which is only what the user PINNED. Never copy this
+   * into `model`: that would turn a display value into a pin they never chose.
+   */
+  resolvedModel?: string
+  /**
    * Currently selected provider-instance id (named credential set). When
    * undefined, the registry resolves to `<agentType>-default` at session
    * start. Changing this requires a session restart - handled by the
@@ -137,6 +143,8 @@ interface AgentStore {
   setTitle: (sessionId: string, title: string) => void
   setRuntimeMode: (sessionId: string, mode: RuntimeMode) => void
   setModel: (sessionId: string, model: string) => void
+  /** Record the model the backend resolved to. Does NOT change the user's pin. */
+  setResolvedModel: (sessionId: string, resolvedModel: string) => void
   setReasoningEffort: (sessionId: string, effort: ReasoningEffort) => void
   setCostUsd: (sessionId: string, costUsd: number) => void
   setVariants: (sessionId: string, available: string[], current: string) => void
@@ -328,6 +336,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       ),
     })),
 
+  setResolvedModel: (sessionId, resolvedModel) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, resolvedModel } : s
+      ),
+    })),
+
   setReasoningEffort: (sessionId, effort) =>
     set((state) => ({
       sessions: state.sessions.map((s) =>
@@ -389,7 +404,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         // session-id namespaces differ across kinds (Claude UUID vs.
         // Codex rollout id) - there's no migration path.
         s.id === sessionId
-          ? { ...s, type, model: undefined, instanceId: undefined, resumeSessionId: undefined }
+          ? { ...s, type, model: undefined, resolvedModel: undefined, instanceId: undefined, resumeSessionId: undefined }
           : s
       ),
     })),

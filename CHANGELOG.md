@@ -2,6 +2,21 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 2026-08-01 - A rate-limit error that sent you the wrong way, and the model it never named
+
+### Fixed
+- **The rate-limit error blamed the profile when the cause was the model.** A rejection printed "Switch to another provider or instance", which for an `org_level_disabled_*` reason cannot work: the spend cap is org-wide, so every profile in that org is refused identically. A user rotated Default to Akshaya and hit the same wall, which is exactly what the copy told them to do. The message now branches on scope. Org-wide says rotation will not help and to change the model; account-scoped still offers another profile, because there it genuinely helps.
+- **The reset time dropped the date.** `toLocaleTimeString` alone rendered "Resets 05:30 AM" for a reset 6.2 hours away on the NEXT day, and an extra-usage cap resets monthly, so the same line could present a reset weeks out as "later today". Reset times reuse `fmtResetsIn` + `fmtResetsAt` and always carry the absolute date.
+- **The model behind the failure was unnameable in the UI.** The picker rendered "Default" whenever nothing was pinned, while the session had resolved to `claude-fable-5`. `context_window` now carries the resolved model and the picker labels it, so the model is visible before a send rather than inferred after a failure. It is stored separately from the user's pin and never written back to it.
+- **Nothing warned before a send that was certain to fail.** A new `spend.blocked` event records the refused (profile, model) pair, persisted, and the composer warns on that pair before the next send with the covered models named. Keyed per pair, not per profile: opus, sonnet and haiku all worked on the same seat at the moment Fable was refused, so a per-profile block would push users back into the profile rotation this exists to prevent.
+
+### Notes
+- **Root cause, and it was not an exhausted plan.** The plan windows read 0% session and 4% weekly while every turn was refused, which is what made it look random. Fable had no `weekly_scoped` allowance on two of four seats, so its usage billed to org credits, and those were over cap and org-disabled. Running the CLI per profile with `--model claude-fable-5` reproduced it exactly: two profiles refused, two fine, while opus/sonnet/haiku succeeded on all four. Do not diagnose this with a bare `claude -p`, which defaults to Sonnet and passes everywhere.
+- **`overageDisabledReason` is a closed enum in `sdk.d.ts` and guessing it was wrong.** The first cut matched `user_*` and `spend_limit_*`, neither of which exists on that wire, while five real values fell through to "no reason reported" and were told to retry a permanent admin toggle. Those two names do exist, but on `extra_usage` in the usage endpoint, which is a different payload.
+- **Review caught the guard being dead on arrival, twice.** `lastKnownModel` was only assigned in the post-turn poll, and a rejection produces no `result`, so in the reported case the model was never known and the event never fired. The init and post-compaction polls now seed it. Separately the adapter recorded the RESOLVED instance id while the composer looked up the un-resolved one, so `claude-code-default` never matched `null` and the banner could not appear on a default-profile session.
+- The Usage panel still cannot show this. The usage endpoint reports `disabled_reason: null` and `spend_limit_reached: false` while the API rejects with `org_level_disabled_until`, so only the rejection payload carries the reason. Surfacing the last rejection in the panel is open.
+- The guard is learned, not predicted. The first failure per (profile, model) is what teaches it. Predicting from a missing `weekly_scoped` row was deliberately not done: that link is a four-account correlation, not proven causation, and a false "this will fail" is worse than a warning one turn late.
+
 ## 2026-07-30 - Quit stops crashing, and slow buttons admit they are working
 
 ### Fixed
