@@ -136,10 +136,15 @@ export const useChatStore = create<ChatState>((set) => ({
             const id = `m-${event.messageId}-${event.streamKind}`
             const existing = t.items.find((i) => i.id === id)
             if (existing && existing.kind === 'text') {
+              // REPLACE, do not append. The adapters ship the full accumulated
+              // text on every delta (claude-adapter.ts builds `fullText` before
+              // emitting; the desktop's streamingBuffer says the same). Appending
+              // concatenated cumulative onto cumulative and visibly duplicated
+              // every streamed reply.
               return {
                 items: replaceItem(t.items, (i) => i.id === id, (i) => ({
                   ...(i as Extract<FeedItem, { kind: 'text' }>),
-                  text: (i as Extract<FeedItem, { kind: 'text' }>).text + event.text,
+                  text: event.text,
                 })),
               }
             }
@@ -232,11 +237,17 @@ export const useChatStore = create<ChatState>((set) => ({
           case 'turn.completed': {
             // Mark all texts done; stamp duration on the last assistant text.
             const lastIdx = t.items.findLastIndex((i) => i.kind === 'text' && i.stream === 'assistant')
-            const items = t.items.map((i, idx) =>
-              i.kind === 'text'
-                ? { ...i, done: true, ...(idx === lastIdx ? { durationMs: event.durationMs } : {}) }
-                : i,
-            )
+            const items = t.items.map((i, idx) => {
+              if (i.kind === 'text') {
+                return { ...i, done: true, ...(idx === lastIdx ? { durationMs: event.durationMs } : {}) }
+              }
+              // A tool card spins while state === 'running'. If tool.completed
+              // never arrives (or its id does not match) the spinner never stops,
+              // which showed as several cards spinning at once. The turn ending
+              // is proof nothing is still running.
+              if (i.kind === 'tool' && i.state === 'running') return { ...i, state: 'done' as const }
+              return i
+            })
             return {
               items,
               status: 'idle' as const,

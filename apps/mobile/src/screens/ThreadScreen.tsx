@@ -19,6 +19,7 @@ import {
   View,
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
+import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
 import type { ChatMessage } from '@shared/types'
@@ -95,6 +96,9 @@ export default function ThreadScreen({ route }: Props) {
   const backendLabel =
     useConnectionsStore((s) => s.configs.find((c) => c.id === connectionId)?.label) ?? 'backend'
 
+  // Real header height: the keyboard offset must clear it, and hardcoding 96
+  // was wrong on Android where it was 0.
+  const headerHeight = useHeaderHeight()
   const [draft, setDraft] = useState('')
   const [voiceNote, setVoiceNote] = useState<VoiceNote | null>(null)
   const composerRef = useRef<TextInput>(null)
@@ -295,8 +299,11 @@ export default function ThreadScreen({ route }: Props) {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 96 : 0}
+      // Android needs a real behaviour too: app.json sets edgeToEdgeEnabled, and
+      // under edge-to-edge the window is no longer resized for the keyboard, so
+      // `undefined` left the composer covered. Offset accounts for the header.
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={headerHeight}
     >
       {/* Status header */}
       <View style={styles.statusBar}>
@@ -317,20 +324,25 @@ export default function ThreadScreen({ route }: Props) {
         {thread.costUsd != null && <Text style={styles.costText}>${thread.costUsd.toFixed(2)}</Text>}
       </View>
 
-      <FlatList
-        inverted
-        data={reversedItems}
-        keyExtractor={(i) => i.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.feedContent}
-        ListEmptyComponent={
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>
-              {isNew ? 'Session started. Say something below.' : 'Loading conversation…'}
-            </Text>
-          </View>
-        }
-      />
+      {/* Rendered OUTSIDE the list on purpose. An inverted FlatList applies a
+          flip to the container and cancels it per cell, but ListEmptyComponent
+          gets no counter-transform, so anything placed there renders mirrored. */}
+      {reversedItems.length === 0 ? (
+        <View style={styles.emptyWrap}>
+          {!isNew && <ActivityIndicator size="small" color={colors.textDim} />}
+          <Text style={styles.emptyText}>
+            {isNew ? 'Session started. Say something below.' : 'Loading conversation'}
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          inverted
+          data={reversedItems}
+          keyExtractor={(i) => i.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.feedContent}
+        />
+      )}
 
       {/* Model picker. Hidden entirely when the provider reports no models, so
           Claude-only setups do not get a chip that cannot do anything. */}
