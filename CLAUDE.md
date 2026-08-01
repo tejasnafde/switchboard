@@ -96,6 +96,44 @@ The renderer NEVER touches `ipcRenderer` directly - it calls `window.api.*` → 
 
 **Remote machines / SSH** (`src/main/machines/`): `sshTunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connectionManager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remoteExec.ts`/`reconnectBackoff.ts`/`sshConfig.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
 
+### Mobile app (`apps/mobile/`)
+
+Expo SDK 57 React Native client for the same backends. Talks to a desktop app
+or a headless server through `WsTransport`, or to an IAP-tunnelled VM through
+`IapTransport` (NDJSON over the raw TCP stream IAP gives us - `TcpHost` serves
+that side). Imports `@shared/*` and nothing else from the repo.
+
+**Two update lanes.** `mobile-ota.yml` publishes JS-only changes over
+expo-updates; `mobile-release.yml` builds an APK on EAS and attaches it to a
+`mobile-v*` GitHub Release, which the app installs itself
+(`src/lib/selfUpdate.ts`). Native changes - a new module, a permission, an SDK
+bump - MUST take the APK lane. `runtimeVersion` follows `appVersion`, so bump
+`version` in app.json whenever native deps change or an OTA will be served to
+an APK that lacks them and crash on import.
+
+**Push** (`src/main/push/`, `src/shared/push-policy.ts`): the BACKEND sends,
+because the phone is asleep when it matters. `attachPushNotifier` subscribes to
+the provider registry's bus and posts to Expo for approvals, questions, turn
+end and errors only. Devices report which thread they have open so they are not
+notified about the screen in the user's hand, and registration carries the
+client's connection id, echoed back so a tap knows which backend to open.
+Android needs FCM credentials on the EAS project - see the Firebase section in
+CLAUDE.local.md. A new registry is created when a closed window is reopened, so
+the notifier must be re-attached there.
+
+**Testing.** Mobile tests live in the root `tests/unit/` and run in the normal
+suite; the `@shared` alias already resolves. Anything importing react-native
+CANNOT load in a node test, so pure logic belongs in `src/lib/*.ts` rather than
+inside a `.tsx` - see `lib/version.ts`, `lib/profiles.ts`, `lib/projectList.ts`,
+`lib/images.ts`, `lib/markdown.ts`.
+
+**Trap that cost a whole debugging cycle:** if `expo-doctor` reports dependency
+drift, fix it before believing anything else. A react-native/metro version
+mismatch made Metro unable to resolve files outside the project root, which is
+how this app reaches `src/shared`, and it surfaced only as a failed
+"Bundle JavaScript" phase on EAS. `npx expo install --fix`, and keep doctor at
+20/20.
+
 ### Window → Row → Window → Pane model (terminals)
 
 - `Row` = horizontal container (full-width stack of columns)
