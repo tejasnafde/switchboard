@@ -129,7 +129,8 @@ app.on('open-url', (event, url) => {
   event.preventDefault()
   ideLog.info('open-url', { url })
   const win = mainWindow
-  if (win) {
+  // Same destroyed-window trap as the second-instance handler above.
+  if (win && !win.isDestroyed()) {
     if (win.isMinimized()) win.restore()
     win.focus()
   }
@@ -142,10 +143,20 @@ if (!gotTheLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
+    // `mainWindow` stays non-null after the window is destroyed, so the null
+    // check alone is not enough: touching a destroyed BrowserWindow throws
+    // "Object has been destroyed". That happens for real - a dev process whose
+    // window closed but which still holds the lock is exactly what a second
+    // `npm run dev` runs into.
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
+      return
     }
+    // Lock held but no window to raise: rebuild one instead of leaving the user
+    // with a process that swallows every launch attempt silently.
+    log.info('second-instance with no live window - recreating it')
+    app.emit('activate')
   })
 }
 
