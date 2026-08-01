@@ -218,6 +218,10 @@ export default function ConnectionsScreen() {
         >
           <Text style={styles.ctaText}>Scan a pairing QR</Text>
         </Pressable>
+        {/* Also here, not only in the paired list's footer: a fresh install is
+            exactly when someone asks which build they are holding, and it is
+            the first place a pairing problem gets debugged. */}
+        <BuildStamp />
       </View>
     )
   }

@@ -20,7 +20,7 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 ## Commands
 
 - `npm run dev` - launches Electron (auto-unsets `ELECTRON_RUN_AS_NODE`)
-- `npm test` - vitest (~1429 tests across 152 files)
+- `npm test` - vitest (~1903 tests across 192 files)
 - `npm run test:watch` - vitest in watch mode
 - `npm run typecheck` - main + renderer tsc
 - `npm run build` - **gated build**: `prebuild` runs typecheck + test before the actual build fires; `postbuild` runs `scripts/smoke-test.mjs`
@@ -88,7 +88,12 @@ The renderer NEVER touches `ipcRenderer` directly - it calls `window.api.*` → 
 
 **Standalone server**: `src/server/index.ts` → bundled to `out/server/index.cjs` (`scripts/build-server.mjs`, esbuild, `electron` external). A headless Node process wrapping the identical handlers under `WsHost` (default `127.0.0.1:8765`, pidfile `~/.switchboard-server/server.pid`). Run via `npm run server`. This is what runs on a remote VM; PTYs/agents/git/fs spawn THERE and stream back.
 
-**Wire protocol**: `src/shared/ws-protocol.ts` - JSON frames `req/res/snd/evt` (`encodeFrame`/`decodeFrame`), `invoke`→req/res correlated by id.
+**Wire protocol**: `src/shared/ws-protocol.ts` - JSON frames `req/res/snd/evt` plus `hello/ready/ping/pong` (`encodeFrame`/`decodeFrame`), `invoke`→req/res correlated by id. `decodeFrame` validates shape, not just the `k` discriminant.
+
+Three things beyond plain RPC, all driven by the phone case:
+- **Resume.** `evt` frames carry a monotonic `seq` and `WsHost` keeps a bounded `EventReplayBuffer` (`src/shared/event-replay-buffer.ts`). A reconnecting client sends `hello { since, epoch }` and is replayed exactly what it missed. `terminal:data` is excluded from the sequence space (`NON_REPLAYABLE_EVENT_CHANNELS`): it is high-volume and re-seeds itself on reattach, so buffering it would evict the provider events that cannot be recovered.
+- **Epoch.** `WsHost` mints a random `epoch` per process. A restarted server resets `seq` to 0, so without this a client holding a high cursor would silently discard every later event. A changed epoch, or an evicted cursor, answers `ready { gap: true }` and the client re-seeds via `onResumeGap` rather than showing a transcript with a hole in it.
+- **Liveness.** The host pings every 15s and terminates clients that stop answering; the client re-dials after 40s of silence and exposes `probe()`/`forceReconnect()`. A mobile socket dies with no FIN, so elapsed silence is the only signal a client that cannot send protocol pings has.
 
 **Client transports** (`src/preload/`): `IpcTransport` (local), `WsTransport` (`src/shared/ws-transport.ts`, browser WebSocket + reconnect/outbox), `HybridTransport` (desktop-only channels → IPC, everything else → remote WS), `TransportRouter` + `routing-table.ts` (one transport per machine keyed by threadId/terminal id, so one window drives local + multiple remotes at once). `SWITCHBOARD_BACKEND_URL=ws://host:8765` flips the base transport to hybrid; unset = pure local.
 
@@ -140,30 +145,50 @@ the notifier must be re-attached there.
 
 **Testing: two runners, one rule.** Pure logic goes in the root vitest suite
 (`tests/unit/**`, `@shared` alias resolves). Anything importing react-native
-CANNOT load there, so components get jest instead: `cd apps/mobile && npm test`,
-config in `apps/mobile/jest.config.js`, tests in `src/**/__tests__/*.test.tsx`.
-The globs do not overlap, so neither runner sees the other's files.
+CANNOT load there, so components get jest instead: `npm test --prefix apps/mobile`,
+config in `apps/mobile/jest.config.js`, tests in
+`src/**/__tests__/**/*.test.{ts,tsx}`. The globs do not overlap (vitest matches
+`.ts` under `tests/unit/` only), so neither runner sees the other's files. **A
+root `npm install` is required as well as the mobile one** - the tests reach
+`@shared/*` outside the package, so babel resolves its runtime helpers from the
+root `node_modules`. CI runs the jest suite on the ubuntu runner only.
 
 Keep decision logic in `src/lib/*.ts` (vitest) and assert only what RENDERS in
-jest - `lib/composer.ts` holds the gesture rules, and the component test checks
-the glyph and label those rules produce. PanResponder derives gesture state from
-real touch history, so a drag cannot be faked by calling the handlers.
+jest - `lib/composer.ts` and `lib/gestures.ts` hold the rules, and the component
+test checks the glyph and label those rules produce. PanResponder derives
+gesture state from real touch history, so a drag cannot be faked by calling the
+handlers. Note that a plain `Pressable` tap is NOT a gesture and can be driven
+with `root.findByProps({...}).props.onPress()` inside `act`; no handler is
+currently exercised, so `onSend`, `onStopTurn` and tool-output expansion have no
+coverage.
 
-Two traps in that jest setup, both cost time:
-- `@testing-library/react-native` 14 returns an EMPTY render result under this
-  React 19 / RN 0.86 / jest-expo combination, even for a bare `<View>`. Uses
-  `react-test-renderer` directly via `src/test/render.tsx` instead.
+Three traps in that jest setup, all cost time:
+- `@testing-library/react-native` 14 returned an EMPTY render result under this
+  React 19 / RN 0.86 / jest-expo combination, even for a bare `<View>`, so
+  `src/test/render.tsx` drives `react-test-renderer` directly. RNTL is NOT a
+  dependency, so that finding cannot be re-verified from the repo; re-test it
+  before assuming it still holds. `react-test-renderer` is itself deprecated by
+  React, so this foundation has a shelf life.
+- `findAll` visits composite instances as well as host ones. Without
+  `{ deep: false }` every icon is found twice (the mock's testID rides on both),
+  and a name comparison against `node.type` matches the composite. Host-node
+  counts must test `typeof node.type === 'string'`.
 - A decorative `Animated.loop` keeps firing on real timers after its test ends
   and crashes the worker inside react-native's `Easing` once jest tears the
   module registry down. `src/test/render.tsx` unmounts after every test.
 
 **Looking at it.** `DevGalleryScreen` (dev-only route, linked from the bottom of
-Connections) renders every feed row and composer state on one screen. It exists
-for the states that are awkward to reach on purpose - an empty thread mid-load,
-an uncaptioned image, a tool that never completed - which is where the bugs that
-reached a device actually were. `BuildStamp` shows version + channel + OTA id,
-because an APK plus stacked OTAs means the version alone does not identify what
-is running.
+Connections) renders assistant text, tool calls and composer states on one
+screen, for states that are awkward to reach on purpose. It is NOT every feed
+row: `user`, `approval`, `question`, `plan`, `fileEdit`, `denial`, `error` and
+`notice` are absent, and `approval`/`question` are the two most stateful.
+Adding them means lifting their handlers out of `ThreadScreen` first. Its
+loading and empty tiles are replicas against the gallery's own stylesheet, not
+the production path, so they would not have caught the upside-down loader
+(a `scaleY: -1` on `ThreadScreen`'s `emptyWrap` under the inverted `FlatList`).
+`BuildStamp` shows version + channel + OTA id, and names an emergency launch
+separately, because an APK plus stacked OTAs means the version alone does not
+identify what is running.
 
 **Trap that cost a whole debugging cycle:** if `expo-doctor` reports dependency
 drift, fix it before believing anything else. A react-native/metro version
@@ -372,7 +397,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
 
-## Test suite (~1429 tests across 152 files)
+## Test suite (~1903 tests across 192 files)
 
 Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
@@ -472,7 +497,7 @@ src/
 │   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · filePathRef.ts
 │   ├── provider-usage.ts · claude-usage-parse.ts · codex-usage-parse.ts   # normalised subscription usage limits
 │   ├── transport.ts · ws-protocol.ts · ws-transport.ts · machines.ts   # backend transport seam (local ↔ remote)
-└── tests/unit/                        # ~1429 tests across 152 files
+└── tests/unit/                        # ~1903 tests across 192 files
 ```
 
 ## Logging conventions

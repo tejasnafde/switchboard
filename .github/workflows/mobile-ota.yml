@@ -10,11 +10,14 @@
 # way, because the bundle would call into native code the installed APK does not
 # contain. Those changes need `mobile-release.yml`, which builds a fresh APK.
 #
-# The safety net is `runtimeVersion: { policy: "appVersion" }` in app.json: EAS
-# only serves a bundle to a binary whose version matches, so even if someone
-# pushes a native change down this lane, an old APK is never served a bundle it
-# cannot run. It just sees no update. Bumping expo.version (which a native change
-# requires anyway) therefore also parks the OTA lane until the new APK is out.
+# The safety net is `runtimeVersion: { policy: "fingerprint" }` in app.json: EAS
+# hashes the native project (native deps, config plugins, the native-affecting
+# parts of app.json) and only serves a bundle to a binary with a matching hash.
+# So even if someone pushes a native change down this lane, an old APK is never
+# served a bundle it cannot run. It just sees no update, until mobile-release.yml
+# ships an APK with the new fingerprint. This replaced the `appVersion` policy,
+# which only compared the version STRING and so relied on a human remembering to
+# bump it.
 #
 # REQUIRED REPO SECRET: EXPO_TOKEN (same one mobile-release.yml uses).
 # This workflow is INERT until someone runs `npx eas update:configure` in
@@ -29,6 +32,11 @@ on:
       # JS, assets, and app config only. Deliberately narrower than
       # mobile-release.yml's `apps/mobile/**`.
       - 'apps/mobile/src/**'
+      # ...but not the test layer, which is under src/ and ships nothing. A
+      # test-only commit publishing a production OTA would push a pointless
+      # restart prompt to every phone.
+      - '!apps/mobile/src/**/__tests__/**'
+      - '!apps/mobile/src/test/**'
       - 'apps/mobile/App.tsx'
       - 'apps/mobile/index.ts'
       - 'apps/mobile/assets/**'

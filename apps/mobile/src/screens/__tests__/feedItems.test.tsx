@@ -96,8 +96,11 @@ describe('TextItem', () => {
     expect(v.texts().join(' ')).toMatch(/worked for/i)
   })
 
-  it('shows no duration mid-stream', () => {
-    const v = renderComponent(<TextItem item={row({ done: false })} />)
+  it('shows no duration mid-stream, even once one is known', () => {
+    // durationMs must be SET here. Without it the row has no duration to show
+    // in the first place, so the test passes with the `done` guard deleted and
+    // proves only that absent data is absent.
+    const v = renderComponent(<TextItem item={row({ done: false, durationMs: 1500 })} />)
     expect(v.texts().join(' ')).not.toMatch(/worked for/i)
   })
 })

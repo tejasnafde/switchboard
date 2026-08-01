@@ -20,9 +20,10 @@ module.exports = {
   },
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   testMatch: ['<rootDir>/src/**/__tests__/**/*.test.{ts,tsx}'],
-  // jest-expo ships a transform allow-list; these ship untranspiled ESM.
-  transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@unimodules/.*|unimodules|sentry-expo|native-base|react-native-svg)',
-  ],
+  // transformIgnorePatterns is deliberately NOT set. jest-expo's preset already
+  // supplies the allow-list, plus two entries that stop babel transforming
+  // babel's own preset (react-native-reanimated/plugin and
+  // @react-native/babel-preset). Overriding it here replaced all three with one
+  // hand-copied, already-stale line rather than extending it.
   clearMocks: true,
 }

@@ -1,16 +1,26 @@
 /**
- * Every feed row and composer state on one screen, for looking at.
+ * Assistant text, tool calls and composer states on one screen, for looking at.
  *
  * Component tests assert what someone thought to assert. This covers the other
- * half: states that are awkward to reach on purpose - an empty thread that is
- * still loading, an image with no caption, a tool that never completed - and
- * where the bug is "it looks wrong" rather than a wrong value. Both of those
- * shipped to a device before this existed.
+ * half: states that are awkward to reach on purpose - a tool that never
+ * completed, a reply still streaming - and where the bug is "it looks wrong"
+ * rather than a wrong value.
+ *
+ * NOT every feed row. `user`, `approval`, `question`, `plan`, `fileEdit`,
+ * `denial`, `error` and `notice` are absent, and `approval` and `question` are
+ * the two most stateful. Adding them means lifting their handlers out of
+ * ThreadScreen first, which is the real work here.
+ *
+ * The loading and empty tiles below are REPLICAS against this file's own
+ * stylesheet, not the production path. The upside-down loader came from a
+ * `scaleY: -1` on ThreadScreen's own emptyWrap interacting with the inverted
+ * FlatList, and nothing here reproduces that. Treat them as reference art
+ * until the real ones are extracted.
  *
  * Dev only; the entry point is hidden unless __DEV__.
  */
 import React, { useState } from 'react'
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { ToolItem, TextItem } from './ThreadScreen'
 import { SendMicButton } from '../components/SendMicButton'
 import { SlashMenu } from '../components/SlashMenu'
@@ -40,7 +50,7 @@ const dictation = (over: Partial<Dictation> = {}): Dictation => ({
 const tool = (over: Partial<Extract<FeedItem, { kind: 'tool' }>> = {}) =>
   ({
     kind: 'tool' as const,
-    id: `t-${Math.random()}`,
+    id: 't-gallery',
     toolName: 'Bash',
     input: { command: 'npm run typecheck' },
     state: 'done' as const,
@@ -51,7 +61,7 @@ const tool = (over: Partial<Extract<FeedItem, { kind: 'tool' }>> = {}) =>
 const text = (over: Partial<Extract<FeedItem, { kind: 'text' }>> = {}) =>
   ({
     kind: 'text' as const,
-    id: `m-${Math.random()}`,
+    id: 'm-gallery',
     text: 'Plain reply.',
     stream: 'assistant' as const,
     done: true,
@@ -65,9 +75,7 @@ export default function DevGalleryScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <BuildStamp />
 
-      <Section title="Loading and empty states">
-        {/* The upside-down loader lived exactly here, in a state that needs an
-            empty thread mid-load to reproduce. */}
+      <Section title="Loading and empty states (replicas)">
         <View style={styles.emptyWrap}>
           <ActivityIndicator size="small" color={colors.textDim} />
           <Text style={styles.emptyText}>Loading conversation</Text>
@@ -114,12 +122,19 @@ export default function DevGalleryScreen() {
               canSend={false}
               isRunning={false}
               dictation={dictation({ listening })}
-              onSend={() => setListening((v) => !v)}
+              onSend={() => {}}
               onStopTurn={() => {}}
             />
           </Labelled>
         </View>
-        <Text style={styles.note}>Tap "dictating" to toggle the recording ring.</Text>
+        {/* A separate control rather than the button's own onSend: the release
+            handler only fires onSend when canSend is true, so wiring the toggle
+            there made the tile inert and the ring unreachable. */}
+        <Pressable onPress={() => setListening((v) => !v)} style={styles.noteButton}>
+          <Text style={styles.note}>
+            {listening ? 'Stop the recording ring' : 'Start the recording ring'}
+          </Text>
+        </Pressable>
       </Section>
     </ScrollView>
   )
@@ -153,4 +168,5 @@ const styles = StyleSheet.create({
   emptyWrap: { alignItems: 'center', justifyContent: 'center', paddingVertical: space.lg },
   emptyText: { color: colors.textFaint, fontSize: 13, marginTop: space.sm },
   note: { color: colors.textFaint, ...type.bodySm, marginTop: space.sm },
+  noteButton: { alignSelf: 'flex-start' },
 })

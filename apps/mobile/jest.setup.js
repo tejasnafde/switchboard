@@ -55,9 +55,15 @@ jest.mock('expo-constants', () => ({
 jest.mock('expo-application', () => ({ nativeApplicationVersion: '0.2.0' }))
 
 // Voice: isVoiceAvailable() gates the mic, so it must answer deterministically.
+//
+// A PARTIAL mock. Only the three functions that reach expo-speech-recognition
+// are replaced; joinDraft is pure and keeps its real implementation. A
+// hand-written stand-in here diverged from it in two cases (empty transcript,
+// and a base already ending in whitespace), which is the shape of stub that
+// makes a future test pass while production is wrong.
 jest.mock('./src/lib/voice', () => ({
+  ...jest.requireActual('./src/lib/voice'),
   isVoiceAvailable: jest.fn(() => true),
   ensureVoicePermission: jest.fn(async () => true),
   startListening: jest.fn(() => ({ stop: jest.fn() })),
-  joinDraft: (base, next) => (base ? `${base} ${next}` : next),
 }))

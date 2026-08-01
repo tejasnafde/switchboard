@@ -30,11 +30,12 @@ export interface Rendered {
   texts: () => string[]
   /**
    * How many host nodes of this type rendered, e.g. 'ActivityIndicator'.
-   * Kept here because `node.type` is typed as ElementType, so comparing it to a
-   * host name needs one narrowing in one place rather than a cast per test.
+   *
+   * Host nodes only, identified by `typeof type === 'string'`. A composite of
+   * the same name sits directly above its host in the tree, so counting both
+   * would double every result.
    */
   countHostType: (name: string) => number
-  unmount: () => void
 }
 
 function matches(value: unknown, label: string | RegExp): boolean {
@@ -77,8 +78,11 @@ export function renderComponent(element: React.ReactElement): Rendered {
     byLabel: (label) => {
       const found = allByLabel(label)
       if (found.length === 0) {
+        // Same `deep: false` as the query above, deliberately: a diagnostic
+        // that lists labels the query could never have returned sends the
+        // reader looking for a bug that is not there.
         const seen = root
-          .findAll((n) => typeof n.props?.accessibilityLabel === 'string')
+          .findAll((n) => typeof n.props?.accessibilityLabel === 'string', { deep: false })
           .map((n) => String(n.props.accessibilityLabel))
         throw new Error(`no node labelled ${String(label)}; labels present: ${seen.join(' | ') || '(none)'}`)
       }
@@ -86,10 +90,13 @@ export function renderComponent(element: React.ReactElement): Rendered {
     },
     iconNames: () =>
       root
-        .findAll((n) => typeof n.props?.testID === 'string' && n.props.testID.startsWith('icon-'))
+        // Without `deep: false` every icon is listed twice, because the mock's
+        // testID rides on both the composite and the host it renders.
+        .findAll((n) => typeof n.props?.testID === 'string' && n.props.testID.startsWith('icon-'), {
+          deep: false,
+        })
         .map((n) => String(n.props.testID).replace('icon-', '')),
-    countHostType: (name) =>
-      root.findAll((n) => (n.type as unknown as string) === name, { deep: false }).length,
+    countHostType: (name) => root.findAll((n) => typeof n.type === 'string' && n.type === name).length,
     texts: () => {
       const out: string[] = []
       const walk = (node: ReactTestInstance): void => {
@@ -101,6 +108,5 @@ export function renderComponent(element: React.ReactElement): Rendered {
       walk(root)
       return out
     },
-    unmount: () => act(() => renderer.unmount()),
   }
 }

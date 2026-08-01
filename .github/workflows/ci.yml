@@ -68,5 +68,18 @@ jobs:
       - name: Unit tests
         run: npm test
 
+      # The mobile component suite runs under jest, not vitest, because the root
+      # vitest config cannot load anything importing react-native. Without this
+      # step it sat outside every gate and nothing would notice it rotting.
+      #
+      # One OS only: these tests render components, and jest-expo resolves the
+      # same platform variants everywhere, so a second and third runner would
+      # re-run identical work. The install has to happen at the repo root too -
+      # the tests reach `@shared/*` outside the package, so babel looks its
+      # runtime helpers up from the root node_modules.
+      - name: Mobile component tests
+        if: matrix.os == 'ubuntu-latest'
+        run: npm ci --prefix apps/mobile && npm test --prefix apps/mobile
+
       - name: Build
         run: npm run build
