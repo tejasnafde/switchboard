@@ -2,6 +2,72 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.0 - The phone
+
+A Switchboard client for Android, and the backend work it needed. The desktop
+changes stand on their own and are the reason this is a minor rather than a
+mobile-only release.
+
+### Added
+- **Mobile client** (`apps/mobile/`, Expo SDK 57). Pairs with a desktop or a
+  headless server, sees the same projects, chats and sessions, and can send
+  turns, answer approvals and questions, and review diffs. Reaches an
+  IAP-tunnelled VM directly where there is no inbound port.
+- **Per-device pairing.** The QR carries a one-time code, good for five
+  minutes, which a device redeems once for a session of its own. Sessions are
+  stored hashed, listed in Settings with a last-seen time, and revocable
+  individually - revoking cuts the live socket, not just the record. A paired
+  phone gets `chat` scope: it cannot spawn a terminal or administer pairings.
+- **The mobile endpoint has an explicit on/off switch** and is off by default.
+- **Push notifications** for approvals, questions, turn end and errors, sent by
+  the backend because the phone is asleep when it matters. Suppressed entirely
+  while you are at the machine, measured from OS idle time rather than window
+  focus, so running three agents does not buzz your pocket about the two you
+  are not watching.
+
+### Changed
+- **Streamed content is incremental.** Adapters emitted the whole accumulated
+  message on every token, so a reply cost O(n^2) bytes. Free over local IPC,
+  ruinous over a radio. All three adapters now emit deltas, folded by one
+  shared rule.
+- **Turn-finished notifications say how long, not how much.** The cost was the
+  one number that cannot tell you whether to walk back to your desk.
+- The reconnect ladder is shared by the transport, the ssh tunnel manager and
+  the phone's send queue, and the transport gained the jitter it lacked.
+
+### Fixed
+- **Events emitted while a client was disconnected are no longer lost.** `evt`
+  frames carry a sequence, the host keeps a bounded replay buffer, and a
+  reconnecting client is replayed exactly what it missed. When that is not
+  possible the server says so and the client re-seeds, rather than showing a
+  transcript with a silent hole in it.
+- **Half-open sockets are detected.** The host pings; a client that stops
+  answering is dropped, and a client that hears nothing re-dials. Both sides
+  require proof the peer speaks the heartbeat first, so an older phone against
+  a newer desktop stays connected.
+- **A viewing claim expires.** A phone force-quit with a thread open used to
+  silence its own notifications for that thread until the backend restarted,
+  and a desktop in the same state silenced every phone.
+- **Dead push tokens are pruned.** The cleanup read the ticket, but Expo
+  reports `DeviceNotRegistered` on the receipt, so it was mostly dead code.
+- Concurrent `startSession` for one thread could spawn two adapters over the
+  same JSONL. The guard checked a map written after an await.
+- `user.message` is published after the adapter accepts it, so a failed send
+  that the client retries no longer renders a duplicate on every client.
+- The pairing token moved to the OS keystore, and off the WebSocket URL.
+- `decodeFrame` validates frame shape rather than casting on one field.
+
+### Notes
+- **The mobile app is a first release and has had far less real use than the
+  desktop.** The desktop side of this was daily-driven for a full day before
+  shipping; the phone was used briefly, on a development build, before most of
+  this landed. Expect to find things.
+- One additive migration: `conversations.last_read_at`. Rollback-safe.
+- A paired phone can do what a second desktop window can do - create
+  conversations, send turns, write files, run git. That is the point of a
+  remote control. It can no longer open a shell.
+- Code-signing is still absent, so macOS and Windows builds remain unsigned.
+
 ## 2026-08-01 - Chats that switched profiles showed every old message N times
 
 ### Fixed
