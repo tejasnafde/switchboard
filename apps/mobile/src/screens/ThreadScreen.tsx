@@ -22,6 +22,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
+import type { ProviderInstance } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
@@ -35,6 +36,8 @@ import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/c
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
 import { ModePicker } from '../components/ModePicker'
+import { ProfilePicker } from '../components/ProfilePicker'
+import { profilesFor } from '../lib/profiles'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
@@ -105,6 +108,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // Which provider drives this thread. Only OpenCode needs the client-side
   // queue below; Claude queues in its adapter and Codex steers into the turn.
   const [provider, setProvider] = useState<ProviderKind>('claude')
+  const [instances, setInstances] = useState<ProviderInstance[]>([])
+  const [instanceId, setInstanceId] = useState<string | undefined>(undefined)
+  const [profilePickerOpen, setProfilePickerOpen] = useState(false)
+  const [rotating, setRotating] = useState(false)
 
   // The accessory subscribes to the store itself, so this runs once per thread.
   useEffect(() => {
@@ -215,6 +222,59 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
     if (saved?.draft) setDraft(saved.draft)
   }, [connectionId, threadId, key, isNew])
+
+  useEffect(() => {
+    const client = getClient(connectionId)
+    if (!client) return
+    let cancelled = false
+    client
+      .listInstances()
+      .then((rows) => {
+        if (!cancelled) setInstances(rows)
+      })
+      .catch((err) => log.warn('listInstances failed - hiding the profile chip', err))
+    return () => {
+      cancelled = true
+    }
+  }, [connectionId])
+
+  /**
+   * Rotate the agent or the OAuth profile on this live thread.
+   *
+   * startSession is idempotent server-side, so re-invoking it on a running
+   * thread returns the existing session and changes nothing. The session has to
+   * be stopped first for the registry to resolve the new credentials.
+   */
+  const rotateProfile = useCallback(
+    (nextProvider: ProviderKind, nextInstanceId?: string) => {
+      const client = getClient(connectionId)
+      if (!client) {
+        reportError(new Error('Backend not connected.'))
+        return
+      }
+      setProfilePickerOpen(false)
+      setRotating(true)
+      void (async () => {
+        try {
+          await client.stopSession(threadId)
+          await client.startSession({
+            threadId,
+            provider: nextProvider,
+            cwd: projectPath,
+            resumeSessionId: threadId,
+            instanceId: nextInstanceId,
+          })
+          setProvider(nextProvider)
+          setInstanceId(nextInstanceId)
+        } catch (err) {
+          reportError(err)
+        } finally {
+          setRotating(false)
+        }
+      })()
+    },
+    [connectionId, threadId, projectPath, reportError],
+  )
 
   // Live model list for this thread. It stays empty until the adapter can
   // answer (Claude's SDK query only exists once a turn has begun, so the fetch
@@ -400,6 +460,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
     [decideApproval, submitAnswers, implementPlan, focusComposer, backendLabel],
   )
 
+  // Null hides the chip: a backend with no configured profiles has nothing to
+  // switch between, and an empty chip would just be a dead control.
+  const currentProfiles = profilesFor(instances, provider)
+  const profileLabel =
+    currentProfiles.length === 0
+      ? null
+      : (currentProfiles.find((i) => i.id === instanceId) ?? currentProfiles[0]).displayName
+
   const isRunning = thread.status === 'running'
   const canSend = draft.trim().length > 0 || attachments.length > 0
 
@@ -488,10 +556,31 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </Pressable>
       </Modal>
 
+      <ProfilePicker
+        visible={profilePickerOpen}
+        instances={instances}
+        provider={provider}
+        instanceId={instanceId}
+        busy={rotating}
+        onPick={rotateProfile}
+        onClose={() => setProfilePickerOpen(false)}
+      />
+
       {/* Composer */}
       <View style={styles.composer}>
         <View style={styles.composerControls}>
           <ModePicker value={thread.runtimeMode} onChange={setMode} />
+          {profileLabel !== null && (
+            <Pressable
+              onPress={() => setProfilePickerOpen(true)}
+              disabled={rotating}
+              style={({ pressed }) => [styles.modelChip, (pressed || rotating) && styles.pressed]}
+            >
+              <Text style={styles.modelChipText} numberOfLines={1}>
+                {rotating ? 'Switching…' : profileLabel}
+              </Text>
+            </Pressable>
+          )}
           {models.length > 0 && (
             <Pressable
               onPress={() => setModelPickerOpen(true)}

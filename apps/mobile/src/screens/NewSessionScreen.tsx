@@ -18,7 +18,7 @@ import {
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, RuntimeMode } from '@shared/provider-events'
 import type { AgentType, ProviderInstance } from '@shared/types'
-import { defaultInstanceId } from '@shared/types'
+import { agentTypeFor, profilesFor } from '../lib/profiles'
 import { modelsForAgent } from '@shared/models'
 import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
@@ -38,11 +38,6 @@ const PROVIDERS: { kind: ProviderKind; label: string; blurb: string }[] = [
   { kind: 'codex', label: 'Codex', blurb: 'OpenAI codex app-server' },
   { kind: 'opencode', label: 'OpenCode', blurb: 'Agent Client Protocol' },
 ]
-
-/** DB agent_type for a provider kind (CreateConversationParams.agentType). */
-function agentTypeFor(kind: ProviderKind): AgentType {
-  return kind === 'claude' ? 'claude-code' : kind
-}
 
 export default function NewSessionScreen({ route, navigation }: Props) {
   const { connectionId, projectPath, projectName } = route.params
@@ -75,15 +70,8 @@ export default function NewSessionScreen({ route, navigation }: Props) {
     }
   }, [connectionId])
 
-  // Enabled instances for the picked agent kind, seed-default first then
-  // alphabetical - same ordering as the desktop UnifiedProviderPicker.
-  const agentInstances = useMemo(() => {
-    const def = defaultInstanceId(agentType)
-    const rank = (id: string) => (id === def ? 0 : 1)
-    return instances
-      .filter((i) => i.agentType === agentType && i.enabled)
-      .sort((a, b) => rank(a.id) - rank(b.id) || a.displayName.localeCompare(b.displayName))
-  }, [instances, agentType])
+  // Shared with the thread-screen picker so both order profiles identically.
+  const agentInstances = useMemo(() => profilesFor(instances, provider), [instances, provider])
 
   // Falls back to the first (default) entry so the chip row always shows what
   // the backend will actually resolve.
