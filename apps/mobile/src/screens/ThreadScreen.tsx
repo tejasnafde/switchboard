@@ -90,6 +90,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // was wrong on Android where it was 0.
   const headerHeight = useHeaderHeight()
   const [draft, setDraft] = useState('')
+  // The focus-effect cleanup closes over its first render, so it reads the
+  // latest text from a ref rather than a stale `draft`.
+  const draftRef = useRef('')
+  draftRef.current = draft
   const [voiceNote, setVoiceNote] = useState<VoiceNote | null>(null)
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const composerRef = useRef<TextInput>(null)
@@ -97,6 +101,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const [model, setModel] = useState('')
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
+  // Which provider drives this thread. Only OpenCode needs the client-side
+  // queue below; Claude queues in its adapter and Codex steers into the turn.
+  const [provider, setProvider] = useState<ProviderKind>('claude')
 
   // The accessory subscribes to the store itself, so this runs once per thread.
   useEffect(() => {
@@ -110,7 +117,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       useChatStore.getState().setActive(key)
-      return () => useChatStore.getState().setActive(null)
+      return () => {
+        useChatStore.getState().setActive(null)
+        // On the way out, not per keystroke - persist writes to AsyncStorage.
+        usePrefsStore.getState().rememberDraft(key, draftRef.current)
+      }
     }, [key]),
   )
 
@@ -143,6 +154,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       try {
         const loaded = await client.loadSessionById(threadId, HISTORY_WINDOW)
         provider = providerFromAgentType(loaded.meta?.agentType)
+        setProvider(provider)
         const store = useChatStore.getState()
         if ((store.threads[key]?.items.length ?? 0) === 0 && loaded.messages.length > 0) {
           const seeded = historyToItems(loaded.messages)
@@ -183,7 +195,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     if (restoredKeyRef.current === key) return
     const saved = usePrefsStore.getState().threads[key]
     const mode = saved?.mode ?? (isNew ? usePrefsStore.getState().defaultMode : undefined)
-    if (mode === undefined && saved?.model === undefined) {
+    if (mode === undefined && saved?.model === undefined && !saved?.draft) {
       restoredKeyRef.current = key
       return
     }
@@ -198,6 +210,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       setModel(saved.model)
       client.setModel(threadId, saved.model).catch((err) => log.warn('restore model failed', err))
     }
+    if (saved?.draft) setDraft(saved.draft)
   }, [connectionId, threadId, key, isNew])
 
   // Live model list for this thread. It stays empty until the adapter can
@@ -243,6 +256,29 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const modelLabel = models.find((m) => m.id === model)?.label ?? 'Default'
 
+  /**
+   * Follow-ups typed while a turn is running.
+   *
+   * Claude pushes into its SDK prompt queue and Codex steers into the live
+   * turn, both in the adapter. OpenCode ACP is one-prompt-per-turn and its
+   * adapter DROPS a mid-turn send silently, so those wait here instead.
+   */
+  const queueRef = useRef<Array<{ text: string; images: Array<{ url: string; mimeType?: string }> }>>([])
+  const [queuedCount, setQueuedCount] = useState(0)
+
+  useEffect(() => {
+    if (thread.status !== 'idle' || queueRef.current.length === 0) return
+    const next = queueRef.current.shift()
+    setQueuedCount(queueRef.current.length)
+    if (!next) return
+    const client = getClient(connectionId)
+    if (!client) return
+    useChatStore.getState().addUserMessage(key, next.text || `[${next.images.length} images]`)
+    client
+      .sendTurn(threadId, next.text, thread.runtimeMode, next.images.length > 0 ? next.images : undefined)
+      .catch(reportError)
+  }, [thread.status, thread.runtimeMode, connectionId, threadId, key, reportError])
+
   const send = () => {
     const text = draft.trim()
     // An image with no caption is a legitimate turn.
@@ -256,6 +292,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
     setDraft('')
     setVoiceNote(null)
     setAttachments([])
+    usePrefsStore.getState().rememberDraft(key, '')
+
+    if (thread.status === 'running' && provider === 'opencode') {
+      queueRef.current.push({ text, images })
+      setQueuedCount(queueRef.current.length)
+      return
+    }
+
     useChatStore.getState().addUserMessage(
       key,
       text || `[${images.length} ${images.length === 1 ? 'image' : 'images'}]`,
@@ -353,6 +397,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     [decideApproval, submitAnswers, implementPlan, focusComposer, backendLabel],
   )
 
+  const isRunning = thread.status === 'running'
   const canSend = draft.trim().length > 0 || attachments.length > 0
 
   const contextPct =
@@ -456,6 +501,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
           )}
         </View>
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
+        {queuedCount > 0 && (
+          <Text style={styles.queuedNote}>
+            {queuedCount} {queuedCount === 1 ? 'message' : 'messages'} waiting for this turn to finish
+          </Text>
+        )}
         <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
         <View style={styles.inputRow}>
           <TextInput
@@ -463,25 +513,26 @@ export default function ThreadScreen({ route, navigation }: Props) {
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder="Message the agent…"
+            placeholder={isRunning ? 'Queue a follow-up…' : 'Message the agent…'}
             placeholderTextColor={colors.textFaint}
             multiline
           />
           <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
           <MicButton draft={draft} onDraft={setDraft} onNote={setVoiceNote} />
-          {thread.status === 'running' ? (
+          {/* Stop sits BESIDE Send while running, as on the desktop. Replacing
+              Send made it impossible to queue a follow-up mid-turn. */}
+          {isRunning && (
             <Pressable style={[styles.sendButton, styles.stopButton]} onPress={stop}>
               <Text style={styles.sendLabel}>Stop</Text>
             </Pressable>
-          ) : (
-            <Pressable
-              style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
-              onPress={send}
-              disabled={!canSend}
-            >
-              <Text style={styles.sendLabel}>Send</Text>
-            </Pressable>
           )}
+          <Pressable
+            style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
+            onPress={send}
+            disabled={!canSend}
+          >
+            <Text style={styles.sendLabel}>{isRunning ? 'Queue' : 'Send'}</Text>
+          </Pressable>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -882,6 +933,7 @@ const styles = StyleSheet.create({
   noticeRow: { alignItems: 'center', paddingVertical: space.md },
   noticeText: { color: colors.textDim, ...type.monoSm },
   toolInputProse: { color: colors.textDim, ...type.bodySm },
+  queuedNote: { color: colors.textDim, ...type.monoSm, marginBottom: space.sm },
   denialPill: {
     alignSelf: 'flex-start',
     marginHorizontal: 14,

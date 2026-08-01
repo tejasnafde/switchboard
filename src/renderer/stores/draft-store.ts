@@ -12,9 +12,19 @@ const PILLS_STORAGE_KEY = 'switchboard.draftPills'
  *     viewer selections, terminal selections, chat-message quotes) - these
  *     render as Cursor-style chips above the textarea and serialize back
  *     into the message body when the user hits Send.
+ *   - `imagesBySession[sessionId]`: pasted/dropped image attachments. NOT
+ *     persisted - each holds a live File and an object URL, neither of which
+ *     survives JSON.stringify or a restart.
  */
 
 export type DraftPillKind = 'file' | 'terminal' | 'chat-message'
+
+/** A pasted, dropped or picked image waiting to be sent. */
+export interface ImageAttachment {
+  id: string
+  file: File
+  previewUrl: string
+}
 
 export interface DraftPill {
   id: string
@@ -64,6 +74,7 @@ function savePills(pills: Record<string, DraftPill[]>) {
 interface DraftStore {
   drafts: Record<string, string>
   pillsBySession: Record<string, DraftPill[]>
+  imagesBySession: Record<string, ImageAttachment[]>
 
   getDraft: (sessionId: string) => string
   setDraft: (sessionId: string, value: string) => void
@@ -79,11 +90,16 @@ interface DraftStore {
   addPill: (sessionId: string, pill: DraftPill) => void
   removePill: (sessionId: string, pillId: string) => void
   clearPills: (sessionId: string) => void
+
+  addImages: (sessionId: string, images: ImageAttachment[]) => void
+  removeImage: (sessionId: string, imageId: string) => void
+  clearImages: (sessionId: string) => void
 }
 
 export const useDraftStore = create<DraftStore>((set, get) => ({
   drafts: loadDrafts(),
   pillsBySession: loadPills(),
+  imagesBySession: {},
 
   getDraft: (sessionId) => get().drafts[sessionId] ?? '',
 
@@ -143,6 +159,35 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
       delete next[sessionId]
       savePills(next)
       return { pillsBySession: next }
+    }),
+
+  addImages: (sessionId, images) =>
+    set((state) => {
+      const current = state.imagesBySession[sessionId] ?? []
+      return { imagesBySession: { ...state.imagesBySession, [sessionId]: [...current, ...images] } }
+    }),
+
+  removeImage: (sessionId, imageId) =>
+    set((state) => {
+      const current = state.imagesBySession[sessionId] ?? []
+      const target = current.find((i) => i.id === imageId)
+      if (!target) return state
+      URL.revokeObjectURL(target.previewUrl)
+      const filtered = current.filter((i) => i.id !== imageId)
+      const next = { ...state.imagesBySession }
+      if (filtered.length) next[sessionId] = filtered
+      else delete next[sessionId]
+      return { imagesBySession: next }
+    }),
+
+  clearImages: (sessionId) =>
+    set((state) => {
+      const current = state.imagesBySession[sessionId]
+      if (!current) return state
+      for (const img of current) URL.revokeObjectURL(img.previewUrl)
+      const next = { ...state.imagesBySession }
+      delete next[sessionId]
+      return { imagesBySession: next }
     }),
 }))
 

@@ -3,7 +3,7 @@ import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:input')
 import { ContextWindowMeter, type ContextWindowUsage } from './ContextWindowMeter'
-import { useDraftStore } from '../../stores/draft-store'
+import { useDraftStore, type ImageAttachment } from '../../stores/draft-store'
 import {
   modelsForAgent,
   REASONING_EFFORTS,
@@ -36,12 +36,6 @@ type RuntimeMode = 'plan' | 'sandbox' | 'full-access' | 'accept-edits'
 
 export function shouldFetchProviderSkills(agentType: AgentType): boolean {
   return agentType !== 'terminal'
-}
-
-interface ImageAttachment {
-  id: string
-  file: File
-  previewUrl: string
 }
 
 interface ChatInputProps {
@@ -92,6 +86,7 @@ const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
 // no pills yet. Without this, every render produced a fresh `[]` and
 // downstream memos invalidated.
 const EMPTY_PILLS: import('../../stores/draft-store').DraftPill[] = []
+const EMPTY_IMAGES: import('../../stores/draft-store').ImageAttachment[] = []
 
 export function ChatInput({
   sessionId,
@@ -204,6 +199,18 @@ export function ChatInput({
     () => (sessionId ? pillsBySession[sessionId] ?? EMPTY_PILLS : EMPTY_PILLS),
     [pillsBySession, sessionId],
   )
+  // Per session, exactly like drafts and pills - the previous component-local
+  // useState survived a conversation switch (nothing remounts ChatInput), so a
+  // pasted image followed the user into every chat they opened and was sent
+  // from whichever one they hit Send in.
+  const imagesBySession = useDraftStore((s) => s.imagesBySession)
+  const images = useMemo(
+    () => (sessionId ? imagesBySession[sessionId] ?? EMPTY_IMAGES : EMPTY_IMAGES),
+    [imagesBySession, sessionId],
+  )
+  const addImagesToSession = useDraftStore((s) => s.addImages)
+  const removeImageFromSession = useDraftStore((s) => s.removeImage)
+  const clearImages = useDraftStore((s) => s.clearImages)
   const removePill = useDraftStore((s) => s.removePill)
   const clearPills = useDraftStore((s) => s.clearPills)
 
@@ -214,7 +221,6 @@ export function ChatInput({
   // Live caret offset into `value`. Updated on every editor change so we
   // can re-detect slash triggers without dipping into the editor.
   const [caret, setCaret] = useState<number | null>(null)
-  const [images, setImages] = useState<ImageAttachment[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const [previewImage, setPreviewImage] = useState<ImageAttachment | null>(null)
   // Slash command popover state: `null` when closed; trigger info when open
@@ -371,26 +377,30 @@ export function ChatInput({
 
 
 
-  const addImages = useCallback((files: File[]) => {
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'))
-    const valid = imageFiles.filter((f) => f.size <= MAX_IMAGE_SIZE)
+  const addImages = useCallback(
+    (files: File[]) => {
+      if (!sessionId) return
+      const imageFiles = files.filter((f) => f.type.startsWith('image/'))
+      const valid = imageFiles.filter((f) => f.size <= MAX_IMAGE_SIZE)
 
-    const newAttachments: ImageAttachment[] = valid.map((file) => ({
-      id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-      file,
-      previewUrl: URL.createObjectURL(file),
-    }))
+      addImagesToSession(
+        sessionId,
+        valid.map((file) => ({
+          id: `img_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          file,
+          previewUrl: URL.createObjectURL(file),
+        })),
+      )
+    },
+    [sessionId, addImagesToSession],
+  )
 
-    setImages((prev) => [...prev, ...newAttachments])
-  }, [])
-
-  const removeImage = useCallback((id: string) => {
-    setImages((prev) => {
-      const removed = prev.find((img) => img.id === id)
-      if (removed) URL.revokeObjectURL(removed.previewUrl)
-      return prev.filter((img) => img.id !== id)
-    })
-  }, [])
+  const removeImage = useCallback(
+    (id: string) => {
+      if (sessionId) removeImageFromSession(sessionId, id)
+    },
+    [sessionId, removeImageFromSession],
+  )
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
@@ -419,8 +429,8 @@ export function ChatInput({
       if (hasPills) clearPills(sessionId)
     }
     insertedPillsRef.current.clear()
-    setImages([])
-  }, [value, pills, pillsById, images, disabled, onSend, sessionId, clearDraft, clearPills])
+    if (sessionId) clearImages(sessionId)
+  }, [value, pills, pillsById, images, disabled, onSend, sessionId, clearDraft, clearPills, clearImages])
 
   // ─── Slash command handling ─────────────────────────────────
   const dismissSlash = useCallback(() => {
