@@ -29,6 +29,7 @@ import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
 import { getSignedInEmail, warmUpGoogleAuth } from '../lib/google-auth'
 import { initialsFromEmail } from '../lib/account'
 import { BuildStamp } from '../components/BuildStamp'
+import { chatCacheReady } from '../stores/chat'
 import { useConnectionsStore, secretsReady, type ConnectionConfig, type ConnectionStatus } from '../stores/connections'
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
@@ -111,11 +112,12 @@ export default function ConnectionsScreen() {
 
   useEffect(() => {
     let cancelled = false
-    // Two things must land before the first dial: the Google token (IAP configs
-    // cannot dial without it) and the pairing tokens read back out of the
-    // keystore. Dialling early would present no token and be rejected with
-    // 4001, which the UI would report as "token rejected - re-pair".
-    void Promise.all([warmUpGoogleAuth(), secretsReady]).then(() => {
+    // Three things must land before the first dial: the Google token (IAP
+    // configs cannot dial without it), the pairing tokens read back out of the
+    // keystore, and the cached feeds. Dialling early would either present no
+    // token and be rejected with 4001, or finish a fetch and seed a thread only
+    // for the rehydrate to land after and replace it with the stale copy.
+    void Promise.all([warmUpGoogleAuth(), secretsReady, chatCacheReady]).then(() => {
       if (cancelled) return
       const store = useConnectionsStore.getState()
       for (const config of store.configs) store.connect(config.id)

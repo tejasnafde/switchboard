@@ -10,7 +10,7 @@ import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
 import { generateTitle } from '@shared/auto-title'
-import { onSessionRename, emitSessionRename, emitSessionActivity, onProviderEvent } from '../../services/session-events'
+import { onSessionRename, emitSessionRename, emitSessionActivity, onProviderEvent, claimProviderEvent } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
 import { isAssistantStreamingEnabled } from '../../services/streamingPref'
 import { createRendererLogger } from '../../logger'
@@ -298,6 +298,12 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     const removeProvider = onProviderEvent((event) => {
       const tid = event.threadId
       if (!tid) return
+      // Every mounted panel reduces the WHOLE stream, not just its own session,
+      // because a background session still needs its unread count and status.
+      // With two panes open that means two listeners applying the same event,
+      // which appended each streamed fragment twice once `content` became an
+      // increment. Exactly one listener does the store work.
+      if (!claimProviderEvent(event)) return
 
       // Any non-content event must land AFTER whatever content is pending
       // for this thread, or message order flips (e.g. a buffered first

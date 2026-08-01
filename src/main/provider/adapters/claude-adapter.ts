@@ -1275,8 +1275,8 @@ export class ClaudeAdapter implements ProviderAdapter {
               active.currentMessageId = `msg_${threadId.slice(-6)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
             }
             const msgId = active.currentMessageId
-            // The accumulated copy stays: turn assembly and the JSONL fallback
-            // both read it. Only the WIRE carries the increment now.
+            // The accumulated copy is what the closing snapshot below sends,
+            // so a client that joined mid-message can still be made whole.
             active.partialMessageText.set(msgId, (active.partialMessageText.get(msgId) ?? '') + delta.text)
             active.onEvent({
               type: 'content',
@@ -1305,6 +1305,26 @@ export class ClaudeAdapter implements ProviderAdapter {
             })
           }
         } else if (ev.type === 'content_block_stop') {
+          // Close the message with a SNAPSHOT of the accumulated body.
+          //
+          // Deltas only reconstruct the whole message for a client that saw
+          // every one of them. A client that attached mid-turn, or re-seeded
+          // after a replay gap, holds a fragment starting from wherever it
+          // joined and nothing would ever repair it - under the old cumulative
+          // shape the next event self-healed that. One extra frame per message
+          // costs nothing next to the per-token traffic it replaced.
+          for (const id of [active.currentMessageId, active.currentReasoningMessageId]) {
+            if (!id) continue
+            const full = active.partialMessageText.get(id)
+            if (full === undefined) continue
+            active.onEvent({
+              type: 'content',
+              threadId,
+              messageId: id,
+              text: full,
+              streamKind: id === active.currentReasoningMessageId ? 'reasoning' : 'assistant',
+            })
+          }
           active.currentReasoningMessageId = null
         }
         break

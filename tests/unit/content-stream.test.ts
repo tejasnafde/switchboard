@@ -86,3 +86,22 @@ describe('wire cost', () => {
     expect(incremental).toBeLessThan(cumulative / 100)
   })
 })
+
+/**
+ * Applying an increment twice was harmless while content was cumulative
+ * (last-write-wins) and is not now. Dual-chat mode mounts two panels, each
+ * reducing the whole event stream, which duplicated every fragment of every
+ * reply until exactly one of them claimed each event.
+ */
+describe('double application', () => {
+  it('an increment applied twice duplicates the text', () => {
+    const chunk = { text: 'Hel', append: true }
+    const once = applyContentText(undefined, chunk)
+    expect(applyContentText(once, chunk)).toBe('HelHel')
+  })
+
+  it('a snapshot applied twice is harmless, which is why this was invisible before', () => {
+    const chunk = { text: 'Hello' }
+    expect(applyContentText(applyContentText(undefined, chunk), chunk)).toBe('Hello')
+  })
+})

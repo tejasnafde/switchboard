@@ -19,7 +19,7 @@ import type { RuntimeMode } from '@shared/provider-events'
 import { deliveryAction, retryDelayMs, shouldRetry, type QueuedMessage } from '../lib/outboxModel'
 import { loadQueued, removeQueued, saveQueued } from '../lib/outboxStorage'
 import { getClient } from './connections'
-import { useChatStore, threadKey } from './chat'
+import { markOwnTurn, useChatStore, threadKey } from './chat'
 
 const log = createLogger('store:outbox')
 
@@ -76,28 +76,65 @@ export async function hydrateOutbox(): Promise<void> {
   const messages = await loadQueued()
   if (messages.length === 0) return
   log.info(`restored ${messages.length} unsent message(s)`)
+  // The optimistic bubbles for these were persisted with the chat cache, so
+  // their echoes must be suppressed exactly as if this run had sent them.
+  for (const m of messages) markOwnTurn(m.messageId)
   useOutboxStore.setState({ messages })
   void drain()
 }
 
 let draining = false
+let retryTimer: ReturnType<typeof setTimeout> | null = null
 
 /**
- * Deliver what can be delivered, one message at a time per thread.
+ * Deliver everything deliverable, oldest first within each thread.
  *
  * Serial per thread on purpose: messages are ordered, and firing the second
- * while the first is in flight would let them land out of order.
+ * while the first is in flight would let them land out of order. So it loops
+ * until a pass makes no progress rather than sending one per thread per call -
+ * three messages typed offline must all go out when signal returns, not one.
  */
 export async function drain(): Promise<void> {
   if (draining) return
   draining = true
   try {
-    for (const message of nextPerThread()) {
-      await deliver(message)
+    // Bounded by the queue length: every successful pass removes a message, so
+    // this cannot spin, and a pass that delivers nothing ends it.
+    for (;;) {
+      const before = useOutboxStore.getState().messages.length
+      for (const message of nextPerThread()) {
+        await deliver(message)
+      }
+      if (useOutboxStore.getState().messages.length >= before) break
     }
   } finally {
     draining = false
+    scheduleRetry()
   }
+}
+
+/**
+ * Wake the queue when the earliest backoff expires.
+ *
+ * Without this a retryable failure on a socket that STAYS up parks the message
+ * until something unrelated happens to call drain - a reconnect, a foreground,
+ * or the user opening that exact thread. On a healthy connection none of those
+ * may happen for hours.
+ */
+function scheduleRetry(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+  const waits = [...retryNotBefore.values()]
+  if (waits.length === 0) return
+  const soonest = Math.min(...waits)
+  const delay = Math.max(250, soonest - Date.now())
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    void drain()
+  }, delay)
+  ;(retryTimer as { unref?: () => void }).unref?.()
 }
 
 /** The head of each thread's queue, since only that one is eligible. */
@@ -120,6 +157,9 @@ async function deliver(message: QueuedMessage): Promise<void> {
     // and Codex steers it into the running turn, so holding those back would
     // add a delay for no reason.
     threadBusy: thread?.provider === 'opencode' && thread.status === 'running',
+    // The thread row is created on first event and never removed by the app, so
+    // this is always true today. It stays in the model because the rule is
+    // about the message, not about what this caller happens to know.
     threadExists: true,
     editing: useOutboxStore.getState().editingId === message.messageId,
     nowMs: Date.now(),
@@ -152,6 +192,9 @@ async function deliver(message: QueuedMessage): Promise<void> {
         threadId: message.threadId,
         message: `Message not sent: ${err instanceof Error ? err.message : String(err)}`,
       })
+      // Take the optimistic bubble back down. Leaving it reads as sent, which
+      // is the one thing it definitely is not.
+      chat.removeUserMessage(threadKey(message.connectionId, message.threadId), message.messageId)
       await forget(message.messageId)
       return
     }

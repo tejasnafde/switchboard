@@ -138,6 +138,15 @@ export function authenticateSession(token: string, nowMs: number = Date.now()): 
 }
 
 /**
+ * Notified when a session is revoked, so live sockets for it can be closed.
+ * Set by whoever owns the listener; a tombstone alone is not revocation.
+ */
+let onRevoked: ((id: string) => void) | null = null
+export function setRevocationListener(fn: ((id: string) => void) | null): void {
+  onRevoked = fn
+}
+
+/**
  * Revoke one device. Tombstoned rather than deleted so the list still shows
  * what was removed and when, which is the point of having it.
  */
@@ -147,5 +156,6 @@ export function revokeSession(id: string, nowMs: number = Date.now()): boolean {
   if (!target || isRevoked(target)) return false
   saveSessions(sessions.map((s) => (s.id === id ? { ...s, revokedAt: nowMs } : s)))
   log.info(`revoked device session ${target.label}`)
+  onRevoked?.(id)
   return true
 }

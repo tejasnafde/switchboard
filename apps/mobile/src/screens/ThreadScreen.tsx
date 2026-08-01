@@ -215,7 +215,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // session, but it is a route param that never changes. Honouring it after
     // an invalidation left a phone-started thread wiped and never refilled,
     // for the life of the process, including across navigating away and back.
-    if ((isNew && !invalidated) || startedKeyRef.current === key) return
+    // A cached feed counts as unseeded: it is a snapshot from a previous run
+    // and everything the backend did since is missing from it.
+    const stale = invalidated || thread.cached === true
+    if ((isNew && !stale) || startedKeyRef.current === key) return
     startedKeyRef.current = key
     const client = getClient(connectionId)
     if (!client) {
@@ -229,7 +232,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
         provider = providerFromAgentType(loaded.meta?.agentType)
         setProvider(provider)
         const store = useChatStore.getState()
-        if ((store.threads[key]?.items.length ?? 0) === 0 && loaded.messages.length > 0) {
+        const current = store.threads[key]
+        const replaceable = (current?.items.length ?? 0) === 0 || current?.cached === true
+        if (replaceable && loaded.messages.length > 0) {
           const seeded = historyToItems(loaded.messages)
           // A thread silently starting mid-conversation reads as lost history.
           if (loaded.truncated && loaded.total) {
@@ -259,7 +264,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         reportError(err)
       }
     })()
-  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated])
+  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached])
 
   // Restore the user's last choices, pushing the mode to the backend too so the
   // adapter and the chip agree.
@@ -431,8 +436,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // A backend check here would only cover the cases we can SEE are broken,
     // and the expensive ones are the ambiguous ones: a socket that still reads
     // as open, a reconnect in flight, a turn already running.
-    useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url))
     const messageId = ownTurn()
+    useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), messageId)
     enqueue({
       connectionId,
       threadId,
@@ -444,7 +449,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
       attempts: 0,
     }).catch((err: unknown) => {
       // The durable write failed, so the message is out of the queue again.
-      // Give the user back what they typed rather than losing it silently.
+      // Take the optimistic bubble back down and give the user what they typed,
+      // rather than leaving a bubble that reads as sent and never will be.
+      useChatStore.getState().removeUserMessage(key, messageId)
       setDraft((current) => (current ? current : text))
       setAttachments(attachments)
       reportError(err)

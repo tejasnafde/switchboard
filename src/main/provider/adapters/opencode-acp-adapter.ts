@@ -142,8 +142,9 @@ export function mapSessionUpdate(
         }
       }
       
-      // The accumulated copy stays for turn assembly; only the wire carries the
-      // increment, which is what keeps a long reply from costing O(n^2) bytes.
+      // The accumulated copy is kept for the fallback message id bookkeeping
+      // below; only the wire carries the increment, which is what keeps a long
+      // reply from costing O(n^2) bytes.
       assistantMessageText.set(messageId, `${assistantMessageText.get(messageId) ?? ''}${delta}`)
 
       events.push({

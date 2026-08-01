@@ -509,12 +509,14 @@ describe('CodexAdapter', () => {
 
     await adapter.sendTurn('thread-1', 'hello codex')
 
-    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'content',
-      threadId: 'thread-1',
-      text: 'Hello from Codex',
-      streamKind: 'assistant',
-    }))
+    // Each delta travels as itself; consumers fold with applyContentText. The
+    // adapter still accumulates internally, because codex mixes delta and
+    // whole-body forms for the same message id.
+    const chunks = onEvent.mock.calls
+      .map(([e]) => e as { type: string; streamKind?: string; text?: string; append?: boolean })
+      .filter((e) => e.type === 'content' && e.streamKind === 'assistant')
+    expect(chunks.map((c) => c.text)).toEqual(['Hello', ' from Codex'])
+    expect(chunks.every((c) => c.append === true)).toBe(true)
   })
 
   it('steers a running turn with turn/steer instead of a concurrent turn/start', async () => {

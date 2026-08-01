@@ -12,7 +12,7 @@ import { getSetting } from '../db/database'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 import { MAX_FRAME_BYTES, WsHost } from './ws-host'
-import { authenticateSession, redeemPairingCode } from './device-sessions'
+import { authenticateSession, redeemPairingCode, setRevocationListener } from './device-sessions'
 import { PHONE_SCOPES } from '@shared/device-auth'
 
 const log = createLogger('backend:mobile-server')
@@ -95,7 +95,7 @@ export class MobileEndpoint implements BackendHost {
       redeem: (pairing, label) => redeemPairingCode(pairing, label, [...PHONE_SCOPES]),
       authenticate: (session) => {
         const found = authenticateSession(session)
-        return found ? { scopes: found.scopes } : null
+        return found ? { id: found.id, scopes: found.scopes } : null
       },
     })
     for (const [ch, fn] of this.handlerRegs) inner.handle(ch, fn)
@@ -117,6 +117,10 @@ export class MobileEndpoint implements BackendHost {
       this.wss = null
     })
 
+    // A revoke must reach the sockets this endpoint is holding open, or the
+    // revoked device keeps working until it next reconnects.
+    setRevocationListener((sessionId) => inner.disconnectSession(sessionId))
+
     this.wss = wss
     this.inner = inner
     this.activeToken = token
@@ -132,6 +136,7 @@ export class MobileEndpoint implements BackendHost {
     this.wss = null
     // Without this the host's heartbeat interval outlives the endpoint, and a
     // toggle-off/toggle-on leaves one sweeping a socket set nobody owns.
+    setRevocationListener(null)
     this.inner?.dispose()
     this.inner = null
     this.activeToken = null

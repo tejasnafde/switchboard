@@ -49,6 +49,17 @@ export class TurnDeduper {
     return false
   }
 
+  /**
+   * Forget an origin because the operation it guarded failed.
+   *
+   * Recording on entry is what makes the check race-free, but it also means a
+   * failure would leave the origin claimed for a turn that never ran, and the
+   * client's legitimate retry would be answered as a duplicate and dropped.
+   */
+  release(origin: string | undefined): void {
+    if (origin) this.seen.delete(origin)
+  }
+
   private expire(nowMs: number): void {
     for (const [origin, at] of this.seen) {
       if (nowMs - at > this.maxAgeMs) this.seen.delete(origin)

@@ -571,6 +571,9 @@ app.whenReady().then(() => {
   const backendHost: BackendHost = new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
   backendHost.handle(AppChannels.MOBILE_PAIRING_APPLY, () => mobileEndpoint!.apply())
   backendHost.handle(AppChannels.MOBILE_PAIRING_STATUS, () => mobileEndpoint!.status())
+  // These sit behind the `admin` scope (see device-auth): a paired phone must
+  // not be able to mint itself another session or revoke the devices that
+  // could remove it.
   backendHost.handle(AppChannels.MOBILE_PAIRING_CODE, () => createPairingCode())
   backendHost.handle(AppChannels.MOBILE_DEVICES, () => listSessionViews())
   backendHost.handle(AppChannels.MOBILE_DEVICE_REVOKE, (id: string) => revokeSession(id))

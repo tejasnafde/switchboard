@@ -372,14 +372,17 @@ export function installNetworkWatch(): () => void {
   }
   // Seed from the current state: a launch in airplane mode should not spend
   // the first minute retrying.
+  // `isConnected`, NOT `isInternetReachable`. The latter is WAN validation, and
+  // a backend on the same subnet is reachable over a wifi network with no
+  // internet at all - an isolated router, a captive portal, a hotspot out of
+  // data. Parking on that flag would leave the app permanently "offline" on a
+  // working LAN. Undefined means the platform is still deciding, and treating
+  // unknown as offline has the same failure.
+  const reachable = (state: Network.NetworkState): boolean => state.isConnected !== false
   void Network.getNetworkStateAsync()
-    .then((state) => report(state.isInternetReachable !== false))
+    .then((state) => report(reachable(state)))
     .catch((err: unknown) => log.warn('could not read the initial network state', err))
-  const sub = Network.addNetworkStateListener((state) => {
-    // `isInternetReachable` is undefined while the platform is still deciding.
-    // Treating unknown as offline would park the queue on a working network.
-    report(state.isInternetReachable !== false)
-  })
+  const sub = Network.addNetworkStateListener((state) => report(reachable(state)))
   return () => sub.remove()
 }
 

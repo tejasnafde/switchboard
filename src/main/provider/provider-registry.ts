@@ -355,7 +355,16 @@ export class ProviderRegistry {
       // without this a message typed on one client is invisible everywhere
       // else. The sender skips its own echo via `origin`.
       this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
-      await adapter.sendTurn(threadId, message, runtimeMode, images)
+      try {
+        await adapter.sendTurn(threadId, message, runtimeMode, images)
+      } catch (err) {
+        // Release the origin: the turn did NOT happen, so the client's retry
+        // must be allowed through. Holding it would have the retry answered
+        // with a cheerful success and the message dropped silently, which is
+        // the worst outcome available here.
+        this.turnDedupe.release(origin)
+        throw err
+      }
     })
 
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {

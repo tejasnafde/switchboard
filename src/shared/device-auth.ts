@@ -18,10 +18,16 @@
  *  - Everything travels in an `auth` frame after the socket opens, never in the
  *    URL.
  *
- * Scopes are not decoration. The phone app has no terminal UI at all, so a
- * phone session has no business being able to spawn a PTY on the paired
- * machine. Handing it one anyway is the difference between a stolen token
- * reading your conversations and it running commands as you.
+ * Scopes are narrow on purpose, and it is worth being precise about what they
+ * do and do not buy. A phone session cannot spawn a PTY and cannot administer
+ * pairings - so a stolen phone credential cannot open a shell, and cannot
+ * revoke your other devices or mint itself a second session.
+ *
+ * It CAN still do everything the chat surface does, and that surface runs an
+ * agent: `provider:start-session` with a cwd, `files:write-file`, `git:*`. So
+ * this is a reduction in blast radius, not a sandbox. Closing that gap means
+ * constraining what an agent session may be started against, which is a
+ * different piece of work from authentication.
  */
 
 /**
@@ -31,10 +37,10 @@
  * a PTY is arbitrary code execution and nothing on the phone needs it.
  * `full` exists for a desktop driving a remote backend, which genuinely does.
  */
-export type DeviceScope = 'chat' | 'terminal'
+export type DeviceScope = 'chat' | 'terminal' | 'admin'
 
 export const PHONE_SCOPES: readonly DeviceScope[] = ['chat']
-export const FULL_SCOPES: readonly DeviceScope[] = ['chat', 'terminal']
+export const FULL_SCOPES: readonly DeviceScope[] = ['chat', 'terminal', 'admin']
 
 /**
  * Channel prefixes a scope is REQUIRED for. Anything not listed is open to any
@@ -50,6 +56,13 @@ export const FULL_SCOPES: readonly DeviceScope[] = ['chat', 'terminal']
  */
 const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
   terminal: ['terminal:'],
+  /**
+   * Pairing administration. Without this gate the model defeats itself: any
+   * paired device could mint a fresh pairing code, redeem it for another
+   * session, and revoke every other device. Revocation has to be something a
+   * revocable credential cannot reach.
+   */
+  admin: ['mobile-pairing:'],
   // `chat` gates nothing on its own. It is the baseline every session has.
   chat: [],
 }

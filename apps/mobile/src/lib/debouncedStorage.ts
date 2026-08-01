@@ -2,9 +2,14 @@
  * A zustand `persist` storage that writes at most once per window.
  *
  * The chat store commits a batch every 50ms while an agent streams, and
- * `persist` writes on every commit. Handing that straight to AsyncStorage means
- * ~20 serializations a second of the whole thread map, on the JS thread, during
- * the exact interval the feed is trying to render smoothly.
+ * `persist` writes on every commit. This coalesces the DISK WRITE, which is the
+ * expensive part and the one that contends with everything else on the bridge.
+ *
+ * Note what it does not do: `partialize` and `JSON.stringify` still run on
+ * every commit, above this layer, because `persist` calls them before handing
+ * the string over. Moving those behind the debounce means reaching into
+ * zustand's middleware rather than its storage, which is a bigger change than
+ * the remaining cost justifies.
  *
  * So writes coalesce: only the newest value for a key survives the window, and
  * a read still sees it because pending writes are served from memory. Reads and

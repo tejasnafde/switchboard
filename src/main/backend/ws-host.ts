@@ -58,6 +58,8 @@ function tokenMatches(expected: string, presented: string | null): boolean {
 
 interface ClientState {
   missedPings: number
+  /** Session id this connection authenticated as, so a revoke can find it. */
+  sessionId?: string
   /**
    * What this connection is allowed to call.
    *
@@ -88,7 +90,7 @@ export interface DeviceAuthPort {
     pairing: string,
     label: string,
   ) => { ok: boolean; session?: string; scopes?: DeviceScope[]; error?: string }
-  authenticate: (session: string) => { scopes: DeviceScope[] } | null
+  authenticate: (session: string) => { id: string; scopes: DeviceScope[] } | null
 }
 
 const NO_DEVICE_AUTH: DeviceAuthPort = {
@@ -272,6 +274,7 @@ export class WsHost implements BackendHost {
       return
     }
     state.scopes = session.scopes
+    state.sessionId = session.id
     this.reply(socket, { k: 'authed', ok: true, scopes: [...session.scopes] })
   }
 
@@ -281,6 +284,14 @@ export class WsHost implements BackendHost {
    * than assuming the replay was complete.
    */
   private onHello(socket: WebSocket, frame: Extract<WsFrame, { k: 'hello' }>): void {
+    // Resume is a read of everything recently emitted, so it needs the same
+    // credential a request does. Without this an unauthenticated socket could
+    // learn the epoch from one `ready` and then ask to be replayed the whole
+    // buffer with the next.
+    if (!this.clients.get(socket)?.scopes) {
+      log.warn('refused a resume request from an unauthenticated client')
+      return
+    }
     const requested = frame.since ?? 0
     const sameEpoch = frame.epoch === this.epoch
     // A cursor from another process indexes a sequence space that no longer
@@ -336,13 +347,37 @@ export class WsHost implements BackendHost {
     const seq = replayable ? ++this.seq : undefined
     const encoded = encodeFrame({ k: 'evt', ch: channel, args, seq })
     if (replayable && seq !== undefined) this.replay.push(seq, encoded)
-    // Broadcast to everyone immediately, including a client whose `hello` is
-    // still in flight. Gating on hello would starve an older build that never
-    // sends one; the client instead holds live frames until its replay lands,
-    // so ordering is fixed on the side that can tell the difference.
-    for (const socket of this.clients.keys()) {
+    // Authenticated clients only. Gating on `hello` would starve an older build
+    // that never sends one, but scopes are a different thing: a socket that has
+    // not presented a credential must not receive chat content, tool output or
+    // terminal output while it waits out its auth grace period. The mobile
+    // endpoint binds 0.0.0.0, so that window was open to the whole LAN.
+    for (const [socket, state] of this.clients) {
+      if (!state.scopes) continue
+      if (!isChannelAllowed(state.scopes, channel)) continue
       if (socket.readyState === socket.OPEN) socket.send(encoded)
     }
+  }
+
+  /**
+   * Cut off any live connection belonging to a revoked session.
+   *
+   * Scopes are cached per connection, and the heartbeat keeps a socket alive
+   * indefinitely, so a revoke that only tombstones the record leaves the
+   * revoked device working until it happens to reconnect. That is not
+   * revocation.
+   */
+  disconnectSession(sessionId: string): number {
+    let closed = 0
+    for (const [socket, state] of this.clients) {
+      if (state.sessionId !== sessionId) continue
+      state.scopes = null
+      this.clients.delete(socket)
+      socket.close(4001, 'unauthorized')
+      closed++
+    }
+    if (closed > 0) log.info(`closed ${closed} connection(s) for a revoked device`)
+    return closed
   }
 
   /** Stop the heartbeat. Call when the host is torn down for good. */

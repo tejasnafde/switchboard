@@ -49,6 +49,15 @@ export interface ThreadState {
   unread: number
   /** Last time any event touched this thread. Drives cache eviction. */
   updatedAt?: number
+  /**
+   * True for a feed restored from disk rather than fetched this run.
+   *
+   * The seed path is guarded on an EMPTY feed, so without this flag a cached
+   * thread looks already-loaded and never re-seeds: the app would open showing
+   * yesterday's transcript and append live events onto it, with everything in
+   * between missing and no indication.
+   */
+  cached?: boolean
 }
 
 /**
@@ -89,10 +98,23 @@ export function prunePersistedThreads(
   return out
 }
 
-/** Origins this device sent, so its own user.message echo is dropped. */
+/**
+ * Origins this device sent, so its own user.message echo is dropped.
+ *
+ * Seeded from the outbox on launch as well as marked on send: the optimistic
+ * bubble is persisted with the chat cache, so a message queued before a kill
+ * comes back on screen AND is delivered afterwards. Without the seed its echo
+ * would render a second copy.
+ */
 const sentOrigins = new Set<string>()
 export function markOwnTurn(origin: string): void {
   sentOrigins.add(origin)
+  // Bounded: a long session sending thousands of turns should not hold every
+  // id forever, and an echo arrives within seconds of its send.
+  if (sentOrigins.size > 500) {
+    const oldest = sentOrigins.values().next().value
+    if (oldest !== undefined) sentOrigins.delete(oldest)
+  }
 }
 
 export function threadKey(connectionId: string, threadId: string): string {
@@ -112,10 +134,13 @@ interface ChatState {
   activeKey: string | null
   setActive: (key: string | null) => void
   setRuntimeMode: (key: string, mode: RuntimeMode) => void
-  addUserMessage: (key: string, text: string, images?: string[]) => void
+  /** `id` ties the bubble to its queued message so a failed send can undo it. */
+  addUserMessage: (key: string, text: string, images?: string[], id?: string) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
   markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny') => void
   seedItems: (key: string, items: FeedItem[]) => void
+  /** Remove an optimistic user bubble whose message will never be sent. */
+  removeUserMessage: (key: string, id: string) => void
   /** Queued: coalesced and applied on the next flush tick. */
   ingest: (connectionId: string, event: RuntimeEvent) => void
   /** Unbatched single-event apply. Used by the flush path and by tests. */
@@ -441,6 +466,18 @@ function applyEvent(
  */
 const cacheStorage = createDebouncedStorage(AsyncStorage)
 
+let resolveCache: () => void = () => undefined
+/**
+ * Resolves once the cached feeds are in the store.
+ *
+ * Dialling before this can finish a fetch and seed a thread, only for the
+ * rehydrate to land afterwards and replace it with the stale copy. Waiting is
+ * cheaper than reconciling.
+ */
+export const chatCacheReady = new Promise<void>((resolve) => {
+  resolveCache = resolve
+})
+
 export const useChatStore = create<ChatState>()(
   persist(
     (set) => ({
@@ -456,10 +493,10 @@ export const useChatStore = create<ChatState>()(
   setRuntimeMode: (key, mode) =>
     set((s) => ({ threads: patchThread(s.threads, key, () => ({ runtimeMode: mode })) })),
 
-  addUserMessage: (key, text, images) =>
+  addUserMessage: (key, text, images, id) =>
     set((s) => ({
       threads: patchThread(s.threads, key, (t) => ({
-        items: [...t.items, { kind: 'user', id: `u-${Date.now()}`, text, at: Date.now(), images }],
+        items: [...t.items, { kind: 'user', id: id ?? `u-${Date.now()}`, text, at: Date.now(), images }],
         status: 'running',
       })),
     })),
@@ -486,8 +523,12 @@ export const useChatStore = create<ChatState>()(
       })),
     })),
 
+  removeUserMessage: (key, id) =>
+    set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ items: t.items.filter((i) => i.id !== id) })) })),
+
   seedItems: (key, items) =>
-    set((s) => ({ threads: patchThread(s.threads, key, () => ({ items })) })),
+    // Clearing `cached` is the point: this feed now came from the backend.
+    set((s) => ({ threads: patchThread(s.threads, key, () => ({ items, cached: false })) })),
 
   ingest: (connectionId, event) => enqueue(connectionId, event),
 
@@ -496,7 +537,11 @@ export const useChatStore = create<ChatState>()(
 
   staleGeneration: 0,
 
-  invalidateConnection: (connectionId) =>
+  invalidateConnection: (connectionId) => {
+    // Drop anything still sitting in the 50ms batch. Those chunks belong to the
+    // view being discarded, and flushing them after the clear would leave a
+    // mid-sentence fragment that the seed guard then treats as a loaded feed.
+    resetQueue()
     set((s) => {
       const prefix = `${connectionId}:`
       const threads: Record<string, ThreadState> = {}
@@ -506,7 +551,8 @@ export const useChatStore = create<ChatState>()(
         threads[key] = key.startsWith(prefix) ? { ...thread, items: [] } : thread
       }
       return { threads, staleGeneration: s.staleGeneration + 1 }
-    }),
+    })
+  },
     }),
     {
       name: 'sb-chat-cache',
@@ -514,13 +560,20 @@ export const useChatStore = create<ChatState>()(
       // Only the feeds. activeKey and staleGeneration describe this run.
       partialize: (s) => ({ threads: prunePersistedThreads(s.threads) }),
       onRehydrateStorage: () => (state) => {
-        if (!state) return
+        if (!state) {
+          resolveCache()
+          return
+        }
         // A cached thread is not a live one. Restoring 'running' would show a
         // spinner for a turn that finished while the app was closed, and
         // restoring 'idle' would claim a connection we have not made yet.
         state.threads = Object.fromEntries(
-          Object.entries(state.threads).map(([key, t]) => [key, { ...t, status: 'connecting' as const }]),
+          Object.entries(state.threads).map(([key, t]) => [
+            key,
+            { ...t, status: 'connecting' as const, cached: true },
+          ]),
         )
+        resolveCache()
       },
     },
   ),

@@ -993,8 +993,8 @@ export class CodexAdapter implements ProviderAdapter {
       const text = notification.params?.delta ?? notification.params?.text ?? ''
       const messageId = notification.params?.itemId ?? `reason_${Date.now()}`
       if (text) {
-        // The accumulated copy stays for turn assembly; only the wire carries
-        // the increment.
+        // Kept so a closing snapshot could be sent, and because the codex
+        // wire mixes delta and whole-body forms for the same message id.
         active.assistantMessageText.set(messageId, `${active.assistantMessageText.get(messageId) ?? ''}${text}`)
         active.onEvent({
           type: 'content',
@@ -1009,13 +1009,13 @@ export class CodexAdapter implements ProviderAdapter {
       const text = notification.params?.delta ?? ''
       const messageId = notification.params?.itemId ?? `plan_${Date.now()}`
       if (text) {
-        const fullText = `${active.assistantMessageText.get(messageId) ?? ''}${text}`
-        active.assistantMessageText.set(messageId, fullText)
+        active.assistantMessageText.set(messageId, `${active.assistantMessageText.get(messageId) ?? ''}${text}`)
         active.onEvent({
           type: 'content',
           threadId,
           messageId,
-          text: fullText,
+          text,
+          append: true,
           streamKind: 'plan',
         })
       }
@@ -1026,16 +1026,20 @@ export class CodexAdapter implements ProviderAdapter {
         || ''
       if (text) {
         const messageId = notification.params?.itemId ?? `msg_${Date.now()}`
-        const fullText = notification.params?.delta
-          ? `${active.assistantMessageText.get(messageId) ?? ''}${text}`
-          : text
-        active.assistantMessageText.set(messageId, fullText)
+        // `delta` is an increment; `text`/`content` are whole-body forms that
+        // must still replace, so the wire mode follows which one arrived.
+        const isDelta = Boolean(notification.params?.delta)
+        active.assistantMessageText.set(
+          messageId,
+          isDelta ? `${active.assistantMessageText.get(messageId) ?? ''}${text}` : text,
+        )
 
         active.onEvent({
           type: 'content',
           threadId,
           messageId,
-          text: fullText,
+          text,
+          append: isDelta || undefined,
           streamKind: 'assistant',
         })
       }

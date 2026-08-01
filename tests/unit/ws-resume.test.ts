@@ -176,3 +176,33 @@ describe('event resume', () => {
     expect(frames.find((f) => f.ch === 'provider:event')?.seq).toBe(1)
   })
 })
+
+/**
+ * The mobile endpoint binds 0.0.0.0, so anything an unauthenticated socket can
+ * read is readable by the whole LAN. Requests were gated from the start; events
+ * and replay were not, which made the token a write-only control.
+ */
+describe('unauthenticated clients', () => {
+  it('receive no events and cannot be replayed the buffer', async () => {
+    const server = new WebSocketServer({ port: 0 })
+    wss = server
+    const host = new WsHost(server, 's3cret')
+    await new Promise<void>((res) => server.on('listening', () => res()))
+    const url = `ws://localhost:${(server.address() as AddressInfo).port}/?auth=frame`
+
+    const frames: string[] = []
+    const raw = new WebSocket(url)
+    await new Promise((r) => raw.addEventListener('open', r))
+    raw.addEventListener('message', (ev: MessageEvent) => frames.push(String(ev.data)))
+
+    // Ask to be replayed everything, then wait for live traffic.
+    raw.send(JSON.stringify({ k: 'hello', since: 0 }))
+    host.emit('provider:event', 'secret')
+    await settle(200)
+    raw.close()
+
+    const kinds = frames.map((f) => decodeFrame(f)?.k)
+    expect(kinds).not.toContain('evt')
+    expect(kinds).not.toContain('ready')
+  })
+})
