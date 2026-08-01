@@ -576,53 +576,56 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
       {/* Composer */}
       <View style={styles.composer}>
-        {/* Every control except Send lives in one scroller, so the input keeps
-            the full width instead of competing with chips for it. */}
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          keyboardShouldPersistTaps="always"
-          style={styles.controlsScroller}
-          contentContainerStyle={styles.controlsContent}
-        >
-          {/* First in the row: it overflows, and hunting for Stop mid-turn is
-              the one thing you cannot ask someone to scroll for. Stop does not
-              replace Send, so a follow-up can still be queued. */}
-          {isRunning && (
-            <Pressable
-              style={({ pressed }) => [styles.stopButton, pressed && styles.pressed]}
-              onPress={stop}
-              accessibilityRole="button"
-              accessibilityLabel="Stop"
-            >
-              <Ionicons name="stop" size={16} color="#fff" />
-            </Pressable>
-          )}
-          <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
-          <MicButton draft={draft} onDraft={setDraft} onNote={setVoiceNote} />
-          <ModePicker value={thread.runtimeMode} onChange={setMode} />
-          {profileLabel !== null && (
-            <Pressable
-              onPress={() => setProfilePickerOpen(true)}
-              disabled={rotating}
-              style={({ pressed }) => [styles.modelChip, (pressed || rotating) && styles.pressed]}
-            >
-              <Text style={styles.modelChipText} numberOfLines={1}>
-                {rotating ? 'Switching…' : profileLabel}
-              </Text>
-            </Pressable>
-          )}
-          {models.length > 0 && (
-            <Pressable
-              onPress={() => setModelPickerOpen(true)}
-              style={({ pressed }) => [styles.modelChip, pressed && styles.pressed]}
-            >
-              <Text style={styles.modelChipText} numberOfLines={1}>
-                {modelLabel}
-              </Text>
-            </Pressable>
-          )}
-        </ScrollView>
+        {/* Dropdowns left, actions right. The left group scrolls if the labels
+            overflow; the right group never does, so the mic, attach and Stop
+            are always where the thumb expects them. */}
+        <View style={styles.controlsRow}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="always"
+            style={styles.controlsScroller}
+            contentContainerStyle={styles.controlsContent}
+          >
+            <ModePicker value={thread.runtimeMode} onChange={setMode} />
+            {models.length > 0 && (
+              <Pressable
+                onPress={() => setModelPickerOpen(true)}
+                style={({ pressed }) => [styles.modelChip, pressed && styles.pressed]}
+              >
+                <Text style={styles.modelChipText} numberOfLines={1}>
+                  {modelLabel}
+                </Text>
+              </Pressable>
+            )}
+            {profileLabel !== null && (
+              <Pressable
+                onPress={() => setProfilePickerOpen(true)}
+                disabled={rotating}
+                style={({ pressed }) => [styles.modelChip, (pressed || rotating) && styles.pressed]}
+              >
+                <Text style={styles.modelChipText} numberOfLines={1}>
+                  {rotating ? 'Switching…' : profileLabel}
+                </Text>
+              </Pressable>
+            )}
+          </ScrollView>
+          <View style={styles.controlsActions}>
+            {/* Stop does not replace Send, so a follow-up can still be queued. */}
+            {isRunning && (
+              <Pressable
+                style={({ pressed }) => [styles.stopButton, pressed && styles.pressed]}
+                onPress={stop}
+                accessibilityRole="button"
+                accessibilityLabel="Stop"
+              >
+                <Ionicons name="stop" size={16} color="#fff" />
+              </Pressable>
+            )}
+            <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
+            <MicButton draft={draft} onDraft={setDraft} onNote={setVoiceNote} />
+          </View>
+        </View>
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
         {queuedCount > 0 && (
           <Text style={styles.queuedNote}>
@@ -1337,14 +1340,24 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 24 : 12,
     gap: 8,
   },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+  },
   controlsScroller: {
-    flexGrow: 0,
+    flex: 1,
     minHeight: 40,
   },
   controlsContent: {
     gap: space.sm,
     alignItems: 'center',
     paddingHorizontal: 2,
+  },
+  controlsActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
   },
   // Owns the border and fill so the send button can nest flush inside it: the
   // small right padding is what makes the circle sit against the edge.

@@ -225,7 +225,7 @@ export default function NewSessionScreen({ route, navigation }: Props) {
       )}
 
       <Text style={styles.sectionLabel}>Runtime mode</Text>
-      <ModePicker value={mode} onChange={setMode} />
+      <ModePicker value={mode} onChange={setMode} variant="row" />
 
       <Text style={styles.sectionLabel}>First message (optional)</Text>
       <TextInput

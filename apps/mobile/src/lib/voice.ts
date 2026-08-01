@@ -13,6 +13,9 @@ import type {
 
 const log = createLogger('mobile:voice')
 
+/** How long the Android recognizer waits through silence before finalizing. */
+const PAUSE_TOLERANCE_MS = 4000
+
 type SpeechModule = (typeof import('expo-speech-recognition'))['ExpoSpeechRecognitionModule']
 
 const speech: SpeechModule | null = (() => {
@@ -54,9 +57,9 @@ export async function ensureVoicePermission(): Promise<boolean> {
 export type VoiceHandlers = {
   /** Streaming partial transcript for the utterance in progress. */
   onPartial: (transcript: string) => void
-  /** Final transcript, delivered on end-of-speech or after stop(). */
+  /** One finalized utterance. Fires repeatedly within a continuous session. */
   onFinal: (transcript: string) => void
-  /** The session is over: end-of-speech, stop(), or a fatal error. */
+  /** The session is over: stop(), or a fatal error. */
   onEnd: () => void
   onError: (message: string, code: string) => void
 }
@@ -64,9 +67,13 @@ export type VoiceHandlers = {
 export type VoiceSession = { stop: () => void }
 
 /**
- * Start one dictation session in the device locale. Non-continuous on
- * purpose: the recognizer finalizes on end-of-speech, so a tap starts an
- * utterance and silence (or a second tap) ends it.
+ * Start one dictation session in the device locale.
+ *
+ * Continuous, so a thinking pause does not end the note: only a second tap or
+ * a real error stops it. Some Android recognizers still finalize on silence
+ * regardless of the flag, so the intent extras widen the silence windows too.
+ * Continuous also means several final results per session, which is why
+ * onFinal must accumulate rather than replace.
  */
 export function startListening(handlers: VoiceHandlers): VoiceSession | null {
   if (!speech) return null
@@ -86,7 +93,16 @@ export function startListening(handlers: VoiceHandlers): VoiceSession | null {
     }),
   ]
   try {
-    speech.start({ lang: deviceLocale(), interimResults: true, addsPunctuation: true })
+    speech.start({
+      lang: deviceLocale(),
+      interimResults: true,
+      addsPunctuation: true,
+      continuous: true,
+      androidIntentOptions: {
+        EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: PAUSE_TOLERANCE_MS,
+        EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: PAUSE_TOLERANCE_MS,
+      },
+    })
   } catch (err) {
     log.error('speech.start failed', err)
     for (const sub of subs) sub.remove()

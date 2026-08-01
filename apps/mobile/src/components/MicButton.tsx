@@ -2,7 +2,8 @@
  * Composer mic: dictates into a draft via src/lib/voice. Renders nothing when
  * voice is unavailable (Expo Go, or no recognizer on the device), so callers
  * can mount it unconditionally. Partial transcripts stream into the draft by
- * composing onto a snapshot taken when listening starts; errors and the
+ * composing onto a base snapshot, which each finalized utterance extends so a
+ * long continuous dictation keeps its earlier sentences; errors and the
  * permission-denied state surface through onNote as a brief inline note that
  * the parent renders with VoiceNoteBar.
  */
@@ -82,7 +83,12 @@ export function MicButton({
     baseRef.current = draftRef.current
     const session = startListening({
       onPartial: (t) => onDraft(joinDraft(baseRef.current, t)),
-      onFinal: (t) => onDraft(joinDraft(baseRef.current, t)),
+      // A continuous session finalizes each utterance separately, so the base
+      // absorbs it: without this the next sentence overwrites the last one.
+      onFinal: (t) => {
+        baseRef.current = joinDraft(baseRef.current, t)
+        onDraft(baseRef.current)
+      },
       onEnd: () => {
         sessionRef.current = null
         setListening(false)

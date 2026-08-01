@@ -27,7 +27,9 @@ export async function ensureAndroidChannel(): Promise<void> {
   await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
     name: 'Agent activity',
     importance: Notifications.AndroidImportance.HIGH,
-    sound: 'default',
+    // No `sound`: on a channel the field is a FILENAME, so the literal
+    // 'default' makes it hunt for a bundled file called "default" and warn.
+    // Omitting it gives the system default.
   })
 }
 
