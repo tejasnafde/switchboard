@@ -16,7 +16,7 @@ import { GeistMono_400Regular, GeistMono_500Medium } from '@expo-google-fonts/ge
 import { createLogger } from '@shared/logger'
 import { colors, fonts } from './src/theme'
 import { getCachedAccessToken, warmUpGoogleAuth } from './src/lib/google-auth'
-import { installLifecycleReconnect, setGoogleTokenProvider } from './src/stores/connections'
+import { installLifecycleReconnect, installNetworkWatch, setGoogleTokenProvider } from './src/stores/connections'
 import { hydrateOutbox } from './src/stores/outbox'
 import { UpdateBanner } from './src/components/UpdateBanner'
 import ConnectionsScreen from './src/screens/ConnectionsScreen'
@@ -124,6 +124,7 @@ export default function App() {
   // otherwise see a live-looking screen backed by a dead connection until an
   // invoke times out. Installed once, for every connection.
   useEffect(() => installLifecycleReconnect(), [])
+  useEffect(() => installNetworkWatch(), [])
 
   // Tapping a notification opens the thread it came from.
   //

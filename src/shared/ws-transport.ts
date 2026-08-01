@@ -19,6 +19,7 @@
  *    say "token rejected" instead of spinning on "connecting".
  */
 import { encodeFrame, decodeFrame, type WsFrame } from './ws-protocol'
+import { reconnectDelay } from './backoff'
 import type { Transport } from './transport'
 import { createLogger } from './logger'
 
@@ -146,6 +147,11 @@ export class WsTransport implements Transport {
   /** The socket already routed through onSocketDead. forceReconnect drives that
    *  path by hand, and the real 'close' event then arrives for the same socket. */
   private deadSocket: WebSocket | null = null
+  /**
+   * Whether the device believes it has a network. Defaults true so a caller
+   * that never reports stays on the old always-retry behaviour.
+   */
+  private online = true
   private readonly watchdog: ReturnType<typeof setInterval>
 
   private reconnecting = false
@@ -323,6 +329,32 @@ export class WsTransport implements Transport {
     this.onStateChange?.('reconnecting')
   }
 
+  /**
+   * Tell the transport whether the device has a network at all.
+   *
+   * With the radio off, re-dialling is a guaranteed failure on a timer, which
+   * costs battery and inflates the backoff so the FIRST attempt after the
+   * network returns is delayed by up to the cap. Pausing instead makes that
+   * reconnect immediate: coming back online is a better signal than any timer.
+   */
+  setOnline(online: boolean): void {
+    if (this.online === online || this.closed) return
+    this.online = online
+    if (!online) {
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = null
+      }
+      return
+    }
+    // Only dial if we were actually waiting to. A live socket is left alone;
+    // the watchdog owns deciding whether it survived.
+    if (this.reconnecting && !this.open) {
+      this.reconnectAttempt = 0
+      this.dial()
+    }
+  }
+
   private scheduleRedial(): void {
     if (this.reconnectTimer) return
     if (!this.reconnecting) {
@@ -339,8 +371,18 @@ export class WsTransport implements Transport {
     if (Date.now() - this.reconnectStartedAt >= this.reconnectBudgetMs && this.reconnectAttempt % 10 === 0) {
       log.error(`still reconnecting after ${Math.round((Date.now() - this.reconnectStartedAt) / 1000)}s`, this.url)
     }
+    // Offline: stay in the reconnecting state but arm no timer. setOnline
+    // dials the moment the network is back.
+    if (!this.online) return
     this.reconnectAttempt++
-    const delay = Math.min(this.reconnectBaseMs * 2 ** (this.reconnectAttempt - 1), this.reconnectCapMs)
+    // Jittered, so a fleet of phones dropped by the same event (a laptop
+    // sleeping, a wifi drop) does not come back in lockstep and hammer one
+    // desktop on the same tick.
+    const delay = reconnectDelay(this.reconnectAttempt, {
+      baseMs: this.reconnectBaseMs,
+      capMs: this.reconnectCapMs,
+      jitter: 0.25,
+    })
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       if (this.closed) return

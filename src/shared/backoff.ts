@@ -1,4 +1,11 @@
 /**
+ * The one reconnect/retry ladder.
+ *
+ * Shared because three things back off against the same kinds of failure - the
+ * WebSocket transport's re-dial, the desktop's ssh tunnel manager, and the
+ * phone's send queue - and each had grown its own copy. They drift, and the
+ * one that drifts is always the one nobody is looking at.
+ *
  * Exponential backoff (base * 2^(attempt-1)) capped at capMs, with optional
  * jitter so machines that dropped simultaneously (e.g. laptop wake) don't
  * reconnect in lockstep. `jitter` is a fraction of the delay: 0.25 spreads

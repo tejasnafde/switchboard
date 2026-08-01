@@ -319,7 +319,9 @@ describe('WsTransport (fake socket)', () => {
     void t.invoke('queued-invoke').catch(() => {})
     expect(FakeSocket.instances).toHaveLength(1) // no immediate dial
 
-    await vi.advanceTimersByTimeAsync(500) // first backoff step
+    // The ladder is jittered (+/-25%), so advance past the ceiling of the first
+    // step rather than assuming an exact 500ms.
+    await vi.advanceTimersByTimeAsync(700)
     expect(FakeSocket.instances).toHaveLength(2)
     const sock2 = FakeSocket.instances.at(-1)!
     sock2.fire('open')

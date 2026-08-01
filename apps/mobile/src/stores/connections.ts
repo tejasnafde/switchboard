@@ -9,6 +9,7 @@
  * never contains a credential that grants a remote shell.
  */
 import { AppState, type AppStateStatus } from 'react-native'
+import * as Network from 'expo-network'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -309,6 +310,31 @@ const onForeground = new Set<() => void>()
 export function onAppForeground(fn: () => void): () => void {
   onForeground.add(fn)
   return () => onForeground.delete(fn)
+}
+
+/**
+ * Report the device's network state to every live transport.
+ *
+ * Without this the app re-dials on a timer with the radio off: guaranteed
+ * failures, battery spent, and the backoff inflated so the first attempt after
+ * signal returns is delayed by up to the cap. With it, losing signal parks the
+ * retry and regaining it dials immediately.
+ */
+export function installNetworkWatch(): () => void {
+  const report = (reachable: boolean): void => {
+    for (const client of clients.values()) client.transport.setOnline?.(reachable)
+  }
+  // Seed from the current state: a launch in airplane mode should not spend
+  // the first minute retrying.
+  void Network.getNetworkStateAsync()
+    .then((state) => report(state.isInternetReachable !== false))
+    .catch((err: unknown) => log.warn('could not read the initial network state', err))
+  const sub = Network.addNetworkStateListener((state) => {
+    // `isInternetReachable` is undefined while the platform is still deciding.
+    // Treating unknown as offline would park the queue on a working network.
+    report(state.isInternetReachable !== false)
+  })
+  return () => sub.remove()
 }
 
 export function installLifecycleReconnect(): () => void {

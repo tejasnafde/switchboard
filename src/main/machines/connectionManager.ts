@@ -9,7 +9,7 @@
 import type { Machine } from '@shared/machines'
 import { buildTunnelCommand } from './sshTunnel'
 import { nextConnectionStatus, type ConnectionStatus } from './connectionStatus'
-import { reconnectDelay } from './reconnectBackoff'
+import { reconnectDelay } from '@shared/backoff'
 
 export interface TunnelProcess {
   kill: () => void

@@ -12,6 +12,8 @@
  * living inline in a hook.
  */
 
+import { reconnectDelay } from '@shared/backoff'
+
 /** A message the user has committed to sending, waiting for a live backend. */
 export interface QueuedMessage {
   connectionId: string
@@ -38,9 +40,14 @@ export interface QueuedMessage {
 
 export const MAX_RETRY_DELAY_MS = 16_000
 
-/** 1s doubling to a 16s cap, matching the transport's own reconnect ladder. */
+/**
+ * 1s doubling to a 16s cap, on the shared ladder.
+ *
+ * No jitter: unlike a reconnect, these retries do not stampede. One device's
+ * queue drains against one backend, so spreading them only adds latency.
+ */
 export function retryDelayMs(attempts: number): number {
-  return Math.min(1_000 * 2 ** Math.max(0, attempts - 1), MAX_RETRY_DELAY_MS)
+  return reconnectDelay(attempts, { baseMs: 1_000, capMs: MAX_RETRY_DELAY_MS })
 }
 
 export type DeliveryAction = 'send' | 'wait' | 'drop'
