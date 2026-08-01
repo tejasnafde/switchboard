@@ -1,10 +1,11 @@
 /** Composer image attachments: pick button and thumbnail strip. Rules in lib/images.ts. */
 import React, { memo, useCallback } from 'react'
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import * as ImagePicker from 'expo-image-picker'
 import { createLogger } from '@shared/logger'
 import { assetToPayload, fitTurnBudget, formatBytes, MAX_IMAGE_BYTES, MAX_TURN_WIRE_BYTES, type ImagePayload } from '../lib/images'
-import { colors, radius, space, type, HIT } from '../theme'
+import { colors, radius, space, type } from '../theme'
 
 const log = createLogger('composer:images')
 
@@ -93,7 +94,7 @@ export const AttachButton = memo(function AttachButton({
       accessibilityLabel="Attach an image"
       hitSlop={8}
     >
-      <Text style={styles.attachGlyph}>+</Text>
+      <Ionicons name="add" size={22} color={colors.textDim} />
     </Pressable>
   )
 })
@@ -128,13 +129,12 @@ export const AttachmentStrip = memo(function AttachmentStrip({
 
 const styles = StyleSheet.create({
   attachButton: {
-    width: HIT,
-    height: HIT,
+    width: 40,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: radius.sm,
   },
-  attachGlyph: { color: colors.textDim, fontSize: 24, lineHeight: 26 },
   pressed: { opacity: 0.6 },
   strip: { flexGrow: 0, marginBottom: space.sm },
   thumbWrap: { marginRight: space.sm },

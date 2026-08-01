@@ -1,33 +1,26 @@
 /**
- * Composer mic: dictates into a draft via src/lib/voice. Renders nothing when
- * voice is unavailable (Expo Go, or no recognizer on the device), so callers
- * can mount it unconditionally. Partial transcripts stream into the draft by
- * composing onto a base snapshot, which each finalized utterance extends so a
- * long continuous dictation keeps its earlier sentences; errors and the
- * permission-denied state surface through onNote as a brief inline note that
- * the parent renders with VoiceNoteBar.
+ * The composer's inline voice note. Session management moved to
+ * hooks/useDictation when the mic became a gesture on the send button.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Animated, Easing, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { createLogger } from '@shared/logger'
 import { colors, radius, space, type } from '../theme'
-import {
-  ensureVoicePermission,
-  isVoiceAvailable,
-  joinDraft,
-  startListening,
-  type VoiceSession,
-} from '../lib/voice'
+import { useDictation, type VoiceNote } from '../hooks/useDictation'
 
 const log = createLogger('mobile:mic')
 
-export type VoiceNote = { message: string; showSettingsLink?: boolean }
+export type { VoiceNote }
 
 const NOTE_TTL_MS = 6000
 
 /** Error codes that end a session without anything worth telling the user. */
 const QUIET_ERROR_CODES = new Set(['aborted', 'no-speech', 'speech-timeout'])
 
+/**
+ * Plain mic toggle, for fields with no send button of their own (the new-session
+ * first message). The chat composer uses SendMicButton's hold gesture instead.
+ */
 export function MicButton({
   draft,
   onDraft,
@@ -37,125 +30,21 @@ export function MicButton({
   onDraft: (text: string) => void
   onNote: (note: VoiceNote | null) => void
 }) {
-  const available = useMemo(() => isVoiceAvailable(), [])
-  const [listening, setListening] = useState(false)
-  const sessionRef = useRef<VoiceSession | null>(null)
-  const baseRef = useRef('')
-  const noteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // The draft prop is only read when a session starts; a ref keeps the
-  // press handler stable without re-subscribing on every keystroke.
-  const draftRef = useRef(draft)
-  draftRef.current = draft
-
-  const postNote = useCallback(
-    (note: VoiceNote) => {
-      if (noteTimerRef.current) clearTimeout(noteTimerRef.current)
-      onNote(note)
-      // Permission notes carry the Settings action, so they stay until the
-      // next interaction instead of vanishing mid-tap.
-      if (!note.showSettingsLink) {
-        noteTimerRef.current = setTimeout(() => onNote(null), NOTE_TTL_MS)
-      }
-    },
-    [onNote],
-  )
-
-  useEffect(
-    () => () => {
-      if (noteTimerRef.current) clearTimeout(noteTimerRef.current)
-      sessionRef.current?.stop()
-    },
-    [],
-  )
-
-  const toggle = useCallback(async () => {
-    if (sessionRef.current && listening) {
-      sessionRef.current.stop()
-      return
-    }
-    onNote(null)
-    const granted = await ensureVoicePermission()
-    if (!granted) {
-      postNote({ message: 'Microphone permission needed.', showSettingsLink: true })
-      return
-    }
-    baseRef.current = draftRef.current
-    const session = startListening({
-      onPartial: (t) => onDraft(joinDraft(baseRef.current, t)),
-      // A continuous session finalizes each utterance separately, so the base
-      // absorbs it: without this the next sentence overwrites the last one.
-      onFinal: (t) => {
-        baseRef.current = joinDraft(baseRef.current, t)
-        onDraft(baseRef.current)
-      },
-      onEnd: () => {
-        sessionRef.current = null
-        setListening(false)
-      },
-      onError: (message, code) => {
-        if (QUIET_ERROR_CODES.has(code)) return
-        if (code === 'not-allowed') {
-          postNote({ message: 'Microphone permission needed.', showSettingsLink: true })
-          return
-        }
-        postNote({ message: `Voice input failed: ${message}` })
-      },
-    })
-    if (!session) {
-      postNote({ message: 'Voice input failed to start.' })
-      return
-    }
-    sessionRef.current = session
-    setListening(true)
-  }, [listening, onDraft, onNote, postNote])
-
-  // Subtle pulse while recording: an accent ring breathing outward.
-  const pulse = useRef(new Animated.Value(0)).current
-  useEffect(() => {
-    if (!listening) {
-      pulse.setValue(0)
-      return
-    }
-    const loop = Animated.loop(
-      Animated.timing(pulse, {
-        toValue: 1,
-        duration: 1100,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }),
-    )
-    loop.start()
-    return () => loop.stop()
-  }, [listening, pulse])
-
-  if (!available) return null
-
-  const glyphColor = listening ? colors.accent : colors.textDim
-
+  const dictation = useDictation({ draft, onDraft, onNote })
+  if (!dictation.available) return null
   return (
     <Pressable
-      onPress={() => void toggle()}
+      onPress={() => (dictation.listening ? dictation.stop() : void dictation.start())}
       accessibilityRole="button"
-      accessibilityLabel={listening ? 'Stop dictation' : 'Start dictation'}
-      style={({ pressed }) => [styles.button, listening && styles.buttonListening, pressed && styles.pressed]}
+      accessibilityLabel={dictation.listening ? 'Stop dictation' : 'Start dictation'}
+      hitSlop={8}
+      style={({ pressed }) => [styles.plainMic, pressed && styles.pressed]}
     >
-      {listening && (
-        <Animated.View
-          style={[
-            styles.pulseRing,
-            {
-              opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0] }),
-              transform: [{ scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.45] }) }],
-            },
-          ]}
-        />
-      )}
-      <View style={styles.glyph}>
-        <View style={[styles.micBody, { backgroundColor: glyphColor }]} />
-        <View style={[styles.micStem, { backgroundColor: glyphColor }]} />
-        <View style={[styles.micBase, { backgroundColor: glyphColor }]} />
-      </View>
+      <Ionicons
+        name="mic"
+        size={18}
+        color={dictation.listening ? colors.accent : colors.textDim}
+      />
     </Pressable>
   )
 }
@@ -194,6 +83,7 @@ const styles = StyleSheet.create({
     borderColor: colors.accent,
     backgroundColor: colors.accentWash,
   },
+  plainMic: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
   pressed: {
     opacity: 0.6,
   },

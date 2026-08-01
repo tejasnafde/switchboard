@@ -40,7 +40,9 @@ import { ModePicker } from '../components/ModePicker'
 import { ProfilePicker } from '../components/ProfilePicker'
 import { profilesFor } from '../lib/profiles'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
-import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
+import { VoiceNoteBar } from '../components/MicButton'
+import { SendMicButton } from '../components/SendMicButton'
+import { useDictation, type VoiceNote } from '../hooks/useDictation'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 
 /** How much of a long thread to pull on open. The feed says when it is a window. */
@@ -487,6 +489,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const isRunning = thread.status === 'running'
   const canSend = draft.trim().length > 0 || attachments.length > 0
+  const dictation = useDictation({ draft, onDraft: setDraft, onNote: setVoiceNote })
 
   const contextPct =
     thread.usedTokens != null && thread.maxTokens ? Math.min(1, thread.usedTokens / thread.maxTokens) : null
@@ -619,21 +622,6 @@ export default function ThreadScreen({ route, navigation }: Props) {
               </Pressable>
             )}
           </ScrollView>
-          <View style={styles.controlsActions}>
-            {/* Stop does not replace Send, so a follow-up can still be queued. */}
-            {isRunning && (
-              <Pressable
-                style={({ pressed }) => [styles.stopButton, pressed && styles.pressed]}
-                onPress={stop}
-                accessibilityRole="button"
-                accessibilityLabel="Stop"
-              >
-                <Ionicons name="stop" size={16} color="#fff" />
-              </Pressable>
-            )}
-            <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
-            <MicButton draft={draft} onDraft={setDraft} onNote={setVoiceNote} />
-          </View>
         </View>
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
         {queuedCount > 0 && (
@@ -652,15 +640,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
             placeholderTextColor={colors.textFaint}
             multiline
           />
-          <Pressable
-            style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
-            onPress={send}
-            disabled={!canSend}
-            accessibilityRole="button"
-            accessibilityLabel={isRunning ? 'Queue' : 'Send'}
-          >
-            <Ionicons name="arrow-up" size={16} color="#fff" />
-          </Pressable>
+          {/* Attach lives inside the bubble, left of the primary button. */}
+          <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
+          <SendMicButton
+            canSend={canSend}
+            isRunning={isRunning}
+            dictation={dictation}
+            onSend={send}
+            onStopTurn={stop}
+          />
         </View>
       </View>
     </KeyboardAvoidingView>
