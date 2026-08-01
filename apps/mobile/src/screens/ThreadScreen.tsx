@@ -742,7 +742,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
 // ─── Item renderers ────────────────────────────────────────────
 
-const TextItem = memo(function TextItem({ item }: { item: Extract<FeedItem, { kind: 'text' }> }) {
+export const TextItem = memo(function TextItem({ item }: { item: Extract<FeedItem, { kind: 'text' }> }) {
   const [expanded, setExpanded] = useState(false)
 
   if (item.stream === 'reasoning') {
@@ -776,7 +776,7 @@ const TextItem = memo(function TextItem({ item }: { item: Extract<FeedItem, { ki
   )
 })
 
-const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedItem, { kind: 'tool' }> }) {
+export const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedItem, { kind: 'tool' }> }) {
   const [expanded, setExpanded] = useState(false)
   const summary = useMemo(() => summarizeTool(item.toolName, item.input), [item.toolName, item.input])
   const icon = useMemo(() => toolIcon(item.toolName), [item.toolName])

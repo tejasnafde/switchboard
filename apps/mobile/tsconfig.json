@@ -6,7 +6,10 @@
       "@shared/*": [
         "../../src/shared/*"
       ]
-    }
+    },
+    "types": [
+      "jest"
+    ]
   },
   "include": [
     "index.ts",

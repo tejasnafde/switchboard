@@ -4,6 +4,7 @@ import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@r
 import * as Notifications from 'expo-notifications'
 import { usePushStore } from './src/stores/push'
 import { threadRouteFromPush, type ThreadRoute } from './src/lib/pushRoute'
+import DevGalleryScreen from './src/screens/DevGalleryScreen'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
@@ -35,6 +36,7 @@ export type RootStackParamList = {
   Conversations: { connectionId: string; projectPath: string; projectName: string }
   Thread: { connectionId: string; threadId: string; title: string; projectPath: string; isNew?: boolean }
   NewSession: { connectionId: string; projectPath: string; projectName: string }
+  DevGallery: undefined
 }
 
 const Stack = createNativeStackNavigator<RootStackParamList>()
@@ -173,6 +175,13 @@ export default function App() {
             component={NewSessionScreen}
             options={{ title: 'New session', presentation: 'modal' }}
           />
+          {__DEV__ && (
+            <Stack.Screen
+              name="DevGallery"
+              component={DevGalleryScreen}
+              options={{ title: 'Component gallery' }}
+            />
+          )}
         </Stack.Navigator>
       </NavigationContainer>
       <UpdateBanner />
