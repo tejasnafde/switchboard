@@ -96,12 +96,12 @@ export const useConnectionsStore = create<ConnectionsState>()(
       addConnection: (config) => {
         // The in-memory config keeps the token so a connect() on the next line
         // works; only the persisted copy is stripped.
-        void saveConnectionToken(config.id, config.token)
+        void rememberToken(config.id, config.token)
         set((s) => ({ configs: [...s.configs, config] }))
       },
 
       updateConnection: (id, patch) => {
-        if ('token' in patch) void saveConnectionToken(id, patch.token)
+        if ('token' in patch) void rememberToken(id, patch.token)
         set((s) => ({
           configs: s.configs.map((c) => (c.id === id ? ({ ...c, ...patch } as ConnectionConfig) : c)),
         }))
@@ -212,8 +212,15 @@ export const useConnectionsStore = create<ConnectionsState>()(
       storage: createJSONStorage(() => AsyncStorage),
       // Tokens are deliberately absent from the persisted shape - they live in
       // the keystore and are merged back in by the rehydration below.
+      //
+      // Except where the keystore refused the write. Stripping those would
+      // leave the token in neither store, and the next launch would dial with
+      // nothing and be told 4001. A token in local storage is worse than one in
+      // the keystore; a token nowhere is worse than both.
       partialize: (s) => ({
-        configs: s.configs.map(({ token: _token, ...rest }) => rest) as ConnectionConfig[],
+        configs: s.configs.map((c) =>
+          keystoreFailures.has(c.id) ? c : ({ ...c, token: undefined } as ConnectionConfig),
+        ),
       }),
       onRehydrateStorage: () => (state) => {
         if (!state) {
@@ -225,6 +232,21 @@ export const useConnectionsStore = create<ConnectionsState>()(
     },
   ),
 )
+
+/**
+ * Connections whose token the keystore refused. Their tokens stay in the
+ * persisted blob, because the alternative is losing them entirely.
+ */
+const keystoreFailures = new Set<string>()
+
+/**
+ * Write a token to the keystore, and remember if that failed so `partialize`
+ * keeps the persisted copy instead of stripping the only remaining one.
+ */
+async function rememberToken(id: string, token: string | undefined): Promise<void> {
+  if (await saveConnectionToken(id, token)) keystoreFailures.delete(id)
+  else keystoreFailures.add(id)
+}
 
 let resolveSecrets: () => void = () => undefined
 /**
@@ -243,7 +265,8 @@ export const secretsReady = new Promise<void>((resolve) => {
  */
 async function hydrateTokens(configs: ConnectionConfig[]): Promise<void> {
   try {
-    await migrateTokensToKeystore(configs)
+    const { failed } = await migrateTokensToKeystore(configs)
+    for (const id of failed) keystoreFailures.add(id)
     const loaded = await Promise.all(
       configs.map(async (config) => ({
         id: config.id,
@@ -252,7 +275,13 @@ async function hydrateTokens(configs: ConnectionConfig[]): Promise<void> {
     )
     const byId = new Map(loaded.map((entry) => [entry.id, entry.token]))
     useConnectionsStore.setState((s) => ({
-      configs: s.configs.map((c) => ({ ...c, token: byId.get(c.id) }) as ConnectionConfig),
+      // Merge on presence, not value. Pairing runs on another screen and is not
+      // gated on this, so a connection added during the keystore reads is
+      // absent from `byId` - assigning its `get` result would wipe the token
+      // the user just scanned.
+      configs: s.configs.map((c) =>
+        byId.has(c.id) ? ({ ...c, token: byId.get(c.id) } as ConnectionConfig) : c,
+      ),
     }))
     // Rewriting state re-persists through partialize, which is what drops the
     // tokens a legacy blob was carrying.
@@ -268,6 +297,17 @@ async function hydrateTokens(configs: ConnectionConfig[]): Promise<void> {
  * stares at a live-looking screen backed by a dead connection until something
  * times out. Returns a teardown for symmetry with other listeners.
  */
+/**
+ * Callbacks to run when the app returns to the foreground, for state that
+ * cannot survive suspension on its own. Screens register while mounted.
+ */
+const onForeground = new Set<() => void>()
+
+export function onAppForeground(fn: () => void): () => void {
+  onForeground.add(fn)
+  return () => onForeground.delete(fn)
+}
+
 export function installLifecycleReconnect(): () => void {
   let backgroundedAt: number | null = AppState.currentState === 'background' ? Date.now() : null
   const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
@@ -278,6 +318,11 @@ export function installLifecycleReconnect(): () => void {
     if (next !== 'active') return
     const action = foregroundAction(backgroundedAt, Date.now())
     backgroundedAt = null
+    // JS timers are suspended while backgrounded, so the open thread's viewing
+    // lease has expired if the absence outlasted its TTL. Renewing here closes
+    // the window in which the user is notified about the screen they are
+    // looking at; ThreadScreen's own interval only covers a foregrounded app.
+    onForeground.forEach((fn) => fn())
     for (const [id, client] of clients) {
       const { transport } = client
       if (transport.forceReconnect || transport.probe) {

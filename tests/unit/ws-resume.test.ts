@@ -122,8 +122,38 @@ describe('event resume', () => {
     expect(seen).toContain(7)
   })
 
+  // The server broadcasts to a newly accepted socket before it gets round to
+  // that socket's `hello`. If the client applied that live event first it would
+  // advance its cursor past the replay, and every replayed frame would then be
+  // discarded as a duplicate - losing exactly what this mechanism recovers,
+  // while the server logged a successful resume.
+  it('does not lose the replay when a live event arrives during the handshake', async () => {
+    const { host, url } = await setup()
+    const seen: number[] = []
+    client = new WsTransport(url)
+    client.on('provider:event', (n) => seen.push(n as number))
+    await client.invoke('__ready__').catch(() => {})
+
+    host.emit('provider:event', 1)
+    await settle()
+    dropClients()
+    host.emit('provider:event', 2)
+    host.emit('provider:event', 3)
+
+    // Fire a live event on every new connection, so one lands ahead of the
+    // replay the reconnect is about to request.
+    wss!.on('connection', () => host.emit('provider:event', 99))
+
+    await settle(1_200)
+    expect(seen).toEqual([1, 2, 3, 99])
+  })
+
   it('terminal output is excluded from the sequence space so it cannot evict provider events', async () => {
-    expect(isReplayableEventChannel('terminal:data')).toBe(false)
+    // terminal:data is the CLIENT-to-server keystroke channel and never travels
+    // as an evt, so naming it here excluded nothing while pty output - which is
+    // terminal:output - poured into the buffer and evicted provider events.
+    expect(isReplayableEventChannel('terminal:output')).toBe(false)
+    expect(isReplayableEventChannel('terminal:exit')).toBe(false)
     expect(isReplayableEventChannel('provider:event')).toBe(true)
 
     const { host, url } = await setup()
@@ -137,12 +167,12 @@ describe('event resume', () => {
       const f = decodeFrame(String(ev.data))
       if (f?.k === 'evt') frames.push({ ch: f.ch, seq: f.seq })
     })
-    host.emit('terminal:data', 'noise')
+    host.emit('terminal:output', 'noise')
     host.emit('provider:event', 'signal')
     await settle()
     raw.close()
 
-    expect(frames.find((f) => f.ch === 'terminal:data')?.seq).toBeUndefined()
+    expect(frames.find((f) => f.ch === 'terminal:output')?.seq).toBeUndefined()
     expect(frames.find((f) => f.ch === 'provider:event')?.seq).toBe(1)
   })
 })

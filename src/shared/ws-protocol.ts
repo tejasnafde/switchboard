@@ -18,12 +18,24 @@
  *    "start over".
  */
 
-/** Channels excluded from the replay buffer.
+/**
+ * Channels excluded from the replay buffer.
  *
- *  Terminal output is high-volume and self-healing: a reattach re-seeds from
- *  the pty's own scrollback, so buffering it would evict the provider events
- *  that genuinely cannot be recovered any other way. */
-export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set(['terminal:data'])
+ * Terminal output is high-volume and self-healing: a reattach re-seeds from the
+ * pty's own scrollback, so buffering it would evict the provider events that
+ * genuinely cannot be recovered any other way, and replaying it would paint
+ * output into xterm that the user has already seen.
+ *
+ * These are the SERVER-TO-CLIENT channel names (`TerminalChannels.OUTPUT` /
+ * `.EXIT`), which are the only ones that ever travel as `evt`. Naming
+ * `terminal:data` here was a real bug: that is the client-to-server keystroke
+ * channel and it is sent as `snd`, so the list excluded something that never
+ * reaches the buffer while pty output poured into it.
+ */
+export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set([
+  'terminal:output',
+  'terminal:exit',
+])
 
 export function isReplayableEventChannel(channel: string): boolean {
   return !NON_REPLAYABLE_EVENT_CHANNELS.has(channel)

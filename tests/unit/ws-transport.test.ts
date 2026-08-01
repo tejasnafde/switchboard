@@ -346,6 +346,34 @@ describe('WsTransport (fake socket)', () => {
     expect(FakeSocket.instances).toHaveLength(1)
   })
 
+  // A phone updates over OTA while the desktop it pairs with updates by hand,
+  // so a new client against a pre-heartbeat backend is a routine state. Acting
+  // on that backend's silence tore the connection down every 40s, forever.
+  it('does not tear down an idle socket to a backend that never pings', async () => {
+    vi.useFakeTimers()
+    const { t } = makeOpenTransport()
+    await vi.advanceTimersByTimeAsync(120_000)
+    expect(FakeSocket.instances).toHaveLength(1)
+    t.close()
+  })
+
+  it('arms the silence watchdog once the backend proves it speaks the heartbeat', async () => {
+    vi.useFakeTimers()
+    const { t, sock } = makeOpenTransport()
+    sock.fire('message', { data: JSON.stringify({ k: 'ping', t: 1 }) })
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(FakeSocket.instances.length).toBeGreaterThan(1)
+    t.close()
+  })
+
+  it('answers a ping with a pong so the backend does not presume it dead', () => {
+    const { t, sock } = makeOpenTransport()
+    sock.fire('message', { data: JSON.stringify({ k: 'ping', t: 7 }) })
+    const pong = sock.sent.map((x) => JSON.parse(x)).find((f) => f.k === 'pong')
+    expect(pong).toEqual({ k: 'pong', t: 7 })
+    t.close()
+  })
+
   it('drops send() after a deliberate close instead of queuing it into the outbox', () => {
     const { t, sock } = makeOpenTransport()
     t.close()

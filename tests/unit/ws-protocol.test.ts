@@ -76,7 +76,11 @@ describe('decodeFrame', () => {
 
 describe('isReplayableEventChannel', () => {
   it('excludes terminal output, which is high-volume and re-seeded on reattach', () => {
-    expect(isReplayableEventChannel('terminal:data')).toBe(false)
+    // The SERVER-to-client names. `terminal:data` is the client-to-server
+    // keystroke channel and travels as `snd`, so listing it excluded nothing
+    // while pty output filled the buffer and evicted provider events.
+    expect(isReplayableEventChannel('terminal:output')).toBe(false)
+    expect(isReplayableEventChannel('terminal:exit')).toBe(false)
   })
 
   it('includes provider events, which cannot be recovered any other way', () => {

@@ -35,7 +35,7 @@ import type { RootStackParamList } from '../../App'
 import { colors, radius, space, type } from '../theme'
 import { Markdown } from '../components/Markdown'
 import { summarizeTool, toolIcon } from '../lib/toolSummary'
-import { getClient, useConnectionsStore } from '../stores/connections'
+import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { markOwnTurn, useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
@@ -162,16 +162,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
       // The claim is a lease on the backend, so it has to be renewed while the
       // screen stays open. Without this a thread left open for a few minutes
       // starts pushing notifications about itself.
-      const renew = setInterval(
-        () => usePushStore.getState().reportViewing(connectionId, threadId),
-        VIEWING_RENEW_MS,
-      )
+      const report = (): void => usePushStore.getState().reportViewing(connectionId, threadId)
+      const renew = setInterval(report, VIEWING_RENEW_MS)
+      // The interval does not run while the app is suspended, so a long
+      // background leaves the lease expired and the user gets notified about
+      // the thread already on their screen.
+      const unsubForeground = onAppForeground(report)
       // Read state is the backend's, so the Mac's badge clears from here too.
       getClient(connectionId)
         ?.markRead(threadId)
         .catch((err) => log.warn('markRead failed', err))
       return () => {
         clearInterval(renew)
+        unsubForeground()
         useChatStore.getState().setActive(null)
         usePushStore.getState().reportViewing(connectionId, null)
         // On the way out, not per keystroke - persist writes to AsyncStorage.
@@ -199,11 +202,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // A re-seed request has to defeat the once-per-mount guard, or a feed that
   // lost events while the phone was away stays holed until the app restarts.
   const staleGeneration = useChatStore((s) => s.staleGeneration)
+  const mountGenerationRef = useRef(staleGeneration)
+  // True once this backend has reported that it could not replay what we
+  // missed, so the cached feed was dropped.
+  const invalidated = staleGeneration !== mountGenerationRef.current
   useEffect(() => {
     startedKeyRef.current = null
   }, [staleGeneration])
   useEffect(() => {
-    if (isNew || startedKeyRef.current === key) return
+    // `isNew` skips the seed because NewSessionScreen already started the
+    // session, but it is a route param that never changes. Honouring it after
+    // an invalidation left a phone-started thread wiped and never refilled,
+    // for the life of the process, including across navigating away and back.
+    if ((isNew && !invalidated) || startedKeyRef.current === key) return
     startedKeyRef.current = key
     const client = getClient(connectionId)
     if (!client) {
@@ -247,7 +258,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         reportError(err)
       }
     })()
-  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration])
+  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated])
 
   // Restore the user's last choices, pushing the mode to the backend too so the
   // adapter and the chip agree.

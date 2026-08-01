@@ -137,6 +137,15 @@ export class WsTransport implements Transport {
    *  the listener never sees a newer event before an older one. */
   private resumeHold: Array<Extract<WsFrame, { k: 'evt' }>> | null = null
   private lastFrameAt = 0
+  /**
+   * Set once the backend proves it speaks the heartbeat, by sending a `ping` or
+   * a `ready`. Until then the liveness checks stay disarmed, because an older
+   * backend's silence is normal rather than fatal.
+   */
+  private peerSendsHeartbeat = false
+  /** The socket already routed through onSocketDead. forceReconnect drives that
+   *  path by hand, and the real 'close' event then arrives for the same socket. */
+  private deadSocket: WebSocket | null = null
   private readonly watchdog: ReturnType<typeof setInterval>
 
   private reconnecting = false
@@ -174,6 +183,12 @@ export class WsTransport implements Transport {
    */
   private checkSilence(): void {
     if (this.closed || !this.open) return
+    // Silence only means death if the peer would otherwise be talking. A
+    // backend from before the heartbeat existed never pings, so arming this
+    // against one would tear down a perfectly good idle connection every 40s
+    // forever. The phone updates over OTA while the desktop it pairs with
+    // updates by hand, so that skew is a normal state, not an edge case.
+    if (!this.peerSendsHeartbeat) return
     if (Date.now() - this.lastFrameAt < SILENCE_LIMIT_MS) return
     log.warn('no frames for', `${SILENCE_LIMIT_MS}ms - treating socket as dead`, this.url)
     this.forceReconnect()
@@ -192,7 +207,10 @@ export class WsTransport implements Transport {
       log.warn('forceReconnect on an already-dead socket', err)
     }
     // `close()` on a half-open socket can hang without ever firing 'close', so
-    // drive the dead path directly rather than waiting for an event.
+    // drive the dead path directly rather than waiting for an event. The
+    // socket's own 'close' may still arrive afterwards; onSocketDead is guarded
+    // against running twice for one socket, or redialCount - a diagnostic that
+    // has already cost a long debugging session once - would count double.
     this.onSocketDead(this.ws, null)
   }
 
@@ -202,6 +220,9 @@ export class WsTransport implements Transport {
    */
   probe(timeoutMs = 3_000): void {
     if (this.closed || !this.open) return
+    // An older backend does not answer a ping, so acting on the silence would
+    // reconnect on every foreground rather than only on a dead socket.
+    if (!this.peerSendsHeartbeat) return
     const before = this.lastFrameAt
     this.rawSend(encodeFrame({ k: 'ping', t: Date.now() }))
     setTimeout(() => {
@@ -240,7 +261,10 @@ export class WsTransport implements Transport {
       // Hold live events until the replay lands, so a resumed client does not
       // see turn N+1 before the turn N it missed while disconnected.
       this.resumeHold = []
-      sock.send(encodeFrame({ k: 'hello', since: this.lastSeq, epoch: this.epoch ?? undefined }))
+      // Guarded: a socket that dies between 'open' and here would otherwise
+      // throw out of the listener, skipping onStateChange and the outbox flush
+      // below and leaving the UI on "connecting" with this.open already true.
+      this.rawSend(encodeFrame({ k: 'hello', since: this.lastSeq, epoch: this.epoch ?? undefined }))
       this.onStateChange?.('connected')
       for (const frame of this.outbox.splice(0)) {
         sock.send(frame.encoded)
@@ -271,7 +295,8 @@ export class WsTransport implements Transport {
   }
 
   private onSocketDead(sock: WebSocket, code: number | null): void {
-    if (sock !== this.ws || this.closed) return
+    if (sock !== this.ws || this.closed || sock === this.deadSocket) return
+    this.deadSocket = sock
     this.open = false
     this.resumeHold = null
     // In-flight invokes are genuinely lost - their responses died with the
@@ -376,11 +401,13 @@ export class WsTransport implements Transport {
       return
     }
     if (frame.k === 'ping') {
+      this.peerSendsHeartbeat = true
       this.rawSend(encodeFrame({ k: 'pong', t: frame.t }))
       return
     }
     if (frame.k === 'pong') return
     if (frame.k === 'ready') {
+      this.peerSendsHeartbeat = true
       this.onReady(frame)
       return
     }
@@ -409,10 +436,14 @@ export class WsTransport implements Transport {
       this.onResumeGap?.()
       return
     }
-    // Replayed frames were delivered ahead of this marker and have already
-    // advanced lastSeq. Release anything live that arrived while we waited.
+    // Everything sequenced since the socket opened waited for this marker:
+    // replayed frames, and any live event the server broadcast before it got
+    // round to our `hello`. Sort by sequence rather than trusting arrival
+    // order, because that live event can land FIRST and would otherwise
+    // advance lastSeq past the replay and drop all of it.
     const held = this.resumeHold ?? []
     this.resumeHold = null
+    held.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
     for (const evt of held) this.applyEvent(evt)
   }
 

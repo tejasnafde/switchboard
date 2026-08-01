@@ -134,7 +134,14 @@ export function groupByClientRef(devices: PushDevice[]): Map<string | undefined,
  * only a token-cleanup hint, and losing the queue on restart costs one more
  * failed send rather than anything a user notices.
  */
-const pending: PendingReceipt[] = []
+const pending: Array<PendingReceipt & { queuedAt: number }> = []
+
+/**
+ * Give up on a ticket after this long. Expo discards receipts after about a
+ * day, so an id that never resolved by then never will, and re-queueing it
+ * forever grows the queue and every subsequent request without limit.
+ */
+export const RECEIPT_MAX_AGE_MS = 24 * 60 * 60_000
 
 /**
  * Expo asks senders to wait before reading receipts, since a receipt does not
@@ -160,7 +167,10 @@ async function sweepReceipts(): Promise<void> {
   // An id Expo had no answer for yet goes back in the queue rather than being
   // dropped, or its verdict would be lost for good.
   const resolved = new Set(resolvedIds)
-  pending.push(...batch.filter((entry) => !resolved.has(entry.id)))
+  const cutoff = Date.now() - RECEIPT_MAX_AGE_MS
+  const expired = batch.filter((entry) => !resolved.has(entry.id) && entry.queuedAt <= cutoff)
+  if (expired.length > 0) log.info(`gave up on ${expired.length} receipt(s) Expo never resolved`)
+  pending.push(...batch.filter((entry) => !resolved.has(entry.id) && entry.queuedAt > cutoff))
 }
 
 /**
@@ -191,7 +201,8 @@ export function attachPushNotifier(bus: RuntimeEventBus): () => void {
         // The ticket only says Expo accepted the message. The delivery verdict
         // arrives on the receipt minutes later, which is where
         // DeviceNotRegistered usually shows up.
-        pending.push(...pendingReceipts)
+        const queuedAt = Date.now()
+        pending.push(...pendingReceipts.map((entry) => ({ ...entry, queuedAt })))
       })
     }
   }

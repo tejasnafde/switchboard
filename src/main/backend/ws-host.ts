@@ -25,11 +25,18 @@ const log = createLogger('backend:ws-host')
  * Largest single frame a client may send.
  *
  * `ws` defaults to 100 MB, which on a listener bound to every interface lets
- * one connection pin memory before any of our code sees the frame. Nothing
- * legitimate comes close: the biggest frames are pasted images, already bounded
- * well below this by the chat path.
+ * one connection pin memory before any of our code sees the frame.
+ *
+ * 64 MB rather than something tighter because the DESKTOP composer has no
+ * total-turn bound: `ChatInput` caps a single image at 20 MB raw, which is
+ * ~27 MB once base64'd, and allows several per turn. Over a remote WsHost a
+ * frame past the cap is closed with 1009, which the user sees as a reconnect
+ * and a lost turn with no explanation. The mobile client is not the problem
+ * here - it already bounds a turn at 12 MB (`lib/images.ts`). Giving the
+ * desktop the same wire budget is the real fix; until then this stays generous
+ * enough not to break a normal paste.
  */
-export const MAX_FRAME_BYTES = 16 * 1024 * 1024
+export const MAX_FRAME_BYTES = 64 * 1024 * 1024
 
 /** Ping cadence. Short enough that a dead phone socket is noticed while the
  *  user is still looking at the screen, long enough to be free on a radio. */
@@ -47,6 +54,14 @@ function tokenMatches(expected: string, presented: string | null): boolean {
 
 interface ClientState {
   missedPings: number
+  /**
+   * Set once this client has answered a ping. Until it has, missed pings are
+   * not acted on: a client from before the heartbeat existed never sends
+   * `pong`, and terminating it after 30s would break a working connection.
+   * A phone updates over OTA independently of the desktop it pairs with, so
+   * that skew is routine.
+   */
+  sawPong: boolean
 }
 
 export class WsHost implements BackendHost {
@@ -82,7 +97,7 @@ export class WsHost implements BackendHost {
           return
         }
       }
-      this.clients.set(socket, { missedPings: 0 })
+      this.clients.set(socket, { missedPings: 0, sawPong: false })
       log.info(`client connected (${this.clients.size} total)`)
       socket.on('message', (data) => this.onMessage(socket, data.toString()))
       socket.on('close', () => {
@@ -106,7 +121,7 @@ export class WsHost implements BackendHost {
     const frame = encodeFrame({ k: 'ping', t: Date.now() })
     for (const [socket, state] of this.clients) {
       if (socket.readyState !== socket.OPEN) continue
-      if (state.missedPings >= HEARTBEAT_MISS_LIMIT) {
+      if (state.sawPong && state.missedPings >= HEARTBEAT_MISS_LIMIT) {
         log.warn('client missed heartbeats, terminating socket')
         this.clients.delete(socket)
         socket.terminate()
@@ -142,7 +157,10 @@ export class WsHost implements BackendHost {
       this.onHello(socket, frame)
     } else if (frame.k === 'pong') {
       const state = this.clients.get(socket)
-      if (state) state.missedPings = 0
+      if (state) {
+        state.missedPings = 0
+        state.sawPong = true
+      }
     } else if (frame.k === 'ping') {
       this.reply(socket, { k: 'pong', t: frame.t })
     }
@@ -154,23 +172,36 @@ export class WsHost implements BackendHost {
    * than assuming the replay was complete.
    */
   private onHello(socket: WebSocket, frame: Extract<WsFrame, { k: 'hello' }>): void {
+    const requested = frame.since ?? 0
     const sameEpoch = frame.epoch === this.epoch
-    const cursor = sameEpoch ? (frame.since ?? 0) : 0
     // A cursor from another process indexes a sequence space that no longer
     // exists, so replaying against it would deliver the wrong events entirely.
-    const result = sameEpoch && cursor > 0 ? this.replay.since(cursor) : { frames: [], gap: cursor > 0 }
+    // `requested`, not the zeroed cursor: a cross-epoch client HAS lost events,
+    // and reporting otherwise would let it stitch a broken transcript.
+    const result = sameEpoch && requested > 0 ? this.replay.since(requested) : { frames: [], gap: requested > 0 }
+    // Replay BEFORE the ready marker. The client holds live frames only until
+    // ready lands, so anything sent after it is applied out of order and then
+    // swallowed by the duplicate guard - which silently loses exactly the
+    // events this mechanism exists to recover.
+    //
+    // Nothing is sent on a gap: the client discards its cursor and re-seeds, so
+    // shipping up to the whole buffer would be pure waste on a metered link.
+    if (!result.gap) {
+      for (const encoded of result.frames) {
+        if (socket.readyState === socket.OPEN) socket.send(encoded)
+      }
+    }
     this.reply(socket, {
       k: 'ready',
       epoch: this.epoch,
       seq: this.seq,
-      replayed: result.frames.length,
+      replayed: result.gap ? 0 : result.frames.length,
       gap: result.gap,
     })
-    for (const encoded of result.frames) {
-      if (socket.readyState === socket.OPEN) socket.send(encoded)
-    }
     if (result.frames.length > 0 || result.gap) {
-      log.info(`client resumed from ${cursor}: replayed ${result.frames.length}${result.gap ? ' (gap)' : ''}`)
+      log.info(
+        `client resumed from ${requested}: ${result.gap ? 'gap, told to re-seed' : `replayed ${result.frames.length}`}`,
+      )
     }
   }
 
