@@ -15,7 +15,7 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', msg)
 })
 
-import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, protocol, net, screen } from 'electron'
+import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
 import { join, basename } from 'path'
 import { registerTerminalHandlers, shutdownTerminals } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
@@ -608,7 +608,11 @@ app.whenReady().then(() => {
 
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
-  detachPush = attachPushNotifier(providerRegistry.bus)
+  detachPush = attachPushNotifier(providerRegistry.bus, {
+    // OS-level idle, so it is true whatever window is in front. The headless
+    // server passes nothing and therefore never suppresses.
+    idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
+  })
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token
@@ -639,7 +643,11 @@ app.whenReady().then(() => {
       // New registry means a new bus. Without re-attaching, notifications stop
       // after the window has been closed and reopened once.
       detachPush?.()
-      detachPush = attachPushNotifier(providerRegistry.bus)
+      detachPush = attachPushNotifier(providerRegistry.bus, {
+    // OS-level idle, so it is true whatever window is in front. The headless
+    // server passes nothing and therefore never suppresses.
+    idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
+  })
       providerRegistry.registerIpcHandlers()
     }
   })

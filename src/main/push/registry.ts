@@ -17,12 +17,19 @@ import type { RuntimeEvent } from '@shared/provider-events'
 import { getSetting, setSetting, getConversationById } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
 import { createMainLogger } from '../logger'
+import { isUserPresent, type PresenceProbe } from '@shared/push-presence'
 import { fetchReceipts, sendPush, type PendingReceipt } from './expo-push'
 
 const log = createMainLogger('push:registry')
 
 const SETTING_KEY = 'pushTokens'
 const ENABLED_KEY = 'pushEnabled'
+/** Suppress push while the user is demonstrably at this machine. Default on. */
+const WHILE_ACTIVE_KEY = 'pushWhileActive'
+
+export function pushWhileActive(): boolean {
+  return getSetting(WHILE_ACTIVE_KEY) === 'true'
+}
 
 export interface PushDevice {
   token: string
@@ -165,9 +172,13 @@ async function sweepReceipts(): Promise<void> {
  * Subscribe to the event bus and notify registered devices. Returns an
  * unsubscribe function.
  */
-export function attachPushNotifier(bus: RuntimeEventBus): () => void {
+export function attachPushNotifier(bus: RuntimeEventBus, presence: PresenceProbe | null = null): () => void {
   const onEvent = (event: RuntimeEvent): void => {
     if (!pushEnabled()) return
+    // At the machine, so the phone in your pocket has nothing to tell you that
+    // the screen in front of you is not already showing. Covers every thread,
+    // not just the focused one, and does not care which window has focus.
+    if (!pushWhileActive() && isUserPresent(presence)) return
     const devices = listDevices()
     if (devices.length === 0) return
 

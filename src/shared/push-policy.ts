@@ -4,6 +4,7 @@
  * Pure and shared so the rule is one implementation and can be tested without a
  * device or a network. The backend decides - the phone is asleep and cannot.
  */
+import { fmtDuration } from './format'
 import type { RuntimeEvent } from './provider-events'
 
 export interface PushMessage {
@@ -74,12 +75,17 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
     }
 
     case 'turn.completed':
+      // What you want off a lock screen is "which chat, and is it worth walking
+      // back to" - so the conversation title (already the heading) and how long
+      // it took. The cost was the wrong number: it is the one thing that cannot
+      // tell you whether to look, and it turned every turn into a billing
+      // notice. It is still on the turn in the app.
       return {
         title,
         body: clampBody(
-          event.costUsd != null && event.costUsd > 0
-            ? `Turn finished - $${event.costUsd.toFixed(2)}`
-            : 'Turn finished',
+          event.durationMs != null && event.durationMs > 0
+            ? `Done in ${fmtDuration(event.durationMs)}`
+            : 'Done',
         ),
         data: { threadId, kind: 'done' },
       }

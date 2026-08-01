@@ -37,13 +37,12 @@ describe('pushForEvent', () => {
     expect(msg?.data.kind).toBe('question')
   })
 
-  it('notifies when a turn finishes, with the cost when there is one', () => {
+  it('notifies when a turn finishes, saying how long it took rather than what it cost', () => {
     expect(
-      pushForEvent({ type: 'turn.completed', threadId: T, costUsd: 0.42 } as RuntimeEvent, {})?.body,
-    ).toBe('Turn finished - $0.42')
-    expect(pushForEvent({ type: 'turn.completed', threadId: T } as RuntimeEvent, {})?.body).toBe(
-      'Turn finished',
-    )
+      pushForEvent({ type: 'turn.completed', threadId: T, costUsd: 0.42, durationMs: 65_000 } as RuntimeEvent, {})?.body,
+    ).toBe('Done in 1m 5s')
+    // No duration reported (a legacy adapter path) still says something useful.
+    expect(pushForEvent({ type: 'turn.completed', threadId: T } as RuntimeEvent, {})?.body).toBe('Done')
   })
 
   it('notifies on an error', () => {
