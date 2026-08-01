@@ -30,6 +30,8 @@ export type MobileEndpointStatus = MobilePairingStatus
 
 export class MobileEndpoint implements BackendHost {
   /** Registrations recorded for replay onto each (re)started inner host. */
+  /** Token the live listener was built with, to detect a real config change. */
+  private activeToken: string | null = null
   private readonly handlerRegs: Array<[string, (...args: unknown[]) => unknown]> = []
   private readonly listenerRegs: Array<[string, (...args: unknown[]) => void]> = []
   private inner: WsHost | null = null
@@ -56,10 +58,26 @@ export class MobileEndpoint implements BackendHost {
 
   /**
    * Start or restart the listener from the CURRENT settings. Safe to call any
-   * time (Settings save, app start); existing phone connections are dropped
-   * and re-dial, which their transports handle.
+   * time (Settings save, app start).
+   *
+   * A restart TERMINATES every connected phone, so it must only happen when
+   * something actually changed. The Settings tab re-applies on every edit to
+   * host, port or token, and typing in one of those fields was kicking a
+   * connected phone off once per keystroke - it reconnected, got killed by the
+   * next apply, and sat on "connecting" forever.
    */
   apply(): MobileEndpointStatus {
+    const desiredToken = getSetting(TOKEN_KEY)
+    const desiredPort = Number(getSetting(PORT_KEY) ?? DEFAULT_PORT) || DEFAULT_PORT
+    if (
+      this.wss !== null &&
+      this.state.listening &&
+      this.activeToken === desiredToken &&
+      this.state.port === desiredPort
+    ) {
+      return this.state
+    }
+
     this.close()
 
     const token = getSetting(TOKEN_KEY)
@@ -95,6 +113,7 @@ export class MobileEndpoint implements BackendHost {
 
     this.wss = wss
     this.inner = inner
+    this.activeToken = token
     // Optimistic until the 'listening'/'error' event lands - callers polling
     // status() right after apply() see the port they asked for.
     this.state = { listening: true, port, reason: null }
@@ -106,6 +125,7 @@ export class MobileEndpoint implements BackendHost {
     if (!wss) return
     this.wss = null
     this.inner = null
+    this.activeToken = null
     this.state = { listening: false, port: null, reason: 'stopped' }
     try {
       for (const client of wss.clients) client.terminate()
