@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
+import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX } from './rotationMarker'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
@@ -126,6 +127,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   const folderName = projectPath?.split('/').pop() ?? ''
   const runtimeMode = activeSession?.runtimeMode ?? 'sandbox'
   const model = activeSession?.model
+  const resolvedModel = activeSession?.resolvedModel
   const reasoningEffort = activeSession?.reasoningEffort
   const instanceId = activeSession?.instanceId
 
@@ -435,6 +437,23 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           // here. Push it onto the session so StatusBar can display it.
           if (typeof event.costUsd === 'number') {
             useAgentStore.getState().setCostUsd(tid, event.costUsd)
+          }
+          // Lets the picker name the model instead of showing "Default".
+          if (event.model) {
+            useAgentStore.getState().setResolvedModel(tid, event.model)
+          }
+          break
+        }
+        case 'spend.blocked': {
+          // ChatInput warns on this pair before the next send.
+          if (event.model) {
+            useSpendBlockStore.getState().record({
+              instanceId: event.instanceId,
+              model: event.model,
+              reason: event.reason,
+              scope: event.scope,
+              resetsAtMs: event.resetsAtMs,
+            })
           }
           break
         }
@@ -1260,6 +1279,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         runtimeMode={runtimeMode}
         onRuntimeModeChange={handleRuntimeModeChange}
         model={model}
+        resolvedModel={resolvedModel}
         onModelChange={handleModelChange}
         reasoningEffort={reasoningEffort}
         onReasoningEffortChange={handleReasoningEffortChange}

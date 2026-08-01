@@ -92,7 +92,7 @@ export class JsonlParser {
         // Skip assistant messages with no visible content (e.g., thinking-only)
         if (!content && toolCalls.length === 0) return null
         return {
-          id: (event.id as string) ?? generateId(),
+          id: stableId(event),
           role: 'assistant',
           content,
           toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -108,7 +108,7 @@ export class JsonlParser {
         // historical image-only user messages reappear after reload.
         if (!content && images.length === 0 && hasOnlyToolResults(event.message)) return null
         return {
-          id: (event.id as string) ?? generateId(),
+          id: stableId(event),
           role: 'user',
           content,
           images: images.length > 0 ? images : undefined,
@@ -118,7 +118,7 @@ export class JsonlParser {
 
       case 'result': {
         return {
-          id: generateId(),
+          id: stableId(event),
           role: 'assistant',
           content: (event.result as string) ?? '',
           timestamp: ts,
@@ -211,6 +211,25 @@ function extractToolCalls(message: unknown): ToolCall[] {
 let idCounter = 0
 function generateId(): string {
   return `msg_${Date.now()}_${++idCounter}`
+}
+
+/**
+ * Stable message id, taken from the JSONL line itself. MUST survive a re-parse
+ * AND a file copy: rotating profile copies the session JSONL into the new
+ * oauth_dir, and `load-by-id` unions it from every profile dir and dedupes by
+ * id, so a synthesized id showed every message once per profile.
+ *
+ * `uuid`, NOT `message.id`: one assistant `message.id` spans a JSONL line per
+ * content block, so keying on that would merge a turn's text, thinking and
+ * tool_use into one message and drop content.
+ */
+function stableId(event: Record<string, unknown>): string {
+  const uuid = event.uuid
+  if (typeof uuid === 'string' && uuid.length > 0) return uuid
+  // Claude Code JSONL has no top-level `id`; kept for other writers.
+  const id = event.id
+  if (typeof id === 'string' && id.length > 0) return id
+  return generateId()
 }
 
 // ─── Codex event schema normalization ──────────────────────────

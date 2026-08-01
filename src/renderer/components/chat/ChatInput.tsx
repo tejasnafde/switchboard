@@ -11,10 +11,12 @@ import {
   type ModelOption,
   type ReasoningEffort,
 } from '@shared/models'
-import { type AgentType, type ProviderSkill } from '@shared/types'
+import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
 import { UnifiedProviderPicker } from './UnifiedProviderPicker'
 import { useSkillStore } from '../../stores/skill-store'
+import { useSpendBlockStore } from '../../stores/spend-block-store'
+import { describeSpendBlock, findSpendBlock } from '@shared/spend-block'
 import { SlashCommandMenu } from './SlashCommandMenu'
 import {
   detectSlashTrigger,
@@ -66,6 +68,8 @@ interface ChatInputProps {
   contextUsage?: ContextWindowUsage
   model?: string
   onModelChange?: (model: string) => void
+  /** Model the backend resolved to, when the user pinned nothing. */
+  resolvedModel?: string
   /** Current reasoning-effort tier (Codex only). */
   reasoningEffort?: ReasoningEffort
   onReasoningEffortChange?: (effort: ReasoningEffort) => void
@@ -104,6 +108,7 @@ export function ChatInput({
   contextUsage,
   model,
   onModelChange,
+  resolvedModel,
   reasoningEffort,
   onReasoningEffortChange,
   isRunning = false,
@@ -290,6 +295,17 @@ export function ChatInput({
     if (!sessionId) return
     setSkillNames(sessionId, mergedCommands.map((c) => c.name))
   }, [sessionId, mergedCommands, setSkillNames])
+
+  // Resolve the instance id the way the backend does: it records the RESOLVED
+  // id, so looking up a bare `undefined` never matched. Not memoized because
+  // `Date.now()` is not a reactive dep and a memo kept the banner up past expiry.
+  const spendBlocks = useSpendBlockStore((s) => s.blocks)
+  const spendBlock = findSpendBlock(
+    spendBlocks,
+    instanceId ?? defaultInstanceId(agentType),
+    model || resolvedModel || null,
+    Date.now(),
+  )
 
   const slashRangeRef = useRef<{ start: number; end: number } | null>(null)
   const dragDepthRef = useRef(0)
@@ -800,6 +816,29 @@ export function ChatInput({
         style={{ display: 'none' }}
       />
 
+      {/* Shown before the send: the plan windows read normal in this case. */}
+      {spendBlock && (
+        <div
+          data-spend-block-warning
+          style={{
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'flex-start',
+            margin: '0 0 6px',
+            padding: '7px 9px',
+            fontSize: '11px',
+            lineHeight: 1.45,
+            color: 'var(--text-secondary)',
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--warning)',
+            borderRadius: 'var(--radius)',
+          }}
+        >
+          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>!</span>
+          <span style={{ flex: 1, minWidth: 0 }}>{describeSpendBlock(spendBlock)}</span>
+        </div>
+      )}
+
       {/* Rich text input - Lexical-backed contenteditable that renders
           pill chips inline at the caret position (Cursor-style). The host
           sees a plain string body with `[[pill:id]]` tokens; pillsById
@@ -923,6 +962,7 @@ export function ChatInput({
             model={model ?? ''}
             onModelChange={onModelChange}
             dynamicModels={dynamicModels}
+            resolvedModel={resolvedModel}
           />
         )}
 

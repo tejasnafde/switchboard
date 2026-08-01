@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 out/
 dist/
 # Exception: tour MP4s rendered by HyperFrames live at videos/dist/ and

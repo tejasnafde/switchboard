@@ -10,6 +10,8 @@
  * stay in `src/main/provider/types.ts`; only the wire events are shared.
  */
 
+import type { OverageScope } from './claude-rate-limit'
+
 export type ProviderSessionStatus =
   | 'connecting'
   | 'idle'
@@ -39,6 +41,26 @@ export interface RuntimeWorktreeDriftEvent {
   branch: string
 }
 
+/**
+ * A turn was refused because the model billed to extra usage and that pool is
+ * unavailable. Separate from `error` so the renderer can remember the
+ * (instance, model) pair and warn before the next send.
+ */
+export interface RuntimeSpendBlockedEvent {
+  type: 'spend.blocked'
+  threadId: string
+  /** Provider instance in use, so a sibling profile is not tarred with this. */
+  instanceId: string | null
+  /** Resolved model id, e.g. `claude-fable-5`. */
+  model: string | null
+  /** Raw provider reason, e.g. `org_level_disabled_until`. */
+  reason: string | null
+  /** Classified scope, so the composer warning cannot contradict this error. */
+  scope: OverageScope
+  /** Epoch ms when the credit pool resets. null when unknown. */
+  resetsAtMs: number | null
+}
+
 export type RuntimeEvent = (
   | RuntimeContentEvent
   | RuntimeToolStartedEvent
@@ -57,6 +79,7 @@ export type RuntimeEvent = (
   | RuntimeQuestionAnsweredEvent
   | RuntimeFileEditedEvent
   | RuntimeWorktreeDriftEvent
+  | RuntimeSpendBlockedEvent
 ) & {
   /** Which machine emitted this event ('local' or a remote's id). Stamped by
    *  preload's provider.onEvent, not the adapter - used to reject cross-machine
@@ -155,6 +178,11 @@ export interface RuntimeContextWindowEvent {
   threadId: string
   usedTokens: number
   maxTokens: number | null
+  /**
+   * Model the session RESOLVED to, e.g. `claude-fable-5`. Lets the UI name the
+   * real model when the user pinned nothing.
+   */
+  model?: string
   /** Cumulative session cost in USD, when the agent reports it. ACP's
    * `usage_update` carries this; legacy adapters omit it. */
   costUsd?: number

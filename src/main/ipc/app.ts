@@ -62,6 +62,7 @@ import { defaultClaudeDir } from '../provider/claude-session-migrate'
 import { listRemoteClaudeConfigDirs } from '../provider/remote-gate'
 import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
 import { loadJsonlCached } from '../agent/jsonl-cache'
+import { dedupeMessagesById } from '../agent/dedupe-messages'
 import { forkConversation } from '../conversations/fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
@@ -394,14 +395,13 @@ export function registerAppHandlers(host: BackendHost): void {
       }
       // Merge in timestamp order so fragments interleave correctly.
       all.sort((a, b) => a.timestamp - b.timestamp)
-      // Deduplicate by message id - later JSONL fragments re-include context
-      // from earlier ones (same tool_use blocks), causing duplicate React keys.
-      const seen = new Set<string>()
-      const deduped = all.filter((m) => {
-        if (seen.has(m.id)) return false
-        seen.add(m.id)
-        return true
-      })
+      // Fold the same message arriving from several profile dirs back to one.
+      const { messages: deduped, removed, conflicts } = dedupeMessagesById(all)
+      if (conflicts > 0) {
+        // Profile copies are byte-prefixes of one another, so this should be
+        // unreachable. If it fires, "first wins" dropped a differing version.
+        log.warn(`load-by-id: ${conversationId} had ${conflicts} id(s) with conflicting content`)
+      }
       // JSONL gone (Claude Code prunes/rotates ~/.claude/projects), but the
       // messages are mirrored in SQLite - recover from the DB so the
       // conversation still renders instead of showing an empty chat.
@@ -423,7 +423,7 @@ export function registerAppHandlers(host: BackendHost): void {
         timestamp: m.timestamp,
       }))
       const merged = [...enriched, ...markers].sort((a, b) => a.timestamp - b.timestamp)
-      log.info(`load-by-id: ${conversationId} → ${deduped.length} messages (${all.length - deduped.length} dupes removed) across ${sessionIds.length} fragment(s), +${markers.length} marker(s)`)
+      log.info(`load-by-id: ${conversationId} → ${deduped.length} messages (${removed} dupes removed) across ${sessionIds.length} fragment(s), +${markers.length} marker(s)`)
       return capTail({ messages: merged, meta }, opts)
     }
 

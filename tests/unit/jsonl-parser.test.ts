@@ -600,3 +600,91 @@ describe('JsonlParser - Codex source', () => {
     expect(messages).toHaveLength(0)
   })
 })
+
+/**
+ * Regression: ids were `msg_${Date.now()}_${++counter}`, so the same line read
+ * from two profile dirs produced two ids and `load-by-id`'s dedupe never
+ * collapsed anything. See CHANGELOG 2026-08-01 for the measurements.
+ */
+describe('JsonlParser: stable message ids', () => {
+  const parse = (lines: object[]) => {
+    const out: Array<{ id: string; content?: string; toolCalls?: unknown[] }> = []
+    const parser = new JsonlParser((m) => out.push(m as never))
+    for (const l of lines) parser.feed(JSON.stringify(l) + '\n')
+    parser.flush()
+    return out
+  }
+
+  const line = (uuid: string, text: string) => ({
+    type: 'assistant',
+    uuid,
+    timestamp: '2026-07-31T10:00:00.000Z',
+    message: { id: 'msg_shared_api_id', content: [{ type: 'text', text }] },
+  })
+
+  it('uses the line uuid as the id', () => {
+    expect(parse([line('uuid-a', 'hi')])[0].id).toBe('uuid-a')
+  })
+
+  it('produces IDENTICAL ids across two independent parses of the same content', () => {
+    // The actual defect. Two parses stood in for two profile dirs.
+    const a = parse([line('uuid-a', 'hi'), line('uuid-b', 'there')])
+    const b = parse([line('uuid-a', 'hi'), line('uuid-b', 'there')])
+    expect(a.map((m) => m.id)).toEqual(b.map((m) => m.id))
+  })
+
+  it('collapses to one set when the same file is unioned from N profile dirs', () => {
+    const copies = [1, 2, 3, 4].flatMap(() => parse([line('uuid-a', 'hi'), line('uuid-b', 'there')]))
+    expect(copies).toHaveLength(8)
+    const seen = new Set<string>()
+    const deduped = copies.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)))
+    expect(deduped).toHaveLength(2)
+  })
+
+  it('keeps separate lines that share one message.id', () => {
+    // Why the key is `uuid` and not `message.id`: one assistant message.id spans
+    // a JSONL line per content block, measured up to 7 on a real file. Keying on
+    // it would merge a turn's text, thinking and tool_use and drop content.
+    const out = parse([line('uuid-a', 'part one'), line('uuid-b', 'part two')])
+    expect(out).toHaveLength(2)
+    expect(new Set(out.map((m) => m.id)).size).toBe(2)
+    expect(out.map((m) => m.content)).toEqual(['part one', 'part two'])
+  })
+
+  it('keeps BOTH text and tool_use when they share one message.id', () => {
+    // Review found the single-line version of this vacuous: with one input line
+    // there is nothing to merge, so it passed against a message.id key too.
+    // Two lines under one message.id is the shape that actually catches it.
+    const out = parse([
+      line('uuid-text', 'here is the plan'),
+      {
+        type: 'assistant',
+        uuid: 'uuid-tool',
+        timestamp: '2026-07-31T10:00:01.000Z',
+        message: {
+          id: 'msg_shared_api_id',
+          content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file: 'a.ts' } }],
+        },
+      },
+    ])
+    expect(out).toHaveLength(2)
+    expect(out.map((m) => m.id)).toEqual(['uuid-text', 'uuid-tool'])
+    expect(out[0].content).toBe('here is the plan')
+    expect(out[1].toolCalls).toHaveLength(1)
+  })
+
+  it('still parses a line with no uuid, falling back to a unique id', () => {
+    const out = parse([
+      { type: 'user', message: { content: [{ type: 'text', text: 'one' }] } },
+      { type: 'user', message: { content: [{ type: 'text', text: 'two' }] } },
+    ])
+    expect(out).toHaveLength(2)
+    expect(out[0].id).not.toBe(out[1].id)
+  })
+
+  it('prefers uuid over a top-level id when both are present', () => {
+    const out = parse([{ type: 'user', uuid: 'uuid-wins', id: 'legacy', message: { content: [{ type: 'text', text: 'x' }] } }])
+    expect(out[0].id).toBe('uuid-wins')
+  })
+})
+
