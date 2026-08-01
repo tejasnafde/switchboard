@@ -15,6 +15,7 @@ import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
 import { encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
+import { isChannelAllowed, FULL_SCOPES, PHONE_SCOPES, type DeviceScope } from '@shared/device-auth'
 import { EventReplayBuffer } from '@shared/event-replay-buffer'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
@@ -44,6 +45,9 @@ export const HEARTBEAT_INTERVAL_MS = 15_000
 /** Miss this many consecutive pings and the socket is presumed dead. */
 const HEARTBEAT_MISS_LIMIT = 2
 
+/** How long a client declaring in-band auth has to actually send it. */
+const AUTH_GRACE_MS = 10_000
+
 /** Constant-time token compare; length mismatch short-circuits (length leaks anyway). */
 function tokenMatches(expected: string, presented: string | null): boolean {
   if (presented === null) return false
@@ -55,6 +59,15 @@ function tokenMatches(expected: string, presented: string | null): boolean {
 interface ClientState {
   missedPings: number
   /**
+   * What this connection is allowed to call.
+   *
+   * `null` means "not authenticated yet". A legacy client presenting the shared
+   * token in the URL is granted FULL_SCOPES immediately, so nothing that works
+   * today stops working; a client using the auth frame gets whatever its device
+   * session carries.
+   */
+  scopes: readonly DeviceScope[] | null
+  /**
    * Set once this client has answered a ping. Until it has, missed pings are
    * not acted on: a client from before the heartbeat existed never sends
    * `pong`, and terminating it after 30s would break a working connection.
@@ -62,6 +75,25 @@ interface ClientState {
    * that skew is routine.
    */
   sawPong: boolean
+}
+
+/**
+ * How the host resolves credentials. Injected rather than imported so the host
+ * stays free of the database, which the loopback and test hosts have no need
+ * of. The default refuses everything, so a host that was not given one simply
+ * has no auth-frame path rather than a broken one.
+ */
+export interface DeviceAuthPort {
+  redeem: (
+    pairing: string,
+    label: string,
+  ) => { ok: boolean; session?: string; scopes?: DeviceScope[]; error?: string }
+  authenticate: (session: string) => { scopes: DeviceScope[] } | null
+}
+
+const NO_DEVICE_AUTH: DeviceAuthPort = {
+  redeem: () => ({ ok: false, error: 'pairing is not enabled on this backend' }),
+  authenticate: () => null,
 }
 
 export class WsHost implements BackendHost {
@@ -82,23 +114,49 @@ export class WsHost implements BackendHost {
   constructor(
     private readonly wss: WebSocketServer,
     token?: string,
+    private readonly deviceAuth: DeviceAuthPort = NO_DEVICE_AUTH,
   ) {
     this.wss.on('connection', (socket, req: IncomingMessage) => {
+      // Legacy path: the shared token in the URL. Still accepted so an already
+      // paired phone keeps working, but it grants everything and cannot be
+      // revoked per device, which is why the auth frame exists.
+      let legacyScopes: readonly DeviceScope[] | null = token ? null : FULL_SCOPES
       if (token) {
         let presented: string | null = null
+        let url: URL | null = null
         try {
-          presented = new URL(req.url ?? '/', 'ws://localhost').searchParams.get('token')
+          url = new URL(req.url ?? '/', 'ws://localhost')
+          presented = url.searchParams.get('token')
         } catch (err) {
           log.warn('unparseable upgrade url', err)
         }
-        if (!tokenMatches(token, presented)) {
+        // `?auth=frame` declares that the client will authenticate in-band.
+        // Without it, a missing token stays an immediate rejection: a client
+        // that intends nothing should learn that now rather than sit in a
+        // retry loop discovering every request is refused. The flag carries no
+        // secret, which is the entire point of moving the credential out.
+        const framed = url?.searchParams.get('auth') === 'frame'
+        if (tokenMatches(token, presented)) {
+          legacyScopes = FULL_SCOPES
+        } else if (!framed) {
           log.warn(`rejected connection with ${presented === null ? 'missing' : 'bad'} token`)
           socket.close(4001, 'unauthorized')
           return
         }
       }
-      this.clients.set(socket, { missedPings: 0, sawPong: false })
+      this.clients.set(socket, { missedPings: 0, sawPong: false, scopes: legacyScopes })
       log.info(`client connected (${this.clients.size} total)`)
+      if (legacyScopes === null) {
+        // Do not hold a socket open indefinitely for an auth frame that never
+        // comes. Anything unauthenticated past this is not a slow client.
+        const deadline = setTimeout(() => {
+          if (this.clients.get(socket)?.scopes) return
+          log.warn('closing a connection that never authenticated')
+          socket.close(4001, 'unauthorized')
+        }, AUTH_GRACE_MS)
+        deadline.unref?.()
+        socket.on('close', () => clearTimeout(deadline))
+      }
       socket.on('message', (data) => this.onMessage(socket, data.toString()))
       socket.on('close', () => {
         this.clients.delete(socket)
@@ -138,6 +196,25 @@ export class WsHost implements BackendHost {
       log.warn('dropped unparseable frame')
       return
     }
+    if (frame.k === 'auth') {
+      this.onAuth(socket, frame)
+      return
+    }
+    const state = this.clients.get(socket)
+    // Everything below acts on the user's machine, so it needs a credential.
+    if ((frame.k === 'req' || frame.k === 'snd') && !state?.scopes) {
+      if (frame.k === 'req') {
+        this.reply(socket, { k: 'res', id: frame.id, ok: false, error: 'not authenticated' })
+      }
+      return
+    }
+    if ((frame.k === 'req' || frame.k === 'snd') && state?.scopes && !isChannelAllowed(state.scopes, frame.ch)) {
+      log.warn(`denied ${frame.ch} - outside this device's scopes (${state.scopes.join(',')})`)
+      if (frame.k === 'req') {
+        this.reply(socket, { k: 'res', id: frame.id, ok: false, error: `not permitted: ${frame.ch}` })
+      }
+      return
+    }
     if (frame.k === 'req') {
       const handler = this.handlers.get(frame.ch)
       if (!handler) {
@@ -164,6 +241,38 @@ export class WsHost implements BackendHost {
     } else if (frame.k === 'ping') {
       this.reply(socket, { k: 'pong', t: frame.t })
     }
+  }
+
+  /**
+   * Exchange a credential for scopes on this connection.
+   *
+   * A pairing code is redeemed once and answers with the minted session token,
+   * which is the only moment that token is transmitted. A session token is
+   * matched against the store and can have been revoked since last time.
+   */
+  private onAuth(socket: WebSocket, frame: Extract<WsFrame, { k: 'auth' }>): void {
+    const state = this.clients.get(socket)
+    if (!state) return
+    if (frame.pairing) {
+      const result = this.deviceAuth.redeem(frame.pairing, frame.label ?? 'device')
+      if (!result.ok || !result.session) {
+        this.reply(socket, { k: 'authed', ok: false, error: result.error ?? 'pairing failed' })
+        return
+      }
+      state.scopes = result.scopes ?? PHONE_SCOPES
+      this.reply(socket, { k: 'authed', ok: true, session: result.session, scopes: [...state.scopes] })
+      return
+    }
+    const session = frame.session ? this.deviceAuth.authenticate(frame.session) : null
+    if (!session) {
+      // Close, not just refuse: a revoked device should stop reconnecting
+      // rather than sit in a retry loop against a decision that will not change.
+      this.reply(socket, { k: 'authed', ok: false, error: 'session not recognised' })
+      socket.close(4001, 'unauthorized')
+      return
+    }
+    state.scopes = session.scopes
+    this.reply(socket, { k: 'authed', ok: true, scopes: [...session.scopes] })
   }
 
   /**

@@ -58,6 +58,21 @@ export type WsFrame =
   | { k: 'ready'; epoch: string; seq: number; replayed: number; gap: boolean }
   | { k: 'ping'; t: number }
   | { k: 'pong'; t: number }
+  /**
+   * Client -> server, first frame after open, carrying a credential.
+   *
+   * In a frame rather than the URL because a query string lands in proxy logs,
+   * process listings and crash reports. `pairing` is a one-time code from the
+   * QR and is exchanged for a session; `session` is what every later connect
+   * presents.
+   */
+  | { k: 'auth'; session?: string; pairing?: string; label?: string }
+  /**
+   * Server -> client verdict. On a successful pairing exchange `session`
+   * carries the newly minted token, which is the only time it is transmitted.
+   */
+  | { k: 'authed'; ok: true; session?: string; scopes: string[] }
+  | { k: 'authed'; ok: false; error: string }
 
 export function encodeFrame(frame: WsFrame): string {
   return JSON.stringify(frame)
@@ -122,6 +137,30 @@ export function decodeFrame(data: string): WsFrame | null {
     case 'pong':
       if (typeof frame.t !== 'number') return null
       return { k: 'pong', t: frame.t }
+    case 'auth': {
+      const session = typeof frame.session === 'string' ? frame.session : undefined
+      const pairing = typeof frame.pairing === 'string' ? frame.pairing : undefined
+      const label = typeof frame.label === 'string' ? frame.label : undefined
+      // A frame offering neither credential is malformed, not an anonymous
+      // request: letting it through would make the auth step optional.
+      if (!session && !pairing) return null
+      return { k: 'auth', session, pairing, label }
+    }
+    case 'authed': {
+      if (frame.ok === true) {
+        if (!Array.isArray(frame.scopes) || frame.scopes.some((x) => typeof x !== 'string')) return null
+        return {
+          k: 'authed',
+          ok: true,
+          session: typeof frame.session === 'string' ? frame.session : undefined,
+          scopes: frame.scopes as string[],
+        }
+      }
+      if (frame.ok === false && typeof frame.error === 'string') {
+        return { k: 'authed', ok: false, error: frame.error }
+      }
+      return null
+    }
     default:
       return null
   }

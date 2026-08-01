@@ -12,6 +12,8 @@ import { getSetting } from '../db/database'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 import { MAX_FRAME_BYTES, WsHost } from './ws-host'
+import { authenticateSession, redeemPairingCode } from './device-sessions'
+import { PHONE_SCOPES } from '@shared/device-auth'
 
 const log = createLogger('backend:mobile-server')
 
@@ -86,7 +88,16 @@ export class MobileEndpoint implements BackendHost {
     // pin memory. Nothing legitimate approaches this: the largest frames are
     // pasted images, which the chat path already bounds well below it.
     const wss = new WebSocketServer({ port, host: '0.0.0.0', maxPayload: MAX_FRAME_BYTES })
-    const inner = new WsHost(wss, token)
+    // The phone gets a device session scoped to chat only: the app has no
+    // terminal UI at all, so granting it PTY spawn would mean a stolen
+    // credential runs commands rather than merely reads conversations.
+    const inner = new WsHost(wss, token, {
+      redeem: (pairing, label) => redeemPairingCode(pairing, label, [...PHONE_SCOPES]),
+      authenticate: (session) => {
+        const found = authenticateSession(session)
+        return found ? { scopes: found.scopes } : null
+      },
+    })
     for (const [ch, fn] of this.handlerRegs) inner.handle(ch, fn)
     for (const [ch, fn] of this.listenerRegs) inner.on(ch, fn)
 

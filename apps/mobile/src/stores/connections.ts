@@ -18,7 +18,14 @@ import { createLogger } from '@shared/logger'
 import { SwitchboardClient } from '../lib/api'
 import { IapTransport } from '../lib/iap-transport'
 import { foregroundAction } from '../lib/appLifecycle'
-import { deleteConnectionToken, loadConnectionToken, migrateTokensToKeystore, saveConnectionToken } from '../lib/secrets'
+import {
+  deleteConnectionToken,
+  loadConnectionSession,
+  loadConnectionToken,
+  migrateTokensToKeystore,
+  saveConnectionSession,
+  saveConnectionToken,
+} from '../lib/secrets'
 import { useChatStore } from './chat'
 import { drain as drainOutbox } from './outbox'
 
@@ -44,15 +51,32 @@ export interface WsConnectionConfig {
   id: string
   label: string
   kind: 'ws'
-  /** ws://host:port - token travels separately, appended at dial time. */
+  /** ws://host:port - credentials travel separately, never in this string. */
   url: string
+  /**
+   * Legacy shared secret, appended to the dial URL.
+   *
+   * Kept only so a phone paired before device sessions existed keeps working.
+   * It grants everything, cannot be revoked without cutting off every other
+   * device, and rides in the query string. A re-pair replaces it with
+   * `session` and it is then cleared.
+   */
   token?: string
+  /** Per-device session token, sent in an auth frame. Held in the keystore. */
+  session?: string
+  /** One-time code from the QR, exchanged for `session` on first connect. */
+  pairing?: string
 }
 
 export interface IapConnectionConfig {
   id: string
   label: string
   kind: 'iap'
+  /** Present for shape parity with the ws config so credential handling can
+   *  stay kind-agnostic. IAP reaches TcpHost, which has its own auth frame and
+   *  does not yet mint device sessions. */
+  session?: string
+  pairing?: string
   project: string
   zone: string
   instance: string
@@ -155,8 +179,26 @@ export const useConnectionsStore = create<ConnectionsState>()(
             get().setStatus(id, state === 'connected' ? 'connected' : 'disconnected')
           client = new SwitchboardClient(transport)
         } else {
-          const wsClient = SwitchboardClient.overWs(config.url, config.token)
+          // Prefer the device session; fall back to the shared token only for
+          // a connection paired before sessions existed.
+          const auth =
+            config.session || config.pairing
+              ? { session: config.session, pairing: config.pairing, label: config.label }
+              : null
+          const wsClient = SwitchboardClient.overWs(config.url, config.token, auth)
           const transport = wsClient.transport as WsTransport
+          // The minted session is transmitted exactly once, in reply to the
+          // pairing code. Persisting it here is what makes the code one-time
+          // rather than a credential the phone keeps re-presenting.
+          transport.onSessionIssued = (session) => {
+            log.info('received a device session, retiring the pairing code', config.label)
+            void saveConnectionSession(id, session)
+            // The shared token is cleared here: this connection now has a
+            // credential of its own, and keeping the old one alive would
+            // preserve exactly the blast radius the session removes.
+            void saveConnectionToken(id, undefined)
+            get().updateConnection(id, { session, pairing: undefined, token: undefined })
+          }
           // The backend could not replay everything we missed, so the cached
           // feed for this backend has a hole in it. Drop it and re-seed rather
           // than showing a transcript that is quietly missing turns.
@@ -223,7 +265,9 @@ export const useConnectionsStore = create<ConnectionsState>()(
       // the keystore; a token nowhere is worse than both.
       partialize: (s) => ({
         configs: s.configs.map((c) =>
-          keystoreFailures.has(c.id) ? c : ({ ...c, token: undefined } as ConnectionConfig),
+          keystoreFailures.has(c.id)
+            ? c
+            : ({ ...c, token: undefined, session: undefined, pairing: undefined } as ConnectionConfig),
         ),
       }),
       onRehydrateStorage: () => (state) => {
@@ -275,17 +319,19 @@ async function hydrateTokens(configs: ConnectionConfig[]): Promise<void> {
       configs.map(async (config) => ({
         id: config.id,
         token: config.token ?? (await loadConnectionToken(config.id)),
+        session: config.session ?? (await loadConnectionSession(config.id)),
       })),
     )
-    const byId = new Map(loaded.map((entry) => [entry.id, entry.token]))
+    const byId = new Map(loaded.map((entry) => [entry.id, entry]))
     useConnectionsStore.setState((s) => ({
       // Merge on presence, not value. Pairing runs on another screen and is not
       // gated on this, so a connection added during the keystore reads is
       // absent from `byId` - assigning its `get` result would wipe the token
       // the user just scanned.
-      configs: s.configs.map((c) =>
-        byId.has(c.id) ? ({ ...c, token: byId.get(c.id) } as ConnectionConfig) : c,
-      ),
+      configs: s.configs.map((c) => {
+        const entry = byId.get(c.id)
+        return entry ? ({ ...c, token: entry.token, session: entry.session } as ConnectionConfig) : c
+      }),
     }))
     // Rewriting state re-persists through partialize, which is what drops the
     // tokens a legacy blob was carrying.

@@ -70,6 +70,12 @@ export const AppChannels = {
   MOBILE_PAIRING_APPLY: 'mobile-pairing:apply',
   /** Current mobile pairing endpoint status without changing anything. */
   MOBILE_PAIRING_STATUS: 'mobile-pairing:status',
+  /** Mint a one-time pairing code for the QR. Replaces any unused one. */
+  MOBILE_PAIRING_CODE: 'mobile-pairing:code',
+  /** Paired devices, with the credential itself omitted. */
+  MOBILE_DEVICES: 'mobile-pairing:devices',
+  /** Revoke one device without disturbing the others. */
+  MOBILE_DEVICE_REVOKE: 'mobile-pairing:revoke',
   /** External IPv4 addresses of this machine - mobile pairing QR host picker. */
   LAN_ADDRESSES: 'app:lan-addresses',
   /**

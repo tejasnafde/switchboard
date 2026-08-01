@@ -152,6 +152,17 @@ export class WsTransport implements Transport {
    * that never reports stays on the old always-retry behaviour.
    */
   private online = true
+  /**
+   * In-band credential. When set, the transport authenticates with an `auth`
+   * frame instead of putting a token in the URL.
+   */
+  private auth: { session?: string; pairing?: string; label?: string } | null = null
+  /**
+   * Called when a pairing exchange mints a session token. This is the only
+   * moment that token is transmitted, so the owner must persist it here or the
+   * device has to pair again.
+   */
+  onSessionIssued: ((session: string) => void) | null = null
   private readonly watchdog: ReturnType<typeof setInterval>
 
   private reconnecting = false
@@ -166,7 +177,9 @@ export class WsTransport implements Transport {
     readonly url: string,
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
     reconnect: WsReconnectOptions = {},
+    auth: { session?: string; pairing?: string; label?: string } | null = null,
   ) {
+    this.auth = auth
     this.reconnectBaseMs = reconnect.baseMs ?? RECONNECT_BASE_MS
     this.reconnectCapMs = reconnect.capMs ?? RECONNECT_CAP_MS
     this.reconnectBudgetMs = reconnect.budgetMs ?? RECONNECT_BUDGET_MS
@@ -267,6 +280,9 @@ export class WsTransport implements Transport {
       // Hold live events until the replay lands, so a resumed client does not
       // see turn N+1 before the turn N it missed while disconnected.
       this.resumeHold = []
+      // Before hello: the server refuses everything until this lands, and
+      // ordering the two means one round trip rather than two.
+      if (this.auth) this.rawSend(encodeFrame({ k: 'auth', ...this.auth }))
       // Guarded: a socket that dies between 'open' and here would otherwise
       // throw out of the listener, skipping onStateChange and the outbox flush
       // below and leaving the UI on "connecting" with this.open already true.
@@ -451,6 +467,21 @@ export class WsTransport implements Transport {
     if (frame.k === 'ready') {
       this.peerSendsHeartbeat = true
       this.onReady(frame)
+      return
+    }
+    if (frame.k === 'authed') {
+      if (!frame.ok) {
+        // A refusal is a verdict, not a blip. The socket close that follows
+        // carries 4001 and takes the transport terminal.
+        log.error('backend refused our credential', frame.error)
+        return
+      }
+      if (frame.session) {
+        // Swap the one-time pairing code for the session immediately, so a
+        // reconnect before the owner has persisted it still authenticates.
+        this.auth = { session: frame.session }
+        this.onSessionIssued?.(frame.session)
+      }
       return
     }
     if (frame.k === 'evt') {

@@ -20,9 +20,41 @@ const log = createLogger('mobile:secrets')
 /** SecureStore keys allow alphanumerics plus `.-_`, which connection ids
  *  (`c-<epoch ms>`) already satisfy. */
 const KEY_PREFIX = 'sb-token-'
+/** Device session tokens, kept apart from the legacy shared token so a
+ *  connection can hold both during the changeover without either overwriting
+ *  the other. */
+const SESSION_PREFIX = 'sb-session-'
+
+function safeId(connectionId: string): string {
+  return connectionId.replace(/[^A-Za-z0-9._-]/g, '_')
+}
 
 function keyFor(connectionId: string): string {
-  return `${KEY_PREFIX}${connectionId.replace(/[^A-Za-z0-9._-]/g, '_')}`
+  return `${KEY_PREFIX}${safeId(connectionId)}`
+}
+
+function sessionKeyFor(connectionId: string): string {
+  return `${SESSION_PREFIX}${safeId(connectionId)}`
+}
+
+export async function saveConnectionSession(connectionId: string, session: string | undefined): Promise<boolean> {
+  try {
+    if (session) await SecureStore.setItemAsync(sessionKeyFor(connectionId), session)
+    else await SecureStore.deleteItemAsync(sessionKeyFor(connectionId))
+    return true
+  } catch (err) {
+    log.warn('could not write the device session to the keystore', err)
+    return false
+  }
+}
+
+export async function loadConnectionSession(connectionId: string): Promise<string | undefined> {
+  try {
+    return (await SecureStore.getItemAsync(sessionKeyFor(connectionId))) ?? undefined
+  } catch (err) {
+    log.warn('could not read the device session from the keystore', err)
+    return undefined
+  }
 }
 
 /** True when the keystore accepted the write. The caller MUST act on false:
@@ -51,6 +83,7 @@ export async function loadConnectionToken(connectionId: string): Promise<string 
 
 export async function deleteConnectionToken(connectionId: string): Promise<void> {
   try {
+    await SecureStore.deleteItemAsync(sessionKeyFor(connectionId))
     await SecureStore.deleteItemAsync(keyFor(connectionId))
   } catch (err) {
     log.warn('could not delete pairing token from the keystore', err)

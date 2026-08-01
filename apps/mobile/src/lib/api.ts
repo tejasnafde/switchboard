@@ -51,10 +51,25 @@ export class SwitchboardClient {
    */
   constructor(readonly transport: Transport) {}
 
-  /** LAN / tunnelled backend over WebSocket. */
-  static overWs(url: string, token?: string): SwitchboardClient {
-    const dialUrl = token ? `${url}${url.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}` : url
-    return new SwitchboardClient(new WsTransport(dialUrl))
+  /**
+   * LAN / tunnelled backend over WebSocket.
+   *
+   * Two credential paths. `auth` is the current one: the token travels in a
+   * frame after the socket opens, never in the URL, and identifies one device
+   * that can be revoked on its own. `token` is the legacy shared secret in the
+   * query string, kept so a phone paired before this change keeps working
+   * until it re-pairs.
+   */
+  static overWs(
+    url: string,
+    token?: string,
+    auth?: { session?: string; pairing?: string; label?: string } | null,
+  ): SwitchboardClient {
+    // `auth=frame` tells the backend to expect in-band credentials rather than
+    // rejecting a tokenless connection outright. It carries no secret.
+    const query = auth ? 'auth=frame' : token ? `token=${encodeURIComponent(token)}` : ''
+    const dialUrl = query ? `${url}${url.includes('?') ? '&' : '?'}${query}` : url
+    return new SwitchboardClient(new WsTransport(dialUrl, undefined, {}, auth ?? null))
   }
 
   // ── app ──

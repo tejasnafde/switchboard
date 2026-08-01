@@ -27,6 +27,7 @@ import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machin
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
 import { MultiHost } from './backend/multi-host'
+import { createPairingCode, listSessionViews, revokeSession } from './backend/device-sessions'
 import { MobileEndpoint } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
 import { registerIdeHandlers } from './ipc/ide'
@@ -570,6 +571,9 @@ app.whenReady().then(() => {
   const backendHost: BackendHost = new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
   backendHost.handle(AppChannels.MOBILE_PAIRING_APPLY, () => mobileEndpoint!.apply())
   backendHost.handle(AppChannels.MOBILE_PAIRING_STATUS, () => mobileEndpoint!.status())
+  backendHost.handle(AppChannels.MOBILE_PAIRING_CODE, () => createPairingCode())
+  backendHost.handle(AppChannels.MOBILE_DEVICES, () => listSessionViews())
+  backendHost.handle(AppChannels.MOBILE_DEVICE_REVOKE, (id: string) => revokeSession(id))
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)

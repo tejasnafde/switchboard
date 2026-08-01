@@ -18,6 +18,7 @@ import type {
   MobilePairingStatus,
 } from '@shared/types'
 import type { RuntimeEvent, RuntimeMode, ApprovalDecision } from '@shared/provider-events'
+import type { DeviceSessionView, PairingCode } from '@shared/device-auth'
 import { createRendererLogger } from '../renderer/logger'
 
 const log = createRendererLogger('preload:provider')
@@ -144,6 +145,15 @@ const api = {
     /** Current pairing endpoint status, without restarting it. */
     mobilePairingStatus: (): Promise<MobilePairingStatus> =>
       transport.invoke(AppChannels.MOBILE_PAIRING_STATUS),
+    /** One-time code for the QR. Short-lived and consumed on first use. */
+    mobilePairingCode: (): Promise<PairingCode> =>
+      transport.invoke(AppChannels.MOBILE_PAIRING_CODE),
+    /** Paired devices. Never includes the credential itself. */
+    mobileDevices: (): Promise<DeviceSessionView[]> =>
+      transport.invoke(AppChannels.MOBILE_DEVICES),
+    /** Cut off one device, leaving every other pairing intact. */
+    mobileRevokeDevice: (id: string): Promise<boolean> =>
+      transport.invoke(AppChannels.MOBILE_DEVICE_REVOKE, id),
     createConversation: (params: CreateConversationParams) =>
       transport.invoke(AppChannels.CREATE_CONVERSATION, params),
     setConversationWorktree: (
