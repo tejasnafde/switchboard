@@ -314,6 +314,44 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
  * Anything else is filtered out. Names with leading "/" get stripped so
  * the menu can render them uniformly.
  */
+/**
+ * Tool results out of an SDK `user` message.
+ *
+ * The SDK reports a finished tool as a tool_result block on a synthetic user
+ * message. Nothing consumed those, so `tool.completed` was never emitted for
+ * Claude at all - Codex and OpenCode both emit it - and any client keying a
+ * spinner on completion span every tool card until the whole turn ended.
+ *
+ * `content` is a string for simple results and a block array for rich ones.
+ */
+export function extractToolResults(
+  message: unknown,
+): Array<{ toolId: string; output: string; isError: boolean }> {
+  const blocks = (message as { message?: { content?: unknown } } | null)?.message?.content
+  if (!Array.isArray(blocks)) return []
+  const out: Array<{ toolId: string; output: string; isError: boolean }> = []
+  for (const raw of blocks) {
+    const block = raw as {
+      type?: string
+      tool_use_id?: string
+      is_error?: boolean
+      content?: unknown
+    }
+    if (block.type !== 'tool_result' || !block.tool_use_id) continue
+    let text = ''
+    if (typeof block.content === 'string') {
+      text = block.content
+    } else if (Array.isArray(block.content)) {
+      text = block.content
+        .map((c) => (c as { type?: string; text?: string }).text ?? '')
+        .filter(Boolean)
+        .join('\n')
+    }
+    out.push({ toolId: block.tool_use_id, output: text, isError: block.is_error === true })
+  }
+  return out
+}
+
 export function parseClaudeSlashCommands(input: unknown): ProviderSkill[] {
   if (!Array.isArray(input)) return []
   const out: ProviderSkill[] = []
@@ -1237,19 +1275,56 @@ export class ClaudeAdapter implements ProviderAdapter {
               active.currentMessageId = `msg_${threadId.slice(-6)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
             }
             const msgId = active.currentMessageId
-            const fullText = (active.partialMessageText.get(msgId) ?? '') + delta.text
-            active.partialMessageText.set(msgId, fullText)
-            active.onEvent({ type: 'content', threadId, messageId: msgId, text: fullText, streamKind: 'assistant' })
+            // The accumulated copy is what the closing snapshot below sends,
+            // so a client that joined mid-message can still be made whole.
+            active.partialMessageText.set(msgId, (active.partialMessageText.get(msgId) ?? '') + delta.text)
+            active.onEvent({
+              type: 'content',
+              threadId,
+              messageId: msgId,
+              text: delta.text,
+              append: true,
+              streamKind: 'assistant',
+            })
           } else if (delta?.type === 'thinking_delta' && delta.thinking) {
             if (!active.currentReasoningMessageId) {
               active.currentReasoningMessageId = `think_${threadId.slice(-6)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
             }
             const reasonId = active.currentReasoningMessageId
-            const fullText = (active.partialMessageText.get(reasonId) ?? '') + delta.thinking
-            active.partialMessageText.set(reasonId, fullText)
-            active.onEvent({ type: 'content', threadId, messageId: reasonId, text: fullText, streamKind: 'reasoning' })
+            active.partialMessageText.set(
+              reasonId,
+              (active.partialMessageText.get(reasonId) ?? '') + delta.thinking,
+            )
+            active.onEvent({
+              type: 'content',
+              threadId,
+              messageId: reasonId,
+              text: delta.thinking,
+              append: true,
+              streamKind: 'reasoning',
+            })
           }
         } else if (ev.type === 'content_block_stop') {
+          // Close the message with a SNAPSHOT of the accumulated body.
+          //
+          // Deltas only reconstruct the whole message for a client that saw
+          // every one of them. A client that attached mid-turn, or re-seeded
+          // after a replay gap, holds a fragment starting from wherever it
+          // joined and nothing would ever repair it - under the old cumulative
+          // shape the next event self-healed that. One extra frame per message
+          // costs nothing next to the per-token traffic it replaced.
+          for (const id of [active.currentMessageId, active.currentReasoningMessageId]) {
+            if (!id) continue
+            const full = active.partialMessageText.get(id)
+            if (full === undefined) continue
+            active.onEvent({
+              type: 'content',
+              threadId,
+              messageId: id,
+              text: full,
+              streamKind: id === active.currentReasoningMessageId ? 'reasoning' : 'assistant',
+            })
+          }
           active.currentReasoningMessageId = null
         }
         break
@@ -1322,6 +1397,20 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         active.session.status = 'running'
         active.onEvent({ type: 'status', threadId, status: 'running' })
+        break
+      }
+
+      case 'user': {
+        // Tool results ride a synthetic user message. Without this the only
+        // thing settling a tool card was the end of the entire turn.
+        for (const result of extractToolResults(msg)) {
+          active.onEvent({
+            type: 'tool.completed',
+            threadId,
+            toolId: result.toolId,
+            output: result.output,
+          })
+        }
         break
       }
 

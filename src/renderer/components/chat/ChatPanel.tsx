@@ -10,7 +10,7 @@ import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
 import { generateTitle } from '@shared/auto-title'
-import { onSessionRename, emitSessionRename, emitSessionActivity, onProviderEvent } from '../../services/session-events'
+import { onSessionRename, emitSessionRename, emitSessionActivity, onProviderEvent, claimProviderEvent } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
 import { isAssistantStreamingEnabled } from '../../services/streamingPref'
 import { createRendererLogger } from '../../logger'
@@ -22,6 +22,8 @@ import {
   drainTurn,
 } from '../../services/streamingBuffer'
 import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
+import { applyContentText, type ContentChunk } from '@shared/content-stream'
+import { echoMessageId } from '@shared/provider-events'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
@@ -38,14 +40,22 @@ interface ChatPanelProps {
 }
 
 /**
- * Update a streamed assistant message's content if it exists, else append a
- * fresh bubble. Shared by the streaming-ON coalescer commit and the
- * streaming-OFF drainTurn flush so the two paths can't drift.
+ * Window-wide, not per panel: exactly one mounted panel claims each event, so
+ * with streaming off the whole reply died with the claiming panel when this was
+ * per-instance.
  */
-function upsertAssistantContent(threadId: string, messageId: string, text: string): void {
+const streamingBuffer = createStreamingBuffer()
+
+/**
+ * Update a streamed assistant message if it exists, else append a fresh bubble.
+ * Shared by the streaming-ON coalescer commit and the streaming-OFF drainTurn
+ * flush so the two paths cannot drift.
+ */
+function upsertAssistantContent(threadId: string, messageId: string, chunk: ContentChunk): void {
   const store = useAgentStore.getState()
   const session = store.sessions.find((s) => s.id === threadId)
   const existing = session?.messages.find((m) => m.id === messageId)
+  const text = applyContentText(existing?.content, chunk)
   if (existing) {
     store.updateMessage(threadId, messageId, { content: text })
   } else {
@@ -267,7 +277,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   // changes take effect on the next session switch. When OFF, content
   // events accumulate in the buffer and flush on turn.completed.
   const streamingEnabledRef = useRef<boolean>(true)
-  const streamingBufferRef = useRef(createStreamingBuffer())
   useEffect(() => {
     isAssistantStreamingEnabled().then((v) => {
       streamingEnabledRef.current = v
@@ -279,8 +288,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   // bubble per delta). Ordering contract lives in services/contentCoalescer.
   const contentCoalescerRef = useRef<ContentCoalescer | null>(null)
   if (!contentCoalescerRef.current) {
-    contentCoalescerRef.current = createContentCoalescer(({ threadId, messageId, text }) =>
-      upsertAssistantContent(threadId, messageId, text),
+    contentCoalescerRef.current = createContentCoalescer(({ threadId, messageId, text, append }) =>
+      upsertAssistantContent(threadId, messageId, { text, append }),
     )
   }
   useEffect(() => () => contentCoalescerRef.current?.dispose(), [])
@@ -294,6 +303,12 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     const removeProvider = onProviderEvent((event) => {
       const tid = event.threadId
       if (!tid) return
+      // Every mounted panel reduces the WHOLE stream, not just its own session,
+      // because a background session still needs its unread count and status.
+      // With two panes open that means two listeners applying the same event,
+      // which appended each streamed fragment twice once `content` became an
+      // increment. Exactly one listener does the store work.
+      if (!claimProviderEvent(event)) return
 
       // Any non-content event must land AFTER whatever content is pending
       // for this thread, or message order flips (e.g. a buffered first
@@ -303,12 +318,26 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }
 
       switch (event.type) {
+        // A turn submitted somewhere else (the phone, a second window), OR the
+        // echo of our own send. Both are safe to append: our optimistic message
+        // already carries `remote_<origin>` as its id, so the store's
+        // id-idempotency collapses the echo onto it.
+        case 'user.message': {
+          appendMessage(tid, {
+            id: echoMessageId(event.origin ?? String(event.at)),
+            role: 'user',
+            content: event.text,
+            timestamp: event.at,
+          })
+          break
+        }
         case 'content': {
+          const chunk = { text: event.text, append: event.append }
           if (!streamingEnabledRef.current) {
-            bufferContent(streamingBufferRef.current, tid, event.messageId, event.text)
+            bufferContent(streamingBuffer, tid, event.messageId, chunk)
             break
           }
-          contentCoalescerRef.current?.push(tid, event.messageId, event.text)
+          contentCoalescerRef.current?.push(tid, event.messageId, chunk)
           break
         }
         case 'tool.started': {
@@ -387,9 +416,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         case 'turn.completed': {
           // Flush buffered content if streaming was off this turn.
           if (!streamingEnabledRef.current) {
-            const drained = drainTurn(streamingBufferRef.current, tid)
+            const drained = drainTurn(streamingBuffer, tid)
             for (const entry of drained) {
-              upsertAssistantContent(tid, entry.messageId, entry.text)
+              // The buffer already folded every chunk, so this is the whole
+              // body and replaces rather than extends.
+              upsertAssistantContent(tid, entry.messageId, { text: entry.text })
             }
           }
           // Token usage comes from context_window events only - this event's
@@ -815,8 +846,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         messageImages = urls
       }
 
+      // The id the backend's echo will carry, so the echo lands on THIS message
+      // instead of appending a second copy. appendMessage is idempotent by id
+      // (agent-store), which makes the de-dupe a property of the data rather
+      // than of a skip set that has to survive a remount, a hot reload, or a
+      // second panel claiming the event.
+      const origin = `d${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const userMsg: ChatMessage = {
-        id: `user_${Date.now()}`,
+        id: echoMessageId(origin),
         role: 'user',
         content: message,
         images: messageImages,
@@ -894,7 +931,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
       }
 
-      providerApi.sendTurn(sessionId, message, runtimeMode, messageImages).catch((err: Error) => {
+      providerApi.sendTurn(sessionId, message, runtimeMode, messageImages, origin).catch((err: Error) => {
         appendMessage(sessionId, {
           id: `error_${Date.now()}`,
           role: 'system',

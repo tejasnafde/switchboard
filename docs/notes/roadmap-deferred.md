@@ -232,6 +232,42 @@ multiply.
 
 ---
 
+## 6. Attention-ordered chat list (mobile first)
+
+**Not in the first app release.** Recorded 2026-08-02.
+
+T3 Code and Codex both moved their desktop sidebar from a static tree of
+folders/chats/repos to an attention model: whatever needs you bubbles up,
+everything settled drops away. The case for it is much stronger on MOBILE,
+where reaching a chat costs four screens (Connections → Projects →
+Conversations → Thread) and the thing you actually want is "which of my agents
+needs me right now".
+
+Why this is cheap for us: the signal already exists and is already classified.
+`pushForEvent` (`src/shared/push-policy.ts`) sorts events into approval /
+question / done / error, which is exactly the ordering a list would want. The
+same classifier can drive the UI, which also keeps the list and the
+notifications from ever disagreeing.
+
+Three things to get right, all learned from looking at theirs:
+
+- **Segment, do not re-sort.** Sorting the whole list by attention destroys
+  spatial memory - "my repo is third from the top" is real muscle memory, and
+  a list that reorders under you is worse than a static one. Pin an attention
+  section above a stable list instead.
+- **"Settled" needs a definition.** T3 has an explicit `thread.settled` event.
+  We have no such concept, and inferring it from `turn.completed` is wrong for
+  a thread whose last turn ended in an error or an unanswered question. This is
+  the actual work; the sorting is the easy part.
+- **On mobile it should REPLACE the middle levels for the default path**, not
+  sit on top of them. Adding an attention screen above four existing ones makes
+  navigation worse, not better.
+
+Desktop is a weaker case (its sidebar is already one level and always visible)
+but not a null one: the same "which agent needs me" question is what drives
+push suppression by presence, added in the same batch. Same question, three
+surfaces.
+
 ## Reference index
 
 - vibe-kanban: <https://github.com/BloopAI/vibe-kanban> (sunsetting,

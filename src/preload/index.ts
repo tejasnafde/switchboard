@@ -4,7 +4,8 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels } from '@shared/ipc-channels'
+import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
@@ -14,8 +15,10 @@ import type {
   AgentSendPayload,
   CreateConversationParams,
   SaveMessageParams,
+  MobilePairingStatus,
 } from '@shared/types'
 import type { RuntimeEvent, RuntimeMode, ApprovalDecision } from '@shared/provider-events'
+import type { DeviceSessionView, PairingCode } from '@shared/device-auth'
 import { createRendererLogger } from '../renderer/logger'
 
 const log = createRendererLogger('preload:provider')
@@ -130,6 +133,27 @@ const api = {
       transport.invoke(AppChannels.REMOVE_PROJECT, projectPath),
     renameProject: (projectPath: string, name: string): Promise<{ ok: true }> =>
       transport.invoke(AppChannels.RENAME_PROJECT, projectPath, name),
+    /** External IPv4 addresses of this machine (mobile pairing host picker). */
+    lanAddresses: (): Promise<Array<{ iface: string; address: string }>> =>
+      transport.invoke(AppChannels.LAN_ADDRESSES),
+    /** Persist + broadcast that this thread was read, clearing it on the phone too. */
+    markRead: (threadId: string, at?: number): Promise<{ ok: boolean; at: number }> =>
+      transport.invoke(AppChannels.MARK_READ, threadId, at),
+    /** (Re)start the pairing endpoint from saved settings; resolves to its status. */
+    mobilePairingApply: (): Promise<MobilePairingStatus> =>
+      transport.invoke(AppChannels.MOBILE_PAIRING_APPLY),
+    /** Current pairing endpoint status, without restarting it. */
+    mobilePairingStatus: (): Promise<MobilePairingStatus> =>
+      transport.invoke(AppChannels.MOBILE_PAIRING_STATUS),
+    /** One-time code for the QR. Short-lived and consumed on first use. */
+    mobilePairingCode: (): Promise<PairingCode> =>
+      transport.invoke(AppChannels.MOBILE_PAIRING_CODE),
+    /** Paired devices. Never includes the credential itself. */
+    mobileDevices: (): Promise<DeviceSessionView[]> =>
+      transport.invoke(AppChannels.MOBILE_DEVICES),
+    /** Cut off one device, leaving every other pairing intact. */
+    mobileRevokeDevice: (id: string): Promise<boolean> =>
+      transport.invoke(AppChannels.MOBILE_DEVICE_REVOKE, id),
     createConversation: (params: CreateConversationParams) =>
       transport.invoke(AppChannels.CREATE_CONVERSATION, params),
     setConversationWorktree: (
@@ -415,6 +439,25 @@ const api = {
     },
   },
 
+  // ─── Push ─────────────────────────────────────────────────────
+  push: {
+    /**
+     * Tell the backend which thread this desktop has open, so it does not push
+     * a phone about a chat the user is already reading here.
+     *
+     * The channel takes the viewer ref first, which is not a routable id, so the
+     * machine is resolved from the threadId by hand - and on the clearing call
+     * too, or the entry would be left behind on the backend that holds it.
+     */
+    reportViewing: (threadId: string, viewing: boolean): Promise<unknown> =>
+      router.invokeOn(
+        routingTable.resolve(PushChannels.VIEWING, [threadId]),
+        PushChannels.VIEWING,
+        DESKTOP_VIEWER_REF,
+        viewing ? threadId : null,
+      ),
+  },
+
   // ─── Kanban (per-project task cards + per-card worktrees) ─────
   kanban: {
     list: (projectPath: string): Promise<KanbanCard[]> =>
@@ -491,8 +534,8 @@ const api = {
       return transport.invoke(ProviderChannels.START_SESSION, opts)
     },
 
-    sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) =>
-      transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images),
+    sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) =>
+      transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images, origin),
 
     interrupt: (threadId: string) =>
       transport.invoke(ProviderChannels.INTERRUPT, threadId),

@@ -1,6 +1,6 @@
 /** Exponential reconnect backoff with a cap. */
 import { describe, it, expect } from 'vitest'
-import { reconnectDelay } from '../../src/main/machines/reconnectBackoff'
+import { reconnectDelay } from '../../src/shared/backoff'
 
 describe('reconnectDelay', () => {
   it('doubles per attempt from the base', () => {

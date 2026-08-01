@@ -22,10 +22,12 @@ import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
+import { UpdateToast } from './components/UpdateToast'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated, onSessionRename } from './services/session-events'
+import { initSharedReadState } from './services/readState'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
@@ -234,6 +236,9 @@ export function App() {
 
   // Load bookmarks on mount
   useEffect(() => { void useBookmarkStore.getState().load() }, [])
+
+  // Unread is shared with the phone, so opening a chat here clears it there.
+  useEffect(() => initSharedReadState(), [])
 
   // Machine registry (remote SSH hosts) - hydrate once on launch.
   useEffect(() => {
@@ -1107,6 +1112,7 @@ export function App() {
           {appToast}
         </div>
       )}
+      <UpdateToast />
     </div>
   )
 }

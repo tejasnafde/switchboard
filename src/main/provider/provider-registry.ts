@@ -14,6 +14,7 @@ import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-dr
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { TurnDeduper } from '@shared/turn-dedupe'
 import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
@@ -25,6 +26,7 @@ import type { AgentType } from '@shared/types'
 import type {
   ProviderAdapter,
   ProviderKind,
+  ProviderSession,
   RuntimeEvent,
   SessionStartOpts,
   ApprovalDecision,
@@ -59,6 +61,10 @@ export class ProviderRegistry {
    * same way in chat.
    */
   private checkpoints = new CheckpointTracker()
+  /** Turn origins already accepted, so a client retry cannot run twice. */
+  private turnDedupe = new TurnDeduper()
+  /** Threads with a startSession in flight. Claimed before the first await. */
+  private startingSessions = new Set<string>()
 
   /**
    * Event bus that decouples adapter event emission from the consumer.
@@ -249,6 +255,26 @@ export class ProviderRegistry {
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
 
+      // Idempotent re-attach: a second START_SESSION for a live thread (screen
+      // remount, second client on the same backend) must not spawn a second
+      // adapter process over the same JSONL. Returns a descriptor instead.
+      // Also against a set claimed SYNCHRONOUSLY below: the adapter map is
+      // written after `await adapter.startSession`, so two clients racing that
+      // window both passed this guard and both spawned a process.
+      if (this.sessionAdapters.has(opts.threadId) || this.startingSessions.has(opts.threadId)) {
+        log.info(`startSession ${opts.threadId} already live - re-attaching`)
+        return {
+          threadId: opts.threadId,
+          provider: opts.provider,
+          status: 'idle',
+          runtimeMode: opts.runtimeMode ?? 'sandbox',
+          cwd: this.sessionCwd.get(opts.threadId) ?? opts.cwd,
+          createdAt: Date.now(),
+        } satisfies ProviderSession
+      }
+      this.startingSessions.add(opts.threadId)
+      try {
+
       // On a remote VM only Claude Code runs. Reject Codex / OpenCode with a
       // readable message the chat surfaces instead of a deep adapter failure.
       let remoteClaudeConfig: string | null = null
@@ -295,17 +321,38 @@ export class ProviderRegistry {
 
       const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))
       if (instance) session.instanceId = instance.id
+      // Tell every client which profile this thread now runs on. A rotation
+      // done on one client would otherwise leave the others showing the old
+      // one, since only this resolution knows what was actually picked.
+      this.publish({
+        type: 'session.provider',
+        threadId: opts.threadId,
+        provider: opts.provider,
+        instanceId: instance?.id ?? null,
+        instanceName: instance?.displayName ?? null,
+      })
       this.sessionAdapters.set(opts.threadId, adapter)
       this.sessionCwd.set(opts.threadId, session.cwd)
       await this.attachNotebooks(opts.threadId, session.cwd)
       return session
+      } finally {
+        this.startingSessions.delete(opts.threadId)
+      }
     })
 
-    this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) => {
+    this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
         log.warn(`sendTurn ${threadId} - no adapter (session not started?)`)
         throw new Error(`No session: ${threadId}`)
+      }
+      // A client that retried after an ambiguous failure (socket died with the
+      // request on the wire, invoke timed out) cannot know whether this ran.
+      // Retrying is the right client behaviour, so the duplicate has to be
+      // caught here or the user gets the same turn twice.
+      if (this.turnDedupe.isDuplicate(origin)) {
+        log.info(`sendTurn ${threadId} - duplicate origin ${origin}, already accepted`)
+        return
       }
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${images?.length ?? 0}`)
       // Snapshot the working tree BEFORE the agent edits, so the post-turn
@@ -313,7 +360,22 @@ export class ProviderRegistry {
       const cwd = this.sessionCwd.get(threadId)
       if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
       notebookManager.beginTurn(threadId)
-      await adapter.sendTurn(threadId, message, runtimeMode, images)
+      // Broadcast the user's turn: adapters only emit the agent's side, so
+      // without this a message typed on one client is invisible everywhere
+      // else. The sender skips its own echo via `origin`.
+      try {
+        await adapter.sendTurn(threadId, message, runtimeMode, images)
+      } catch (err) {
+        // Release the origin: the turn did NOT happen, so the client's retry
+        // must be allowed through. Holding it would answer the retry with a
+        // cheerful success and drop the message silently.
+        this.turnDedupe.release(origin)
+        throw err
+      }
+      // AFTER the adapter accepts. Broadcasting first meant a failed send had
+      // already consumed the origin from every other client's skip set, so the
+      // retry rendered a duplicate bubble everywhere with no retraction.
+      this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
     })
 
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {
@@ -412,4 +474,20 @@ let activeRegistry: ProviderRegistry | null = null
 
 export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
   if (cwd) activeRegistry?.updateSessionCwd(threadId, cwd)
+}
+
+/**
+ * Fan an event that no adapter produced out to every client.
+ *
+ * The bus is the only path that reaches the registry's MultiHost, so this is
+ * what gets a broadcast to the renderer AND every paired phone at once. Skips
+ * the registry's own `publish()` on purpose: that layer adds session-id
+ * persistence and post-turn diffing, neither of which applies here.
+ */
+export function publishRuntimeEvent(event: RuntimeEvent): void {
+  if (!activeRegistry) {
+    log.warn(`no active registry - dropping ${event.type} for ${event.threadId}`)
+    return
+  }
+  activeRegistry.bus.publish(event)
 }

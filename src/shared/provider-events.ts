@@ -61,8 +61,20 @@ export interface RuntimeSpendBlockedEvent {
   resetsAtMs: number | null
 }
 
+/**
+ * A client marked a thread read. Read state lives on the backend, so this is
+ * how the OTHER clients learn to drop their badge - each one counting unread on
+ * its own is what let the phone and the Mac disagree.
+ */
+export interface RuntimeThreadReadEvent {
+  type: 'thread.read'
+  threadId: string
+  at: number
+}
+
 export type RuntimeEvent = (
   | RuntimeContentEvent
+  | RuntimeUserMessageEvent
   | RuntimeToolStartedEvent
   | RuntimeToolCompletedEvent
   | RuntimeToolDeniedEvent
@@ -72,6 +84,7 @@ export type RuntimeEvent = (
   | RuntimeErrorEvent
   | RuntimeStatusEvent
   | RuntimeSessionEvent
+  | RuntimeSessionProviderEvent
   | RuntimeContextWindowEvent
   | RuntimeModelVariantsEvent
   | RuntimePlanProposedEvent
@@ -80,6 +93,7 @@ export type RuntimeEvent = (
   | RuntimeFileEditedEvent
   | RuntimeWorktreeDriftEvent
   | RuntimeSpendBlockedEvent
+  | RuntimeThreadReadEvent
 ) & {
   /** Which machine emitted this event ('local' or a remote's id). Stamped by
    *  preload's provider.onEvent, not the adapter - used to reject cross-machine
@@ -87,12 +101,55 @@ export type RuntimeEvent = (
   machineId?: string
 }
 
+/**
+ * The message id a `user.message` echo will carry.
+ *
+ * A client appends its own turn optimistically and the backend then broadcasts
+ * it to everyone. Using this id for BOTH means the echo collapses onto the
+ * optimistic message by id, in whatever store the client keeps. The alternative
+ * - a set of "origins I sent" consulted on arrival - has to survive a remount,
+ * a hot reload and a second panel claiming the event, and did not.
+ */
+export function echoMessageId(origin: string): string {
+  return `remote_${origin}`
+}
+
 export interface RuntimeContentEvent {
   type: 'content'
   threadId: string
   messageId: string
+  /** An increment when `append` is set, otherwise the whole message body. */
   text: string
+  /**
+   * True when `text` extends the message rather than replacing it.
+   *
+   * Adapters set this wherever their provider hands them a delta, which is the
+   * common case. Emitting the accumulated body every token cost O(n^2) bytes,
+   * invisible over local IPC and ruinous over a phone's radio.
+   *
+   * Absent means a full snapshot, which is what non-streaming providers and
+   * one-shot notices produce. Fold with `applyContentText` in shared/
+   * content-stream rather than deciding per call site.
+   */
+  append?: boolean
   streamKind: 'assistant' | 'reasoning' | 'plan'
+}
+
+/**
+ * A user turn was submitted. The adapter never emits this - the registry does,
+ * on send-turn, because the typed text otherwise exists only in the client that
+ * typed it. Without it a phone's message never reaches the desktop, even though
+ * the agent's reply does.
+ *
+ * `origin` is a client-generated id echoed back so the sender can skip its own
+ * message, which it already appended optimistically.
+ */
+export interface RuntimeUserMessageEvent {
+  type: 'user.message'
+  threadId: string
+  text: string
+  origin?: string
+  at: number
 }
 
 export interface RuntimeToolStartedEvent {
@@ -165,6 +222,22 @@ export interface RuntimeStatusEvent {
   type: 'status'
   threadId: string
   status: ProviderSessionStatus
+}
+
+/**
+ * Which provider and credential profile a thread is now running on.
+ *
+ * Published by the registry whenever a session starts, so EVERY connected
+ * client agrees. Without it a rotation done on one client leaves the others
+ * labelling the thread with the profile it used to run on.
+ */
+export interface RuntimeSessionProviderEvent {
+  type: 'session.provider'
+  threadId: string
+  provider: ProviderKind
+  instanceId: string | null
+  /** Display name, so a client can label the chip without its own lookup. */
+  instanceName: string | null
 }
 
 export interface RuntimeSessionEvent {

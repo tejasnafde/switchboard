@@ -127,6 +127,9 @@ interface AgentStore {
   addSession: (session: Omit<AgentSession, 'messages' | 'unreadCount' | 'runtimeMode'> & { runtimeMode?: RuntimeMode }) => void
   removeSession: (id: string) => void
   setActiveSession: (id: string) => void
+  /** Clear the badge without focusing the session - a `thread.read` from
+   *  another client (the phone) means it was read there, not here. */
+  markSessionRead: (id: string) => void
   updateStatus: (id: string, status: AgentStatus) => void
   /** When a machine's tunnel drops the remote server dies with it - reset that
    *  machine's in-flight sessions ('running' or 'thinking') to 'idle' so they
@@ -233,6 +236,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       s.id === id ? { ...s, unreadCount: 0 } : s
     ),
   })),
+
+  markSessionRead: (id) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === id && s.unreadCount !== 0 ? { ...s, unreadCount: 0 } : s
+      ),
+    })),
 
   updateStatus: (id, status) =>
     set((state) => ({

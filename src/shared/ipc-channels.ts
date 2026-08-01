@@ -66,6 +66,23 @@ export const AppChannels = {
   REMOVE_PROJECT: 'app:remove-project',
   /** Rename a project's display name (path/PK unchanged). */
   RENAME_PROJECT: 'app:rename-project',
+  /** (Re)start the mobile pairing endpoint from saved settings; returns status. */
+  MOBILE_PAIRING_APPLY: 'mobile-pairing:apply',
+  /** Current mobile pairing endpoint status without changing anything. */
+  MOBILE_PAIRING_STATUS: 'mobile-pairing:status',
+  /** Mint a one-time pairing code for the QR. Replaces any unused one. */
+  MOBILE_PAIRING_CODE: 'mobile-pairing:code',
+  /** Paired devices, with the credential itself omitted. */
+  MOBILE_DEVICES: 'mobile-pairing:devices',
+  /** Revoke one device without disturbing the others. */
+  MOBILE_DEVICE_REVOKE: 'mobile-pairing:revoke',
+  /** External IPv4 addresses of this machine - mobile pairing QR host picker. */
+  LAN_ADDRESSES: 'app:lan-addresses',
+  /**
+   * Record that a thread was read, and broadcast `thread.read` so every other
+   * client drops its badge. Read state is the backend's, not each client's.
+   */
+  MARK_READ: 'app:mark-read',
 } as const
 
 export const MachineChannels = {
@@ -76,6 +93,12 @@ export const MachineChannels = {
   REORDER: 'machines:reorder',
   /** Parse ~/.ssh/config into host candidates for the "Add machine" picker. */
   LIST_SSH_HOSTS: 'machines:list-ssh-hosts',
+  /**
+   * IAP tunnel targets discovered from ~/.ssh/config ProxyCommand lines, so a
+   * paired phone can offer VMs instead of asking for project/zone/instance by
+   * hand. Served by whichever backend holds the ssh config.
+   */
+  LIST_IAP_TARGETS: 'machines:list-iap-targets',
   /** Cached per-remote tree snapshots for offline read-only browse. */
   GET_SNAPSHOTS: 'machines:get-snapshots',
   /** Persist a freshly-scanned remote tree snapshot. */
@@ -151,6 +174,18 @@ export const GitChannels = {
  * serving the folder; SELECTION carries cmd+l captures from the workbench;
  * STOP is the idle shutdown (hidden pane reclaims the server's RAM).
  */
+/**
+ * Mobile push. The backend sends, because the phone is asleep when it matters.
+ * VIEWING tells the backend which thread a device has open, so it is not
+ * notified about the screen already in the user's hand.
+ */
+export const PushChannels = {
+  REGISTER: 'push:register',
+  UNREGISTER: 'push:unregister',
+  VIEWING: 'push:viewing',
+  LIST: 'push:list',
+} as const
+
 export const IdeChannels = {
   ENSURE: 'ide:ensure',
   /** Write workbench.colorTheme into code-server's settings.json - applied live by its file watcher. */

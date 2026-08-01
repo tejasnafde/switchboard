@@ -3,9 +3,9 @@
  *
  * When the toggle is OFF, ChatPanel routes every `content` runtime
  * event through `bufferContent` instead of dispatching to the agent
- * store. The buffer keeps the latest `text` snapshot for each
- * `(threadId, messageId)` pair (content events ship the full
- * accumulated text on every delta, not just the new chars). On
+ * store. The buffer accumulates each `(threadId, messageId)` pair with
+ * `applyContentText`, so an increment extends what is held and a full
+ * snapshot replaces it. On
  * `turn.completed`, ChatPanel calls `drainTurn(threadId)` to flush
  * everything for that thread as a single batch - same UX as t3code's
  * server-side `delivery: "buffered"` mode but implemented renderer-side
@@ -17,6 +17,8 @@
  * them in the right sequence.
  */
 
+import { applyContentText, type ContentChunk } from '@shared/content-stream'
+
 export type StreamingBuffer = Map<string, Map<string, string>>
 
 export function createStreamingBuffer(): StreamingBuffer {
@@ -27,14 +29,14 @@ export function bufferContent(
   buffer: StreamingBuffer,
   threadId: string,
   messageId: string,
-  text: string,
+  chunk: ContentChunk,
 ): void {
   let perThread = buffer.get(threadId)
   if (!perThread) {
     perThread = new Map()
     buffer.set(threadId, perThread)
   }
-  perThread.set(messageId, text)
+  perThread.set(messageId, applyContentText(perThread.get(messageId), chunk))
 }
 
 export interface DrainedEntry {

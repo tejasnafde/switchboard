@@ -24,3 +24,28 @@ export function fmtDuration(ms: number): string {
   const m = Math.floor((ms % 3_600_000) / 60_000)
   return `${h}h ${m}m`
 }
+
+/** Compact token counts: 850 → "850", 4500 → "4.5k", 1_500_000 → "1.5M". */
+export function formatTokens(tokens: number | null): string {
+  if (tokens === null) return '?'
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`
+  return String(tokens)
+}
+
+/** Compact relative timestamps for list rows: now / 5m / 3h / 2d / 4w / 3mo. */
+export function formatRelativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'now'
+  if (mins < 60) return `${mins}m`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h`
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days}d`
+  const weeks = Math.floor(days / 7)
+  const months = Math.floor(days / 30)
+  // 28-30 days: already "4w" but not yet a full month - keep weeks, never "0mo".
+  if (months < 1) return `${weeks}w`
+  return `${months}mo`
+}

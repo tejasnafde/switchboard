@@ -15,15 +15,20 @@ process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection:', msg)
 })
 
-import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, protocol, net, screen } from 'electron'
+import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
 import { join, basename } from 'path'
 import { registerTerminalHandlers, shutdownTerminals } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
+import { registerPushHandlers } from './ipc/push'
+import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers } from './ipc/app'
 import { registerAppDesktopHandlers } from './ipc/app-desktop'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
-import { ElectronIpcHost } from './backend/host'
+import { ElectronIpcHost, type BackendHost } from './backend/host'
+import { MultiHost } from './backend/multi-host'
+import { createPairingCode, listSessionViews, revokeSession } from './backend/device-sessions'
+import { MobileEndpoint } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
 import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
@@ -41,8 +46,16 @@ const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
 
+/** Unpackaged means a dev run, where a stale instance is the usual lock holder. */
+const isDev = !app.isPackaged
+
+/** Unsubscribe for the push notifier, so a reactivated window can re-attach. */
+let detachPush: (() => void) | null = null
+
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
+/** Mobile pairing WS endpoint (null when no token is configured). */
+let mobileEndpoint: MobileEndpoint | null = null
 /** True once the user has asked for restart-and-install; repeats are dropped. */
 let installRequested = false
 
@@ -120,7 +133,8 @@ app.on('open-url', (event, url) => {
   event.preventDefault()
   ideLog.info('open-url', { url })
   const win = mainWindow
-  if (win) {
+  // Same destroyed-window trap as the second-instance handler above.
+  if (win && !win.isDestroyed()) {
     if (win.isMinimized()) win.restore()
     win.focus()
   }
@@ -130,13 +144,40 @@ app.on('open-url', (event, url) => {
 // Single instance lock - prevent multiple windows
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
+  // In dev this is almost always a STALE process from an earlier `npm run dev`
+  // whose window was closed: it still holds the lock, so the fresh build loses
+  // and exits. Silence made that look like "you have to run it twice".
+  if (isDev) {
+    log.error(
+      'another Switchboard holds the single-instance lock - probably an earlier `npm run dev`. ' +
+        'It is being asked to quit; re-run `npm run dev`. To check: ' +
+        "lsof -nP -iTCP:8765 -sTCP:LISTEN",
+    )
+  }
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (mainWindow) {
+    // `mainWindow` stays non-null after the window is destroyed, so the null
+    // check alone is not enough: touching a destroyed BrowserWindow throws
+    // "Object has been destroyed". That happens for real - a dev process whose
+    // window closed but which still holds the lock is exactly what a second
+    // `npm run dev` runs into.
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore()
       mainWindow.focus()
+      return
     }
+    // Lock held but no window to raise. In dev that means THIS process is a
+    // stale husk: its renderer was served by a vite server that died with the
+    // old run, so recreating a window here would load a dead URL. Quit instead
+    // and release the lock, so the next run - with the fresh build - wins.
+    if (isDev) {
+      log.info('stale dev instance with no window - quitting to release the single-instance lock')
+      app.quit()
+      return
+    }
+    log.info('second-instance with no live window - recreating it')
+    app.emit('activate')
   })
 }
 
@@ -523,11 +564,24 @@ app.whenReady().then(() => {
   mainWindow = createWindow()
 
   // Handlers migrating to the BackendHost seam (remote-ready); rest take the window.
-  const backendHost = new ElectronIpcHost(mainWindow)
+  // The mobile endpoint is ALWAYS in the fan-out; whether it actually listens is
+  // decided by apply() from the saved token - and re-decided live whenever
+  // Settings > Mobile saves, so a fresh QR is never a lie about a dead port.
+  mobileEndpoint = new MobileEndpoint()
+  const backendHost: BackendHost = new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
+  backendHost.handle(AppChannels.MOBILE_PAIRING_APPLY, () => mobileEndpoint!.apply())
+  backendHost.handle(AppChannels.MOBILE_PAIRING_STATUS, () => mobileEndpoint!.status())
+  // These sit behind the `admin` scope (see device-auth): a paired phone must
+  // not be able to mint itself another session or revoke the devices that
+  // could remove it.
+  backendHost.handle(AppChannels.MOBILE_PAIRING_CODE, () => createPairingCode())
+  backendHost.handle(AppChannels.MOBILE_DEVICES, () => listSessionViews())
+  backendHost.handle(AppChannels.MOBILE_DEVICE_REVOKE, (id: string) => revokeSession(id))
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)
   registerAppHandlers(backendHost)
+  registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
@@ -554,15 +608,29 @@ app.whenReady().then(() => {
 
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
+  detachPush = attachPushNotifier(providerRegistry.bus, {
+    // OS-level idle, so it is true whatever window is in front. The headless
+    // server passes nothing and therefore never suppresses.
+    idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
+  })
   providerRegistry.registerIpcHandlers()
+
+  // All handlers are recorded on the endpoint now; start listening if a token
+  // is already saved. Later Settings saves re-apply() live over IPC.
+  mobileEndpoint.apply()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow()
-      const reactivatedHost = new ElectronIpcHost(mainWindow)
+      // Re-point the renderer half at the new window; the mobile endpoint is
+      // already listening, so reuse it rather than binding the port again.
+      const reactivatedHost: BackendHost = mobileEndpoint
+        ? new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
+        : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
       registerAgentHandlers(reactivatedHost)
       registerAppHandlers(reactivatedHost)
+      registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
@@ -572,6 +640,14 @@ app.whenReady().then(() => {
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(reactivatedHost)
+      // New registry means a new bus. Without re-attaching, notifications stop
+      // after the window has been closed and reopened once.
+      detachPush?.()
+      detachPush = attachPushNotifier(providerRegistry.bus, {
+    // OS-level idle, so it is true whatever window is in front. The headless
+    // server passes nothing and therefore never suppresses.
+    idleMs: () => powerMonitor.getSystemIdleTime() * 1000,
+  })
       providerRegistry.registerIpcHandlers()
     }
   })
@@ -591,6 +667,7 @@ const quitCoordinator = new QuitCoordinator(
     providerRegistry?.stopAll()
     disposeUsageProbes()
     void stopAllMachineConnections()
+    mobileEndpoint?.close()
     closeDb()
   },
   () => app.quit(),

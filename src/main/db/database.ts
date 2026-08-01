@@ -29,6 +29,21 @@ export function getDb(): Database.Database {
   try {
     db = openAndMigrate(dbPath)
   } catch (err) {
+    // A native binding that will not load says NOTHING about the database file.
+    // Moving it aside here destroyed a perfectly good DB whenever
+    // better-sqlite3 was built for a different ABI than the running runtime -
+    // e.g. `npm run rebuild` targets Electron (module version 130) while the
+    // headless server runs under system node (137). Fail loudly with the fix
+    // instead of eating the data.
+    const code = (err as NodeJS.ErrnoException | undefined)?.code
+    if (code === 'ERR_DLOPEN_FAILED' || code === 'MODULE_NOT_FOUND') {
+      log.error(`better-sqlite3 could not load - NOT touching ${dbPath}`, err)
+      throw new Error(
+        'better-sqlite3 failed to load: it was built for a different runtime than the one ' +
+          'running now. For the Electron app run `npm run rebuild`; for the headless server ' +
+          'run it under Electron as node (`npm run server`) or rebuild for plain node.',
+      )
+    }
     // A corrupt/unopenable DB used to throw uncaught here, leaving the app
     // running with no window and no explanation. Move the bad file aside
     // (preserved for manual recovery), start fresh, and tell the user.
@@ -202,6 +217,12 @@ function migrate(db: Database.Database): void {
     }
     if (!cols.some((c) => c.name === 'worktree_branch')) {
       db.exec('ALTER TABLE conversations ADD COLUMN worktree_branch TEXT')
+    }
+    // Migration (2026-08-01 - shared read state): epoch ms of the last time any
+    // client marked this thread read. Nullable: a never-opened conversation has
+    // no read point, and null is not the same as "read at time 0".
+    if (!cols.some((c) => c.name === 'last_read_at')) {
+      db.exec('ALTER TABLE conversations ADD COLUMN last_read_at INTEGER')
     }
   } catch { /* ignore */ }
 
@@ -838,6 +859,27 @@ export function setConversationRuntimeMode(id: string, mode: string): void {
   getDb().prepare(
     'UPDATE conversations SET runtime_mode = ?, updated_at = ? WHERE id = ?'
   ).run(mode, Date.now(), id)
+}
+
+/**
+ * Stamp when a thread was read. Deliberately does NOT touch `updated_at` -
+ * that drives sidebar ordering, and reading a chat must not reorder the list.
+ *
+ * Returns false when no row matched, which happens for a session that was
+ * scanned off disk but never persisted. The caller still broadcasts, so the
+ * badge clears everywhere either way.
+ */
+export function setConversationLastRead(id: string, at: number): boolean {
+  return getDb().prepare(
+    'UPDATE conversations SET last_read_at = ? WHERE id = ?'
+  ).run(at, id).changes > 0
+}
+
+export function getConversationLastRead(id: string): number | null {
+  const row = getDb().prepare(
+    'SELECT last_read_at FROM conversations WHERE id = ?'
+  ).get(id) as { last_read_at: number | null } | undefined
+  return row?.last_read_at ?? null
 }
 
 /**

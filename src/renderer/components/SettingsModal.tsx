@@ -28,6 +28,7 @@ import {
   setAssistantStreamingEnabled,
 } from '../services/streamingPref'
 import { ProvidersTab } from './settings/ProvidersTab'
+import { MobilePairingTab } from './settings/MobilePairingTab'
 
 interface SettingsModalProps {
   open: boolean
@@ -74,7 +75,7 @@ interface LaunchConfigProjectRow {
 
 export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const { theme, setTheme } = useThemeStore()
-  const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'launchConfigs' | 'archived' | 'tour' | 'about'>('general')
+  const [activeTab, setActiveTab] = useState<'general' | 'providers' | 'mobile' | 'launchConfigs' | 'archived' | 'tour' | 'about'>('general')
   const [archived, setArchived] = useState<ArchivedConv[]>([])
   const [loadingArchived, setLoadingArchived] = useState(false)
   const [launchConfigProjects, setLaunchConfigProjectRows] = useState<LaunchConfigProjectRow[]>([])
@@ -333,7 +334,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           padding: '0 18px',
           gap: '0',
         }}>
-          {(['general', 'providers', 'launchConfigs', 'archived', 'tour', 'about'] as const).map((tab) => (
+          {(['general', 'providers', 'mobile', 'launchConfigs', 'archived', 'tour', 'about'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -442,6 +443,12 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           )}
 
           {activeTab === 'providers' && <ProvidersTab />}
+
+          {activeTab === 'mobile' && (
+            <SettingsSection title="Mobile Pairing">
+              <MobilePairingTab />
+            </SettingsSection>
+          )}
 
           {activeTab === 'launchConfigs' && (
             <div>

@@ -20,7 +20,7 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 ## Commands
 
 - `npm run dev` - launches Electron (auto-unsets `ELECTRON_RUN_AS_NODE`)
-- `npm test` - vitest (~1429 tests across 152 files)
+- `npm test` - vitest (~1953 tests across 196 files)
 - `npm run test:watch` - vitest in watch mode
 - `npm run typecheck` - main + renderer tsc
 - `npm run build` - **gated build**: `prebuild` runs typecheck + test before the actual build fires; `postbuild` runs `scripts/smoke-test.mjs`
@@ -42,6 +42,28 @@ require green CI on main first (see docs/releasing.md).
 ## Build gate (2026-04-20)
 
 `npm run build` fails the entire build if typecheck or tests fail. The `prebuild` npm lifecycle hook chains `typecheck && test` before `electron-vite build`. This caught real regressions on the first run - see CHANGELOG.md.
+
+## Google Cloud, OAuth branding, Secret Manager
+
+@/Users/tejas/Desktop/projects/CLAUDE.local.md
+
+Shared across every project under `~/Desktop/projects` - read that file for the
+rules. The ones that bite most often:
+
+- Personal GCP resources (our OAuth client, secrets) live in `teejayproject` and
+  **every** gcloud command touching them needs `--configuration=personal`. IAP
+  tunnels to GeoIQ VMs use the WORK account instead - no flag.
+- The OAuth consent screen is per-PROJECT, so all personal apps share one brand:
+  **tn07** / `tn07.dev` (projects live at `<name>.tn07.dev`, e.g.
+  `switchboard.tn07.dev`). Do not rename it to "Switchboard".
+- The mobile OAuth client is Secret Manager secret `switchboard-oauth-client`.
+  Never hardcode it.
+- IAP relay requires `Origin: bot:iap-tunneler` or it silently sends nothing.
+
+Switchboard-specific: `src/shared/iap-tunnel.ts` is the IAP codec and
+`scripts/iap-probe.mjs` is the live smoke test (validated end to end against
+`geoiq-ssg-dev-in` on 2026-07-25). Design notes in
+`docs/plans/2026-07-22-mobile-app.md`.
 
 ## Known gotchas
 
@@ -66,13 +88,116 @@ The renderer NEVER touches `ipcRenderer` directly - it calls `window.api.*` → 
 
 **Standalone server**: `src/server/index.ts` → bundled to `out/server/index.cjs` (`scripts/build-server.mjs`, esbuild, `electron` external). A headless Node process wrapping the identical handlers under `WsHost` (default `127.0.0.1:8765`, pidfile `~/.switchboard-server/server.pid`). Run via `npm run server`. This is what runs on a remote VM; PTYs/agents/git/fs spawn THERE and stream back.
 
-**Wire protocol**: `src/shared/ws-protocol.ts` - JSON frames `req/res/snd/evt` (`encodeFrame`/`decodeFrame`), `invoke`→req/res correlated by id.
+**Wire protocol**: `src/shared/ws-protocol.ts` - JSON frames `req/res/snd/evt` plus `hello/ready/ping/pong` (`encodeFrame`/`decodeFrame`), `invoke`→req/res correlated by id. `decodeFrame` validates shape, not just the `k` discriminant.
+
+Three things beyond plain RPC, all driven by the phone case:
+- **Resume.** `evt` frames carry a monotonic `seq` and `WsHost` keeps a bounded `EventReplayBuffer` (`src/shared/event-replay-buffer.ts`). A reconnecting client sends `hello { since, epoch }` and is replayed exactly what it missed. `terminal:output`/`terminal:exit` are excluded from the sequence space (`NON_REPLAYABLE_EVENT_CHANNELS`): it is high-volume and re-seeds itself on reattach, so buffering it would evict the provider events that cannot be recovered.
+- **Epoch.** `WsHost` mints a random `epoch` per process. A restarted server resets `seq` to 0, so without this a client holding a high cursor would silently discard every later event. A changed epoch, or an evicted cursor, answers `ready { gap: true }` and the client re-seeds via `onResumeGap` rather than showing a transcript with a hole in it.
+- **Liveness.** The host pings every 15s and terminates clients that stop answering; the client re-dials after 40s of silence and exposes `probe()`/`forceReconnect()`. A mobile socket dies with no FIN, so elapsed silence is the only signal a client that cannot send protocol pings has. Both sides require proof the peer speaks the heartbeat before acting on its silence, because a phone updates over OTA independently of the desktop it pairs with.
+- **Auth in a frame, not the URL** (`src/shared/device-auth.ts`, `src/main/backend/device-sessions.ts`). The QR carries a one-time pairing code (5 min); a device redeems it once for its own session, stored as a sha256 hash and revocable on its own. Scopes deny only what is dangerous (`terminal:*` and `mobile-pairing:*` for a phone, so a stolen phone credential can neither open a shell nor revoke your other devices) rather than allowing only what is listed - deny-by-default needs a hand-maintained channel list whose failure mode is a feature breaking silently for paired devices. Legacy `?token=` still works; `?auth=frame` declares in-band auth, and an unauthenticated socket is closed after 10s.
+- **Content is incremental.** `content` events carry a delta with `append`, folded by `applyContentText` (`src/shared/content-stream.ts`). Cumulative text cost O(n^2) bytes per reply. `mergeContentChunks` is associative, which is what lets the renderer's 30fps coalescer and the phone's 50ms batcher drop intermediate commits losslessly.
 
 **Client transports** (`src/preload/`): `IpcTransport` (local), `WsTransport` (`src/shared/ws-transport.ts`, browser WebSocket + reconnect/outbox), `HybridTransport` (desktop-only channels → IPC, everything else → remote WS), `TransportRouter` + `routing-table.ts` (one transport per machine keyed by threadId/terminal id, so one window drives local + multiple remotes at once). `SWITCHBOARD_BACKEND_URL=ws://host:8765` flips the base transport to hybrid; unset = pure local.
 
 `src/shared/*` is the transport-agnostic contract layer (channels, wire protocol, transport interface, events, types) - **no `electron`, no `react` imports**. Consumed by preload AND both backend hosts.
 
 **Remote machines / SSH** (`src/main/machines/`): `sshTunnel.ts` builds `ssh -L localPort:127.0.0.1:remotePort … <bootstrap>` (uses the system `ssh` binary - no `ssh2`/native deps; `BatchMode`, `accept-new`), `connectionManager.ts` owns connect/provision/health-probe/auto-reconnect, plus `provisioner.ts`/`remoteExec.ts`/`reconnectBackoff.ts`/`sshConfig.ts`. The renderer then connects to `ws://127.0.0.1:<localPort>` as if local. Docs: `docs/notes/ssh-remote-plan.md`, `docs/notes/remote-machines-handoff.md`. No mobile client and no cloud relay - the "remote client" is the desktop app pointed at a tunneled remote backend.
+
+### Mobile app (`apps/mobile/`)
+
+Expo SDK 57 React Native client for the same backends. Talks to a desktop app
+or a headless server through `WsTransport`, or to an IAP-tunnelled VM through
+`IapTransport` (NDJSON over the raw TCP stream IAP gives us - `TcpHost` serves
+that side). Imports `@shared/*` and nothing else from the repo.
+
+**Two update lanes.** `mobile-ota.yml` publishes JS-only changes over
+expo-updates; `mobile-release.yml` builds an APK on EAS and attaches it to a
+`mobile-v*` GitHub Release, which the app installs itself
+(`src/lib/selfUpdate.ts`). Native changes - a new module, a permission, an SDK
+bump - MUST take the APK lane. `runtimeVersion` uses the **`fingerprint`**
+policy (changed 2026-08-01, was `appVersion`), so the hash covers native deps,
+config plugins and the native-affecting parts of app.json. An OTA can therefore
+only reach a binary whose native side matches it, with nobody having to
+remember anything. `appVersion` pinned to the version *string*, so adding a
+native module without bumping `version` shipped a bundle to an APK that lacked
+it. `.fingerprintignore` keeps generated (`/android`, `/ios`) and test-only
+paths out of the hash. Switching policy re-targets every future update, so
+APKs built before the switch need replacing once.
+
+**Android release builds block cleartext, and dev builds do not.** RN's Gradle
+plugin sets `usesCleartextTraffic=false` for the release build type, and Expo's
+main manifest sets nothing, so targetSdk 28+ defaults to blocking it. Our whole
+transport is `ws://`, so a `preview`/`production` APK failed every connection
+while `expo run:android` worked. `plugins/withAndroidCleartextTraffic.js` sets
+the attribute on the main manifest; iOS needs `NSAllowsArbitraryLoads` plus
+`NSLocalNetworkUsageDescription` (both in app.json) for the same reason. Verify
+after touching either with `npx expo prebuild -p android --clean` then grep the
+manifest, and delete the generated `android/` afterwards (prebuild also rewrites
+the `android`/`ios` npm scripts for a bare workflow; revert that).
+
+**Push** (`src/main/push/`, `src/shared/push-policy.ts`): the BACKEND sends,
+because the phone is asleep when it matters. `attachPushNotifier` subscribes to
+the provider registry's bus and posts to Expo for approvals, questions, turn
+end and errors only. Devices report which thread they have open so they are not
+notified about the screen in the user's hand, and registration carries the
+client's connection id, echoed back so a tap knows which backend to open.
+Android needs FCM credentials on the EAS project - see the Firebase section in
+CLAUDE.local.md. A new registry is created when a closed window is reopened, so
+the notifier must be re-attached there.
+
+**Testing: two runners, one rule.** Pure logic goes in the root vitest suite
+(`tests/unit/**`, `@shared` alias resolves). Anything importing react-native
+CANNOT load there, so components get jest instead: `npm test --prefix apps/mobile`,
+config in `apps/mobile/jest.config.js`, tests in
+`src/**/__tests__/**/*.test.{ts,tsx}`. The globs do not overlap (vitest matches
+`.ts` under `tests/unit/` only), so neither runner sees the other's files. **A
+root `npm install` is required as well as the mobile one** - the tests reach
+`@shared/*` outside the package, so babel resolves its runtime helpers from the
+root `node_modules`. CI runs the jest suite on the ubuntu runner only.
+
+Keep decision logic in `src/lib/*.ts` (vitest) and assert only what RENDERS in
+jest - `lib/composer.ts` and `lib/gestures.ts` hold the rules, and the component
+test checks the glyph and label those rules produce. PanResponder derives
+gesture state from real touch history, so a drag cannot be faked by calling the
+handlers. Note that a plain `Pressable` tap is NOT a gesture and can be driven
+with `root.findByProps({...}).props.onPress()` inside `act`; no handler is
+currently exercised, so `onSend`, `onStopTurn` and tool-output expansion have no
+coverage.
+
+Three traps in that jest setup, all cost time:
+- `@testing-library/react-native` 14 returned an EMPTY render result under this
+  React 19 / RN 0.86 / jest-expo combination, even for a bare `<View>`, so
+  `src/test/render.tsx` drives `react-test-renderer` directly. RNTL is NOT a
+  dependency, so that finding cannot be re-verified from the repo; re-test it
+  before assuming it still holds. `react-test-renderer` is itself deprecated by
+  React, so this foundation has a shelf life.
+- `findAll` visits composite instances as well as host ones. Without
+  `{ deep: false }` every icon is found twice (the mock's testID rides on both),
+  and a name comparison against `node.type` matches the composite. Host-node
+  counts must test `typeof node.type === 'string'`.
+- A decorative `Animated.loop` keeps firing on real timers after its test ends
+  and crashes the worker inside react-native's `Easing` once jest tears the
+  module registry down. `src/test/render.tsx` unmounts after every test.
+
+**Looking at it.** `DevGalleryScreen` (dev-only route, linked from the bottom of
+Connections) renders assistant text, tool calls and composer states on one
+screen, for states that are awkward to reach on purpose. It is NOT every feed
+row: `user`, `approval`, `question`, `plan`, `fileEdit`, `denial`, `error` and
+`notice` are absent, and `approval`/`question` are the two most stateful.
+Adding them means lifting their handlers out of `ThreadScreen` first. Its
+loading and empty tiles are replicas against the gallery's own stylesheet, not
+the production path, so they would not have caught the upside-down loader
+(a `scaleY: -1` on `ThreadScreen`'s `emptyWrap` under the inverted `FlatList`).
+`BuildStamp` shows version + channel + OTA id, and names an emergency launch
+separately, because an APK plus stacked OTAs means the version alone does not
+identify what is running.
+
+**Trap that cost a whole debugging cycle:** if `expo-doctor` reports dependency
+drift, fix it before believing anything else. A react-native/metro version
+mismatch made Metro unable to resolve files outside the project root, which is
+how this app reaches `src/shared`, and it surfaced only as a failed
+"Bundle JavaScript" phase on EAS. `npx expo install --fix`, and keep doctor at
+20/20.
 
 ### Window → Row → Window → Pane model (terminals)
 
@@ -274,7 +399,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
 
-## Test suite (~1429 tests across 152 files)
+## Test suite (~1953 tests across 196 files)
 
 Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
@@ -293,7 +418,7 @@ Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file
 
 ### E2E temp-dir cleanup (MANDATORY)
 
-The e2e scripts (`e2e/ide.e2e.mjs`, `e2e/ide-workflow.e2e.mjs`, etc.) create ~600MB temp dirs per run via `mkdtempSync` (`sb-ide-e2e-*`, `sb-ide-wf-*`, `sb-ide-proj-*`, `sb-update*`, `sb-ide-probe*`) and do NOT clean up after themselves — this has filled the entire disk before (600+ leaked dirs, ~18GB). You are welcome to run e2e tests, but after every e2e run (pass, fail, or crash) you MUST delete the leftovers:
+The e2e scripts (`e2e/ide.e2e.mjs`, `e2e/ide-workflow.e2e.mjs`, etc.) create ~600MB temp dirs per run via `mkdtempSync` (`sb-ide-e2e-*`, `sb-ide-wf-*`, `sb-ide-proj-*`, `sb-update*`, `sb-ide-probe*`) and do NOT clean up after themselves - this has filled the entire disk before (600+ leaked dirs, ~18GB). You are welcome to run e2e tests, but after every e2e run (pass, fail, or crash) you MUST delete the leftovers:
 
 ```sh
 rm -rf "$TMPDIR"sb-* /tmp/sb-*
@@ -374,7 +499,7 @@ src/
 │   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · filePathRef.ts
 │   ├── provider-usage.ts · claude-usage-parse.ts · codex-usage-parse.ts   # normalised subscription usage limits
 │   ├── transport.ts · ws-protocol.ts · ws-transport.ts · machines.ts   # backend transport seam (local ↔ remote)
-└── tests/unit/                        # ~1429 tests across 152 files
+└── tests/unit/                        # ~1953 tests across 196 files
 ```
 
 ## Logging conventions

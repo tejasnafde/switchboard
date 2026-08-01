@@ -26,7 +26,8 @@
     "test:e2e:remote-bridge": "node e2e/remote-bridge.e2e.mjs",
     "test:coverage": "vitest run --coverage",
     "build:server": "node scripts/build-server.mjs",
-    "server": "node out/server/index.cjs",
+    "server": "ELECTRON_RUN_AS_NODE=1 electron out/server/index.cjs",
+    "server:node": "node out/server/index.cjs",
     "rebuild": "npx --yes @electron/rebuild -f -w node-pty",
     "dist": "npm run build && electron-builder --mac --arm64",
     "dist:fast": "npm run build:fast && electron-builder --mac --arm64",
@@ -35,7 +36,8 @@
     "dist:mac": "npm run build && electron-builder --mac --arm64",
     "dist:win": "npm run build && electron-builder --win --x64",
     "dist:publish": "npm run build && electron-builder --mac --arm64 --publish always",
-    "dist:publish:win": "npm run build && electron-builder --win --x64 --publish always"
+    "dist:publish:win": "npm run build && electron-builder --win --x64 --publish always",
+    "seed:demo": "ELECTRON_RUN_AS_NODE=1 electron scripts/seed-mobile-demo.mjs"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",
@@ -61,6 +63,7 @@
     "lexical": "^0.44.0",
     "marked": "^15.0.0",
     "node-pty": "^1.0.0",
+    "qrcode": "^1.5.4",
     "ws": "^8.21.0",
     "zustand": "^5.0.0"
   },
@@ -69,6 +72,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.0.0",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/ws": "^8.18.1",

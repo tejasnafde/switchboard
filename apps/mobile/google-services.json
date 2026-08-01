@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "974343814740",
+    "project_id": "teejayproject",
+    "storage_bucket": "teejayproject.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:974343814740:android:ebc1f6839b8da5423e37c1",
+        "android_client_info": {
+          "package_name": "app.switchboard.mobile"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "974343814740-0grpoovl4e9ku6h8ccc7s7v3ffa3maf7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAFcw4aNehZAhReL4sGMCNxtnqQu8NrAXM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "974343814740-0grpoovl4e9ku6h8ccc7s7v3ffa3maf7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -3,10 +3,23 @@
  * WebSocket so it needs no dependency. Frames before 'open' queue; in-flight
  * invokes reject on close. An unexpected close re-dials the same URL with
  * capped exponential backoff (tunnel blips heal in place - subscriptions and
- * queued frames survive); a deliberate close() or an exhausted reconnect
- * budget closes the transport for good.
+ * queued frames survive). Only a deliberate close() or a server auth rejection
+ * is terminal; a long outage keeps retrying at the cap.
+ *
+ * Three mobile-driven behaviours live here:
+ *
+ *  - **Resume.** On every open the transport sends `hello { since, epoch }` and
+ *    the server replays the `evt` frames it missed. Live frames arriving before
+ *    the replay are held back, so the listener still sees them in order.
+ *  - **Heartbeat.** The server pings; silence past a threshold means a
+ *    half-open socket (radio off, NAT rebind) and forces a re-dial instead of
+ *    waiting for a 30s invoke timeout to notice.
+ *  - **Classification.** A close is `transient` (retry forever) or `blocked`
+ *    (a verdict - stop and wait for the user to change something), so a UI can
+ *    say "token rejected" instead of spinning on "connecting".
  */
 import { encodeFrame, decodeFrame, type WsFrame } from './ws-protocol'
+import { reconnectDelay } from './backoff'
 import type { Transport } from './transport'
 import { createLogger } from './logger'
 
@@ -17,7 +30,8 @@ const DEFAULT_TIMEOUT_MS = 30_000
  *  shelling out to a CLI) - give them a generous timeout instead of the default. */
 const PROVIDER_TIMEOUT_MS = 200_000
 
-/** Re-dial backoff: 500ms doubling to a 5s cap, give up after ~60s total. */
+/** Re-dial backoff: 500ms doubling to a 5s cap. Past the budget we keep going
+ *  but start logging, so a long outage is visible without being terminal. */
 const RECONNECT_BASE_MS = 500
 const RECONNECT_CAP_MS = 5_000
 const RECONNECT_BUDGET_MS = 60_000
@@ -25,10 +39,34 @@ const RECONNECT_BUDGET_MS = 60_000
  *  bound are rejected/dropped instead of piling up unbounded. */
 const MAX_QUEUED_FRAMES = 100
 
+/** Two missed 15s pings plus slack: long enough that a brief radio stall does
+ *  not churn the connection, short enough to beat an invoke timeout. */
+const SILENCE_LIMIT_MS = 40_000
+const WATCHDOG_INTERVAL_MS = 5_000
+
 export interface WsReconnectOptions {
   baseMs?: number
   capMs?: number
   budgetMs?: number
+}
+
+/** WsHost's auth rejection close code - a server verdict, not a blip. */
+const CLOSE_UNAUTHORIZED = 4001
+
+export type WsTransportState = 'connected' | 'reconnecting' | 'closed'
+
+/**
+ * Why the connection is not up.
+ *
+ *  - `transient` - network, timeout, tunnel blip. Retrying is the right answer
+ *    and the user has nothing to fix.
+ *  - `blocked` - the server made a decision (bad token). Retrying loops against
+ *    a rejection forever; something has to change first.
+ */
+export type WsCloseReason = 'transient' | 'blocked'
+
+export function classifyCloseCode(code: number | null): WsCloseReason {
+  return code === CLOSE_UNAUTHORIZED ? 'blocked' : 'transient'
 }
 
 interface PendingInvoke {
@@ -62,8 +100,55 @@ export class WsTransport implements Transport {
   private readonly listeners = new Map<string, Set<(...args: unknown[]) => void>>()
   private readonly outbox: QueuedFrame[] = []
   private open = false
-  /** Terminal: deliberate close() or exhausted reconnect budget. Never unset. */
+  /** Terminal: deliberate close() or auth rejection. Never unset. */
   private closed = false
+  /** Set when the server closed us with 4001 - surfaced so UIs can say "bad token"
+   *  instead of spinning on "connecting". */
+  authRejected = false
+  /**
+   * Why the last socket died, and how many re-dials since the last success.
+   *
+   * A client stuck on "connecting" is otherwise indistinguishable from one that
+   * connects and is dropped every time - which is exactly the case that took a
+   * long time to diagnose once already.
+   */
+  lastCloseCode: number | null = null
+  lastCloseReason: WsCloseReason = 'transient'
+  redialCount = 0
+  /** Optional liveness observer - fired on open / unexpected close / terminal
+   *  shutdown. Assign after construction; connection stores use this instead
+   *  of probing. */
+  onStateChange: ((state: WsTransportState) => void) | null = null
+  /**
+   * Fired when the server could not replay everything we missed, so our view is
+   * known-incomplete. The owner re-seeds (re-fetches the open thread) instead
+   * of stitching a transcript that is quietly missing turns.
+   */
+  onResumeGap: (() => void) | null = null
+
+  /** Highest `evt` sequence applied. Sent as `since` on the next open. */
+  private lastSeq = 0
+  /** The server process our sequence belongs to; a change means start over. */
+  private epoch: string | null = null
+  /** Live frames that arrived before this connection's replay landed. Held so
+   *  the listener never sees a newer event before an older one. */
+  private resumeHold: Array<Extract<WsFrame, { k: 'evt' }>> | null = null
+  private lastFrameAt = 0
+  /** Set once the backend sends a `ping` or `ready`. Until then the liveness
+   *  checks stay disarmed: an older backend's silence is normal, not fatal. */
+  private peerSendsHeartbeat = false
+  /** The socket already routed through onSocketDead. forceReconnect drives that
+   *  path by hand, and the real 'close' event then arrives for the same socket. */
+  private deadSocket: WebSocket | null = null
+  /** Defaults true so a caller that never reports keeps always-retry. */
+  private online = true
+  /** When set, authenticate with an `auth` frame instead of a URL token. */
+  private auth: { session?: string; pairing?: string; label?: string } | null = null
+  /** The minted session is transmitted exactly once, so the owner must persist
+   *  it here or the device has to pair again. */
+  onSessionIssued: ((session: string) => void) | null = null
+  private readonly watchdog: ReturnType<typeof setInterval>
+
   private reconnecting = false
   private reconnectAttempt = 0
   private reconnectStartedAt = 0
@@ -76,17 +161,81 @@ export class WsTransport implements Transport {
     readonly url: string,
     private readonly timeoutMs = DEFAULT_TIMEOUT_MS,
     reconnect: WsReconnectOptions = {},
+    auth: { session?: string; pairing?: string; label?: string } | null = null,
   ) {
+    this.auth = auth
     this.reconnectBaseMs = reconnect.baseMs ?? RECONNECT_BASE_MS
     this.reconnectCapMs = reconnect.capMs ?? RECONNECT_CAP_MS
     this.reconnectBudgetMs = reconnect.budgetMs ?? RECONNECT_BUDGET_MS
+    this.watchdog = setInterval(() => this.checkSilence(), WATCHDOG_INTERVAL_MS)
+    // Node keeps a bare interval alive; the renderer and RN ignore this.
+    ;(this.watchdog as { unref?: () => void }).unref?.()
     this.dial()
   }
 
-  /** True until a deliberate close() or the reconnect budget runs out - a
-   *  transport mid-reconnect is still alive (its subscriptions will survive). */
+  /** True only while a socket is open. Callers deciding whether to SEND want
+   *  this; `isAlive` answers whether the transport still exists. */
+  isConnected(): boolean {
+    return this.open && !this.closed
+  }
+
+  /** True until a deliberate close() or an auth rejection - a transport
+   *  mid-reconnect is still alive (its subscriptions will survive). */
   isAlive(): boolean {
     return !this.closed
+  }
+
+  /** A half-open connection reports OPEN indefinitely, so elapsed silence is
+   *  the only signal a client that cannot send protocol pings has. */
+  private checkSilence(): void {
+    if (this.closed || !this.open) return
+    // Silence only means death if the peer would otherwise be talking. A
+    // pre-heartbeat backend never pings, and arming this against one tears down
+    // a healthy idle connection every 40s forever.
+    if (!this.peerSendsHeartbeat) return
+    if (Date.now() - this.lastFrameAt < SILENCE_LIMIT_MS) return
+    log.warn('no frames for', `${SILENCE_LIMIT_MS}ms - treating socket as dead`, this.url)
+    this.forceReconnect()
+  }
+
+  /** Tear down and re-dial now. For the watchdog, and for a foreground resume
+   *  after long enough that the OS has probably killed the socket silently. */
+  forceReconnect(): void {
+    if (this.closed) return
+    try {
+      this.ws.close()
+    } catch (err) {
+      log.warn('forceReconnect on an already-dead socket', err)
+    }
+    // `close()` on a half-open socket can hang without firing 'close', so drive
+    // the dead path directly. Its real 'close' may still arrive, hence the
+    // guard in onSocketDead - otherwise redialCount counts double.
+    this.onSocketDead(this.ws, null)
+  }
+
+  /** Round-trip a ping and reconnect if it goes unanswered. */
+  probe(timeoutMs = 3_000): void {
+    if (this.closed || !this.open) return
+    // An older backend does not answer a ping, so acting on the silence would
+    // reconnect on every foreground rather than only on a dead socket.
+    if (!this.peerSendsHeartbeat) return
+    const before = this.lastFrameAt
+    this.rawSend(encodeFrame({ k: 'ping', t: Date.now() }))
+    setTimeout(() => {
+      if (this.closed || !this.open) return
+      if (this.lastFrameAt === before) {
+        log.warn('probe went unanswered, reconnecting', this.url)
+        this.forceReconnect()
+      }
+    }, timeoutMs)
+  }
+
+  private rawSend(encoded: string): void {
+    try {
+      this.ws.send(encoded)
+    } catch (err) {
+      log.warn('send on a dead socket', err)
+    }
   }
 
   private dial(): void {
@@ -97,11 +246,23 @@ export class WsTransport implements Transport {
     sock.addEventListener('open', () => {
       if (sock !== this.ws || this.closed) return
       this.open = true
+      this.lastFrameAt = Date.now()
       if (this.reconnecting) {
         log.info('reconnected', this.url)
         this.reconnecting = false
         this.reconnectAttempt = 0
       }
+      this.redialCount = 0
+      this.lastCloseCode = null
+      // Hold live events until the replay lands, so a resumed client does not
+      // see turn N+1 before the turn N it missed.
+      this.resumeHold = []
+      // Before hello: the server refuses everything until this lands.
+      if (this.auth) this.rawSend(encodeFrame({ k: 'auth', ...this.auth }))
+      // Guarded: a throw here would skip onStateChange and the outbox flush
+      // below, leaving the UI on "connecting" with this.open already true.
+      this.rawSend(encodeFrame({ k: 'hello', since: this.lastSeq, epoch: this.epoch ?? undefined }))
+      this.onStateChange?.('connected')
       for (const frame of this.outbox.splice(0)) {
         sock.send(frame.encoded)
         if (frame.id !== undefined) {
@@ -112,6 +273,7 @@ export class WsTransport implements Transport {
     })
     sock.addEventListener('message', (ev: MessageEvent) => {
       if (sock !== this.ws) return
+      this.lastFrameAt = Date.now()
       const frame = decodeFrame(typeof ev.data === 'string' ? ev.data : String(ev.data))
       if (frame) this.dispatch(frame)
     })
@@ -120,25 +282,77 @@ export class WsTransport implements Transport {
     // first failed dial silently killed the whole re-dial chain. Spec-compliant
     // impls fire both for one failure, hence the settled guard.
     let settled = false
-    const onDead = (): void => {
-      if (settled || sock !== this.ws || this.closed) return
+    const onDead = (ev?: CloseEvent): void => {
+      if (settled) return
       settled = true
-      this.open = false
-      // In-flight invokes are genuinely lost - their responses died with the
-      // socket. Queued (unsent) ones stay pending and flush after the re-dial.
-      for (const [id, entry] of this.pending) {
-        if (!entry.sent) continue
-        clearTimeout(entry.timer)
-        entry.reject(new Error('WebSocket closed'))
-        this.pending.delete(id)
-      }
-      this.scheduleRedial()
+      this.onSocketDead(sock, typeof ev?.code === 'number' ? ev.code : null)
     }
     sock.addEventListener('close', onDead)
-    sock.addEventListener('error', onDead)
+    sock.addEventListener('error', () => onDead())
+  }
+
+  private onSocketDead(sock: WebSocket, code: number | null): void {
+    if (sock !== this.ws || this.closed || sock === this.deadSocket) return
+    this.deadSocket = sock
+    this.open = false
+    this.resumeHold = null
+    // In-flight invokes are genuinely lost - their responses died with the
+    // socket. Queued (unsent) ones stay pending and flush after the re-dial.
+    for (const [id, entry] of this.pending) {
+      if (!entry.sent) continue
+      clearTimeout(entry.timer)
+      entry.reject(new Error('WebSocket closed'))
+      this.pending.delete(id)
+    }
+    this.lastCloseCode = code
+    this.lastCloseReason = classifyCloseCode(code)
+    // 4001 is the server's auth verdict - re-dialing would loop against a
+    // rejection forever. Terminal shutdown; the owner re-pairs with a new token.
+    if (this.lastCloseReason === 'blocked') {
+      log.error('server rejected token (4001), closing transport', this.url)
+      this.authRejected = true
+      this.shutdown()
+      this.onStateChange?.('closed')
+      return
+    }
+    this.redialCount++
+    this.scheduleRedial()
+    this.onStateChange?.('reconnecting')
+  }
+
+  /**
+   * With the radio off, re-dialling is a guaranteed failure on a timer that
+   * also inflates the backoff, so the first attempt after signal returns is
+   * delayed by up to the cap. Pausing makes that reconnect immediate.
+   */
+  setOnline(online: boolean): void {
+    if (this.online === online || this.closed) return
+    this.online = online
+    if (!online) {
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer)
+        this.reconnectTimer = null
+      }
+      return
+    }
+    // Only dial if we were actually waiting to. A live socket is left alone;
+    // the watchdog owns deciding whether it survived.
+    if (this.reconnecting && !this.open) {
+      // Close the previous socket first. A dial in flight when the network
+      // dropped is never reaped by our own handlers (they all bail on
+      // `sock !== this.ws`), so it would linger until the server's auth grace.
+      try {
+        this.ws?.close()
+      } catch (err) {
+        log.warn('closing a superseded socket on reconnect', err)
+      }
+      this.reconnectAttempt = 0
+      this.dial()
+    }
   }
 
   private scheduleRedial(): void {
+    if (this.reconnectTimer) return
     if (!this.reconnecting) {
       this.reconnecting = true
       this.reconnectStartedAt = Date.now()
@@ -153,8 +367,15 @@ export class WsTransport implements Transport {
     if (Date.now() - this.reconnectStartedAt >= this.reconnectBudgetMs && this.reconnectAttempt % 10 === 0) {
       log.error(`still reconnecting after ${Math.round((Date.now() - this.reconnectStartedAt) / 1000)}s`, this.url)
     }
+    // Offline: stay reconnecting but arm no timer; setOnline dials on signal.
+    if (!this.online) return
     this.reconnectAttempt++
-    const delay = Math.min(this.reconnectBaseMs * 2 ** (this.reconnectAttempt - 1), this.reconnectCapMs)
+    // Jittered, so a fleet dropped by one event does not come back in lockstep.
+    const delay = reconnectDelay(this.reconnectAttempt, {
+      baseMs: this.reconnectBaseMs,
+      capMs: this.reconnectCapMs,
+      jitter: 0.25,
+    })
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null
       if (this.closed) return
@@ -166,6 +387,8 @@ export class WsTransport implements Transport {
   private shutdown(): void {
     this.closed = true
     this.open = false
+    this.resumeHold = null
+    clearInterval(this.watchdog)
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -210,10 +433,72 @@ export class WsTransport implements Transport {
       this.pending.delete(frame.id)
       if (frame.ok) entry.resolve(frame.result)
       else entry.reject(new Error(frame.error))
-    } else if (frame.k === 'evt') {
-      const set = this.listeners.get(frame.ch)
-      if (set) for (const fn of set) fn(...frame.args)
+      return
     }
+    if (frame.k === 'ping') {
+      this.peerSendsHeartbeat = true
+      this.rawSend(encodeFrame({ k: 'pong', t: frame.t }))
+      return
+    }
+    if (frame.k === 'pong') return
+    if (frame.k === 'ready') {
+      this.peerSendsHeartbeat = true
+      this.onReady(frame)
+      return
+    }
+    if (frame.k === 'authed') {
+      if (!frame.ok) {
+        // A verdict, not a blip; the 4001 close that follows is terminal.
+        log.error('backend refused our credential', frame.error)
+        return
+      }
+      if (frame.session) {
+        // Swap in the session at once, so a reconnect before the owner has
+        // persisted it still authenticates.
+        this.auth = { session: frame.session }
+        this.onSessionIssued?.(frame.session)
+      }
+      return
+    }
+    if (frame.k === 'evt') {
+      // Live frames wait for the replay so ordering is preserved.
+      if (this.resumeHold !== null && frame.seq !== undefined && frame.seq > this.lastSeq) {
+        this.resumeHold.push(frame)
+        return
+      }
+      this.applyEvent(frame)
+    }
+  }
+
+  private onReady(frame: Extract<WsFrame, { k: 'ready' }>): void {
+    const epochChanged = this.epoch !== null && this.epoch !== frame.epoch
+    this.epoch = frame.epoch
+    if (epochChanged || frame.gap) {
+      // The backend restarted, or it had already evicted what we missed. Both
+      // mean the local view is incomplete and only a re-seed fixes it.
+      log.warn(epochChanged ? 'backend restarted, re-seeding' : 'replay gap, re-seeding', this.url)
+      this.lastSeq = frame.seq
+      this.resumeHold = null
+      this.onResumeGap?.()
+      return
+    }
+    // Sort rather than trust arrival order: the server broadcasts to a new
+    // socket before it processes that socket's hello, so a live event can land
+    // first and would otherwise advance lastSeq past the whole replay.
+    const held = this.resumeHold ?? []
+    this.resumeHold = null
+    held.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
+    for (const evt of held) this.applyEvent(evt)
+  }
+
+  private applyEvent(frame: Extract<WsFrame, { k: 'evt' }>): void {
+    if (frame.seq !== undefined) {
+      // A replay can overlap frames the previous socket already delivered.
+      if (frame.seq <= this.lastSeq) return
+      this.lastSeq = frame.seq
+    }
+    const set = this.listeners.get(frame.ch)
+    if (set) for (const fn of set) fn(...frame.args)
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -258,6 +543,7 @@ export class WsTransport implements Transport {
   close(): void {
     if (this.closed) return
     this.shutdown()
+    this.onStateChange?.('closed')
     try {
       this.ws.close()
     } catch (err) {

@@ -11,7 +11,7 @@ import { MachineChannels } from '@shared/ipc-channels'
 import { createMainLogger } from '../logger'
 import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, getMachineSnapshots, saveMachineSnapshot, type MachineInput } from '../db/machines'
 import type { MachineSnapshot } from '@shared/machines'
-import { parseSshConfig } from '../machines/sshConfig'
+import { parseSshConfig, parseIapTargets } from '../machines/sshConfig'
 import { ConnectionManager } from '../machines/connectionManager'
 import { allocatePort, spawnTunnel, waitForHealth, REMOTE_PORT, REMOTE_COMMAND, REMOTE_IDE_PORT } from '../machines/connectDeps'
 import { makeProvision } from '../machines/provisionDeps'
@@ -122,6 +122,19 @@ export function registerMachineHandlers(host: BackendHost): void {
     } catch (err) {
       // No ~/.ssh/config (or unreadable) is normal - the picker just shows none.
       log.info(`no ssh config: ${err instanceof Error ? err.message : String(err)}`)
+      return []
+    }
+  })
+
+  // Same file, different projection: the IAP ProxyCommand lines already carry
+  // project and zone, which is everything a paired phone needs to add a VM
+  // without anyone retyping it.
+  host.handle(MachineChannels.LIST_IAP_TARGETS, async () => {
+    try {
+      const text = await readFile(join(homedir(), '.ssh', 'config'), 'utf-8')
+      return parseIapTargets(text)
+    } catch (err) {
+      log.info(`no ssh config for IAP targets: ${err instanceof Error ? err.message : String(err)}`)
       return []
     }
   })
