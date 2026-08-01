@@ -5,12 +5,19 @@
  * a given backend across restarts of both. The decision of what to send is in
  * shared/push-policy; this wires it to the event bus and the sender.
  */
-import { isExpoPushToken, pushForEvent, pushTargets, type PushKind } from '@shared/push-policy'
+import {
+  isExpoPushToken,
+  isLeaseLive,
+  pushForEvent,
+  pushTargets,
+  type PushKind,
+  type ViewingLease,
+} from '@shared/push-policy'
 import type { RuntimeEvent } from '@shared/provider-events'
 import { getSetting, setSetting, getConversationById } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
 import { createMainLogger } from '../logger'
-import { sendPush } from './expo-push'
+import { fetchReceipts, sendPush, type PendingReceipt } from './expo-push'
 
 const log = createMainLogger('push:registry')
 
@@ -79,12 +86,23 @@ export function pushEnabled(): boolean {
  * Threads each client currently has open, reported by the client itself - only
  * it knows what is on screen. Keyed by viewer ref: a phone uses its push token,
  * the desktop uses DESKTOP_VIEWER_REF because it has no token to key on.
+ *
+ * Entries are leases with an expiry rather than standing facts, because a
+ * client that dies without saying goodbye (force-quit, crash, signal loss) is
+ * the common case on a phone and used to silence itself permanently.
  */
-const viewing = new Map<string, string>()
+const viewing = new Map<string, ViewingLease>()
 
-export function setViewing(ref: string, threadId: string | null): void {
+export function setViewing(ref: string, threadId: string | null, nowMs: number = Date.now()): void {
   if (threadId === null) viewing.delete(ref)
-  else viewing.set(ref, threadId)
+  else viewing.set(ref, { threadId, atMs: nowMs })
+}
+
+/** Drop expired leases so the map cannot grow without bound across sessions. */
+function pruneViewing(nowMs: number): void {
+  for (const [ref, lease] of viewing) {
+    if (!isLeaseLive(lease, nowMs)) viewing.delete(ref)
+  }
 }
 
 function conversationFor(threadId: string): { title?: string; projectPath?: string } {
@@ -112,6 +130,40 @@ export function groupByClientRef(devices: PushDevice[]): Map<string | undefined,
 }
 
 /**
+ * Ticket ids awaiting a delivery verdict. In memory on purpose: a receipt is
+ * only a token-cleanup hint, and losing the queue on restart costs one more
+ * failed send rather than anything a user notices.
+ */
+const pending: PendingReceipt[] = []
+
+/**
+ * Expo asks senders to wait before reading receipts, since a receipt does not
+ * exist until delivery has been attempted. Fifteen minutes is their own
+ * suggested figure.
+ */
+export const RECEIPT_SWEEP_MS = 15 * 60_000
+
+function dropDeadTokens(deadTokens: string[]): void {
+  if (deadTokens.length === 0) return
+  // Expo asks senders to stop using a DeviceNotRegistered token; continuing is
+  // how an account gets rate-limited.
+  saveDevices(listDevices().filter((d) => !deadTokens.includes(d.token)))
+  log.info(`dropped ${deadTokens.length} unregistered device(s)`)
+}
+
+/** Resolve queued tickets, prune condemned tokens, and keep the rest queued. */
+async function sweepReceipts(): Promise<void> {
+  if (pending.length === 0) return
+  const batch = pending.splice(0, pending.length)
+  const { deadTokens, resolvedIds } = await fetchReceipts(batch)
+  dropDeadTokens(deadTokens)
+  // An id Expo had no answer for yet goes back in the queue rather than being
+  // dropped, or its verdict would be lost for good.
+  const resolved = new Set(resolvedIds)
+  pending.push(...batch.filter((entry) => !resolved.has(entry.id)))
+}
+
+/**
  * Subscribe to the event bus and notify registered devices. Returns an
  * unsubscribe function.
  */
@@ -121,7 +173,9 @@ export function attachPushNotifier(bus: RuntimeEventBus): () => void {
     const devices = listDevices()
     if (devices.length === 0) return
 
-    const targets = pushTargets(devices, event.threadId, viewing)
+    const now = Date.now()
+    pruneViewing(now)
+    const targets = pushTargets(devices, event.threadId, viewing, now)
     if (targets.length === 0) return
 
     const { title, projectPath } = conversationFor(event.threadId)
@@ -132,17 +186,23 @@ export function attachPushNotifier(bus: RuntimeEventBus): () => void {
       void sendPush(tokens, {
         ...message,
         data: { ...message.data, projectPath, clientRef, title },
-      }).then(({ deadTokens }) => {
-        // Expo asks senders to stop using a DeviceNotRegistered token.
-        if (deadTokens.length > 0) {
-          saveDevices(listDevices().filter((d) => !deadTokens.includes(d.token)))
-          log.info(`dropped ${deadTokens.length} unregistered device(s)`)
-        }
+      }).then(({ deadTokens, pendingReceipts }) => {
+        dropDeadTokens(deadTokens)
+        // The ticket only says Expo accepted the message. The delivery verdict
+        // arrives on the receipt minutes later, which is where
+        // DeviceNotRegistered usually shows up.
+        pending.push(...pendingReceipts)
       })
     }
   }
 
-  return bus.subscribe(onEvent)
+  const unsubscribe = bus.subscribe(onEvent)
+  const sweep = setInterval(() => void sweepReceipts(), RECEIPT_SWEEP_MS)
+  sweep.unref?.()
+  return () => {
+    clearInterval(sweep)
+    unsubscribe()
+  }
 }
 
 export type { PushKind }

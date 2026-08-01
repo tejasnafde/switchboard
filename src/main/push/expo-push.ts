@@ -45,10 +45,100 @@ export function chunk<T>(items: T[], size = MAX_BATCH): T[][] {
   return out
 }
 
+export const EXPO_RECEIPTS_URL = 'https://exp.host/--/api/v2/push/getPushReceipts'
+
+/** Expo documents 1000 receipt ids per request. */
+export const MAX_RECEIPT_BATCH = 1_000
+
 interface ExpoTicket {
   status?: string
   message?: string
+  id?: string
   details?: { error?: string }
+}
+
+/**
+ * A ticket id to look up later, paired with the token it belongs to.
+ *
+ * The two-step exists because a ticket only says Expo accepted the message.
+ * Whether the device actually took it is reported on the receipt, minutes
+ * later, and `DeviceNotRegistered` is usually delivered there rather than on
+ * the ticket. Reading only tickets means dead tokens are almost never pruned
+ * and accumulate until sends start getting rate-limited.
+ */
+export interface PendingReceipt {
+  id: string
+  token: string
+}
+
+/** Ticket ids worth following up, i.e. the accepted ones. Tickets are positional. */
+export function pendingReceiptsFrom(tokens: string[], body: unknown): PendingReceipt[] {
+  const data = (body as { data?: ExpoTicket[] } | null)?.data
+  if (!Array.isArray(data)) return []
+  const pending: PendingReceipt[] = []
+  data.forEach((ticket, i) => {
+    const token = tokens[i]
+    if (ticket?.status === 'ok' && typeof ticket.id === 'string' && token) {
+      pending.push({ id: ticket.id, token })
+    }
+  })
+  return pending
+}
+
+/**
+ * Tokens a receipt condemns, and the ids that have been resolved either way.
+ *
+ * An id missing from the response is deliberately NOT resolved: Expo returns
+ * nothing for a receipt that is not ready yet, and dropping it would lose the
+ * verdict permanently.
+ */
+export function readReceipts(
+  pending: readonly PendingReceipt[],
+  body: unknown,
+): { deadTokens: string[]; resolvedIds: string[] } {
+  const data = (body as { data?: Record<string, ExpoTicket> } | null)?.data
+  if (!data || typeof data !== 'object') return { deadTokens: [], resolvedIds: [] }
+  const deadTokens: string[] = []
+  const resolvedIds: string[] = []
+  for (const entry of pending) {
+    const receipt = data[entry.id]
+    if (!receipt) continue
+    resolvedIds.push(entry.id)
+    if (receipt.status === 'error' && receipt.details?.error === 'DeviceNotRegistered') {
+      deadTokens.push(entry.token)
+    }
+  }
+  return { deadTokens, resolvedIds }
+}
+
+/**
+ * Look up receipts for ids collected earlier. Best effort like `sendPush`:
+ * an unresolved id stays pending and is retried on the next pass.
+ */
+export async function fetchReceipts(
+  pending: readonly PendingReceipt[],
+): Promise<{ deadTokens: string[]; resolvedIds: string[] }> {
+  const deadTokens: string[] = []
+  const resolvedIds: string[] = []
+  for (const batch of chunk([...pending], MAX_RECEIPT_BATCH)) {
+    try {
+      const res = await fetch(EXPO_RECEIPTS_URL, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ ids: batch.map((entry) => entry.id) }),
+      })
+      if (!res.ok) {
+        log.warn(`receipt lookup rejected: ${res.status} ${res.statusText}`)
+        continue
+      }
+      const result = readReceipts(batch, await res.json())
+      deadTokens.push(...result.deadTokens)
+      resolvedIds.push(...result.resolvedIds)
+    } catch (err) {
+      log.warn('receipt lookup failed', err)
+    }
+  }
+  return { deadTokens, resolvedIds }
 }
 
 /**
@@ -73,6 +163,8 @@ export function deadTokensFrom(tokens: string[], body: unknown): string[] {
 export interface SendResult {
   sent: number
   deadTokens: string[]
+  /** Ticket ids to look up once Expo has had time to attempt delivery. */
+  pendingReceipts: PendingReceipt[]
 }
 
 /**
@@ -80,9 +172,10 @@ export interface SendResult {
  * turn that triggered it, so every failure is logged and swallowed.
  */
 export async function sendPush(tokens: string[], message: PushMessage): Promise<SendResult> {
-  if (tokens.length === 0) return { sent: 0, deadTokens: [] }
+  if (tokens.length === 0) return { sent: 0, deadTokens: [], pendingReceipts: [] }
   let sent = 0
   const deadTokens: string[] = []
+  const pendingReceipts: PendingReceipt[] = []
 
   for (const batch of chunk(tokens)) {
     try {
@@ -97,10 +190,11 @@ export async function sendPush(tokens: string[], message: PushMessage): Promise<
       }
       const body: unknown = await res.json()
       deadTokens.push(...deadTokensFrom(batch, body))
+      pendingReceipts.push(...pendingReceiptsFrom(batch, body))
       sent += batch.length
     } catch (err) {
       log.warn('push send failed', err)
     }
   }
-  return { sent, deadTokens }
+  return { sent, deadTokens, pendingReceipts }
 }

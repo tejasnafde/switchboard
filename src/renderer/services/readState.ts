@@ -10,6 +10,7 @@
  * skips a phone that has the thread open; telling it the desktop has one open
  * stops it waking a phone the user is not looking at.
  */
+import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { useAgentStore } from '../stores/agent-store'
 import { onProviderEvent } from './session-events'
 import { createRendererLogger } from '../logger'
@@ -68,7 +69,14 @@ export function initSharedReadState(): () => void {
   window.addEventListener('focus', onFocusChange)
   window.addEventListener('blur', onFocusChange)
 
+  // The backend treats a viewing claim as a lease that expires, because a
+  // client that dies without withdrawing it would otherwise suppress pushes
+  // forever. Desktop viewing is a global veto, so a lapsed lease here means
+  // every phone starts buzzing about a thread the user is reading.
+  const renew = setInterval(() => reportViewing(current), VIEWING_RENEW_MS)
+
   return () => {
+    clearInterval(renew)
     unsubStore()
     unsubEvents()
     window.removeEventListener('focus', onFocusChange)

@@ -104,19 +104,53 @@ export function isExpoPushToken(value: unknown): value is string {
 export const DESKTOP_VIEWER_REF = 'desktop'
 
 /**
+ * A client's claim that it has a thread on screen, and when it last said so.
+ *
+ * Timestamped because the claim used to be permanent. A phone that was
+ * force-quit, crashed, or lost signal with a thread open kept its entry
+ * forever, so that device never got another notification for that thread until
+ * the backend restarted - and a desktop in the same state silenced *every*
+ * phone, because desktop viewing is a global veto. Both read as "push is
+ * broken" and neither leaves a trace.
+ *
+ * So the claim is a lease: it expires unless the client keeps renewing it.
+ */
+export interface ViewingLease {
+  threadId: string
+  atMs: number
+}
+
+/** A lease older than this is ignored. */
+export const VIEWING_LEASE_TTL_MS = 180_000
+/**
+ * How often a client with a thread open renews its lease. A third of the TTL,
+ * so two renewals can be lost (a brief network stall, a busy main thread)
+ * before the user starts getting notified about the screen in their hand.
+ */
+export const VIEWING_RENEW_MS = 60_000
+
+export function isLeaseLive(lease: ViewingLease, nowMs: number): boolean {
+  return nowMs - lease.atMs < VIEWING_LEASE_TTL_MS
+}
+
+/**
  * Devices still worth notifying about `threadId`.
  *
- * `viewing` maps a viewer ref to the thread it has open. A ref that is not an
- * Expo token belongs to a client we cannot push to - the desktop - and the user
- * reading there makes the notification noise on EVERY phone, not just one.
+ * `viewing` maps a viewer ref to its lease. A ref that is not an Expo token
+ * belongs to a client we cannot push to - the desktop - and the user reading
+ * there makes the notification noise on EVERY phone, not just one.
  */
 export function pushTargets<T extends { token: string }>(
   devices: readonly T[],
   threadId: string,
-  viewing: ReadonlyMap<string, string>,
+  viewing: ReadonlyMap<string, ViewingLease>,
+  nowMs: number = Date.now(),
 ): T[] {
-  for (const [ref, open] of viewing) {
-    if (open === threadId && !isExpoPushToken(ref)) return []
+  for (const [ref, lease] of viewing) {
+    if (lease.threadId === threadId && isLeaseLive(lease, nowMs) && !isExpoPushToken(ref)) return []
   }
-  return devices.filter((d) => viewing.get(d.token) !== threadId)
+  return devices.filter((d) => {
+    const lease = viewing.get(d.token)
+    return !(lease && lease.threadId === threadId && isLeaseLive(lease, nowMs))
+  })
 }

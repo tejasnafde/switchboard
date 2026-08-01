@@ -2,7 +2,15 @@
  * Which runtime events are worth waking a phone for.
  */
 import { describe, it, expect } from 'vitest'
-import { pushForEvent, clampBody, isExpoPushToken, pushTargets, DESKTOP_VIEWER_REF } from '../../src/shared/push-policy'
+import {
+  pushForEvent,
+  clampBody,
+  isExpoPushToken,
+  pushTargets,
+  DESKTOP_VIEWER_REF,
+  VIEWING_LEASE_TTL_MS,
+  VIEWING_RENEW_MS,
+} from '../../src/shared/push-policy'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
 const T = 'thread-1'
@@ -103,32 +111,61 @@ describe('pushTargets', () => {
   const PHONE_B = 'ExponentPushToken[bbb]'
   const devices = [{ token: PHONE_A }, { token: PHONE_B }]
 
+  const NOW = 1_000_000
+  /** A claim made just now, i.e. one the client is actively renewing. */
+  const live = (threadId: string) => ({ threadId, atMs: NOW })
+  /** A claim from a client that stopped renewing, e.g. a force-quit phone. */
+  const expired = (threadId: string) => ({ threadId, atMs: NOW - VIEWING_LEASE_TTL_MS })
+
   it('notifies every device when nobody has the thread open', () => {
-    expect(pushTargets(devices, T, new Map())).toEqual(devices)
+    expect(pushTargets(devices, T, new Map(), NOW)).toEqual(devices)
   })
 
   it('skips only the phone showing the thread', () => {
-    const viewing = new Map([[PHONE_A, T]])
-    expect(pushTargets(devices, T, viewing)).toEqual([{ token: PHONE_B }])
+    const viewing = new Map([[PHONE_A, live(T)]])
+    expect(pushTargets(devices, T, viewing, NOW)).toEqual([{ token: PHONE_B }])
   })
 
   it('still notifies a phone that has a DIFFERENT thread open', () => {
-    const viewing = new Map([[PHONE_A, 'other-thread']])
-    expect(pushTargets(devices, T, viewing)).toEqual(devices)
+    const viewing = new Map([[PHONE_A, live('other-thread')]])
+    expect(pushTargets(devices, T, viewing, NOW)).toEqual(devices)
   })
 
   it('silences every phone when the desktop has the thread open', () => {
-    const viewing = new Map([[DESKTOP_VIEWER_REF, T]])
-    expect(pushTargets(devices, T, viewing)).toEqual([])
+    const viewing = new Map([[DESKTOP_VIEWER_REF, live(T)]])
+    expect(pushTargets(devices, T, viewing, NOW)).toEqual([])
   })
 
   it('leaves phones alone when the desktop is on another thread', () => {
-    const viewing = new Map([[DESKTOP_VIEWER_REF, 'other-thread']])
-    expect(pushTargets(devices, T, viewing)).toEqual(devices)
+    const viewing = new Map([[DESKTOP_VIEWER_REF, live('other-thread')]])
+    expect(pushTargets(devices, T, viewing, NOW)).toEqual(devices)
   })
 
   it('treats any non-token viewer ref as a client it cannot push to', () => {
-    const viewing = new Map([['second-window', T]])
-    expect(pushTargets(devices, T, viewing)).toEqual([])
+    const viewing = new Map([['second-window', live(T)]])
+    expect(pushTargets(devices, T, viewing, NOW)).toEqual([])
+  })
+
+  // A claim used to last forever. A phone that was force-quit or lost signal
+  // with a thread open therefore silenced itself for that thread until the
+  // backend restarted, which reads exactly like push being broken.
+  it('notifies a phone again once its claim has expired', () => {
+    const viewing = new Map([[PHONE_A, expired(T)]])
+    expect(pushTargets(devices, T, viewing, NOW)).toEqual(devices)
+  })
+
+  it('lifts the desktop veto once its claim has expired', () => {
+    const viewing = new Map([[DESKTOP_VIEWER_REF, expired(T)]])
+    expect(pushTargets(devices, T, viewing, NOW)).toEqual(devices)
+  })
+
+  it('keeps honouring a claim right up to the expiry boundary', () => {
+    const viewing = new Map([[PHONE_A, { threadId: T, atMs: NOW - VIEWING_LEASE_TTL_MS + 1 }]])
+    expect(pushTargets(devices, T, viewing, NOW)).toEqual([{ token: PHONE_B }])
+  })
+
+  it('renews often enough that two lost renewals still hold the claim', () => {
+    // Otherwise a brief network stall makes the user's own open thread buzz.
+    expect(VIEWING_RENEW_MS * 2).toBeLessThan(VIEWING_LEASE_TTL_MS)
   })
 })

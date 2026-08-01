@@ -29,6 +29,7 @@ import type { ProviderInstance, ProviderSkill } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
+import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, radius, space, type } from '../theme'
@@ -158,11 +159,19 @@ export default function ThreadScreen({ route, navigation }: Props) {
     useCallback(() => {
       useChatStore.getState().setActive(key)
       usePushStore.getState().reportViewing(connectionId, threadId)
+      // The claim is a lease on the backend, so it has to be renewed while the
+      // screen stays open. Without this a thread left open for a few minutes
+      // starts pushing notifications about itself.
+      const renew = setInterval(
+        () => usePushStore.getState().reportViewing(connectionId, threadId),
+        VIEWING_RENEW_MS,
+      )
       // Read state is the backend's, so the Mac's badge clears from here too.
       getClient(connectionId)
         ?.markRead(threadId)
         .catch((err) => log.warn('markRead failed', err))
       return () => {
+        clearInterval(renew)
         useChatStore.getState().setActive(null)
         usePushStore.getState().reportViewing(connectionId, null)
         // On the way out, not per keystroke - persist writes to AsyncStorage.
