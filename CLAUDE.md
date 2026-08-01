@@ -107,9 +107,26 @@ that side). Imports `@shared/*` and nothing else from the repo.
 expo-updates; `mobile-release.yml` builds an APK on EAS and attaches it to a
 `mobile-v*` GitHub Release, which the app installs itself
 (`src/lib/selfUpdate.ts`). Native changes - a new module, a permission, an SDK
-bump - MUST take the APK lane. `runtimeVersion` follows `appVersion`, so bump
-`version` in app.json whenever native deps change or an OTA will be served to
-an APK that lacks them and crash on import.
+bump - MUST take the APK lane. `runtimeVersion` uses the **`fingerprint`**
+policy (changed 2026-08-01, was `appVersion`), so the hash covers native deps,
+config plugins and the native-affecting parts of app.json. An OTA can therefore
+only reach a binary whose native side matches it, with nobody having to
+remember anything. `appVersion` pinned to the version *string*, so adding a
+native module without bumping `version` shipped a bundle to an APK that lacked
+it. `.fingerprintignore` keeps generated (`/android`, `/ios`) and test-only
+paths out of the hash. Switching policy re-targets every future update, so
+APKs built before the switch need replacing once.
+
+**Android release builds block cleartext, and dev builds do not.** RN's Gradle
+plugin sets `usesCleartextTraffic=false` for the release build type, and Expo's
+main manifest sets nothing, so targetSdk 28+ defaults to blocking it. Our whole
+transport is `ws://`, so a `preview`/`production` APK failed every connection
+while `expo run:android` worked. `plugins/withAndroidCleartextTraffic.js` sets
+the attribute on the main manifest; iOS needs `NSAllowsArbitraryLoads` plus
+`NSLocalNetworkUsageDescription` (both in app.json) for the same reason. Verify
+after touching either with `npx expo prebuild -p android --clean` then grep the
+manifest, and delete the generated `android/` afterwards (prebuild also rewrites
+the `android`/`ios` npm scripts for a bare workflow; revert that).
 
 **Push** (`src/main/push/`, `src/shared/push-policy.ts`): the BACKEND sends,
 because the phone is asleep when it matters. `attachPushNotifier` subscribes to

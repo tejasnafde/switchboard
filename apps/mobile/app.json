@@ -2,7 +2,7 @@
   "expo": {
     "name": "Switchboard",
     "slug": "switchboard-mobile",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "scheme": [
       "switchboard",
       "com.googleusercontent.apps.974343814740-be31f3e59stdql81uke54r62aodb5c7q"
@@ -11,11 +11,18 @@
     "userInterfaceStyle": "dark",
     "backgroundColor": "#0d0f12",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.switchboard.mobile"
+      "bundleIdentifier": "app.switchboard.mobile",
+      "infoPlist": {
+        "//": "Backends are reached over ws:// on a LAN, a tailnet, or an ssh tunnel, so App Transport Security has to allow cleartext or every pairing fails at the platform layer. NSLocalNetworkUsageDescription is separately required from iOS 14: without it a dial to a private-range address is refused with no prompt and no error the app can report.",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "NSLocalNetworkUsageDescription": "Switchboard connects to the desktop app running on your Mac over your local network or tailnet."
+      }
     },
     "android": {
       "package": "app.switchboard.mobile",
@@ -52,10 +59,11 @@
           "photosPermission": "Switchboard attaches screenshots and photos from your library to messages you send to an agent."
         }
       ],
-      "expo-notifications"
+      "expo-notifications",
+      "./plugins/withAndroidCleartextTraffic"
     ],
     "extra": {
-      "//updates": "OTA is live: `eas init` + `eas update:configure` were run on 2026-07-27 against EAS account tejasnafde, which wrote `updates.url` and `extra.eas.projectId` below. `runtimeVersion.policy: appVersion` pins each OTA bundle to a matching native binary, so a JS bundle can never be served to an APK missing native modules it needs. `REQUEST_INSTALL_PACKAGES` is what lets the app hand a downloaded APK to Android's package installer (src/lib/selfUpdate.ts); CAMERA is for the pairing QR scanner; RECORD_AUDIO is for voice dictation in the chat composer (src/lib/voice.ts, needs the dev build - Expo Go hides the mic).",
+      "//updates": "OTA is live: `eas init` + `eas update:configure` were run on 2026-07-27 against EAS account tejasnafde, which wrote `updates.url` and `extra.eas.projectId` below. `runtimeVersion.policy: fingerprint` hashes the actual native project (native deps, config plugins, and app.json's native-affecting fields), so an OTA bundle can only reach a binary whose native side matches it. This replaced `appVersion` on 2026-08-01: appVersion pinned to the version STRING, so adding a native module without remembering to bump `version` would serve a JS bundle to an APK that lacks it and crash on import. The old policy needed a human to remember; this one cannot be forgotten. Consequence to know: switching policies changes the runtimeVersion of every future update, so APKs built before the switch stop receiving OTAs until they are replaced. That was free here because the cleartext plugin below is itself a native change and already required a new APK. `REQUEST_INSTALL_PACKAGES` is what lets the app hand a downloaded APK to Android's package installer (src/lib/selfUpdate.ts); CAMERA is for the pairing QR scanner; RECORD_AUDIO is for voice dictation in the chat composer (src/lib/voice.ts, needs the dev build - Expo Go hides the mic).",
       "//": "Google OAuth client for the direct accounts.google.com PKCE flow (src/lib/google-auth.ts). Real values live in Secret Manager secret 'switchboard-oauth-client' in GCP project teejayproject: gcloud --configuration=personal secrets versions access latest --secret=switchboard-oauth-client. NEVER commit real values here. The stored client is Desktop-type, which works for the loopback probe but is REJECTED for custom-scheme redirects on device: shipping needs an Android-type client (package app.switchboard.mobile + signing SHA-1) and an iOS-type client. Those have no secret, so googleClientSecret stays empty for device builds.",
       "googleClientId": "974343814740-be31f3e59stdql81uke54r62aodb5c7q.apps.googleusercontent.com",
       "googleClientSecret": "",
