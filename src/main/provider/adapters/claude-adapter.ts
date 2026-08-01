@@ -314,6 +314,44 @@ class PromptQueue implements AsyncIterable<SDKUserMessage> {
  * Anything else is filtered out. Names with leading "/" get stripped so
  * the menu can render them uniformly.
  */
+/**
+ * Tool results out of an SDK `user` message.
+ *
+ * The SDK reports a finished tool as a tool_result block on a synthetic user
+ * message. Nothing consumed those, so `tool.completed` was never emitted for
+ * Claude at all - Codex and OpenCode both emit it - and any client keying a
+ * spinner on completion span every tool card until the whole turn ended.
+ *
+ * `content` is a string for simple results and a block array for rich ones.
+ */
+export function extractToolResults(
+  message: unknown,
+): Array<{ toolId: string; output: string; isError: boolean }> {
+  const blocks = (message as { message?: { content?: unknown } } | null)?.message?.content
+  if (!Array.isArray(blocks)) return []
+  const out: Array<{ toolId: string; output: string; isError: boolean }> = []
+  for (const raw of blocks) {
+    const block = raw as {
+      type?: string
+      tool_use_id?: string
+      is_error?: boolean
+      content?: unknown
+    }
+    if (block.type !== 'tool_result' || !block.tool_use_id) continue
+    let text = ''
+    if (typeof block.content === 'string') {
+      text = block.content
+    } else if (Array.isArray(block.content)) {
+      text = block.content
+        .map((c) => (c as { type?: string; text?: string }).text ?? '')
+        .filter(Boolean)
+        .join('\n')
+    }
+    out.push({ toolId: block.tool_use_id, output: text, isError: block.is_error === true })
+  }
+  return out
+}
+
 export function parseClaudeSlashCommands(input: unknown): ProviderSkill[] {
   if (!Array.isArray(input)) return []
   const out: ProviderSkill[] = []
@@ -1322,6 +1360,20 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         active.session.status = 'running'
         active.onEvent({ type: 'status', threadId, status: 'running' })
+        break
+      }
+
+      case 'user': {
+        // Tool results ride a synthetic user message. Without this the only
+        // thing settling a tool card was the end of the entire turn.
+        for (const result of extractToolResults(msg)) {
+          active.onEvent({
+            type: 'tool.completed',
+            threadId,
+            toolId: result.toolId,
+            output: result.output,
+          })
+        }
         break
       }
 
