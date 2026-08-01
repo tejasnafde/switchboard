@@ -17,6 +17,7 @@ import { PHONE_SCOPES } from '@shared/device-auth'
 
 const log = createLogger('backend:mobile-server')
 
+const ENABLED_KEY = 'mobilePairing.enabled'
 const TOKEN_KEY = 'mobilePairing.token'
 const PORT_KEY = 'mobilePairing.port'
 const DEFAULT_PORT = 8765
@@ -27,6 +28,8 @@ export type MobileEndpointStatus = MobilePairingStatus
 export class MobileEndpoint implements BackendHost {
   /** Token the live listener was built with, to detect a real config change. */
   private activeToken: string | null = null
+  /** Whether the endpoint was last applied in the enabled state. */
+  private activeEnabled = false
   /** Registrations recorded for replay onto each (re)started inner host. */
   private readonly handlerRegs: Array<[string, (...args: unknown[]) => unknown]> = []
   private readonly listenerRegs: Array<[string, (...args: unknown[]) => void]> = []
@@ -60,11 +63,13 @@ export class MobileEndpoint implements BackendHost {
    */
   apply(): MobileEndpointStatus {
     const desiredToken = getSetting(TOKEN_KEY)
+    const enabled = getSetting(ENABLED_KEY) === 'true'
     const desiredPort = Number(getSetting(PORT_KEY) ?? DEFAULT_PORT) || DEFAULT_PORT
     if (
       this.wss !== null &&
       this.state.listening &&
       this.activeToken === desiredToken &&
+      this.activeEnabled === enabled &&
       this.state.port === desiredPort
     ) {
       return this.state
@@ -73,9 +78,12 @@ export class MobileEndpoint implements BackendHost {
     this.close()
 
     const token = desiredToken
-    if (!token) {
-      log.info('no pairing token configured - mobile endpoint off (Settings > Mobile to enable)')
-      this.state = { listening: false, port: null, reason: 'no token configured' }
+    // Device sessions are the current credential, so a shared token is no
+    // longer what turns the endpoint on. `enabled` is, and a listener with
+    // neither is simply off rather than open.
+    if (!token && !enabled) {
+      log.info('mobile endpoint off (Settings > Mobile to enable)')
+      this.state = { listening: false, port: null, reason: 'not enabled' }
       return this.state
     }
     const port = desiredPort
@@ -91,13 +99,21 @@ export class MobileEndpoint implements BackendHost {
     // The phone gets a device session scoped to chat only: the app has no
     // terminal UI at all, so granting it PTY spawn would mean a stolen
     // credential runs commands rather than merely reads conversations.
-    const inner = new WsHost(wss, token, {
-      redeem: (pairing, label) => redeemPairingCode(pairing, label, [...PHONE_SCOPES]),
-      authenticate: (session) => {
-        const found = authenticateSession(session)
-        return found ? { id: found.id, scopes: found.scopes } : null
+    const inner = new WsHost(
+      wss,
+      token ?? undefined,
+      {
+        redeem: (pairing, label) => redeemPairingCode(pairing, label, [...PHONE_SCOPES]),
+        authenticate: (session) => {
+          const found = authenticateSession(session)
+          return found ? { id: found.id, scopes: found.scopes } : null
+        },
       },
-    })
+      // Bound to 0.0.0.0, so a connection must present a credential even when
+      // no shared token is configured. The default (trust everything) is only
+      // correct for loopback and the ssh tunnel.
+      true,
+    )
     for (const [ch, fn] of this.handlerRegs) inner.handle(ch, fn)
     for (const [ch, fn] of this.listenerRegs) inner.on(ch, fn)
 
@@ -124,6 +140,7 @@ export class MobileEndpoint implements BackendHost {
     this.wss = wss
     this.inner = inner
     this.activeToken = token
+    this.activeEnabled = enabled
     // Optimistic until the 'listening'/'error' event lands - callers polling
     // status() right after apply() see the port they asked for.
     this.state = { listening: true, port, reason: null }
@@ -140,6 +157,7 @@ export class MobileEndpoint implements BackendHost {
     this.inner?.dispose()
     this.inner = null
     this.activeToken = null
+    this.activeEnabled = false
     this.state = { listening: false, port: null, reason: 'stopped' }
     try {
       for (const client of wss.clients) client.terminate()

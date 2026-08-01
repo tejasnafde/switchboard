@@ -158,13 +158,16 @@ export default function PairScreen() {
     // Default the name to the host so the scan path needs no typing at all.
     const name = (rawLabel ?? '').trim() || parsed.url.replace(/^wss?:\/\//, '')
     const store = useConnectionsStore.getState()
+    // `session: undefined` on an edit is deliberate: re-pairing with a fresh
+    // code must not keep a session minted for the previous credential.
+    const credentials = { token: parsed.token, pairing: parsed.pairing, session: undefined }
     if (editId) {
-      store.updateConnection(editId, { label: name, url: parsed.url, token: parsed.token })
+      store.updateConnection(editId, { label: name, url: parsed.url, ...credentials })
       store.disconnect(editId)
       store.connect(editId)
     } else {
       const id = `c-${Date.now()}`
-      store.addConnection({ id, kind: 'ws', label: name, url: parsed.url, token: parsed.token })
+      store.addConnection({ id, kind: 'ws', label: name, url: parsed.url, ...credentials })
       store.connect(id)
     }
     navigation.goBack()
@@ -215,7 +218,9 @@ export default function PairScreen() {
       log.warn('scanned a code that is not a machine address')
       return
     }
-    saveWs(parsed.url, parsed.token ?? '')
+    // Hand saveWs the RAW payload, not the parsed pieces: it re-parses, and
+    // passing url+token discarded the pairing code the QR now carries.
+    saveWs(data.trim(), '')
   }
 
   if (scanning) {

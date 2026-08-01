@@ -113,17 +113,27 @@ export class WsHost implements BackendHost {
    * clients dial `ws://host:port/?token=<token>`. Unset preserves the
    * loopback/SSH-tunnel trust model (no in-band auth).
    */
+  /**
+   * `requireAuth` matters for any listener that is not loopback.
+   *
+   * Without a configured token the default is to trust every connection, which
+   * is right for the ssh-tunnelled and in-process cases and catastrophic for a
+   * listener bound to 0.0.0.0: it would hand FULL_SCOPES to the whole LAN. A
+   * host that is reachable off-machine passes true, and then a connection has
+   * to present a credential no matter what is configured.
+   */
   constructor(
     private readonly wss: WebSocketServer,
     token?: string,
     private readonly deviceAuth: DeviceAuthPort = NO_DEVICE_AUTH,
+    requireAuth = false,
   ) {
     this.wss.on('connection', (socket, req: IncomingMessage) => {
       // Legacy path: the shared token in the URL. Still accepted so an already
       // paired phone keeps working, but it grants everything and cannot be
       // revoked per device, which is why the auth frame exists.
-      let legacyScopes: readonly DeviceScope[] | null = token ? null : FULL_SCOPES
-      if (token) {
+      let legacyScopes: readonly DeviceScope[] | null = token || requireAuth ? null : FULL_SCOPES
+      if (token || requireAuth) {
         let presented: string | null = null
         let url: URL | null = null
         try {
@@ -138,7 +148,7 @@ export class WsHost implements BackendHost {
         // retry loop discovering every request is refused. The flag carries no
         // secret, which is the entire point of moving the credential out.
         const framed = url?.searchParams.get('auth') === 'frame'
-        if (tokenMatches(token, presented)) {
+        if (token && tokenMatches(token, presented)) {
           legacyScopes = FULL_SCOPES
         } else if (!framed) {
           log.warn(`rejected connection with ${presented === null ? 'missing' : 'bad'} token`)

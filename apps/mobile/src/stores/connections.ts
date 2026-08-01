@@ -15,6 +15,7 @@ import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { WsTransport } from '@shared/ws-transport'
 import { createLogger } from '@shared/logger'
+export { parsePairingUrl } from '../lib/pairing'
 import { SwitchboardClient } from '../lib/api'
 import { IapTransport } from '../lib/iap-transport'
 import { foregroundAction } from '../lib/appLifecycle'
@@ -417,20 +418,4 @@ export function installLifecycleReconnect(): () => void {
     }
   })
   return () => sub.remove()
-}
-
-/** Parse a pairing payload (QR or typed): ws://host:8765?token=abc */
-export function parsePairingUrl(raw: string): { url: string; token?: string } | null {
-  const trimmed = raw.trim()
-  if (!/^wss?:\/\//.test(trimmed)) return null
-  try {
-    const u = new URL(trimmed)
-    const token = u.searchParams.get('token') ?? undefined
-    u.search = ''
-    return { url: u.toString().replace(/\/$/, ''), token }
-  } catch {
-    // Validator, not an error path: malformed input is the expected case and the
-    // caller shows the message. Logging here would fire on every keystroke.
-    return null
-  }
 }

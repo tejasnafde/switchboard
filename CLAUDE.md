@@ -20,7 +20,7 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 ## Commands
 
 - `npm run dev` - launches Electron (auto-unsets `ELECTRON_RUN_AS_NODE`)
-- `npm test` - vitest (~1948 tests across 195 files)
+- `npm test` - vitest (~1953 tests across 196 files)
 - `npm run test:watch` - vitest in watch mode
 - `npm run typecheck` - main + renderer tsc
 - `npm run build` - **gated build**: `prebuild` runs typecheck + test before the actual build fires; `postbuild` runs `scripts/smoke-test.mjs`
@@ -399,7 +399,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 
 Pure parsers exported and unit-tested: `parseClaudeSlashCommands` (claude-adapter), `parseCodexSkills` (codex-adapter), `mergeWithAgentSkills` + `skillsToSlashCommands` (slashCommands.ts).
 
-## Test suite (~1948 tests across 195 files)
+## Test suite (~1953 tests across 196 files)
 
 Run the whole suite: `npm test`. Targeted runs: `npx vitest run tests/unit/<file>.test.ts`. Notable files:
 
@@ -499,7 +499,7 @@ src/
 │   ├── ipc-channels.ts · provider-events.ts · types.ts · auto-title.ts · models.ts · format.ts · filePathRef.ts
 │   ├── provider-usage.ts · claude-usage-parse.ts · codex-usage-parse.ts   # normalised subscription usage limits
 │   ├── transport.ts · ws-protocol.ts · ws-transport.ts · machines.ts   # backend transport seam (local ↔ remote)
-└── tests/unit/                        # ~1948 tests across 195 files
+└── tests/unit/                        # ~1953 tests across 196 files
 ```
 
 ## Logging conventions

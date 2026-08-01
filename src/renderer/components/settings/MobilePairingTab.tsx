@@ -1,13 +1,19 @@
 /**
- * Mobile pairing tab - generates the QR a mobile client scans to connect to a
- * headless Switchboard backend (`npm run server`, WsHost). The QR encodes
- * `ws://<host>:<port>?token=<SWITCHBOARD_TOKEN>`; the server refuses to bind
- * beyond loopback without that token, so the tab also shows the exact command
- * to launch the server with it.
+ * Mobile pairing.
+ *
+ * The QR encodes `ws://<host>:<port>?pair=<code>`, where the code is one-time
+ * and expires in five minutes. A phone redeems it once for a session of its
+ * own, which can be revoked without disturbing any other device.
+ *
+ * The old shared token is still stored and still accepted, because a phone
+ * paired before this existed holds it and clearing it would lock that phone
+ * out with no way back. It has no part in the flow above and is retired per
+ * device as each one re-pairs.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MobilePairingStatus } from '@shared/types'
+import type { DeviceSessionView } from '@shared/device-auth'
 import QRCode from 'qrcode'
 import { createRendererLogger } from '../../logger'
 
@@ -17,6 +23,7 @@ const SETTINGS_KEYS = {
   host: 'mobilePairing.host',
   port: 'mobilePairing.port',
   token: 'mobilePairing.token',
+  enabled: 'mobilePairing.enabled',
 } as const
 
 const DEFAULT_PORT = '8765'
@@ -81,6 +88,10 @@ export function MobilePairingTab() {
   const [host, setHost] = useState('')
   const [port, setPort] = useState(DEFAULT_PORT)
   const [token, setToken] = useState('')
+  /** Live pairing code. Minted on demand, never persisted in this component. */
+  const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null)
+  const [secondsLeft, setSecondsLeft] = useState(0)
+  const [devices, setDevices] = useState<DeviceSessionView[]>([])
   const [loaded, setLoaded] = useState(false)
   const [customHost, setCustomHost] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
@@ -124,6 +135,9 @@ export function MobilePairingTab() {
       window.api.settings.set(SETTINGS_KEYS.host, host),
       window.api.settings.set(SETTINGS_KEYS.port, port),
       window.api.settings.set(SETTINGS_KEYS.token, token),
+      // Device sessions replaced the shared token as the credential, so the
+      // endpoint needs its own on/off rather than inferring it from one.
+      window.api.settings.set(SETTINGS_KEYS.enabled, 'true'),
     ])
       .then(() => window.api.app.mobilePairingApply())
       .then((status) => {
@@ -133,10 +147,65 @@ export function MobilePairingTab() {
     return () => { cancelled = true }
   }, [loaded, host, port, token])
 
+  const refreshDevices = useCallback(() => {
+    window.api.app
+      .mobileDevices()
+      .then(setDevices)
+      .catch((err: unknown) => log.warn('failed to list paired devices', err))
+  }, [])
+
+  useEffect(() => {
+    if (loaded) refreshDevices()
+  }, [loaded, refreshDevices])
+
+  /** Mint a fresh code. Any previous unused one stops working immediately. */
+  const startPairing = useCallback(() => {
+    window.api.app
+      .mobilePairingCode()
+      .then((code) => setPairing({ code: code.code, expiresAt: code.expiresAt }))
+      .catch((err: unknown) => log.warn('failed to mint a pairing code', err))
+  }, [])
+
+  // Count down, and drop the QR the moment it stops working. Showing an expired
+  // code is worse than showing none: the scan fails with nothing on screen
+  // explaining why.
+  useEffect(() => {
+    if (!pairing) {
+      setSecondsLeft(0)
+      return
+    }
+    const tick = (): void => {
+      const left = Math.max(0, Math.round((pairing.expiresAt - Date.now()) / 1000))
+      setSecondsLeft(left)
+      if (left === 0) setPairing(null)
+    }
+    tick()
+    const timer = setInterval(tick, 1000)
+    return () => clearInterval(timer)
+  }, [pairing])
+
+  // A redeemed code is consumed server-side, so the device list is the only
+  // signal that a scan worked. Poll while a code is live.
+  useEffect(() => {
+    if (!pairing) return
+    const timer = setInterval(refreshDevices, 2000)
+    return () => clearInterval(timer)
+  }, [pairing, refreshDevices])
+
+  const revoke = useCallback(
+    (id: string) => {
+      window.api.app
+        .mobileRevokeDevice(id)
+        .then(refreshDevices)
+        .catch((err: unknown) => log.warn('failed to revoke a device', err))
+    },
+    [refreshDevices],
+  )
+
   const pairingUrl = useMemo(() => {
-    if (!host || !token || !isValidPort(port)) return null
-    return `ws://${host}:${port}?token=${token}`
-  }, [host, port, token])
+    if (!host || !pairing || !isValidPort(port)) return null
+    return `ws://${host}:${port}?pair=${pairing.code}`
+  }, [host, port, pairing])
 
   // Regenerate the QR whenever the pairing URL changes.
   useEffect(() => {
@@ -314,14 +383,38 @@ export function MobilePairingTab() {
             textAlign: 'center',
             padding: '8px',
           }}>
-            {isValidPort(port)
-              ? 'Enter a host and token to render the QR'
-              : 'Port must be 1-65535'}
+            {!isValidPort(port)
+              ? 'Port must be 1-65535'
+              : !host
+                ? 'Pick an address to render the QR'
+                : 'Tap Show pairing QR'}
           </div>
         )}
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)', marginBottom: '4px' }}>
-            Pairing URL
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+            <div style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+              Pairing URL
+            </div>
+            <button
+              onClick={startPairing}
+              disabled={!host || !isValidPort(port)}
+              style={{
+                fontSize: '10.5px',
+                padding: '2px 8px',
+                borderRadius: '4px',
+                border: '1px solid var(--border)',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: host && isValidPort(port) ? 'pointer' : 'default',
+              }}
+            >
+              {pairing ? 'New code' : 'Show pairing QR'}
+            </button>
+            {pairing && (
+              <span style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                expires in {secondsLeft}s
+              </span>
+            )}
           </div>
           <div style={{
             fontSize: '11px',
@@ -358,6 +451,58 @@ export function MobilePairingTab() {
           )}
         </div>
       </div>
+
+      {/* Paired devices */}
+      <div style={fieldLabelStyle}>
+        Paired devices
+        <InfoHint text="Each device holds a credential of its own. Revoking one cuts it off immediately and leaves every other device working. A device paired before this change still uses the old shared token and shows as legacy until it scans a new code." />
+      </div>
+      {devices.length === 0 ? (
+        <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '14px' }}>
+          Nothing paired yet. Show the QR above and scan it from the phone.
+        </div>
+      ) : (
+        <div style={{ marginBottom: '14px' }}>
+          {devices.map((device) => (
+            <div
+              key={device.id}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 0',
+                borderBottom: '1px solid var(--border)',
+                opacity: device.revoked ? 0.5 : 1,
+              }}
+            >
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '11.5px', color: 'var(--text-primary)' }}>{device.label}</div>
+                <div style={{ fontSize: '10.5px', color: 'var(--text-muted)' }}>
+                  {device.revoked ? 'revoked' : `last seen ${new Date(device.lastSeenAt).toLocaleString()}`}
+                  {' · '}
+                  {device.scopes.join(', ')}
+                </div>
+              </div>
+              {!device.revoked && (
+                <button
+                  onClick={() => revoke(device.id)}
+                  style={{
+                    fontSize: '10.5px',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    border: '1px solid var(--border)',
+                    background: 'transparent',
+                    color: 'var(--error, #e5544a)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Revoke
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Server command */}
       <div style={fieldLabelStyle}>Run on the target machine</div>
