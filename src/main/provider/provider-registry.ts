@@ -14,6 +14,7 @@ import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-dr
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
+import { TurnDeduper } from '@shared/turn-dedupe'
 import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
@@ -60,6 +61,8 @@ export class ProviderRegistry {
    * same way in chat.
    */
   private checkpoints = new CheckpointTracker()
+  /** Turn origins already accepted, so a client retry cannot run twice. */
+  private turnDedupe = new TurnDeduper()
 
   /**
    * Event bus that decouples adapter event emission from the consumer.
@@ -333,6 +336,14 @@ export class ProviderRegistry {
       if (!adapter) {
         log.warn(`sendTurn ${threadId} - no adapter (session not started?)`)
         throw new Error(`No session: ${threadId}`)
+      }
+      // A client that retried after an ambiguous failure (socket died with the
+      // request on the wire, invoke timed out) cannot know whether this ran.
+      // Retrying is the right client behaviour, so the duplicate has to be
+      // caught here or the user gets the same turn twice.
+      if (this.turnDedupe.isDuplicate(origin)) {
+        log.info(`sendTurn ${threadId} - duplicate origin ${origin}, already accepted`)
+        return
       }
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${images?.length ?? 0}`)
       // Snapshot the working tree BEFORE the agent edits, so the post-turn

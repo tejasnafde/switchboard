@@ -17,6 +17,7 @@ import { createLogger } from '@shared/logger'
 import { colors, fonts } from './src/theme'
 import { getCachedAccessToken, warmUpGoogleAuth } from './src/lib/google-auth'
 import { installLifecycleReconnect, setGoogleTokenProvider } from './src/stores/connections'
+import { hydrateOutbox } from './src/stores/outbox'
 import { UpdateBanner } from './src/components/UpdateBanner'
 import ConnectionsScreen from './src/screens/ConnectionsScreen'
 import PairScreen from './src/screens/PairScreen'
@@ -113,6 +114,10 @@ export default function App() {
     // is close to expiry, so the first IAP dial does not have to wait.
     void warmUpGoogleAuth().catch((err) => log.warn('google auth warm-up failed', err))
     void usePushStore.getState().init()
+    // Anything the user sent before the app was last killed is still owed to
+    // them. Restored before the first dial so it goes out as soon as a backend
+    // answers.
+    void hydrateOutbox()
   }, [])
 
   // The OS suspends sockets without closing them, so a returning user would

@@ -37,6 +37,7 @@ import { Markdown } from '../components/Markdown'
 import { summarizeTool, toolIcon } from '../lib/toolSummary'
 import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { markOwnTurn, useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
+import { drain, enqueue, useOutboxStore } from '../stores/outbox'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
 import { ModePicker } from '../components/ModePicker'
@@ -398,53 +399,56 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const modelLabel = models.find((m) => m.id === model)?.label ?? 'Default'
 
   /**
-   * Follow-ups typed while a turn is running.
+   * Messages still waiting to reach the backend, for this thread.
    *
-   * Claude pushes into its SDK prompt queue and Codex steers into the live
-   * turn, both in the adapter. OpenCode ACP is one-prompt-per-turn and its
-   * adapter DROPS a mid-turn send silently, so those wait here instead.
+   * Includes both the offline case and follow-ups typed during an OpenCode
+   * turn: its adapter is one-prompt-per-turn and drops a mid-turn send
+   * silently, while Claude queues in its SDK and Codex steers into the live
+   * turn. That distinction now lives in the outbox rather than in a second
+   * queue here.
    */
-  const queueRef = useRef<Array<{ text: string; images: Array<{ url: string; mimeType?: string }> }>>([])
-  const [queuedCount, setQueuedCount] = useState(0)
+  const queuedCount = useOutboxStore(
+    (o) => o.messages.filter((m) => m.connectionId === connectionId && m.threadId === threadId).length,
+  )
 
+  // A turn ending is the most likely moment a waiting message becomes
+  // deliverable, so nudge the queue rather than waiting out its backoff.
   useEffect(() => {
-    if (thread.status !== 'idle' || queueRef.current.length === 0) return
-    const next = queueRef.current.shift()
-    setQueuedCount(queueRef.current.length)
-    if (!next) return
-    const client = getClient(connectionId)
-    if (!client) return
-    useChatStore.getState().addUserMessage(key, next.text, next.images.map((i) => i.url))
-    client
-      .sendTurn(threadId, next.text, thread.runtimeMode, next.images.length > 0 ? next.images : undefined, ownTurn())
-      .catch(reportError)
-  }, [thread.status, thread.runtimeMode, connectionId, threadId, key, reportError])
+    if (thread.status === 'idle') void drain()
+  }, [thread.status])
 
   const send = () => {
     const text = draft.trim()
     // An image with no caption is a legitimate turn.
     if (!text && attachments.length === 0) return
-    const client = getClient(connectionId)
-    if (!client) {
-      reportError(new Error('Backend not connected.'))
-      return
-    }
     const images = attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
     setDraft('')
     setVoiceNote(null)
     setAttachments([])
     usePrefsStore.getState().rememberDraft(key, '')
 
-    if (thread.status === 'running' && provider === 'opencode') {
-      queueRef.current.push({ text, images })
-      setQueuedCount(queueRef.current.length)
-      return
-    }
-
+    // Every send goes through the outbox, including one made while connected.
+    // A backend check here would only cover the cases we can SEE are broken,
+    // and the expensive ones are the ambiguous ones: a socket that still reads
+    // as open, a reconnect in flight, a turn already running.
     useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url))
-    client
-      .sendTurn(threadId, text, thread.runtimeMode, images.length > 0 ? images : undefined, ownTurn())
-      .catch(reportError)
+    const messageId = ownTurn()
+    enqueue({
+      connectionId,
+      threadId,
+      messageId,
+      text,
+      images: images.length > 0 ? images : undefined,
+      runtimeMode: thread.runtimeMode,
+      createdAt: Date.now(),
+      attempts: 0,
+    }).catch((err: unknown) => {
+      // The durable write failed, so the message is out of the queue again.
+      // Give the user back what they typed rather than losing it silently.
+      setDraft((current) => (current ? current : text))
+      setAttachments(attachments)
+      reportError(err)
+    })
   }
 
   const addAttachments = useCallback((added: Attachment[]) => {
@@ -736,7 +740,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
         {queuedCount > 0 && (
           <Text style={styles.queuedNote}>
-            {queuedCount} {queuedCount === 1 ? 'message' : 'messages'} waiting for this turn to finish
+            {queuedCount} {queuedCount === 1 ? 'message' : 'messages'} waiting to send
           </Text>
         )}
         {slashQuery !== null && <SlashMenu commands={slashMatches} onPick={runSlash} />}

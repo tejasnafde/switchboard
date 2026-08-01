@@ -19,6 +19,7 @@ import { IapTransport } from '../lib/iap-transport'
 import { foregroundAction } from '../lib/appLifecycle'
 import { deleteConnectionToken, loadConnectionToken, migrateTokensToKeystore, saveConnectionToken } from '../lib/secrets'
 import { useChatStore } from './chat'
+import { drain as drainOutbox } from './outbox'
 
 const log = createLogger('store:connections')
 
@@ -168,6 +169,8 @@ export const useConnectionsStore = create<ConnectionsState>()(
             if (state === 'connected') {
               set((s) => ({ detail: { ...s.detail, [id]: '' } }))
               get().setStatus(id, 'connected')
+              // A backend coming up is the event the queue is waiting for.
+              void drainOutbox()
             } else if (state === 'reconnecting') {
               // A socket that opens and is dropped looks identical to one that
               // never opens, unless the close code is shown.
@@ -323,6 +326,9 @@ export function installLifecycleReconnect(): () => void {
     // the window in which the user is notified about the screen they are
     // looking at; ThreadScreen's own interval only covers a foregrounded app.
     onForeground.forEach((fn) => fn())
+    // Retry backoffs do not tick while suspended either, so a queue parked on
+    // one would otherwise wait out its full delay after the user returns.
+    void drainOutbox()
     for (const [id, client] of clients) {
       const { transport } = client
       if (transport.forceReconnect || transport.probe) {

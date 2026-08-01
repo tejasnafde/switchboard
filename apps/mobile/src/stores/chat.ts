@@ -7,6 +7,9 @@
  * threadId without bleed (same reason preload stamps machineId on desktop).
  */
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { createDebouncedStorage } from '../lib/debouncedStorage'
 import type {
   ProviderKind,
   RuntimeContentEvent,
@@ -44,6 +47,46 @@ export interface ThreadState {
   costUsd?: number
   lastTurnDurationMs?: number
   unread: number
+  /** Last time any event touched this thread. Drives cache eviction. */
+  updatedAt?: number
+}
+
+/**
+ * Bounds on what survives a restart.
+ *
+ * The cache exists so opening the app with no signal shows the last thing you
+ * were reading instead of an empty screen. It is not an archive: the backend
+ * owns the transcript and a re-seed pulls more. So keep the tail of a handful
+ * of recent threads, and let AsyncStorage stay small enough that reading it on
+ * launch is not felt.
+ */
+export const MAX_CACHED_THREADS = 20
+export const MAX_CACHED_ITEMS = 60
+
+/**
+ * Trim the thread map to what is worth persisting: the most recently touched
+ * threads, each holding only its newest items.
+ *
+ * Pure, so the eviction rule can be tested without a device.
+ */
+export function prunePersistedThreads(
+  threads: Record<string, ThreadState>,
+  maxThreads = MAX_CACHED_THREADS,
+  maxItems = MAX_CACHED_ITEMS,
+): Record<string, ThreadState> {
+  const keep = Object.entries(threads)
+    .sort(([, a], [, b]) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+    .slice(0, maxThreads)
+  const out: Record<string, ThreadState> = {}
+  for (const [key, thread] of keep) {
+    out[key] = {
+      ...thread,
+      // The tail, because a feed renders newest-last and that is what the user
+      // was looking at.
+      items: thread.items.length > maxItems ? thread.items.slice(-maxItems) : thread.items,
+    }
+  }
+  return out
 }
 
 /** Origins this device sent, so its own user.message echo is dropped. */
@@ -186,7 +229,7 @@ function patchThread(
   fn: (t: ThreadState) => Partial<ThreadState>,
 ): Record<string, ThreadState> {
   const t = threads[key] ?? emptyThread()
-  return { ...threads, [key]: { ...t, ...fn(t) } }
+  return { ...threads, [key]: { ...t, ...fn(t), updatedAt: Date.now() } }
 }
 
 /**
@@ -392,7 +435,15 @@ function applyEvent(
   return patchThread(threads, key, (t) => reduceEvent(t, event, activeKey === key))
 }
 
-export const useChatStore = create<ChatState>((set) => ({
+/**
+ * Debounced so a streaming turn does not serialize the whole thread map 20
+ * times a second on the JS thread while the feed is trying to render.
+ */
+const cacheStorage = createDebouncedStorage(AsyncStorage)
+
+export const useChatStore = create<ChatState>()(
+  persist(
+    (set) => ({
   threads: {},
   activeKey: null,
 
@@ -456,4 +507,21 @@ export const useChatStore = create<ChatState>((set) => ({
       }
       return { threads, staleGeneration: s.staleGeneration + 1 }
     }),
-}))
+    }),
+    {
+      name: 'sb-chat-cache',
+      storage: createJSONStorage(() => cacheStorage),
+      // Only the feeds. activeKey and staleGeneration describe this run.
+      partialize: (s) => ({ threads: prunePersistedThreads(s.threads) }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) return
+        // A cached thread is not a live one. Restoring 'running' would show a
+        // spinner for a turn that finished while the app was closed, and
+        // restoring 'idle' would claim a connection we have not made yet.
+        state.threads = Object.fromEntries(
+          Object.entries(state.threads).map(([key, t]) => [key, { ...t, status: 'connecting' as const }]),
+        )
+      },
+    },
+  ),
+)
