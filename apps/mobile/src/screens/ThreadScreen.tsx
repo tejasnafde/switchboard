@@ -7,6 +7,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Animated,
   Image,
   FlatList,
   KeyboardAvoidingView,
@@ -46,6 +47,7 @@ import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { VoiceNoteBar } from '../components/MicButton'
 import { SendMicButton } from '../components/SendMicButton'
 import { useDictation, type VoiceNote } from '../hooks/useDictation'
+import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 
 /** How much of a long thread to pull on open. The feed says when it is a window. */
@@ -63,6 +65,9 @@ function ownTurn(): string {
 }
 
 const IMPLEMENT_MESSAGE = 'Implement the plan you proposed.'
+
+/** KeyboardAvoidingView cannot take an Animated.Value in its style unwrapped. */
+const AnimatedKeyboardAvoidingView = Animated.createAnimatedComponent(KeyboardAvoidingView)
 
 function providerFromAgentType(agentType: string | undefined): ProviderKind {
   if (agentType === 'codex') return 'codex'
@@ -131,6 +136,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   /** Full-screen preview of a sent image, since a 180pt thumbnail hides detail. */
   const [lightbox, setLightbox] = useState<string | null>(null)
   const [skills, setSkills] = useState<ProviderSkill[]>([])
+  const swipeBack = useEdgeSwipeBack(useCallback(() => navigation.goBack(), [navigation]))
   // Which provider drives this thread. Only OpenCode needs the client-side
   // queue below; Claude queues in its adapter and Codex steers into the turn.
   const [provider, setProvider] = useState<ProviderKind>('claude')
@@ -564,8 +570,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
     thread.usedTokens != null && thread.maxTokens ? Math.min(1, thread.usedTokens / thread.maxTokens) : null
 
   return (
-    <KeyboardAvoidingView
-      style={styles.screen}
+    <AnimatedKeyboardAvoidingView
+      {...swipeBack.panHandlers}
+      style={[styles.screen, { transform: [{ translateX: swipeBack.translateX }] }]}
       // Edge-to-edge is unconditional in SDK 57, and under it the window is not
       // resized for the keyboard, so `undefined` left the composer covered.
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -729,7 +736,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           />
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </AnimatedKeyboardAvoidingView>
   )
 }
 

@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native'
 import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native'
 import * as Notifications from 'expo-notifications'
 import { usePushStore } from './src/stores/push'
+import { threadRouteFromPush, type ThreadRoute } from './src/lib/pushRoute'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
@@ -70,6 +71,32 @@ Notifications.setNotificationHandler({
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>()
 
+/**
+ * A tap can arrive before the navigation container mounts, which is normal on a
+ * cold start. Dropping it - as an isReady() guard did - lost exactly the taps
+ * that matter most, so the target waits here and `onReady` flushes it.
+ */
+let pendingRoute: ThreadRoute | null = null
+
+function openFromPush(data: unknown): void {
+  const route = threadRouteFromPush(data)
+  if (!route) {
+    log.warn('notification payload could not address a thread', data)
+    return
+  }
+  if (!navigationRef.isReady()) {
+    pendingRoute = route
+    return
+  }
+  navigationRef.navigate('Thread', route)
+}
+
+function flushPendingRoute(): void {
+  const route = pendingRoute
+  pendingRoute = null
+  if (route && navigationRef.isReady()) navigationRef.navigate('Thread', route)
+}
+
 export default function App() {
   // Display grotesque + technical mono. Names must match src/theme.ts `fonts`.
   const [fontsLoaded] = useFonts({
@@ -86,21 +113,19 @@ export default function App() {
     void usePushStore.getState().init()
   }, [])
 
-  // Tapping a notification opens the thread it came from. The payload carries
-  // only threadId, so the connection and project come from the saved list.
+  // Tapping a notification opens the thread it came from.
+  //
+  // Two paths, and only the first was handled before. The listener covers a tap
+  // while the app is alive. A tap that LAUNCHES a killed app delivers its
+  // response before any listener attaches, so the initial response has to be
+  // read separately - that is the common case for a notification, since the
+  // point of one is that the app is not open.
   useEffect(() => {
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data as
-        | { threadId?: string; projectPath?: string; clientRef?: string; title?: string }
-        | undefined
-      if (!data?.threadId || !data.clientRef || !navigationRef.isReady()) return
-      navigationRef.navigate('Thread', {
-        connectionId: data.clientRef,
-        threadId: data.threadId,
-        title: data.title ?? 'Conversation',
-        projectPath: data.projectPath ?? '',
-        isNew: false,
-      })
+      openFromPush(response.notification.request.content.data)
+    })
+    void Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) openFromPush(response.notification.request.content.data)
     })
     return () => sub.remove()
   }, [])
@@ -115,7 +140,7 @@ export default function App() {
     // screen and are not torn down by navigation. They drive both update lanes:
     // OTA for JS-only changes, a GitHub-released APK for native ones.
     <View style={styles.root}>
-      <NavigationContainer theme={theme} ref={navigationRef}>
+      <NavigationContainer theme={theme} ref={navigationRef} onReady={flushPendingRoute}>
         <StatusBar style="light" />
         <Stack.Navigator
           initialRouteName="Connections"
