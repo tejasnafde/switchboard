@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { Project, Workspace } from '@shared/types'
@@ -20,6 +21,7 @@ import { applyProjectOrder, groupProjectsByWorkspace } from '@shared/projectGrou
 import { matchesQuery, parseOrder } from '../lib/projectList'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
+import { usePrefsStore, UNGROUPED_WORKSPACE_KEY } from '../stores/prefs'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
@@ -53,6 +55,8 @@ export default function ProjectsScreen({ route, navigation }: Props) {
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
+  const collapsedWorkspaces = usePrefsStore((s) => s.collapsedWorkspaces)
+  const toggleWorkspaceCollapsed = usePrefsStore((s) => s.toggleWorkspaceCollapsed)
 
   const load = useCallback(
     async (asRefresh = false) => {
@@ -94,15 +98,24 @@ export default function ProjectsScreen({ route, navigation }: Props) {
     if (projects === null) return []
     const filtered = projects.filter((p) => matchesQuery(p, query))
     const ordered = applyProjectOrder(filtered, order)
-    return groupProjectsByWorkspace(ordered, workspaces)
+    const groups = groupProjectsByWorkspace(ordered, workspaces)
       // A workspace with no matches is noise while searching.
       .filter((g) => g.projects.length > 0)
-      .map((g) => ({
+    // A single group renders no header, so it has nothing to tap and must not
+    // collapse. A live query overrides collapse so every match stays visible.
+    const collapsible = groups.length > 1 && query.trim() === ''
+    return groups.map((g) => {
+      const key = g.workspace?.id ?? UNGROUPED_WORKSPACE_KEY
+      const collapsed = collapsible && collapsedWorkspaces.includes(key)
+      return {
+        key,
         title: g.workspace?.name ?? 'Ungrouped',
-        workspaceId: g.workspace?.id ?? null,
-        data: g.projects,
-      }))
-  }, [projects, workspaces, order, query])
+        count: g.projects.length,
+        collapsed,
+        data: collapsed ? [] : g.projects,
+      }
+    })
+  }, [projects, workspaces, order, query, collapsedWorkspaces])
 
   if (projects === null && error !== null) {
     // The transport may still be dialing (reconnects are internal to it), so
@@ -138,7 +151,23 @@ export default function ProjectsScreen({ route, navigation }: Props) {
       // A lone "Ungrouped" label above every project is clutter.
       renderSectionHeader={({ section }) =>
         sections.length > 1 ? (
-          <Text style={styles.sectionHeader}>{section.title.toUpperCase()}</Text>
+          <Pressable
+            style={({ pressed }) => [styles.sectionHeader, pressed && styles.sectionHeaderPressed]}
+            onPress={() => toggleWorkspaceCollapsed(section.key)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: !section.collapsed }}
+            accessibilityHint={
+              section.collapsed ? 'Expands the workspace' : 'Collapses the workspace'
+            }
+          >
+            <Ionicons
+              name={section.collapsed ? 'chevron-forward' : 'chevron-down'}
+              size={14}
+              color={colors.textDim}
+            />
+            <Text style={styles.sectionTitle}>{section.title.toUpperCase()}</Text>
+            <Text style={styles.sectionCount}>{section.count}</Text>
+          </Pressable>
         ) : null
       }
       ListHeaderComponent={
@@ -225,10 +254,24 @@ const styles = StyleSheet.create({
     ...type.body,
   },
   sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    minHeight: HIT,
+    paddingLeft: space.lg + space.xs,
+    paddingRight: space.md,
+    marginTop: space.xs,
+  },
+  sectionHeaderPressed: {
+    backgroundColor: colors.wash,
+  },
+  sectionTitle: {
     color: colors.textFaint,
     ...type.label,
-    marginTop: space.md,
-    marginBottom: space.xs,
+  },
+  sectionCount: {
+    color: colors.textFaint,
+    ...type.monoSm,
   },
   center: {
     flex: 1,

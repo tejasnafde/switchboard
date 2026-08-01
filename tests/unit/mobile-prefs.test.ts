@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   pruneThreadPrefs,
+  toggleCollapsedWorkspace,
   MAX_REMEMBERED_THREADS,
   type ThreadPref,
 } from '../../apps/mobile/src/stores/prefs'
@@ -48,5 +49,25 @@ describe('pruneThreadPrefs', () => {
   it('is stable at exactly the cap', () => {
     const prefs = makePrefs(3)
     expect(pruneThreadPrefs(prefs, 3)).toBe(prefs)
+  })
+})
+
+describe('toggleCollapsedWorkspace', () => {
+  it('collapses a workspace that was expanded', () => {
+    expect(toggleCollapsedWorkspace([], 'ws-1')).toEqual(['ws-1'])
+  })
+
+  it('expands a workspace that was collapsed', () => {
+    expect(toggleCollapsedWorkspace(['ws-1', 'ws-2'], 'ws-1')).toEqual(['ws-2'])
+  })
+
+  it('stores only collapsed ids, so an unknown workspace stays expanded', () => {
+    expect(toggleCollapsedWorkspace(['ws-1'], 'ws-2')).toEqual(['ws-1', 'ws-2'])
+  })
+
+  it('does not mutate the input', () => {
+    const list = ['ws-1']
+    toggleCollapsedWorkspace(list, 'ws-1')
+    expect(list).toEqual(['ws-1'])
   })
 })

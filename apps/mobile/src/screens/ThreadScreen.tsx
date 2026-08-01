@@ -18,6 +18,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from '@react-navigation/native'
 import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
@@ -575,7 +576,30 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
       {/* Composer */}
       <View style={styles.composer}>
-        <View style={styles.composerControls}>
+        {/* Every control except Send lives in one scroller, so the input keeps
+            the full width instead of competing with chips for it. */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="always"
+          style={styles.controlsScroller}
+          contentContainerStyle={styles.controlsContent}
+        >
+          {/* First in the row: it overflows, and hunting for Stop mid-turn is
+              the one thing you cannot ask someone to scroll for. Stop does not
+              replace Send, so a follow-up can still be queued. */}
+          {isRunning && (
+            <Pressable
+              style={({ pressed }) => [styles.stopButton, pressed && styles.pressed]}
+              onPress={stop}
+              accessibilityRole="button"
+              accessibilityLabel="Stop"
+            >
+              <Ionicons name="stop" size={16} color="#fff" />
+            </Pressable>
+          )}
+          <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
+          <MicButton draft={draft} onDraft={setDraft} onNote={setVoiceNote} />
           <ModePicker value={thread.runtimeMode} onChange={setMode} />
           {profileLabel !== null && (
             <Pressable
@@ -598,7 +622,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
               </Text>
             </Pressable>
           )}
-        </View>
+        </ScrollView>
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
         {queuedCount > 0 && (
           <Text style={styles.queuedNote}>
@@ -606,7 +630,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           </Text>
         )}
         <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
-        <View style={styles.inputRow}>
+        <View style={styles.inputSurface}>
           <TextInput
             ref={composerRef}
             style={styles.input}
@@ -616,21 +640,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
             placeholderTextColor={colors.textFaint}
             multiline
           />
-          <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
-          <MicButton draft={draft} onDraft={setDraft} onNote={setVoiceNote} />
-          {/* Stop sits BESIDE Send while running, as on the desktop. Replacing
-              Send made it impossible to queue a follow-up mid-turn. */}
-          {isRunning && (
-            <Pressable style={[styles.sendButton, styles.stopButton]} onPress={stop}>
-              <Text style={styles.sendLabel}>Stop</Text>
-            </Pressable>
-          )}
           <Pressable
             style={[styles.sendButton, !canSend && styles.sendButtonDisabled]}
             onPress={send}
             disabled={!canSend}
+            accessibilityRole="button"
+            accessibilityLabel={isRunning ? 'Queue' : 'Send'}
           >
-            <Text style={styles.sendLabel}>{isRunning ? 'Queue' : 'Send'}</Text>
+            <Ionicons name="arrow-up" size={16} color="#fff" />
           </Pressable>
         </View>
       </View>
@@ -807,7 +824,7 @@ const QuestionItem = memo(function QuestionItem({
       ))}
       {!answered && (
         <Pressable
-          style={[styles.actionButton, styles.submitButton, !canSubmit && styles.sendButtonDisabled]}
+          style={[styles.actionButton, styles.submitButton, !canSubmit && styles.submitDisabled]}
           disabled={!canSubmit}
           onPress={() => onSubmit(item.requestId, selections)}
         >
@@ -1182,6 +1199,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     marginTop: 2,
   },
+  submitDisabled: {
+    opacity: 0.4,
+  },
   planCard: {
     borderWidth: 1,
     borderColor: colors.accent,
@@ -1251,11 +1271,6 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.6,
   },
-  composerControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   modelChip: {
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -1322,39 +1337,55 @@ const styles = StyleSheet.create({
     paddingBottom: Platform.OS === 'ios' ? 24 : 12,
     gap: 8,
   },
-  inputRow: {
+  controlsScroller: {
+    flexGrow: 0,
+    minHeight: 40,
+  },
+  controlsContent: {
+    gap: space.sm,
+    alignItems: 'center',
+    paddingHorizontal: 2,
+  },
+  // Owns the border and fill so the send button can nest flush inside it: the
+  // small right padding is what makes the circle sit against the edge.
+  inputSurface: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 8,
-  },
-  input: {
-    flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingLeft: 18,
+    paddingRight: 5,
+    paddingVertical: 5,
+    borderRadius: radius.lg,
     backgroundColor: colors.bg,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
+  },
+  input: {
+    flex: 1,
+    minHeight: 36,
+    maxHeight: 160,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
     color: colors.text,
     fontSize: 15,
   },
   sendButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 11,
-    borderRadius: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.accent,
   },
   sendButtonDisabled: {
-    opacity: 0.4,
+    backgroundColor: colors.surfaceRaised,
+    opacity: 0.55,
   },
   stopButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: colors.red,
-  },
-  sendLabel: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
   },
 })

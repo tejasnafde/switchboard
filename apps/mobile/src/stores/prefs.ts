@@ -56,14 +56,28 @@ export function withDraft(
   return pruneThreadPrefs({ ...threads, [key]: { ...current, draft, at: now } })
 }
 
+/** Collapse key for the implicit group holding projects with no workspace. */
+export const UNGROUPED_WORKSPACE_KEY = 'ungrouped'
+
+/**
+ * Toggle a workspace id in the collapsed list. Only collapsed ids are stored,
+ * so a workspace the client has never seen defaults to expanded.
+ */
+export function toggleCollapsedWorkspace(collapsed: string[], key: string): string[] {
+  return collapsed.includes(key) ? collapsed.filter((k) => k !== key) : [...collapsed, key]
+}
+
 interface PrefsState {
   threads: Record<string, ThreadPref>
   /** Mode a NEW session starts in - the last one the user chose. */
   defaultMode: RuntimeMode
+  /** Workspace ids the user collapsed on the Projects screen. */
+  collapsedWorkspaces: string[]
   rememberMode: (key: string, mode: RuntimeMode) => void
   rememberModel: (key: string, model: string) => void
   rememberDraft: (key: string, draft: string) => void
   forget: (key: string) => void
+  toggleWorkspaceCollapsed: (key: string) => void
 }
 
 export const usePrefsStore = create<PrefsState>()(
@@ -71,6 +85,7 @@ export const usePrefsStore = create<PrefsState>()(
     (set) => ({
       threads: {},
       defaultMode: 'sandbox',
+      collapsedWorkspaces: [],
 
       rememberMode: (key, mode) =>
         set((s) => ({
@@ -98,6 +113,9 @@ export const usePrefsStore = create<PrefsState>()(
           delete next[key]
           return { threads: next }
         }),
+
+      toggleWorkspaceCollapsed: (key) =>
+        set((s) => ({ collapsedWorkspaces: toggleCollapsedWorkspace(s.collapsedWorkspaces, key) })),
     }),
     {
       name: 'switchboard-prefs',
