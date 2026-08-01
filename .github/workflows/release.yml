@@ -93,6 +93,13 @@ jobs:
           retry_wait_seconds: 15
           command: npm ci
 
+      # `npm run build` runs the test gate first, and the root vitest suite
+      # imports pure logic out of apps/mobile, whose tsconfig extends
+      # `expo/tsconfig.base`. Same reason ci.yml installs it - the build cannot
+      # transform those files without it.
+      - name: Install mobile dependencies
+        run: npm ci --prefix apps/mobile
+
       - name: Build renderer + main
         run: npm run build
 
