@@ -28,6 +28,7 @@ import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
 import { getSignedInEmail, warmUpGoogleAuth } from '../lib/google-auth'
 import { initialsFromEmail } from '../lib/account'
+import { BuildStamp } from '../components/BuildStamp'
 import { useConnectionsStore, secretsReady, type ConnectionConfig, type ConnectionStatus } from '../stores/connections'
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
@@ -236,6 +237,16 @@ export default function ConnectionsScreen() {
           </Text>
         </View>
       }
+      ListFooterComponent={
+        <View>
+          <BuildStamp />
+          {__DEV__ && (
+            <Pressable onPress={() => navigation.navigate('DevGallery')} style={styles.devLink}>
+              <Text style={styles.devLinkText}>Component gallery</Text>
+            </Pressable>
+          )}
+        </View>
+      }
       renderItem={({ item }) => (
         <ConnectionRow
           config={item}
@@ -250,6 +261,8 @@ export default function ConnectionsScreen() {
 }
 
 const styles = StyleSheet.create({
+  devLink: { alignItems: 'center', paddingVertical: space.sm },
+  devLinkText: { color: colors.textFaint, ...type.monoSm },
   list: {
     paddingHorizontal: space.lg,
     paddingBottom: space.xxl,

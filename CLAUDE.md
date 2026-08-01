@@ -121,11 +121,32 @@ Android needs FCM credentials on the EAS project - see the Firebase section in
 CLAUDE.local.md. A new registry is created when a closed window is reopened, so
 the notifier must be re-attached there.
 
-**Testing.** Mobile tests live in the root `tests/unit/` and run in the normal
-suite; the `@shared` alias already resolves. Anything importing react-native
-CANNOT load in a node test, so pure logic belongs in `src/lib/*.ts` rather than
-inside a `.tsx` - see `lib/version.ts`, `lib/profiles.ts`, `lib/projectList.ts`,
-`lib/images.ts`, `lib/markdown.ts`.
+**Testing: two runners, one rule.** Pure logic goes in the root vitest suite
+(`tests/unit/**`, `@shared` alias resolves). Anything importing react-native
+CANNOT load there, so components get jest instead: `cd apps/mobile && npm test`,
+config in `apps/mobile/jest.config.js`, tests in `src/**/__tests__/*.test.tsx`.
+The globs do not overlap, so neither runner sees the other's files.
+
+Keep decision logic in `src/lib/*.ts` (vitest) and assert only what RENDERS in
+jest - `lib/composer.ts` holds the gesture rules, and the component test checks
+the glyph and label those rules produce. PanResponder derives gesture state from
+real touch history, so a drag cannot be faked by calling the handlers.
+
+Two traps in that jest setup, both cost time:
+- `@testing-library/react-native` 14 returns an EMPTY render result under this
+  React 19 / RN 0.86 / jest-expo combination, even for a bare `<View>`. Uses
+  `react-test-renderer` directly via `src/test/render.tsx` instead.
+- A decorative `Animated.loop` keeps firing on real timers after its test ends
+  and crashes the worker inside react-native's `Easing` once jest tears the
+  module registry down. `src/test/render.tsx` unmounts after every test.
+
+**Looking at it.** `DevGalleryScreen` (dev-only route, linked from the bottom of
+Connections) renders every feed row and composer state on one screen. It exists
+for the states that are awkward to reach on purpose - an empty thread mid-load,
+an uncaptioned image, a tool that never completed - which is where the bugs that
+reached a device actually were. `BuildStamp` shows version + channel + OTA id,
+because an APK plus stacked OTAs means the version alone does not identify what
+is running.
 
 **Trap that cost a whole debugging cycle:** if `expo-doctor` reports dependency
 drift, fix it before believing anything else. A react-native/metro version
