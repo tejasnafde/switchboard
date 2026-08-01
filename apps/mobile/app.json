@@ -67,6 +67,10 @@
     "updates": {
       "url": "https://u.expo.dev/efbb89d9-210f-4584-bf62-8186cd5fb476"
     },
-    "icon": "./assets/icon.png"
+    "icon": "./assets/icon.png",
+    "platforms": [
+      "android",
+      "ios"
+    ]
   }
 }
