@@ -3,7 +3,7 @@
  * JSON.stringify of the whole input object.
  */
 import { describe, it, expect } from 'vitest'
-import { summarizeTool, shortenPath, condense } from '../../apps/mobile/src/lib/toolSummary'
+import { summarizeTool, shortenPath, condense, toolIcon } from '../../apps/mobile/src/lib/toolSummary'
 
 describe('summarizeTool', () => {
   it('shows the command for Bash, not the surrounding JSON', () => {
@@ -87,5 +87,28 @@ describe('helpers', () => {
   it('caps with an ellipsis at the requested length', () => {
     expect(condense('x'.repeat(50), 10)).toHaveLength(10)
     expect(condense('short', 10)).toBe('short')
+  })
+})
+
+describe('toolIcon', () => {
+  it('groups by what the tool does, across providers', () => {
+    // Codex/OpenCode spellings must land on the same glyph as Claude's.
+    expect(toolIcon('Bash')).toBe(toolIcon('shell'))
+    expect(toolIcon('Read')).toBe(toolIcon('read_file'))
+    expect(toolIcon('Grep')).toBe(toolIcon('search_files'))
+    expect(toolIcon('Edit')).toBe(toolIcon('apply_patch'))
+  })
+
+  it('is case-insensitive', () => {
+    expect(toolIcon('BASH')).toBe('terminal')
+  })
+
+  it('falls back to a generic glyph for an unknown tool', () => {
+    expect(toolIcon('mcp__thing__do')).toBe('construct-outline')
+    expect(toolIcon('')).toBe('construct-outline')
+  })
+
+  it('gives searches and shells different glyphs, so a feed is scannable', () => {
+    expect(toolIcon('Grep')).not.toBe(toolIcon('Bash'))
   })
 })

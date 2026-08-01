@@ -146,3 +146,44 @@ export function summarizeTool(toolName: string, input: unknown): ToolSummary {
     }
   }
 }
+
+/**
+ * Ionicons name for a tool, so a feed of calls is scannable by shape rather
+ * than by reading every title. Grouped by what the tool DOES: reads, writes,
+ * searches and shells each get one glyph across all three providers.
+ */
+export function toolIcon(toolName: string): string {
+  switch (toolName.toLowerCase()) {
+    case 'bash':
+    case 'shell':
+      return 'terminal'
+    case 'read':
+    case 'read_file':
+      return 'document-text-outline'
+    case 'write':
+    case 'write_file':
+      return 'create-outline'
+    case 'edit':
+    case 'multiedit':
+    case 'apply_patch':
+    case 'notebookedit':
+      return 'pencil'
+    case 'grep':
+    case 'search_files':
+    case 'glob':
+      return 'search'
+    case 'list_files':
+    case 'ls':
+      return 'folder-outline'
+    case 'webfetch':
+    case 'fetch':
+    case 'websearch':
+      return 'globe-outline'
+    case 'task':
+      return 'sparkles-outline'
+    case 'todowrite':
+      return 'checkbox-outline'
+    default:
+      return 'construct-outline'
+  }
+}

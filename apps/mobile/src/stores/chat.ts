@@ -16,7 +16,7 @@ import type {
 } from '@shared/provider-events'
 
 export type FeedItem =
-  | { kind: 'user'; id: string; text: string; at: number }
+  | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
   | { kind: 'text'; id: string; text: string; stream: 'assistant' | 'reasoning' | 'plan'; done: boolean; durationMs?: number }
   | { kind: 'tool'; id: string; toolName: string; input: unknown; output?: string; state: 'running' | 'done' }
   | { kind: 'denial'; id: string; toolName: string; reason: string }
@@ -67,7 +67,7 @@ interface ChatState {
   activeKey: string | null
   setActive: (key: string | null) => void
   setRuntimeMode: (key: string, mode: RuntimeMode) => void
-  addUserMessage: (key: string, text: string) => void
+  addUserMessage: (key: string, text: string, images?: string[]) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
   markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny') => void
   seedItems: (key: string, items: FeedItem[]) => void
@@ -382,10 +382,10 @@ export const useChatStore = create<ChatState>((set) => ({
   setRuntimeMode: (key, mode) =>
     set((s) => ({ threads: patchThread(s.threads, key, () => ({ runtimeMode: mode })) })),
 
-  addUserMessage: (key, text) =>
+  addUserMessage: (key, text, images) =>
     set((s) => ({
       threads: patchThread(s.threads, key, (t) => ({
-        items: [...t.items, { kind: 'user', id: `u-${Date.now()}`, text, at: Date.now() }],
+        items: [...t.items, { kind: 'user', id: `u-${Date.now()}`, text, at: Date.now(), images }],
         status: 'running',
       })),
     })),

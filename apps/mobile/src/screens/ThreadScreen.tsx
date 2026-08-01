@@ -7,6 +7,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Image,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -23,7 +24,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
-import type { ProviderInstance } from '@shared/types'
+import type { ProviderInstance, ProviderSkill } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
@@ -31,13 +32,15 @@ import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, radius, space, type } from '../theme'
 import { Markdown } from '../components/Markdown'
-import { summarizeTool } from '../lib/toolSummary'
+import { summarizeTool, toolIcon } from '../lib/toolSummary'
 import { getClient, useConnectionsStore } from '../stores/connections'
 import { markOwnTurn, useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
 import { ModePicker } from '../components/ModePicker'
 import { ProfilePicker } from '../components/ProfilePicker'
+import { SlashMenu } from '../components/SlashMenu'
+import { allCommands, detectSlash, filterCommands, type SlashCommand } from '../lib/slash'
 import { profilesFor } from '../lib/profiles'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { VoiceNoteBar } from '../components/MicButton'
@@ -72,7 +75,17 @@ function historyToItems(messages: ChatMessage[]): FeedItem[] {
   const items: FeedItem[] = []
   for (const m of messages) {
     if (m.role === 'user') {
-      if (m.content.trim()) items.push({ kind: 'user', id: `h-${m.id}`, text: m.content, at: m.timestamp })
+      const urls = (m.images ?? []).map((img) => img.url).filter(Boolean)
+      // A message can be images with no caption, so an empty body still counts.
+      if (m.content.trim() || urls.length > 0) {
+        items.push({
+          kind: 'user',
+          id: `h-${m.id}`,
+          text: m.content,
+          at: m.timestamp,
+          images: urls.length > 0 ? urls : undefined,
+        })
+      }
       continue
     }
     // Assistant and system messages render as done assistant text.
@@ -115,6 +128,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const [model, setModel] = useState('')
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
+  /** Full-screen preview of a sent image, since a 180pt thumbnail hides detail. */
+  const [lightbox, setLightbox] = useState<string | null>(null)
+  const [skills, setSkills] = useState<ProviderSkill[]>([])
   // Which provider drives this thread. Only OpenCode needs the client-side
   // queue below; Claude queues in its adapter and Codex steers into the turn.
   const [provider, setProvider] = useState<ProviderKind>('claude')
@@ -290,6 +306,22 @@ export default function ThreadScreen({ route, navigation }: Props) {
     [connectionId, threadId, projectPath, reportError],
   )
 
+  useEffect(() => {
+    if (skills.length > 0) return
+    const client = getClient(connectionId)
+    if (!client) return
+    let cancelled = false
+    client
+      .listSkills(threadId)
+      .then((rows) => {
+        if (!cancelled && rows && rows.length > 0) setSkills(rows)
+      })
+      .catch((err) => log.warn('listSkills failed - built-ins only', err))
+    return () => {
+      cancelled = true
+    }
+  }, [connectionId, threadId, thread.status, skills.length])
+
   // Live model list for this thread. It stays empty until the adapter can
   // answer (Claude's SDK query only exists once a turn has begun, so the fetch
   // is re-run on every status change until a list lands) and an empty list
@@ -350,7 +382,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     if (!next) return
     const client = getClient(connectionId)
     if (!client) return
-    useChatStore.getState().addUserMessage(key, next.text || `[${next.images.length} images]`)
+    useChatStore.getState().addUserMessage(key, next.text, next.images.map((i) => i.url))
     client
       .sendTurn(threadId, next.text, thread.runtimeMode, next.images.length > 0 ? next.images : undefined, ownTurn())
       .catch(reportError)
@@ -377,10 +409,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       return
     }
 
-    useChatStore.getState().addUserMessage(
-      key,
-      text || `[${images.length} ${images.length === 1 ? 'image' : 'images'}]`,
-    )
+    useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url))
     client
       .sendTurn(threadId, text, thread.runtimeMode, images.length > 0 ? images : undefined, ownTurn())
       .catch(reportError)
@@ -437,7 +466,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
           return (
             <View style={styles.userRow}>
               <View style={styles.userBubble}>
-                <Text style={styles.userText}>{item.text}</Text>
+                {item.images?.map((url, i) => (
+                  <Pressable key={`${item.id}-img-${i}`} onPress={() => setLightbox(url)}>
+                    <Image source={{ uri: url }} style={styles.sentImage} resizeMode="cover" />
+                  </Pressable>
+                ))}
+                {/* An image with no caption is a valid message, so the label is
+                    conditional rather than a placeholder like "[1 image]". */}
+                {item.text.length > 0 && <Text style={styles.userText}>{item.text}</Text>}
               </View>
             </View>
           )
@@ -471,7 +507,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           return <Text style={styles.errorText}>{item.message}</Text>
       }
     },
-    [decideApproval, submitAnswers, implementPlan, focusComposer, backendLabel],
+    [decideApproval, submitAnswers, implementPlan, focusComposer, backendLabel, setLightbox],
   )
 
   // Null hides the chip: a backend with no configured profiles has nothing to
@@ -486,6 +522,39 @@ export default function ThreadScreen({ route, navigation }: Props) {
       ? null
       : (thread.instanceName ??
           (currentProfiles.find((i) => i.id === effectiveInstanceId) ?? currentProfiles[0]).displayName)
+
+  const slashQuery = detectSlash(draft)
+  const slashMatches = useMemo(
+    () => (slashQuery === null ? [] : filterCommands(allCommands(skills), slashQuery)),
+    [slashQuery, skills],
+  )
+
+  const runSlash = useCallback(
+    (cmd: SlashCommand) => {
+      const action = cmd.action
+      // Built-ins consume the typed slash; a skill replaces it with the invocation
+      // so the user can add arguments before sending.
+      setDraft(action.kind === 'insert' ? action.text : '')
+      switch (action.kind) {
+        case 'mode':
+          setMode(action.mode)
+          break
+        case 'clear':
+          // Local only: the backend transcript is the record of truth, so this
+          // clears what this phone shows, not the conversation.
+          useChatStore.getState().seedItems(key, [])
+          break
+        case 'stop':
+          stop()
+          break
+        case 'attach':
+        case 'insert':
+          composerRef.current?.focus()
+          break
+      }
+    },
+    [key, setMode, stop],
+  )
 
   const isRunning = thread.status === 'running'
   const canSend = draft.trim().length > 0 || attachments.length > 0
@@ -586,6 +655,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
         onClose={() => setProfilePickerOpen(false)}
       />
 
+      <Modal visible={lightbox !== null} transparent animationType="fade" onRequestClose={() => setLightbox(null)}>
+        <Pressable style={styles.lightbox} onPress={() => setLightbox(null)}>
+          {lightbox !== null && (
+            <Image source={{ uri: lightbox }} style={styles.lightboxImage} resizeMode="contain" />
+          )}
+        </Pressable>
+      </Modal>
+
       {/* Composer */}
       <View style={styles.composer}>
         {/* Dropdowns left, actions right. The left group scrolls if the labels
@@ -629,6 +706,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
             {queuedCount} {queuedCount === 1 ? 'message' : 'messages'} waiting for this turn to finish
           </Text>
         )}
+        {slashQuery !== null && <SlashMenu commands={slashMatches} onPick={runSlash} />}
         <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
         <View style={styles.inputSurface}>
           <TextInput
@@ -694,32 +772,54 @@ const TextItem = memo(function TextItem({ item }: { item: Extract<FeedItem, { ki
 const ToolItem = memo(function ToolItem({ item }: { item: Extract<FeedItem, { kind: 'tool' }> }) {
   const [expanded, setExpanded] = useState(false)
   const summary = useMemo(() => summarizeTool(item.toolName, item.input), [item.toolName, item.input])
-  const outputLines = (item.output ?? '').split('\n')
-  const shown = expanded ? outputLines : outputLines.slice(0, 6)
-  const hiddenCount = outputLines.length - 6
+  const icon = useMemo(() => toolIcon(item.toolName), [item.toolName])
+  const output = item.output ?? ''
+  const hasOutput = item.state === 'done' && output.length > 0
+  const lineCount = hasOutput ? output.split('\n').length : 0
 
+  // Collapsed to a single quiet line: a turn can hold dozens of these, and the
+  // output only matters when the user asks for it.
   return (
-    <View style={[styles.itemBlock, styles.toolCard]}>
-      <View style={styles.toolHeader}>
-        <Text style={styles.toolName}>{summary.title}</Text>
-        {item.state === 'running' && <ActivityIndicator size="small" color={colors.accent} />}
-      </View>
-      {summary.detail.length > 0 && (
-        <Text style={summary.mono ? styles.toolInput : styles.toolInputProse} numberOfLines={2}>
-          {summary.detail}
-        </Text>
-      )}
-      {item.state === 'done' && item.output != null && item.output.length > 0 && (
-        <>
-          <Text style={styles.toolOutput}>{shown.join('\n')}</Text>
-          {hiddenCount > 0 && (
-            <Pressable onPress={() => setExpanded((v) => !v)}>
-              <Text style={styles.toggleText}>
-                {expanded ? 'Show less' : `Show ${hiddenCount} more lines`}
-              </Text>
-            </Pressable>
-          )}
-        </>
+    <View style={styles.itemBlock}>
+      <Pressable
+        onPress={() => hasOutput && setExpanded((v) => !v)}
+        style={({ pressed }) => [styles.toolRow, pressed && hasOutput && styles.pressed]}
+        accessibilityRole={hasOutput ? 'button' : undefined}
+        accessibilityLabel={`${summary.title} ${summary.detail}`}
+      >
+        {item.state === 'running' ? (
+          <ActivityIndicator size="small" color={colors.accent} style={styles.toolIcon} />
+        ) : (
+          <Ionicons name={icon as never} size={14} color={colors.textFaint} style={styles.toolIcon} />
+        )}
+        <Text style={styles.toolTitle}>{summary.title}</Text>
+        {summary.detail.length > 0 && (
+          <Text
+            style={[styles.toolDetail, summary.mono ? styles.toolDetailMono : null]}
+            numberOfLines={1}
+            ellipsizeMode={summary.mono ? 'head' : 'tail'}
+          >
+            {summary.detail}
+          </Text>
+        )}
+        {hasOutput && (
+          <Ionicons
+            name={expanded ? 'chevron-up' : 'chevron-down'}
+            size={13}
+            color={colors.textFaint}
+          />
+        )}
+      </Pressable>
+
+      {expanded && hasOutput && (
+        <View style={styles.toolOutputBox}>
+          {/* Horizontal scroll, not wrapping: tool output is machine-formatted
+              and wrapped columns are unreadable. */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <Text style={styles.toolOutputText}>{output}</Text>
+          </ScrollView>
+          <Text style={styles.toolMeta}>{lineCount} {lineCount === 1 ? 'line' : 'lines'}</Text>
+        </View>
       )}
     </View>
   )
@@ -979,6 +1079,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: space.md,
     paddingVertical: space.sm + 2,
   },
+  lightbox: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  lightboxImage: { width: '100%', height: '80%' },
+  sentImage: {
+    width: 180,
+    height: 180,
+    borderRadius: radius.sm,
+    marginBottom: space.xs,
+    backgroundColor: colors.surfaceRaised,
+  },
   userText: {
     ...type.bodySm,
     color: colors.text,
@@ -1050,6 +1159,28 @@ const styles = StyleSheet.create({
   },
   noticeRow: { alignItems: 'center', paddingVertical: space.md },
   noticeText: { color: colors.textDim, ...type.monoSm },
+  toolRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingVertical: 5,
+  },
+  toolIcon: { width: 16, alignItems: 'center' },
+  toolTitle: { color: colors.textDim, ...type.bodySm },
+  toolDetail: { color: colors.textFaint, ...type.bodySm, flexShrink: 1 },
+  toolDetailMono: { ...type.monoSm },
+  toolOutputBox: {
+    marginTop: space.xs,
+    marginLeft: 24,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.sm,
+    borderColor: colors.border,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  toolOutputText: { color: colors.textDim, ...type.monoSm },
+  toolMeta: { color: colors.textFaint, ...type.monoSm, marginTop: space.xs },
   toolInputProse: { color: colors.textDim, ...type.bodySm },
   queuedNote: { color: colors.textDim, ...type.monoSm, marginBottom: space.sm },
   denialPill: {

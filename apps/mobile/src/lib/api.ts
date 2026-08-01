@@ -8,7 +8,7 @@ import type { Transport } from '@shared/transport'
 import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PushChannels } from '@shared/ipc-channels'
 import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
-import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, Workspace } from '@shared/types'
+import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
 
 export interface StartSessionOpts {
@@ -139,6 +139,11 @@ export class SwitchboardClient {
     origin?: string,
   ): Promise<void> {
     return this.transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images, origin)
+  }
+
+  /** Skills the live agent reports. Empty until its session is up. */
+  listSkills(threadId: string): Promise<ProviderSkill[] | null> {
+    return this.transport.invoke(ProviderChannels.LIST_SKILLS, threadId)
   }
 
   interrupt(threadId: string): Promise<void> {
