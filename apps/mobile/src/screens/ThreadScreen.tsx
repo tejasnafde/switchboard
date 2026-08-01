@@ -38,11 +38,7 @@ import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 
-/**
- * How much of a long thread to pull on open. Enough that scrolling back feels
- * normal, small enough that a 2800-message thread paints promptly over a phone
- * connection. The backend reports the true total and the feed says so.
- */
+/** How much of a long thread to pull on open. The feed says when it is a window. */
 const HISTORY_WINDOW = 250
 
 const log = createLogger('screen:thread')
@@ -102,9 +98,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const [modelPickerOpen, setModelPickerOpen] = useState(false)
   const [statusOpen, setStatusOpen] = useState(false)
 
-  // Status lives in the header, not in a row of its own. The accessory
-  // subscribes to the store directly, so this runs once per thread rather than
-  // once per streamed token.
+  // The accessory subscribes to the store itself, so this runs once per thread.
   useEffect(() => {
     navigation.setOptions({
       headerRight: () => <ThreadHeaderStatus threadKey={key} onPress={() => setStatusOpen((v) => !v)} />,
@@ -152,8 +146,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         const store = useChatStore.getState()
         if ((store.threads[key]?.items.length ?? 0) === 0 && loaded.messages.length > 0) {
           const seeded = historyToItems(loaded.messages)
-          // Say what is being withheld. A long thread silently starting
-          // mid-conversation reads as lost history.
+          // A thread silently starting mid-conversation reads as lost history.
           if (loaded.truncated && loaded.total) {
             seeded.unshift({
               kind: 'notice',
@@ -183,9 +176,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
     })()
   }, [connectionId, threadId, projectPath, key, isNew, reportError])
 
-  // Restore what the user last chose for this thread. Runs once per thread and
-  // pushes the mode to the backend too, so the adapter and the chip agree - a
-  // restored chip that the backend does not know about would be a lie.
+  // Restore the user's last choices, pushing the mode to the backend too so the
+  // adapter and the chip agree.
   const restoredKeyRef = useRef<string | null>(null)
   useEffect(() => {
     if (restoredKeyRef.current === key) return
@@ -229,11 +221,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
   }, [connectionId, threadId, thread.status, models.length])
 
-  // FlatList passes its OWN getItem/getItemCount after {...restProps}, so a
-  // zero-copy accessor is impossible here - it would be silently ignored and the
-  // feed would render oldest-first inside an inverted list. Reversing a copy is
-  // the supported route; the cost that actually mattered was re-rendering every
-  // row per token, which the memoized rows below fix.
+  // FlatList passes its own getItem/getItemCount after {...restProps}, so a
+  // zero-copy accessor would be ignored and the feed would render oldest-first.
+  // Reversing a copy is cheap; the memoized rows are what actually mattered.
   const reversedItems = useMemo(() => [...thread.items].reverse(), [thread.items])
   const itemCount = reversedItems.length
 
@@ -255,8 +245,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const send = () => {
     const text = draft.trim()
-    // An image with no caption is a legitimate turn - "what is wrong with this
-    // screenshot" is most of the reason to attach one from a phone.
+    // An image with no caption is a legitimate turn.
     if (!text && attachments.length === 0) return
     const client = getClient(connectionId)
     if (!client) {
@@ -372,9 +361,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      // Android needs a real behaviour too. Edge-to-edge is unconditional in
-      // SDK 57, and under it the window is no longer resized for the keyboard,
-      // so `undefined` left the composer covered. Offset accounts for the header.
+      // Edge-to-edge is unconditional in SDK 57, and under it the window is not
+      // resized for the keyboard, so `undefined` left the composer covered.
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={headerHeight}
     >
@@ -396,9 +384,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </View>
       )}
 
-      {/* Rendered OUTSIDE the list on purpose. An inverted FlatList applies a
-          flip to the container and cancels it per cell, but ListEmptyComponent
-          gets no counter-transform, so anything placed there renders mirrored. */}
+      {/* Outside the list: ListEmptyComponent gets no counter-transform from an
+          inverted FlatList, so anything placed there renders mirrored. */}
       {itemCount === 0 ? (
         <View style={styles.emptyWrap}>
           {!isNew && <ActivityIndicator size="small" color={colors.textDim} />}

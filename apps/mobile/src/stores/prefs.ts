@@ -1,24 +1,14 @@
 /**
- * Preferences that survive an app restart.
- *
- * The desktop remembers a session's runtime mode and model; the phone forgot
- * both on every open, so a thread the user had put in Plan mode came back in
- * sandbox. Stored per thread key (`connectionId:threadId`), so the same
- * threadId on two backends does not collide.
- *
- * Not the same thing as the backend settings table: these are choices about how
- * THIS client drives a thread. Anything the desktop owns (projectOrder,
- * workspaces) is read from the backend instead, so it stays in one place.
+ * Client preferences that survive a restart, keyed `connectionId:threadId`.
+ * Only choices about how THIS client drives a thread live here - anything the
+ * desktop owns (projectOrder, workspaces) is read from the backend instead.
  */
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import type { RuntimeMode } from '@shared/provider-events'
 
-/**
- * How many threads to remember. Bounded because the map is persisted and a
- * long-lived install would otherwise accumulate an entry per thread ever opened.
- */
+/** Bounded: the map is persisted, so it cannot grow per thread ever opened. */
 export const MAX_REMEMBERED_THREADS = 200
 
 export interface ThreadPref {
@@ -28,10 +18,7 @@ export interface ThreadPref {
   at: number
 }
 
-/**
- * Keep the most recently touched entries, newest first. Pure so the eviction
- * rule is testable.
- */
+/** Keep the most recently touched entries. Pure, so eviction is testable. */
 export function pruneThreadPrefs(
   prefs: Record<string, ThreadPref>,
   max = MAX_REMEMBERED_THREADS,

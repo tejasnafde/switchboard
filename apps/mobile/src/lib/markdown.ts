@@ -1,19 +1,7 @@
 /**
- * A small Markdown parser for the chat feed.
- *
- * Agent replies are Markdown, and the app was rendering them as raw text -
- * literal `**bold**`, `###` headings, and fenced code blocks shown with their
- * backticks. This produces a flat block list that React Native can render with
- * plain <Text>/<View>, which is all the feed needs.
- *
- * Deliberately NOT a full CommonMark implementation, and no dependency: the
- * input is agent chat output, not arbitrary documents. Supported: fenced code,
- * ATX headings, bullet and ordered lists (nested), block quotes, horizontal
- * rules, tables-as-code, paragraphs; inline code, bold, italic, strikethrough
- * and links. Anything unrecognised falls through as text, which is the correct
- * failure mode for a chat bubble.
- *
- * Pure and unit-tested; the renderer stays dumb.
+ * Markdown parser for the chat feed: a flat block list that React Native renders
+ * with plain Text/View. Not full CommonMark and no dependency - the input is
+ * agent chat output. Anything unrecognised falls through as text.
  */
 
 export type Inline =
@@ -34,10 +22,7 @@ export type Block =
 
 // ── inline ──────────────────────────────────────────────────────────────────
 
-/**
- * Ordered by precedence. Code spans come first so `**` inside backticks stays
- * literal, which matters constantly in agent output ("run `npm i -D **`").
- */
+/** Precedence order. Code spans first, so `**` inside backticks stays literal. */
 const INLINE_PATTERNS: Array<{
   re: RegExp
   build: (m: RegExpExecArray, recurse: (s: string) => Inline[]) => Inline
@@ -47,10 +32,8 @@ const INLINE_PATTERNS: Array<{
     re: /^\[([^\]]*)\]\(([^)\s]+)[^)]*\)/,
     build: (m, recurse) => ({ kind: 'link', href: m[2], children: recurse(m[1]) }),
   },
-  //
-  // Emphasis runs must begin AND end on a non-space character - CommonMark's
-  // flanking rule. Without it `2 * 3 * 4` parses as italics and the asterisks
-  // disappear, turning arithmetic into "2  3  4".
+  // CommonMark's flanking rule: emphasis must begin and end on a non-space
+  // char, or `2 * 3 * 4` parses as italics and the asterisks vanish.
   { re: /^\*\*\*(\S|\S[^*]*?\S)\*\*\*/, build: (m, r) => ({ kind: 'strong', children: [{ kind: 'em', children: r(m[1]) }] }) },
   { re: /^\*\*(\S|\S[\s\S]*?\S)\*\*/, build: (m, r) => ({ kind: 'strong', children: r(m[1]) }) },
   { re: /^__(\S|\S[\s\S]*?\S)__/, build: (m, r) => ({ kind: 'strong', children: r(m[1]) }) },
@@ -95,8 +78,7 @@ export function parseInline(src: string, depth = 0): Inline[] {
       break
     }
     if (matched) continue
-    // No pattern at this position: take one char as text and advance. Slower
-    // than scanning to the next marker but never loops.
+    // No match here: take one char as text. Slower than seeking, but never loops.
     out.push({ kind: 'text', text: rest[0] })
     rest = rest.slice(1)
   }
@@ -133,8 +115,7 @@ export function parseMarkdown(src: string): Block[] {
       const marker = fence[1][0]
       const body: string[] = []
       i++
-      // An unterminated fence runs to the end of the message, which is the
-      // normal case while a code block is still streaming in.
+      // An unterminated fence runs to the end - normal while streaming.
       for (; i < lines.length; i++) {
         const close = FENCE.exec(lines[i])
         if (close !== null && close[1][0] === marker) break

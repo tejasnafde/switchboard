@@ -1,11 +1,7 @@
 /**
- * Workspace grouping and project ordering.
- *
- * Lives in shared/ because the desktop sidebar and the mobile Projects screen
- * must group projects identically - the phone is supposed to show the same
- * workspaces in the same order as the Mac. Two copies of this would drift.
- *
- * Pure, no electron/react imports, per the shared/ contract.
+ * Workspace grouping and project ordering. In shared/ because the desktop
+ * sidebar and the mobile Projects screen must group identically; two copies
+ * would drift. Pure, per the shared/ contract.
  */
 import type { Project, Workspace } from './types'
 

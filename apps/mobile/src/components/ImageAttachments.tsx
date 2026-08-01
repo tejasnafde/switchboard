@@ -1,9 +1,4 @@
-/**
- * Image attachments for the composer: a pick button and a thumbnail strip.
- *
- * The conversion rules live in lib/images.ts and are unit-tested; this file is
- * the picker call plus the chrome.
- */
+/** Composer image attachments: pick button and thumbnail strip. Rules in lib/images.ts. */
 import React, { memo, useCallback } from 'react'
 import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
@@ -38,17 +33,14 @@ export const AttachButton = memo(function AttachButton({
       return
     }
     try {
-      // The OS photo picker needs no permission grant on either platform; asking
-      // for one would be a dialog with nothing behind it.
+      // The OS picker needs no permission grant on either platform.
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ['images'],
-        // Required: a file:// uri is meaningless to a backend on another machine,
-        // so the bytes have to travel with the request.
+        // The bytes must travel: a file:// uri means nothing to a remote backend.
         base64: true,
         allowsMultipleSelection: true,
         selectionLimit: MAX_PER_TURN - count,
-        // Re-encode a little: camera-roll originals are far larger than a model
-        // needs, and base64 inflates whatever we send by a third.
+        // Camera-roll originals are far larger than a model needs.
         quality: 0.7,
       })
       if (result.canceled) return
@@ -72,9 +64,7 @@ export const AttachButton = memo(function AttachButton({
         })
       }
 
-      // Total size matters as much as per-image size: the transport's frame cap
-      // is enforced by dropping the connection, so an oversized turn would look
-      // like the backend disappearing.
+      // Total matters too: an oversized turn drops the connection outright.
       const { accepted, rejected: overBudget } = fitTurnBudget(existing, added)
       if (overBudget.length > 0) {
         rejected.push(
@@ -84,8 +74,7 @@ export const AttachButton = memo(function AttachButton({
       }
 
       if (rejected.length > 0) {
-        // Say which ones were dropped. Silently attaching 2 of 3 is worse than
-        // an alert, because the user sends the turn believing all three went.
+        // Silently attaching 2 of 3 is worse than an alert.
         log.warn('rejected attachments', rejected)
         Alert.alert('Some images were not attached', rejected.join('\n'))
       }

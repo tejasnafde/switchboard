@@ -1,9 +1,6 @@
 /**
- * Renders the block list from lib/markdown with plain RN primitives.
- *
- * Parsing lives in lib/markdown.ts and is unit-tested; this file only maps
- * nodes to styles. Code blocks scroll horizontally rather than wrapping, since
- * wrapped code is unreadable and agent output is full of it.
+ * Renders lib/markdown's block list with RN primitives. Code blocks scroll
+ * horizontally rather than wrap.
  */
 import React, { memo, useMemo } from 'react'
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native'
@@ -107,10 +104,7 @@ const BlockView = memo(function BlockView({ block }: { block: Block }): React.Re
   }
 })
 
-/**
- * `text` is re-parsed whenever it changes, which during streaming is once per
- * coalesced flush rather than once per token - see the chat store's batching.
- */
+/** Re-parsed on change: once per coalesced flush, not once per token. */
 export const Markdown = memo(function Markdown({ text }: { text: string }): React.ReactElement {
   const blocks = useMemo(() => parseMarkdown(text), [text])
   return (

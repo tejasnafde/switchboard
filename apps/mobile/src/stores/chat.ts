@@ -67,26 +67,13 @@ interface ChatState {
 }
 
 /**
- * Event coalescing.
- *
- * A streaming agent emits a `content` event per token. Applying each one
- * immediately meant one zustand set() and one React render per token, which on
- * a phone rendering a long inverted feed is the whole "streaming feels janky"
- * complaint. The desktop gets away with unbatched dispatch because it is not a
- * phone; it has `streamingBuffer` for the same reason at a coarser grain.
- *
- * So: queue events and drain them on a short timer, folding the batch into ONE
- * set(). Two rules keep this honest:
- *
- *  - Order is preserved. The queue is FIFO and non-content events are queued
- *    too, so a tool card can never overtake the text that preceded it.
- *  - Interactive events flush immediately (after the events queued ahead of
- *    them), so an approval prompt or an error is never sitting in a buffer
- *    waiting on a timer.
+ * Queue events and drain them on a timer, folding each batch into one set().
+ * A streaming agent emits a `content` event per token, and one render per token
+ * is what made the feed feel janky. The queue is FIFO, so order holds.
  */
 const FLUSH_MS = 50
 
-/** Events a human is waiting on - never worth delaying for batching. */
+/** Events a human is waiting on - flushed without waiting for the timer. */
 const FLUSH_IMMEDIATELY: ReadonlySet<RuntimeEvent['type']> = new Set([
   'request.opened',
   'request.closed',
@@ -111,15 +98,10 @@ function contentIdOf(e: RuntimeEvent): string | null {
 }
 
 function enqueue(connectionId: string, event: RuntimeEvent): void {
-  // Collapse consecutive deltas for the same message. `content` carries the
-  // full accumulated text, so an older delta is pure garbage once a newer one
-  // arrives - dropping it is lossless, not sampling.
-  //
-  // Replacing IN PLACE is safe even when other events sit in between. The feed
-  // item for a message is created by its first delta and thereafter located by
-  // id, so a later delta only ever rewrites that item's text - it never depends
-  // on queue position. Order relative to interleaved tool/approval events is
-  // therefore unchanged.
+  // Collapse deltas for the same message. `content` carries the full
+  // accumulated text, so dropping an older delta is lossless. Replacing in
+  // place is safe with other events in between: the feed item is located by id,
+  // never by queue position.
   const id = contentIdOf(event)
   if (id !== null) {
     for (let i = queue.length - 1; i >= 0; i--) {
@@ -198,21 +180,15 @@ function findFromEnd(items: FeedItem[], match: (i: FeedItem) => boolean): FeedIt
   return undefined
 }
 
-/**
- * Pure per-event reducer. Extracted from the store so `flush` can fold a whole
- * batch of events into ONE set() call instead of one per event.
- */
+/** Pure per-event reducer, so a whole batch folds into one set(). */
 function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Partial<ThreadState> {
       switch (event.type) {
         case 'content': {
           const id = `m-${event.messageId}-${event.streamKind}`
           const existing = findFromEnd(t.items, (i) => i.id === id)
           if (existing && existing.kind === 'text') {
-            // REPLACE, do not append. The adapters ship the full accumulated
-            // text on every delta (claude-adapter.ts builds `fullText` before
-            // emitting; the desktop's streamingBuffer says the same). Appending
-            // concatenated cumulative onto cumulative and visibly duplicated
-            // every streamed reply.
+            // Replace, never append: adapters ship the full accumulated text
+            // on every delta, so appending duplicated every streamed reply.
             return {
               items: replaceItem(t.items, (i) => i.id === id, (i) => ({
                 ...(i as Extract<FeedItem, { kind: 'text' }>),

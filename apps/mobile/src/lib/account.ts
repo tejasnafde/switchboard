@@ -4,12 +4,8 @@
  */
 
 /**
- * Two-letter monogram for an account avatar.
- *
- * Prefers the dotted/underscored name part of an email, which is how most work
- * addresses encode a person - "tejas.nafde@x.io" gives TN. A single-word local
- * part falls back to its first two letters, and an unusable value gives a
- * neutral dash rather than a wrong set of initials.
+ * Two-letter monogram from an email's local part - "tejas.nafde@x.io" gives TN.
+ * An unusable value gives a dash rather than wrong initials.
  */
 export function initialsFromEmail(email: string | null | undefined): string {
   const local = (email ?? '').split('@')[0]

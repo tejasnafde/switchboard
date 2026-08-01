@@ -64,11 +64,8 @@ export default function ProjectsScreen({ route, navigation }: Props) {
         return
       }
       try {
-        // Workspaces and the saved order come from the SAME backend tables the
-        // desktop sidebar reads, so grouping matches the Mac rather than
-        // approximating it. Neither is essential: a backend that cannot answer
-        // (older server, or the settings row was never written) still lists
-        // projects, just ungrouped.
+        // Same backend tables the desktop sidebar reads, so grouping matches.
+        // Neither is essential - a server that cannot answer still lists projects.
         const [result, ws, orderJson] = await Promise.all([
           client.getProjects(),
           client.listWorkspaces().catch(() => [] as Workspace[]),
@@ -138,8 +135,7 @@ export default function ProjectsScreen({ route, navigation }: Props) {
       contentContainerStyle={sections.length === 0 ? styles.emptyContainer : styles.listContent}
       keyboardShouldPersistTaps="handled"
       stickySectionHeadersEnabled={false}
-      // Only worth a header when there is more than one group; a lone
-      // "Ungrouped" label above every project is pure clutter.
+      // A lone "Ungrouped" label above every project is clutter.
       renderSectionHeader={({ section }) =>
         sections.length > 1 ? (
           <Text style={styles.sectionHeader}>{section.title.toUpperCase()}</Text>

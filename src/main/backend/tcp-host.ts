@@ -17,13 +17,10 @@ import type { BackendHost } from './host'
 
 const log = createLogger('backend:tcp-host')
 
-/** A single frame must not exceed this while buffering, to bound memory. */
 /**
- * One frame's ceiling. Generous because a turn can now carry image attachments,
- * and base64 inflates them by a third: an 8 MB photo is an ~11 MB frame. Going
- * over does not reject the frame, it destroys the connection (see below), so the
- * cap has to sit above any legitimate payload. The mobile client enforces its own
- * per-turn budget well under this.
+ * One frame's ceiling. Generous because a turn can carry image attachments and
+ * base64 inflates them by a third. Going over destroys the connection rather
+ * than rejecting the frame, so it must sit above any legitimate payload.
  */
 const MAX_LINE_BYTES = 32 * 1024 * 1024
 

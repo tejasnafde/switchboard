@@ -1,11 +1,6 @@
 /**
- * Turning picked photos into what SEND_TURN expects.
- *
- * The wire format matches the desktop composer: a data URL plus an explicit
- * mimeType. Adapters strip the prefix and build provider-native image blocks, so
- * nothing here needs per-provider knowledge.
- *
- * Pure, so the size and type rules are testable without a device.
+ * Picked photos to the shape SEND_TURN expects: a data URL plus a mimeType,
+ * matching the desktop composer. Pure, so the size rules are testable.
  */
 
 export interface ImagePayload {
@@ -22,11 +17,7 @@ export interface PickedAsset {
   fileName?: string | null
 }
 
-/**
- * Cap on a single encoded image. Base64 inflates by about a third, and each
- * image crosses a phone socket and then goes into a model request, so a 20 MB
- * photo is not worth attempting. Matches the desktop file-write ceiling.
- */
+/** Cap on one image. Base64 inflates it by a third before it crosses a socket. */
 export const MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 const EXT_TO_MIME: Record<string, string> = {
@@ -40,11 +31,7 @@ const EXT_TO_MIME: Record<string, string> = {
   bmp: 'image/bmp',
 }
 
-/**
- * Best-effort media type. The picker usually reports one; when it does not, the
- * file extension is the only other signal, and JPEG is the right guess for a
- * camera roll.
- */
+/** Picker-reported type, else the extension, else jpeg for a camera roll. */
 export function inferMimeType(asset: Pick<PickedAsset, 'uri' | 'mimeType' | 'fileName'>): string {
   if (asset.mimeType && asset.mimeType.startsWith('image/')) return asset.mimeType
   const name = asset.fileName ?? asset.uri
@@ -62,11 +49,7 @@ export type ImageResult =
   | { ok: true; payload: ImagePayload }
   | { ok: false; reason: 'no-data' | 'too-large' }
 
-/**
- * `base64` must be requested from the picker (`base64: true`). Without it there
- * is nothing to send: a `file://` uri means nothing to a backend that may be on
- * another machine entirely.
- */
+/** Needs `base64: true` from the picker - a file:// uri means nothing to a remote backend. */
 export function assetToPayload(asset: PickedAsset): ImageResult {
   const b64 = asset.base64
   if (!b64) return { ok: false, reason: 'no-data' }
@@ -76,12 +59,9 @@ export function assetToPayload(asset: PickedAsset): ImageResult {
 }
 
 /**
- * Ceiling on the combined size of one turn's attachments, measured as the bytes
- * that actually cross the wire (the data URLs).
- *
- * This exists because the IAP transport's frame cap is enforced by DESTROYING
- * the connection, not by rejecting the frame - so an oversized turn would look
- * like the backend dropping out. Kept well under that cap.
+ * Ceiling on one turn's attachments. TcpHost enforces its frame cap by
+ * destroying the connection, so an oversized turn looks like the backend
+ * dropping out. Kept well under it.
  */
 export const MAX_TURN_WIRE_BYTES = 12 * 1024 * 1024
 
@@ -90,11 +70,7 @@ export function totalWireBytes(payloads: Array<Pick<ImagePayload, 'url'>>): numb
   return payloads.reduce((n, p) => n + p.url.length, 0)
 }
 
-/**
- * Split additions into those that fit the remaining turn budget and those that
- * do not, in order. Callers must tell the user about `rejected` rather than
- * quietly sending fewer images than were picked.
- */
+/** Split additions by what fits the remaining budget. Callers must report `rejected`. */
 export function fitTurnBudget<T extends Pick<ImagePayload, 'url'>>(
   existing: Array<Pick<ImagePayload, 'url'>>,
   additions: T[],

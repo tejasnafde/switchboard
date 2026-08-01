@@ -1,13 +1,6 @@
 /**
- * Turn a tool call into something a person can read at a glance.
- *
- * The feed used to print `JSON.stringify(input)` truncated to 120 chars, so a
- * Bash call showed `{"command":"npm run typecheck","descrip...` - the useful
- * part buried behind punctuation. Each tool has one field that actually says
- * what it is doing; this picks it.
- *
- * Covers Claude's tool names and the Codex/OpenCode equivalents, since all
- * three providers feed the same chat surface.
+ * Pick the one field of a tool call that says what it is doing, instead of
+ * dumping JSON. Covers Claude's tool names and the Codex/OpenCode spellings.
  */
 
 export interface ToolSummary {
@@ -42,10 +35,7 @@ export function condense(s: string, max = 140): string {
   return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`
 }
 
-/**
- * Shorten a path to its last two segments. Agent paths are usually absolute and
- * deep, and the tail is the part that identifies the file.
- */
+/** Last two segments - agent paths are deep and the tail identifies the file. */
 export function shortenPath(p: string): string {
   const parts = p.split('/').filter(Boolean)
   if (parts.length <= 2) return p
@@ -83,7 +73,7 @@ export function summarizeTool(toolName: string, input: unknown): ToolSummary {
   switch (key) {
     case 'bash':
     case 'shell': {
-      // Codex sends argv as `command: string[]`; Claude sends a string.
+      // Codex sends argv as string[]; Claude sends a string.
       const raw = o.command
       const cmd = Array.isArray(raw) ? raw.filter((x) => typeof x === 'string').join(' ') : str(raw)
       return { title, detail: condense(cmd ?? ''), mono: true }
@@ -101,7 +91,7 @@ export function summarizeTool(toolName: string, input: unknown): ToolSummary {
     }
 
     case 'apply_patch': {
-      // The patch body names its own files; show those rather than the diff.
+      // The patch body names its files; show those, not the diff.
       const patch = pick(o, 'patch', 'input', 'diff') ?? ''
       const files = [...patch.matchAll(/^\*\*\* (?:Add|Update|Delete) File: (.+)$/gm)].map((m) => m[1])
       if (files.length === 1) return { title, detail: shortenPath(files[0]), mono: true }
@@ -127,7 +117,7 @@ export function summarizeTool(toolName: string, input: unknown): ToolSummary {
     case 'webfetch':
     case 'fetch': {
       const url = pick(o, 'url', 'uri')
-      // Host is the identifying part; the full URL wraps and adds nothing.
+      // Host identifies it; a full URL just wraps.
       const host = url?.match(/^https?:\/\/([^/]+)/)?.[1]
       return { title, detail: host ?? condense(url ?? ''), mono: false }
     }
@@ -147,7 +137,7 @@ export function summarizeTool(toolName: string, input: unknown): ToolSummary {
     }
 
     default: {
-      // Unknown tool: prefer a plausible single field over dumping JSON.
+      // Unknown tool: a plausible field beats raw JSON.
       const guess = pick(o, 'command', 'file_path', 'path', 'pattern', 'query', 'url', 'description')
       if (guess !== null) return { title, detail: condense(guess), mono: true }
       const keys = Object.keys(o)

@@ -71,10 +71,7 @@ export class SwitchboardClient {
     return this.transport.invoke(AppChannels.WORKSPACE_LIST)
   }
 
-  /**
-   * Backend settings table. The same store the desktop uses, so a preference
-   * read here is the one the user set there - `projectOrder` in particular.
-   */
+  /** The same settings table the desktop writes, so `projectOrder` matches. */
   getSetting(key: string): Promise<string | null> {
     return this.transport.invoke('settings:get', key)
   }
@@ -83,11 +80,7 @@ export class SwitchboardClient {
     return this.transport.invoke('settings:set', key, value)
   }
 
-  /**
-   * `limit` returns only the newest N messages. Long threads otherwise push
-   * megabytes over the socket before the screen can paint; the result carries
-   * `total`/`truncated` so the UI can say what it is not showing.
-   */
+  /** `limit` returns only the newest N; the result reports `total`/`truncated`. */
   loadSessionById(conversationId: string, limit?: number): Promise<LoadedSession> {
     return this.transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, { limit })
   }
@@ -120,12 +113,7 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.START_SESSION, opts)
   }
 
-  /**
-   * `images` are data URLs (`data:image/jpeg;base64,…`) with an explicit
-   * mimeType, matching what the desktop composer sends. The adapters strip the
-   * prefix and build provider-native image blocks, so the phone needs no
-   * per-provider knowledge.
-   */
+  /** `images` are data URLs with a mimeType, as the desktop composer sends them. */
   sendTurn(
     threadId: string,
     message: string,

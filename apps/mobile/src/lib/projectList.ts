@@ -4,11 +4,7 @@
  */
 import type { Project } from '@shared/types'
 
-/**
- * `projectOrder` is stored as a JSON array of paths in the backend settings
- * table. A corrupt or foreign value must not throw - the screen falls back to
- * scan order, which is the same thing the desktop sidebar does.
- */
+/** A corrupt settings value must not throw; the screen falls back to scan order. */
 export function parseOrder(json: string | null): string[] | null {
   if (!json) return null
   try {
@@ -19,10 +15,7 @@ export function parseOrder(json: string | null): string[] | null {
   }
 }
 
-/**
- * Case-insensitive match on the project name or its path. Path is included
- * because two checkouts of one repo differ only by directory.
- */
+/** Name or path, case-insensitive. Path matters: two checkouts differ only by directory. */
 export function matchesQuery(p: Pick<Project, 'name' | 'path'>, query: string): boolean {
   const needle = query.trim().toLowerCase()
   if (needle === '') return true
