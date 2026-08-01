@@ -63,6 +63,7 @@ export interface RuntimeSpendBlockedEvent {
 
 export type RuntimeEvent = (
   | RuntimeContentEvent
+  | RuntimeUserMessageEvent
   | RuntimeToolStartedEvent
   | RuntimeToolCompletedEvent
   | RuntimeToolDeniedEvent
@@ -93,6 +94,23 @@ export interface RuntimeContentEvent {
   messageId: string
   text: string
   streamKind: 'assistant' | 'reasoning' | 'plan'
+}
+
+/**
+ * A user turn was submitted. The adapter never emits this - the registry does,
+ * on send-turn, because the typed text otherwise exists only in the client that
+ * typed it. Without it a phone's message never reaches the desktop, even though
+ * the agent's reply does.
+ *
+ * `origin` is a client-generated id echoed back so the sender can skip its own
+ * message, which it already appended optimistically.
+ */
+export interface RuntimeUserMessageEvent {
+  type: 'user.message'
+  threadId: string
+  text: string
+  origin?: string
+  at: number
 }
 
 export interface RuntimeToolStartedEvent {

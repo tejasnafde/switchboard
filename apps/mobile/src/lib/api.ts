@@ -130,8 +130,10 @@ export class SwitchboardClient {
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
+    /** Echoed back on the user.message broadcast so we skip our own turn. */
+    origin?: string,
   ): Promise<void> {
-    return this.transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images)
+    return this.transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images, origin)
   }
 
   interrupt(threadId: string): Promise<void> {

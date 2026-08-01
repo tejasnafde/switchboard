@@ -39,6 +39,12 @@ export interface ThreadState {
   unread: number
 }
 
+/** Origins this device sent, so its own user.message echo is dropped. */
+const sentOrigins = new Set<string>()
+export function markOwnTurn(origin: string): void {
+  sentOrigins.add(origin)
+}
+
 export function threadKey(connectionId: string, threadId: string): string {
   return `${connectionId}:${threadId}`
 }
@@ -202,6 +208,17 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             // bumps once per assistant MESSAGE, not per turn - counts stay
             // consistent across clients watching the same session.
             unread: event.streamKind === 'assistant' && !isActive ? t.unread + 1 : t.unread,
+          }
+        }
+        // A turn sent from another client (desktop, second phone). Our own
+        // sends carry an origin we recorded, and were added optimistically.
+        case 'user.message': {
+          if (event.origin && sentOrigins.has(event.origin)) {
+            sentOrigins.delete(event.origin)
+            return {}
+          }
+          return {
+            items: [...t.items, { kind: 'user', id: `r-${event.origin ?? event.at}`, text: event.text, at: event.at }],
           }
         }
         case 'tool.started':

@@ -501,8 +501,8 @@ const api = {
       return transport.invoke(ProviderChannels.START_SESSION, opts)
     },
 
-    sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) =>
-      transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images),
+    sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) =>
+      transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images, origin),
 
     interrupt: (threadId: string) =>
       transport.invoke(ProviderChannels.INTERRUPT, threadId),

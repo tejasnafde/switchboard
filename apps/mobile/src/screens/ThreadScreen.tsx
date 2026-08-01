@@ -32,7 +32,7 @@ import { colors, radius, space, type } from '../theme'
 import { Markdown } from '../components/Markdown'
 import { summarizeTool } from '../lib/toolSummary'
 import { getClient, useConnectionsStore } from '../stores/connections'
-import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
+import { markOwnTurn, useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
 import { ModePicker } from '../components/ModePicker'
@@ -48,6 +48,13 @@ const HISTORY_WINDOW = 250
 const log = createLogger('screen:thread')
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Thread'>
+
+/** Tag a turn as ours so its user.message broadcast is not re-rendered. */
+function ownTurn(): string {
+  const id = `m${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  markOwnTurn(id)
+  return id
+}
 
 const IMPLEMENT_MESSAGE = 'Implement the plan you proposed.'
 
@@ -338,7 +345,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     if (!client) return
     useChatStore.getState().addUserMessage(key, next.text || `[${next.images.length} images]`)
     client
-      .sendTurn(threadId, next.text, thread.runtimeMode, next.images.length > 0 ? next.images : undefined)
+      .sendTurn(threadId, next.text, thread.runtimeMode, next.images.length > 0 ? next.images : undefined, ownTurn())
       .catch(reportError)
   }, [thread.status, thread.runtimeMode, connectionId, threadId, key, reportError])
 
@@ -368,7 +375,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       text || `[${images.length} ${images.length === 1 ? 'image' : 'images'}]`,
     )
     client
-      .sendTurn(threadId, text, thread.runtimeMode, images.length > 0 ? images : undefined)
+      .sendTurn(threadId, text, thread.runtimeMode, images.length > 0 ? images : undefined, ownTurn())
       .catch(reportError)
   }
 
@@ -395,7 +402,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     useChatStore.getState().setRuntimeMode(key, 'sandbox')
     client.setRuntimeMode(threadId, 'sandbox').catch(reportError)
     useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE)
-    client.sendTurn(threadId, IMPLEMENT_MESSAGE, 'sandbox').catch(reportError)
+    client.sendTurn(threadId, IMPLEMENT_MESSAGE, 'sandbox', undefined, ownTurn()).catch(reportError)
   }, [connectionId, threadId, key, reportError])
 
   const decideApproval = useCallback(

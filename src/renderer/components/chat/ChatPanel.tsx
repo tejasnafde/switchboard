@@ -72,6 +72,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   // which subscribed ChatPanel to the whole store and re-rendered it on every
   // token of *other* sessions (e.g. the other dual-chat panel).
   const appendMessage = useAgentStore((s) => s.appendMessage)
+  /** Ids of turns THIS window sent, so its own user.message echo is dropped. */
+  const sentOriginsRef = useRef<Set<string>>(new Set())
   const updateMessage = useAgentStore((s) => s.updateMessage)
   const updateStatus = useAgentStore((s) => s.updateStatus)
   const setTitle = useAgentStore((s) => s.setTitle)
@@ -303,6 +305,21 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }
 
       switch (event.type) {
+        // A turn submitted somewhere else (the phone, a second window). Our own
+        // sends are skipped by origin, since they were appended optimistically.
+        case 'user.message': {
+          if (event.origin && sentOriginsRef.current.has(event.origin)) {
+            sentOriginsRef.current.delete(event.origin)
+            break
+          }
+          appendMessage(tid, {
+            id: `remote_${event.origin ?? event.at}`,
+            role: 'user',
+            content: event.text,
+            timestamp: event.at,
+          })
+          break
+        }
         case 'content': {
           if (!streamingEnabledRef.current) {
             bufferContent(streamingBufferRef.current, tid, event.messageId, event.text)
@@ -894,7 +911,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
       }
 
-      providerApi.sendTurn(sessionId, message, runtimeMode, messageImages).catch((err: Error) => {
+      const origin = `d${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      sentOriginsRef.current.add(origin)
+      providerApi.sendTurn(sessionId, message, runtimeMode, messageImages, origin).catch((err: Error) => {
         appendMessage(sessionId, {
           id: `error_${Date.now()}`,
           role: 'system',

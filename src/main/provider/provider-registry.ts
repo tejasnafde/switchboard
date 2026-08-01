@@ -318,7 +318,7 @@ export class ProviderRegistry {
       return session
     })
 
-    this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>) => {
+    this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) => {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
         log.warn(`sendTurn ${threadId} - no adapter (session not started?)`)
@@ -330,6 +330,10 @@ export class ProviderRegistry {
       const cwd = this.sessionCwd.get(threadId)
       if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
       notebookManager.beginTurn(threadId)
+      // Broadcast the user's turn: adapters only emit the agent's side, so
+      // without this a message typed on one client is invisible everywhere
+      // else. The sender skips its own echo via `origin`.
+      this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
       await adapter.sendTurn(threadId, message, runtimeMode, images)
     })
 
