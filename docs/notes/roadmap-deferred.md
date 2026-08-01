@@ -268,6 +268,64 @@ but not a null one: the same "which agent needs me" question is what drives
 push suppression by presence, added in the same batch. Same question, three
 surfaces.
 
+## 7. Build size, desktop and mobile
+
+Recorded 2026-08-02, measured against the 0.8.0 / mobile 0.3.0 releases. Every
+number below was measured, not estimated.
+
+**Where it stands**
+
+| Artifact | Size |
+|---|---|
+| macOS arm64 `.zip` | 168 MB |
+| Windows `.zip` | 204 MB |
+| Windows installer | 148 MB |
+| Android APK | 107 MB |
+
+Our own compiled output is 4.6 MB of that (`out/`: renderer 2.6, server 1.3,
+main 0.7). So this is almost entirely Electron plus what electron-builder packs
+out of `dependencies`, and the wins are in the dependency list rather than in
+our code.
+
+**Two concrete desktop findings**
+
+- **`effect` is 33 MB and is not used.** `src/main/provider/types.ts` has
+  `import type { Effect } from 'effect'` and re-exports it; nothing imports
+  that re-export. A type-only import is erased at compile time, so the runtime
+  dependency buys nothing at all. Deleting the import and the package should be
+  a straight 33 MB off every desktop artifact. Verify by searching for the
+  re-export before removing - the grep that found this excluded `useEffect`,
+  `dropEffect`, `NSVisualEffectView` and "Effective", and all 17 remaining hits
+  were those false positives.
+- **`node-pty` is 63 MB, of which `prebuilds/` is 58 MB.** Those are prebuilt
+  binaries for every platform and architecture; a packaged app needs the one it
+  was rebuilt for. Pruning needs care rather than a blanket ignore: `npm run
+  rebuild` (@electron/rebuild) produces the binary actually loaded, and the
+  interplay with `prebuilds/` decides whether the app finds it. Get this wrong
+  and terminals break at runtime on one platform only, which is the worst
+  failure shape available.
+
+**One mobile finding**
+
+- **`expo-dev-client` is in `dependencies`, not `devDependencies`**, so the
+  PRODUCTION APK ships the dev launcher and dev menu. Confirmed by extracting
+  the release APK: `expo.modules.devclient`, `devlauncher` and `devmenu` are all
+  in `classes3.dex`. Moving it means `expo start --dev-client` still needs it
+  installed locally, so check that the development EAS profile still builds
+  before assuming this is free.
+
+**Also worth a look, not yet investigated**
+
+- The renderer is one 2.5 MB JS chunk. Vite warns about it on every build. Code
+  splitting the IDE pane and the kanban view would help first paint more than
+  it helps download size, since the file ships either way.
+- `@pierre/diffs` (8 MB) and the three `@xterm` packages (~9 MB combined) are
+  used, but neither has been checked for a lighter entry point.
+
+**Do not start here.** Nothing above is a correctness problem, and the desktop
+floor is Electron regardless. The `effect` removal is the exception: it is one
+line, 33 MB, and carries no runtime risk because the import is type-only.
+
 ## Reference index
 
 - vibe-kanban: <https://github.com/BloopAI/vibe-kanban> (sunsetting,
