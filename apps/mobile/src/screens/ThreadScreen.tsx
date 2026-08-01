@@ -944,12 +944,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    // The list is inverted, so un-flip the empty state.
-    transform: [{ scaleY: -1 }],
+    // No counter-flip here. This block renders OUTSIDE the inverted list, so
+    // nothing flips it; the scaleY:-1 that used to cancel the list's transform
+    // became the thing turning it upside down once it moved out.
   },
   emptyText: {
     color: colors.textFaint,
     fontSize: 13,
+    marginTop: space.sm,
   },
   itemBlock: {
     marginHorizontal: space.lg,
