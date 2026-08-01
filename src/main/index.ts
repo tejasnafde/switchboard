@@ -45,6 +45,9 @@ const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
 
+/** Unpackaged means a dev run, where a stale instance is the usual lock holder. */
+const isDev = !app.isPackaged
+
 /** Unsubscribe for the push notifier, so a reactivated window can re-attach. */
 let detachPush: (() => void) | null = null
 
@@ -140,6 +143,16 @@ app.on('open-url', (event, url) => {
 // Single instance lock - prevent multiple windows
 const gotTheLock = app.requestSingleInstanceLock()
 if (!gotTheLock) {
+  // In dev this is almost always a STALE process from an earlier `npm run dev`
+  // whose window was closed: it still holds the lock, so the fresh build loses
+  // and exits. Silence made that look like "you have to run it twice".
+  if (isDev) {
+    log.error(
+      'another Switchboard holds the single-instance lock - probably an earlier `npm run dev`. ' +
+        'It is being asked to quit; re-run `npm run dev`. To check: ' +
+        "lsof -nP -iTCP:8765 -sTCP:LISTEN",
+    )
+  }
   app.quit()
 } else {
   app.on('second-instance', () => {
@@ -153,8 +166,15 @@ if (!gotTheLock) {
       mainWindow.focus()
       return
     }
-    // Lock held but no window to raise: rebuild one instead of leaving the user
-    // with a process that swallows every launch attempt silently.
+    // Lock held but no window to raise. In dev that means THIS process is a
+    // stale husk: its renderer was served by a vite server that died with the
+    // old run, so recreating a window here would load a dead URL. Quit instead
+    // and release the lock, so the next run - with the fresh build - wins.
+    if (isDev) {
+      log.info('stale dev instance with no window - quitting to release the single-instance lock')
+      app.quit()
+      return
+    }
     log.info('second-instance with no live window - recreating it')
     app.emit('activate')
   })
