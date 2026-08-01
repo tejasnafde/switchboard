@@ -1,13 +1,7 @@
 /**
  * APK self-update off GitHub Releases, for native changes an OTA cannot carry.
- *
- * Reads the releases LIST, not /releases/latest: this repo also publishes the
- * Electron app under `v*` tags, so "latest" is usually a desktop release with no
- * .apk attached. Mobile tags are `mobile-v<version>`.
- *
- * Uses expo-file-system/legacy because downloadAsync and getContentUriAsync live
- * there in SDK 57; the new File API has no getContentUriAsync, and the package
- * installer cannot read file:// URIs on Android 7+.
+ * Uses expo-file-system/legacy: the new File API has no getContentUriAsync, and
+ * the package installer cannot read file:// URIs on Android 7+.
  */
 import { Platform } from 'react-native'
 import * as Application from 'expo-application'
@@ -19,14 +13,9 @@ import { compareVersions, versionFromTag } from './version'
 const log = createLogger('mobile:self-update')
 
 /**
- * The releases LIST, not `/releases/latest`.
- *
- * This repo publishes the Electron desktop app under `v*` tags too, and it
- * releases far more often than mobile does, so `/releases/latest` would almost
- * always hand back a desktop release with no `.apk` attached and mobile would
- * never see its own update. Scanning the list for the newest release that
- * actually carries an APK is what makes a shared repo work. Mobile releases are
- * tagged `mobile-v<version>` to keep the two namespaces from colliding.
+ * The releases LIST, not `/releases/latest`: this repo also publishes the
+ * desktop app under `v*` tags and far more often, so "latest" is nearly always
+ * a release with no .apk. Mobile tags are `mobile-v<version>`.
  */
 const RELEASES_API = 'https://api.github.com/repos/tejasnafde/switchboard/releases?per_page=30'
 

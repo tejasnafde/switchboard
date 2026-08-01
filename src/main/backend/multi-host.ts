@@ -1,8 +1,7 @@
 /**
- * Fan-out BackendHost: one handler set registered on several hosts, so the
- * desktop serves its renderer and paired phones from a SINGLE ProviderRegistry.
- * That shared registry is the point - sessions started anywhere land in the same
- * pool, and events reach both.
+ * Fan-out BackendHost: one handler set on several hosts, so the renderer and
+ * paired phones share a SINGLE ProviderRegistry. Sessions started anywhere land
+ * in the same pool and events reach both.
  */
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'

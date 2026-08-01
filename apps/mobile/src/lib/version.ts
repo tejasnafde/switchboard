@@ -1,19 +1,15 @@
 /**
- * Version parsing and comparison for the APK update lane.
- *
- * Separate from selfUpdate.ts, which imports react-native and expo modules and
- * so cannot load in a node test. These rules decide whether a user is ever
- * offered a build, which makes them worth testing directly.
+ * Version parsing for the APK update lane. Split from selfUpdate.ts, which
+ * pulls in react-native and so cannot load in a node test.
  */
 
 /** Tag prefix written by .github/workflows/mobile-release.yml. */
 const MOBILE_TAG_PREFIX = 'mobile-v'
 
 /**
- * Split a version into numbers. Non-numeric junk reads as 0 rather than NaN, so
- * a malformed tag can never make the comparison throw. Length is not capped:
- * capping at three made a four-segment hotfix tag compare EQUAL to the release
- * it was fixing, so it would never have been offered.
+ * Junk reads as 0, never NaN, so a malformed tag cannot make a comparison
+ * throw. Length is uncapped: capping at three made a four-segment hotfix tag
+ * compare EQUAL to the release it fixed, so it was never offered.
  */
 function toSegments(version: string): number[] {
   return version

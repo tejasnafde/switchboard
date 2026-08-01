@@ -76,9 +76,8 @@ export class IapTransport implements Transport {
     this.backendToken = opts.backendToken
 
     const url = iapConnectUrl(opts.target)
-    // RN's WebSocket accepts a headers option; Origin is load-bearing.
-    // React Native's WebSocket accepts a third options arg (custom headers);
-    // lib.dom's signature stops at two, hence the cast.
+    // RN's WebSocket takes a third options arg for headers; lib.dom's signature
+    // stops at two, hence the cast. Origin is load-bearing.
     const RNWebSocket = WebSocket as unknown as new (
       url: string,
       protocols?: string | string[],

@@ -1,10 +1,7 @@
 /**
- * BackendHost over raw TCP, newline-delimited JSON.
- *
- * IAP forwards an arbitrary VM port and hands the client a RAW TCP stream, so a
- * phone tunnelling in has no WebSocket to speak. Our frames were already JSON,
- * so one per line is enough and no RFC6455 client is needed. Safe because
- * JSON.stringify escapes newlines inside strings.
+ * BackendHost over raw TCP, newline-delimited JSON. IAP hands a phone a RAW TCP
+ * stream, so there is no WebSocket to speak; our frames are already JSON and
+ * JSON.stringify escapes newlines, so one frame per line needs no RFC6455.
  *
  * With a token set, the first line must be {"k":"auth","token":...} or the
  * socket is destroyed, and emit() never reaches an unauthenticated client.

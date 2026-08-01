@@ -1,13 +1,8 @@
 /**
- * Google sign-in that yields a real cloud-platform access token.
- *
- * Talks to accounts.google.com directly: a broker (Supabase et al) hands back
- * its own session JWT, which cannot call googleapis.com, and the IAP relay needs
- * a Google-issued bearer token.
- *
- * Endpoints are inline rather than fetched from OpenID discovery, to keep a
- * network round trip off the cold-start path. Tokens live in expo-secure-store,
- * never AsyncStorage.
+ * Google sign-in yielding a cloud-platform access token for the IAP relay.
+ * Talks to accounts.google.com directly: a broker hands back its own session
+ * JWT, which cannot call googleapis.com. Endpoints are inline to keep a
+ * discovery round trip off cold start; tokens live in expo-secure-store.
  */
 import Constants from 'expo-constants'
 import * as AuthSession from 'expo-auth-session'
@@ -18,32 +13,21 @@ import { createLogger } from '@shared/logger'
 
 const log = createLogger('google-auth')
 
-// Required once at module scope: on web/Expo Go this settles a pending auth
-// session left over from a redirect. Harmless on native, mandatory to call.
+// Settles a redirect left pending on web/Expo Go. Must run at module scope.
 WebBrowser.maybeCompleteAuthSession()
 
-/** Google's OAuth 2.0 endpoints (see the module docblock for why these are inline). */
 export const AUTHORIZATION_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth'
 export const TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token'
 export const REVOKE_ENDPOINT = 'https://oauth2.googleapis.com/revoke'
 
-/**
- * cloud-platform is the scope IAP tunneling actually needs. openid + email are
- * only so the UI can show which account is signed in.
- */
+/** cloud-platform is what IAP needs; openid + email only name the account. */
 export const SCOPES = ['https://www.googleapis.com/auth/cloud-platform', 'openid', 'email']
 
 /**
- * Google REJECTS an arbitrary custom scheme for installed apps: sending
- * `switchboard://oauth2redirect` fails with "Access blocked: Authorization
- * Error / Error 400: invalid_request" before the consent screen even renders.
- * An Android or iOS client must redirect to the REVERSED client id, i.e.
- * `com.googleusercontent.apps.<id-without-the-suffix>:/oauth2redirect`.
- *
- * Derived from the configured client id rather than hardcoded, so rotating the
- * client cannot leave a stale scheme behind. `app.json` registers the same
- * value in its `scheme` array - that part is native, so changing the client id
- * needs a rebuild, not just an OTA.
+ * Google rejects arbitrary custom schemes for installed apps: `switchboard://`
+ * fails with invalid_request before consent renders. It must be the REVERSED
+ * client id. Derived rather than hardcoded so rotating the client cannot leave
+ * a stale scheme; app.json duplicates it natively, so a change needs a rebuild.
  */
 const REDIRECT_PATH = 'oauth2redirect'
 
@@ -74,22 +58,9 @@ interface GoogleClientConfig {
 }
 
 /**
- * Client id / secret come from Expo config `extra` (app.json). The real values
- * live in Secret Manager secret `switchboard-oauth-client` in GCP project
- * `teejayproject`:
- *
- *   gcloud --configuration=personal secrets versions access latest \
- *     --secret=switchboard-oauth-client
- *
- * app.json ships placeholders and MUST NOT be committed with real values.
- *
- * Client TYPE matters: the Desktop-type client in that secret works for the
- * scripts/iap-probe.mjs loopback flow but will NOT work on device, because
- * Google rejects custom-scheme redirects for Desktop clients. Shipping on
- * Android needs an Android-type client (package name `app.switchboard.mobile`
- * plus the signing SHA-1); iOS needs an iOS-type client, whose redirect is the
- * reversed client id. Neither has a client secret, which is why clientSecret is
- * optional here.
+ * From Expo config `extra`; real values in Secret Manager, never committed.
+ * Client TYPE matters - see the README. Android/iOS clients have no secret,
+ * hence clientSecret being optional.
  */
 function readClientConfig(): GoogleClientConfig | null {
   // Credentials imported from the desktop win: that flow uses the Desktop-type
@@ -541,17 +512,10 @@ export function parseCredentialBlob(raw: string): ImportedCredentials | null {
 }
 
 /**
- * Adopt credentials minted on the desktop (scripts/google-mint-token.mjs).
- *
- * Why this exists instead of an in-app browser flow: Google no longer permits
- * custom URI scheme redirects on Android, so the app cannot legally complete an
- * authorization-code flow itself. The desktop CAN, over a loopback redirect with
- * the Desktop-type client. So consent happens once on the Mac and the phone
- * inherits the refresh token, after which it renews access tokens on its own
- * forever - no laptop involved again.
- *
- * Validates by performing a real refresh BEFORE persisting, so a bad paste is
- * rejected immediately rather than looking fine until the first tunnel dial.
+ * Adopt credentials minted on the desktop (scripts/google-mint-token.mjs),
+ * because Google blocks custom-scheme redirects on Android and the phone cannot
+ * run the flow itself. Refreshes once before persisting, so a bad paste fails
+ * here rather than at the first tunnel dial.
  */
 export async function importCredentials(creds: ImportedCredentials): Promise<string | null> {
   await hydrate()
