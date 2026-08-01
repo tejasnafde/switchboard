@@ -101,6 +101,19 @@ export type RuntimeEvent = (
   machineId?: string
 }
 
+/**
+ * The message id a `user.message` echo will carry.
+ *
+ * A client appends its own turn optimistically and the backend then broadcasts
+ * it to everyone. Using this id for BOTH means the echo collapses onto the
+ * optimistic message by id, in whatever store the client keeps. The alternative
+ * - a set of "origins I sent" consulted on arrival - has to survive a remount,
+ * a hot reload and a second panel claiming the event, and did not.
+ */
+export function echoMessageId(origin: string): string {
+  return `remote_${origin}`
+}
+
 export interface RuntimeContentEvent {
   type: 'content'
   threadId: string

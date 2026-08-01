@@ -11,11 +11,11 @@
  */
 import { create } from 'zustand'
 import { createLogger } from '@shared/logger'
-import type { RuntimeMode } from '@shared/provider-events'
+import { echoMessageId, type RuntimeMode } from '@shared/provider-events'
 import { deliveryAction, retryDelayMs, shouldRetry, type QueuedMessage } from '../lib/outboxModel'
 import { loadQueued, removeQueued, saveQueued } from '../lib/outboxStorage'
 import { getClient } from './connections'
-import { markOwnTurn, useChatStore, threadKey } from './chat'
+import { useChatStore, threadKey } from './chat'
 
 const log = createLogger('store:outbox')
 
@@ -66,8 +66,6 @@ export async function hydrateOutbox(): Promise<void> {
   const messages = await loadQueued()
   if (messages.length === 0) return
   log.info(`restored ${messages.length} unsent message(s)`)
-  // Their bubbles persisted with the chat cache, so suppress the echoes.
-  for (const m of messages) markOwnTurn(m.messageId)
   useOutboxStore.setState({ messages })
   void drain()
 }
@@ -175,7 +173,7 @@ async function deliver(message: QueuedMessage): Promise<void> {
         message: `Message not sent: ${err instanceof Error ? err.message : String(err)}`,
       })
       // Leaving the bubble up reads as sent, which it definitely is not.
-      chat.removeUserMessage(threadKey(message.connectionId, message.threadId), message.messageId)
+      chat.removeUserMessage(threadKey(message.connectionId, message.threadId), echoMessageId(message.messageId))
       await forget(message.messageId)
       return
     }

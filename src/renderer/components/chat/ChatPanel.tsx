@@ -23,6 +23,7 @@ import {
 } from '../../services/streamingBuffer'
 import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
+import { echoMessageId } from '@shared/provider-events'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
@@ -40,11 +41,9 @@ interface ChatPanelProps {
 
 /**
  * Window-wide, not per panel: exactly one mounted panel claims each event, so
- * anything the handler reads must be shared. Per-panel copies meant one panel
- * could miss the other's origin and render a duplicate user bubble, and with
- * streaming off the whole reply died with the claiming panel.
+ * with streaming off the whole reply died with the claiming panel when this was
+ * per-instance.
  */
-const sentOrigins = new Set<string>()
 const streamingBuffer = createStreamingBuffer()
 
 /**
@@ -319,15 +318,13 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }
 
       switch (event.type) {
-        // A turn submitted somewhere else (the phone, a second window). Our own
-        // sends are skipped by origin, since they were appended optimistically.
+        // A turn submitted somewhere else (the phone, a second window), OR the
+        // echo of our own send. Both are safe to append: our optimistic message
+        // already carries `remote_<origin>` as its id, so the store's
+        // id-idempotency collapses the echo onto it.
         case 'user.message': {
-          if (event.origin && sentOrigins.has(event.origin)) {
-            sentOrigins.delete(event.origin)
-            break
-          }
           appendMessage(tid, {
-            id: `remote_${event.origin ?? event.at}`,
+            id: echoMessageId(event.origin ?? String(event.at)),
             role: 'user',
             content: event.text,
             timestamp: event.at,
@@ -849,8 +846,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         messageImages = urls
       }
 
+      // The id the backend's echo will carry, so the echo lands on THIS message
+      // instead of appending a second copy. appendMessage is idempotent by id
+      // (agent-store), which makes the de-dupe a property of the data rather
+      // than of a skip set that has to survive a remount, a hot reload, or a
+      // second panel claiming the event.
+      const origin = `d${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const userMsg: ChatMessage = {
-        id: `user_${Date.now()}`,
+        id: echoMessageId(origin),
         role: 'user',
         content: message,
         images: messageImages,
@@ -928,14 +931,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
       }
 
-      const origin = `d${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      sentOrigins.add(origin)
-      // Bounded: an echo arrives within seconds, and an unmatched origin (a send
-      // that never reached the backend) would otherwise sit here for good.
-      if (sentOrigins.size > 500) {
-        const oldest = sentOrigins.values().next().value
-        if (oldest !== undefined) sentOrigins.delete(oldest)
-      }
       providerApi.sendTurn(sessionId, message, runtimeMode, messageImages, origin).catch((err: Error) => {
         appendMessage(sessionId, {
           id: `error_${Date.now()}`,

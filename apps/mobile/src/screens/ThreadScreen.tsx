@@ -29,6 +29,7 @@ import type { ProviderInstance, ProviderSkill } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
+import { echoMessageId } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
@@ -36,7 +37,7 @@ import { colors, radius, space, type } from '../theme'
 import { Markdown } from '../components/Markdown'
 import { summarizeTool, toolIcon } from '../lib/toolSummary'
 import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
-import { markOwnTurn, useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
+import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { drain, enqueue, useOutboxStore } from '../stores/outbox'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
@@ -59,11 +60,10 @@ const log = createLogger('screen:thread')
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Thread'>
 
-/** Tag a turn as ours so its user.message broadcast is not re-rendered. */
+/** Origin for a turn we send. The optimistic bubble uses echoMessageId(origin),
+ *  so the broadcast collapses onto it instead of rendering a second copy. */
 function ownTurn(): string {
-  const id = `m${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  markOwnTurn(id)
-  return id
+  return `m${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
 const IMPLEMENT_MESSAGE = 'Implement the plan you proposed.'
@@ -437,7 +437,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // and the expensive ones are the ambiguous ones: a socket that still reads
     // as open, a reconnect in flight, a turn already running.
     const messageId = ownTurn()
-    useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), messageId)
+    useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), echoMessageId(messageId))
     enqueue({
       connectionId,
       threadId,
@@ -451,7 +451,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       // The durable write failed, so the message is out of the queue again.
       // Take the optimistic bubble back down and give the user what they typed,
       // rather than leaving a bubble that reads as sent and never will be.
-      useChatStore.getState().removeUserMessage(key, messageId)
+      useChatStore.getState().removeUserMessage(key, echoMessageId(messageId))
       setDraft((current) => (current ? current : text))
       setAttachments(attachments)
       reportError(err)
@@ -483,7 +483,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE)
     // Through the outbox like every other send, or it is lost off-socket.
     const messageId = ownTurn()
-    useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE, undefined, messageId)
+    useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE, undefined, echoMessageId(messageId))
     enqueue({
       connectionId,
       threadId,
@@ -493,7 +493,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       createdAt: Date.now(),
       attempts: 0,
     }).catch((err: unknown) => {
-      useChatStore.getState().removeUserMessage(key, messageId)
+      useChatStore.getState().removeUserMessage(key, echoMessageId(messageId))
       reportError(err)
     })
   }, [connectionId, threadId, key, reportError])

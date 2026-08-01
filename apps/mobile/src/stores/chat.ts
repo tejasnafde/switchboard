@@ -19,6 +19,7 @@ import type {
   Question,
 } from '@shared/provider-events'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
+import { echoMessageId } from '@shared/provider-events'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -79,21 +80,6 @@ export function prunePersistedThreads(
     }
   }
   return out
-}
-
-/**
- * Origins this device sent, so its own user.message echo is dropped. Seeded
- * from the outbox on launch too: a bubble queued before a kill comes back on
- * screen AND is delivered after, so without that its echo renders twice.
- */
-const sentOrigins = new Set<string>()
-export function markOwnTurn(origin: string): void {
-  sentOrigins.add(origin)
-  // Bounded: an echo arrives within seconds of its send.
-  if (sentOrigins.size > 500) {
-    const oldest = sentOrigins.values().next().value
-    if (oldest !== undefined) sentOrigins.delete(oldest)
-  }
 }
 
 export function threadKey(connectionId: string, threadId: string): string {
@@ -285,13 +271,11 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         // A turn sent from another client (desktop, second phone). Our own
         // sends carry an origin we recorded, and were added optimistically.
         case 'user.message': {
-          if (event.origin && sentOrigins.has(event.origin)) {
-            sentOrigins.delete(event.origin)
-            return {}
-          }
-          return {
-            items: [...t.items, { kind: 'user', id: `r-${event.origin ?? event.at}`, text: event.text, at: event.at }],
-          }
+          // The echo of our own send carries the id we appended optimistically,
+          // so this collapses onto it instead of rendering a second bubble.
+          const id = echoMessageId(event.origin ?? String(event.at))
+          if (t.items.some((i) => i.id === id)) return {}
+          return { items: [...t.items, { kind: 'user', id, text: event.text, at: event.at }] }
         }
         case 'tool.started':
           return {

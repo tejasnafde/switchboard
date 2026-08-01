@@ -3,6 +3,7 @@
  * (streamed text duplicating, tool spinners never settling) and the event
  * coalescing that keeps a phone from rendering once per token.
  */
+import { echoMessageId } from '../../src/shared/provider-events'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   useChatStore,
@@ -146,5 +147,59 @@ describe('unread counting', () => {
     flushQueue()
 
     expect(useChatStore.getState().threads[KEY].unread).toBe(2)
+  })
+})
+
+/**
+ * A user turn is appended optimistically by the sender AND broadcast back by
+ * the backend. Both must land on one bubble.
+ *
+ * The old defence was a set of "origins I sent", consulted on arrival. It broke
+ * whenever that set and the arriving event were not in the same place: a hot
+ * reload, a remount, a second panel claiming the event, or a restart with the
+ * message still queued. Deriving the id from the origin makes the collapse a
+ * property of the data instead.
+ */
+describe('user.message echo', () => {
+  const KEY = threadKey('c1', 't1')
+
+  beforeEach(() => {
+    resetQueue()
+    useChatStore.setState({ threads: {}, activeKey: null })
+  })
+
+  it('collapses the echo onto the optimistic bubble', () => {
+    const origin = 'm-123'
+    useChatStore.getState().addUserMessage(KEY, 'hello', undefined, echoMessageId(origin))
+    useChatStore.getState().ingestNow('c1', {
+      type: 'user.message',
+      threadId: 't1',
+      text: 'hello',
+      origin,
+      at: Date.now(),
+    })
+    const users = useChatStore.getState().threads[KEY].items.filter((i) => i.kind === 'user')
+    expect(users).toHaveLength(1)
+  })
+
+  it('is idempotent if the echo arrives twice', () => {
+    const origin = 'm-456'
+    const event = { type: 'user.message' as const, threadId: 't1', text: 'hi', origin, at: 1 }
+    useChatStore.getState().ingestNow('c1', event)
+    useChatStore.getState().ingestNow('c1', event)
+    expect(useChatStore.getState().threads[KEY].items.filter((i) => i.kind === 'user')).toHaveLength(1)
+  })
+
+  it('still shows a turn sent from another device', () => {
+    useChatStore.getState().ingestNow('c1', {
+      type: 'user.message',
+      threadId: 't1',
+      text: 'from the phone',
+      origin: 'someone-else',
+      at: 1,
+    })
+    const users = useChatStore.getState().threads[KEY].items.filter((i) => i.kind === 'user')
+    expect(users).toHaveLength(1)
+    expect((users[0] as { text: string }).text).toBe('from the phone')
   })
 })
