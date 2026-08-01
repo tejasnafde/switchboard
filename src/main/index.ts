@@ -45,6 +45,9 @@ const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
 import type { AgentType } from '@shared/types'
 
+/** Unsubscribe for the push notifier, so a reactivated window can re-attach. */
+let detachPush: (() => void) | null = null
+
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
 /** Mobile pairing WS endpoint (null when no token is configured). */
@@ -567,7 +570,7 @@ app.whenReady().then(() => {
 
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
-  attachPushNotifier(providerRegistry.bus)
+  detachPush = attachPushNotifier(providerRegistry.bus)
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token
@@ -585,6 +588,7 @@ app.whenReady().then(() => {
       registerTerminalHandlers(reactivatedHost)
       registerAgentHandlers(reactivatedHost)
       registerAppHandlers(reactivatedHost)
+      registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
@@ -594,6 +598,10 @@ app.whenReady().then(() => {
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(reactivatedHost)
+      // New registry means a new bus. Without re-attaching, notifications stop
+      // after the window has been closed and reopened once.
+      detachPush?.()
+      detachPush = attachPushNotifier(providerRegistry.bus)
       providerRegistry.registerIpcHandlers()
     }
   })
