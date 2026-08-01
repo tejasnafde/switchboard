@@ -62,6 +62,15 @@ jobs:
           retry_wait_seconds: 15
           command: npm ci
 
+      # BEFORE the unit tests, and on every OS. The root vitest suite imports
+      # pure logic out of apps/mobile, and esbuild resolves the nearest tsconfig
+      # per file - apps/mobile/tsconfig.json, which extends `expo/tsconfig.base`
+      # from the mobile app's own install. Without this, 16 test files fail to
+      # transform on a clean checkout while passing on any machine that has run
+      # the mobile install.
+      - name: Install mobile dependencies
+        run: npm ci --prefix apps/mobile
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -79,7 +88,7 @@ jobs:
       # runtime helpers up from the root node_modules.
       - name: Mobile component tests
         if: matrix.os == 'ubuntu-latest'
-        run: npm ci --prefix apps/mobile && npm test --prefix apps/mobile
+        run: npm test --prefix apps/mobile
 
       - name: Build
         run: npm run build
