@@ -28,7 +28,7 @@ import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
 import { getSignedInEmail, warmUpGoogleAuth } from '../lib/google-auth'
 import { initialsFromEmail } from '../lib/account'
-import { useConnectionsStore, type ConnectionConfig, type ConnectionStatus } from '../stores/connections'
+import { useConnectionsStore, secretsReady, type ConnectionConfig, type ConnectionStatus } from '../stores/connections'
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Connections'>
 
@@ -110,10 +110,11 @@ export default function ConnectionsScreen() {
 
   useEffect(() => {
     let cancelled = false
-    // IAP configs need a Google token in hand before dialling, so wait for the
-    // silent refresh. ws:// configs do not care, and the wait is a no-op once
-    // the keychain read is cached.
-    void warmUpGoogleAuth().then(() => {
+    // Two things must land before the first dial: the Google token (IAP configs
+    // cannot dial without it) and the pairing tokens read back out of the
+    // keystore. Dialling early would present no token and be rejected with
+    // 4001, which the UI would report as "token rejected - re-pair".
+    void Promise.all([warmUpGoogleAuth(), secretsReady]).then(() => {
       if (cancelled) return
       const store = useConnectionsStore.getState()
       for (const config of store.configs) store.connect(config.id)

@@ -75,6 +75,21 @@ interface ChatState {
   ingest: (connectionId: string, event: RuntimeEvent) => void
   /** Unbatched single-event apply. Used by the flush path and by tests. */
   ingestNow: (connectionId: string, event: RuntimeEvent) => void
+  /**
+   * Bumped whenever a backend told us it could not replay what we missed, so
+   * every feed sourced from it is known-incomplete. Screens depend on this so
+   * a re-seed actually re-runs instead of being skipped by a once-per-mount
+   * guard.
+   */
+  staleGeneration: number
+  /**
+   * Drop cached feeds for one backend and ask screens to re-seed.
+   *
+   * Clearing is the point: the seed path is guarded on an empty feed, so a
+   * transcript with a hole in it would otherwise be treated as already loaded
+   * and the hole would survive for the life of the process.
+   */
+  invalidateConnection: (connectionId: string) => void
 }
 
 /**
@@ -419,4 +434,18 @@ export const useChatStore = create<ChatState>((set) => ({
 
   ingestNow: (connectionId, event) =>
     set((s) => ({ threads: applyEvent(s.threads, connectionId, event, s.activeKey) })),
+
+  staleGeneration: 0,
+
+  invalidateConnection: (connectionId) =>
+    set((s) => {
+      const prefix = `${connectionId}:`
+      const threads: Record<string, ThreadState> = {}
+      for (const [key, thread] of Object.entries(s.threads)) {
+        // Keep the row (its runtime mode and unread count are still valid) but
+        // empty the feed, which is the part we can no longer vouch for.
+        threads[key] = key.startsWith(prefix) ? { ...thread, items: [] } : thread
+      }
+      return { threads, staleGeneration: s.staleGeneration + 1 }
+    }),
 }))

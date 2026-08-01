@@ -212,6 +212,15 @@ describe('WsTransport (fake socket)', () => {
     return { t, sock }
   }
 
+  /** Frames the caller actually asked for. Every open also writes a `hello`
+   *  (resume handshake) and a live socket answers pings, so positional
+   *  assertions have to skip the protocol chatter. */
+  function appFrames(sock: FakeSocket): Array<{ ch?: string; args?: unknown[] }> {
+    return sock.sent
+      .map((s) => JSON.parse(s) as { k: string; ch?: string; args?: unknown[] })
+      .filter((f) => f.k === 'req' || f.k === 'snd')
+  }
+
   it("re-arms the re-dial when a failed dial fires only 'error' (Node 22 undici never fires 'close' on a refused connect)", async () => {
     vi.useFakeTimers()
     vi.stubGlobal('WebSocket', FakeSocket)
@@ -255,15 +264,13 @@ describe('WsTransport (fake socket)', () => {
   it('strips trailing undefined args before serializing (JSON would otherwise turn them into null)', () => {
     const { t, sock } = makeOpenTransport()
     t.send('files:write-file', 'repo', 'sub', 'content', undefined)
-    const frame = JSON.parse(sock.sent[0])
-    expect(frame.args).toEqual(['repo', 'sub', 'content'])
+    expect(appFrames(sock)[0]?.args).toEqual(['repo', 'sub', 'content'])
   })
 
   it('only strips trailing undefined, leaving interior undefined as null like structured clone would not', () => {
     const { t, sock } = makeOpenTransport()
     t.send('ch', 'a', undefined, 'b')
-    const frame = JSON.parse(sock.sent[0])
-    expect(frame.args).toEqual(['a', null, 'b'])
+    expect(appFrames(sock)[0]?.args).toEqual(['a', null, 'b'])
   })
 
   it('gives provider:* channels a longer timeout than the 30s default', async () => {
@@ -316,7 +323,7 @@ describe('WsTransport (fake socket)', () => {
     expect(FakeSocket.instances).toHaveLength(2)
     const sock2 = FakeSocket.instances.at(-1)!
     sock2.fire('open')
-    expect(sock2.sent.map((s) => JSON.parse(s).ch)).toEqual(['queued-ch', 'queued-invoke'])
+    expect(appFrames(sock2).map((f) => f.ch)).toEqual(['queued-ch', 'queued-invoke'])
     t.close()
   })
 

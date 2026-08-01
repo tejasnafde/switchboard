@@ -187,6 +187,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // idempotent server-side, this just avoids a redundant round-trip). The ref
   // guards double-run within one mount; a fresh mount re-attaches harmlessly.
   const startedKeyRef = useRef<string | null>(null)
+  // A re-seed request has to defeat the once-per-mount guard, or a feed that
+  // lost events while the phone was away stays holed until the app restarts.
+  const staleGeneration = useChatStore((s) => s.staleGeneration)
+  useEffect(() => {
+    startedKeyRef.current = null
+  }, [staleGeneration])
   useEffect(() => {
     if (isNew || startedKeyRef.current === key) return
     startedKeyRef.current = key
@@ -232,7 +238,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         reportError(err)
       }
     })()
-  }, [connectionId, threadId, projectPath, key, isNew, reportError])
+  }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration])
 
   // Restore the user's last choices, pushing the mode to the backend too so the
   // adapter and the chip agree.

@@ -3,7 +3,12 @@
  * WsTransport/SwitchboardClient instances are runtime-only (module-level map,
  * never serialized). One client per backend - VM-direct (tailnet) and
  * Mac-relay endpoints look identical from here, they're just ws:// URLs.
+ *
+ * Pairing tokens are the exception: they live in the OS keystore (lib/secrets)
+ * and are rehydrated into the in-memory configs on start, so the persisted blob
+ * never contains a credential that grants a remote shell.
  */
+import { AppState, type AppStateStatus } from 'react-native'
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -11,6 +16,8 @@ import type { WsTransport } from '@shared/ws-transport'
 import { createLogger } from '@shared/logger'
 import { SwitchboardClient } from '../lib/api'
 import { IapTransport } from '../lib/iap-transport'
+import { foregroundAction } from '../lib/appLifecycle'
+import { deleteConnectionToken, loadConnectionToken, migrateTokensToKeystore, saveConnectionToken } from '../lib/secrets'
 import { useChatStore } from './chat'
 
 const log = createLogger('store:connections')
@@ -86,15 +93,23 @@ export const useConnectionsStore = create<ConnectionsState>()(
       status: {},
       detail: {},
 
-      addConnection: (config) => set((s) => ({ configs: [...s.configs, config] })),
+      addConnection: (config) => {
+        // The in-memory config keeps the token so a connect() on the next line
+        // works; only the persisted copy is stripped.
+        void saveConnectionToken(config.id, config.token)
+        set((s) => ({ configs: [...s.configs, config] }))
+      },
 
-      updateConnection: (id, patch) =>
+      updateConnection: (id, patch) => {
+        if ('token' in patch) void saveConnectionToken(id, patch.token)
         set((s) => ({
           configs: s.configs.map((c) => (c.id === id ? ({ ...c, ...patch } as ConnectionConfig) : c)),
-        })),
+        }))
+      },
 
       removeConnection: (id) => {
         get().disconnect(id)
+        void deleteConnectionToken(id)
         set((s) => {
           const status = { ...s.status }
           delete status[id]
@@ -104,7 +119,15 @@ export const useConnectionsStore = create<ConnectionsState>()(
 
       connect: (id) => {
         const config = get().configs.find((c) => c.id === id)
-        if (!config || clients.has(id)) return
+        if (!config) return
+        const existing = clients.get(id)
+        if (existing) {
+          // A dead client still occupies the map, so a plain `has` check made
+          // the Connect button a silent no-op: the user had to Disconnect and
+          // Connect again to revive a transport that had given up. Replace it.
+          if (existing.transport.isAlive?.() !== false) return
+          get().disconnect(id)
+        }
         get().setStatus(id, 'connecting')
 
         let client: SwitchboardClient
@@ -132,6 +155,13 @@ export const useConnectionsStore = create<ConnectionsState>()(
         } else {
           const wsClient = SwitchboardClient.overWs(config.url, config.token)
           const transport = wsClient.transport as WsTransport
+          // The backend could not replay everything we missed, so the cached
+          // feed for this backend has a hole in it. Drop it and re-seed rather
+          // than showing a transcript that is quietly missing turns.
+          transport.onResumeGap = () => {
+            log.warn('backend could not replay missed events, re-seeding', config.label)
+            useChatStore.getState().invalidateConnection(id)
+          }
           // Status rides the transport's own lifecycle - open/reconnect/terminal
           // all reflect live, so a dropped tunnel can't leave a stale green dot.
           transport.onStateChange = (state) => {
@@ -180,10 +210,89 @@ export const useConnectionsStore = create<ConnectionsState>()(
     {
       name: 'sb-connections',
       storage: createJSONStorage(() => AsyncStorage),
-      partialize: (s) => ({ configs: s.configs }),
+      // Tokens are deliberately absent from the persisted shape - they live in
+      // the keystore and are merged back in by the rehydration below.
+      partialize: (s) => ({
+        configs: s.configs.map(({ token: _token, ...rest }) => rest) as ConnectionConfig[],
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) {
+          resolveSecrets()
+          return
+        }
+        void hydrateTokens(state.configs).then(() => resolveSecrets())
+      },
     },
   ),
 )
+
+let resolveSecrets: () => void = () => undefined
+/**
+ * Resolves once pairing tokens have been read out of the keystore and merged
+ * into the in-memory configs. Dialling before this would present no token and
+ * be rejected with 4001, which reads to the user as "wrong token" rather than
+ * "not loaded yet".
+ */
+export const secretsReady = new Promise<void>((resolve) => {
+  resolveSecrets = resolve
+})
+
+/**
+ * Merge keystore tokens into the rehydrated configs, migrating any that an
+ * older build left inside the persisted blob.
+ */
+async function hydrateTokens(configs: ConnectionConfig[]): Promise<void> {
+  try {
+    const migrated = await migrateTokensToKeystore(configs)
+    const loaded = await Promise.all(
+      configs.map(async (config) => ({
+        id: config.id,
+        token: config.token ?? (await loadConnectionToken(config.id)),
+      })),
+    )
+    const byId = new Map(loaded.map((entry) => [entry.id, entry.token]))
+    useConnectionsStore.setState((s) => ({
+      configs: s.configs.map((c) => ({ ...c, token: byId.get(c.id) }) as ConnectionConfig),
+    }))
+    // Rewriting state re-persists through partialize, which drops the tokens a
+    // legacy blob was carrying.
+    if (migrated.length > 0) log.info(`migrated ${migrated.length} token(s) out of the persisted store`)
+  } catch (err) {
+    log.warn('token hydration failed; connections may need re-pairing', err)
+  }
+}
+
+/**
+ * Keep connections honest across app suspension. Installed once from App.tsx.
+ *
+ * The OS suspends sockets without a close frame, so a returning user otherwise
+ * stares at a live-looking screen backed by a dead connection until something
+ * times out. Returns a teardown for symmetry with other listeners.
+ */
+export function installLifecycleReconnect(): () => void {
+  let backgroundedAt: number | null = AppState.currentState === 'background' ? Date.now() : null
+  const sub = AppState.addEventListener('change', (next: AppStateStatus) => {
+    if (next === 'background') {
+      backgroundedAt = Date.now()
+      return
+    }
+    if (next !== 'active') return
+    const action = foregroundAction(backgroundedAt, Date.now())
+    backgroundedAt = null
+    for (const [id, client] of clients) {
+      const { transport } = client
+      if (transport.forceReconnect || transport.probe) {
+        if (action === 'reconnect') transport.forceReconnect?.()
+        else transport.probe?.()
+      } else {
+        // IapTransport has no probe path of its own; connect() replaces it when
+        // it has died, which is the only recovery it currently has.
+        useConnectionsStore.getState().connect(id)
+      }
+    }
+  })
+  return () => sub.remove()
+}
 
 /** Parse a pairing payload (QR or typed): ws://host:8765?token=abc */
 export function parsePairingUrl(raw: string): { url: string; token?: string } | null {
