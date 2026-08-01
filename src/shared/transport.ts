@@ -24,6 +24,9 @@ export interface Transport {
   /** Drop the current socket and re-dial immediately, skipping backoff. For
    *  when the socket is known-stale rather than suspected-stale. */
   forceReconnect?(): void
+  /** True only while a socket is actually open. Distinct from `isAlive`, which
+   *  stays true across a reconnect so subscriptions survive. */
+  isConnected?(): boolean
   /** Report whether the device has a network. Retries pause while it does not,
    *  and resume the moment it returns rather than waiting out a backoff. */
   setOnline?(online: boolean): void

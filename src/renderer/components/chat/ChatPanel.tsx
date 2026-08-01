@@ -39,9 +39,18 @@ interface ChatPanelProps {
 }
 
 /**
- * Update a streamed assistant message's content if it exists, else append a
- * fresh bubble. Shared by the streaming-ON coalescer commit and the
- * streaming-OFF drainTurn flush so the two paths can't drift.
+ * Window-wide, not per panel: exactly one mounted panel claims each event, so
+ * anything the handler reads must be shared. Per-panel copies meant one panel
+ * could miss the other's origin and render a duplicate user bubble, and with
+ * streaming off the whole reply died with the claiming panel.
+ */
+const sentOrigins = new Set<string>()
+const streamingBuffer = createStreamingBuffer()
+
+/**
+ * Update a streamed assistant message if it exists, else append a fresh bubble.
+ * Shared by the streaming-ON coalescer commit and the streaming-OFF drainTurn
+ * flush so the two paths cannot drift.
  */
 function upsertAssistantContent(threadId: string, messageId: string, chunk: ContentChunk): void {
   const store = useAgentStore.getState()
@@ -74,8 +83,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   // which subscribed ChatPanel to the whole store and re-rendered it on every
   // token of *other* sessions (e.g. the other dual-chat panel).
   const appendMessage = useAgentStore((s) => s.appendMessage)
-  /** Ids of turns THIS window sent, so its own user.message echo is dropped. */
-  const sentOriginsRef = useRef<Set<string>>(new Set())
   const updateMessage = useAgentStore((s) => s.updateMessage)
   const updateStatus = useAgentStore((s) => s.updateStatus)
   const setTitle = useAgentStore((s) => s.setTitle)
@@ -271,7 +278,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   // changes take effect on the next session switch. When OFF, content
   // events accumulate in the buffer and flush on turn.completed.
   const streamingEnabledRef = useRef<boolean>(true)
-  const streamingBufferRef = useRef(createStreamingBuffer())
   useEffect(() => {
     isAssistantStreamingEnabled().then((v) => {
       streamingEnabledRef.current = v
@@ -316,8 +322,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         // A turn submitted somewhere else (the phone, a second window). Our own
         // sends are skipped by origin, since they were appended optimistically.
         case 'user.message': {
-          if (event.origin && sentOriginsRef.current.has(event.origin)) {
-            sentOriginsRef.current.delete(event.origin)
+          if (event.origin && sentOrigins.has(event.origin)) {
+            sentOrigins.delete(event.origin)
             break
           }
           appendMessage(tid, {
@@ -331,7 +337,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         case 'content': {
           const chunk = { text: event.text, append: event.append }
           if (!streamingEnabledRef.current) {
-            bufferContent(streamingBufferRef.current, tid, event.messageId, chunk)
+            bufferContent(streamingBuffer, tid, event.messageId, chunk)
             break
           }
           contentCoalescerRef.current?.push(tid, event.messageId, chunk)
@@ -413,7 +419,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         case 'turn.completed': {
           // Flush buffered content if streaming was off this turn.
           if (!streamingEnabledRef.current) {
-            const drained = drainTurn(streamingBufferRef.current, tid)
+            const drained = drainTurn(streamingBuffer, tid)
             for (const entry of drained) {
               // The buffer already folded every chunk, so this is the whole
               // body and replaces rather than extends.
@@ -923,7 +929,13 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }
 
       const origin = `d${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      sentOriginsRef.current.add(origin)
+      sentOrigins.add(origin)
+      // Bounded: an echo arrives within seconds, and an unmatched origin (a send
+      // that never reached the backend) would otherwise sit here for good.
+      if (sentOrigins.size > 500) {
+        const oldest = sentOrigins.values().next().value
+        if (oldest !== undefined) sentOrigins.delete(oldest)
+      }
       providerApi.sendTurn(sessionId, message, runtimeMode, messageImages, origin).catch((err: Error) => {
         appendMessage(sessionId, {
           id: `error_${Date.now()}`,

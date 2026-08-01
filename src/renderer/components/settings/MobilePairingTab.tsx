@@ -92,6 +92,9 @@ export function MobilePairingTab() {
   const [pairing, setPairing] = useState<{ code: string; expiresAt: number } | null>(null)
   const [secondsLeft, setSecondsLeft] = useState(0)
   const [devices, setDevices] = useState<DeviceSessionView[]>([])
+  /** The endpoint listens only while this is on. Opening a port is a decision
+   *  the user makes, not a side effect of looking at the tab. */
+  const [enabled, setEnabled] = useState(false)
   const [loaded, setLoaded] = useState(false)
   const [customHost, setCustomHost] = useState(false)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
@@ -109,14 +112,19 @@ export function MobilePairingTab() {
       window.api.settings.get(SETTINGS_KEYS.host),
       window.api.settings.get(SETTINGS_KEYS.port),
       window.api.settings.get(SETTINGS_KEYS.token),
-    ]).then(([addrs, savedHost, savedPort, savedToken]) => {
+      window.api.settings.get(SETTINGS_KEYS.enabled),
+    ]).then(([addrs, savedHost, savedPort, savedToken, savedEnabled]) => {
       if (cancelled) return
       setLanAddrs(addrs)
       const initialHost = savedHost ?? addrs[0]?.address ?? ''
       setHost(initialHost)
       setCustomHost(initialHost !== '' && !addrs.some((a) => a.address === initialHost))
       if (savedPort) setPort(savedPort)
-      setToken(savedToken ?? generatePairingToken())
+      // Do NOT mint a token here. Generating one on mount and persisting it
+      // below meant merely LOOKING at this tab opened a LAN listener with a
+      // static credential, on every future launch, with no way to turn it off.
+      setToken(savedToken ?? '')
+      setEnabled(savedEnabled === 'true')
       setLoaded(true)
     }).catch((err) => {
       log.warn('failed to load pairing settings', err)
@@ -135,9 +143,7 @@ export function MobilePairingTab() {
       window.api.settings.set(SETTINGS_KEYS.host, host),
       window.api.settings.set(SETTINGS_KEYS.port, port),
       window.api.settings.set(SETTINGS_KEYS.token, token),
-      // Device sessions replaced the shared token as the credential, so the
-      // endpoint needs its own on/off rather than inferring it from one.
-      window.api.settings.set(SETTINGS_KEYS.enabled, 'true'),
+      window.api.settings.set(SETTINGS_KEYS.enabled, enabled ? 'true' : 'false'),
     ])
       .then(() => window.api.app.mobilePairingApply())
       .then((status) => {
@@ -145,7 +151,7 @@ export function MobilePairingTab() {
       })
       .catch((err) => log.warn('failed to persist/apply pairing settings', err))
     return () => { cancelled = true }
-  }, [loaded, host, port, token])
+  }, [loaded, host, port, token, enabled])
 
   const refreshDevices = useCallback(() => {
     window.api.app
@@ -280,9 +286,25 @@ export function MobilePairingTab() {
 
   return (
     <div>
+      <label
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          fontSize: '12px',
+          color: 'var(--text-primary)',
+          marginBottom: '10px',
+          cursor: 'pointer',
+        }}
+      >
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+        Serve the mobile endpoint
+        <InfoHint text="Opens a listener on the port below, reachable from your local network, so a paired phone sees the same chats and sessions as this window. Off by default: nothing listens until you turn it on, and turning it off stops it immediately. Paired devices keep their credentials and reconnect when it is on again." />
+      </label>
       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '14px', lineHeight: 1.6 }}>
-        Scan the QR below from the mobile app to pair it with this computer.
-        <InfoHint text="Switchboard serves the paired endpoint itself on the port below, as soon as a token is saved. The phone then sees the same chats and sessions as this window. The token gates every connection, since the endpoint is reachable beyond loopback." />
+        {enabled
+          ? 'Scan the QR below from the mobile app to pair it with this computer.'
+          : 'The endpoint is off. Nothing is listening.'}
       </div>
 
       {/* Connection fields */}
@@ -383,11 +405,13 @@ export function MobilePairingTab() {
             textAlign: 'center',
             padding: '8px',
           }}>
-            {!isValidPort(port)
-              ? 'Port must be 1-65535'
-              : !host
-                ? 'Pick an address to render the QR'
-                : 'Tap Show pairing QR'}
+            {!enabled
+              ? 'Turn the endpoint on to pair'
+              : !isValidPort(port)
+                ? 'Port must be 1-65535'
+                : !host
+                  ? 'Pick an address to render the QR'
+                  : 'Tap Show pairing QR'}
           </div>
         )}
         <div style={{ minWidth: 0 }}>
@@ -397,7 +421,7 @@ export function MobilePairingTab() {
             </div>
             <button
               onClick={startPairing}
-              disabled={!host || !isValidPort(port)}
+              disabled={!enabled || !host || !isValidPort(port)}
               style={{
                 fontSize: '10.5px',
                 padding: '2px 8px',

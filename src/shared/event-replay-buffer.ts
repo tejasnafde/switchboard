@@ -25,6 +25,8 @@ interface Entry {
   seq: number
   encoded: string
   bytes: number
+  /** Kept so a replay can apply the same scope filter `emit` does. */
+  channel: string
 }
 
 export class EventReplayBuffer {
@@ -50,9 +52,9 @@ export class EventReplayBuffer {
     return this.entries.length
   }
 
-  push(seq: number, encoded: string): void {
+  push(seq: number, encoded: string, channel: string): void {
     const bytes = encoded.length
-    this.entries.push({ seq, encoded, bytes })
+    this.entries.push({ seq, encoded, bytes, channel })
     this.bytes += bytes
     // `length > 1` stops a frame larger than the whole budget from emptying the
     // buffer and still not fitting.
@@ -63,8 +65,8 @@ export class EventReplayBuffer {
     }
   }
 
-  /** Frames after `cursor`. */
-  since(cursor: number): ReplayResult {
+  /** Frames after `cursor` that `allow` accepts. */
+  since(cursor: number, allow: (channel: string) => boolean = () => true): ReplayResult {
     if (this.entries.length === 0) {
       return { frames: [], gap: false }
     }
@@ -73,7 +75,7 @@ export class EventReplayBuffer {
     const gap = cursor + 1 < this.oldestSeq
     const frames: string[] = []
     for (const entry of this.entries) {
-      if (entry.seq > cursor) frames.push(entry.encoded)
+      if (entry.seq > cursor && allow(entry.channel)) frames.push(entry.encoded)
     }
     return { frames, gap }
   }

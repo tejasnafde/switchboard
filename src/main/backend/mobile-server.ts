@@ -38,13 +38,23 @@ export class MobileEndpoint implements BackendHost {
   private state: MobileEndpointStatus = { listening: false, port: null, reason: 'not started' }
 
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void {
-    this.handlerRegs.push([channel, fn as (...args: unknown[]) => unknown])
+    // Last-wins on the inner host already; keep the replay list in step.
+    const handler = fn as (...args: unknown[]) => unknown
+    const existing = this.handlerRegs.findIndex(([ch]) => ch === channel)
+    if (existing >= 0) this.handlerRegs.splice(existing, 1)
+    this.handlerRegs.push([channel, handler])
     this.inner?.handle(channel, fn)
   }
 
+  /** Last registration per channel wins, matching ElectronIpcHost. Reopening a
+   *  window re-runs every registerX against the SAME endpoint, so appending ran
+   *  each `snd` handler once per reopen: doubled keystrokes, double kills. */
   on<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => void): void {
-    this.listenerRegs.push([channel, fn as (...args: unknown[]) => void])
-    this.inner?.on(channel, fn)
+    const listener = fn as (...args: unknown[]) => void
+    const existing = this.listenerRegs.findIndex(([ch]) => ch === channel)
+    if (existing >= 0) this.listenerRegs.splice(existing, 1)
+    this.listenerRegs.push([channel, listener])
+    this.inner?.replaceListener(channel, listener)
   }
 
   emit(channel: string, ...args: unknown[]): void {
@@ -113,6 +123,9 @@ export class MobileEndpoint implements BackendHost {
       // no shared token is configured. The default (trust everything) is only
       // correct for loopback and the ssh tunnel.
       true,
+      // Static, unrevocable and readable from the settings table, so it gets a
+      // phone's scopes: no shell, no pairing administration.
+      PHONE_SCOPES,
     )
     for (const [ch, fn] of this.handlerRegs) inner.handle(ch, fn)
     for (const [ch, fn] of this.listenerRegs) inner.on(ch, fn)
@@ -129,6 +142,8 @@ export class MobileEndpoint implements BackendHost {
         log.error('mobile endpoint error', err)
         this.state = { listening: false, port, reason: err.message }
       }
+      // Or its heartbeat keeps sweeping an orphaned client set.
+      this.inner?.dispose()
       this.inner = null
       this.wss = null
     })
@@ -151,9 +166,8 @@ export class MobileEndpoint implements BackendHost {
     const wss = this.wss
     if (!wss) return
     this.wss = null
-    // Without this the host's heartbeat interval outlives the endpoint, and a
-    // toggle-off/toggle-on leaves one sweeping a socket set nobody owns.
     setRevocationListener(null)
+    // Or the heartbeat outlives the endpoint.
     this.inner?.dispose()
     this.inner = null
     this.activeToken = null

@@ -105,6 +105,10 @@ export class WsHost implements BackendHost {
     token?: string,
     private readonly deviceAuth: DeviceAuthPort = NO_DEVICE_AUTH,
     requireAuth = false,
+    /** What the legacy URL token grants. Loopback and the ssh tunnel are the
+     *  same-user trust boundary as a PTY, so they get everything; a LAN-facing
+     *  endpoint must not hand a static, unrevocable token a shell. */
+    legacyTokenScopes: readonly DeviceScope[] = FULL_SCOPES,
   ) {
     this.wss.on('connection', (socket, req: IncomingMessage) => {
       // Legacy path: the shared token in the URL. Still accepted so an already
@@ -126,7 +130,7 @@ export class WsHost implements BackendHost {
         // carries no secret.
         const framed = url?.searchParams.get('auth') === 'frame'
         if (token && tokenMatches(token, presented)) {
-          legacyScopes = FULL_SCOPES
+          legacyScopes = legacyTokenScopes
         } else if (!framed) {
           log.warn(`rejected connection with ${presented === null ? 'missing' : 'bad'} token`)
           socket.close(4001, 'unauthorized')
@@ -271,10 +275,11 @@ export class WsHost implements BackendHost {
    */
   private onHello(socket: WebSocket, frame: Extract<WsFrame, { k: 'hello' }>): void {
     // Resume is a read of everything recently emitted, so it needs the same
-    // credential a request does. Without this an unauthenticated socket could
-    // learn the epoch from one `ready` and then ask to be replayed the whole
-    // buffer with the next.
-    if (!this.clients.get(socket)?.scopes) {
+    // credential AND the same scope filter a live emit applies. Without the
+    // credential check an unauthenticated socket could learn the epoch from one
+    // `ready` and be replayed the whole buffer with the next.
+    const scopes = this.clients.get(socket)?.scopes
+    if (!scopes) {
       log.warn('refused a resume request from an unauthenticated client')
       return
     }
@@ -284,7 +289,10 @@ export class WsHost implements BackendHost {
     // exists, so replaying against it would deliver the wrong events entirely.
     // `requested`, not the zeroed cursor: a cross-epoch client HAS lost events,
     // and reporting otherwise would let it stitch a broken transcript.
-    const result = sameEpoch && requested > 0 ? this.replay.since(requested) : { frames: [], gap: requested > 0 }
+    const result =
+      sameEpoch && requested > 0
+        ? this.replay.since(requested, (channel) => isChannelAllowed(scopes, channel))
+        : { frames: [], gap: requested > 0 }
     // Replay BEFORE the ready marker: the client releases held frames on ready,
     // so anything after it is applied out of order and then swallowed by the
     // duplicate guard. Nothing is sent on a gap - the client re-seeds anyway.
@@ -321,6 +329,12 @@ export class WsHost implements BackendHost {
     this.listeners.set(channel, fns)
   }
 
+  /** `on` appends because subsystems legitimately share a channel; a host
+   *  re-registered wholesale needs the replacing shape instead. */
+  replaceListener(channel: string, fn: (...args: unknown[]) => void): void {
+    this.listeners.set(channel, [fn])
+  }
+
   emit(channel: string, ...args: unknown[]): void {
     const replayable = isReplayableEventChannel(channel)
     // Only replayable channels consume sequence numbers. Terminal output would
@@ -328,7 +342,7 @@ export class WsHost implements BackendHost {
     // resume look like a gap.
     const seq = replayable ? ++this.seq : undefined
     const encoded = encodeFrame({ k: 'evt', ch: channel, args, seq })
-    if (replayable && seq !== undefined) this.replay.push(seq, encoded)
+    if (replayable && seq !== undefined) this.replay.push(seq, encoded, channel)
     // Authenticated clients only. A socket that has not presented a credential
     // must not receive chat or terminal output during its auth grace window -
     // the mobile endpoint binds 0.0.0.0, so that window is open to the LAN.

@@ -173,6 +173,12 @@ export class WsTransport implements Transport {
     this.dial()
   }
 
+  /** True only while a socket is open. Callers deciding whether to SEND want
+   *  this; `isAlive` answers whether the transport still exists. */
+  isConnected(): boolean {
+    return this.open && !this.closed
+  }
+
   /** True until a deliberate close() or an auth rejection - a transport
    *  mid-reconnect is still alive (its subscriptions will survive). */
   isAlive(): boolean {
@@ -332,6 +338,14 @@ export class WsTransport implements Transport {
     // Only dial if we were actually waiting to. A live socket is left alone;
     // the watchdog owns deciding whether it survived.
     if (this.reconnecting && !this.open) {
+      // Close the previous socket first. A dial in flight when the network
+      // dropped is never reaped by our own handlers (they all bail on
+      // `sock !== this.ws`), so it would linger until the server's auth grace.
+      try {
+        this.ws?.close()
+      } catch (err) {
+        log.warn('closing a superseded socket on reconnect', err)
+      }
       this.reconnectAttempt = 0
       this.dial()
     }

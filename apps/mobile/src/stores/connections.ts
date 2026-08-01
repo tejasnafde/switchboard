@@ -193,7 +193,14 @@ export const useConnectionsStore = create<ConnectionsState>()(
           // rather than a credential the phone keeps re-presenting.
           transport.onSessionIssued = (session) => {
             log.info('received a device session, retiring the pairing code', config.label)
-            void saveConnectionSession(id, session)
+            void saveConnectionSession(id, session).then((ok) => {
+              // The code is already consumed server-side, so a lost session
+              // means re-pairing. Keep it in the blob rather than nowhere.
+              if (!ok) {
+                keystoreFailures.add(id)
+                log.error('keystore refused the device session; keeping it in local storage', config.label)
+              }
+            })
             // The shared token is cleared here: this connection now has a
             // credential of its own, and keeping the old one alive would
             // preserve exactly the blast radius the session removes.

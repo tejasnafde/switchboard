@@ -481,7 +481,21 @@ export default function ThreadScreen({ route, navigation }: Props) {
     useChatStore.getState().setRuntimeMode(key, 'sandbox')
     client.setRuntimeMode(threadId, 'sandbox').catch(reportError)
     useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE)
-    client.sendTurn(threadId, IMPLEMENT_MESSAGE, 'sandbox', undefined, ownTurn()).catch(reportError)
+    // Through the outbox like every other send, or it is lost off-socket.
+    const messageId = ownTurn()
+    useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE, undefined, messageId)
+    enqueue({
+      connectionId,
+      threadId,
+      messageId,
+      text: IMPLEMENT_MESSAGE,
+      runtimeMode: 'sandbox',
+      createdAt: Date.now(),
+      attempts: 0,
+    }).catch((err: unknown) => {
+      useChatStore.getState().removeUserMessage(key, messageId)
+      reportError(err)
+    })
   }, [connectionId, threadId, key, reportError])
 
   const decideApproval = useCallback(

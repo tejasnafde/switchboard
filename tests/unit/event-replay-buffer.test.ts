@@ -52,11 +52,22 @@ describe('EventReplayBuffer', () => {
 
   it('retains a single frame larger than the whole byte budget rather than dropping it', () => {
     const buf = new EventReplayBuffer(1_000, 10)
-    buf.push(1, frame(1, 'x'.repeat(500)))
+    buf.push(1, frame(1, 'x'.repeat(500)), 'provider:event')
     // Evicting it would leave an empty buffer AND still not fit - the client
     // is better served by being able to replay the one thing we have.
     expect(buf.size).toBe(1)
     expect(buf.since(0).frames).toHaveLength(1)
+  })
+
+  it('applies the caller\'s channel filter, so a replay cannot outrank a live emit', () => {
+    // emit() filters by scope on the way out. Without the same filter here a
+    // scoped device would be handed, on reconnect, events it is not allowed to
+    // receive live.
+    const buf = new EventReplayBuffer()
+    buf.push(1, frame(1), 'provider:event')
+    buf.push(2, frame(2), 'secret:event')
+    const { frames } = buf.since(0, (ch) => ch !== 'secret:event')
+    expect(frames.map((f) => JSON.parse(f).seq)).toEqual([1])
   })
 
   it('an empty buffer is not a gap - a fresh server has genuinely sent nothing', () => {

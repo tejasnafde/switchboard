@@ -86,13 +86,16 @@ export async function drain(): Promise<void> {
   if (draining) return
   draining = true
   try {
-    // Cannot spin: every pass either removes a message or ends the loop.
+    // Tracks messages ATTEMPTED, not queue length: one enqueued mid-delivery
+    // keeps the length flat, and a length check would never try it.
+    const attempted = new Set<string>()
     for (;;) {
-      const before = useOutboxStore.getState().messages.length
-      for (const message of nextPerThread()) {
+      const heads = nextPerThread().filter((m) => !attempted.has(m.messageId))
+      if (heads.length === 0) break
+      for (const message of heads) {
+        attempted.add(message.messageId)
         await deliver(message)
       }
-      if (useOutboxStore.getState().messages.length >= before) break
     }
   } finally {
     draining = false
@@ -101,7 +104,8 @@ export async function drain(): Promise<void> {
 }
 
 /** Without this, a retryable failure on a socket that STAYS up parks the
- *  message until a reconnect, a foreground, or the user opening that thread. */
+ *  message until a reconnect, a foreground, or the user opening that thread.
+ *  Only arms for messages that actually failed; the drain loop covers the rest. */
 function scheduleRetry(): void {
   if (retryTimer) {
     clearTimeout(retryTimer)
@@ -133,7 +137,10 @@ async function deliver(message: QueuedMessage): Promise<void> {
   const chat = useChatStore.getState()
   const thread = chat.threads[threadKey(message.connectionId, message.threadId)]
   const action = deliveryAction({
-    connected: client?.transport.isAlive?.() !== false && client !== undefined,
+    // `isConnected`, not `isAlive`: the latter stays true through a reconnect,
+    // so a send with the radio off sat pending for the 200s provider timeout
+    // and blocked the queue behind it.
+    connected: client?.transport.isConnected?.() ?? client !== undefined,
     // Only OpenCode drops a mid-turn message; Claude queues and Codex steers.
     threadBusy: thread?.provider === 'opencode' && thread.status === 'running',
     // Always true today: the thread row is never removed by the app.

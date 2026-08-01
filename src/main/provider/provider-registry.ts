@@ -63,6 +63,8 @@ export class ProviderRegistry {
   private checkpoints = new CheckpointTracker()
   /** Turn origins already accepted, so a client retry cannot run twice. */
   private turnDedupe = new TurnDeduper()
+  /** Threads with a startSession in flight. Claimed before the first await. */
+  private startingSessions = new Set<string>()
 
   /**
    * Event bus that decouples adapter event emission from the consumer.
@@ -255,9 +257,11 @@ export class ProviderRegistry {
 
       // Idempotent re-attach: a second START_SESSION for a live thread (screen
       // remount, second client on the same backend) must not spawn a second
-      // adapter process over the same JSONL - it would orphan the first one's
-      // cleanup. Return a descriptor of the running session instead.
-      if (this.sessionAdapters.has(opts.threadId)) {
+      // adapter process over the same JSONL. Returns a descriptor instead.
+      // Also against a set claimed SYNCHRONOUSLY below: the adapter map is
+      // written after `await adapter.startSession`, so two clients racing that
+      // window both passed this guard and both spawned a process.
+      if (this.sessionAdapters.has(opts.threadId) || this.startingSessions.has(opts.threadId)) {
         log.info(`startSession ${opts.threadId} already live - re-attaching`)
         return {
           threadId: opts.threadId,
@@ -268,6 +272,8 @@ export class ProviderRegistry {
           createdAt: Date.now(),
         } satisfies ProviderSession
       }
+      this.startingSessions.add(opts.threadId)
+      try {
 
       // On a remote VM only Claude Code runs. Reject Codex / OpenCode with a
       // readable message the chat surfaces instead of a deep adapter failure.
@@ -329,6 +335,9 @@ export class ProviderRegistry {
       this.sessionCwd.set(opts.threadId, session.cwd)
       await this.attachNotebooks(opts.threadId, session.cwd)
       return session
+      } finally {
+        this.startingSessions.delete(opts.threadId)
+      }
     })
 
     this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) => {
@@ -354,17 +363,19 @@ export class ProviderRegistry {
       // Broadcast the user's turn: adapters only emit the agent's side, so
       // without this a message typed on one client is invisible everywhere
       // else. The sender skips its own echo via `origin`.
-      this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
       try {
         await adapter.sendTurn(threadId, message, runtimeMode, images)
       } catch (err) {
         // Release the origin: the turn did NOT happen, so the client's retry
-        // must be allowed through. Holding it would have the retry answered
-        // with a cheerful success and the message dropped silently, which is
-        // the worst outcome available here.
+        // must be allowed through. Holding it would answer the retry with a
+        // cheerful success and drop the message silently.
         this.turnDedupe.release(origin)
         throw err
       }
+      // AFTER the adapter accepts. Broadcasting first meant a failed send had
+      // already consumed the origin from every other client's skip set, so the
+      // retry rendered a duplicate bubble everywhere with no retraction.
+      this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
     })
 
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {

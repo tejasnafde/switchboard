@@ -176,6 +176,9 @@ export function attachPushNotifier(bus: RuntimeEventBus): () => void {
     const targets = pushTargets(devices, event.threadId, viewing, now)
     if (targets.length === 0) return
 
+    // Decide FIRST: `conversationFor` is a synchronous SQLite read, and delta
+    // streaming made this run once per token on the main process.
+    if (!pushForEvent(event)) return
     const { title, projectPath } = conversationFor(event.threadId)
     const message = pushForEvent(event, { title })
     if (!message) return

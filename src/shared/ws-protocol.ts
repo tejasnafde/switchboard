@@ -24,7 +24,8 @@
  * cannot be recovered, and replaying it repaints output the user has seen.
  *
  * SERVER-TO-CLIENT names only, since those are the ones that travel as `evt`.
- * `terminal:data` is the client-to-server keystroke channel and belongs here.
+ * Do NOT add `terminal:data`: that is the client-to-server keystroke channel,
+ * sent as `snd`, so listing it excludes nothing while pty output pours in.
  */
 export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   'terminal:output',
