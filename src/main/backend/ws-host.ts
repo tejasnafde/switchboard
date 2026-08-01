@@ -21,6 +21,16 @@ import type { BackendHost } from './host'
 
 const log = createLogger('backend:ws-host')
 
+/**
+ * Largest single frame a client may send.
+ *
+ * `ws` defaults to 100 MB, which on a listener bound to every interface lets
+ * one connection pin memory before any of our code sees the frame. Nothing
+ * legitimate comes close: the biggest frames are pasted images, already bounded
+ * well below this by the chat path.
+ */
+export const MAX_FRAME_BYTES = 16 * 1024 * 1024
+
 /** Ping cadence. Short enough that a dead phone socket is noticed while the
  *  user is still looking at the screen, long enough to be free on a radio. */
 export const HEARTBEAT_INTERVAL_MS = 15_000

@@ -11,7 +11,7 @@ import type { MobilePairingStatus } from '@shared/types'
 import { getSetting } from '../db/database'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
-import { WsHost } from './ws-host'
+import { MAX_FRAME_BYTES, WsHost } from './ws-host'
 
 const log = createLogger('backend:mobile-server')
 
@@ -80,7 +80,12 @@ export class MobileEndpoint implements BackendHost {
 
     // 0.0.0.0 so a phone on the LAN/tailnet can reach it; the token is the
     // access control (same trust model as the headless server).
-    const wss = new WebSocketServer({ port, host: '0.0.0.0' })
+    //
+    // maxPayload caps a single frame. `ws` defaults to 100 MB, which on a
+    // listener bound to every interface is an easy way for one connection to
+    // pin memory. Nothing legitimate approaches this: the largest frames are
+    // pasted images, which the chat path already bounds well below it.
+    const wss = new WebSocketServer({ port, host: '0.0.0.0', maxPayload: MAX_FRAME_BYTES })
     const inner = new WsHost(wss, token)
     for (const [ch, fn] of this.handlerRegs) inner.handle(ch, fn)
     for (const [ch, fn] of this.listenerRegs) inner.on(ch, fn)
@@ -114,6 +119,9 @@ export class MobileEndpoint implements BackendHost {
     const wss = this.wss
     if (!wss) return
     this.wss = null
+    // Without this the host's heartbeat interval outlives the endpoint, and a
+    // toggle-off/toggle-on leaves one sweeping a socket set nobody owns.
+    this.inner?.dispose()
     this.inner = null
     this.activeToken = null
     this.state = { listening: false, port: null, reason: 'stopped' }

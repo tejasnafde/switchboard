@@ -16,7 +16,7 @@ import { GeistMono_400Regular, GeistMono_500Medium } from '@expo-google-fonts/ge
 import { createLogger } from '@shared/logger'
 import { colors, fonts } from './src/theme'
 import { getCachedAccessToken, warmUpGoogleAuth } from './src/lib/google-auth'
-import { setGoogleTokenProvider } from './src/stores/connections'
+import { installLifecycleReconnect, setGoogleTokenProvider } from './src/stores/connections'
 import { UpdateBanner } from './src/components/UpdateBanner'
 import ConnectionsScreen from './src/screens/ConnectionsScreen'
 import PairScreen from './src/screens/PairScreen'
@@ -114,6 +114,11 @@ export default function App() {
     void warmUpGoogleAuth().catch((err) => log.warn('google auth warm-up failed', err))
     void usePushStore.getState().init()
   }, [])
+
+  // The OS suspends sockets without closing them, so a returning user would
+  // otherwise see a live-looking screen backed by a dead connection until an
+  // invoke times out. Installed once, for every connection.
+  useEffect(() => installLifecycleReconnect(), [])
 
   // Tapping a notification opens the thread it came from.
   //

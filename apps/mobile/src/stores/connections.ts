@@ -243,7 +243,7 @@ export const secretsReady = new Promise<void>((resolve) => {
  */
 async function hydrateTokens(configs: ConnectionConfig[]): Promise<void> {
   try {
-    const migrated = await migrateTokensToKeystore(configs)
+    await migrateTokensToKeystore(configs)
     const loaded = await Promise.all(
       configs.map(async (config) => ({
         id: config.id,
@@ -254,9 +254,8 @@ async function hydrateTokens(configs: ConnectionConfig[]): Promise<void> {
     useConnectionsStore.setState((s) => ({
       configs: s.configs.map((c) => ({ ...c, token: byId.get(c.id) }) as ConnectionConfig),
     }))
-    // Rewriting state re-persists through partialize, which drops the tokens a
-    // legacy blob was carrying.
-    if (migrated.length > 0) log.info(`migrated ${migrated.length} token(s) out of the persisted store`)
+    // Rewriting state re-persists through partialize, which is what drops the
+    // tokens a legacy blob was carrying.
   } catch (err) {
     log.warn('token hydration failed; connections may need re-pairing', err)
   }

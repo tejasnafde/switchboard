@@ -56,11 +56,11 @@ export class EventReplayBuffer {
 
   push(seq: number, encoded: string): void {
     const bytes = encoded.length
-    // A single frame larger than the whole budget would evict everything and
-    // then still not fit. Retain it alone rather than emptying the buffer for
-    // nothing: the next push trims it away normally.
     this.entries.push({ seq, encoded, bytes })
     this.bytes += bytes
+    // The `length > 1` guard is what stops a single frame larger than the whole
+    // byte budget from emptying the buffer and still not fitting. Better to
+    // retain that one frame than to hold nothing at all.
     while (this.entries.length > this.maxFrames || (this.bytes > this.maxBytes && this.entries.length > 1)) {
       const evicted = this.entries.shift()
       if (!evicted) break
