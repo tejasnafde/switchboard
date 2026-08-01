@@ -312,6 +312,16 @@ export class ProviderRegistry {
 
       const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))
       if (instance) session.instanceId = instance.id
+      // Tell every client which profile this thread now runs on. A rotation
+      // done on one client would otherwise leave the others showing the old
+      // one, since only this resolution knows what was actually picked.
+      this.publish({
+        type: 'session.provider',
+        threadId: opts.threadId,
+        provider: opts.provider,
+        instanceId: instance?.id ?? null,
+        instanceName: instance?.displayName ?? null,
+      })
       this.sessionAdapters.set(opts.threadId, adapter)
       this.sessionCwd.set(opts.threadId, session.cwd)
       await this.attachNotebooks(opts.threadId, session.cwd)

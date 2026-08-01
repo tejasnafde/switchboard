@@ -474,11 +474,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   // Null hides the chip: a backend with no configured profiles has nothing to
   // switch between, and an empty chip would just be a dead control.
-  const currentProfiles = profilesFor(instances, provider)
+  // The backend's own view, from session.provider, so a rotation performed on
+  // the desktop relabels this chip live instead of going stale until reopen.
+  const effectiveProvider = thread.provider ?? provider
+  const effectiveInstanceId = thread.instanceId ?? instanceId
+  const currentProfiles = profilesFor(instances, effectiveProvider)
   const profileLabel =
     currentProfiles.length === 0
       ? null
-      : (currentProfiles.find((i) => i.id === instanceId) ?? currentProfiles[0]).displayName
+      : (thread.instanceName ??
+          (currentProfiles.find((i) => i.id === effectiveInstanceId) ?? currentProfiles[0]).displayName)
 
   const isRunning = thread.status === 'running'
   const canSend = draft.trim().length > 0 || attachments.length > 0
@@ -571,8 +576,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
       <ProfilePicker
         visible={profilePickerOpen}
         instances={instances}
-        provider={provider}
-        instanceId={instanceId}
+        provider={effectiveProvider}
+        instanceId={effectiveInstanceId ?? undefined}
         busy={rotating}
         onPick={rotateProfile}
         onClose={() => setProfilePickerOpen(false)}

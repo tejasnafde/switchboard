@@ -75,6 +75,8 @@ interface ConnectionsState {
   connect: (id: string) => void
   disconnect: (id: string) => void
   setStatus: (id: string, status: ConnectionStatus) => void
+  /** Why a connection is not live, keyed by id. Cleared on success. */
+  detail: Record<string, string>
 }
 
 export const useConnectionsStore = create<ConnectionsState>()(
@@ -82,6 +84,7 @@ export const useConnectionsStore = create<ConnectionsState>()(
     (set, get) => ({
       configs: [],
       status: {},
+      detail: {},
 
       addConnection: (config) => set((s) => ({ configs: [...s.configs, config] })),
 
@@ -132,10 +135,27 @@ export const useConnectionsStore = create<ConnectionsState>()(
           // Status rides the transport's own lifecycle - open/reconnect/terminal
           // all reflect live, so a dropped tunnel can't leave a stale green dot.
           transport.onStateChange = (state) => {
-            if (state === 'connected') get().setStatus(id, 'connected')
-            else if (state === 'reconnecting') get().setStatus(id, 'connecting')
-            // authRejected = server said 4001 (bad token): error, not merely off.
-            else get().setStatus(id, transport.authRejected ? 'error' : 'disconnected')
+            if (state === 'connected') {
+              set((s) => ({ detail: { ...s.detail, [id]: '' } }))
+              get().setStatus(id, 'connected')
+            } else if (state === 'reconnecting') {
+              // A socket that opens and is dropped looks identical to one that
+              // never opens, unless the close code is shown.
+              const why = transport.lastCloseCode
+                ? `dropped (${transport.lastCloseCode}), retry ${transport.redialCount}`
+                : `retry ${transport.redialCount}`
+              set((s) => ({ detail: { ...s.detail, [id]: why } }))
+              get().setStatus(id, 'connecting')
+            } else {
+              set((s) => ({
+                detail: {
+                  ...s.detail,
+                  [id]: transport.authRejected ? 'token rejected - re-pair' : 'offline',
+                },
+              }))
+              // authRejected = server said 4001 (bad token): error, not merely off.
+              get().setStatus(id, transport.authRejected ? 'error' : 'disconnected')
+            }
           }
           client = wsClient
         }

@@ -72,6 +72,15 @@ export class WsTransport implements Transport {
   /** Set when the server closed us with 4001 - surfaced so UIs can say "bad token"
    *  instead of spinning on "connecting". */
   authRejected = false
+  /**
+   * Why the last socket died, and how many re-dials since the last success.
+   *
+   * A client stuck on "connecting" is otherwise indistinguishable from one that
+   * connects and is dropped every time - which is exactly the case that took a
+   * long time to diagnose once already.
+   */
+  lastCloseCode: number | null = null
+  redialCount = 0
   /** Optional liveness observer - fired on open / unexpected close / terminal
    *  shutdown. Assign after construction; connection stores use this instead
    *  of probing. */
@@ -114,6 +123,8 @@ export class WsTransport implements Transport {
         this.reconnecting = false
         this.reconnectAttempt = 0
       }
+      this.redialCount = 0
+      this.lastCloseCode = null
       this.onStateChange?.('connected')
       for (const frame of this.outbox.splice(0)) {
         sock.send(frame.encoded)
@@ -147,6 +158,7 @@ export class WsTransport implements Transport {
       }
       // 4001 is the server's auth verdict - re-dialing would loop against a
       // rejection forever. Terminal shutdown; the owner re-pairs with a new token.
+      this.lastCloseCode = typeof ev?.code === 'number' ? ev.code : null
       if (ev?.code === CLOSE_UNAUTHORIZED) {
         log.error('server rejected token (4001), closing transport', this.url)
         this.authRejected = true
@@ -154,6 +166,7 @@ export class WsTransport implements Transport {
         this.onStateChange?.('closed')
         return
       }
+      this.redialCount++
       this.scheduleRedial()
       this.onStateChange?.('reconnecting')
     }

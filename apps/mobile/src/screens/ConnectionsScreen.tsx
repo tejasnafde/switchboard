@@ -49,11 +49,13 @@ const STATUS_COPY: Record<ConnectionStatus, string> = {
 function ConnectionRow({
   config,
   status,
+  detail,
   onOpen,
   onActions,
 }: {
   config: ConnectionConfig
   status: ConnectionStatus
+  detail?: string
   onOpen: () => void
   onActions: () => void
 }) {
@@ -86,6 +88,9 @@ function ConnectionRow({
           <Text style={[styles.statusText, live && { color: colors.textDim }]}>
             {STATUS_COPY[status]}
           </Text>
+          {/* Says WHY when it is not live: a socket that opens and is dropped
+              reads the same as one that never opens without this. */}
+          {!live && detail ? <Text style={styles.statusDetail}>{detail}</Text> : null}
         </View>
       </View>
     </Pressable>
@@ -96,6 +101,7 @@ export default function ConnectionsScreen() {
   const navigation = useNavigation<Nav>()
   const configs = useConnectionsStore((s) => s.configs)
   const status = useConnectionsStore((s) => s.status)
+  const detail = useConnectionsStore((s) => s.detail)
   const [ready, setReady] = useState(false)
   // Avatar monogram from the signed-in account rather than a hardcoded one.
   // Null until the keychain read resolves; the avatar shows a dash meanwhile.
@@ -233,6 +239,7 @@ export default function ConnectionsScreen() {
         <ConnectionRow
           config={item}
           status={status[item.id] ?? 'disconnected'}
+          detail={detail[item.id]}
           onOpen={() => navigation.navigate('Projects', { connectionId: item.id, label: item.label })}
           onActions={() => showRowActions(item)}
         />
@@ -319,6 +326,7 @@ const styles = StyleSheet.create({
     height: 7,
     borderRadius: radius.pill,
   },
+  statusDetail: { color: colors.textFaint, ...type.monoSm },
   statusText: {
     ...type.monoSm,
     color: colors.textFaint,

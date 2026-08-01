@@ -84,6 +84,7 @@ export type RuntimeEvent = (
   | RuntimeErrorEvent
   | RuntimeStatusEvent
   | RuntimeSessionEvent
+  | RuntimeSessionProviderEvent
   | RuntimeContextWindowEvent
   | RuntimeModelVariantsEvent
   | RuntimePlanProposedEvent
@@ -195,6 +196,22 @@ export interface RuntimeStatusEvent {
   type: 'status'
   threadId: string
   status: ProviderSessionStatus
+}
+
+/**
+ * Which provider and credential profile a thread is now running on.
+ *
+ * Published by the registry whenever a session starts, so EVERY connected
+ * client agrees. Without it a rotation done on one client leaves the others
+ * labelling the thread with the profile it used to run on.
+ */
+export interface RuntimeSessionProviderEvent {
+  type: 'session.provider'
+  threadId: string
+  provider: ProviderKind
+  instanceId: string | null
+  /** Display name, so a client can label the chip without its own lookup. */
+  instanceName: string | null
 }
 
 export interface RuntimeSessionEvent {

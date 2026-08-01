@@ -8,6 +8,7 @@
  */
 import { create } from 'zustand'
 import type {
+  ProviderKind,
   RuntimeEvent,
   RuntimeMode,
   ProviderSessionStatus,
@@ -29,6 +30,10 @@ export type FeedItem =
 
 export interface ThreadState {
   items: FeedItem[]
+  /** Provider + profile the BACKEND says this thread runs on, from any client. */
+  provider?: ProviderKind
+  instanceId?: string | null
+  instanceName?: string | null
   status: ProviderSessionStatus
   runtimeMode: RuntimeMode
   sessionId?: string
@@ -324,6 +329,12 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         }
         case 'status':
           return { status: event.status }
+        case 'session.provider':
+          return {
+            provider: event.provider,
+            instanceId: event.instanceId,
+            instanceName: event.instanceName,
+          }
         case 'session':
           return { sessionId: event.sessionId }
         case 'context_window':
