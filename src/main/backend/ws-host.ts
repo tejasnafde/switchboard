@@ -23,19 +23,13 @@ import type { BackendHost } from './host'
 const log = createLogger('backend:ws-host')
 
 /**
- * Largest single frame a client may send.
+ * Largest single frame a client may send. `ws` defaults to 100 MB, which on a
+ * listener bound to every interface lets one connection pin memory.
  *
- * `ws` defaults to 100 MB, which on a listener bound to every interface lets
- * one connection pin memory before any of our code sees the frame.
- *
- * 64 MB rather than something tighter because the DESKTOP composer has no
- * total-turn bound: `ChatInput` caps a single image at 20 MB raw, which is
- * ~27 MB once base64'd, and allows several per turn. Over a remote WsHost a
- * frame past the cap is closed with 1009, which the user sees as a reconnect
- * and a lost turn with no explanation. The mobile client is not the problem
- * here - it already bounds a turn at 12 MB (`lib/images.ts`). Giving the
- * desktop the same wire budget is the real fix; until then this stays generous
- * enough not to break a normal paste.
+ * Generous because the desktop composer has no total-turn bound: it caps one
+ * image at 20 MB raw (~27 MB base64) and allows several. A frame past the cap
+ * closes with 1009, which reads as a reconnect and a lost turn. Giving the
+ * desktop a wire budget like the phone's 12 MB is the real fix.
  */
 export const MAX_FRAME_BYTES = 64 * 1024 * 1024
 
@@ -60,22 +54,12 @@ interface ClientState {
   missedPings: number
   /** Session id this connection authenticated as, so a revoke can find it. */
   sessionId?: string
-  /**
-   * What this connection is allowed to call.
-   *
-   * `null` means "not authenticated yet". A legacy client presenting the shared
-   * token in the URL is granted FULL_SCOPES immediately, so nothing that works
-   * today stops working; a client using the auth frame gets whatever its device
-   * session carries.
-   */
+  /** null until authenticated. A legacy client presenting the URL token gets
+   *  FULL_SCOPES at once; an auth frame grants what its session carries. */
   scopes: readonly DeviceScope[] | null
-  /**
-   * Set once this client has answered a ping. Until it has, missed pings are
-   * not acted on: a client from before the heartbeat existed never sends
-   * `pong`, and terminating it after 30s would break a working connection.
-   * A phone updates over OTA independently of the desktop it pairs with, so
-   * that skew is routine.
-   */
+  /** Missed pings are only acted on once a client has proved it answers them:
+   *  a pre-heartbeat client never sends `pong`, and a phone updates over OTA
+   *  independently of the desktop it pairs with, so that skew is routine. */
   sawPong: boolean
 }
 
@@ -109,18 +93,12 @@ export class WsHost implements BackendHost {
   private seq = 0
 
   /**
-   * `token` (SWITCHBOARD_TOKEN on the server) gates connections when set:
-   * clients dial `ws://host:port/?token=<token>`. Unset preserves the
-   * loopback/SSH-tunnel trust model (no in-band auth).
-   */
-  /**
-   * `requireAuth` matters for any listener that is not loopback.
+   * `token` gates connections when set: clients dial `?token=<token>`. Unset
+   * preserves the loopback/SSH-tunnel trust model.
    *
-   * Without a configured token the default is to trust every connection, which
-   * is right for the ssh-tunnelled and in-process cases and catastrophic for a
-   * listener bound to 0.0.0.0: it would hand FULL_SCOPES to the whole LAN. A
-   * host that is reachable off-machine passes true, and then a connection has
-   * to present a credential no matter what is configured.
+   * `requireAuth` for any listener that is not loopback. Trusting every
+   * connection is right for the ssh tunnel and in-process cases, and
+   * catastrophic on 0.0.0.0 where it hands FULL_SCOPES to the whole LAN.
    */
   constructor(
     private readonly wss: WebSocketServer,
@@ -142,11 +120,10 @@ export class WsHost implements BackendHost {
         } catch (err) {
           log.warn('unparseable upgrade url', err)
         }
-        // `?auth=frame` declares that the client will authenticate in-band.
-        // Without it, a missing token stays an immediate rejection: a client
-        // that intends nothing should learn that now rather than sit in a
-        // retry loop discovering every request is refused. The flag carries no
-        // secret, which is the entire point of moving the credential out.
+        // `?auth=frame` declares in-band auth. Without it a missing token is
+        // still an immediate rejection, so a client that intends nothing learns
+        // that now instead of discovering every request is refused. The flag
+        // carries no secret.
         const framed = url?.searchParams.get('auth') === 'frame'
         if (token && tokenMatches(token, presented)) {
           legacyScopes = FULL_SCOPES
@@ -159,8 +136,7 @@ export class WsHost implements BackendHost {
       this.clients.set(socket, { missedPings: 0, sawPong: false, scopes: legacyScopes })
       log.info(`client connected (${this.clients.size} total)`)
       if (legacyScopes === null) {
-        // Do not hold a socket open indefinitely for an auth frame that never
-        // comes. Anything unauthenticated past this is not a slow client.
+        // Anything still unauthenticated past this is not a slow client.
         const deadline = setTimeout(() => {
           if (this.clients.get(socket)?.scopes) return
           log.warn('closing a connection that never authenticated')
@@ -309,13 +285,9 @@ export class WsHost implements BackendHost {
     // `requested`, not the zeroed cursor: a cross-epoch client HAS lost events,
     // and reporting otherwise would let it stitch a broken transcript.
     const result = sameEpoch && requested > 0 ? this.replay.since(requested) : { frames: [], gap: requested > 0 }
-    // Replay BEFORE the ready marker. The client holds live frames only until
-    // ready lands, so anything sent after it is applied out of order and then
-    // swallowed by the duplicate guard - which silently loses exactly the
-    // events this mechanism exists to recover.
-    //
-    // Nothing is sent on a gap: the client discards its cursor and re-seeds, so
-    // shipping up to the whole buffer would be pure waste on a metered link.
+    // Replay BEFORE the ready marker: the client releases held frames on ready,
+    // so anything after it is applied out of order and then swallowed by the
+    // duplicate guard. Nothing is sent on a gap - the client re-seeds anyway.
     if (!result.gap) {
       for (const encoded of result.frames) {
         if (socket.readyState === socket.OPEN) socket.send(encoded)
@@ -357,11 +329,9 @@ export class WsHost implements BackendHost {
     const seq = replayable ? ++this.seq : undefined
     const encoded = encodeFrame({ k: 'evt', ch: channel, args, seq })
     if (replayable && seq !== undefined) this.replay.push(seq, encoded)
-    // Authenticated clients only. Gating on `hello` would starve an older build
-    // that never sends one, but scopes are a different thing: a socket that has
-    // not presented a credential must not receive chat content, tool output or
-    // terminal output while it waits out its auth grace period. The mobile
-    // endpoint binds 0.0.0.0, so that window was open to the whole LAN.
+    // Authenticated clients only. A socket that has not presented a credential
+    // must not receive chat or terminal output during its auth grace window -
+    // the mobile endpoint binds 0.0.0.0, so that window is open to the LAN.
     for (const [socket, state] of this.clients) {
       if (!state.scopes) continue
       if (!isChannelAllowed(state.scopes, channel)) continue
@@ -369,14 +339,9 @@ export class WsHost implements BackendHost {
     }
   }
 
-  /**
-   * Cut off any live connection belonging to a revoked session.
-   *
-   * Scopes are cached per connection, and the heartbeat keeps a socket alive
-   * indefinitely, so a revoke that only tombstones the record leaves the
-   * revoked device working until it happens to reconnect. That is not
-   * revocation.
-   */
+  /** Cut off live connections for a revoked session. Scopes are cached per
+   *  connection and the heartbeat keeps sockets alive, so a tombstone alone
+   *  leaves the device working until it happens to reconnect. */
   disconnectSession(sessionId: string): number {
     let closed = 0
     for (const [socket, state] of this.clients) {

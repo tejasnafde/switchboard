@@ -19,18 +19,12 @@
  */
 
 /**
- * Channels excluded from the replay buffer.
+ * Channels excluded from the replay buffer. Terminal output is high-volume and
+ * re-seeds itself on reattach, so buffering it evicts provider events that
+ * cannot be recovered, and replaying it repaints output the user has seen.
  *
- * Terminal output is high-volume and self-healing: a reattach re-seeds from the
- * pty's own scrollback, so buffering it would evict the provider events that
- * genuinely cannot be recovered any other way, and replaying it would paint
- * output into xterm that the user has already seen.
- *
- * These are the SERVER-TO-CLIENT channel names (`TerminalChannels.OUTPUT` /
- * `.EXIT`), which are the only ones that ever travel as `evt`. Naming
- * `terminal:data` here was a real bug: that is the client-to-server keystroke
- * channel and it is sent as `snd`, so the list excluded something that never
- * reaches the buffer while pty output poured into it.
+ * SERVER-TO-CLIENT names only, since those are the ones that travel as `evt`.
+ * `terminal:data` is the client-to-server keystroke channel and belongs here.
  */
 export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   'terminal:output',
@@ -59,18 +53,13 @@ export type WsFrame =
   | { k: 'ping'; t: number }
   | { k: 'pong'; t: number }
   /**
-   * Client -> server, first frame after open, carrying a credential.
-   *
-   * In a frame rather than the URL because a query string lands in proxy logs,
-   * process listings and crash reports. `pairing` is a one-time code from the
-   * QR and is exchanged for a session; `session` is what every later connect
-   * presents.
+   * Credential, in a frame rather than the URL: a query string lands in proxy
+   * logs and process listings. `pairing` is the one-time QR code, exchanged
+   * once for a `session`, which every later connect presents.
    */
   | { k: 'auth'; session?: string; pairing?: string; label?: string }
-  /**
-   * Server -> client verdict. On a successful pairing exchange `session`
-   * carries the newly minted token, which is the only time it is transmitted.
-   */
+  /** Verdict. `session` carries the minted token on a pairing exchange, which
+   *  is the only time it is transmitted. */
   | { k: 'authed'; ok: true; session?: string; scopes: string[] }
   | { k: 'authed'; ok: false; error: string }
 
@@ -83,11 +72,9 @@ function isArgs(value: unknown): value is unknown[] {
 }
 
 /**
- * Parse a wire frame; returns null for anything that isn't a well-formed frame.
- *
- * This validates shape, not just the `k` discriminant. The previous blind cast
- * meant a frame like `{k:'req'}` reached a handler as `handler(...undefined)`
- * and threw deep inside application code instead of being rejected at the edge.
+ * Parse a wire frame; null for anything malformed. Validates shape, not just
+ * `k`: a blind cast let `{k:'req'}` reach a handler as `handler(...undefined)`
+ * and throw deep in application code instead of being rejected at the edge.
  */
 export function decodeFrame(data: string): WsFrame | null {
   let parsed: unknown
@@ -141,8 +128,8 @@ export function decodeFrame(data: string): WsFrame | null {
       const session = typeof frame.session === 'string' ? frame.session : undefined
       const pairing = typeof frame.pairing === 'string' ? frame.pairing : undefined
       const label = typeof frame.label === 'string' ? frame.label : undefined
-      // A frame offering neither credential is malformed, not an anonymous
-      // request: letting it through would make the auth step optional.
+      // Neither credential is malformed, not anonymous: letting it through
+      // would make the auth step optional.
       if (!session && !pairing) return null
       return { k: 'auth', session, pairing, label }
     }

@@ -1,27 +1,23 @@
 /**
- * Bounded ring of recently emitted `evt` frames, so a client that reconnects
- * can ask for everything after the last sequence it saw instead of losing it.
+ * Bounded ring of recent `evt` frames, so a reconnecting client can ask for
+ * everything after the last sequence it saw.
  *
- * Bounded two ways on purpose. A count cap alone lets one enormous frame (a
- * big tool result) pin megabytes; a byte cap alone lets a flood of tiny frames
- * grow the array without limit. Whichever binds first wins.
+ * Bounded two ways: a count cap alone lets one huge frame pin megabytes, a byte
+ * cap alone lets tiny frames grow the array. Whichever binds first wins.
  *
- * Eviction is honest rather than silent: once the oldest retained sequence has
- * passed a requester's cursor, `since()` reports `gap`, and the caller re-seeds
- * instead of stitching a transcript that is quietly missing turns.
+ * Eviction is reported rather than silent - once the oldest retained sequence
+ * passes a cursor, `since()` says `gap` and the caller re-seeds.
  */
 
-/** Deliberately generous - a phone backgrounded for a few minutes should still
- *  resume cleanly, and provider events are small. Terminal output does not
- *  enter this buffer (see NON_REPLAYABLE_EVENT_CHANNELS). */
+/** Generous: a phone backgrounded for minutes should still resume cleanly, and
+ *  terminal output does not enter this buffer. */
 export const DEFAULT_MAX_FRAMES = 2_000
 export const DEFAULT_MAX_BYTES = 4 * 1024 * 1024
 
 export interface ReplayResult {
-  /** Encoded frames with seq > the requested cursor, oldest first. */
+  /** Frames with seq > the cursor, oldest first. */
   frames: string[]
-  /** True when the cursor predates what is still retained, so `frames` is
-   *  known-incomplete and the caller must re-seed from scratch. */
+  /** The cursor predates what is retained, so `frames` is incomplete. */
   gap: boolean
 }
 
@@ -58,9 +54,8 @@ export class EventReplayBuffer {
     const bytes = encoded.length
     this.entries.push({ seq, encoded, bytes })
     this.bytes += bytes
-    // The `length > 1` guard is what stops a single frame larger than the whole
-    // byte budget from emptying the buffer and still not fitting. Better to
-    // retain that one frame than to hold nothing at all.
+    // `length > 1` stops a frame larger than the whole budget from emptying the
+    // buffer and still not fitting.
     while (this.entries.length > this.maxFrames || (this.bytes > this.maxBytes && this.entries.length > 1)) {
       const evicted = this.entries.shift()
       if (!evicted) break
@@ -68,16 +63,13 @@ export class EventReplayBuffer {
     }
   }
 
-  /**
-   * Frames after `cursor`. A cursor of 0 means "I have nothing", which is not
-   * a gap on a fresh server but is one as soon as anything has been evicted.
-   */
+  /** Frames after `cursor`. */
   since(cursor: number): ReplayResult {
     if (this.entries.length === 0) {
       return { frames: [], gap: false }
     }
-    // Everything the caller missed is still retained when the oldest frame we
-    // hold is the very next one after their cursor (or earlier).
+    // Nothing was evicted if the oldest frame we hold is the next one after
+    // their cursor, or earlier.
     const gap = cursor + 1 < this.oldestSeq
     const frames: string[] = []
     for (const entry of this.entries) {

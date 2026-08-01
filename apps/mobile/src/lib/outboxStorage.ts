@@ -1,14 +1,10 @@
 /**
- * Durable storage for queued messages.
+ * Durable storage for queued messages. One key per message, not one blob: a
+ * blob loses every pending message to one bad write and makes concurrent
+ * enqueues a read-modify-write race.
  *
- * One key per message, not one blob holding the queue. A blob means a single
- * malformed write loses every pending message, and it makes concurrent
- * enqueues a read-modify-write race. Per message, a bad entry costs exactly
- * itself and is skipped on load.
- *
- * Written immediately and undebounced, unlike the chat cache. This is user
- * intent, not a copy of something the backend still owns: if the process dies
- * between the composer clearing and the write landing, the message is gone.
+ * Written immediately, unlike the chat cache. This is user intent, not a copy
+ * of something the backend still owns.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createLogger } from '@shared/logger'
@@ -22,8 +18,7 @@ function keyFor(messageId: string): string {
   return `${KEY_PREFIX}${messageId}`
 }
 
-/** Shape check rather than a cast: this is parsed from disk written by an
- *  older build, so the fields are not guaranteed. */
+/** Shape check, not a cast: an older build may have written this. */
 function parseQueued(raw: string): QueuedMessage | null {
   try {
     const value: unknown = JSON.parse(raw)
@@ -64,8 +59,8 @@ export async function removeQueued(messageId: string): Promise<void> {
   try {
     await AsyncStorage.removeItem(keyFor(messageId))
   } catch (err) {
-    // A message that is delivered but still on disk would be re-sent on the
-    // next launch. The stable messageId is what stops that being a duplicate.
+    // A delivered message left on disk is re-sent next launch; the stable
+    // messageId is what stops that being a duplicate.
     log.warn('could not remove a delivered message from the outbox', err)
   }
 }

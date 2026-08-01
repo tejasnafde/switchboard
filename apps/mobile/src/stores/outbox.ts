@@ -1,17 +1,13 @@
 /**
- * The send queue. Every message the user commits to goes through here.
+ * The send queue: the ONLY send path, not a fallback for the offline case.
  *
- * Not a fallback for the offline case: the ONLY send path. That is deliberate.
- * A queue used only when a send is known to have failed still loses the
- * ambiguous cases, which are the common ones on a phone - a socket that looks
- * open but is not, a reconnect in flight, a turn still running. Routing
- * everything through one path means those cases are ordinary rather than
- * exceptional, and the code that handles them is exercised on every send
- * instead of only when something has already gone wrong.
+ * A queue used only on a KNOWN failure still loses the ambiguous cases, which
+ * on a phone are the common ones - a socket that looks open but is not, a
+ * reconnect in flight, a turn still running. One path makes those ordinary and
+ * exercises the handling on every send.
  *
- * The queue publishes optimistically and writes durably behind that, so the
- * composer clears on the tap frame rather than after disk IO. A failed write
- * rolls the message back out and the caller restores the draft.
+ * Publishes optimistically and writes durably behind that, so the composer
+ * clears on the tap frame. A failed write rolls the message back out.
  */
 import { create } from 'zustand'
 import { createLogger } from '@shared/logger'
@@ -36,8 +32,7 @@ export const useOutboxStore = create<OutboxState>((set) => ({
   setEditing: (messageId) => set({ editingId: messageId }),
 }))
 
-/** Earliest time each message may be retried, by id. Runtime only: a restart
- *  legitimately starts from zero, since the reason for the delay is gone. */
+/** Earliest retry per message. Runtime only: a restart starts from zero. */
 const retryNotBefore = new Map<string, number>()
 
 /** Messages the user is still waiting on for a given thread, oldest first. */
@@ -47,13 +42,8 @@ export function queuedFor(connectionId: string, threadId: string): QueuedMessage
     .messages.filter((m) => m.connectionId === connectionId && m.threadId === threadId)
 }
 
-/**
- * Add a message. Resolves once it is durable.
- *
- * The store is updated synchronously so the composer can clear immediately;
- * the returned promise rejects if the durable write failed, and the message is
- * rolled back out so the caller can restore what the user typed.
- */
+/** Resolves once durable. The store updates synchronously so the composer can
+ *  clear; a rejection means the message was rolled back out. */
 export async function enqueue(message: QueuedMessage): Promise<void> {
   useOutboxStore.setState((s) => ({ messages: [...s.messages, message] }))
   try {
@@ -76,8 +66,7 @@ export async function hydrateOutbox(): Promise<void> {
   const messages = await loadQueued()
   if (messages.length === 0) return
   log.info(`restored ${messages.length} unsent message(s)`)
-  // The optimistic bubbles for these were persisted with the chat cache, so
-  // their echoes must be suppressed exactly as if this run had sent them.
+  // Their bubbles persisted with the chat cache, so suppress the echoes.
   for (const m of messages) markOwnTurn(m.messageId)
   useOutboxStore.setState({ messages })
   void drain()
@@ -89,17 +78,15 @@ let retryTimer: ReturnType<typeof setTimeout> | null = null
 /**
  * Deliver everything deliverable, oldest first within each thread.
  *
- * Serial per thread on purpose: messages are ordered, and firing the second
- * while the first is in flight would let them land out of order. So it loops
- * until a pass makes no progress rather than sending one per thread per call -
- * three messages typed offline must all go out when signal returns, not one.
+ * Serial per thread: firing the second while the first is in flight lets them
+ * land out of order. Loops until a pass makes no progress, so three messages
+ * typed offline all go out when signal returns rather than one.
  */
 export async function drain(): Promise<void> {
   if (draining) return
   draining = true
   try {
-    // Bounded by the queue length: every successful pass removes a message, so
-    // this cannot spin, and a pass that delivers nothing ends it.
+    // Cannot spin: every pass either removes a message or ends the loop.
     for (;;) {
       const before = useOutboxStore.getState().messages.length
       for (const message of nextPerThread()) {
@@ -113,14 +100,8 @@ export async function drain(): Promise<void> {
   }
 }
 
-/**
- * Wake the queue when the earliest backoff expires.
- *
- * Without this a retryable failure on a socket that STAYS up parks the message
- * until something unrelated happens to call drain - a reconnect, a foreground,
- * or the user opening that exact thread. On a healthy connection none of those
- * may happen for hours.
- */
+/** Without this, a retryable failure on a socket that STAYS up parks the
+ *  message until a reconnect, a foreground, or the user opening that thread. */
 function scheduleRetry(): void {
   if (retryTimer) {
     clearTimeout(retryTimer)
@@ -153,13 +134,9 @@ async function deliver(message: QueuedMessage): Promise<void> {
   const thread = chat.threads[threadKey(message.connectionId, message.threadId)]
   const action = deliveryAction({
     connected: client?.transport.isAlive?.() !== false && client !== undefined,
-    // Only OpenCode drops a mid-turn message. Claude queues it in its adapter
-    // and Codex steers it into the running turn, so holding those back would
-    // add a delay for no reason.
+    // Only OpenCode drops a mid-turn message; Claude queues and Codex steers.
     threadBusy: thread?.provider === 'opencode' && thread.status === 'running',
-    // The thread row is created on first event and never removed by the app, so
-    // this is always true today. It stays in the model because the rule is
-    // about the message, not about what this caller happens to know.
+    // Always true today: the thread row is never removed by the app.
     threadExists: true,
     editing: useOutboxStore.getState().editingId === message.messageId,
     nowMs: Date.now(),
@@ -177,23 +154,20 @@ async function deliver(message: QueuedMessage): Promise<void> {
       message.text,
       message.runtimeMode as RuntimeMode | undefined,
       message.images,
-      // Doubles as the idempotency key: the backend refuses an origin it has
-      // already accepted, so a retry after an ambiguous failure is safe.
+      // Doubles as the idempotency key, so a retry is safe.
       message.messageId,
     )
     await forget(message.messageId)
   } catch (err) {
     if (!shouldRetry(err)) {
-      // The backend understood and refused. Repeating it cannot help, and the
-      // user needs to see why rather than watch it silently spin.
+      // Understood and refused: repeating cannot help, and the user needs why.
       log.warn('backend refused a queued message, dropping it', err)
       chat.ingest(message.connectionId, {
         type: 'error',
         threadId: message.threadId,
         message: `Message not sent: ${err instanceof Error ? err.message : String(err)}`,
       })
-      // Take the optimistic bubble back down. Leaving it reads as sent, which
-      // is the one thing it definitely is not.
+      // Leaving the bubble up reads as sent, which it definitely is not.
       chat.removeUserMessage(threadKey(message.connectionId, message.threadId), message.messageId)
       await forget(message.messageId)
       return

@@ -104,16 +104,12 @@ export function isExpoPushToken(value: unknown): value is string {
 export const DESKTOP_VIEWER_REF = 'desktop'
 
 /**
- * A client's claim that it has a thread on screen, and when it last said so.
+ * A client's claim that it has a thread on screen, as a LEASE that expires
+ * unless renewed.
  *
- * Timestamped because the claim used to be permanent. A phone that was
- * force-quit, crashed, or lost signal with a thread open kept its entry
- * forever, so that device never got another notification for that thread until
- * the backend restarted - and a desktop in the same state silenced *every*
- * phone, because desktop viewing is a global veto. Both read as "push is
- * broken" and neither leaves a trace.
- *
- * So the claim is a lease: it expires unless the client keeps renewing it.
+ * A permanent claim meant a phone force-quit with a thread open never got
+ * another notification for it, and a desktop in the same state silenced every
+ * phone, because desktop viewing is a global veto.
  */
 export interface ViewingLease {
   threadId: string
@@ -122,11 +118,8 @@ export interface ViewingLease {
 
 /** A lease older than this is ignored. */
 export const VIEWING_LEASE_TTL_MS = 180_000
-/**
- * How often a client with a thread open renews its lease. A third of the TTL,
- * so two renewals can be lost (a brief network stall, a busy main thread)
- * before the user starts getting notified about the screen in their hand.
- */
+/** A third of the TTL, so two renewals can be lost before the user is notified
+ *  about the screen in their hand. */
 export const VIEWING_RENEW_MS = 60_000
 
 export function isLeaseLive(lease: ViewingLease, nowMs: number): boolean {

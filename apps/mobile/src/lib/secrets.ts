@@ -1,28 +1,19 @@
 /**
- * Backend pairing tokens, kept in the OS keystore rather than the persisted
- * store.
+ * Backend credentials, in the OS keystore rather than the persisted store.
  *
- * A pairing token grants a PTY and full filesystem access on the paired
- * machine, so it is the highest-value secret this app holds. It used to ride
- * along in the zustand `persist` blob, which on Android is an unencrypted file
- * in the app sandbox - readable from a rooted device or an ADB backup. The
- * Google OAuth token was already in SecureStore, so the more dangerous
- * credential was the less protected one.
- *
- * Config rows still persist normally; only the token is split out and keyed by
- * connection id.
+ * These grant filesystem and (for a legacy token) PTY access on the paired
+ * machine. They used to ride in the zustand `persist` blob, which on Android is
+ * an unencrypted file in the app sandbox, while the lower-value Google token
+ * was already in SecureStore.
  */
 import * as SecureStore from 'expo-secure-store'
 import { createLogger } from '@shared/logger'
 
 const log = createLogger('mobile:secrets')
 
-/** SecureStore keys allow alphanumerics plus `.-_`, which connection ids
- *  (`c-<epoch ms>`) already satisfy. */
+/** SecureStore keys allow alphanumerics plus `.-_`. */
 const KEY_PREFIX = 'sb-token-'
-/** Device session tokens, kept apart from the legacy shared token so a
- *  connection can hold both during the changeover without either overwriting
- *  the other. */
+/** Kept apart from the legacy token so a connection can hold both. */
 const SESSION_PREFIX = 'sb-session-'
 
 function safeId(connectionId: string): string {
@@ -57,10 +48,8 @@ export async function loadConnectionSession(connectionId: string): Promise<strin
   }
 }
 
-/** True when the keystore accepted the write. The caller MUST act on false:
- *  a token that reached neither the keystore nor the persisted blob is gone,
- *  and the next launch presents nothing and is rejected with 4001, which the
- *  user reads as "wrong token" rather than "we lost it". */
+/** Callers MUST act on false: a token in neither store is gone, and the next
+ *  launch is rejected with 4001, which reads as "wrong token". */
 export async function saveConnectionToken(connectionId: string, token: string | undefined): Promise<boolean> {
   try {
     if (token) await SecureStore.setItemAsync(keyFor(connectionId), token)
@@ -91,15 +80,11 @@ export async function deleteConnectionToken(connectionId: string): Promise<void>
 }
 
 /**
- * Move tokens that an older build left in the persisted config blob into the
- * keystore.
+ * Move tokens an older build left in the persisted blob into the keystore.
+ * Write-then-clear, so a crash between the two replays harmlessly.
  *
- * Write-then-clear, deliberately: a crash between the two replays the
- * migration harmlessly, whereas clearing first would lose the token outright.
- *
- * `failed` carries the ids the keystore refused. Those tokens must STAY in the
- * persisted blob, or they exist nowhere. Reporting a failed write as a success
- * is how the safer store and the only remaining copy get dropped in one step.
+ * `failed` ids must STAY in the blob or they exist nowhere: reporting a failed
+ * write as success drops the safer store and the only copy in one step.
  */
 export async function migrateTokensToKeystore(
   configs: ReadonlyArray<{ id: string; token?: string }>,

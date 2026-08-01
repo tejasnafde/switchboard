@@ -1,67 +1,34 @@
 /**
  * Per-device sessions for paired clients.
  *
- * What this replaces: one shared token, stored forever, with no scopes and no
- * way to revoke a single device. Every phone that ever scanned the QR held the
- * same string, so "forget my old phone" meant rotating the token and re-pairing
- * every device including the ones you still wanted. The token also travelled in
- * the WebSocket URL query string, where it lands in proxy logs and process
- * listings.
+ * Replaces one shared token that never expired, carried no scopes, could not be
+ * revoked per device, and travelled in the URL query string. The QR now carries
+ * a one-time pairing code, redeemed once for a session of the device's own, and
+ * credentials travel in an `auth` frame.
  *
- * The model here is deliberately small, because the trust boundary is a machine
- * the user owns on a network they chose, not a hosted service:
- *
- *  - The QR carries a PAIRING code, which is one-time and short-lived. It buys
- *    exactly one thing: a device session.
- *  - A device session is per device, named, revocable on its own, and carries a
- *    scope set.
- *  - Everything travels in an `auth` frame after the socket opens, never in the
- *    URL.
- *
- * Scopes are narrow on purpose, and it is worth being precise about what they
- * do and do not buy. A phone session cannot spawn a PTY and cannot administer
- * pairings - so a stolen phone credential cannot open a shell, and cannot
- * revoke your other devices or mint itself a second session.
- *
- * It CAN still do everything the chat surface does, and that surface runs an
- * agent: `provider:start-session` with a cwd, `files:write-file`, `git:*`. So
- * this is a reduction in blast radius, not a sandbox. Closing that gap means
- * constraining what an agent session may be started against, which is a
- * different piece of work from authentication.
+ * Be precise about what the scopes buy: a phone session cannot spawn a PTY or
+ * administer pairings. It CAN do everything the chat surface does, and that
+ * surface runs an agent. This is a reduction in blast radius, not a sandbox.
  */
 
-/**
- * What a session may do.
- *
- * `chat` is everything the phone actually uses. `terminal` is separate because
- * a PTY is arbitrary code execution and nothing on the phone needs it.
- * `full` exists for a desktop driving a remote backend, which genuinely does.
- */
+/** `terminal` is separate because a PTY is arbitrary code execution and nothing
+ *  on the phone needs it. */
 export type DeviceScope = 'chat' | 'terminal' | 'admin'
 
 export const PHONE_SCOPES: readonly DeviceScope[] = ['chat']
 export const FULL_SCOPES: readonly DeviceScope[] = ['chat', 'terminal', 'admin']
 
 /**
- * Channel prefixes a scope is REQUIRED for. Anything not listed is open to any
+ * Channel prefixes a scope is REQUIRED for. Anything unlisted is open to any
  * authenticated session.
  *
- * Deny-by-default was the first instinct and it is wrong here. It needs a
- * hand-maintained list of every channel the app uses, and the failure mode of
- * missing one is a feature that silently stops working for paired devices,
- * discovered by a user rather than a test. Denying the small set that is
- * genuinely dangerous is both safer to maintain and honest about what the
- * boundary is actually for: keeping arbitrary code execution away from a
- * credential that only needs to read and reply to conversations.
+ * Deliberately not deny-by-default: that needs a hand-maintained list of every
+ * channel, and missing one breaks a feature silently for paired devices only.
  */
 const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
   terminal: ['terminal:'],
-  /**
-   * Pairing administration. Without this gate the model defeats itself: any
-   * paired device could mint a fresh pairing code, redeem it for another
-   * session, and revoke every other device. Revocation has to be something a
-   * revocable credential cannot reach.
-   */
+  // Without this, a paired device could mint itself another session and revoke
+  // every other device. Revocation must be out of reach of a revocable credential.
   admin: ['mobile-pairing:'],
   // `chat` gates nothing on its own. It is the baseline every session has.
   chat: [],
@@ -95,7 +62,7 @@ export function isRevoked(session: DeviceSession): boolean {
 }
 
 /** What the UI may see. The hash is not a secret, but showing it invites
- *  someone to treat it as an identifier that means something to a user. */
+ *  treating it as a user-meaningful identifier. */
 export interface DeviceSessionView {
   id: string
   label: string
@@ -116,20 +83,15 @@ export function toView(session: DeviceSession): DeviceSessionView {
   }
 }
 
-/**
- * How long a pairing code is good for.
- *
- * Short because the whole flow is "look at a screen, scan it now". A code left
- * valid for hours is a second long-lived credential, which is the thing this
- * design exists to remove.
- */
+/** Short because the flow is "look at a screen, scan it now". A code valid for
+ *  hours is a second long-lived credential, which is what this removes. */
 export const PAIRING_CODE_TTL_MS = 5 * 60_000
 
 export interface PairingCode {
   code: string
   expiresAt: number
-  /** Consumed on first use: a QR photographed over someone's shoulder is only
-   *  worth anything until the intended device redeems it. */
+  /** Consumed on first use, so a shoulder-surfed QR is worthless once the
+   *  intended device has redeemed it. */
   usedAt?: number
 }
 

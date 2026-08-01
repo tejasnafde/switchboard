@@ -49,35 +49,18 @@ export interface ThreadState {
   unread: number
   /** Last time any event touched this thread. Drives cache eviction. */
   updatedAt?: number
-  /**
-   * True for a feed restored from disk rather than fetched this run.
-   *
-   * The seed path is guarded on an EMPTY feed, so without this flag a cached
-   * thread looks already-loaded and never re-seeds: the app would open showing
-   * yesterday's transcript and append live events onto it, with everything in
-   * between missing and no indication.
-   */
+  /** Restored from disk rather than fetched this run. The seed path is guarded
+   *  on an EMPTY feed, so without this a cached thread looks already-loaded and
+   *  the app opens on yesterday's transcript with live events appended. */
   cached?: boolean
 }
 
-/**
- * Bounds on what survives a restart.
- *
- * The cache exists so opening the app with no signal shows the last thing you
- * were reading instead of an empty screen. It is not an archive: the backend
- * owns the transcript and a re-seed pulls more. So keep the tail of a handful
- * of recent threads, and let AsyncStorage stay small enough that reading it on
- * launch is not felt.
- */
+/** The cache shows the last thing you were reading offline; it is not an
+ *  archive, since the backend owns the transcript and a re-seed pulls more. */
 export const MAX_CACHED_THREADS = 20
 export const MAX_CACHED_ITEMS = 60
 
-/**
- * Trim the thread map to what is worth persisting: the most recently touched
- * threads, each holding only its newest items.
- *
- * Pure, so the eviction rule can be tested without a device.
- */
+/** The most recently touched threads, each holding only its newest items. */
 export function prunePersistedThreads(
   threads: Record<string, ThreadState>,
   maxThreads = MAX_CACHED_THREADS,
@@ -99,18 +82,14 @@ export function prunePersistedThreads(
 }
 
 /**
- * Origins this device sent, so its own user.message echo is dropped.
- *
- * Seeded from the outbox on launch as well as marked on send: the optimistic
- * bubble is persisted with the chat cache, so a message queued before a kill
- * comes back on screen AND is delivered afterwards. Without the seed its echo
- * would render a second copy.
+ * Origins this device sent, so its own user.message echo is dropped. Seeded
+ * from the outbox on launch too: a bubble queued before a kill comes back on
+ * screen AND is delivered after, so without that its echo renders twice.
  */
 const sentOrigins = new Set<string>()
 export function markOwnTurn(origin: string): void {
   sentOrigins.add(origin)
-  // Bounded: a long session sending thousands of turns should not hold every
-  // id forever, and an echo arrives within seconds of its send.
+  // Bounded: an echo arrives within seconds of its send.
   if (sentOrigins.size > 500) {
     const oldest = sentOrigins.values().next().value
     if (oldest !== undefined) sentOrigins.delete(oldest)
@@ -194,11 +173,8 @@ function contentIdOf(e: RuntimeEvent): string | null {
 }
 
 function enqueue(connectionId: string, event: RuntimeEvent): void {
-  // Collapse chunks for the same message into one queued event. Folding with
-  // mergeContentChunks is lossless because that operation is associative: the
-  // merged chunk produces the same body as applying each chunk in order.
-  // Merging in place is safe with other events in between - the feed item is
-  // located by id, never by queue position.
+  // Collapse chunks for the same message. Lossless because mergeContentChunks
+  // is associative, and safe in place because the feed item is located by id.
   const id = contentIdOf(event)
   if (id !== null && event.type === 'content') {
     for (let i = queue.length - 1; i >= 0; i--) {
@@ -467,13 +443,8 @@ function applyEvent(
 const cacheStorage = createDebouncedStorage(AsyncStorage)
 
 let resolveCache: () => void = () => undefined
-/**
- * Resolves once the cached feeds are in the store.
- *
- * Dialling before this can finish a fetch and seed a thread, only for the
- * rehydrate to land afterwards and replace it with the stale copy. Waiting is
- * cheaper than reconciling.
- */
+/** Dialling before this can seed a thread only for the rehydrate to land after
+ *  and replace it with the stale copy. Waiting is cheaper than reconciling. */
 export const chatCacheReady = new Promise<void>((resolve) => {
   resolveCache = resolve
 })
@@ -538,9 +509,8 @@ export const useChatStore = create<ChatState>()(
   staleGeneration: 0,
 
   invalidateConnection: (connectionId) => {
-    // Drop anything still sitting in the 50ms batch. Those chunks belong to the
-    // view being discarded, and flushing them after the clear would leave a
-    // mid-sentence fragment that the seed guard then treats as a loaded feed.
+    // Drop the 50ms batch: flushing it after the clear leaves a mid-sentence
+    // fragment that the seed guard then treats as a loaded feed.
     resetQueue()
     set((s) => {
       const prefix = `${connectionId}:`
@@ -564,9 +534,8 @@ export const useChatStore = create<ChatState>()(
           resolveCache()
           return
         }
-        // A cached thread is not a live one. Restoring 'running' would show a
-        // spinner for a turn that finished while the app was closed, and
-        // restoring 'idle' would claim a connection we have not made yet.
+        // 'running' would spin for a turn that finished while the app was
+        // closed; 'idle' would claim a connection we have not made.
         state.threads = Object.fromEntries(
           Object.entries(state.threads).map(([key, t]) => [
             key,

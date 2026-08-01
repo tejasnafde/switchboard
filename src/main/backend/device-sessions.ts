@@ -1,14 +1,9 @@
 /**
- * Device sessions, stored in the settings table alongside the rest of the
- * backend's state.
+ * Device sessions, in the settings table with the rest of the backend's state.
  *
- * Tokens are stored as sha256 hashes, never in the clear. That is not
- * theatre: the settings table is a plain SQLite file, readable by anything
- * running as the user, and the whole point of a per-device credential is that
- * compromising the record should not hand over the credential.
- *
- * A pairing code is separate, single-use, and short-lived. It is the only
- * thing the QR carries.
+ * Tokens are stored as sha256 hashes: the settings table is a plain SQLite
+ * file, and the point of a per-device credential is that compromising the
+ * record should not hand over the credential.
  */
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto'
 import {
@@ -47,8 +42,7 @@ export function listSessions(): DeviceSession[] {
     const parsed: unknown = JSON.parse(raw)
     return Array.isArray(parsed) ? (parsed as DeviceSession[]).filter((s) => typeof s?.tokenHash === 'string') : []
   } catch {
-    // A corrupt row must not lock the user out of their own machine, and it
-    // cannot be repaired here. Treat it as no sessions; re-pairing recovers.
+    // A corrupt row must not lock the user out of their own machine.
     log.warn('device session store is unreadable, treating as empty')
     return []
   }
@@ -89,13 +83,7 @@ export interface RedeemResult {
   error?: string
 }
 
-/**
- * Exchange a pairing code for a device session.
- *
- * The code is consumed whether or not the caller keeps the result, so a QR
- * photographed over a shoulder is worth nothing once the intended device has
- * used it.
- */
+/** The code is consumed whether or not the caller keeps the result. */
 export function redeemPairingCode(
   presented: string,
   label: string,
@@ -131,8 +119,8 @@ export function authenticateSession(token: string, nowMs: number = Date.now()): 
   const sessions = listSessions()
   const found = sessions.find((s) => hashMatches(s.tokenHash, presented))
   if (!found || isRevoked(found)) return null
-  // Cheap enough to keep honest: the list is small and a device connects
-  // rarely. `lastSeenAt` is what makes the revoke UI usable.
+  // The list is small and a device connects rarely; lastSeenAt makes the
+  // revoke UI usable.
   saveSessions(sessions.map((s) => (s.id === found.id ? { ...s, lastSeenAt: nowMs } : s)))
   return { ...found, lastSeenAt: nowMs }
 }
@@ -146,10 +134,7 @@ export function setRevocationListener(fn: ((id: string) => void) | null): void {
   onRevoked = fn
 }
 
-/**
- * Revoke one device. Tombstoned rather than deleted so the list still shows
- * what was removed and when, which is the point of having it.
- */
+/** Tombstoned rather than deleted, so the list still shows what was removed. */
 export function revokeSession(id: string, nowMs: number = Date.now()): boolean {
   const sessions = listSessions()
   const target = sessions.find((s) => s.id === id)

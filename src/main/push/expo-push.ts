@@ -58,13 +58,10 @@ interface ExpoTicket {
 }
 
 /**
- * A ticket id to look up later, paired with the token it belongs to.
- *
- * The two-step exists because a ticket only says Expo accepted the message.
- * Whether the device actually took it is reported on the receipt, minutes
- * later, and `DeviceNotRegistered` is usually delivered there rather than on
- * the ticket. Reading only tickets means dead tokens are almost never pruned
- * and accumulate until sends start getting rate-limited.
+ * A ticket id to look up later. A ticket only says Expo accepted the message;
+ * whether the device took it lands on the receipt minutes later, and that is
+ * where `DeviceNotRegistered` usually arrives. Reading only tickets means dead
+ * tokens are almost never pruned.
  */
 export interface PendingReceipt {
   id: string
@@ -85,13 +82,8 @@ export function pendingReceiptsFrom(tokens: string[], body: unknown): PendingRec
   return pending
 }
 
-/**
- * Tokens a receipt condemns, and the ids that have been resolved either way.
- *
- * An id missing from the response is deliberately NOT resolved: Expo returns
- * nothing for a receipt that is not ready yet, and dropping it would lose the
- * verdict permanently.
- */
+/** An id missing from the response is NOT resolved: Expo returns nothing for a
+ *  receipt that is not ready, and dropping it loses the verdict. */
 export function readReceipts(
   pending: readonly PendingReceipt[],
   body: unknown,
@@ -111,10 +103,7 @@ export function readReceipts(
   return { deadTokens, resolvedIds }
 }
 
-/**
- * Look up receipts for ids collected earlier. Best effort like `sendPush`:
- * an unresolved id stays pending and is retried on the next pass.
- */
+/** Best effort like `sendPush`: an unresolved id stays pending. */
 export async function fetchReceipts(
   pending: readonly PendingReceipt[],
 ): Promise<{ deadTokens: string[]; resolvedIds: string[] }> {

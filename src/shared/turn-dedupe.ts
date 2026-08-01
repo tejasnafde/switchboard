@@ -1,20 +1,13 @@
 /**
  * Remembers turn origins so a retried send cannot run twice.
  *
- * A client that retries after an ambiguous failure - a socket that died with
- * the request already on the wire, an invoke that timed out - has no way to
- * know whether the backend ran it. Without a check here, the safe client
- * behaviour (retry) produces a duplicate turn, and the safe backend behaviour
- * (run it) makes retrying unsafe. One side has to remember, and it has to be
- * this one.
+ * A client retrying an ambiguous failure cannot know whether the backend ran
+ * it. Without a check here the safe client behaviour produces a duplicate turn,
+ * and the safe backend behaviour makes retrying unsafe. Reuses the existing
+ * client-minted `origin` rather than adding a second id meaning the same thing.
  *
- * `origin` already existed as a client-minted id used to suppress a client's
- * own echo, so it is reused rather than adding a second id meaning the same
- * thing.
- *
- * Bounded by count and age: a turn is retried within seconds, so nothing older
- * than the window can still be in flight, and an unbounded set on a
- * long-running desktop is a slow leak.
+ * Bounded by count and age: nothing older than the window can still be in
+ * flight, and an unbounded set on a long-running desktop is a slow leak.
  */
 
 export const DEDUPE_MAX_AGE_MS = 10 * 60_000
@@ -29,33 +22,23 @@ export class TurnDeduper {
   ) {}
 
   /**
-   * True when this origin has already been accepted, i.e. the caller should do
-   * nothing. Records it otherwise.
+   * True when this origin was already accepted; records it otherwise.
    *
-   * An absent origin is never a duplicate: older clients do not send one, and
-   * treating them all as the same turn would drop every message after the
-   * first.
+   * An absent origin is never a duplicate - older clients send none, and
+   * collapsing them onto one key would drop every message after the first.
    */
   isDuplicate(origin: string | undefined, nowMs: number = Date.now()): boolean {
     if (!origin) return false
-    // Age first, so an entry past the window does not answer "duplicate" for a
-    // turn that is legitimately new.
-    this.expire(nowMs)
+    this.expire(nowMs) // age first, so a stale entry cannot answer "duplicate"
     if (this.seen.has(origin)) return true
     this.seen.set(origin, nowMs)
-    // Size after, so the bound holds once this call has returned rather than
-    // only until the next insert.
-    this.trim()
+    this.trim() // size after, so the bound holds once this call has returned
     return false
   }
 
-  /**
-   * Forget an origin because the operation it guarded failed.
-   *
-   * Recording on entry is what makes the check race-free, but it also means a
-   * failure would leave the origin claimed for a turn that never ran, and the
-   * client's legitimate retry would be answered as a duplicate and dropped.
-   */
+  /** Forget an origin whose operation failed. Recording on entry is what makes
+   *  the check race-free, but without this a failed turn stays claimed and the
+   *  client's legitimate retry is answered as a duplicate and dropped. */
   release(origin: string | undefined): void {
     if (origin) this.seen.delete(origin)
   }

@@ -83,13 +83,10 @@ export function pushEnabled(): boolean {
 }
 
 /**
- * Threads each client currently has open, reported by the client itself - only
- * it knows what is on screen. Keyed by viewer ref: a phone uses its push token,
- * the desktop uses DESKTOP_VIEWER_REF because it has no token to key on.
- *
- * Entries are leases with an expiry rather than standing facts, because a
- * client that dies without saying goodbye (force-quit, crash, signal loss) is
- * the common case on a phone and used to silence itself permanently.
+ * Threads each client has open, reported by the client - only it knows what is
+ * on screen. Keyed by viewer ref: a phone uses its push token, the desktop uses
+ * DESKTOP_VIEWER_REF. Leases with an expiry, because a client that dies without
+ * saying goodbye is the common case on a phone.
  */
 const viewing = new Map<string, ViewingLease>()
 
@@ -129,25 +126,16 @@ export function groupByClientRef(devices: PushDevice[]): Map<string | undefined,
   return groups
 }
 
-/**
- * Ticket ids awaiting a delivery verdict. In memory on purpose: a receipt is
- * only a token-cleanup hint, and losing the queue on restart costs one more
- * failed send rather than anything a user notices.
- */
+/** In memory on purpose: a receipt is only a token-cleanup hint, so losing the
+ *  queue on restart costs one more failed send. */
 const pending: Array<PendingReceipt & { queuedAt: number }> = []
 
-/**
- * Give up on a ticket after this long. Expo discards receipts after about a
- * day, so an id that never resolved by then never will, and re-queueing it
- * forever grows the queue and every subsequent request without limit.
- */
+/** Expo discards receipts after about a day, so an id unresolved by then never
+ *  will be, and re-queueing it forever grows every subsequent request. */
 export const RECEIPT_MAX_AGE_MS = 24 * 60 * 60_000
 
-/**
- * Expo asks senders to wait before reading receipts, since a receipt does not
- * exist until delivery has been attempted. Fifteen minutes is their own
- * suggested figure.
- */
+/** A receipt does not exist until delivery has been attempted; 15 minutes is
+ *  Expo's own suggested wait. */
 export const RECEIPT_SWEEP_MS = 15 * 60_000
 
 function dropDeadTokens(deadTokens: string[]): void {

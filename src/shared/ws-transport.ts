@@ -39,12 +39,8 @@ const RECONNECT_BUDGET_MS = 60_000
  *  bound are rejected/dropped instead of piling up unbounded. */
 const MAX_QUEUED_FRAMES = 100
 
-/**
- * No frame of any kind for this long means the socket is half-open. The server
- * pings every 15s, so this is two missed pings plus slack - long enough that a
- * brief radio stall does not churn the connection, short enough that the user
- * sees "reconnecting" rather than a dead screen.
- */
+/** Two missed 15s pings plus slack: long enough that a brief radio stall does
+ *  not churn the connection, short enough to beat an invoke timeout. */
 const SILENCE_LIMIT_MS = 40_000
 const WATCHDOG_INTERVAL_MS = 5_000
 
@@ -138,30 +134,18 @@ export class WsTransport implements Transport {
    *  the listener never sees a newer event before an older one. */
   private resumeHold: Array<Extract<WsFrame, { k: 'evt' }>> | null = null
   private lastFrameAt = 0
-  /**
-   * Set once the backend proves it speaks the heartbeat, by sending a `ping` or
-   * a `ready`. Until then the liveness checks stay disarmed, because an older
-   * backend's silence is normal rather than fatal.
-   */
+  /** Set once the backend sends a `ping` or `ready`. Until then the liveness
+   *  checks stay disarmed: an older backend's silence is normal, not fatal. */
   private peerSendsHeartbeat = false
   /** The socket already routed through onSocketDead. forceReconnect drives that
    *  path by hand, and the real 'close' event then arrives for the same socket. */
   private deadSocket: WebSocket | null = null
-  /**
-   * Whether the device believes it has a network. Defaults true so a caller
-   * that never reports stays on the old always-retry behaviour.
-   */
+  /** Defaults true so a caller that never reports keeps always-retry. */
   private online = true
-  /**
-   * In-band credential. When set, the transport authenticates with an `auth`
-   * frame instead of putting a token in the URL.
-   */
+  /** When set, authenticate with an `auth` frame instead of a URL token. */
   private auth: { session?: string; pairing?: string; label?: string } | null = null
-  /**
-   * Called when a pairing exchange mints a session token. This is the only
-   * moment that token is transmitted, so the owner must persist it here or the
-   * device has to pair again.
-   */
+  /** The minted session is transmitted exactly once, so the owner must persist
+   *  it here or the device has to pair again. */
   onSessionIssued: ((session: string) => void) | null = null
   private readonly watchdog: ReturnType<typeof setInterval>
 
@@ -195,29 +179,21 @@ export class WsTransport implements Transport {
     return !this.closed
   }
 
-  /**
-   * Drop a socket that has gone quiet. A half-open TCP connection reports
-   * `readyState === OPEN` indefinitely, so elapsed silence is the only signal
-   * available to a client that cannot send protocol-level pings.
-   */
+  /** A half-open connection reports OPEN indefinitely, so elapsed silence is
+   *  the only signal a client that cannot send protocol pings has. */
   private checkSilence(): void {
     if (this.closed || !this.open) return
     // Silence only means death if the peer would otherwise be talking. A
-    // backend from before the heartbeat existed never pings, so arming this
-    // against one would tear down a perfectly good idle connection every 40s
-    // forever. The phone updates over OTA while the desktop it pairs with
-    // updates by hand, so that skew is a normal state, not an edge case.
+    // pre-heartbeat backend never pings, and arming this against one tears down
+    // a healthy idle connection every 40s forever.
     if (!this.peerSendsHeartbeat) return
     if (Date.now() - this.lastFrameAt < SILENCE_LIMIT_MS) return
     log.warn('no frames for', `${SILENCE_LIMIT_MS}ms - treating socket as dead`, this.url)
     this.forceReconnect()
   }
 
-  /**
-   * Tear down the current socket and re-dial now. Used by the watchdog and by
-   * a client returning to the foreground after long enough that the OS has
-   * probably killed the socket without telling either end.
-   */
+  /** Tear down and re-dial now. For the watchdog, and for a foreground resume
+   *  after long enough that the OS has probably killed the socket silently. */
   forceReconnect(): void {
     if (this.closed) return
     try {
@@ -225,18 +201,13 @@ export class WsTransport implements Transport {
     } catch (err) {
       log.warn('forceReconnect on an already-dead socket', err)
     }
-    // `close()` on a half-open socket can hang without ever firing 'close', so
-    // drive the dead path directly rather than waiting for an event. The
-    // socket's own 'close' may still arrive afterwards; onSocketDead is guarded
-    // against running twice for one socket, or redialCount - a diagnostic that
-    // has already cost a long debugging session once - would count double.
+    // `close()` on a half-open socket can hang without firing 'close', so drive
+    // the dead path directly. Its real 'close' may still arrive, hence the
+    // guard in onSocketDead - otherwise redialCount counts double.
     this.onSocketDead(this.ws, null)
   }
 
-  /**
-   * Cheap liveness check for a foreground resume: round-trips a ping and
-   * forces a reconnect if the socket does not answer in time.
-   */
+  /** Round-trip a ping and reconnect if it goes unanswered. */
   probe(timeoutMs = 3_000): void {
     if (this.closed || !this.open) return
     // An older backend does not answer a ping, so acting on the silence would
@@ -278,14 +249,12 @@ export class WsTransport implements Transport {
       this.redialCount = 0
       this.lastCloseCode = null
       // Hold live events until the replay lands, so a resumed client does not
-      // see turn N+1 before the turn N it missed while disconnected.
+      // see turn N+1 before the turn N it missed.
       this.resumeHold = []
-      // Before hello: the server refuses everything until this lands, and
-      // ordering the two means one round trip rather than two.
+      // Before hello: the server refuses everything until this lands.
       if (this.auth) this.rawSend(encodeFrame({ k: 'auth', ...this.auth }))
-      // Guarded: a socket that dies between 'open' and here would otherwise
-      // throw out of the listener, skipping onStateChange and the outbox flush
-      // below and leaving the UI on "connecting" with this.open already true.
+      // Guarded: a throw here would skip onStateChange and the outbox flush
+      // below, leaving the UI on "connecting" with this.open already true.
       this.rawSend(encodeFrame({ k: 'hello', since: this.lastSeq, epoch: this.epoch ?? undefined }))
       this.onStateChange?.('connected')
       for (const frame of this.outbox.splice(0)) {
@@ -346,12 +315,9 @@ export class WsTransport implements Transport {
   }
 
   /**
-   * Tell the transport whether the device has a network at all.
-   *
-   * With the radio off, re-dialling is a guaranteed failure on a timer, which
-   * costs battery and inflates the backoff so the FIRST attempt after the
-   * network returns is delayed by up to the cap. Pausing instead makes that
-   * reconnect immediate: coming back online is a better signal than any timer.
+   * With the radio off, re-dialling is a guaranteed failure on a timer that
+   * also inflates the backoff, so the first attempt after signal returns is
+   * delayed by up to the cap. Pausing makes that reconnect immediate.
    */
   setOnline(online: boolean): void {
     if (this.online === online || this.closed) return
@@ -387,13 +353,10 @@ export class WsTransport implements Transport {
     if (Date.now() - this.reconnectStartedAt >= this.reconnectBudgetMs && this.reconnectAttempt % 10 === 0) {
       log.error(`still reconnecting after ${Math.round((Date.now() - this.reconnectStartedAt) / 1000)}s`, this.url)
     }
-    // Offline: stay in the reconnecting state but arm no timer. setOnline
-    // dials the moment the network is back.
+    // Offline: stay reconnecting but arm no timer; setOnline dials on signal.
     if (!this.online) return
     this.reconnectAttempt++
-    // Jittered, so a fleet of phones dropped by the same event (a laptop
-    // sleeping, a wifi drop) does not come back in lockstep and hammer one
-    // desktop on the same tick.
+    // Jittered, so a fleet dropped by one event does not come back in lockstep.
     const delay = reconnectDelay(this.reconnectAttempt, {
       baseMs: this.reconnectBaseMs,
       capMs: this.reconnectCapMs,
@@ -471,23 +434,20 @@ export class WsTransport implements Transport {
     }
     if (frame.k === 'authed') {
       if (!frame.ok) {
-        // A refusal is a verdict, not a blip. The socket close that follows
-        // carries 4001 and takes the transport terminal.
+        // A verdict, not a blip; the 4001 close that follows is terminal.
         log.error('backend refused our credential', frame.error)
         return
       }
       if (frame.session) {
-        // Swap the one-time pairing code for the session immediately, so a
-        // reconnect before the owner has persisted it still authenticates.
+        // Swap in the session at once, so a reconnect before the owner has
+        // persisted it still authenticates.
         this.auth = { session: frame.session }
         this.onSessionIssued?.(frame.session)
       }
       return
     }
     if (frame.k === 'evt') {
-      // A frame with a sequence is either a replay or live. Both are safe to
-      // apply in arrival order once the replay has been released; before that,
-      // live frames wait so ordering is preserved.
+      // Live frames wait for the replay so ordering is preserved.
       if (this.resumeHold !== null && frame.seq !== undefined && frame.seq > this.lastSeq) {
         this.resumeHold.push(frame)
         return
@@ -500,20 +460,17 @@ export class WsTransport implements Transport {
     const epochChanged = this.epoch !== null && this.epoch !== frame.epoch
     this.epoch = frame.epoch
     if (epochChanged || frame.gap) {
-      // Either the backend restarted (our cursor indexes a sequence space that
-      // no longer exists) or it had already evicted what we missed. Both mean
-      // the local view is incomplete and only a re-seed can fix it.
+      // The backend restarted, or it had already evicted what we missed. Both
+      // mean the local view is incomplete and only a re-seed fixes it.
       log.warn(epochChanged ? 'backend restarted, re-seeding' : 'replay gap, re-seeding', this.url)
       this.lastSeq = frame.seq
       this.resumeHold = null
       this.onResumeGap?.()
       return
     }
-    // Everything sequenced since the socket opened waited for this marker:
-    // replayed frames, and any live event the server broadcast before it got
-    // round to our `hello`. Sort by sequence rather than trusting arrival
-    // order, because that live event can land FIRST and would otherwise
-    // advance lastSeq past the replay and drop all of it.
+    // Sort rather than trust arrival order: the server broadcasts to a new
+    // socket before it processes that socket's hello, so a live event can land
+    // first and would otherwise advance lastSeq past the whole replay.
     const held = this.resumeHold ?? []
     this.resumeHold = null
     held.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
@@ -522,8 +479,7 @@ export class WsTransport implements Transport {
 
   private applyEvent(frame: Extract<WsFrame, { k: 'evt' }>): void {
     if (frame.seq !== undefined) {
-      // Duplicates are expected: a replay can overlap frames we already saw on
-      // the previous socket before it died.
+      // A replay can overlap frames the previous socket already delivered.
       if (frame.seq <= this.lastSeq) return
       this.lastSeq = frame.seq
     }
