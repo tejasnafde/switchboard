@@ -33,6 +33,7 @@ import { summarizeTool } from '../lib/toolSummary'
 import { getClient, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import { usePrefsStore } from '../stores/prefs'
+import { usePushStore } from '../stores/push'
 import { ModePicker } from '../components/ModePicker'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
@@ -117,12 +118,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
   useFocusEffect(
     useCallback(() => {
       useChatStore.getState().setActive(key)
+      usePushStore.getState().reportViewing(connectionId, threadId)
       return () => {
         useChatStore.getState().setActive(null)
+        usePushStore.getState().reportViewing(connectionId, null)
         // On the way out, not per keystroke - persist writes to AsyncStorage.
         usePrefsStore.getState().rememberDraft(key, draftRef.current)
       }
-    }, [key]),
+    }, [key, connectionId, threadId]),
   )
 
   const reportError = useCallback(

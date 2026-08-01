@@ -163,6 +163,18 @@ export const GitChannels = {
  * serving the folder; SELECTION carries cmd+l captures from the workbench;
  * STOP is the idle shutdown (hidden pane reclaims the server's RAM).
  */
+/**
+ * Mobile push. The backend sends, because the phone is asleep when it matters.
+ * VIEWING tells the backend which thread a device has open, so it is not
+ * notified about the screen already in the user's hand.
+ */
+export const PushChannels = {
+  REGISTER: 'push:register',
+  UNREGISTER: 'push:unregister',
+  VIEWING: 'push:viewing',
+  LIST: 'push:list',
+} as const
+
 export const IdeChannels = {
   ENSURE: 'ide:ensure',
   /** Write workbench.colorTheme into code-server's settings.json - applied live by its file watcher. */

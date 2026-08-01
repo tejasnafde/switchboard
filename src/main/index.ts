@@ -19,6 +19,8 @@ import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, protocol
 import { join, basename } from 'path'
 import { registerTerminalHandlers, shutdownTerminals } from './ipc/terminal'
 import { registerAgentHandlers } from './ipc/agent'
+import { registerPushHandlers } from './ipc/push'
+import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers } from './ipc/app'
 import { registerAppDesktopHandlers } from './ipc/app-desktop'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
@@ -538,6 +540,7 @@ app.whenReady().then(() => {
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)
   registerAppHandlers(backendHost)
+  registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
@@ -564,6 +567,7 @@ app.whenReady().then(() => {
 
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
+  attachPushNotifier(providerRegistry.bus)
   providerRegistry.registerIpcHandlers()
 
   // All handlers are recorded on the endpoint now; start listening if a token

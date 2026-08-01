@@ -14,6 +14,8 @@ import { WebSocketServer } from 'ws'
 import { WsHost } from '../main/backend/ws-host'
 import { TcpHost } from '../main/backend/tcp-host'
 import { MultiHost } from '../main/backend/multi-host'
+import { registerPushHandlers } from '../main/ipc/push'
+import { attachPushNotifier } from '../main/push/registry'
 import { registerAppHandlers } from '../main/ipc/app'
 import { registerFilesHandlers } from '../main/ipc/files'
 import { registerGitHandlers } from '../main/ipc/git'
@@ -118,6 +120,7 @@ if (tcpServer) {
 }
 
 registerAppHandlers(host)
+registerPushHandlers(host)
 registerFilesHandlers(host)
 registerGitHandlers(host)
 registerKanbanHandlers(host)
@@ -127,6 +130,8 @@ registerAgentHandlers(host)
 host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 
 const registry = new ProviderRegistry(host)
+// Notify paired phones about approvals, questions, finished turns and errors.
+attachPushNotifier(registry.bus)
 registry.registerIpcHandlers()
 
 // The workbench bridge, when the ssh bootstrap minted a token for us (see

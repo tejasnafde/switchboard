@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { StyleSheet, View } from 'react-native'
-import { NavigationContainer, DarkTheme } from '@react-navigation/native'
+import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native'
+import * as Notifications from 'expo-notifications'
+import { usePushStore } from './src/stores/push'
 import { createNativeStackNavigator } from '@react-navigation/native-stack'
 import { StatusBar } from 'expo-status-bar'
 import { useFonts } from 'expo-font'
@@ -53,6 +55,21 @@ const theme = {
 // navigator mounts, since ConnectionsScreen connects on its first render.
 setGoogleTokenProvider(getCachedAccessToken)
 
+/**
+ * Foreground presentation. Without this a notification arriving while the app
+ * is open is delivered to the handler and never shown.
+ */
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+})
+
+export const navigationRef = createNavigationContainerRef<RootStackParamList>()
+
 export default function App() {
   // Display grotesque + technical mono. Names must match src/theme.ts `fonts`.
   const [fontsLoaded] = useFonts({
@@ -66,6 +83,26 @@ export default function App() {
     // Silent refresh on start: hydrates the keychain and renews the token if it
     // is close to expiry, so the first IAP dial does not have to wait.
     void warmUpGoogleAuth().catch((err) => log.warn('google auth warm-up failed', err))
+    void usePushStore.getState().init()
+  }, [])
+
+  // Tapping a notification opens the thread it came from. The payload carries
+  // only threadId, so the connection and project come from the saved list.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as
+        | { threadId?: string; projectPath?: string; clientRef?: string; title?: string }
+        | undefined
+      if (!data?.threadId || !data.clientRef || !navigationRef.isReady()) return
+      navigationRef.navigate('Thread', {
+        connectionId: data.clientRef,
+        threadId: data.threadId,
+        title: data.title ?? 'Conversation',
+        projectPath: data.projectPath ?? '',
+        isNew: false,
+      })
+    })
+    return () => sub.remove()
   }, [])
 
   // Hold the first paint until the faces are in memory. Rendering early would
@@ -78,7 +115,7 @@ export default function App() {
     // screen and are not torn down by navigation. They drive both update lanes:
     // OTA for JS-only changes, a GitHub-released APK for native ones.
     <View style={styles.root}>
-      <NavigationContainer theme={theme}>
+      <NavigationContainer theme={theme} ref={navigationRef}>
         <StatusBar style="light" />
         <Stack.Navigator
           initialRouteName="Connections"

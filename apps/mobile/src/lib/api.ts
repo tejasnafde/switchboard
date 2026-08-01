@@ -5,7 +5,7 @@
  */
 import { WsTransport } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
-import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
+import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PushChannels } from '@shared/ipc-channels'
 import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, Workspace } from '@shared/types'
@@ -101,6 +101,17 @@ export class SwitchboardClient {
    */
   listIapTargets(): Promise<SshIapTarget[]> {
     return this.transport.invoke(MachineChannels.LIST_IAP_TARGETS)
+  }
+
+  // ── push ──
+  /** Register this device so the backend can notify it while the app is closed. */
+  registerPush(token: string, label: string, clientRef: string): Promise<{ ok: boolean; error?: string }> {
+    return this.transport.invoke(PushChannels.REGISTER, token, label, clientRef)
+  }
+
+  /** Which thread this device has open, so it is not notified about it. */
+  reportViewing(token: string, threadId: string | null): Promise<unknown> {
+    return this.transport.invoke(PushChannels.VIEWING, token, threadId)
   }
 
   // ── provider ──
