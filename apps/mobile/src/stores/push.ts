@@ -11,6 +11,13 @@ import { getClient, useConnectionsStore } from './connections'
 
 const log = createLogger('store:push')
 
+/** Copy without one id, so a failed registration can be retried. */
+function withoutId(ids: Set<string>, id: string): Set<string> {
+  const next = new Set(ids)
+  next.delete(id)
+  return next
+}
+
 interface PushState {
   token: string | null
   /** Why registration is unavailable, for the Settings screen to explain. */
@@ -34,28 +41,44 @@ export const usePushStore = create<PushState>((set, get) => ({
       return
     }
     set({ token: result.token, problem: null })
-    // Register with everything already connected; later connections register
-    // themselves through registerWith.
-    for (const c of useConnectionsStore.getState().configs) await get().registerWith(c.id)
+
+    // Register with whatever is connected now, then keep watching. A client
+    // that is still dialling at startup, or a backend paired later, would
+    // otherwise never register and its notifications would silently not work.
+    const registerConnected = (): void => {
+      const { status } = useConnectionsStore.getState()
+      for (const [id, s] of Object.entries(status)) {
+        if (s === 'connected') void get().registerWith(id)
+      }
+    }
+    registerConnected()
+    useConnectionsStore.subscribe(registerConnected)
   },
 
   registerWith: async (connectionId) => {
     const { token, registered } = get()
     if (!token || registered.has(connectionId)) return
+    // Claim the slot before awaiting: the subscription can fire again while
+    // this request is in flight, which would double-register.
+    set({ registered: new Set(registered).add(connectionId) })
     const client = getClient(connectionId)
-    if (!client) return
+    if (!client) {
+      set({ registered: withoutId(get().registered, connectionId) })
+      return
+    }
     try {
       // Pass our own connection id so every payload comes back tagged with the
       // backend that sent it - a tap can then open the right thread.
       const res = await client.registerPush(token, 'phone', connectionId)
       if (res?.ok === false) {
         log.warn(`backend rejected push token: ${res.error}`)
-        return
+        set({ registered: withoutId(get().registered, connectionId) })
       }
-      set({ registered: new Set(registered).add(connectionId) })
     } catch (err) {
-      // An older backend has no push handler. Not worth surfacing.
+      // An older backend has no push handler. Not worth surfacing, but let a
+      // later attempt retry.
       log.warn('push registration failed', err)
+      set({ registered: withoutId(get().registered, connectionId) })
     }
   },
 
