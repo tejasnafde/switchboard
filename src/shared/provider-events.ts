@@ -105,7 +105,20 @@ export interface RuntimeContentEvent {
   type: 'content'
   threadId: string
   messageId: string
+  /** An increment when `append` is set, otherwise the whole message body. */
   text: string
+  /**
+   * True when `text` extends the message rather than replacing it.
+   *
+   * Adapters set this wherever their provider hands them a delta, which is the
+   * common case. Emitting the accumulated body every token cost O(n^2) bytes,
+   * invisible over local IPC and ruinous over a phone's radio.
+   *
+   * Absent means a full snapshot, which is what non-streaming providers and
+   * one-shot notices produce. Fold with `applyContentText` in shared/
+   * content-stream rather than deciding per call site.
+   */
+  append?: boolean
   streamKind: 'assistant' | 'reasoning' | 'plan'
 }
 

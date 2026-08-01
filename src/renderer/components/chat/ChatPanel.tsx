@@ -22,6 +22,7 @@ import {
   drainTurn,
 } from '../../services/streamingBuffer'
 import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
+import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
@@ -42,10 +43,11 @@ interface ChatPanelProps {
  * fresh bubble. Shared by the streaming-ON coalescer commit and the
  * streaming-OFF drainTurn flush so the two paths can't drift.
  */
-function upsertAssistantContent(threadId: string, messageId: string, text: string): void {
+function upsertAssistantContent(threadId: string, messageId: string, chunk: ContentChunk): void {
   const store = useAgentStore.getState()
   const session = store.sessions.find((s) => s.id === threadId)
   const existing = session?.messages.find((m) => m.id === messageId)
+  const text = applyContentText(existing?.content, chunk)
   if (existing) {
     store.updateMessage(threadId, messageId, { content: text })
   } else {
@@ -281,8 +283,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   // bubble per delta). Ordering contract lives in services/contentCoalescer.
   const contentCoalescerRef = useRef<ContentCoalescer | null>(null)
   if (!contentCoalescerRef.current) {
-    contentCoalescerRef.current = createContentCoalescer(({ threadId, messageId, text }) =>
-      upsertAssistantContent(threadId, messageId, text),
+    contentCoalescerRef.current = createContentCoalescer(({ threadId, messageId, text, append }) =>
+      upsertAssistantContent(threadId, messageId, { text, append }),
     )
   }
   useEffect(() => () => contentCoalescerRef.current?.dispose(), [])
@@ -321,11 +323,12 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
         case 'content': {
+          const chunk = { text: event.text, append: event.append }
           if (!streamingEnabledRef.current) {
-            bufferContent(streamingBufferRef.current, tid, event.messageId, event.text)
+            bufferContent(streamingBufferRef.current, tid, event.messageId, chunk)
             break
           }
-          contentCoalescerRef.current?.push(tid, event.messageId, event.text)
+          contentCoalescerRef.current?.push(tid, event.messageId, chunk)
           break
         }
         case 'tool.started': {
@@ -406,7 +409,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           if (!streamingEnabledRef.current) {
             const drained = drainTurn(streamingBufferRef.current, tid)
             for (const entry of drained) {
-              upsertAssistantContent(tid, entry.messageId, entry.text)
+              // The buffer already folded every chunk, so this is the whole
+              // body and replaces rather than extends.
+              upsertAssistantContent(tid, entry.messageId, { text: entry.text })
             }
           }
           // Token usage comes from context_window events only - this event's

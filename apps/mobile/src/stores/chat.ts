@@ -9,11 +9,13 @@
 import { create } from 'zustand'
 import type {
   ProviderKind,
+  RuntimeContentEvent,
   RuntimeEvent,
   RuntimeMode,
   ProviderSessionStatus,
   Question,
 } from '@shared/provider-events'
+import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -124,16 +126,21 @@ function contentIdOf(e: RuntimeEvent): string | null {
 }
 
 function enqueue(connectionId: string, event: RuntimeEvent): void {
-  // Collapse deltas for the same message. `content` carries the full
-  // accumulated text, so dropping an older delta is lossless. Replacing in
-  // place is safe with other events in between: the feed item is located by id,
-  // never by queue position.
+  // Collapse chunks for the same message into one queued event. Folding with
+  // mergeContentChunks is lossless because that operation is associative: the
+  // merged chunk produces the same body as applying each chunk in order.
+  // Merging in place is safe with other events in between - the feed item is
+  // located by id, never by queue position.
   const id = contentIdOf(event)
-  if (id !== null) {
+  if (id !== null && event.type === 'content') {
     for (let i = queue.length - 1; i >= 0; i--) {
       const prev = queue[i]
       if (prev.connectionId === connectionId && contentIdOf(prev.event) === id) {
-        queue[i] = { connectionId, event }
+        const merged = mergeContentChunks(prev.event as RuntimeContentEvent, event)
+        queue[i] = {
+          connectionId,
+          event: { ...event, text: merged.text, append: merged.append },
+        }
         return
       }
     }
@@ -213,17 +220,18 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           const id = `m-${event.messageId}-${event.streamKind}`
           const existing = findFromEnd(t.items, (i) => i.id === id)
           if (existing && existing.kind === 'text') {
-            // Replace, never append: adapters ship the full accumulated text
-            // on every delta, so appending duplicated every streamed reply.
             return {
-              items: replaceItem(t.items, (i) => i.id === id, (i) => ({
-                ...(i as Extract<FeedItem, { kind: 'text' }>),
-                text: event.text,
-              })),
+              items: replaceItem(t.items, (i) => i.id === id, (i) => {
+                const item = i as Extract<FeedItem, { kind: 'text' }>
+                return { ...item, text: applyContentText(item.text, event) }
+              }),
             }
           }
           return {
-            items: [...t.items, { kind: 'text', id, text: event.text, stream: event.streamKind, done: false }],
+            items: [
+              ...t.items,
+              { kind: 'text', id, text: applyContentText(undefined, event), stream: event.streamKind, done: false },
+            ],
             // Mirror the desktop rule (agent-store appendMessage): unread
             // bumps once per assistant MESSAGE, not per turn - counts stay
             // consistent across clients watching the same session.

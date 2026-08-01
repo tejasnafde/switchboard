@@ -142,15 +142,16 @@ export function mapSessionUpdate(
         }
       }
       
-      const fullText = `${assistantMessageText.get(messageId) ?? ''}${delta}`
-      
-      assistantMessageText.set(messageId, fullText)
+      // The accumulated copy stays for turn assembly; only the wire carries the
+      // increment, which is what keeps a long reply from costing O(n^2) bytes.
+      assistantMessageText.set(messageId, `${assistantMessageText.get(messageId) ?? ''}${delta}`)
 
       events.push({
         type: 'content',
         threadId,
         messageId,
-        text: fullText,
+        text: delta,
+        append: true,
         streamKind: update.sessionUpdate === 'agent_thought_chunk' ? 'reasoning' : 'assistant',
       })
       break

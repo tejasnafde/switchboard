@@ -1275,17 +1275,34 @@ export class ClaudeAdapter implements ProviderAdapter {
               active.currentMessageId = `msg_${threadId.slice(-6)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
             }
             const msgId = active.currentMessageId
-            const fullText = (active.partialMessageText.get(msgId) ?? '') + delta.text
-            active.partialMessageText.set(msgId, fullText)
-            active.onEvent({ type: 'content', threadId, messageId: msgId, text: fullText, streamKind: 'assistant' })
+            // The accumulated copy stays: turn assembly and the JSONL fallback
+            // both read it. Only the WIRE carries the increment now.
+            active.partialMessageText.set(msgId, (active.partialMessageText.get(msgId) ?? '') + delta.text)
+            active.onEvent({
+              type: 'content',
+              threadId,
+              messageId: msgId,
+              text: delta.text,
+              append: true,
+              streamKind: 'assistant',
+            })
           } else if (delta?.type === 'thinking_delta' && delta.thinking) {
             if (!active.currentReasoningMessageId) {
               active.currentReasoningMessageId = `think_${threadId.slice(-6)}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
             }
             const reasonId = active.currentReasoningMessageId
-            const fullText = (active.partialMessageText.get(reasonId) ?? '') + delta.thinking
-            active.partialMessageText.set(reasonId, fullText)
-            active.onEvent({ type: 'content', threadId, messageId: reasonId, text: fullText, streamKind: 'reasoning' })
+            active.partialMessageText.set(
+              reasonId,
+              (active.partialMessageText.get(reasonId) ?? '') + delta.thinking,
+            )
+            active.onEvent({
+              type: 'content',
+              threadId,
+              messageId: reasonId,
+              text: delta.thinking,
+              append: true,
+              streamKind: 'reasoning',
+            })
           }
         } else if (ev.type === 'content_block_stop') {
           active.currentReasoningMessageId = null

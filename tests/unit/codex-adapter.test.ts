@@ -569,7 +569,7 @@ describe('CodexAdapter', () => {
     expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
   })
 
-  it('accumulates reasoning deltas (not just final text) per itemId', async () => {
+  it('ships reasoning deltas as increments, so a long stream stays linear on the wire', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
@@ -582,13 +582,14 @@ describe('CodexAdapter', () => {
 
     await adapter.sendTurn('thread-1', 'think')
 
-    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'content',
-      threadId: 'thread-1',
-      messageId: 'reason-1',
-      text: 'Thinking with Codex',
-      streamKind: 'reasoning',
-    }))
+    // Each delta travels as itself. Re-sending the accumulated body every token
+    // made a reply cost O(n^2) bytes, which is invisible locally and ruinous
+    // over a phone's radio. Consumers fold with applyContentText.
+    const chunks = onEvent.mock.calls
+      .map(([e]) => e as { type: string; messageId?: string; text?: string; append?: boolean })
+      .filter((e) => e.type === 'content' && e.messageId === 'reason-1')
+    expect(chunks.map((c) => c.text)).toEqual(['Thinking ', 'with Codex'])
+    expect(chunks.every((c) => c.append === true)).toBe(true)
   })
 
   it('rejects startSession when codex never responds to initialize, surfacing stderr in the error', async () => {

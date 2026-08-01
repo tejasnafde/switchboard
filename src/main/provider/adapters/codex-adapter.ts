@@ -993,13 +993,15 @@ export class CodexAdapter implements ProviderAdapter {
       const text = notification.params?.delta ?? notification.params?.text ?? ''
       const messageId = notification.params?.itemId ?? `reason_${Date.now()}`
       if (text) {
-        const fullText = `${active.assistantMessageText.get(messageId) ?? ''}${text}`
-        active.assistantMessageText.set(messageId, fullText)
+        // The accumulated copy stays for turn assembly; only the wire carries
+        // the increment.
+        active.assistantMessageText.set(messageId, `${active.assistantMessageText.get(messageId) ?? ''}${text}`)
         active.onEvent({
           type: 'content',
           threadId,
           messageId,
-          text: fullText,
+          text,
+          append: true,
           streamKind: 'reasoning',
         })
       }

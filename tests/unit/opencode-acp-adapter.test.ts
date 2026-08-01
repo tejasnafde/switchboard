@@ -39,7 +39,7 @@ describe('mapSessionUpdate', () => {
     })
   })
 
-  it('accumulates assistant chunks even when ACP omits messageId', () => {
+  it('keeps chunks on one message id when ACP omits it, and ships each as an increment', () => {
     const textByMessageId = new Map<string, string>()
     const first = mapSessionUpdate(
       tid,
@@ -64,13 +64,19 @@ describe('mapSessionUpdate', () => {
       textByMessageId,
     )
 
+    // Both chunks must land on ONE message id, or the feed renders two bubbles.
+    // The text is the increment: consumers fold it with applyContentText, and
+    // the adapter keeps the accumulated copy in textByMessageId for turn
+    // assembly.
     expect(second[0]).toMatchObject({
       type: 'content',
       threadId: tid,
       messageId: (first[0] as any).messageId,
-      text: 'hello from opencode',
+      text: 'from opencode',
+      append: true,
       streamKind: 'assistant',
     })
+    expect(textByMessageId.get((first[0] as any).messageId)).toBe('hello from opencode')
   })
 
   it('maps agent_thought_chunk → content (reasoning)', () => {
