@@ -4,7 +4,8 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels } from '@shared/ipc-channels'
+import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
@@ -134,6 +135,9 @@ const api = {
     /** External IPv4 addresses of this machine (mobile pairing host picker). */
     lanAddresses: (): Promise<Array<{ iface: string; address: string }>> =>
       transport.invoke(AppChannels.LAN_ADDRESSES),
+    /** Persist + broadcast that this thread was read, clearing it on the phone too. */
+    markRead: (threadId: string, at?: number): Promise<{ ok: boolean; at: number }> =>
+      transport.invoke(AppChannels.MARK_READ, threadId, at),
     /** (Re)start the pairing endpoint from saved settings; resolves to its status. */
     mobilePairingApply: (): Promise<MobilePairingStatus> =>
       transport.invoke(AppChannels.MOBILE_PAIRING_APPLY),
@@ -423,6 +427,25 @@ const api = {
       remoteTransports.get(machineId)?.close()
       remoteTransports.delete(machineId)
     },
+  },
+
+  // ─── Push ─────────────────────────────────────────────────────
+  push: {
+    /**
+     * Tell the backend which thread this desktop has open, so it does not push
+     * a phone about a chat the user is already reading here.
+     *
+     * The channel takes the viewer ref first, which is not a routable id, so the
+     * machine is resolved from the threadId by hand - and on the clearing call
+     * too, or the entry would be left behind on the backend that holds it.
+     */
+    reportViewing: (threadId: string, viewing: boolean): Promise<unknown> =>
+      router.invokeOn(
+        routingTable.resolve(PushChannels.VIEWING, [threadId]),
+        PushChannels.VIEWING,
+        DESKTOP_VIEWER_REF,
+        viewing ? threadId : null,
+      ),
   },
 
   // ─── Kanban (per-project task cards + per-card worktrees) ─────

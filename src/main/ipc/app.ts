@@ -1,6 +1,6 @@
 import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
-import { notifyWorktreeSwap } from '../provider/provider-registry'
+import { notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
@@ -56,6 +56,7 @@ import {
   getSystemMarkerMessages,
   getMessagesForConversation,
   messageRowsToChatMessages,
+  setConversationLastRead,
 } from '../db/database'
 import { listOauthDirsForAgent } from '../db/providerInstances'
 import { defaultClaudeDir } from '../provider/claude-session-migrate'
@@ -479,6 +480,19 @@ export function registerAppHandlers(host: BackendHost): void {
       log.info(`saveMessage marker → ${result.ok ? 'ok' : `skipped(${result.reason})`} conv=${params.conversationId} content=${JSON.stringify(params.content)}`)
     }
     return result
+  })
+
+  // A client opened a thread. Persist the read point, then broadcast so the
+  // other clients drop their badge - the whole point is that they agree.
+  host.handle(AppChannels.MARK_READ, (threadId: string, at?: number) => {
+    const readAt = at ?? Date.now()
+    if (!setConversationLastRead(threadId, readAt)) {
+      // Scanned off disk but never persisted - no row to stamp. The broadcast
+      // below still clears the badge, so this is worth a note, not a failure.
+      log.debug(`mark-read: no conversation row for ${threadId}`)
+    }
+    publishRuntimeEvent({ type: 'thread.read', threadId, at: readAt })
+    return { ok: true, at: readAt }
   })
 
   // Read/write the per-conversation runtime mode. The UI calls these so a

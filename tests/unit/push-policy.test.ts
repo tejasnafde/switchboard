@@ -2,7 +2,7 @@
  * Which runtime events are worth waking a phone for.
  */
 import { describe, it, expect } from 'vitest'
-import { pushForEvent, clampBody, isExpoPushToken } from '../../src/shared/push-policy'
+import { pushForEvent, clampBody, isExpoPushToken, pushTargets, DESKTOP_VIEWER_REF } from '../../src/shared/push-policy'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 
 const T = 'thread-1'
@@ -95,5 +95,40 @@ describe('isExpoPushToken', () => {
     expect(isExpoPushToken('ExponentPushToken[]')).toBe(false)
     expect(isExpoPushToken(null)).toBe(false)
     expect(isExpoPushToken(42)).toBe(false)
+  })
+})
+
+describe('pushTargets', () => {
+  const PHONE_A = 'ExponentPushToken[aaa]'
+  const PHONE_B = 'ExponentPushToken[bbb]'
+  const devices = [{ token: PHONE_A }, { token: PHONE_B }]
+
+  it('notifies every device when nobody has the thread open', () => {
+    expect(pushTargets(devices, T, new Map())).toEqual(devices)
+  })
+
+  it('skips only the phone showing the thread', () => {
+    const viewing = new Map([[PHONE_A, T]])
+    expect(pushTargets(devices, T, viewing)).toEqual([{ token: PHONE_B }])
+  })
+
+  it('still notifies a phone that has a DIFFERENT thread open', () => {
+    const viewing = new Map([[PHONE_A, 'other-thread']])
+    expect(pushTargets(devices, T, viewing)).toEqual(devices)
+  })
+
+  it('silences every phone when the desktop has the thread open', () => {
+    const viewing = new Map([[DESKTOP_VIEWER_REF, T]])
+    expect(pushTargets(devices, T, viewing)).toEqual([])
+  })
+
+  it('leaves phones alone when the desktop is on another thread', () => {
+    const viewing = new Map([[DESKTOP_VIEWER_REF, 'other-thread']])
+    expect(pushTargets(devices, T, viewing)).toEqual(devices)
+  })
+
+  it('treats any non-token viewer ref as a client it cannot push to', () => {
+    const viewing = new Map([['second-window', T]])
+    expect(pushTargets(devices, T, viewing)).toEqual([])
   })
 })

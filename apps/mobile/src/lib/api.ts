@@ -89,6 +89,11 @@ export class SwitchboardClient {
     return this.transport.invoke(AppChannels.CREATE_CONVERSATION, params)
   }
 
+  /** Persist the read point and broadcast it, so the Mac's badge clears too. */
+  markRead(threadId: string): Promise<{ ok: boolean; at: number }> {
+    return this.transport.invoke(AppChannels.MARK_READ, threadId)
+  }
+
   serverVersion(): Promise<string> {
     return this.transport.invoke('server:version')
   }

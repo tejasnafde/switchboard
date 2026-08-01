@@ -218,6 +218,12 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'worktree_branch')) {
       db.exec('ALTER TABLE conversations ADD COLUMN worktree_branch TEXT')
     }
+    // Migration (2026-08-01 - shared read state): epoch ms of the last time any
+    // client marked this thread read. Nullable: a never-opened conversation has
+    // no read point, and null is not the same as "read at time 0".
+    if (!cols.some((c) => c.name === 'last_read_at')) {
+      db.exec('ALTER TABLE conversations ADD COLUMN last_read_at INTEGER')
+    }
   } catch { /* ignore */ }
 
   // Migration (v0.1.20): track which launch config a session hydrated
@@ -853,6 +859,27 @@ export function setConversationRuntimeMode(id: string, mode: string): void {
   getDb().prepare(
     'UPDATE conversations SET runtime_mode = ?, updated_at = ? WHERE id = ?'
   ).run(mode, Date.now(), id)
+}
+
+/**
+ * Stamp when a thread was read. Deliberately does NOT touch `updated_at` -
+ * that drives sidebar ordering, and reading a chat must not reorder the list.
+ *
+ * Returns false when no row matched, which happens for a session that was
+ * scanned off disk but never persisted. The caller still broadcasts, so the
+ * badge clears everywhere either way.
+ */
+export function setConversationLastRead(id: string, at: number): boolean {
+  return getDb().prepare(
+    'UPDATE conversations SET last_read_at = ? WHERE id = ?'
+  ).run(at, id).changes > 0
+}
+
+export function getConversationLastRead(id: string): number | null {
+  const row = getDb().prepare(
+    'SELECT last_read_at FROM conversations WHERE id = ?'
+  ).get(id) as { last_read_at: number | null } | undefined
+  return row?.last_read_at ?? null
 }
 
 /**

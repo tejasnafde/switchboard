@@ -96,3 +96,27 @@ export function pushForEvent(event: RuntimeEvent, ctx: PushContext = {}): PushMe
 export function isExpoPushToken(value: unknown): value is string {
   return typeof value === 'string' && /^Expo(nent)?PushToken\[[^\]]+\]$/.test(value)
 }
+
+/**
+ * Viewer ref the desktop reports under. It has no push token, so it needs an id
+ * of its own to hold a slot in the viewing map alongside real devices.
+ */
+export const DESKTOP_VIEWER_REF = 'desktop'
+
+/**
+ * Devices still worth notifying about `threadId`.
+ *
+ * `viewing` maps a viewer ref to the thread it has open. A ref that is not an
+ * Expo token belongs to a client we cannot push to - the desktop - and the user
+ * reading there makes the notification noise on EVERY phone, not just one.
+ */
+export function pushTargets<T extends { token: string }>(
+  devices: readonly T[],
+  threadId: string,
+  viewing: ReadonlyMap<string, string>,
+): T[] {
+  for (const [ref, open] of viewing) {
+    if (open === threadId && !isExpoPushToken(ref)) return []
+  }
+  return devices.filter((d) => viewing.get(d.token) !== threadId)
+}

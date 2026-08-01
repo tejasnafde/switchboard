@@ -21,8 +21,10 @@ export function registerPushHandlers(host: BackendHost): void {
     return { ok: true }
   })
 
-  host.handle(PushChannels.VIEWING, (token: string, threadId: string | null) => {
-    setViewing(token, threadId)
+  // `ref` is a push token from a phone, or DESKTOP_VIEWER_REF from the desktop,
+  // which has no token of its own.
+  host.handle(PushChannels.VIEWING, (ref: string, threadId: string | null) => {
+    setViewing(ref, threadId)
     return { ok: true }
   })
 

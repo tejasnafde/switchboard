@@ -434,3 +434,19 @@ let activeRegistry: ProviderRegistry | null = null
 export function notifyWorktreeSwap(threadId: string, cwd: string | null): void {
   if (cwd) activeRegistry?.updateSessionCwd(threadId, cwd)
 }
+
+/**
+ * Fan an event that no adapter produced out to every client.
+ *
+ * The bus is the only path that reaches the registry's MultiHost, so this is
+ * what gets a broadcast to the renderer AND every paired phone at once. Skips
+ * the registry's own `publish()` on purpose: that layer adds session-id
+ * persistence and post-turn diffing, neither of which applies here.
+ */
+export function publishRuntimeEvent(event: RuntimeEvent): void {
+  if (!activeRegistry) {
+    log.warn(`no active registry - dropping ${event.type} for ${event.threadId}`)
+    return
+  }
+  activeRegistry.bus.publish(event)
+}

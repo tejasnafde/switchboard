@@ -72,6 +72,11 @@ export const AppChannels = {
   MOBILE_PAIRING_STATUS: 'mobile-pairing:status',
   /** External IPv4 addresses of this machine - mobile pairing QR host picker. */
   LAN_ADDRESSES: 'app:lan-addresses',
+  /**
+   * Record that a thread was read, and broadcast `thread.read` so every other
+   * client drops its badge. Read state is the backend's, not each client's.
+   */
+  MARK_READ: 'app:mark-read',
 } as const
 
 export const MachineChannels = {

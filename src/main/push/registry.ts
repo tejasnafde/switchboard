@@ -5,7 +5,7 @@
  * a given backend across restarts of both. The decision of what to send is in
  * shared/push-policy; this wires it to the event bus and the sender.
  */
-import { isExpoPushToken, pushForEvent, type PushKind } from '@shared/push-policy'
+import { isExpoPushToken, pushForEvent, pushTargets, type PushKind } from '@shared/push-policy'
 import type { RuntimeEvent } from '@shared/provider-events'
 import { getSetting, setSetting, getConversationById } from '../db/database'
 import type { RuntimeEventBus } from '../provider/event-bus'
@@ -76,15 +76,15 @@ export function pushEnabled(): boolean {
 }
 
 /**
- * Threads a phone currently has open, reported by the client. A notification
- * for the screen already in the user's hand is noise, and only the client
- * knows what it is showing.
+ * Threads each client currently has open, reported by the client itself - only
+ * it knows what is on screen. Keyed by viewer ref: a phone uses its push token,
+ * the desktop uses DESKTOP_VIEWER_REF because it has no token to key on.
  */
 const viewing = new Map<string, string>()
 
-export function setViewing(token: string, threadId: string | null): void {
-  if (threadId === null) viewing.delete(token)
-  else viewing.set(token, threadId)
+export function setViewing(ref: string, threadId: string | null): void {
+  if (threadId === null) viewing.delete(ref)
+  else viewing.set(ref, threadId)
 }
 
 function conversationFor(threadId: string): { title?: string; projectPath?: string } {
@@ -121,8 +121,7 @@ export function attachPushNotifier(bus: RuntimeEventBus): () => void {
     const devices = listDevices()
     if (devices.length === 0) return
 
-    // Built once, but `isViewing` is per device, so the check is per token.
-    const targets = devices.filter((d) => viewing.get(d.token) !== event.threadId)
+    const targets = pushTargets(devices, event.threadId, viewing)
     if (targets.length === 0) return
 
     const { title, projectPath } = conversationFor(event.threadId)

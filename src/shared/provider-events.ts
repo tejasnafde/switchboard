@@ -61,6 +61,17 @@ export interface RuntimeSpendBlockedEvent {
   resetsAtMs: number | null
 }
 
+/**
+ * A client marked a thread read. Read state lives on the backend, so this is
+ * how the OTHER clients learn to drop their badge - each one counting unread on
+ * its own is what let the phone and the Mac disagree.
+ */
+export interface RuntimeThreadReadEvent {
+  type: 'thread.read'
+  threadId: string
+  at: number
+}
+
 export type RuntimeEvent = (
   | RuntimeContentEvent
   | RuntimeUserMessageEvent
@@ -81,6 +92,7 @@ export type RuntimeEvent = (
   | RuntimeFileEditedEvent
   | RuntimeWorktreeDriftEvent
   | RuntimeSpendBlockedEvent
+  | RuntimeThreadReadEvent
 ) & {
   /** Which machine emitted this event ('local' or a remote's id). Stamped by
    *  preload's provider.onEvent, not the adapter - used to reject cross-machine

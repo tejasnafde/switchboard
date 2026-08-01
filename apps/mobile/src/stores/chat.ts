@@ -339,6 +339,10 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             items: [...t.items, { kind: 'error', id: `e-${Date.now()}`, message: event.message }],
             status: 'error' as const,
           }
+        // Read on another client. applyEvent already resolved the connection's
+        // thread key, so this only has to drop the count.
+        case 'thread.read':
+          return { unread: 0 }
         default:
           return {}
       }

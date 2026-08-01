@@ -134,6 +134,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
     useCallback(() => {
       useChatStore.getState().setActive(key)
       usePushStore.getState().reportViewing(connectionId, threadId)
+      // Read state is the backend's, so the Mac's badge clears from here too.
+      getClient(connectionId)
+        ?.markRead(threadId)
+        .catch((err) => log.warn('markRead failed', err))
       return () => {
         useChatStore.getState().setActive(null)
         usePushStore.getState().reportViewing(connectionId, null)
