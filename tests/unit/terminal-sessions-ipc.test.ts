@@ -239,23 +239,35 @@ describe('stampAgentTypes', () => {
   })
 })
 
-describe('the set callers must pass', () => {
-  it('keeps a conversation whose transcript exists but was hidden as a rotation child', () => {
-    // The live failure: a chat started on the phone wrote its JSONL under a
-    // non-default Claude profile dir, so the scanner saw it and thread_sessions
-    // recorded it as a child of the thread. Callers passed EVERY scanned id, so
-    // the DB row was dropped as a duplicate of an entry childSet had already
-    // dropped, and the chat existed in neither list.
-    const conv = { id: 'mob-1', session_id: 'uuid-a', title: 'Marvel Syllabus', agent_type: 'claude-code' }
-    const scannedIncludingHidden = new Set(['uuid-a'])
-    const visibleAfterChildFilter = new Set<string>()
+describe('why a scanned transcript was hidden decides whether to synthesize', () => {
+  const conv = (over: Record<string, unknown>) =>
+    [{ id: 'c1', session_id: null, title: 't', agent_type: 'claude-code', ...over }] as never
 
-    expect(synthesizeDbOnlySessions([conv] as never, new Set(), scannedIncludingHidden)).toHaveLength(0)
-    expect(synthesizeDbOnlySessions([conv] as never, new Set(), visibleAfterChildFilter)).toHaveLength(1)
+  it('keeps the row when childSet hid the transcript, or the chat renders nowhere', () => {
+    // A chat started on the phone wrote its JSONL under a non-default Claude
+    // profile dir, so the scanner saw it and thread_sessions recorded it as a
+    // rotation child. The scanned entry was dropped as a child and the row was
+    // dropped as its duplicate.
+    const rows = conv({ id: 'mob-1', session_id: 'uuid-a' })
+    expect(synthesizeDbOnlySessions(rows, new Set(), new Set(['uuid-a']), new Set(['uuid-a']))).toHaveLength(1)
   })
 
-  it('still suppresses a duplicate when the scanned entry is actually visible', () => {
-    const conv = { id: 'c1', session_id: 'uuid-b', title: 'Shown once', agent_type: 'claude-code' }
-    expect(synthesizeDbOnlySessions([conv] as never, new Set(), new Set(['uuid-b']))).toHaveLength(0)
+  it('suppresses the row when the transcript was hidden by archiving', () => {
+    // Archiving a live chat archives the SCANNED id, leaving the parent row
+    // unarchived. Synthesizing it here would resurrect the chat one refresh later.
+    const rows = conv({ id: 'agent_1000', session_id: 'uuid-a' })
+    expect(synthesizeDbOnlySessions(rows, new Set(), new Set(['uuid-a']), new Set())).toHaveLength(0)
+  })
+
+  it('suppresses a merged fragment, which has a row of its own under the scanned id', () => {
+    // attach-to-thread promises the fragment disappears; it is in childSet, so
+    // only the own-id check can suppress it.
+    const rows = conv({ id: 'uuid-frag', session_id: null })
+    expect(synthesizeDbOnlySessions(rows, new Set(), new Set(['uuid-frag']), new Set(['uuid-frag']))).toHaveLength(0)
+  })
+
+  it('suppresses a duplicate of a transcript that is plainly visible', () => {
+    const rows = conv({ id: 'c1', session_id: 'uuid-b' })
+    expect(synthesizeDbOnlySessions(rows, new Set(), new Set(['uuid-b']), new Set())).toHaveLength(0)
   })
 })

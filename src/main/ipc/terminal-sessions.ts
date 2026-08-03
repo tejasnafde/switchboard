@@ -27,13 +27,17 @@ export function synthesizeDbOnlySessions(
   dbConversations: ConversationRow[],
   archivedSet: Set<string>,
   scannedIds: Set<string>,
+  childSet: Set<string> = new Set(),
 ): SessionSummary[] {
   return dbConversations
     .filter(
       (c) =>
         !archivedSet.has(c.id) &&
+        // Own id scanned: either shown already, or hidden on purpose by a merge.
         !scannedIds.has(c.id) &&
-        !(c.session_id !== null && scannedIds.has(c.session_id)),
+        // Transcript scanned: that entry represents this row - UNLESS childSet
+        // hid it, in which case this row is the only thing left to render.
+        !(c.session_id !== null && scannedIds.has(c.session_id) && !childSet.has(c.session_id)),
     )
     .map((c) => ({
       id: c.id,

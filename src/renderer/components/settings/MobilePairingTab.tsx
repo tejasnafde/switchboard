@@ -530,14 +530,7 @@ export function MobilePairingTab() {
       )}
 
       {/* Server command */}
-      <div style={fieldLabelStyle}>Run on the machine you want to reach</div>
-      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.6 }}>
-        Only for another machine with a Switchboard checkout. This desktop needs
-        nothing beyond the toggle above. Starts both listeners: <code>ws://</code> on
-        8765, and the ndjson one on 8766 that an IAP-tunnelled phone needs. Runs in the
-        foreground, so start it under tmux. It prints its own pairing QR - the one above
-        pairs with this desktop only.
-      </div>
+      <div style={fieldLabelStyle}>Run on the target machine</div>
       <div style={{
         display: 'flex',
         alignItems: 'flex-start',
@@ -575,8 +568,9 @@ export function MobilePairingTab() {
         </button>
       </div>
       <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.6 }}>
-        Only for a machine with no Switchboard app running, such as a VM.
-        <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and binding beyond loopback without SWITCHBOARD_TOKEN mints one and saves it to ~/.switchboard-server/token. Running it here as well would take the port and stop the app from serving." />
+        Only for a machine with no Switchboard app running, such as a VM. Runs in the
+        foreground, so start it under tmux, and pair from the QR it prints.
+        <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and binding beyond loopback without SWITCHBOARD_TOKEN mints one and saves it to ~/.switchboard-server/token. TCP_PORT starts a second listener on 8766 speaking ndjson, which is what an IAP-tunnelled phone dials. Running it here as well would take the port and stop the app from serving." />
       </div>
 
       {/* APK download QR - static URL, resolved to the newest release by the Worker */}
