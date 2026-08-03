@@ -100,8 +100,6 @@ export class SwitchboardClient {
     return this.transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, { limit })
   }
 
-  /** Rename a chat. The desktop titles from the first message; the phone did
-   *  not, so mobile-started chats sat in the sidebar as "New conversation". */
   renameConversation(conversationId: string, title: string): Promise<unknown> {
     return this.transport.invoke(AppChannels.RENAME_CONVERSATION, conversationId, title)
   }

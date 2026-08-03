@@ -19,8 +19,7 @@ export type Block =
   | { kind: 'listItem'; ordered: boolean; marker: string; depth: number; inlines: Inline[] }
   | { kind: 'quote'; inlines: Inline[] }
   | { kind: 'rule' }
-  /** GFM table. `align` is per column, null where the delimiter row said
-   *  nothing. Cells are already inline-parsed. */
+  /** GFM table; `align` is null where the delimiter row said nothing. */
   | { kind: 'table'; header: Inline[][]; rows: Inline[][][]; align: Array<'left' | 'center' | 'right' | null> }
 
 // ── inline ──────────────────────────────────────────────────────────────────
@@ -98,15 +97,17 @@ const BULLET = /^(\s*)[-*+]\s+(.*)$/
 const ORDERED = /^(\s*)(\d{1,9})[.)]\s+(.*)$/
 const QUOTE = /^\s{0,3}>\s?(.*)$/
 
-/** A delimiter row: only pipes, dashes, colons and spaces, with at least one dash. */
-const TABLE_DELIM = /^\s*\|?[\s:-]*-[\s|:-]*\|?\s*$/
+/** Every cell is dashes with optional leading/trailing colon. */
+function isDelimiterRow(line: string): boolean {
+  return splitRow(line).every((c) => /^:?-+:?$/.test(c))
+}
 
-/**
- * Split one table row into cell texts.
- *
- * Leading and trailing pipes are optional in GFM, so they are trimmed rather
- * than producing empty edge cells. An escaped `\|` is not a separator.
- */
+/** Does this line open a different block? Then it cannot be a table row. */
+function startsBlock(line: string): boolean {
+  return HEADING.test(line) || QUOTE.test(line) || BULLET.test(line) || ORDERED.test(line) || RULE.test(line)
+}
+
+/** Split a table row. Edge pipes are optional in GFM; `\|` is not a separator. */
 function splitRow(line: string): string[] {
   const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
   const cells: string[] = []
@@ -164,9 +165,16 @@ export function parseMarkdown(src: string): Block[] {
       continue
     }
 
-    // GFM table: a header row followed by a delimiter row of dashes. Checked
-    // before RULE, because `|---|---|` also matches a horizontal rule.
-    if (line.includes('|') && i + 1 < lines.length && TABLE_DELIM.test(lines[i + 1])) {
+    // Before RULE: `|---|---|` matches a horizontal rule too. The delimiter
+    // must itself contain a pipe and have the header's cell count, or a bare
+    // `---` under any line with a pipe in it fabricates a table.
+    if (
+      line.includes('|') &&
+      i + 1 < lines.length &&
+      lines[i + 1].includes('|') &&
+      isDelimiterRow(lines[i + 1]) &&
+      splitRow(lines[i + 1]).length === splitRow(line).length
+    ) {
       flushParagraph()
       const align = splitRow(lines[i + 1]).map((c) => {
         const left = c.startsWith(':')
@@ -181,7 +189,9 @@ export function parseMarkdown(src: string): Block[] {
       i += 2
       for (; i < lines.length; i++) {
         const row = lines[i]
-        if (row.trim() === '' || !row.includes('|')) break
+        // A pipe alone is not enough: a list item or heading that happens to
+        // contain one would be eaten as a row.
+        if (row.trim() === '' || !row.includes('|') || startsBlock(row)) break
         rows.push(splitRow(row).map((c) => parseInline(c)))
       }
       i-- // the loop's own i++ consumes the terminator

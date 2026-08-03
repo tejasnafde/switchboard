@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { inferTier } from '../../src/main/provider/adapters/claude-adapter'
-import { CLAUDE_MODELS, CODEX_MODELS } from '../../src/shared/models'
+import { CLAUDE_MODELS, CODEX_MODELS, defaultModelFor } from '../../src/shared/models'
 
 /**
  * `inferTier` maps a Claude model id to the picker's tier badge for the
@@ -32,14 +32,9 @@ describe('inferTier', () => {
   })
 })
 
-/**
- * The pre-session picker list. Verified against the ids in the Claude Code
- * binary the adapter spawns, so a typo here means a model the CLI rejects.
- */
 describe('CLAUDE_MODELS', () => {
   it('assigns every entry the tier inferTier would derive from its id', () => {
-    // Otherwise the pre-session list and the live model.variants list disagree
-    // about the same model, and the picker's grouping jumps on session start.
+    // Else the static and live lists disagree and the grouping jumps.
     for (const m of CLAUDE_MODELS) expect(m.tier).toBe(inferTier(m.id))
   })
 
@@ -52,18 +47,13 @@ describe('CLAUDE_MODELS', () => {
   })
 })
 
-/**
- * The Codex picker list. Codex has no `model.variants` event, so this array is
- * the ONLY list the user ever sees - a wrong id is a model they cannot pick.
- */
 describe('CODEX_MODELS', () => {
   it('has no duplicate ids', () => {
     expect(new Set(CODEX_MODELS.map((m) => m.id)).size).toBe(CODEX_MODELS.length)
   })
 
   it('offers each of the three 5.6 variants at its own tier', () => {
-    // Sol/Terra/Luna are one generation split by capability, not aliases. The
-    // tiers come from the shipped catalog's own descriptions.
+    // Not aliases - one generation split by capability.
     const byId = Object.fromEntries(CODEX_MODELS.map((m) => [m.id, m.tier]))
     expect(byId['gpt-5.6-sol']).toBe('max')
     expect(byId['gpt-5.6-terra']).toBe('balanced')
@@ -72,5 +62,13 @@ describe('CODEX_MODELS', () => {
 
   it('drops the -codex slugs the shipped catalog does not list', () => {
     expect(CODEX_MODELS.some((m) => m.id.includes('-codex'))).toBe(false)
+  })
+})
+
+describe('defaultModelFor', () => {
+  it('returns an id that is actually in each list', () => {
+    // It used to index CLAUDE_MODELS[1], so reordering changed the default.
+    expect(CLAUDE_MODELS.map((m) => m.id)).toContain(defaultModelFor('claude-code'))
+    expect(CODEX_MODELS.map((m) => m.id)).toContain(defaultModelFor('codex'))
   })
 })

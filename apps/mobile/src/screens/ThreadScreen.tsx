@@ -438,10 +438,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // and the expensive ones are the ambiguous ones: a socket that still reads
     // as open, a reconnect in flight, a turn already running.
     const messageId = ownTurn()
-    // Title from the first message, as the desktop does. Without this a chat
-    // started on the phone stays "New conversation" in every sidebar, which is
-    // what made mobile-started chats feel like they had never synced.
-    if (thread.items.filter((i) => i.kind === 'user').length === 0 && text) {
+    // Title from the first message, as the desktop does. `isNew` matters: an
+    // existing chat whose items were emptied by /clear, or one whose history
+    // has not loaded yet, also has no user items - titling those would
+    // overwrite a title the user already has.
+    if (isNew && thread.items.filter((i) => i.kind === 'user').length === 0 && text) {
       const title = generateTitle(text)
       getClient(connectionId)
         ?.renameConversation(threadId, title)

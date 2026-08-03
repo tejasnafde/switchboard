@@ -102,9 +102,7 @@ const BlockView = memo(function BlockView({ block }: { block: Block }): React.Re
     case 'table': {
       const cols = Math.max(block.header.length, ...block.rows.map((r) => r.length))
       const textAlign = (i: number): 'left' | 'center' | 'right' => block.align[i] ?? 'left'
-      // Horizontally scrollable: a phone cannot fit a wide table, and wrapping
-      // every cell turns one into an unreadable stack. Columns get a floor so
-      // a long cell does not squeeze its neighbours to nothing.
+      // Scrolls rather than wraps - a wrapped wide table is unreadable.
       return (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableWrap}>
           <View>

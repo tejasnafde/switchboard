@@ -117,10 +117,6 @@ describe('parseMarkdown blocks', () => {
   })
 })
 
-/**
- * GFM tables. The renderer had no table block at all, so an agent reply
- * containing one showed the raw pipes and dashes on the phone.
- */
 describe('tables', () => {
   const t = (md: string) => parseMarkdown(md).find((b) => b.kind === 'table') as
     | Extract<ReturnType<typeof parseMarkdown>[number], { kind: 'table' }>
@@ -160,13 +156,44 @@ describe('tables', () => {
   })
 
   it('still parses a horizontal rule, which the delimiter row resembles', () => {
-    // `|---|---|` matches a rule too, so the table check runs first and a bare
-    // rule must not be swallowed by it.
+    // `|---|---|` matches a rule too; the table check runs first.
     expect(parseMarkdown('text\n\n---\n\nmore').some((b) => b.kind === 'rule')).toBe(true)
   })
 
   it('parses inline markup inside cells', () => {
     const table = t('| a |\n|---|\n| **bold** |')
     expect(table!.rows[0][0][0].kind).toBe('strong')
+  })
+})
+
+describe('table false positives', () => {
+  const kinds = (md: string) => parseMarkdown(md).map((b) => b.kind)
+
+  it('does not turn a bare rule under a piped line into a table', () => {
+    // `grep foo | wc -l` in prose split the code span in half.
+    const blocks = parseMarkdown('Run `grep foo | wc -l` first.\n---\nNext.')
+    expect(blocks.some((b) => b.kind === 'table')).toBe(false)
+    expect(blocks.some((b) => b.kind === 'rule')).toBe(true)
+  })
+
+  it('keeps a heading, quote and list item that contain a pipe', () => {
+    expect(kinds('# Title | Sub\n---')).toContain('heading')
+    expect(kinds('> quote | here\n---')).toContain('quote')
+    expect(kinds('- item | one\n- - -')).toContain('listItem')
+  })
+
+  it('requires the delimiter row to have the header cell count', () => {
+    expect(kinds('| a | b |\n|---|\n| 1 | 2 |')).not.toContain('table')
+  })
+
+  it('stops the body at a list item that contains a pipe', () => {
+    const blocks = parseMarkdown('| a | b |\n|---|---|\n| 1 | 2 |\n- bullet | pipe\n- plain')
+    const table = blocks.find((b) => b.kind === 'table')
+    expect(table && table.kind === 'table' && table.rows).toHaveLength(1)
+    expect(blocks.filter((b) => b.kind === 'listItem')).toHaveLength(2)
+  })
+
+  it('still parses a table with no edge pipes', () => {
+    expect(kinds('a | b\n--- | ---\n1 | 2')).toContain('table')
   })
 })

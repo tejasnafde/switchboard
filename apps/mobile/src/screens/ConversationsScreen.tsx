@@ -83,14 +83,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
     [connectionId, projectPath],
   )
 
-  /**
-   * Long-press to rename. The backend has owned RENAME_CONVERSATION all along;
-   * only the phone had no way to call it, so a chat titled badly on one device
-   * could not be fixed from the other.
-   *
-   * A Modal rather than Alert.prompt, which exists on iOS only and would have
-   * been a no-op on the platform this app actually ships to.
-   */
+  // Modal, not Alert.prompt - that is iOS-only and a no-op on Android.
   const [renaming, setRenaming] = useState<ConversationRow | null>(null)
   const [renameText, setRenameText] = useState('')
 

@@ -6,17 +6,8 @@ export interface ModelOption {
   tier: 'fast' | 'balanced' | 'max'
 }
 
-/**
- * Shown BEFORE a session exists, on both desktop and mobile - `provider:list-models`
- * needs a live session to answer, so neither client can do better than a static
- * list here. Once a session starts, the adapter's `model.variants` event replaces
- * it with what that account actually has.
- *
- * Verified 2026-08-03 against the ids in the Claude Code binary the adapter
- * spawns (2.1.220), not from memory. Newest first; the 4.5-era ids were dropped
- * because their successors cost the same. An id already stored on a session
- * still works - this list only decides what the picker OFFERS.
- */
+/** Pre-session list; `model.variants` replaces it once a session starts.
+ *  Ids from the Claude Code binary (2.1.220). */
 export const CLAUDE_MODELS: ModelOption[] = [
   { id: 'claude-fable-5', label: 'Claude Fable 5', tier: 'max' },
   { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'max' },
@@ -27,26 +18,8 @@ export const CLAUDE_MODELS: ModelOption[] = [
   { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'fast' },
 ]
 
-/**
- * Codex models.
- *
- * Unlike Claude, the Codex adapter has NO live model list - it never emits
- * `model.variants` - so this array is the only list the picker ever shows. A
- * stale entry here is a model the user simply cannot pick.
- *
- * Verified 2026-08-03 against the model catalog embedded in the codex binary
- * (codex-cli 0.144.1), taking exactly the entries marked `"visibility": "list"`.
- * Tiers come from that catalog's own descriptions, not from a guess:
- * Sol "latest frontier", Terra "balanced ... everyday work", Luna "fast and
- * affordable".
- *
- * The `-codex` slugs that used to be listed here (5.1-codex-max, 5.1-codex-mini,
- * 5.2-codex, 5.3-codex) are absent from that catalog. They still appear as
- * strings in the binary, so they are probably accepted for back-compat, but
- * Codex's own picker does not offer them and neither should ours.
- *
- * Reasoning effort is a SEPARATE selector (`ReasoningEffort` below).
- */
+/** The ONLY Codex list - this adapter never emits `model.variants`. Entries
+ *  marked `visibility: list` in the codex binary's catalog (0.144.1). */
 export const CODEX_MODELS: ModelOption[] = [
   { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', tier: 'max' },
   { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', tier: 'balanced' },
@@ -102,7 +75,8 @@ export function modelsForAgent(agent: AgentType): ModelOption[] {
 export function defaultModelFor(agent: AgentType): string {
   if (agent === 'codex') return CODEX_MODELS[0].id
   if (agent === 'opencode') return OPENCODE_MODELS[0].id // GLM 5.1
-  return CLAUDE_MODELS[1].id
+  // Named, not positional: reordering the list used to change the default.
+  return 'claude-sonnet-5'
 }
 
 /**
