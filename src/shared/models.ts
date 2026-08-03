@@ -28,23 +28,33 @@ export const CLAUDE_MODELS: ModelOption[] = [
 ]
 
 /**
- * Codex models - mirrors the Codex desktop app's model picker. The Codex
- * app-server accepts these IDs directly via the `model` param on
- * thread/start / turn/start. Order matches the desktop app's picker (most
- * recent frontier first).
+ * Codex models.
  *
- * Reasoning effort is a SEPARATE selector (`ReasoningEffort` below) - the
- * Codex app surfaces it next to the model dropdown, not as model variants.
+ * Unlike Claude, the Codex adapter has NO live model list - it never emits
+ * `model.variants` - so this array is the only list the picker ever shows. A
+ * stale entry here is a model the user simply cannot pick.
+ *
+ * Verified 2026-08-03 against the model catalog embedded in the codex binary
+ * (codex-cli 0.144.1), taking exactly the entries marked `"visibility": "list"`.
+ * Tiers come from that catalog's own descriptions, not from a guess:
+ * Sol "latest frontier", Terra "balanced ... everyday work", Luna "fast and
+ * affordable".
+ *
+ * The `-codex` slugs that used to be listed here (5.1-codex-max, 5.1-codex-mini,
+ * 5.2-codex, 5.3-codex) are absent from that catalog. They still appear as
+ * strings in the binary, so they are probably accepted for back-compat, but
+ * Codex's own picker does not offer them and neither should ours.
+ *
+ * Reasoning effort is a SEPARATE selector (`ReasoningEffort` below).
  */
 export const CODEX_MODELS: ModelOption[] = [
+  { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', tier: 'max' },
+  { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', tier: 'balanced' },
+  { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', tier: 'fast' },
   { id: 'gpt-5.5', label: 'GPT-5.5', tier: 'max' },
   { id: 'gpt-5.4', label: 'GPT-5.4', tier: 'max' },
-  { id: 'gpt-5.2-codex', label: 'GPT-5.2-Codex', tier: 'balanced' },
-  { id: 'gpt-5.1-codex-max', label: 'GPT-5.1-Codex-Max', tier: 'max' },
   { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini', tier: 'fast' },
-  { id: 'gpt-5.3-codex', label: 'GPT-5.3-Codex', tier: 'balanced' },
   { id: 'gpt-5.2', label: 'GPT-5.2', tier: 'balanced' },
-  { id: 'gpt-5.1-codex-mini', label: 'GPT-5.1-Codex-Mini', tier: 'fast' },
 ]
 
 /**
