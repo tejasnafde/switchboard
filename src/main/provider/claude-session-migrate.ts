@@ -1,18 +1,14 @@
 /**
- * When a conversation switches between Claude provider instances mid-flight
- * and the new instance has a different `CLAUDE_CONFIG_DIR` (oauth_dir), the
- * Claude SDK can't resume the session because the JSONL it reads from
- * `<dir>/projects/<encodedCwd>/<sessionId>.jsonl` lives in the *previous*
- * profile. This helper copies the file across so the SDK's UUID-based
- * resume path keeps working - preserving turn-by-turn conversation context
- * across credential rotation without re-paying input tokens.
+ * Keeps the freshest transcript copy at the one path the SDK resumes from:
+ * `<CLAUDE_CONFIG_DIR>/projects/<encode(cwd)>/<sessionId>.jsonl`. Both halves
+ * move under a live chat - profile switch, or cwd change into a worktree - and
+ * either one fails as "No conversation found with session ID".
  *
- * Pure I/O. Idempotent. Source is left untouched so rotating back later
- * still resolves cleanly.
+ * Copies, never moves, so switching back keeps working.
  */
 import { homedir } from 'os'
-import { join } from 'path'
-import { existsSync, mkdirSync, copyFileSync, readdirSync } from 'fs'
+import { basename, dirname, join } from 'path'
+import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync } from 'fs'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
 import { createMainLogger as createLogger } from '../logger'
 
@@ -26,108 +22,164 @@ export type MigrateResult =
   | { ok: true; copied: boolean; from?: string }
   | { ok: false; reason: 'source-missing' | 'io-error'; detail?: string }
 
+export interface SessionCopy {
+  path: string
+  mtimeMs: number
+}
+
 /**
- * Locate `<sessionId>.jsonl` under `<dir>/projects/`. Tries the encoded cwd
- * first, then scans every project subdir: the Claude CLI re-roots a
- * transcript into the encoded dir of whatever cwd the session ends up in
- * (e.g. the agent entering a worktree mid-conversation), so the exact-path
- * lookup alone reported real sessions as missing. Session ids are UUIDs, so
- * a filename match anywhere under projects/ is unambiguous.
+ * Every `<sessionId>.jsonl` under `<dir>/projects/*`, newest first. One copy
+ * per cwd the chat has run in, and only the last-appended one is complete.
  */
-export function findClaudeSessionFile(dir: string, sessionId: string, cwd: string): string | null {
+export function listClaudeSessionCopies(dir: string, sessionId: string): SessionCopy[] {
   const file = `${sessionId}.jsonl`
-  const exact = join(dir, 'projects', encodeClaudeProjectPath(cwd), file)
-  if (existsSync(exact)) return exact
   const projects = join(dir, 'projects')
-  if (!existsSync(projects)) return null
-  for (const sub of readdirSync(projects)) {
-    const candidate = join(projects, sub, file)
-    if (existsSync(candidate)) return candidate
+  let subs: string[]
+  try {
+    subs = readdirSync(projects)
+  } catch (err) {
+    // Unreadable profile (usually never run) is not a source. Must not throw:
+    // this runs mid-turn.
+    const code = (err as { code?: string }).code
+    if (code !== 'ENOENT') log.warn(`cannot scan ${projects}: ${code ?? String(err)}`)
+    return []
   }
-  return null
-}
-
-/**
- * Does the session JSONL exist anywhere under `<dir>/projects/`?
- *
- * Exposed so callers can probe the destination dir before deciding whether
- * to bother running migration - the typical case (no rotation since
- * session creation) is a no-op skip.
- */
-export function claudeSessionExistsIn(dir: string, sessionId: string, cwd: string): boolean {
-  return findClaudeSessionFile(dir, sessionId, cwd) !== null
-}
-
-/**
- * Find the first dir from `candidates` that contains the session JSONL,
- * then copy it to `toDir`. Used when the in-memory rotation tracker
- * doesn't know the previous dir (app restart, fresh adapter instance) -
- * we scan known oauth_dirs + default to discover the source.
- *
- * Returns `source-missing` if no candidate has the file.
- */
-export function migrateClaudeSessionFromCandidates(opts: {
-  sessionId: string
-  cwd: string
-  toDir: string
-  candidates: string[]
-}): MigrateResult {
-  for (const candidate of opts.candidates) {
-    if (candidate === opts.toDir) continue
-    if (claudeSessionExistsIn(candidate, opts.sessionId, opts.cwd)) {
-      const r = migrateClaudeSession({
-        sessionId: opts.sessionId,
-        cwd: opts.cwd,
-        fromDir: candidate,
-        toDir: opts.toDir,
-      })
-      if (r.ok) return { ...r, from: candidate }
-      // try next candidate on io-error
+  const found: SessionCopy[] = []
+  for (const sub of subs) {
+    const path = join(projects, sub, file)
+    try {
+      // throwIfNoEntry covers ENOENT only; EACCES still throws, and this runs
+      // mid-turn where a throw would wedge the query.
+      const st = statSync(path, { throwIfNoEntry: false })
+      if (st) found.push({ path, mtimeMs: st.mtimeMs })
+    } catch (err) {
+      log.warn(`cannot stat ${path}: ${(err as { code?: string }).code ?? String(err)}`)
     }
   }
-  return { ok: false, reason: 'source-missing' }
-}
-
-export interface MigrateOpts {
-  sessionId: string
-  cwd: string
-  /** Resolved CLAUDE_CONFIG_DIR of the previous instance (or default). */
-  fromDir: string
-  /** Resolved CLAUDE_CONFIG_DIR of the new instance (or default). */
-  toDir: string
+  return found.sort((a, b) => b.mtimeMs - a.mtimeMs)
 }
 
 /**
- * Copy `<fromDir>/projects/<encodedCwd>/<sessionId>.jsonl` to the same
- * relative path under `toDir`. No-op when fromDir === toDir.
+ * Encoded cwd first, else the newest copy anywhere under `projects/`.
+ * Newest, not first: readdir lists a repo before its worktrees, and taking
+ * that re-filed a 1-turn transcript over a 21-turn one.
  */
-export function migrateClaudeSession(opts: MigrateOpts): MigrateResult {
-  if (opts.fromDir === opts.toDir) {
-    return { ok: true, copied: false }
-  }
+export function findClaudeSessionFile(dir: string, sessionId: string, cwd: string): string | null {
+  const exact = claudeSessionResumePath(dir, sessionId, cwd)
+  if (existsSync(exact)) return exact
+  return listClaudeSessionCopies(dir, sessionId)[0]?.path ?? null
+}
 
-  const encoded = encodeClaudeProjectPath(opts.cwd)
-  const file = `${opts.sessionId}.jsonl`
-  // Destination stays the encoded startSession cwd - that is where the SDK's
-  // resume looks. Source may live under a different encoded dir (worktree
-  // re-rooting), hence the scan.
-  const srcPath = findClaudeSessionFile(opts.fromDir, opts.sessionId, opts.cwd)
-  const dstDir = join(opts.toDir, 'projects', encoded)
-  const dstPath = join(dstDir, file)
+/**
+ * Exact resume path only, no scan. A scan answers "exists somewhere", which is
+ * not the same question and skipped the copy this module exists to make.
+ */
+export function claudeSessionResumableIn(dir: string, sessionId: string, cwd: string): boolean {
+  return existsSync(claudeSessionResumePath(dir, sessionId, cwd))
+}
 
-  if (!srcPath) {
-    log.warn(`source missing under ${join(opts.fromDir, 'projects')} for session ${opts.sessionId}`)
-    return { ok: false, reason: 'source-missing' }
-  }
+/** Where a transcript must sit for `--resume` to find it. */
+export function claudeSessionResumePath(dir: string, sessionId: string, cwd: string): string {
+  return join(dir, 'projects', encodeClaudeProjectPath(cwd), `${sessionId}.jsonl`)
+}
 
+/**
+ * Put the freshest copy at the resume path. Call before every query carrying a
+ * resume id.
+ *
+ * Freshest, not "any copy exists": A -> B -> A leaves A's copy frozen at the
+ * first switch, so existence resumes a transcript missing every turn under B.
+ * Never overwrites a newer destination.
+ */
+export function ensureClaudeSessionResumable(opts: {
+  sessionId: string
+  cwd: string
+  /** Resolved CLAUDE_CONFIG_DIR the query will run under. */
+  toDir: string
+  /** Every known CLAUDE_CONFIG_DIR, including `toDir`. */
+  candidates: string[]
+}): MigrateResult {
+  const dirs = Array.from(new Set([opts.toDir, ...opts.candidates]))
+  const copies = dirs
+    .flatMap((dir) => listClaudeSessionCopies(dir, opts.sessionId))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+  if (copies.length === 0) return { ok: false, reason: 'source-missing' }
+
+  const dstPath = claudeSessionResumePath(opts.toDir, opts.sessionId, opts.cwd)
+  const newest = copies[0]
+  if (newest.path === dstPath) return { ok: true, copied: false }
+
+  const dst = copies.find((c) => c.path === dstPath)
+  if (dst && dst.mtimeMs >= newest.mtimeMs) return { ok: true, copied: false }
+
+  return copyToResumePath(newest.path, dstPath)
+}
+
+function copyToResumePath(srcPath: string, dstPath: string): MigrateResult {
   try {
-    mkdirSync(dstDir, { recursive: true })
+    mkdirSync(dirname(dstPath), { recursive: true })
     copyFileSync(srcPath, dstPath)
-    log.info(`migrated session ${opts.sessionId}: ${srcPath} → ${dstPath}`)
-    return { ok: true, copied: true }
+    log.info(`re-filed transcript: ${srcPath} → ${dstPath}`)
+    return { ok: true, copied: true, from: srcPath }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     log.error(`copy failed: ${srcPath} → ${dstPath}: ${msg}`)
     return { ok: false, reason: 'io-error', detail: msg }
+  }
+}
+
+/**
+ * Why resume failed. "Switch profile" is misleading when the profile is right
+ * and the cwd moved, so the message is picked by looking, not guessing.
+ */
+export type TranscriptWhereabouts =
+  | { kind: 'resumable' }
+  | { kind: 'other-project-dir'; path: string }
+  | { kind: 'other-profile'; dir: string; path: string }
+  | { kind: 'unknown' }
+
+export function locateResumeTranscript(opts: {
+  sessionId: string
+  cwd: string
+  activeDir: string
+  candidateDirs: string[]
+}): TranscriptWhereabouts {
+  if (claudeSessionResumableIn(opts.activeDir, opts.sessionId, opts.cwd)) {
+    return { kind: 'resumable' }
+  }
+  const inActive = findClaudeSessionFile(opts.activeDir, opts.sessionId, opts.cwd)
+  if (inActive) return { kind: 'other-project-dir', path: inActive }
+
+  for (const dir of opts.candidateDirs) {
+    if (dir === opts.activeDir) continue
+    const hit = findClaudeSessionFile(dir, opts.sessionId, opts.cwd)
+    if (hit) return { kind: 'other-profile', dir, path: hit }
+  }
+  return { kind: 'unknown' }
+}
+
+/** Chat copy for a failed resume. The user's next move differs per branch. */
+export function describeResumeFailure(where: TranscriptWhereabouts): string {
+  switch (where.kind) {
+    case 'other-project-dir':
+      return (
+        'Claude files history per project folder, and this conversation started in a different ' +
+        'folder from the one it is running in now, so Claude cannot see its history. ' +
+        'Nothing is lost. Send the message again to retry.'
+      )
+    case 'other-profile':
+      return (
+        'This conversation was started under a different profile and its history is not available here. ' +
+        `The transcript is in ${basename(where.dir)}. Your context is safe - switch to that profile to resume it.`
+      )
+    case 'unknown':
+      return (
+        'Claude has no transcript for this conversation, so the agent cannot resume its context. ' +
+        'Your messages here are safe. If it belongs to a profile that is not set up in Switchboard, ' +
+        'add it under Settings > Providers and switch to it. Otherwise the next message starts a ' +
+        'fresh Claude session.'
+      )
+    case 'resumable':
+      return 'Claude could not resume this conversation, but its transcript is where it should be. Send the message again to retry.'
   }
 }

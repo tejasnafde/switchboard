@@ -2,6 +2,22 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.2 - Resume blamed the profile when the directory had moved
+
+### Fixed
+- **A chat that changed directory lost its Claude context, and the error blamed the wrong thing.** The SDK resumes from exactly `<CLAUDE_CONFIG_DIR>/projects/<encode(cwd)>/<sessionId>.jsonl`, so the cwd keys that path as much as the profile does. Only the profile half was handled. Live capture: a 214-message chat resumed with cwd set to a worktree while its transcript stayed filed under the repo, under the correct profile, and was told "This conversation was started under a different profile - switch back". There was nothing to switch back to.
+- **The pre-flight check could not see the case it existed for.** `claudeSessionExistsIn` scans every project subdirectory, so it answered "already present" for a transcript filed under any cwd and skipped the copy. Existence and resumability are separate functions now, and only the exact-path one gates the copy.
+- **Rotating profiles A to B and back resumed a transcript frozen at the first switch.** The copy is one-directional, so B's file kept growing while A's did not. Placement ranks by mtime, takes the newest, and never overwrites a newer destination.
+- **Directory order picked the wrong copy.** A repo's encoded name is a prefix of its worktrees', so `readdirSync` returned the pre-worktree copy first. On real data that re-filed a 1-turn transcript over a 21-turn conversation.
+- **A failed copy claimed nothing was found, and cost the conversation.** A destination-side `io-error` (TCC denial, no space) fell through a per-candidate retry loop that discarded it and reported `source-missing`. One copy attempt now, and its error surfaces. The resume id is dropped only when the transcript is genuinely gone: on a transient fault it is kept, because clearing it is permanent - the SDK's replacement UUID gets recorded and becomes the resume target from then on.
+- **The failure message says where the transcript is:** at the resume path, in this profile under another cwd, in a named other profile, or nowhere known. Only one of those mentions profiles.
+
+### Notes
+- Placement moved from `startSession` to `runQuery`. Resume is a per-query argument, and `ChatPanel` guards `startSession` behind `providerStartedRef`, so the resend the message asks for never re-ran the old check. In practice the drain loop spans the session, so this fires at session start and after each query terminates rather than on every send.
+- Two bugs found by writing the tests: `readdirSync` on an unreadable profile dir threw out of the scan, and `statSync`'s `throwIfNoEntry` covers ENOENT but not EACCES. Either would have killed the turn with a raw errno instead of the notice.
+- The `<sessionId>/` sidecar (`subagents/`, `tool-results/`) is still not copied and does not need to be: tool results are referenced by absolute path with an inline preview, and sources are copied rather than moved, so those paths keep resolving. Deleting a profile would degrade an oversized result to its preview.
+- Not addressed: the "other profile" message names the directory (`.claude-tejas`), not the Settings display name. Two profiles at `~/work/.claude` and `~/personal/.claude` both render as `.claude`.
+
 ## 0.8.1 - Models the picker actually has
 
 ### Fixed

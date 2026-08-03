@@ -299,11 +299,9 @@ export class ProviderRegistry {
 
       const agentType: AgentType = opts.provider === 'claude' ? 'claude-code' : opts.provider
       const instance = resolveProviderInstance(agentType, opts.instanceId)
-      // Gather every known oauth_dir for this agent kind so the adapter
-      // can scan them on cold-start (lastOauthDir map empty after app
-      // restart) to find a resumeable JSONL across profiles. Always
-      // includes the default dir so env-mode sessions (no oauth_dir) are
-      // discoverable too.
+      // Every known oauth_dir for this agent kind, so the adapter can find a
+      // resumeable JSONL across profiles. Includes the default dir so env-mode
+      // sessions (no oauth_dir) are discoverable too.
       const candidateOauthDirs = Array.from(new Set([
         ...listOauthDirsForAgent(agentType),
         defaultClaudeDir(),
