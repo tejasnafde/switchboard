@@ -6,11 +6,25 @@ export interface ModelOption {
   tier: 'fast' | 'balanced' | 'max'
 }
 
+/**
+ * Shown BEFORE a session exists, on both desktop and mobile - `provider:list-models`
+ * needs a live session to answer, so neither client can do better than a static
+ * list here. Once a session starts, the adapter's `model.variants` event replaces
+ * it with what that account actually has.
+ *
+ * Verified 2026-08-03 against the ids in the Claude Code binary the adapter
+ * spawns (2.1.220), not from memory. Newest first; the 4.5-era ids were dropped
+ * because their successors cost the same. An id already stored on a session
+ * still works - this list only decides what the picker OFFERS.
+ */
 export const CLAUDE_MODELS: ModelOption[] = [
-  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'fast' },
-  { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', tier: 'balanced' },
-  { id: 'claude-opus-4-5', label: 'Claude Opus 4.5', tier: 'max' },
+  { id: 'claude-fable-5', label: 'Claude Fable 5', tier: 'max' },
+  { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'max' },
+  { id: 'claude-opus-4-8', label: 'Claude Opus 4.8', tier: 'max' },
   { id: 'claude-opus-4-7', label: 'Claude Opus 4.7', tier: 'max' },
+  { id: 'claude-sonnet-5', label: 'Claude Sonnet 5', tier: 'balanced' },
+  { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', tier: 'balanced' },
+  { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'fast' },
 ]
 
 /**
