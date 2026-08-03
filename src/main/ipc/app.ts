@@ -313,6 +313,7 @@ export function registerAppHandlers(host: BackendHost): void {
       `conversation created: ${params.id} project=${params.projectPath}` +
         (params.worktreePath ? ` worktree=${params.worktreePath} (${params.worktreeBranch})` : ''),
     )
+    host.emit(AppChannels.CONVERSATIONS_CHANGED)
     return { id: params.id }
   })
 
@@ -521,6 +522,7 @@ export function registerAppHandlers(host: BackendHost): void {
   host.handle(AppChannels.RENAME_CONVERSATION, (id: string, title: string) => {
     updateConversationTitle(id, title)
     log.info(`conversation renamed: ${id} → ${title}`)
+    host.emit(AppChannels.CONVERSATIONS_CHANGED)
     return { ok: true }
   })
 

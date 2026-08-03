@@ -213,6 +213,8 @@ const api = {
       transport.invoke(AppChannels.SAVE_LAUNCH_CONFIG, projectPath, yamlContent),
     onLaunchConfigChanged: (callback: (projectPath: string) => void) =>
       transport.on<[string]>('app:launch-config-changed', (projectPath) => callback(projectPath)),
+    onConversationsChanged: (callback: () => void) =>
+      transport.on<[]>(AppChannels.CONVERSATIONS_CHANGED, () => callback()),
     /**
      * Manual "check for updates" trigger. Returns the most recent
      * status the main process saw (or `unsupported` in dev). Live

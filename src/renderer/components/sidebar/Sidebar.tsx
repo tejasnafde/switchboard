@@ -272,7 +272,14 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
       }).catch(() => {})
     }
     window.addEventListener('sidebar-refresh', handler)
-    return () => window.removeEventListener('sidebar-refresh', handler)
+    // Also on a conversation created or renamed by another client. onSessionCreated
+    // is a renderer-local bus, so a chat started on the phone was invisible here
+    // until the window was reloaded.
+    const off = window.api.app.onConversationsChanged(handler)
+    return () => {
+      window.removeEventListener('sidebar-refresh', handler)
+      off()
+    }
   }, [])
 
   // Listen for newly-created sessions from ChatPanel (e.g. "+ New Chat")
