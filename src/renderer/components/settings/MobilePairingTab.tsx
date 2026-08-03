@@ -238,10 +238,7 @@ export function MobilePairingTab() {
     return () => { cancelled = true }
   }, [])
 
-  // Both listeners in one command: HOST serves the `ws` connection kind, TCP_PORT
-  // the `iap` one. A VM with no routable port (any IAP-only host) can ONLY be
-  // reached through the second, and omitting it is silent - the phone just never
-  // connects. Cheaper to always start both than to make the user pick.
+  // HOST serves the `ws` kind, TCP_PORT the `iap` one. Both, so neither silently fails.
   const serverCommand = token
     ? `SWITCHBOARD_TOKEN=${token} HOST=0.0.0.0 TCP_PORT=8766 npm run server`
     : null
@@ -535,12 +532,11 @@ export function MobilePairingTab() {
       {/* Server command */}
       <div style={fieldLabelStyle}>Run on the machine you want to reach</div>
       <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.6 }}>
-        Only for a different machine - this desktop needs nothing beyond the toggle
-        above. Starts both listeners, so in the app either scan the QR / use{' '}
-        <strong>Enter one manually</strong> with <code>ws://&lt;host&gt;:8765</code> if the
-        phone can reach that IP, or <strong>Add a work VM</strong> (port 8766) for a VM
-        with no routable port, which is the only way in for one behind IAP. Runs in the
-        foreground - start it under tmux or it dies with your SSH session.
+        Only for another machine with a Switchboard checkout. This desktop needs
+        nothing beyond the toggle above. Starts both listeners: <code>ws://</code> on
+        8765, and the ndjson one on 8766 that an IAP-tunnelled phone needs. Runs in the
+        foreground, so start it under tmux. It prints its own pairing QR - the one above
+        pairs with this desktop only.
       </div>
       <div style={{
         display: 'flex',
@@ -580,7 +576,7 @@ export function MobilePairingTab() {
       </div>
       <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '8px', lineHeight: 1.6 }}>
         Only for a machine with no Switchboard app running, such as a VM.
-        <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and the server exits at startup if SWITCHBOARD_TOKEN is missing while bound beyond loopback. Running it here as well would take the port and stop the app from serving." />
+        <InfoHint text="This computer needs no command: it serves the endpoint itself. On a VM, the server bundle (out/server/index.cjs) must be present first, and binding beyond loopback without SWITCHBOARD_TOKEN mints one and saves it to ~/.switchboard-server/token. Running it here as well would take the port and stop the app from serving." />
       </div>
 
       {/* APK download QR - static URL, resolved to the newest release by the Worker */}
