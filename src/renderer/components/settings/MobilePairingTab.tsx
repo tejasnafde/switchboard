@@ -238,8 +238,12 @@ export function MobilePairingTab() {
     return () => { cancelled = true }
   }, [])
 
+  // Both listeners in one command: HOST serves the `ws` connection kind, TCP_PORT
+  // the `iap` one. A VM with no routable port (any IAP-only host) can ONLY be
+  // reached through the second, and omitting it is silent - the phone just never
+  // connects. Cheaper to always start both than to make the user pick.
   const serverCommand = token
-    ? `SWITCHBOARD_TOKEN=${token} HOST=0.0.0.0 npm run server`
+    ? `SWITCHBOARD_TOKEN=${token} HOST=0.0.0.0 TCP_PORT=8766 npm run server`
     : null
 
   const copyCommand = useCallback(async () => {
@@ -529,7 +533,15 @@ export function MobilePairingTab() {
       )}
 
       {/* Server command */}
-      <div style={fieldLabelStyle}>Run on the target machine</div>
+      <div style={fieldLabelStyle}>Run on the machine you want to reach</div>
+      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px', lineHeight: 1.6 }}>
+        Only for a different machine - this desktop needs nothing beyond the toggle
+        above. Starts both listeners, so in the app either scan the QR / use{' '}
+        <strong>Enter one manually</strong> with <code>ws://&lt;host&gt;:8765</code> if the
+        phone can reach that IP, or <strong>Add a work VM</strong> (port 8766) for a VM
+        with no routable port, which is the only way in for one behind IAP. Runs in the
+        foreground - start it under tmux or it dies with your SSH session.
+      </div>
       <div style={{
         display: 'flex',
         alignItems: 'flex-start',
