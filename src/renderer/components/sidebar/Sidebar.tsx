@@ -152,33 +152,31 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     window.api.app.workspaces.list().then((list) => setWorkspaces(list ?? [])).catch(() => {})
   }, [])
 
+  // Every refetch goes through this. Applying projectOrder only at mount meant
+  // any later refresh reinstated the DB's added_at order and silently undid a
+  // user's drag - and handleDragEnd would then persist that reset order.
+  const loadProjects = useCallback(async (firstRun = false): Promise<void> => {
+    const saved: Project[] = await window.api.app.getProjects()
+    if (!saved?.length) return
+    if (firstRun && useLayoutStore.getState().sidebarCollapsedProjects.length === 0) {
+      setSidebarCollapsedProjects(saved.map((p) => p.path))
+    }
+    const orderJson = await window.api.settings.get('projectOrder')
+    let order: string[] | null = null
+    if (orderJson) {
+      try {
+        order = JSON.parse(orderJson)
+      } catch {
+        order = null // corrupt setting - fall back to scan order
+      }
+    }
+    setProjects(order ? applyProjectOrder(saved, order) : saved)
+  }, [setSidebarCollapsedProjects])
+
   useEffect(() => {
     refreshWorkspaces()
-    window.api.app.getProjects().then((saved: Project[]) => {
-      if (saved?.length) {
-        // Default-collapse only on first run - once the user has expanded
-        // anything, layout-store drives the truth across reloads.
-        const stored = useLayoutStore.getState().sidebarCollapsedProjects
-        if (stored.length === 0) {
-          setSidebarCollapsedProjects(saved.map((p) => p.path))
-        }
-
-        window.api.settings.get('projectOrder').then((orderJson: string | null) => {
-          if (orderJson) {
-            let order: string[] | null = null
-            try {
-              order = JSON.parse(orderJson)
-            } catch {
-              order = null // corrupt setting - fall back to scan order
-            }
-            setProjects(applyProjectOrder(saved, order))
-          } else {
-            setProjects(saved)
-          }
-        })
-      }
-    })
-  }, [refreshWorkspaces, setSidebarCollapsedProjects])
+    void loadProjects(true)
+  }, [refreshWorkspaces, loadProjects])
 
   const handleAddProject = useCallback(async () => {
     const project = await window.api.app.openFolder()
@@ -266,21 +264,15 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
 
   // Refresh project list from disk (e.g., after unarchive)
   useEffect(() => {
-    const handler = () => {
-      window.api.app.getProjects().then((saved: Project[]) => {
-        if (saved?.length) setProjects(saved)
-      }).catch(() => {})
-    }
+    const handler = () => void loadProjects().catch(() => {})
     window.addEventListener('sidebar-refresh', handler)
-    // Also on a conversation created or renamed by another client. onSessionCreated
-    // is a renderer-local bus, so a chat started on the phone was invisible here
-    // until the window was reloaded.
+    // onSessionCreated is renderer-local, so another client's chat needs this.
     const off = window.api.app.onConversationsChanged(handler)
     return () => {
       window.removeEventListener('sidebar-refresh', handler)
       off()
     }
-  }, [])
+  }, [loadProjects])
 
   // Listen for newly-created sessions from ChatPanel (e.g. "+ New Chat")
   useEffect(() => {

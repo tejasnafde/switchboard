@@ -53,8 +53,7 @@ export const AppChannels = {
   WORKSPACE_REORDER: 'app:workspace-reorder',
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
   FORK_CONVERSATION: 'app:fork-conversation',
-  /** backend → renderer push: a conversation was created or renamed by ANY
-   *  client, so a desktop window learns about one started on the phone. */
+  /** backend → renderer push: any client created or renamed a conversation. */
   CONVERSATIONS_CHANGED: 'app:conversations-changed',
   // Editor tabs persistence - open files survive app restart per session.
   /**

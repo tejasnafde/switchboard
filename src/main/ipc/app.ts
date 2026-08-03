@@ -215,7 +215,10 @@ export function registerAppHandlers(host: BackendHost): void {
           return withAgentType
         })
       const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, scannedIds)
-      return { path: row.path, name: row.name, sessions: [...filtered, ...dbOnlySessions], workspaceId: row.workspace_id ?? null }
+      // Sorted, not concatenated: dbOnlySessions used to land after every
+      // scanned session, so a brand-new chat appeared at the bottom.
+      const merged = [...filtered, ...dbOnlySessions].sort((a, b) => b.startedAt - a.startedAt)
+      return { path: row.path, name: row.name, sessions: merged, workspaceId: row.workspace_id ?? null }
     }))
     return projects
   })
@@ -301,7 +304,7 @@ export function registerAppHandlers(host: BackendHost): void {
   )
 
   host.handle(AppChannels.CREATE_CONVERSATION, (params: CreateConversationParams) => {
-    createConversation(
+    const inserted = createConversation(
       params.id,
       params.projectPath,
       params.agentType,
@@ -313,7 +316,8 @@ export function registerAppHandlers(host: BackendHost): void {
       `conversation created: ${params.id} project=${params.projectPath}` +
         (params.worktreePath ? ` worktree=${params.worktreePath} (${params.worktreeBranch})` : ''),
     )
-    host.emit(AppChannels.CONVERSATIONS_CHANGED)
+    // INSERT OR IGNORE: opening an existing chat re-runs this and changes nothing.
+    if (inserted) host.emit(AppChannels.CONVERSATIONS_CHANGED)
     return { id: params.id }
   })
 
@@ -520,9 +524,9 @@ export function registerAppHandlers(host: BackendHost): void {
 
   // Rename a conversation
   host.handle(AppChannels.RENAME_CONVERSATION, (id: string, title: string) => {
-    updateConversationTitle(id, title)
+    const changed = updateConversationTitle(id, title)
     log.info(`conversation renamed: ${id} → ${title}`)
-    host.emit(AppChannels.CONVERSATIONS_CHANGED)
+    if (changed) host.emit(AppChannels.CONVERSATIONS_CHANGED)
     return { ok: true }
   })
 

@@ -552,9 +552,9 @@ export function createConversation(
   title?: string,
   worktreePath?: string | null,
   worktreeBranch?: string | null,
-): void {
+): boolean {
   const now = Date.now()
-  getDb().prepare(
+  const info = getDb().prepare(
     `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title, created_at, updated_at, worktree_path, worktree_branch)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
@@ -567,6 +567,7 @@ export function createConversation(
     worktreePath ?? null,
     worktreeBranch ?? null,
   )
+  return info.changes > 0
 }
 
 /**
@@ -590,10 +591,12 @@ export function updateConversationSessionId(id: string, sessionId: string): void
   ).run(sessionId, Date.now(), id)
 }
 
-export function updateConversationTitle(id: string, title: string): void {
-  getDb().prepare(
-    'UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?'
-  ).run(title, Date.now(), id)
+/** Returns false when the title was already this, so callers can skip a broadcast. */
+export function updateConversationTitle(id: string, title: string): boolean {
+  const info = getDb().prepare(
+    'UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND title IS NOT ?'
+  ).run(title, Date.now(), id, title)
+  return info.changes > 0
 }
 
 export function getConversationsForProject(projectPath: string): ConversationRow[] {
