@@ -2,6 +2,29 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.1 - Models the picker actually has
+
+### Fixed
+- **Model lists were stale on both agents.** Claude offered Haiku 4.5, Sonnet
+  4.5, Opus 4.5 and Opus 4.7, missing Opus 5, Opus 4.8, Sonnet 5, Sonnet 4.6
+  and Fable 5. Codex was worse: four of its eight entries (the `-codex` slugs)
+  are not in the catalog the codex binary ships, and the whole 5.6 generation
+  was absent - Sol, Terra and Luna, three models rather than one. Both lists
+  now come from the ids in the binaries the adapters spawn.
+- **The default Claude model was positional.** `defaultModelFor` indexed
+  `CLAUDE_MODELS[1]`, so reordering the list moved the default from Sonnet to
+  Opus 5. It names the model now.
+
+Codex matters more than Claude here: that adapter never emits `model.variants`,
+so its static list is the only one the picker ever shows.
+
+### Mobile (ships over the air, no new APK)
+- Chats started on the phone are titled from their first message. Without it
+  they stayed "New conversation" and were unfindable in a long sidebar.
+- Long-press a chat to rename it. The backend has always had the handler; the
+  phone had no way to call it.
+- Markdown tables render. They used to show as raw pipes and dashes.
+
 ## 0.8.0 - The phone
 
 A Switchboard client for Android, and the backend work it needed. The desktop
