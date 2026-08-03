@@ -126,7 +126,6 @@ export function registerAppHandlers(host: BackendHost): void {
         .filter((c) => c.worktree_path)
         .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
     )
-    const scannedIds = new Set(sessions.map((s) => s.id))
     const filtered = sessions
       // Hide archived chats (global set - across project paths) and child
       // session_ids produced by Claude SDK rotation (tracked in thread_sessions).
@@ -148,7 +147,10 @@ export function registerAppHandlers(host: BackendHost): void {
         return withAgentType
       })
 
-    const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, scannedIds)
+    // Same rule as GET_PROJECTS: compare against what survived the filter, or a
+    // conversation whose transcript childSet hides is suppressed into nothing.
+    const visibleIds = new Set(filtered.map((s) => s.id))
+    const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, visibleIds)
     const result = [...filtered, ...dbOnlySessions]
     log.info(`scan complete: ${result.length} visible (${sessions.length - filtered.length} archived/child, ${dbOnlySessions.length} db-only)`)
     return result
@@ -198,7 +200,6 @@ export function registerAppHandlers(host: BackendHost): void {
           .filter((c) => c.worktree_path)
           .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
       )
-      const scannedIds = new Set(sessions.map((s) => s.id))
       const filtered = sessions
         .filter((s) => !archivedSet.has(s.id) && !childSet.has(s.id))
         .map((s) => {
@@ -214,7 +215,11 @@ export function registerAppHandlers(host: BackendHost): void {
           }
           return withAgentType
         })
-      const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, scannedIds)
+      // The VISIBLE ids, not every scanned one. A transcript that childSet hides
+      // still lived in scannedIds, so the DB row was suppressed as a duplicate of
+      // an entry that was itself dropped - and the chat vanished from the sidebar.
+      const visibleIds = new Set(filtered.map((s) => s.id))
+      const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, visibleIds)
       // Sorted, not concatenated: dbOnlySessions used to land after every
       // scanned session, so a brand-new chat appeared at the bottom.
       const merged = [...filtered, ...dbOnlySessions].sort((a, b) => b.startedAt - a.startedAt)

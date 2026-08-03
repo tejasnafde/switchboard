@@ -238,3 +238,24 @@ describe('stampAgentTypes', () => {
     expect(result.find((s) => s.id === 'unknown')?.agentType).toBeUndefined()
   })
 })
+
+describe('the set callers must pass', () => {
+  it('keeps a conversation whose transcript exists but was hidden as a rotation child', () => {
+    // The live failure: a chat started on the phone wrote its JSONL under a
+    // non-default Claude profile dir, so the scanner saw it and thread_sessions
+    // recorded it as a child of the thread. Callers passed EVERY scanned id, so
+    // the DB row was dropped as a duplicate of an entry childSet had already
+    // dropped, and the chat existed in neither list.
+    const conv = { id: 'mob-1', session_id: 'uuid-a', title: 'Marvel Syllabus', agent_type: 'claude-code' }
+    const scannedIncludingHidden = new Set(['uuid-a'])
+    const visibleAfterChildFilter = new Set<string>()
+
+    expect(synthesizeDbOnlySessions([conv] as never, new Set(), scannedIncludingHidden)).toHaveLength(0)
+    expect(synthesizeDbOnlySessions([conv] as never, new Set(), visibleAfterChildFilter)).toHaveLength(1)
+  })
+
+  it('still suppresses a duplicate when the scanned entry is actually visible', () => {
+    const conv = { id: 'c1', session_id: 'uuid-b', title: 'Shown once', agent_type: 'claude-code' }
+    expect(synthesizeDbOnlySessions([conv] as never, new Set(), new Set(['uuid-b']))).toHaveLength(0)
+  })
+})
