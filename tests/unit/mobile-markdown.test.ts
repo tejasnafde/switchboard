@@ -116,3 +116,57 @@ describe('parseMarkdown blocks', () => {
     expect(blocks.length).toBeGreaterThan(0)
   })
 })
+
+/**
+ * GFM tables. The renderer had no table block at all, so an agent reply
+ * containing one showed the raw pipes and dashes on the phone.
+ */
+describe('tables', () => {
+  const t = (md: string) => parseMarkdown(md).find((b) => b.kind === 'table') as
+    | Extract<ReturnType<typeof parseMarkdown>[number], { kind: 'table' }>
+    | undefined
+
+  it('parses a header, a delimiter row and body rows', () => {
+    const table = t('| source | finding |\n|---|---|\n| A | best |\n| B | usable |')
+    expect(table).toBeDefined()
+    expect(table!.header).toHaveLength(2)
+    expect(table!.rows).toHaveLength(2)
+  })
+
+  it('reads column alignment from the delimiter row', () => {
+    expect(t('| a | b | c |\n|:--|:-:|--:|\n| 1 | 2 | 3 |')!.align).toEqual(['left', 'center', 'right'])
+  })
+
+  it('leaves alignment null where the delimiter says nothing', () => {
+    expect(t('| a |\n|---|\n| 1 |')!.align).toEqual([null])
+  })
+
+  it('accepts rows without leading and trailing pipes, which GFM allows', () => {
+    const table = t('a | b\n--- | ---\n1 | 2')
+    expect(table).toBeDefined()
+    expect(table!.header).toHaveLength(2)
+    expect(table!.rows[0]).toHaveLength(2)
+  })
+
+  it('does not treat an escaped pipe as a cell separator', () => {
+    const table = t('| a | b |\n|---|---|\n| x \\| y | z |')
+    expect(table!.rows[0]).toHaveLength(2)
+  })
+
+  it('ends the table at a blank line rather than swallowing what follows', () => {
+    const blocks = parseMarkdown('| a |\n|---|\n| 1 |\n\nAfter the table.')
+    expect(blocks.filter((b) => b.kind === 'table')).toHaveLength(1)
+    expect(blocks.some((b) => b.kind === 'paragraph')).toBe(true)
+  })
+
+  it('still parses a horizontal rule, which the delimiter row resembles', () => {
+    // `|---|---|` matches a rule too, so the table check runs first and a bare
+    // rule must not be swallowed by it.
+    expect(parseMarkdown('text\n\n---\n\nmore').some((b) => b.kind === 'rule')).toBe(true)
+  })
+
+  it('parses inline markup inside cells', () => {
+    const table = t('| a |\n|---|\n| **bold** |')
+    expect(table!.rows[0][0][0].kind).toBe('strong')
+  })
+})

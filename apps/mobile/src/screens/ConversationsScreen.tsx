@@ -5,7 +5,11 @@
 import { memo, useCallback, useLayoutEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -79,6 +83,28 @@ export default function ConversationsScreen({ route, navigation }: Props) {
     [connectionId, projectPath],
   )
 
+  /**
+   * Long-press to rename. The backend has owned RENAME_CONVERSATION all along;
+   * only the phone had no way to call it, so a chat titled badly on one device
+   * could not be fixed from the other.
+   *
+   * A Modal rather than Alert.prompt, which exists on iOS only and would have
+   * been a no-op on the platform this app actually ships to.
+   */
+  const [renaming, setRenaming] = useState<ConversationRow | null>(null)
+  const [renameText, setRenameText] = useState('')
+
+  const commitRename = useCallback(() => {
+    const target = renaming
+    const title = renameText.trim()
+    setRenaming(null)
+    if (!target || !title || title === target.title) return
+    getClient(connectionId)
+      ?.renameConversation(target.id, title)
+      .then(() => void load())
+      .catch(() => Alert.alert('Could not rename', 'The backend refused the new title.'))
+  }, [connectionId, load, renaming, renameText])
+
   useFocusEffect(
     useCallback(() => {
       void load()
@@ -128,6 +154,14 @@ export default function ConversationsScreen({ route, navigation }: Props) {
   }
 
   return (
+    <>
+    <RenameModal
+      row={renaming}
+      value={renameText}
+      onChange={setRenameText}
+      onCancel={() => setRenaming(null)}
+      onSubmit={commitRename}
+    />
     <FlatList
       data={visibleRows}
       keyExtractor={(r) => r.id}
@@ -173,6 +207,10 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         return (
           <Pressable
             style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            onLongPress={() => {
+              setRenameText(item.title)
+              setRenaming(item)
+            }}
             onPress={() =>
               navigation.navigate('Thread', {
                 connectionId,
@@ -195,10 +233,74 @@ export default function ConversationsScreen({ route, navigation }: Props) {
         )
       }}
     />
+    </>
+  )
+}
+
+/** Rename prompt. Its own component so the list is not re-rendered per keystroke. */
+function RenameModal({
+  row,
+  value,
+  onChange,
+  onCancel,
+  onSubmit,
+}: {
+  row: ConversationRow | null
+  value: string
+  onChange: (v: string) => void
+  onCancel: () => void
+  onSubmit: () => void
+}) {
+  return (
+    <Modal visible={row !== null} transparent animationType="fade" onRequestClose={onCancel}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.modalBackdrop}
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />
+        <View style={styles.modalCard}>
+          <Text style={styles.modalTitle}>Rename chat</Text>
+          <TextInput
+            value={value}
+            onChangeText={onChange}
+            autoFocus
+            selectTextOnFocus
+            returnKeyType="done"
+            onSubmitEditing={onSubmit}
+            style={styles.modalInput}
+            placeholderTextColor={colors.textFaint}
+          />
+          <View style={styles.modalActions}>
+            <Pressable onPress={onCancel} style={styles.modalButton}>
+              <Text style={styles.modalButtonText}>Cancel</Text>
+            </Pressable>
+            <Pressable onPress={onSubmit} style={styles.modalButton}>
+              <Text style={[styles.modalButtonText, styles.modalPrimary]}>Save</Text>
+            </Pressable>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   )
 }
 
 const styles = StyleSheet.create({
+  modalBackdrop: { flex: 1, backgroundColor: '#000000aa', justifyContent: 'center', padding: space.lg },
+  modalCard: { backgroundColor: colors.surface, borderRadius: radius.md, padding: space.lg, gap: space.md },
+  modalTitle: { ...type.body, color: colors.text, fontWeight: '600' },
+  modalInput: {
+    ...type.body,
+    color: colors.text,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+  },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: space.lg },
+  modalButton: { paddingVertical: space.xs, paddingHorizontal: space.sm },
+  modalButtonText: { ...type.body, color: colors.textDim },
+  modalPrimary: { color: colors.accent, fontWeight: '600' },
   searchWrap: { paddingBottom: space.sm },
   searchInput: {
     backgroundColor: colors.surfaceRaised,

@@ -19,6 +19,9 @@ export type Block =
   | { kind: 'listItem'; ordered: boolean; marker: string; depth: number; inlines: Inline[] }
   | { kind: 'quote'; inlines: Inline[] }
   | { kind: 'rule' }
+  /** GFM table. `align` is per column, null where the delimiter row said
+   *  nothing. Cells are already inline-parsed. */
+  | { kind: 'table'; header: Inline[][]; rows: Inline[][][]; align: Array<'left' | 'center' | 'right' | null> }
 
 // ── inline ──────────────────────────────────────────────────────────────────
 
@@ -95,6 +98,37 @@ const BULLET = /^(\s*)[-*+]\s+(.*)$/
 const ORDERED = /^(\s*)(\d{1,9})[.)]\s+(.*)$/
 const QUOTE = /^\s{0,3}>\s?(.*)$/
 
+/** A delimiter row: only pipes, dashes, colons and spaces, with at least one dash. */
+const TABLE_DELIM = /^\s*\|?[\s:-]*-[\s|:-]*\|?\s*$/
+
+/**
+ * Split one table row into cell texts.
+ *
+ * Leading and trailing pipes are optional in GFM, so they are trimmed rather
+ * than producing empty edge cells. An escaped `\|` is not a separator.
+ */
+function splitRow(line: string): string[] {
+  const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
+  const cells: string[] = []
+  let current = ''
+  for (let i = 0; i < trimmed.length; i++) {
+    const ch = trimmed[i]
+    if (ch === '\\' && trimmed[i + 1] === '|') {
+      current += '|'
+      i++
+      continue
+    }
+    if (ch === '|') {
+      cells.push(current.trim())
+      current = ''
+      continue
+    }
+    current += ch
+  }
+  cells.push(current.trim())
+  return cells
+}
+
 export function parseMarkdown(src: string): Block[] {
   const lines = src.replace(/\r\n?/g, '\n').split('\n')
   const blocks: Block[] = []
@@ -127,6 +161,31 @@ export function parseMarkdown(src: string): Block[] {
 
     if (line.trim() === '') {
       flushParagraph()
+      continue
+    }
+
+    // GFM table: a header row followed by a delimiter row of dashes. Checked
+    // before RULE, because `|---|---|` also matches a horizontal rule.
+    if (line.includes('|') && i + 1 < lines.length && TABLE_DELIM.test(lines[i + 1])) {
+      flushParagraph()
+      const align = splitRow(lines[i + 1]).map((c) => {
+        const left = c.startsWith(':')
+        const right = c.endsWith(':')
+        if (left && right) return 'center' as const
+        if (right) return 'right' as const
+        if (left) return 'left' as const
+        return null
+      })
+      const header = splitRow(line).map((c) => parseInline(c))
+      const rows: Inline[][][] = []
+      i += 2
+      for (; i < lines.length; i++) {
+        const row = lines[i]
+        if (row.trim() === '' || !row.includes('|')) break
+        rows.push(splitRow(row).map((c) => parseInline(c)))
+      }
+      i-- // the loop's own i++ consumes the terminator
+      blocks.push({ kind: 'table', header, rows, align })
       continue
     }
 

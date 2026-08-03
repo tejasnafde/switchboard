@@ -31,6 +31,7 @@ import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
 import { echoMessageId } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
+import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, radius, space, type } from '../theme'
@@ -437,6 +438,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // and the expensive ones are the ambiguous ones: a socket that still reads
     // as open, a reconnect in flight, a turn already running.
     const messageId = ownTurn()
+    // Title from the first message, as the desktop does. Without this a chat
+    // started on the phone stays "New conversation" in every sidebar, which is
+    // what made mobile-started chats feel like they had never synced.
+    if (thread.items.filter((i) => i.kind === 'user').length === 0 && text) {
+      const title = generateTitle(text)
+      getClient(connectionId)
+        ?.renameConversation(threadId, title)
+        .catch((err: unknown) => log.warn('could not set the chat title', err))
+    }
     useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), echoMessageId(messageId))
     enqueue({
       connectionId,

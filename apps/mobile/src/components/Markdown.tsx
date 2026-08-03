@@ -99,6 +99,40 @@ const BlockView = memo(function BlockView({ block }: { block: Block }): React.Re
         </View>
       )
 
+    case 'table': {
+      const cols = Math.max(block.header.length, ...block.rows.map((r) => r.length))
+      const textAlign = (i: number): 'left' | 'center' | 'right' => block.align[i] ?? 'left'
+      // Horizontally scrollable: a phone cannot fit a wide table, and wrapping
+      // every cell turns one into an unreadable stack. Columns get a floor so
+      // a long cell does not squeeze its neighbours to nothing.
+      return (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tableWrap}>
+          <View>
+            <View style={[styles.tableRow, styles.tableHeadRow]}>
+              {Array.from({ length: cols }, (_, c) => (
+                <View key={c} style={styles.tableCell}>
+                  <Text style={[styles.tableHeadText, { textAlign: textAlign(c) }]}>
+                    {block.header[c] ? renderInlines(block.header[c], `h${c}.`) : null}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            {block.rows.map((row, r) => (
+              <View key={r} style={styles.tableRow}>
+                {Array.from({ length: cols }, (_, c) => (
+                  <View key={c} style={styles.tableCell}>
+                    <Text style={[styles.tableText, { textAlign: textAlign(c) }]}>
+                      {row[c] ? renderInlines(row[c], `r${r}.${c}.`) : null}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      )
+    }
+
     case 'rule':
       return <View style={styles.rule} />
   }
@@ -150,6 +184,12 @@ const styles = StyleSheet.create({
     marginVertical: space.xs,
   },
   quoteText: { color: colors.textDim },
+  tableWrap: { marginVertical: space.sm },
+  tableRow: { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
+  tableHeadRow: { borderBottomWidth: 1 },
+  tableCell: { minWidth: 96, maxWidth: 260, paddingVertical: space.xs, paddingHorizontal: space.sm },
+  tableHeadText: { ...type.bodySm, color: colors.text, fontWeight: '600' },
+  tableText: { ...type.bodySm, color: colors.textDim },
   rule: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: colors.border,
