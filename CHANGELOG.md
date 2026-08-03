@@ -2,6 +2,15 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.4 - A chat could exist in the database and render nowhere
+
+### Fixed
+- **A chat started on the phone was in SQLite, unarchived, and in neither list the sidebar renders.** Its transcript was written under a non-default Claude profile dir, and `claudeCandidateDirs()` scans every profile - so the scanner found it, `thread_sessions` had it as a rotation child, and `childSet` dropped the scanned entry. `synthesizeDbOnlySessions` was then handed every scanned id and dropped the database row as a duplicate of the entry that had just been dropped. Both halves cancelled and the chat vanished. The two reasons a transcript can be hidden are now distinguished: hidden as a rotation child keeps the row, hidden by archiving suppresses it.
+- The same defect existed a second time in `SCAN_SESSIONS`.
+
+### Changed
+- The Settings > Mobile command now sets `TCP_PORT=8766` as well. Without it the ndjson listener never starts and an IAP-tunnelled phone silently never connects. The hint alongside it says which machine the command is for, that it runs in the foreground, and that the server prints its own pairing QR.
+
 ## 0.8.3 - A chat started on the phone showed up on the desktop
 
 ### Fixed
