@@ -2,6 +2,14 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.3 - A chat started on the phone showed up on the desktop
+
+### Fixed
+- **A conversation created on the mobile app was invisible on the desktop until the window was reloaded.** The sidebar learned about new chats from `onSessionCreated`, a renderer-local bus fired by the desktop's own ChatPanel, so nothing told a running window that another client had written to the database. The backend now emits `app:conversations-changed` on create and rename, and the sidebar refetches on it.
+- **A new chat appeared at the bottom of its project.** `GET_PROJECTS` returned `[...scanned, ...dbOnly]`, and a chat with no transcript yet is db-only, so it sorted below sessions from months ago. The merged list is sorted newest-first.
+- **A sidebar refresh undid a project drag.** `projectOrder` was applied only in the mount effect, so any later refetch reinstated the database's `added_at` order - and the next drag persisted that reset order.
+- **Most broadcasts described nothing.** `createConversation` is `INSERT OR IGNORE` and runs on every chat open; it now reports whether it inserted, and a rename reports whether the title actually changed. Without this, each no-op write cost a full-workspace filesystem rescan.
+
 ## 0.8.2 - Resume blamed the profile when the directory had moved
 
 ### Fixed
