@@ -2,6 +2,16 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.5 - A git process per frame
+
+### Fixed
+- **BranchPicker spawned `git` on every render while a turn streamed.** Its refresh effect depended on the `onCwdMissing` callback, which depended on a `{ path, branch }` object rebuilt on every agent-store commit. Streaming commits at up to 30fps, so the effect re-ran that often, each pass spawning `git rev-parse` and re-registering the HEAD watcher. The memo returns strings now, so the callback is stable while the worktree is.
+- **"Worktree X no longer exists" appeared twice.** `refresh()` calls `onCwdMissing` after an await, so both of StrictMode's mount-effect invocations were in flight before either healed. `appendMessage` already dedupes by id and its comment names this exact class of duplicate; only `wt_orphan_${Date.now()}` defeated it. The id is derived from the worktree path now, which also covers the same session shown in two panes.
+
+### Notes
+- A first attempt used a per-mount ref to count invocations. Review killed it: `ChatPanel` has no key, so ChatInput is not remounted when you switch chats, and a path-keyed ref would then have skipped the store write for a second session pointing at the same deleted worktree. Making the operation idempotent, which is what the other StrictMode call sites here do, has no such edge.
+- The duplicate was visual only. That path appends to the store without calling `saveMessage`, so a reload never showed it twice.
+
 ## 0.8.4 - A chat could exist in the database and render nowhere
 
 ### Fixed

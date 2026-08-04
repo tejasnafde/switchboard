@@ -461,14 +461,17 @@ export function ChatInput({
       .catch((err: unknown) => log.warn('persist worktree failed:', err))
   }
 
-  const { repoRoot, driftSuggestion, orphanedWorktree } = useMemo(() => {
+  const { repoRoot, driftSuggestion, orphanedPath, orphanedBranch } = useMemo(() => {
     const s = sessionsForRepo.find((sess) => sess.id === sessionId)
     return {
       repoRoot: s?.worktreePath ?? s?.projectPath ?? null,
       driftSuggestion: s?.driftSuggestion ?? null,
       // Only a WORKTREE pointer can be healed by falling back to the clone;
-      // a missing projectPath has nowhere to fall back to.
-      orphanedWorktree: s?.worktreePath ? { path: s.worktreePath, branch: s.worktreeBranch ?? null } : null,
+      // a missing projectPath has nowhere to fall back to. Strings, not an
+      // object: this feeds `onCwdMissing`, and a fresh object per store commit
+      // re-ran BranchPicker's effect - a git spawn per frame while streaming.
+      orphanedPath: s?.worktreePath ?? null,
+      orphanedBranch: s?.worktreeBranch ?? null,
     }
   }, [sessionsForRepo, sessionId])
 
@@ -476,7 +479,7 @@ export function ChatInput({
   // after merges): reset the pointer to the main clone so the chip, IDE
   // pane, terminals, and diff review all recover, and say so in the chat.
   const healOrphanedWorktree = useCallback(() => {
-    if (!sessionId || !orphanedWorktree) return
+    if (!sessionId || !orphanedPath) return
     useAgentStore.getState().setWorktree(sessionId, null, null)
     const conversationId = useAgentStore.getState().sessions.find((x) => x.id === sessionId)?.conversationId
       ?? sessionId
@@ -484,13 +487,15 @@ export function ChatInput({
       .setConversationWorktree(conversationId, null, null)
       .catch((err: unknown) => log.warn('persist worktree reset failed:', err))
     useAgentStore.getState().appendMessage(sessionId, {
-      id: `wt_orphan_${Date.now()}`,
+      // Deterministic, so `appendMessage`'s id dedupe absorbs the repeat calls
+      // this gets: two panes on one session, and two mount effects in dev.
+      id: `wt_orphan_${orphanedPath}`,
       role: 'system',
-      content: `Worktree ${orphanedWorktree.branch ?? orphanedWorktree.path} no longer exists - switched back to the main checkout.`,
+      content: `Worktree ${orphanedBranch ?? orphanedPath} no longer exists - switched back to the main checkout.`,
       timestamp: Date.now(),
     })
-    log.info('healed orphaned worktree pointer', orphanedWorktree.path)
-  }, [sessionId, orphanedWorktree])
+    log.info('healed orphaned worktree pointer', orphanedPath)
+  }, [sessionId, orphanedPath, orphanedBranch])
 
   const followDrift = () => {
     if (driftSuggestion) swapWorktreePointer(driftSuggestion.worktreePath, driftSuggestion.branch)
