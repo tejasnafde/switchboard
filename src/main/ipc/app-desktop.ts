@@ -11,7 +11,7 @@ import { AppChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions } from '../projects/session-scanner'
 import { addProject, getArchivedConversationIds } from '../db/database'
-import { claudeCandidateDirs } from './app'
+import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import type { Project } from '@shared/types'
 
 const log = createLogger('ipc:app-desktop')

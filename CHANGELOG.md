@@ -2,6 +2,25 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.6 - Every reader that guessed where a transcript lives
+
+An audit of one bug's family. A transcript's path is a function of `(profile, cwd)` at WRITE time - `<CLAUDE_CONFIG_DIR>/projects/<encode(cwd)>/<id>.jsonl` - and every reader was reconstructing it from `(~/.claude, project_path)` at READ time. Both halves drift: the profile changes when you switch instance, the cwd changes when a chat enters a worktree. 0.8.2 fixed resume. These are the rest.
+
+### Fixed
+- **Re-entering a chat replaced live history with a frozen snapshot.** `LOAD_SESSION_BY_ID` scanned every profile but only the `encode(project_path)` directory, so a chat running in a worktree loaded whatever stale copy sat under the project dir. Measured on a real thread: it returned the same 540 messages for 17 hours while the live transcript grew past 1599 lines, and every reload overwrote the in-memory history with it. Every log line said `across 1 fragment(s)`, which was the tell. Now unions every copy under every project dir of every profile, then dedupes by uuid as before. On the affected chat the handler went from reading 5.19 MB to 13.64 MB.
+- **Fork could not find 98% of transcripts.** `fork.ts` hardcoded `homedir()/.claude` in three places. That is not even the default profile's directory here - `claude-code-default` resolves to `~/.claude-tech-team` - so it missed 355 of 361 locatable transcripts. It then fell back to the sqlite mirror, which holds only the handful of messages Switchboard streamed itself, and the range guard threw `upToIndex out of range` into the UI. Forking "29 Jul Bugfixes" past message 12 of its 401 was impossible. Fragments now resolve by session id across all profiles and project dirs, newest copy wins. On this database, forkable conversations go from **6 to 327**.
+- **Fork wrote to the wrong profile.** The truncated JSONL landed in `~/.claude` while the new session ran under the resolved default instance. It only worked because 0.8.2's per-query pre-flight found it there and re-filed it. Now written where the new session will read it.
+- **"Fork to worktree" from a worktree chat branched off the wrong ref.** It passed `project_path` as the repo root, so the fork started at the repo's HEAD instead of the branch you were looking at.
+- **Worktree chats sorted to the bottom of the sidebar.** They can only render through `synthesizeDbOnlySessions`, which stamped `startedAt` from `created_at`. One real row was 2 days 5 hours behind its transcript. `sessionActivity.ts` already documented this field as last-activity from `updated_at`; the synthesizer was the one place that disagreed. `SCAN_SESSIONS` also concatenated db-only rows instead of sorting, the exact bug `GET_PROJECTS` carries a comment about having fixed.
+- **Exporting a worktree chat wrote an empty file.** The export path keys off `filePath`, which db-only rows leave as `''`, so it serialized zero messages with the transcript sitting on disk. Falls back to `loadSessionById`.
+
+### Notes
+- `claudeCandidateDirs` moved from `ipc/app` to `claude-session-migrate` so fork can use it without an import cycle.
+- Widening by session id, not by directory name, is what keeps this safe. A prefix or substring rule would reinstate the parent/child bleed fixed in 2026-04: `encode('~/Desktop/projects')` is a prefix of both `-Users-tejas-Desktop-projects-switchboard` and its worktree dirs, and this install has 25 child projects registered under one parent. Session ids already belong to a known conversation row, so they cannot bleed.
+- Fork's orchestration layer had zero tests, which is why none of this was caught. `listClaudeFragmentPaths` is exported and covered now.
+- **Latent, left alone:** OpenCode writes session summaries under `encode(session.cwd)` and scans under `encode(project_path)` - the same asymmetry, but `~/.opencode` does not exist and there are 0 OpenCode conversations. Codex matches rollouts by cwd substring, which survives an in-repo worktree but not one in `/tmp`; no Codex rollout references a worktree today. `findCodexRollout` hardcodes `~/.codex/sessions` and breaks the moment a second Codex profile exists.
+- **Sqlite is not the backup it looks like.** For the chat above: 46 rows in `messages`, ~800 real. The DB fallback only fires when JSONL yields zero.
+
 ## 0.8.5 - A git process per frame
 
 ### Fixed

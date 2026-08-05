@@ -54,8 +54,8 @@ function makeSession(over: Partial<SessionSummary> & { id: string }): SessionSum
 describe('synthesizeDbOnlySessions', () => {
   it('returns a SessionSummary for each terminal row', () => {
     const rows = [
-      makeRow({ id: 't1', agent_type: 'terminal', title: 'claude session', created_at: 5000 }),
-      makeRow({ id: 't2', agent_type: 'terminal', title: 'codex session', created_at: 6000 }),
+      makeRow({ id: 't1', agent_type: 'terminal', title: 'claude session', created_at: 5000, updated_at: 7000 }),
+      makeRow({ id: 't2', agent_type: 'terminal', title: 'codex session', created_at: 6000, updated_at: 8000 }),
     ]
     const result = synthesizeDbOnlySessions(rows, new Set(), new Set())
     expect(result).toHaveLength(2)
@@ -63,7 +63,9 @@ describe('synthesizeDbOnlySessions', () => {
       id: 't1',
       source: 'switchboard',
       title: 'claude session',
-      startedAt: 5000,
+      // updated_at, not created_at. The sidebar sorts on startedAt as last
+      // activity, and a worktree chat renders ONLY through this synthesizer.
+      startedAt: 7000,
       messageCount: 0,
       filePath: '',
       agentType: 'terminal',

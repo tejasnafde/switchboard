@@ -58,9 +58,7 @@ import {
   messageRowsToChatMessages,
   setConversationLastRead,
 } from '../db/database'
-import { listOauthDirsForAgent } from '../db/providerInstances'
-import { defaultClaudeDir } from '../provider/claude-session-migrate'
-import { listRemoteClaudeConfigDirs } from '../provider/remote-gate'
+import { claudeCandidateDirs, listClaudeSessionCopies } from '../provider/claude-session-migrate'
 import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { dedupeMessagesById } from '../agent/dedupe-messages'
@@ -69,20 +67,6 @@ import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfig
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
 
 const log = createLogger('ipc:app')
-
-/**
- * All Claude config roots: every enabled oauth_dir + the default ~/.claude.
- * On a remote VM, also every ~/.claude* dir - per-instance dirs are forwarded
- * per session and never registered in the VM's provider_instances table, so
- * without the extra scan session scans and history loads miss their JSONLs.
- */
-export function claudeCandidateDirs(): string[] {
-  return Array.from(new Set([
-    ...listOauthDirsForAgent('claude-code'),
-    defaultClaudeDir(),
-    ...(process.env.SWITCHBOARD_REMOTE ? listRemoteClaudeConfigDirs() : []),
-  ]))
-}
 
 // Data handlers - transport-agnostic, run on either ElectronIpcHost or WsHost.
 // Native-dialog / window / app-lifecycle handlers live in app-desktop.ts.
@@ -149,7 +133,10 @@ export function registerAppHandlers(host: BackendHost): void {
       })
 
     const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, scannedIds, childSet)
-    const result = [...filtered, ...dbOnlySessions]
+    // Sorted for the same reason GET_PROJECTS is: concatenating puts every
+    // db-only row last regardless of recency, and a worktree-run chat is
+    // ALWAYS a db-only row, so they all sank to the bottom of this list.
+    const result = [...filtered, ...dbOnlySessions].sort((a, b) => b.startedAt - a.startedAt)
     log.info(`scan complete: ${result.length} visible (${sessions.length - filtered.length} archived/child, ${dbOnlySessions.length} db-only)`)
     return result
   })
@@ -385,18 +372,19 @@ export function registerAppHandlers(host: BackendHost): void {
     const sessionIds = listSessionIdsForThread(conversationId)
 
     if (source === 'claude-code') {
-      const encoded = encodeClaudeProjectPath(row.project_path)
-      // Scan every known Claude profile dir - the SDK writes JSONLs under the
-      // active CLAUDE_CONFIG_DIR, not ~/.claude.
+      // Every profile dir, and within each, every project dir - NOT just
+      // `encode(project_path)`. The CLI files a transcript under the encoded
+      // cwd, so a chat that ran in a worktree writes somewhere this handler
+      // used to never look: it kept returning the last snapshot left under the
+      // project dir, and re-entering the chat replaced live history with it.
       const candidateDirs = claudeCandidateDirs()
       const all: ChatMessage[] = []
       for (const sid of sessionIds) {
         for (const dir of candidateDirs) {
-          const filePath = joinPath(dir, 'projects', encoded, `${sid}.jsonl`)
-          // null = no jsonl in this profile (rotation didn't migrate it, or
-          // session never ran here) - a cheap stat miss, not a throw.
-          const msgs = await loadJsonlCached(filePath, 'claude-code')
-          if (msgs) all.push(...msgs)
+          for (const copy of listClaudeSessionCopies(dir, sid)) {
+            const msgs = await loadJsonlCached(copy.path, 'claude-code')
+            if (msgs) all.push(...msgs)
+          }
         }
       }
       // Merge in timestamp order so fragments interleave correctly.

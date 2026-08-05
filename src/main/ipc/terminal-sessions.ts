@@ -45,7 +45,11 @@ export function synthesizeDbOnlySessions(
       // first three are valid SessionSource values, terminal maps to switchboard.
       source: (c.agent_type === 'terminal' ? 'switchboard' : c.agent_type) as SessionSource,
       title: c.title,
-      startedAt: c.created_at,
+      // updated_at, not created_at: the sidebar sorts and labels by this as
+      // "last activity" (see sessionActivity.ts), and saveMessage bumps it.
+      // A worktree-run chat only ever renders through this path, so it sat in
+      // the sidebar stamped with its creation time - measured 2 days stale.
+      startedAt: c.updated_at,
       messageCount: 0,
       filePath: '',
       agentType: c.agent_type,

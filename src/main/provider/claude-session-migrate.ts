@@ -10,12 +10,31 @@ import { homedir } from 'os'
 import { basename, dirname, join } from 'path'
 import { existsSync, mkdirSync, copyFileSync, readdirSync, statSync } from 'fs'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
+import { listOauthDirsForAgent } from '../db/providerInstances'
+import { listRemoteClaudeConfigDirs } from './remote-gate'
 import { createMainLogger as createLogger } from '../logger'
 
 const log = createLogger('provider:claude:migrate')
 
 export function defaultClaudeDir(): string {
   return join(homedir(), '.claude')
+}
+
+/**
+ * All Claude config roots: every enabled oauth_dir + the default ~/.claude.
+ * On a remote VM, also every ~/.claude* dir - per-instance dirs are forwarded
+ * per session and never registered in the VM's provider_instances table, so
+ * without the extra scan session scans and history loads miss their JSONLs.
+ *
+ * Lives here rather than in ipc/app so readers outside the IPC layer (fork)
+ * can use it without importing a module that imports them back.
+ */
+export function claudeCandidateDirs(): string[] {
+  return Array.from(new Set([
+    ...listOauthDirsForAgent('claude-code'),
+    defaultClaudeDir(),
+    ...(process.env.SWITCHBOARD_REMOTE ? listRemoteClaudeConfigDirs() : []),
+  ]))
 }
 
 export type MigrateResult =

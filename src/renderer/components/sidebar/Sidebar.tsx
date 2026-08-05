@@ -313,6 +313,12 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
         if (session.filePath) {
           const source = session.source === 'codex' ? 'codex' : 'claude-code'
           messages = await window.api.app.loadSession(session.filePath, session.id, source)
+        } else {
+          // No filePath means a db-only row, which is what every worktree-run
+          // chat is. Exporting those wrote an empty file with the transcript
+          // sitting on disk unread; loadSessionById finds it by session id.
+          const resp = await window.api.app.loadSessionById(session.id) as { messages?: ChatMessage[] } | null
+          messages = resp?.messages ?? []
         }
       } catch { /* best-effort - export whatever we have */ }
     }

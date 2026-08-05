@@ -1,4 +1,4 @@
-import { readFile, writeFile, readdir, stat, mkdir } from 'fs/promises'
+import { readFile, writeFile, readdir, mkdir } from 'fs/promises'
 import { join, dirname } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
@@ -12,6 +12,8 @@ import {
   messageRowsToChatMessages,
 } from '../db/database'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
+import { resolveProviderInstance } from '../db/providerInstances'
+import { claudeCandidateDirs, defaultClaudeDir, listClaudeSessionCopies } from '../provider/claude-session-migrate'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import {
   truncateCodexJsonl,
@@ -131,7 +133,9 @@ export async function forkConversation(input: ForkInput): Promise<ForkResult> {
     const slug = makeBranchSlug(stripForSlug(summarySource))
     log.info(`fork: creating worktree for ${source.id} with slug "${slug}"`)
     const wt = await createForkWorktree(
-      { repoRoot: source.project_path, baseRef: 'HEAD', slug },
+      // The source's own cwd, so forking a worktree chat branches off the
+      // branch the user is looking at rather than the repo's HEAD.
+      { repoRoot: source.worktree_path || source.project_path, baseRef: 'HEAD', slug },
       input.gitRunner,
     )
     effectiveProjectPath = wt.path
@@ -205,18 +209,22 @@ function stripForSlug(body: string): string {
 
 async function forkClaude(ctx: ForkContext): Promise<ForkResult> {
   const { source, input, keptMessages, upToVisibleIndex, title, effectiveProjectPath, worktreeMeta } = ctx
-  // Always read fragments from the SOURCE project's claude-projects dir
-  // (that's where the parent's transcript lives). We write the truncated
-  // fork JSONL to the dir keyed by `effectiveProjectPath` so a worktree-
-  // backed fork resumes correctly when the SDK cwd is the new worktree.
-  const sourceProjectDir = join(homedir(), '.claude', 'projects', encodeClaudeProjectPath(source.project_path))
-  const targetProjectDir = join(homedir(), '.claude', 'projects', encodeClaudeProjectPath(effectiveProjectPath))
+  // Fragments are located by session id across every profile, because a
+  // hardcoded ~/.claude found nothing for 355 of the 361 locatable transcripts
+  // on a real install - `claude-code-default` does not even point at ~/.claude.
+  // The fork is WRITTEN to the profile the new session will actually run under,
+  // keyed by `effectiveProjectPath` so a worktree-backed fork resumes there.
+  const targetProjectDir = join(
+    resolveProviderInstance('claude-code', null)?.oauthDir ?? defaultClaudeDir(),
+    'projects',
+    encodeClaudeProjectPath(effectiveProjectPath),
+  )
   // The source thread can span multiple JSONL files (Claude SDK rotates
   // session_id during compaction). Read every fragment in chronological
   // order and let `assembleClaudeFork` walk the merged stream - the cut
   // can land anywhere, including past the first fragment, and earlier
   // fragments must come along verbatim or the resume context is broken.
-  const fragmentPaths = await listClaudeFragmentPaths(sourceProjectDir, source.id)
+  const fragmentPaths = listClaudeFragmentPaths(source.id)
   const fragments: string[] = []
   for (const p of fragmentPaths) {
     const raw = await readFile(p, 'utf-8').catch(() => null)
@@ -275,35 +283,22 @@ async function forkClaude(ctx: ForkContext): Promise<ForkResult> {
 }
 
 /**
- * Resolve the on-disk JSONL fragments for a Claude thread in chronological
- * order. Prefers the `thread_sessions` ancestry chain; falls back to a
- * mtime-sorted dir scan when ancestry isn't recorded (older imported
- * sessions, or threads created before the table existed).
+ * On-disk JSONL fragments for a Claude thread, oldest first.
+ *
+ * Resolved by SESSION ID, never by directory: the transcript's location is a
+ * function of the profile and the cwd at write time, and both drift. Where two
+ * profiles hold the same fragment, the newest wins - same rule as resume.
  */
-async function listClaudeFragmentPaths(projectDir: string, threadId: string): Promise<string[]> {
-  const sessionIds = listSessionIdsForThread(threadId)
-  if (sessionIds.length > 0) {
-    return sessionIds.map((sid) => join(projectDir, `${sid}.jsonl`))
+export function listClaudeFragmentPaths(threadId: string): string[] {
+  const dirs = claudeCandidateDirs()
+  const paths: string[] = []
+  for (const sid of listSessionIdsForThread(threadId)) {
+    const copies = dirs.flatMap((dir) => listClaudeSessionCopies(dir, sid))
+    if (copies.length === 0) continue
+    copies.sort((a, b) => b.mtimeMs - a.mtimeMs)
+    paths.push(copies[0].path)
   }
-  // Dir-scan fallback: every `.jsonl` in the project dir, sorted oldest
-  // first. The thread root file (`<threadId>.jsonl`) is pinned to the
-  // front so a thread with a single fragment hits the obvious file even
-  // if its mtime got bumped by an unrelated tool.
-  const files = await readdir(projectDir).catch(() => [] as string[])
-  const jsonl = files.filter((f) => f.endsWith('.jsonl'))
-  const withStat = await Promise.all(jsonl.map(async (f) => {
-    const full = join(projectDir, f)
-    const s = await stat(full).catch(() => null)
-    return { full, mtime: s?.mtimeMs ?? 0, name: f }
-  }))
-  withStat.sort((a, b) => a.mtime - b.mtime)
-  const pref = `${threadId}.jsonl`
-  const idx = withStat.findIndex((x) => x.name === pref)
-  if (idx > 0) {
-    const [pinned] = withStat.splice(idx, 1)
-    withStat.unshift(pinned)
-  }
-  return withStat.map((x) => x.full)
+  return paths
 }
 
 // ── Codex ─────────────────────────────────────────────────────────
@@ -435,11 +430,9 @@ async function loadSourceMessages(
   const all: ChatMessage[] = []
 
   if (source.agent_type === 'claude-code') {
-    const dir = join(homedir(), '.claude', 'projects', encodeClaudeProjectPath(source.project_path))
-    // Use the same fragment-resolution path as the truncate flow so a
-    // missing thread_sessions row falls back to the mtime-sorted dir scan
-    // instead of returning empty.
-    const paths = await listClaudeFragmentPaths(dir, source.id)
+    // Same resolution as the truncate flow, so the index space the renderer
+    // forks against matches the fragments we actually splice.
+    const paths = listClaudeFragmentPaths(source.id)
     for (const path of paths) {
       // Shared (mtime,size) cache with the LOAD_SESSION handlers - a fork
       // usually follows a load of the same transcript moments earlier.
