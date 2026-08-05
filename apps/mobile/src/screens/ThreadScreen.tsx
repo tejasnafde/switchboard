@@ -115,7 +115,7 @@ function historyToItems(messages: ChatMessage[]): FeedItem[] {
 }
 
 export default function ThreadScreen({ route, navigation }: Props) {
-  const { connectionId, threadId, projectPath, isNew } = route.params
+  const { connectionId, threadId, projectPath, worktreePath, isNew } = route.params
   const key = threadKey(connectionId, threadId)
   const thread = useChatStore((s) => s.threads[key]) ?? emptyThread()
   const backendLabel =
@@ -257,7 +257,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
         await client.startSession({
           threadId,
           provider,
-          cwd: projectPath,
+          // `worktreePath ?? projectPath`, same as the desktop. Without it the
+          // phone started worktree-backed chats in the parent repo, and
+          // whichever client started first fixed the cwd for both - so the
+          // agent edited the wrong tree.
+          cwd: worktreePath ?? projectPath,
           resumeSessionId: threadId,
         })
       } catch (err) {
@@ -332,7 +336,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
           await client.startSession({
             threadId,
             provider: nextProvider,
-            cwd: projectPath,
+            // Same cwd rule as the initial start. stopSession first means the
+            // registry's idempotent re-attach cannot cover for a wrong value,
+            // so a rotation used to move a worktree chat into the main checkout.
+            cwd: worktreePath ?? projectPath,
             resumeSessionId: threadId,
             instanceId: nextInstanceId,
           })

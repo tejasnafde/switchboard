@@ -92,8 +92,22 @@ export default function ConversationsScreen({ route, navigation }: Props) {
     const title = renameText.trim()
     setRenaming(null)
     if (!target || !title || title === target.title) return
-    getClient(connectionId)
-      ?.renameConversation(target.id, title)
+    const client = getClient(connectionId)
+    if (!client) return
+    // Ensure the row first, as the desktop sidebar does. The list is built from
+    // the scanned session list, and a scanned transcript need not have a
+    // conversations row yet (6 of 28 in this project) - renaming one of those
+    // updated zero rows and reported success.
+    client
+      .createConversation({
+        id: target.id,
+        projectPath,
+        agentType: isAgentType(target.agent_type) ? target.agent_type : 'claude-code',
+        title: target.title,
+        worktreePath: target.worktree_path ?? null,
+        worktreeBranch: target.worktree_branch ?? null,
+      })
+      .then(() => client.renameConversation(target.id, title))
       .then(() => void load())
       .catch(() => Alert.alert('Could not rename', 'The backend refused the new title.'))
   }, [connectionId, load, renaming, renameText])
@@ -210,6 +224,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
                 threadId: item.id,
                 title: item.title,
                 projectPath,
+                worktreePath: item.worktree_path ?? null,
               })
             }
           >

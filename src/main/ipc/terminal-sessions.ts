@@ -67,3 +67,36 @@ export function stampAgentTypes(
     agentTypeMap.has(s.id) ? { ...s, agentType: agentTypeMap.get(s.id) } : s,
   )
 }
+
+/**
+ * Project a visible SessionSummary into the ConversationRow shape the phone
+ * consumes, so both clients address a chat by the SAME id.
+ *
+ * Filtering rows by the visible-id set does NOT work and is the trap here: a
+ * desktop Claude chat is a row keyed `agent_<ms>` while its visible id is the
+ * scanned transcript UUID, so the intersection is empty and the chat vanishes
+ * (measured: 98 chats). The list has to come FROM the summaries. Taking `s.id`
+ * is also the point of the exercise - runtime events are keyed on threadId, so
+ * a phone opening the twin id saw none of the desktop's events.
+ *
+ * `updated_at` from `startedAt` is a bonus fix: the phone sorts on it, and it
+ * was previously only ever moved by the desktop renderer's saveMessage, so a
+ * phone-driven chat never rose to the top.
+ */
+export function sessionSummaryToConversationRow(
+  s: SessionSummary,
+  projectPath: string,
+): ConversationRow {
+  return {
+    id: s.id,
+    project_path: projectPath,
+    agent_type: s.agentType ?? (s.source === 'switchboard' ? 'terminal' : s.source),
+    session_id: null,
+    title: s.title ?? 'Untitled',
+    created_at: s.startedAt,
+    updated_at: s.startedAt,
+    archived: 0,
+    worktree_path: s.worktreePath ?? null,
+    worktree_branch: s.worktreeBranch ?? null,
+  } as ConversationRow
+}

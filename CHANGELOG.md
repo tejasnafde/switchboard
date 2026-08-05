@@ -2,6 +2,24 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.9 - The phone and the Mac were reading different lists
+
+The phone did not have a sync bug so much as its own idea of which chats exist. Event fan-out was always correct: one `ProviderRegistry`, one bus behind a `MultiHost`, and `WsHost.emit` broadcasting to every authed socket. What diverged was identity.
+
+### Fixed
+- **The phone listed chats the Mac had archived.** `GET_CONVERSATIONS` was a raw `SELECT * FROM conversations WHERE project_path = ?` - no archive filter, no rotation dedupe. `grep -rn archived apps/mobile/src` returns nothing; the phone has no concept of archiving. On this install it listed 169 chats for one project where the desktop showed 32, 120 of them archived. Its own project screen used the filtered count, so it printed "32 sessions" and then listed 169.
+- **The two clients addressed the same chat by different ids, which is why messages did not appear.** A chat routinely exists as two rows: an `agent_<ms>` row and a Claude UUID row sharing one `session_id` (83 such pairs live here). The desktop list picks the UUID and suppresses the twin; the phone showed both. Runtime events are keyed on `threadId` and `appendMessage` drops anything whose id does not match the open session, so a phone driving `agent_1785917479430` while the Mac had `a3717923-…` open had every `content` and `user.message` event discarded. Not a missing broadcast - a mismatched key. The phone's list is now built from the same `visibleSessionsForProject` the sidebar renders, so the id it opens is the id the desktop uses.
+- **A chat archived on the Mac could still be listed on the phone.** Archiving flags only one of the twin rows: "Add skills" was `agent_1781436825014` (archived=0) beside `146a4711-…` (archived=1). Both are hidden now, on both clients.
+- **The phone ran worktree-backed chats in the parent repo.** It sent `cwd: projectPath` where the desktop sends `worktreePath ?? projectPath`, and whichever client starts first fixes the cwd for both - so a phone-first open had the agent editing the wrong tree. 33 unarchived conversations here carry a worktree. Fixed for both the initial start and profile rotation, which stops the session first and so could not rely on the registry's idempotent re-attach.
+- **A phone-driven chat never rose in its own list.** The phone sorts on `updated_at`, which only the desktop renderer's `saveMessage` ever moved. It now comes from the session's real last activity.
+- **Renaming from the phone could report success and change nothing.** A scanned transcript need not have a `conversations` row (6 of 28 in this project), and `updateConversationTitle` updated zero rows. The phone ensures the row first, as the sidebar does.
+
+### Notes
+- **Review caught the first attempt deleting 98 chats from the phone.** It filtered conversation rows by the visible-id set, which compares two different id spaces: a desktop Claude chat is a row keyed `agent_<ms>` whose visible id is the transcript UUID, so the intersection is empty. Simulated over the live DB: 174 unarchived rows dropped, 98 reachable under no other id, including a chat with a 6.6 MB transcript. The list has to be built FROM the summaries, which is also what makes the ids line up.
+- Per-thread state the phone remembers (model, mode, draft) is keyed on the thread id, so for a twin chat it resets once.
+- Not addressed: the phone has no equivalent of the desktop's orphaned-worktree healing, so if a worktree directory is deleted the phone reports the failed start rather than falling back to the clone. 11 unarchived rows point at a missing directory today, though none of them currently survive the visible-session filter.
+- Still open, and the reason phone-driven history is thin: nothing but the desktop renderer writes to `messages`. Two of three `mob-*` chats here have zero rows, so `⌘⇧F` cannot find a phone turn.
+
 ## 0.8.8 - A 529 looked exactly like nothing happening
 
 ### Fixed

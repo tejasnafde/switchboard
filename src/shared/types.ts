@@ -374,4 +374,11 @@ export interface ConversationRow {
   title: string
   created_at: number
   updated_at: number
+  /**
+   * The wire carries the whole row, and a client starting a session must route
+   * cwd as `worktree_path ?? project_path`. Optional: a synthesized row omits
+   * them.
+   */
+  worktree_path?: string | null
+  worktree_branch?: string | null
 }

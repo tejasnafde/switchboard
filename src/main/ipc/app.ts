@@ -4,7 +4,7 @@ import { notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-re
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
-import { synthesizeDbOnlySessions, stampAgentTypes } from './terminal-sessions'
+import { synthesizeDbOnlySessions, stampAgentTypes, sessionSummaryToConversationRow } from './terminal-sessions'
 import { homedir, networkInterfaces } from 'os'
 import { basename, join as joinPath } from 'path'
 import {
@@ -64,7 +64,7 @@ import { loadJsonlCached } from '../agent/jsonl-cache'
 import { dedupeMessagesById } from '../agent/dedupe-messages'
 import { forkConversation } from '../conversations/fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
-import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage } from '@shared/types'
+import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
 
 const log = createLogger('ipc:app')
 
@@ -90,54 +90,68 @@ function capTail<T extends { messages: ChatMessage[] }>(
   return { ...result, messages: result.messages.slice(total - limit), total, truncated: true }
 }
 
+/**
+ * The visible session list for a project: disk scan merged with DB rows, minus
+ * archived chats and rotated child sessions, newest first.
+ *
+ * One definition of "visible", because there used to be two. The phone listed
+ * `getConversationsForProject` raw, so it showed 169 chats where this returned
+ * 32 - and where a chat exists as both an `agent_<ms>` row and a Claude UUID
+ * row, this picks the UUID, so the phone opened the twin and every runtime
+ * event, keyed on threadId, was dropped by the desktop.
+ */
+export async function visibleSessionsForProject(projectPath: string): Promise<SessionSummary[]> {
+  const sessions = await scanAllSessions(projectPath, claudeCandidateDirs())
+  const archivedSet = getArchivedConversationIds()
+  const childSet = getChildSessionIds()
+  const syntheticParents = getSyntheticParentMap()
+  const dbConversations = getConversationsForProject(projectPath)
+  const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
+  const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
+  // Worktree pointers per conversation id - stamped onto the
+  // SessionSummary so the renderer can route the agent's cwd via
+  // `worktreePath ?? projectPath`.
+  const worktreeMap = new Map(
+    dbConversations
+      .filter((c) => c.worktree_path)
+      .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
+  )
+  const scannedIds = new Set(sessions.map((s) => s.id))
+  const filtered = sessions
+    // Hide archived chats (global set - across project paths) and child
+    // session_ids produced by Claude SDK rotation (tracked in thread_sessions).
+    .filter((s) => !archivedSet.has(s.id) && !childSet.has(s.id))
+    .map((s) => {
+      // Direct title match (UUID is the canonical conversation id)
+      const direct = titleMap.get(s.id)
+      const wt = worktreeMap.get(s.id) ?? worktreeMap.get(syntheticParents.get(s.id) ?? '')
+      const withWorktree = wt ? { ...s, worktreePath: wt.path, worktreeBranch: wt.branch } : s
+      const withAgentType = stampAgentTypes([withWorktree], agentTypeMap)[0]
+      if (direct) return { ...withAgentType, title: direct }
+      // Title inheritance: UUID has a synthetic `agent_<ts>` parent in
+      // thread_sessions. Look up the parent's title from conversations.
+      const parentId = syntheticParents.get(s.id)
+      if (parentId) {
+        const parentTitle = titleMap.get(parentId)
+        if (parentTitle) return { ...withAgentType, title: parentTitle }
+      }
+      return withAgentType
+    })
+
+  const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, scannedIds, childSet)
+  // Sorted for the same reason GET_PROJECTS is: concatenating puts every
+  // db-only row last regardless of recency, and a worktree-run chat is
+  // ALWAYS a db-only row, so they all sank to the bottom of this list.
+  return [...filtered, ...dbOnlySessions].sort((a, b) => b.startedAt - a.startedAt)
+}
+
 export function registerAppHandlers(host: BackendHost): void {
   setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
 
   host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {
     log.info(`scan-sessions: ${projectPath}`)
-    const sessions = await scanAllSessions(projectPath, claudeCandidateDirs())
-    const archivedSet = getArchivedConversationIds()
-    const childSet = getChildSessionIds()
-    const syntheticParents = getSyntheticParentMap()
-    const dbConversations = getConversationsForProject(projectPath)
-    const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
-    const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
-    // Worktree pointers per conversation id - stamped onto the
-    // SessionSummary so the renderer can route the agent's cwd via
-    // `worktreePath ?? projectPath`.
-    const worktreeMap = new Map(
-      dbConversations
-        .filter((c) => c.worktree_path)
-        .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
-    )
-    const scannedIds = new Set(sessions.map((s) => s.id))
-    const filtered = sessions
-      // Hide archived chats (global set - across project paths) and child
-      // session_ids produced by Claude SDK rotation (tracked in thread_sessions).
-      .filter((s) => !archivedSet.has(s.id) && !childSet.has(s.id))
-      .map((s) => {
-        // Direct title match (UUID is the canonical conversation id)
-        const direct = titleMap.get(s.id)
-        const wt = worktreeMap.get(s.id) ?? worktreeMap.get(syntheticParents.get(s.id) ?? '')
-        const withWorktree = wt ? { ...s, worktreePath: wt.path, worktreeBranch: wt.branch } : s
-        const withAgentType = stampAgentTypes([withWorktree], agentTypeMap)[0]
-        if (direct) return { ...withAgentType, title: direct }
-        // Title inheritance: UUID has a synthetic `agent_<ts>` parent in
-        // thread_sessions. Look up the parent's title from conversations.
-        const parentId = syntheticParents.get(s.id)
-        if (parentId) {
-          const parentTitle = titleMap.get(parentId)
-          if (parentTitle) return { ...withAgentType, title: parentTitle }
-        }
-        return withAgentType
-      })
-
-    const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, scannedIds, childSet)
-    // Sorted for the same reason GET_PROJECTS is: concatenating puts every
-    // db-only row last regardless of recency, and a worktree-run chat is
-    // ALWAYS a db-only row, so they all sank to the bottom of this list.
-    const result = [...filtered, ...dbOnlySessions].sort((a, b) => b.startedAt - a.startedAt)
-    log.info(`scan complete: ${result.length} visible (${sessions.length - filtered.length} archived/child, ${dbOnlySessions.length} db-only)`)
+    const result = await visibleSessionsForProject(projectPath)
+    log.info(`scan complete: ${result.length} visible`)
     return result
   })
 
@@ -518,10 +532,12 @@ export function registerAppHandlers(host: BackendHost): void {
     return { ok: true }
   })
 
-  // Get conversations for a project
-  host.handle(AppChannels.GET_CONVERSATIONS, (projectPath: string) => {
+  // Derived from the same list the desktop sidebar renders, so the phone cannot
+  // list a chat the Mac archived, and both clients address a chat by one id.
+  host.handle(AppChannels.GET_CONVERSATIONS, async (projectPath: string) => {
     watchLaunchConfig(projectPath) // Start watching as soon as project is loaded
-    return getConversationsForProject(projectPath)
+    const sessions = await visibleSessionsForProject(projectPath)
+    return sessions.map((s) => sessionSummaryToConversationRow(s, projectPath))
   })
 
   // Session layout persistence

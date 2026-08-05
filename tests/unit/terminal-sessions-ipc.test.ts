@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest'
 import {
   synthesizeDbOnlySessions,
   stampAgentTypes,
+  sessionSummaryToConversationRow,
 } from '../../src/main/ipc/terminal-sessions'
 import type { ConversationRow } from '../../src/main/db/database'
 import type { SessionSummary } from '../../src/shared/types'
@@ -271,5 +272,64 @@ describe('why a scanned transcript was hidden decides whether to synthesize', ()
   it('suppresses a duplicate of a transcript that is plainly visible', () => {
     const rows = conv({ id: 'c1', session_id: 'uuid-b' })
     expect(synthesizeDbOnlySessions(rows, new Set(), new Set(['uuid-b']), new Set())).toHaveLength(0)
+  })
+})
+
+/**
+ * GET_CONVERSATIONS (the phone's list) is built from these, so the phone and the
+ * desktop address a chat by one id. Filtering conversation ROWS by the visible
+ * id set was tried and drops 98 chats on a real install: a desktop Claude chat
+ * is a row keyed `agent_<ms>` whose visible id is the transcript UUID, so the
+ * intersection is empty.
+ */
+describe('sessionSummaryToConversationRow', () => {
+  const summary = (over: Partial<SessionSummary> = {}): SessionSummary => ({
+    id: 'a3717923-940a-47bf-a15e-cfd4f9cc194a',
+    source: 'claude-code',
+    title: 'Lat Lng',
+    startedAt: 7000,
+    messageCount: 0,
+    filePath: '/x.jsonl',
+    ...over,
+  } as SessionSummary)
+
+  it('carries the summary id, which is the id runtime events are keyed on', () => {
+    expect(sessionSummaryToConversationRow(summary(), '/repo').id)
+      .toBe('a3717923-940a-47bf-a15e-cfd4f9cc194a')
+  })
+
+  it('carries the worktree so the phone starts the agent in the right tree', () => {
+    const row = sessionSummaryToConversationRow(
+      summary({ worktreePath: '/private/tmp/wt-slack-channel', worktreeBranch: 'feat/x' }),
+      '/repo',
+    )
+    expect(row.worktree_path).toBe('/private/tmp/wt-slack-channel')
+    expect(row.worktree_branch).toBe('feat/x')
+  })
+
+  it('leaves worktree fields null when the chat has none', () => {
+    const row = sessionSummaryToConversationRow(summary(), '/repo')
+    expect(row.worktree_path).toBeNull()
+    expect(row.worktree_branch).toBeNull()
+  })
+
+  it('sorts by real activity: updated_at comes from startedAt', () => {
+    // The phone sorts on updated_at, which only the desktop renderer ever moved.
+    expect(sessionSummaryToConversationRow(summary({ startedAt: 12345 }), '/repo').updated_at)
+      .toBe(12345)
+  })
+
+  it('prefers the stamped agentType over the scan source', () => {
+    const row = sessionSummaryToConversationRow(summary({ source: 'claude-code', agentType: 'codex' }), '/repo')
+    expect(row.agent_type).toBe('codex')
+  })
+
+  it('maps a terminal session back to its agent_type', () => {
+    const row = sessionSummaryToConversationRow(summary({ source: 'switchboard', agentType: undefined }), '/repo')
+    expect(row.agent_type).toBe('terminal')
+  })
+
+  it('stamps the project path it was listed under', () => {
+    expect(sessionSummaryToConversationRow(summary(), '/repo').project_path).toBe('/repo')
   })
 })

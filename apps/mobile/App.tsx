@@ -35,7 +35,7 @@ export type RootStackParamList = {
   Pair: { editId?: string } | undefined
   Projects: { connectionId: string; label: string }
   Conversations: { connectionId: string; projectPath: string; projectName: string }
-  Thread: { connectionId: string; threadId: string; title: string; projectPath: string; isNew?: boolean }
+  Thread: { connectionId: string; threadId: string; title: string; projectPath: string; worktreePath?: string | null; isNew?: boolean }
   NewSession: { connectionId: string; projectPath: string; projectName: string }
   DevGallery: undefined
 }
