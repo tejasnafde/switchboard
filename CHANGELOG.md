@@ -2,6 +2,21 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.10 - The backend writes history now, not the window
+
+Every `saveMessage` call site was in `src/renderer`. `apps/mobile/src` had none, and neither did the registry. So the durable record of a conversation existed only if a desktop window happened to be attached.
+
+### Fixed
+- **A turn sent from the phone persisted nothing.** Two of three `mob-*` chats here have zero rows in `messages`, one of them against a 189-line transcript. That turn could never be found by `⌘⇧F`, and if Claude pruned the JSONL the DB-recovery fallback rendered the chat empty. `SEND_TURN` persists the user's turn now, whichever client sent it.
+- **A phone-driven chat never rose in the phone's own list.** `updated_at` is only touched by `saveMessage`, and the phone sorts on it, so an hour of phone work left the thread buried. Persisting the turn moves it.
+- **An error card survived a reload only on the desktop.** `ChatPanel` was the sole writer, so a headless `npm run server` driving a paired phone showed a 529 once and lost it - the JSONL parser deliberately drops API-error records. `publish()` persists error events now, and the renderer's duplicate write is gone.
+
+### Notes
+- **Review caught this destroying pill metadata on every desktop send.** The first cut used `saveMessage`, which is `INSERT OR REPLACE` and therefore whole-row. `ChatPanel` writes its copy BEFORE calling `sendTurn` and the registry writes after, so the backend row landed second and nulled `display_body` and `pills_meta` - a chat message with file chips would have reloaded as its expanded body, up to the 50k-char cap. There is a `saveMessageIfAbsent` now: fill-only, so the renderer's richer row always wins and the backend is a backstop.
+- That also removed a second defect the reviewer found: `INSERT OR REPLACE` does not fire the FTS delete trigger (`recursive_triggers` is off), so each desktop turn left an orphaned index row. Searches stayed correct because the rowid join drops orphans, but the `ftsCount < msgCount` self-heal could never fire again, and a later deletion reusing that rowid would fail a constraint and silently lose the message.
+- The phone's opening message sends no `origin`, so an `if (origin)` guard skipped exactly the first turn of every phone-created chat. Ids fall back to a minted one.
+- The registry test's DB mock had no `saveMessage`, so a missing write showed up only as a `log.warn` and the suite passed. The mock records writes now and two tests assert them.
+
 ## 0.8.9 - The phone and the Mac were reading different lists
 
 The phone did not have a sync bug so much as its own idea of which chats exist. Event fan-out was always correct: one `ProviderRegistry`, one bus behind a `MultiHost`, and `WsHost.emit` broadcasting to every authed socket. What diverged was identity.

@@ -1008,22 +1008,33 @@ let saveMsg: {
   db: Database.Database
   convExists: Database.Statement
   write: Database.Transaction<(args: SaveMessageArgs) => void>
+  fill: Database.Transaction<(args: SaveMessageArgs) => boolean>
 } | null = null
 
 function saveMessageStmts(db: Database.Database) {
   if (saveMsg?.db !== db) {
     const convExists = db.prepare('SELECT 1 FROM conversations WHERE id = ?')
-    const insert = db.prepare(
-      `INSERT OR REPLACE INTO messages
-         (id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
+    const cols = '(id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)'
+    const values = 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    const insert = db.prepare(`INSERT OR REPLACE INTO messages ${cols} ${values}`)
+    // OR IGNORE, for a writer that must not overwrite a richer row. REPLACE is
+    // whole-row, so it also nulls columns the caller does not pass, and it does
+    // NOT fire the FTS delete trigger (recursive_triggers is off), which leaves
+    // an orphaned index row behind.
+    const insertIfAbsent = db.prepare(`INSERT OR IGNORE INTO messages ${cols} ${values}`)
     const touch = db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?')
+    const run = (stmt: Database.Statement, a: SaveMessageArgs): Database.RunResult =>
+      stmt.run(a.id, a.conversationId, a.role, a.content, a.toolCalls, a.images, a.now, a.displayBody, a.pillsMeta)
     const write = db.transaction((a: SaveMessageArgs) => {
-      insert.run(a.id, a.conversationId, a.role, a.content, a.toolCalls, a.images, a.now, a.displayBody, a.pillsMeta)
+      run(insert, a)
       touch.run(a.now, a.conversationId)
     })
-    saveMsg = { db, convExists, write }
+    const fill = db.transaction((a: SaveMessageArgs): boolean => {
+      const changed = run(insertIfAbsent, a).changes > 0
+      if (changed) touch.run(a.now, a.conversationId)
+      return changed
+    })
+    saveMsg = { db, convExists, write, fill }
   }
   return saveMsg
 }
@@ -1136,6 +1147,40 @@ export function getDisplayBodyEnrichments(
  * user switches instances mid-conversation, and merged back into the
  * load-by-id output so the marker survives reload.
  */
+/**
+ * Write a message only if that id is absent. For a writer that is a backstop
+ * rather than the owner: the backend persists a user turn so a phone-driven
+ * chat is not lost, but the desktop renderer's own save carries pill metadata
+ * and must win. The renderer writes BEFORE it sends, so a plain `saveMessage`
+ * here landed second and nulled `display_body`/`pills_meta`.
+ *
+ * Returns whether a row was inserted.
+ */
+export function saveMessageIfAbsent(
+  id: string,
+  conversationId: string,
+  role: string,
+  content: string,
+  images?: string,
+): boolean {
+  const stmts = saveMessageStmts(getDb())
+  if (!stmts.convExists.get(conversationId)) {
+    log.warn(`saveMessageIfAbsent: conversation ${conversationId} not found, skipping`)
+    return false
+  }
+  return stmts.fill({
+    id,
+    conversationId,
+    role,
+    content,
+    toolCalls: null,
+    images: images ?? null,
+    now: Date.now(),
+    displayBody: null,
+    pillsMeta: null,
+  })
+}
+
 export function getSystemMarkerMessages(conversationId: string): Array<{
   id: string
   role: string

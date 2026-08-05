@@ -19,7 +19,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { recordThreadSession, updateConversationSessionId } from '../db/database'
+import { recordThreadSession, updateConversationSessionId, saveMessageIfAbsent } from '../db/database'
 import { defaultClaudeDir } from './claude-session-migrate'
 import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir, checkRemoteClaudeAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
@@ -32,6 +32,7 @@ import type {
   ApprovalDecision,
   RuntimeMode,
 } from './types'
+import { echoMessageId } from '@shared/provider-events'
 
 const log = createLogger('provider:registry')
 
@@ -106,7 +107,26 @@ export class ProviderRegistry {
     this.host.emit(ProviderChannels.EVENT, event)
   }
 
+  /** Breaks same-millisecond id collisions, which INSERT OR REPLACE would eat. */
+  private savedMessageSeq = 0
+
   private publish(event: RuntimeEvent): void {
+    // Persisted here, not in ChatPanel, which only exists when a desktop window
+    // is attached - a phone on a headless server saw a 529 once and lost it on
+    // reload. The `Error: ` prefix is load-bearing: `getSystemMarkerMessages`
+    // matches on it to merge these back into a reloaded thread.
+    if (event.type === 'error') {
+      try {
+        saveMessageIfAbsent(
+          `error_${Date.now()}_${++this.savedMessageSeq}`,
+          event.threadId,
+          'system',
+          `Error: ${event.message}`,
+        )
+      } catch (err) {
+        log.warn(`failed to persist error card for ${event.threadId}: ${err}`)
+      }
+    }
     if (event.type === 'session') {
       try {
         updateConversationSessionId(event.threadId, event.sessionId)
@@ -369,6 +389,27 @@ export class ProviderRegistry {
         // cheerful success and drop the message silently.
         this.turnDedupe.release(origin)
         throw err
+      }
+      // Persisted here because the renderer was the only writer, so a turn sent
+      // from the phone left no row: absent from search, absent from the DB
+      // fallback, and `updated_at` never moved.
+      //
+      // Fill-only, and that is the whole subtlety. The renderer writes the same
+      // id (`echoMessageId`) BEFORE it calls sendTurn, carrying the pill
+      // metadata only it has; this runs after, so a plain REPLACE nulled
+      // `display_body`/`pills_meta` on every desktop send. Absent origin - the
+      // phone's opening turn does not send one - still gets a row, under a
+      // minted id, since nothing else will write it.
+      try {
+        saveMessageIfAbsent(
+          origin ? echoMessageId(origin) : `turn_${Date.now()}_${++this.savedMessageSeq}`,
+          threadId,
+          'user',
+          message,
+          images && images.length > 0 ? JSON.stringify(images) : undefined,
+        )
+      } catch (err) {
+        log.warn(`failed to persist user turn for ${threadId}: ${err}`)
       }
       // AFTER the adapter accepts. Broadcasting first meant a failed send had
       // already consumed the origin from every other client's skip set, so the

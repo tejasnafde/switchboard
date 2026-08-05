@@ -587,14 +587,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             timestamp: Date.now(),
           }
           appendMessage(tid, errMsg)
-          // Persist like the rotation marker does - error cards were
-          // renderer-state-only and vanished on restart.
-          window.api.app.saveMessage({
-            id: errMsg.id,
-            conversationId: tid,
-            role: errMsg.role,
-            content: errMsg.content,
-          }).catch(() => {})
+          // Persisted by the registry, not here: this listener only exists when
+          // a desktop window is attached, so a phone talking to a headless
+          // server lost the card on reload.
           break
         }
         case 'status': {

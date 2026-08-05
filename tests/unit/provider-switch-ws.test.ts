@@ -22,9 +22,15 @@ vi.mock('../../src/main/db/providerInstances', () => ({
   }),
   listOauthDirsForAgent: () => [],
 }))
+/** Records what the registry persists, so a missing method cannot pass as a log line. */
+const saved: Array<{ id: string; conversationId: string; role: string; content: string; images?: string }> = []
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   updateConversationSessionId: () => {},
+  saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string, images?: string) => {
+    saved.push({ id, conversationId, role, content, images })
+    return true
+  },
 }))
 
 import { WsHost } from '../../src/main/backend/ws-host'
@@ -139,6 +145,37 @@ describe('provider switching over the WebSocket boundary', () => {
     const content = events.find((e) => e.type === 'content')
     expect(content && 'text' in content ? content.text : '').toBe('[sonnet] echo: hello')
     expect(events.some((e) => e.type === 'turn.completed')).toBe(true)
+  })
+
+  // The renderer was the only writer of `messages`, so a turn sent from the
+  // phone left no row at all: no search hit, no DB fallback, and `updated_at`
+  // never moved so the chat stayed buried in the phone's own sort.
+  it('persists a turn sent by a client that is not the desktop renderer', async () => {
+    const { cwd } = await setup()
+    saved.length = 0
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'from the phone', undefined, undefined, 'o-1')
+    await flush()
+
+    const turn = saved.find((m) => m.role === 'user')
+    expect(turn).toBeDefined()
+    expect(turn?.content).toBe('from the phone')
+    expect(turn?.conversationId).toBe('t1')
+    // echoMessageId(origin) - the id the optimistic bubble already uses, so the
+    // renderer's own richer write targets this row instead of adding a second.
+    expect(turn?.id).toBe('remote_o-1')
+  })
+
+  it('persists a turn even when the client sends no origin (the phone\'s first message)', async () => {
+    const { cwd } = await setup()
+    saved.length = 0
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'opening turn')
+    await flush()
+
+    const turn = saved.find((m) => m.role === 'user')
+    expect(turn?.content).toBe('opening turn')
+    expect(turn?.id).toMatch(/^turn_\d+_\d+$/)
   })
 
   it('a mid-session model switch takes effect across the wire', async () => {
