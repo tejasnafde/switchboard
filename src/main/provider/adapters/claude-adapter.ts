@@ -1319,12 +1319,36 @@ export class ClaudeAdapter implements ProviderAdapter {
 
       case 'assistant': {
         type ContentBlock = { type: string; text?: string; id?: string; name?: string; input?: unknown; thinking?: string }
-        const errMsg = msg as SDKMessage & { error?: string; message?: { model?: string; content?: ContentBlock[] } }
-        // The CLI injects a synthetic assistant message on API errors (e.g.
-        // "You've hit your session limit") alongside the rate_limit_event we
-        // already surface as a system error card - rendering both duplicates
-        // the error in chat.
-        if (errMsg.error || errMsg.message?.model === '<synthetic>') break
+        const errMsg = msg as SDKMessage & {
+          error?: string
+          parent_tool_use_id?: string | null
+          message?: { model?: string; content?: ContentBlock[] }
+        }
+        // The CLI writes API errors as a synthetic assistant message. Keyed on
+        // the error CODE, not on whether we have already emitted a card: this
+        // message arrives BEFORE the matching `rate_limit_event` (measured
+        // across 12 production pairs, 1-78 ms), so a "did we card it yet" flag
+        // reads false every time and double-reports every rate limit - 807 of
+        // the 948 API errors on this machine. `rate_limit` is the one code with
+        // another messenger; a 529 has none, and dropping it left a spinner
+        // with no reply and no error at all (captured 2026-08-05).
+        // Sidechain errors stay out: a subagent's transient 529 is not the
+        // parent turn's failure, and the parent often recovers from it.
+        if (errMsg.error || errMsg.message?.model === '<synthetic>') {
+          if (errMsg.error && errMsg.error !== 'rate_limit' && !errMsg.parent_tool_use_id) {
+            const text = (errMsg.message?.content ?? [])
+              .filter((b) => b.type === 'text' && b.text)
+              .map((b) => b.text)
+              .join('\n')
+              .trim()
+            active.onEvent({
+              type: 'error',
+              threadId,
+              message: text || `Claude Code reported an API error (${errMsg.error}).`,
+            })
+          }
+          break
+        }
         const content = (msg as SDKMessage & { message?: { content?: ContentBlock[] } }).message?.content
         if (!content || !Array.isArray(content)) break
 

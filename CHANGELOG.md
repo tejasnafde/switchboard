@@ -2,6 +2,17 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.8 - A 529 looked exactly like nothing happening
+
+### Fixed
+- **API errors other than rate limits were dropped in silence.** The CLI writes an API error as a synthetic assistant message, and the live handler discarded any assistant message carrying `error` (`claude-adapter.ts`, 2026-07-10). The rationale was that `rate_limit_event` already emits a card, so rendering both duplicates it - true for a rate limit, false for everything else. Live capture: "yo" ran 3.4 minutes, the CLI wrote `API Error: 529 Overloaded`, and the user got a spinner, no reply and no error. `load-by-id` reported 1 message for a thread that had 2. That machine logged 6 rate limits and 4 overloads the same day. Non-rate-limit API errors now surface with the CLI's own text.
+- **Sidechain API errors stay out of the main chat.** A subagent's transient 529 is not the parent turn's failure and the parent usually recovers from it, so a message with `parent_tool_use_id` is not surfaced.
+
+### Notes
+- **Review caught the first fix double-reporting 85% of API errors.** It gated on a per-turn "did we already emit a rate-limit card" flag. The synthetic message arrives BEFORE the matching `rate_limit_event` - measured across 12 production log/transcript pairs, 1 to 78 ms - so the flag reads false every time. Of 948 API-error records in 1496 local transcripts, 807 are `rate_limit`, so almost every one would have produced two cards that disagreed about the cause ("hit your org's monthly spend limit" beside "rate limit reached (five-hour window)"). The dedupe is keyed on the error code instead, which is order-independent, and the flag is gone.
+- Not fixed, and it needs backend-side persistence rather than a patch here: on reload the message survives only because `ChatPanel` persists `error` events to sqlite, and `ChatPanel` is the only writer in the codebase. A headless `npm run server` driving a paired phone shows the red line once and loses it on reopen, because `jsonl-parser.ts` still drops `isApiErrorMessage` records. Same root cause as the desktop/mobile history divergence: nothing but the desktop renderer writes to `messages`.
+- The Codex and OpenCode adapters have no equivalent surfacing path.
+
 ## 0.8.7 - Changing the model did nothing until you switched profile
 
 ### Fixed

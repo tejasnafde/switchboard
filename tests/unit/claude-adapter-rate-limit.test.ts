@@ -142,3 +142,74 @@ describe('setModel', () => {
     await expect(new ClaudeAdapter().setModel('nope', 'opus')).resolves.toBeUndefined()
   })
 })
+
+/**
+ * Live capture 2026-08-05: "yo" sat on a spinner for 3.4 minutes with no reply
+ * and no error. The CLI had written `API Error: 529 Overloaded` as a synthetic
+ * assistant message and both the live handler and the parser dropped it.
+ *
+ * The dedupe is keyed on the error CODE because this message arrives BEFORE the
+ * matching `rate_limit_event` (measured across 12 production pairs). A
+ * "have we carded it yet" flag reads false every time and double-reports every
+ * rate limit, which is 807 of the 948 API errors on this machine.
+ */
+describe('synthetic API-error assistant messages', () => {
+  const apiError = (text: string, error = 'server_error', extra: object = {}) => ({
+    type: 'assistant',
+    error,
+    ...extra,
+    message: { role: 'assistant', content: [{ type: 'text', text }] },
+  })
+
+  it('surfaces a 529 as an error card', () => {
+    const events = dispatch(apiError('API Error: 529 Overloaded. Try again in a moment.'))
+    expect(events.map((e) => e.type)).toEqual(['error'])
+    expect((events[0] as { message: string }).message).toContain('529 Overloaded')
+  })
+
+  it('drops a rate_limit error, whose card comes from rate_limit_event', () => {
+    expect(dispatch(apiError("You've hit your session limit.", 'rate_limit'))).toEqual([])
+  })
+
+  it('does not double-report in the real arrival order (assistant first)', () => {
+    const adapter = new ClaudeAdapter()
+    const active = makeActive()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const send = (m: object) => (adapter as any).handleSDKMessage('thread-1', active, m)
+    send(apiError("You've hit your org's monthly spend limit", 'rate_limit'))
+    send({ type: 'rate_limit_event', rate_limit_info: { status: 'rejected', rateLimitType: 'five_hour' } })
+    const errors = active.onEvent.mock.calls
+      .map((c) => c[0] as RuntimeEvent)
+      .filter((e) => e.type === 'error')
+    // Exactly one card, from rate_limit_event, which knows the window and reset.
+    expect(errors).toHaveLength(1)
+    expect((errors[0] as { message: string }).message).toMatch(/rate limit/i)
+  })
+
+  it('ignores a subagent API error - the parent turn often recovers', () => {
+    expect(dispatch(apiError('API Error: 529 Overloaded', 'server_error', {
+      parent_tool_use_id: 'toolu_123',
+    }))).toEqual([])
+  })
+
+  it('falls back to a named message when the error block carries no text', () => {
+    const events = dispatch({ type: 'assistant', error: 'overloaded_error', message: { role: 'assistant', content: [] } })
+    expect((events[0] as { message: string }).message).toContain('overloaded_error')
+  })
+
+  it('still drops a synthetic placeholder that is not an API error', () => {
+    const events = dispatch({ type: 'assistant', message: { model: '<synthetic>', role: 'assistant', content: [] } })
+    expect(events).toEqual([])
+  })
+
+  it('leaves a normal assistant message alone', () => {
+    const events = dispatch({
+      type: 'assistant',
+      message: { role: 'assistant', model: 'claude-opus-5', content: [{ type: 'text', text: 'hello' }] },
+    })
+    // 'status' rides along on any real assistant message; the point is that
+    // 'content' is emitted and no 'error' is.
+    expect(events.map((e) => e.type)).toContain('content')
+    expect(events.map((e) => e.type)).not.toContain('error')
+  })
+})
