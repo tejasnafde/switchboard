@@ -286,8 +286,11 @@ export default function ThreadScreen({ route, navigation }: Props) {
       client.setRuntimeMode(threadId, mode).catch((err) => log.warn('restore mode failed', err))
     }
     if (saved?.model !== undefined) {
+      // Local only. Pushing a remembered model on OPEN would retarget a session
+      // the desktop is driving - harmless while the Claude adapter ignored
+      // setModel, a silent mid-conversation model change now that it does not.
+      // The backend reports the live model on `context_window`.
       setModel(saved.model)
-      client.setModel(threadId, saved.model).catch((err) => log.warn('restore model failed', err))
     }
     if (saved?.draft) setDraft(saved.draft)
   }, [connectionId, threadId, key, isNew])

@@ -1027,6 +1027,23 @@ export class ClaudeAdapter implements ProviderAdapter {
     return active.models
   }
 
+  async setModel(threadId: string, model: string): Promise<void> {
+    const active = this.sessions.get(threadId)
+    if (!active) return
+    // Recorded even with no live query - `startDraining` reads it, so the next
+    // query picks the new model up by itself.
+    active.session.model = model
+    // Keep the rate-limit attribution honest: a rejection right after a switch
+    // would otherwise name the model the user just moved AWAY from.
+    active.lastKnownModel = model
+    try {
+      await active.query?.setModel(model)
+      log.info(`model updated: ${threadId} → ${model}`)
+    } catch (err) {
+      log.warn(`failed to set model mid-session for ${threadId}: ${err}`)
+    }
+  }
+
   async interruptTurn(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.query) return

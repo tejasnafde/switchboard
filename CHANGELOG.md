@@ -2,6 +2,17 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.7 - Changing the model did nothing until you switched profile
+
+### Fixed
+- **The model picker never reached a live Claude session.** `ProviderAdapter.setModel` is optional and the Claude adapter never implemented it, so `provider-registry`'s `if (adapter.setModel)` was always false. The picker updated the UI and nothing else. Live capture: a turn was rejected on Fable (org spend block), the user picked Opus and resent, and the log shows the retry still running as `model=claude-fable-5`. Only switching provider profile fixed it, because that is a `stopSession` + `startSession` and the new session re-reads the model. The adapter now implements `setModel`: it records the model for the next query and applies it to the running one.
+- **A rejection right after a model switch blamed the wrong model.** `lastKnownModel` was only written by the post-turn context poll, so the rate-limit message and the `spend.blocked` guard both named the model the user had just moved away from - and the composer then warned about the wrong one. `setModel` retargets it.
+- **The phone could silently retarget the desktop's model.** `ThreadScreen` pushes its remembered per-thread model on OPEN. That was inert for Claude while `setModel` did nothing; with it implemented, opening a thread on the phone would change the model of a session the desktop is driving, mid-conversation. The restore is now local to the phone's picker, and the live model still arrives on `context_window`.
+
+### Notes
+- **A wrong diagnosis got as far as a written fix, and review killed it.** The first read of the capture was "the drain loop parks after a rejection, so later sends queue into a void", based on the resend having no `starting query` line after it. That line is only logged for the FIRST query of a session - streaming-input mode reuses one query for every later turn - so its absence proves nothing. The raw log shows the resend WAS processed, on Fable. The discarded fix retired the query on every rejection, which would have killed the CLI's own retry (three rejections 1.2s apart inside one query appear in an earlier log), orphaned a subprocess per retire, and let a retired loop clobber its successor's state.
+- Not addressed: an `import()` failure in `startDraining` still leaves `draining` true forever with no `finally` to clear it. Pre-existing.
+
 ## 0.8.6 - Every reader that guessed where a transcript lives
 
 An audit of one bug's family. A transcript's path is a function of `(profile, cwd)` at WRITE time - `<CLAUDE_CONFIG_DIR>/projects/<encode(cwd)>/<id>.jsonl` - and every reader was reconstructing it from `(~/.claude, project_path)` at READ time. Both halves drift: the profile changes when you switch instance, the cwd changes when a chat enters a worktree. 0.8.2 fixed resume. These are the rest.

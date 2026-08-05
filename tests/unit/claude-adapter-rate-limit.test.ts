@@ -13,8 +13,8 @@ function makeActive(onEvent = vi.fn()) {
       cwd: '/tmp',
       createdAt: 0,
     },
-    query: null,
-    prompt: { push: vi.fn() } as never,
+    query: null as unknown,
+    prompt: { push: vi.fn(), close: vi.fn() } as never,
     onEvent,
     abortController: new AbortController(),
     pendingApprovals: new Map(),
@@ -29,6 +29,7 @@ function makeActive(onEvent = vi.fn()) {
     skills: [],
     instanceEnv: {},
     instanceOauthDir: null,
+    lastKnownModel: null as string | null,
     watchdog: new TurnWatchdog(180_000, () => {}),
     stderrTail: new StderrTail(2_000),
   }
@@ -85,5 +86,59 @@ describe('rate_limit_event', () => {
   it('emits nothing when rate_limit_info is missing', () => {
     const events = dispatch({ type: 'rate_limit_event' })
     expect(events).toHaveLength(0)
+  })
+})
+
+/**
+ * Live capture 2026-08-05: Fable was rejected on spend, the user picked Opus and
+ * resent, and the retry still ran on Fable - the log shows `context: ...
+ * model=claude-fable-5` after the resend. The adapter never implemented
+ * `setModel`, so `provider-registry`'s `if (adapter.setModel)` was always false
+ * and only a profile switch (stopSession + startSession, which re-reads the
+ * model) could change it.
+ */
+describe('setModel', () => {
+  function adapterWithSession(query: unknown) {
+    const adapter = new ClaudeAdapter()
+    const active = makeActive()
+    active.query = query as never
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).sessions.set('thread-1', active)
+    return { adapter, active }
+  }
+
+  it('exists, so the registry actually dispatches to it', () => {
+    expect(typeof new ClaudeAdapter().setModel).toBe('function')
+  })
+
+  it('records the model so the next query starts with it', async () => {
+    const { adapter, active } = adapterWithSession(null)
+    await adapter.setModel('thread-1', 'opus')
+    expect(active.session.model).toBe('opus')
+  })
+
+  it('applies to a live query', async () => {
+    const setModel = vi.fn().mockResolvedValue(undefined)
+    const { adapter } = adapterWithSession({ setModel })
+    await adapter.setModel('thread-1', 'opus')
+    expect(setModel).toHaveBeenCalledWith('opus')
+  })
+
+  it('retargets rate-limit attribution, so a rejection names the new model', async () => {
+    const { adapter, active } = adapterWithSession(null)
+    active.lastKnownModel = 'claude-fable-5'
+    await adapter.setModel('thread-1', 'claude-opus-5')
+    expect(active.lastKnownModel).toBe('claude-opus-5')
+  })
+
+  it('still records the model when the live call rejects', async () => {
+    const setModel = vi.fn().mockRejectedValue(new Error('query closed'))
+    const { adapter, active } = adapterWithSession({ setModel })
+    await expect(adapter.setModel('thread-1', 'opus')).resolves.toBeUndefined()
+    expect(active.session.model).toBe('opus')
+  })
+
+  it('is a no-op for an unknown thread', async () => {
+    await expect(new ClaudeAdapter().setModel('nope', 'opus')).resolves.toBeUndefined()
   })
 })
