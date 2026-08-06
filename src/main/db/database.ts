@@ -407,6 +407,15 @@ function migrate(db: Database.Database): void {
      WHERE provider_instance_id IS NULL
   `)
 
+  // Migration (2026-08-06): persist the per-conversation pinned model, same
+  // shape as runtime_mode/provider_instance_id above. Previously the pick
+  // lived only on the in-memory AgentSession, so it was lost the moment a
+  // chat's live session object stopped matching the id the sidebar/kanban
+  // handed back (e.g. after Claude assigns the chat its own session id).
+  if (!convCols.some((c) => c.name === 'model')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN model TEXT')
+  }
+
   // Rebuild FTS index from existing messages
   try {
     const ftsCount = (db.prepare('SELECT count(*) as c FROM messages_fts').get() as { c: number } | undefined)?.c ?? 0
@@ -845,11 +854,20 @@ export function listAllThreadSessions(): Array<{
 /**
  * Per-conversation runtime mode (plan/sandbox/accept-edits/full-access).
  * Returns null if never set. Callers should fall back to a user default.
+ *
+ * Resolves `id` through `resolveRootThreadId` first: the sidebar hands back
+ * whatever id the disk scanner currently considers canonical for this chat,
+ * which is the Claude UUID once one has been assigned - but the mode was
+ * saved against the synthetic `agent_<ts>` id this chat was created under.
+ * Without this, every conversation "forgot" its runtime mode (and provider
+ * instance, below) the first time it was reopened after Claude assigned it
+ * a session id, since the raw id used to save it isn't the one being read
+ * back. `resolveRootThreadId` no-ops when `id` was never rotated.
  */
 export function getConversationRuntimeMode(id: string): string | null {
   const row = getDb().prepare(
     'SELECT runtime_mode FROM conversations WHERE id = ?'
-  ).get(id) as { runtime_mode: string | null } | undefined
+  ).get(resolveRootThreadId(id)) as { runtime_mode: string | null } | undefined
   return row?.runtime_mode ?? null
 }
 
@@ -857,11 +875,15 @@ export function getConversationRuntimeMode(id: string): string | null {
  * Persist the per-conversation runtime mode. Called when the user picks a
  * mode in the chat header so reopening the conversation (incl. via a kanban
  * card click) restores their selection instead of resetting to 'sandbox'.
+ *
+ * Resolves through `resolveRootThreadId` for the same reason as the getter
+ * above, so a pick made while viewing a rotated-id session lands on the same
+ * row the getter will read from, instead of a stray row keyed by the UUID.
  */
 export function setConversationRuntimeMode(id: string, mode: string): void {
   getDb().prepare(
     'UPDATE conversations SET runtime_mode = ?, updated_at = ? WHERE id = ?'
-  ).run(mode, Date.now(), id)
+  ).run(mode, Date.now(), resolveRootThreadId(id))
 }
 
 /**
@@ -890,11 +912,17 @@ export function getConversationLastRead(id: string): number | null {
  * not yet populated (extremely old conversation, or one created before
  * the multi-instance migration ran). Callers fall back to the
  * `<agentType>-default` instance.
+ *
+ * Resolves through `resolveRootThreadId` first - see the comment on
+ * `getConversationRuntimeMode` above. This is the fix for the sidebar
+ * "provider instance keeps resetting to default" bug: the row that holds
+ * the user's pick is keyed by the synthetic `agent_<ts>` id, but a chat
+ * reopened from the sidebar arrives here keyed by its rotated Claude UUID.
  */
 export function getConversationProviderInstanceId(id: string): string | null {
   const row = getDb().prepare(
     'SELECT provider_instance_id FROM conversations WHERE id = ?'
-  ).get(id) as { provider_instance_id: string | null } | undefined
+  ).get(resolveRootThreadId(id)) as { provider_instance_id: string | null } | undefined
   return row?.provider_instance_id ?? null
 }
 
@@ -902,9 +930,35 @@ export function setConversationProviderInstanceId(id: string, instanceId: string
   // Keep `session_id`. The claude-adapter migrates the JSONL across
   // CLAUDE_CONFIG_DIR profiles when oauth_dir differs, so resume by UUID
   // still works after a switch. Nulling here would drop history.
+  //
+  // Resolved through `resolveRootThreadId` so a pick made against a rotated
+  // id lands on the same row the getter above reads from, instead of a
+  // stray row keyed by the UUID that the getter would never see.
   getDb().prepare(
     'UPDATE conversations SET provider_instance_id = ?, updated_at = ? WHERE id = ?'
-  ).run(instanceId, Date.now(), id)
+  ).run(instanceId, Date.now(), resolveRootThreadId(id))
+}
+
+/**
+ * Per-conversation pinned model. Returns null if the user never pinned one
+ * (callers fall back to the adapter's own default).
+ *
+ * Resolves through `resolveRootThreadId` first - see the comment on
+ * `getConversationRuntimeMode` above. Same fallback as runtime mode and
+ * provider instance, so a chat reopened from the sidebar under its rotated
+ * Claude UUID still finds the pin saved under its original id.
+ */
+export function getConversationModel(id: string): string | null {
+  const row = getDb().prepare(
+    'SELECT model FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as { model: string | null } | undefined
+  return row?.model ?? null
+}
+
+export function setConversationModel(id: string, model: string): void {
+  getDb().prepare(
+    'UPDATE conversations SET model = ?, updated_at = ? WHERE id = ?'
+  ).run(model, Date.now(), resolveRootThreadId(id))
 }
 
 export function archiveConversation(id: string): void {

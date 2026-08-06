@@ -122,19 +122,39 @@ export async function launchCardChat(
     if (existing) {
       log('reuse existing session', { cardId: card.id, sessionId: existing.id })
       useAgentStore.getState().setActiveSession(existing.id)
-      // Fix up the in-memory mode from the DB. The session may have been
-      // added via a sidebar click on app boot (which seeded `runtimeMode`
-      // with the module default before we could fetch the persisted value).
-      // Without this, the chip would show e.g. 'sandbox' even though the
-      // user's last selection on this conversation was 'full-access'.
-      try {
-        const persisted = await resolveCardRuntimeMode(card.runtimeMode, existing.id)
+      // Fix up the in-memory mode and pinned model from the DB. The session
+      // may have been added via a sidebar click on app boot (which seeded
+      // `runtimeMode` with the module default before we could fetch the
+      // persisted value, and left `model` unset entirely). Without this,
+      // the chip would show e.g. 'sandbox' even though the user's last
+      // selection was 'full-access', and the model picker would silently
+      // drop back to the adapter default.
+      //
+      // The two reads are independent, fired concurrently rather than one
+      // after the other - each wrapped in its own async IIFE so a
+      // synchronous throw from either rejects that entry instead of
+      // skipping the other fix-up.
+      const [runtimeModeResult, modelResult] = await Promise.allSettled([
+        (async () => resolveCardRuntimeMode(card.runtimeMode, existing.id))(),
+        (async () => window.api?.app?.getConversationModel?.(existing.id))(),
+      ])
+      if (runtimeModeResult.status === 'fulfilled') {
+        const persisted = runtimeModeResult.value
         if (persisted !== existing.runtimeMode) {
           useAgentStore.getState().setRuntimeMode(existing.id, persisted)
           window.api?.provider?.setRuntimeMode?.(existing.id, persisted).catch(() => {})
         }
-      } catch (err) {
-        log('runtime-mode hydrate failed', { err: String(err) })
+      } else {
+        log('runtime-mode hydrate failed', { err: String(runtimeModeResult.reason) })
+      }
+      if (modelResult.status === 'fulfilled') {
+        const res = modelResult.value
+        if (res?.model && res.model !== existing.model) {
+          useAgentStore.getState().setModel(existing.id, res.model)
+          window.api?.provider?.setModel?.(existing.id, res.model).catch(() => {})
+        }
+      } else {
+        log('model hydrate failed', { err: String(modelResult.reason) })
       }
       return { sessionId: existing.id, reused: true }
     }

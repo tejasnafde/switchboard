@@ -570,26 +570,46 @@ export function App() {
         title: session.title,
       }).catch(() => {})
 
-      // Hydrate the persisted runtime mode (if the user previously picked
-      // one for this conversation). Without this, the chip shows the module
-      // default until the user re-toggles, which feels like "the value is
-      // hardcoded on chat load."
-      try {
-        const res = await window.api.app.getConversationRuntimeMode?.(session.id)
-        const persisted = res?.mode
+      // Hydrate the persisted runtime mode, provider instance, and pinned
+      // model (if the user previously picked one for this conversation).
+      // Without this, the pickers show the module default until the user
+      // re-toggles, which feels like "the value is hardcoded on chat load."
+      // Fired concurrently - the three reads are independent and each has
+      // its own failure handling, so there's no reason to pay three
+      // sequential round trips (real latency over a remote/WS backend).
+      // Each entry is wrapped in an async IIFE, not called bare: the old
+      // code gave each call its own try/catch, so a synchronous throw (e.g.
+      // a missing method on a degraded transport) only dropped that one
+      // field. A bare call here would throw while building this array,
+      // before Promise.allSettled exists to catch anything, taking down
+      // the rest of handleSessionSelect - including loadSessionById below.
+      const [runtimeModeResult, instanceResult, modelResult] = await Promise.allSettled([
+        (async () => window.api.app.getConversationRuntimeMode?.(session.id))(),
+        (async () => window.api.app.getConversationProviderInstanceId(session.id))(),
+        (async () => window.api.app.getConversationModel?.(session.id))(),
+      ])
+      if (runtimeModeResult.status === 'fulfilled') {
+        const persisted = runtimeModeResult.value?.mode
         if (persisted === 'plan' || persisted === 'sandbox' || persisted === 'accept-edits' || persisted === 'full-access') {
           useAgentStore.getState().setRuntimeMode(session.id, persisted)
         }
-      } catch { /* best-effort */ }
-
-      // Restore the conversation's provider instance so reopening picks up
-      // the same credentials / OAuth dir as the last run.
-      try {
-        const res = await window.api.app.getConversationProviderInstanceId(session.id)
-        if (res?.instanceId) {
-          useAgentStore.getState().setInstanceId(session.id, res.instanceId)
+      } else {
+        log.warn('restore runtime mode failed', { sessionId: session.id, err: runtimeModeResult.reason })
+      }
+      if (instanceResult.status === 'fulfilled') {
+        if (instanceResult.value?.instanceId) {
+          useAgentStore.getState().setInstanceId(session.id, instanceResult.value.instanceId)
         }
-      } catch { /* best-effort */ }
+      } else {
+        log.warn('restore provider instance failed', { sessionId: session.id, err: instanceResult.reason })
+      }
+      if (modelResult.status === 'fulfilled') {
+        if (modelResult.value?.model) {
+          useAgentStore.getState().setModel(session.id, modelResult.value.model)
+        }
+      } else {
+        log.warn('restore pinned model failed', { sessionId: session.id, err: modelResult.reason })
+      }
 
       // Load messages via loadSessionById so the main process scans every
       // known oauth_dir for this agent kind - sessions whose last turn ran

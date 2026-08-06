@@ -163,6 +163,10 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // turn; Claude/Codex no-op). Without this, the adapter keeps using
     // whatever model was passed at startSession forever.
     window.api.provider.setModel?.(sessionId, m).catch(() => {})
+    // Persist as the per-conversation source of truth so reopening this
+    // chat (sidebar, kanban card click) restores the pin instead of losing
+    // it the moment the live session object stops matching session.id.
+    window.api.app?.setConversationModel?.(sessionId, m).catch(() => {})
   }, [sessionId, storeSetModel])
 
   const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {

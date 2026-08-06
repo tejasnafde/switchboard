@@ -95,18 +95,20 @@ interface MockApi {
     unarchiveConversation: ReturnType<typeof vi.fn>
     getConversationRuntimeMode: ReturnType<typeof vi.fn>
     setConversationRuntimeMode: ReturnType<typeof vi.fn>
+    getConversationModel: ReturnType<typeof vi.fn>
   }
   provider: {
     startSession: ReturnType<typeof vi.fn>
     sendTurn: ReturnType<typeof vi.fn>
     setRuntimeMode: ReturnType<typeof vi.fn>
+    setModel: ReturnType<typeof vi.fn>
   }
   kanban: {
     update: ReturnType<typeof vi.fn>
   }
 }
 
-function installApiMock(persistedMode: string | null = null): MockApi {
+function installApiMock(persistedMode: string | null = null, persistedModel: string | null = null): MockApi {
   const api: MockApi = {
     app: {
       createConversation: vi.fn(async () => undefined),
@@ -115,11 +117,13 @@ function installApiMock(persistedMode: string | null = null): MockApi {
       unarchiveConversation: vi.fn(async () => undefined),
       getConversationRuntimeMode: vi.fn(async () => ({ mode: persistedMode })),
       setConversationRuntimeMode: vi.fn(async () => ({ ok: true })),
+      getConversationModel: vi.fn(async () => ({ model: persistedModel })),
     },
     provider: {
       startSession: vi.fn(async () => ({ ok: true })),
       sendTurn: vi.fn(async () => undefined),
       setRuntimeMode: vi.fn(async () => undefined),
+      setModel: vi.fn(async () => undefined),
     },
     kanban: {
       update: vi.fn(async (id: string, patch: Record<string, unknown>) => ({
@@ -348,5 +352,33 @@ describe('launchCardChat', () => {
     expect(session?.runtimeMode).toBe('full-access')
     // And the change is propagated to any running provider session.
     expect(api.provider.setRuntimeMode).toHaveBeenCalledWith('existing_1', 'full-access')
+  })
+
+  it("hydrates a reused session's stale in-memory model pin from the DB", async () => {
+    // Same "open card after app restart" scenario as the runtime-mode test
+    // above, but for the pinned model: the session was re-added with no
+    // `model` field, while the conversation row has a real pin saved.
+    const api = installApiMock(null, 'claude-opus-4')
+    useAgentStore.setState({
+      sessions: [{
+        id: 'existing_1',
+        type: 'claude-code',
+        status: 'idle',
+        projectPath: '/repo',
+        title: 't',
+        messages: [],
+        unreadCount: 0,
+        runtimeMode: 'accept-edits',
+      }],
+      activeSessionId: null,
+    })
+    const c = card({ conversationId: 'existing_1' })
+
+    const result = await launchCardChat(c, { openChat: true })
+
+    expect(result.reused).toBe(true)
+    const session = useAgentStore.getState().sessions.find((s) => s.id === 'existing_1')
+    expect(session?.model).toBe('claude-opus-4')
+    expect(api.provider.setModel).toHaveBeenCalledWith('existing_1', 'claude-opus-4')
   })
 })

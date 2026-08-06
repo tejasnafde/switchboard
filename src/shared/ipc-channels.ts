@@ -40,6 +40,8 @@ export const AppChannels = {
   SET_CONVERSATION_RUNTIME_MODE: 'app:set-conversation-runtime-mode',
   GET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:get-conversation-provider-instance-id',
   SET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:set-conversation-provider-instance-id',
+  GET_CONVERSATION_MODEL: 'app:get-conversation-model',
+  SET_CONVERSATION_MODEL: 'app:set-conversation-model',
   CHECK_FOR_UPDATES: 'app:check-for-updates',
   RELAUNCH: 'app:relaunch',
   /** main → renderer push: status changes from electron-updater. */

@@ -39,6 +39,8 @@ import {
   setConversationRuntimeMode,
   getConversationProviderInstanceId,
   setConversationProviderInstanceId,
+  getConversationModel,
+  setConversationModel,
   getChildSessionIds,
   getSyntheticParentMap,
   listSessionIdsForThread,
@@ -521,6 +523,17 @@ export function registerAppHandlers(host: BackendHost): void {
   })
   host.handle(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, (id: string, instanceId: string) => {
     setConversationProviderInstanceId(id, instanceId)
+    return { ok: true }
+  })
+
+  // Per-conversation pinned model. Same symmetry as runtime mode / provider
+  // instance above: sidebar reopen / kanban click should restore the user's
+  // last pin instead of falling back to the adapter's default.
+  host.handle(AppChannels.GET_CONVERSATION_MODEL, (id: string) => {
+    return { model: getConversationModel(id) }
+  })
+  host.handle(AppChannels.SET_CONVERSATION_MODEL, (id: string, model: string) => {
+    setConversationModel(id, model)
     return { ok: true }
   })
 

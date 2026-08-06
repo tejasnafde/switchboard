@@ -189,6 +189,10 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_PROVIDER_INSTANCE_ID, id),
     setConversationProviderInstanceId: (id: string, instanceId: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, id, instanceId),
+    getConversationModel: (id: string): Promise<{ model: string | null }> =>
+      transport.invoke(AppChannels.GET_CONVERSATION_MODEL, id),
+    setConversationModel: (id: string, model: string): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.SET_CONVERSATION_MODEL, id, model),
     getConversations: (projectPath: string) =>
       transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
     setVibrancy: (enabled: boolean) =>

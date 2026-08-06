@@ -2,6 +2,22 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.11 - A setting saved under one id, read back under another
+
+Two per-conversation settings - provider instance and runtime mode - reset to
+their defaults the first time a chat was reopened after Claude assigned it a
+session id. A third, the pinned model, had no persistence at all and reset
+every time, not just some of the time.
+
+### Fixed
+- **Provider instance and runtime mode reset to default after a chat's first turn.** Claude assigns a chat its own session UUID once it produces a turn, and the sidebar then surfaces that UUID as the chat's id instead of the synthetic `agent_<ts>` id it was created under. `getConversationProviderInstanceId`/`getConversationRuntimeMode` queried `conversations WHERE id = ?` with that UUID directly, found no row, and fell back to the default - even though `thread_sessions` already mapped the rotated id back to the original for title/worktree inheritance. Both getters and setters now resolve through the existing `resolveRootThreadId` first.
+- **The model picker's pin was never persisted at all.** Unlike runtime mode and provider instance, the chosen model lived only on the in-memory session object, so it reset on every sidebar or kanban reopen after a chat's first turn. Added a `conversations.model` column and a matching getter/setter (with the `resolveRootThreadId` fix built in from the start), wired into the chat header's model picker and restored on reopen from both the sidebar and kanban card launch.
+
+### Notes
+- Review caught the sidebar restore losing its per-field failure isolation when the three reads (runtime mode, provider instance, model) were parallelized with `Promise.allSettled`: a bare call that throws synchronously is no longer caught by its own try/catch, so it would throw while the array was still being built, before `Promise.allSettled` exists to catch anything, taking the rest of session-open down with it. Each read is now wrapped in its own async IIFE.
+- Review also caught the kanban "reuse existing session" path doing its two reads (runtime mode, model) sequentially right after the sidebar path was parallelized for that exact reason. Parallelized there too.
+- Deferred: runtime mode, provider instance, and now model are three near-identical column + getter + setter pairs, each one a place to forget `resolveRootThreadId` again. A generic per-conversation key-value table would remove that risk structurally, but it is a schema migration touching two existing columns and out of scope for this fix.
+
 ## 0.8.10 - The backend writes history now, not the window
 
 Every `saveMessage` call site was in `src/renderer`. `apps/mobile/src` had none, and neither did the registry. So the durable record of a conversation existed only if a desktop window happened to be attached.
