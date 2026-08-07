@@ -22,8 +22,17 @@ export function isStaleDownloadError(raw: string): boolean {
   return STALE_DOWNLOAD_RE.test(raw)
 }
 
+/**
+ * Our own `withTimeout` wrapper around `checkForUpdates()` produced this.
+ * electron-updater caches the in-flight check promise, so once a check
+ * hangs, every retry click awaits the same hung request - only an app
+ * restart truly resets it. The message must name that escape hatch.
+ */
+const CHECK_TIMEOUT_RE = /^Update check timed out after \d+ms$/
+
 export function friendlyUpdateError(raw: string): string {
   if (NETWORK_RE.test(raw)) return 'No internet connection'
   if (isStaleDownloadError(raw)) return 'Update download was interrupted - try again'
+  if (CHECK_TIMEOUT_RE.test(raw)) return 'Update check timed out - try again, or restart the app if it persists'
   return raw
 }

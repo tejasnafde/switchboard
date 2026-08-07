@@ -34,4 +34,13 @@ describe('friendlyUpdateError', () => {
     expect(friendlyUpdateError('HttpError: 404 Not Found')).toBe('HttpError: 404 Not Found')
     expect(friendlyUpdateError('signature verification failed')).toBe('signature verification failed')
   })
+
+  it('maps a timed-out check to a message that names the restart escape hatch', () => {
+    // electron-updater caches the in-flight check promise, so once one check
+    // hangs, every retry click awaits the same hung request - only an app
+    // restart truly resets it. The message has to say so.
+    expect(friendlyUpdateError('Update check timed out after 30000ms')).toBe(
+      'Update check timed out - try again, or restart the app if it persists',
+    )
+  })
 })

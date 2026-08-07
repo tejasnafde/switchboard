@@ -26,6 +26,7 @@ import { app, ipcMain, type BrowserWindow } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import { AppChannels } from '@shared/ipc-channels'
 import type { UpdateStatus } from '@shared/update-status'
+import { withTimeout } from '@shared/promise-timeout'
 import { createMainLogger } from './logger'
 import { friendlyUpdateError, isStaleDownloadError } from './updater-error'
 
@@ -38,6 +39,16 @@ let registered = false
 let lastStatus: UpdateStatus = { kind: 'idle' }
 /** Guards the one-shot re-download after a purged staging file. */
 let staleDownloadRetried = false
+
+/**
+ * Deadline on `checkForUpdates()`. Its HTTP request has no timeout of its
+ * own, and electron-updater dedups concurrent checks by returning the same
+ * cached in-flight promise - so one stalled request pinned the Settings
+ * row on "Checking..." until app restart (seen 2026-08-07: a check that
+ * never resolved, then "already in progress" on every retry click).
+ * Healthy checks resolve in ~2s; 30s is generous.
+ */
+const CHECK_TIMEOUT_MS = 30_000
 
 function send(window: BrowserWindow, status: UpdateStatus): void {
   lastStatus = status
@@ -68,7 +79,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     }
     try {
       send(window, { kind: 'checking' })
-      const result = await autoUpdater.checkForUpdates()
+      const result = await withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check')
       // No `result` means the channel file was missing or unreachable;
       // electron-updater logs the underlying reason. Surface as error.
       if (!result) {
@@ -138,7 +149,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       staleDownloadRetried = true
       log.warn('update staging file vanished mid-download - retrying once')
       send(window, { kind: 'checking' })
-      autoUpdater.checkForUpdates().catch((retryErr) => {
+      withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check').catch((retryErr) => {
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
         log.error(`stale-download retry failed: ${retryMsg}`)
         send(window, { kind: 'error', message: friendlyUpdateError(retryMsg) })
@@ -153,8 +164,12 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   // `checking-for-update` event fires before the listener is attached
   // and the UI looks stuck on "idle".
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((err) => {
-      log.warn(`initial checkForUpdates failed: ${err instanceof Error ? err.message : err}`)
+    withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check').catch((err) => {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`initial checkForUpdates failed: ${message}`)
+      // Unstick the UI: without this, a hung launch-time check leaves the
+      // Settings row on the "checking" status it broadcast at start.
+      send(window, { kind: 'error', message: friendlyUpdateError(message) })
     })
   }, 3_000)
 }

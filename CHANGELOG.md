@@ -2,6 +2,16 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.12 - One stalled request wedged the updater until restart
+
+### Fixed
+- **"Check for updates" could stick on "Checking..." forever.** `autoUpdater.checkForUpdates()` runs an HTTP request with no deadline, and electron-updater dedups concurrent checks by returning the same cached in-flight promise - so one stalled request (seen 2026-08-07: a check that never resolved, then "already in progress" on every retry click) pinned the Settings row until app restart. All three check call sites (manual button, launch-time, stale-download retry) are now bounded by a 30s timeout; a timeout surfaces as an error naming the restart escape hatch instead of silence. Healthy checks resolve in ~2s.
+- **A hung launch-time check also left the row stuck** - its failure path only logged. It now broadcasts the error status too.
+
+### Notes
+- `withTimeout` was extracted to `src/shared/promise-timeout.ts` from codex-adapter's private copy (verbatim), which now imports it - one implementation, not two.
+- The timeout unsticks the UI but cannot cancel electron-updater's cached in-flight request; a genuinely hung request stays hung until restart, which is why the error message names restarting. A late-resolving check firing its events afterwards is harmless - it overwrites the error with a correct, current status.
+
 ## 0.8.11 - A setting saved under one id, read back under another
 
 Two per-conversation settings - provider instance and runtime mode - reset to
