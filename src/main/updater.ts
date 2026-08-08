@@ -79,7 +79,13 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     }
     try {
       send(window, { kind: 'checking' })
+      // Timed so a stall is measurable. Healthy checks take ~2s; three stalls
+      // (2026-08-07 x2, 08-08) each ran ~77s, the shape of a TCP connect that
+      // black-holes until the OS gives up. electron-updater dedups concurrent
+      // checks, so a retry click during a stall inherits the stuck request.
+      const startedAt = Date.now()
       const result = await withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check')
+      log.info(`manual update check resolved in ${Date.now() - startedAt}ms`)
       // No `result` means the channel file was missing or unreachable;
       // electron-updater logs the underlying reason. Surface as error.
       if (!result) {
@@ -106,6 +112,10 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   // Don't auto-install on quit - let the user click the prompt so a
   // long-running terminal pane doesn't die in the middle of work.
   autoUpdater.autoInstallOnAppQuit = false
+  // Differential download never paid off here: it either finds no previous
+  // update.zip and falls back anyway, or (2026-08-07) burns ~12s of range
+  // requests, fails on a sha512 mismatch, then full-downloads regardless.
+  autoUpdater.disableDifferentialDownload = true
   // Pipe the library's logger through ours so failures show up in the
   // app's log file, not just stdout.
   autoUpdater.logger = {

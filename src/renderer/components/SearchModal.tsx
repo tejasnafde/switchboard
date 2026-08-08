@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { renderSnippetHtml } from './searchSnippet'
+import { resolveSessionSelectTarget } from '../utils/session-eviction'
 import type { ChatMessage, AgentType } from '@shared/types'
 
 interface SearchResult {
@@ -60,6 +61,7 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
   const handleSelect = useCallback(async (result: SearchResult) => {
     const store = useAgentStore.getState()
     const existing = store.sessions.find((s) => s.id === result.conversationId)
+    let targetId = result.conversationId
 
     // Hydrate the session if it isn't already in the agent store. Search
     // hits often reference chats from previous launches that were scanned
@@ -68,9 +70,16 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
       try {
         const resp = await window.api.app.loadSessionById(result.conversationId) as {
           messages: ChatMessage[]
-          meta: { id: string; title: string; projectPath: string; agentType: string } | null
+          meta: { id: string; title: string; projectPath: string; agentType: string; rootThreadId?: string } | null
         }
-        if (resp.meta) {
+        // A hit can name a rotated id whose live thread is already in the
+        // store; adding it again would build an unreachable twin.
+        targetId = resolveSessionSelectTarget(
+          result.conversationId,
+          resp?.meta?.rootThreadId,
+          store.sessions.map((s) => s.id),
+        )
+        if (resp.meta && targetId === result.conversationId) {
           addSession({
             id: resp.meta.id,
             type: (resp.meta.agentType === 'codex' ? 'codex' : 'claude-code') as AgentType,
@@ -86,11 +95,11 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
       }
     }
 
-    setActiveSession(result.conversationId)
+    setActiveSession(targetId)
     // Ask MessageList to jump the virtualizer to this message. The effect
     // there retries until the message shows up in the turns array (gives
     // setMessages a chance to land).
-    requestScrollToMessage(result.conversationId, result.messageId)
+    requestScrollToMessage(targetId, result.messageId)
     onClose()
   }, [setActiveSession, requestScrollToMessage, addSession, setMessages, onClose])
 

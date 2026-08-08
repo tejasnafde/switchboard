@@ -1,5 +1,23 @@
 import { describe, it, expect } from 'vitest'
-import { shouldEvictMessages, needsMessageReload } from '../../src/renderer/utils/session-eviction'
+import { shouldEvictMessages, needsMessageReload, resolveSessionSelectTarget } from '../../src/renderer/utils/session-eviction'
+
+describe('resolveSessionSelectTarget', () => {
+  it('activates the live thread when the sidebar id is a rotated twin', () => {
+    expect(resolveSessionSelectTarget('uuid-1', 'agent_1', ['agent_1'])).toBe('agent_1')
+  })
+
+  it('keeps the clicked id when the live thread is not in the store', () => {
+    expect(resolveSessionSelectTarget('uuid-1', 'agent_1', ['other'])).toBe('uuid-1')
+  })
+
+  it('keeps the clicked id when it is already the root', () => {
+    expect(resolveSessionSelectTarget('agent_1', 'agent_1', ['agent_1'])).toBe('agent_1')
+  })
+
+  it('keeps the clicked id when the backend sent no root', () => {
+    expect(resolveSessionSelectTarget('uuid-1', undefined, ['agent_1'])).toBe('uuid-1')
+  })
+})
 
 describe('session eviction', () => {
   describe('shouldEvictMessages', () => {

@@ -21,7 +21,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const threadSessions = new Map<string, string>() // claude_session_id -> thread_id
-const conversations = new Map<string, { provider_instance_id?: string | null; runtime_mode?: string | null; model?: string | null }>()
+const conversations = new Map<string, {
+  provider_instance_id?: string | null
+  runtime_mode?: string | null
+  model?: string | null
+  archived?: number
+  last_read_at?: number | null
+}>()
 
 vi.mock('better-sqlite3', () => {
   class FakeDb {
@@ -45,6 +51,14 @@ vi.mock('better-sqlite3', () => {
           if (/SELECT model FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
             return row ? { model: row.model ?? null } : undefined
+          }
+          if (/SELECT archived FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row ? { archived: row.archived ?? 0 } : undefined
+          }
+          if (/SELECT last_read_at FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row ? { last_read_at: row.last_read_at ?? null } : undefined
           }
           return undefined
         },
@@ -73,9 +87,30 @@ vi.mock('better-sqlite3', () => {
             row.model = model
             return { changes: 1 }
           }
+          if (/UPDATE conversations SET archived = \?/.test(sql)) {
+            const [archived, , id] = args as [number, number, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.archived = archived
+            return { changes: 1 }
+          }
+          if (/UPDATE conversations SET last_read_at = \?/.test(sql)) {
+            const [at, id] = args as [number, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.last_read_at = at
+            return { changes: 1 }
+          }
           return { changes: 0 }
         },
-        all: () => [],
+        all: (...args: unknown[]) => {
+          if (/SELECT claude_session_id, recorded_at FROM thread_sessions WHERE thread_id = \?/.test(sql)) {
+            return [...threadSessions.entries()]
+              .filter(([, threadId]) => threadId === args[0])
+              .map(([claudeSessionId]) => ({ claude_session_id: claudeSessionId, recorded_at: 1 }))
+          }
+          return []
+        },
       }
     }
   }
@@ -89,6 +124,11 @@ const {
   setConversationRuntimeMode,
   getConversationModel,
   setConversationModel,
+  archiveConversation,
+  unarchiveConversation,
+  isConversationArchived,
+  setConversationLastRead,
+  getConversationLastRead,
 } = await import('../../src/main/db/database')
 
 beforeEach(() => {
@@ -166,5 +206,48 @@ describe('model pin survives Claude session-id rotation', () => {
   it('returns null when neither the id nor its resolved root has a saved model', () => {
     conversations.set('agent_789', {})
     expect(getConversationModel('agent_789')).toBeNull()
+  })
+})
+
+describe('archive covers every id of a rotated thread', () => {
+  it('archives the rotated row as well as the root, so the chat cannot reappear', () => {
+    conversations.set('agent_123', {})
+    conversations.set('uuid-abc', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    archiveConversation('uuid-abc')
+
+    expect(conversations.get('agent_123')?.archived).toBe(1)
+    expect(conversations.get('uuid-abc')?.archived).toBe(1)
+    expect(isConversationArchived('uuid-abc')).toBe(true)
+  })
+
+  it('unarchives every id too', () => {
+    conversations.set('agent_123', { archived: 1 })
+    conversations.set('uuid-abc', { archived: 1 })
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    unarchiveConversation('agent_123')
+
+    expect(conversations.get('agent_123')?.archived).toBe(0)
+    expect(conversations.get('uuid-abc')?.archived).toBe(0)
+  })
+})
+
+describe('read state covers every id of a rotated thread', () => {
+  it('stamps the rotated row as well as the root, so the badge clears once', () => {
+    conversations.set('agent_123', {})
+    conversations.set('uuid-abc', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    expect(setConversationLastRead('uuid-abc', 5000)).toBe(true)
+
+    expect(conversations.get('agent_123')?.last_read_at).toBe(5000)
+    expect(conversations.get('uuid-abc')?.last_read_at).toBe(5000)
+    expect(getConversationLastRead('uuid-abc')).toBe(5000)
+  })
+
+  it('reports no change when the thread has no row at all', () => {
+    expect(setConversationLastRead('ghost', 5000)).toBe(false)
   })
 })

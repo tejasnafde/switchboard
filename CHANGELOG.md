@@ -2,6 +2,27 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.13 - A live reply rendered into a session with no sidebar entry
+
+A chat can answer to two ids: the synthetic `agent_<ts>` thread it starts
+under, and the session UUID Claude assigns after its first turn. The sidebar
+lists only the second. Selecting it built a *second* store session, so every
+token of the running turn streamed into a session nothing on screen showed.
+The reply looked like it was never sent. It was in the transcript the whole
+time, and only reappeared after a restart.
+
+### Fixed
+- **Replies could vanish from a running chat.** `handleSessionSelect` matched sidebar clicks to store sessions by exact id, so clicking a chat under its rotated UUID created a twin holding a snapshot instead of attaching to the live thread. `load-session-by-id` now returns `rootThreadId` and the renderer resolves through it (`resolveSessionSelectTarget`). The same twin was reachable from search hits; `SearchModal` resolves too.
+- **Live assistant text never reached SQLite.** It existed only in the provider's own transcript, which Claude Code prunes and rotates, so a lost reply had no second home. The provider registry now folds `content` deltas per turn and mirrors them on `turn.completed`, and on a mid-turn stop where no `turn.completed` is coming. It lives in the registry, not `ChatPanel`, so a phone on a headless server with no window attached is covered.
+- **Archiving a rotated chat left it listed.** `archiveConversation`/`unarchiveConversation` wrote one row, so the chat stayed visible under its other id. Both now cover every id of the thread via a new `threadFamilyIds` helper.
+- **Unread badges could not be cleared.** `setConversationLastRead` stamped one row for the same reason; it now stamps the whole family. Its getter and `isConversationArchived` resolve through `resolveRootThreadId`.
+- **Update downloads paid for a differential attempt that never worked.** On 2026-08-07 it spent ~12s on range requests, failed a sha512 checksum, then full-downloaded anyway. `disableDifferentialDownload` is on.
+
+### Notes
+- The rule from 0.8.11 needed a second half. Per-conversation *reads* resolve to the root; per-conversation *writes* must cover every id, because a rotated chat owns one `conversations` row per id. `threadFamilyIds` is the write-side counterpart to `resolveRootThreadId`.
+- A slow "Check for updates" is a stalled GitHub request, not app code: healthy checks take ~2s, three observed stalls each ran ~77s, which is a TCP connect black-holing until the OS gives up. Manual checks now log their duration so this is measurable rather than guessed at.
+- Not done: the twin rows already in the database are left alone. The fix stops new ones and routes around existing ones.
+
 ## 0.8.12 - One stalled request wedged the updater until restart
 
 ### Fixed

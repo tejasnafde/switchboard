@@ -30,6 +30,10 @@ vi.mock('better-sqlite3', () => {
           return { changes: nextChanges }
         },
         get: (...args: unknown[]) => {
+          // These ids are never rotated here, so the rotation lookup must miss.
+          // Answering it with `nextRow` made resolveRootThreadId read a
+          // last_read_at row as a thread mapping.
+          if (/FROM thread_sessions/.test(sql)) return undefined
           getCalls.push({ sql, args })
           return nextRow
         },

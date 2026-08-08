@@ -31,7 +31,7 @@ import { initSharedReadState } from './services/readState'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
-import { shouldEvictMessages, needsMessageReload } from './utils/session-eviction'
+import { shouldEvictMessages, needsMessageReload, resolveSessionSelectTarget } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 
 const log = createRendererLogger('app')
@@ -544,6 +544,32 @@ export function App() {
         return
       }
 
+      // Load before creating anything: the response carries `rootThreadId`, so
+      // a click on a rotated id can activate the live thread instead of
+      // building a twin next to it.
+      type LoadedSession = {
+        messages: ChatMessage[]
+        meta: { id: string; title: string; projectPath: string; agentType: string; rootThreadId?: string } | null
+      }
+      let loaded: LoadedSession | null = null
+      try {
+        loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+      } catch (err) {
+        log.warn('session history load failed', { sessionId: session.id, machineId: effectiveMachineId, err })
+      }
+
+      const targetId = resolveSessionSelectTarget(
+        session.id,
+        loaded?.meta?.rootThreadId,
+        useAgentStore.getState().sessions.map((s) => s.id),
+      )
+      if (targetId !== session.id) {
+        const live = useAgentStore.getState().sessions.find((s) => s.id === targetId)
+        window.api.routing.bind(targetId, live?.machineId ?? effectiveMachineId)
+        setActiveSession(targetId)
+        return
+      }
+
       // First open: create session in store - pass session.id as resumeSessionId
       // so Claude CLI can --resume the conversation. Hydrate the
       // worktree pointer so a session that was created in worktree
@@ -611,18 +637,7 @@ export function App() {
         log.warn('restore pinned model failed', { sessionId: session.id, err: modelResult.reason })
       }
 
-      // Load messages via loadSessionById so the main process scans every
-      // known oauth_dir for this agent kind - sessions whose last turn ran
-      // under a non-default profile (e.g. after instance rotation) write
-      // JSONLs under that profile's dir, which the project scanner doesn't
-      // see (it only walks ~/.claude).
-      try {
-        const resp = await window.api.app.loadSessionById(session.id) as {
-          messages: ChatMessage[]
-          meta: { id: string; title: string; projectPath: string; agentType: string } | null
-        }
-        if (resp?.messages?.length) setMessages(session.id, resp.messages)
-      } catch { /* failed load - session shows empty state */ }
+      if (loaded?.messages?.length) setMessages(session.id, loaded.messages)
     },
     [addSession, setActiveSession, setMessages, clearMessages],
   )

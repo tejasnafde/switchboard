@@ -4,6 +4,7 @@
 
 import type { BackendHost } from '../backend/host'
 import { ProviderChannels } from '@shared/ipc-channels'
+import { applyContentText } from '@shared/content-stream'
 import { createMainLogger as createLogger } from '../logger'
 import { ClaudeAdapter } from './adapters/claude-adapter'
 import { CodexAdapter } from './adapters/codex-adapter'
@@ -110,6 +111,43 @@ export class ProviderRegistry {
   /** Breaks same-millisecond id collisions, which INSERT OR REPLACE would eat. */
   private savedMessageSeq = 0
 
+  /**
+   * In-flight assistant text per thread, mirrored to SQLite on turn end.
+   * Without it a reply lives only in the provider's transcript file, which
+   * Claude Code prunes and rotates. Persisted here, not in ChatPanel, for the
+   * same reason as the error card above: a headless server has no window.
+   */
+  private pendingAssistantText = new Map<string, Map<string, string>>()
+
+  /** Fold one content delta into the in-flight turn buffer. */
+  private bufferAssistantText(event: RuntimeEvent): void {
+    if (event.type !== 'content' || event.streamKind !== 'assistant') return
+    let byMessage = this.pendingAssistantText.get(event.threadId)
+    if (!byMessage) {
+      byMessage = new Map()
+      this.pendingAssistantText.set(event.threadId, byMessage)
+    }
+    byMessage.set(
+      event.messageId,
+      applyContentText(byMessage.get(event.messageId), { text: event.text, append: event.append }),
+    )
+  }
+
+  /** Mirror the finished turn's assistant messages, then drop the buffer. */
+  private flushAssistantText(threadId: string): void {
+    const byMessage = this.pendingAssistantText.get(threadId)
+    this.pendingAssistantText.delete(threadId)
+    if (!byMessage) return
+    for (const [messageId, text] of byMessage) {
+      if (!text.trim()) continue
+      try {
+        saveMessageIfAbsent(messageId, threadId, 'assistant', text)
+      } catch (err) {
+        log.warn(`failed to mirror assistant message ${messageId} for ${threadId}: ${err}`)
+      }
+    }
+  }
+
   private publish(event: RuntimeEvent): void {
     // Persisted here, not in ChatPanel, which only exists when a desktop window
     // is attached - a phone on a headless server saw a 529 once and lost it on
@@ -135,12 +173,14 @@ export class ProviderRegistry {
         log.warn(`failed to persist provider session mapping ${event.threadId} -> ${event.sessionId}: ${err}`)
       }
     }
+    this.bufferAssistantText(event)
     this.bus.publish(event)
 
     // A turn just ended - diff the start-of-turn checkpoint against the
     // working tree and stream one file.edited event per changed file. Fire
     // and forget; the cards land right after the turn.completed marker.
     if (event.type === 'turn.completed') {
+      this.flushAssistantText(event.threadId)
       void this.emitFileEdits(event.threadId)
     }
 
@@ -481,6 +521,9 @@ export class ProviderRegistry {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) return
       await adapter.stopSession(threadId)
+      // A stop can land mid-turn, so no turn.completed is coming. Persist what
+      // the assistant already produced instead of dropping the buffer.
+      this.flushAssistantText(threadId)
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
       this.checkpoints.clear(threadId)

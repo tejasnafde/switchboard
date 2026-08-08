@@ -766,6 +766,15 @@ export function resolveRootThreadId(claudeSessionId: string): string {
  *
  * Always includes `threadId` itself so callers don't need to special-case.
  */
+/**
+ * Every conversation id one thread answers to: root plus rotated session ids.
+ * Per-thread WRITES need all of them, since a rotated chat owns a row per id
+ * and updating one leaves the rest stale. Reads can use `resolveRootThreadId`.
+ */
+export function threadFamilyIds(id: string): string[] {
+  return listSessionIdsForThread(resolveRootThreadId(id))
+}
+
 export function listSessionIdsForThread(threadId: string): string[] {
   const db = getDb()
   const directStmt = db.prepare(
@@ -895,15 +904,17 @@ export function setConversationRuntimeMode(id: string, mode: string): void {
  * badge clears everywhere either way.
  */
 export function setConversationLastRead(id: string, at: number): boolean {
-  return getDb().prepare(
-    'UPDATE conversations SET last_read_at = ? WHERE id = ?'
-  ).run(at, id).changes > 0
+  // Every id of the thread: stamping one row left the badge lit under the other.
+  const stmt = getDb().prepare('UPDATE conversations SET last_read_at = ? WHERE id = ?')
+  let changed = 0
+  for (const memberId of threadFamilyIds(id)) changed += stmt.run(at, memberId).changes
+  return changed > 0
 }
 
 export function getConversationLastRead(id: string): number | null {
   const row = getDb().prepare(
     'SELECT last_read_at FROM conversations WHERE id = ?'
-  ).get(id) as { last_read_at: number | null } | undefined
+  ).get(resolveRootThreadId(id)) as { last_read_at: number | null } | undefined
   return row?.last_read_at ?? null
 }
 
@@ -962,15 +973,21 @@ export function setConversationModel(id: string, model: string): void {
 }
 
 export function archiveConversation(id: string): void {
-  getDb().prepare(
-    'UPDATE conversations SET archived = 1, updated_at = ? WHERE id = ?'
-  ).run(Date.now(), id)
+  setConversationArchived(id, 1)
 }
 
 export function unarchiveConversation(id: string): void {
-  getDb().prepare(
-    'UPDATE conversations SET archived = 0, updated_at = ? WHERE id = ?'
-  ).run(Date.now(), id)
+  setConversationArchived(id, 0)
+}
+
+/**
+ * Applies to every id of the thread. Archiving one row left the chat listed
+ * under its other id, which reads as "archive did nothing".
+ */
+function setConversationArchived(id: string, archived: 0 | 1): void {
+  const stmt = getDb().prepare('UPDATE conversations SET archived = ?, updated_at = ? WHERE id = ?')
+  const now = Date.now()
+  for (const memberId of threadFamilyIds(id)) stmt.run(archived, now, memberId)
 }
 
 export function getArchivedConversations(): Array<{ id: string; project_path: string; title: string; updated_at: number }> {
@@ -982,7 +999,7 @@ export function getArchivedConversations(): Array<{ id: string; project_path: st
 export function isConversationArchived(id: string): boolean {
   const row = getDb().prepare(
     'SELECT archived FROM conversations WHERE id = ?'
-  ).get(id) as { archived: number } | undefined
+  ).get(resolveRootThreadId(id)) as { archived: number } | undefined
   return row?.archived === 1
 }
 

@@ -44,6 +44,7 @@ import {
   getChildSessionIds,
   getSyntheticParentMap,
   listSessionIdsForThread,
+  resolveRootThreadId,
   recordThreadSession,
   detachSession,
   listAllThreadSessions,
@@ -382,7 +383,16 @@ export function registerAppHandlers(host: BackendHost): void {
     const row = getConversationById(conversationId)
     if (!row) return capTail({ messages: [], meta: null }, opts)
     const source: 'claude-code' | 'codex' = row.agent_type === 'codex' ? 'codex' : 'claude-code'
-    const meta = { id: row.id, title: row.title, projectPath: row.project_path, agentType: row.agent_type }
+    // rootThreadId lets the renderer avoid building a twin session: the sidebar
+    // lists a chat under its SDK session UUID, but a live adapter keys events to
+    // the synthetic agent_<ts> thread. See resolveSessionSelectTarget.
+    const meta = {
+      id: row.id,
+      title: row.title,
+      projectPath: row.project_path,
+      agentType: row.agent_type,
+      rootThreadId: resolveRootThreadId(row.id),
+    }
 
     // All session_ids that belong to this thread (root + children).
     const sessionIds = listSessionIdsForThread(conversationId)
