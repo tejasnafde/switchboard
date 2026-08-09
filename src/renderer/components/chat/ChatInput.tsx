@@ -27,6 +27,8 @@ import {
   type SlashCommandContext,
 } from './slashCommands'
 import { detectAtTrigger, filterAtMatches } from './atMention'
+import { detectSendToTrigger } from './sendToCommand'
+import { fuzzyScore } from '../../services/fuzzyScore'
 import { AtMentionMenu } from './AtMentionMenu'
 import { BranchPickerTrigger } from './BranchPicker'
 import { composerFooterLayout } from './composerFooterLayout'
@@ -247,12 +249,27 @@ export function ChatInput({
   // is open at a time (different trigger chars on the same token).
   const [atQuery, setAtQuery] = useState<string | null>(null)
   const [atActiveIdx, setAtActiveIdx] = useState(0)
+  // Target picker for `/send-to`: the command needs a chat title the user has
+  // no way to recall exactly, so offer the open ones.
+  const [sendToQuery, setSendToQuery] = useState<string | null>(null)
+  const [sendToActiveIdx, setSendToActiveIdx] = useState(0)
+  const sendToRangeRef = useRef<{ start: number; end: number } | null>(null)
   const [atFiles, setAtFiles] = useState<string[]>([])
   const [atLoading, setAtLoading] = useState(false)
   // Single fuzzy scan per keystroke, shared by the keyboard handler and the
   // menu. Previously the keydown handler re-ran filterAtMatches (a full-list
   // fuzzyScore pass, 10k+ files) unmemoized on every keydown, on top of the
   // menu's own memoized copy.
+  const sendToTitles = useAgentStore((st) => st.sessions)
+  const sendToMatches = useMemo(() => {
+    if (sendToQuery === null) return []
+    const self = sendToTitles.find((x) => x.id === sessionId)
+    return sendToTitles
+      .filter((x) => x.id !== sessionId && (x.machineId ?? 'local') === (self?.machineId ?? 'local'))
+      .map((x) => x.title ?? x.id)
+      .filter((t) => sendToQuery === '' || fuzzyScore(sendToQuery, t) !== null)
+  }, [sendToQuery, sendToTitles, sessionId])
+
   const atMatches = useMemo(
     () => (atQuery !== null ? filterAtMatches(atQuery, atFiles) : []),
     [atQuery, atFiles],
@@ -537,6 +554,15 @@ export function ChatInput({
     }
   }, [repoRoot])
 
+  /** Commit a picked chat title as the `/send-to` target, colon included. */
+  const runSendToPick = useCallback((title: string) => {
+    const range = sendToRangeRef.current
+    setSendToQuery(null)
+    if (!range) return
+    richRef.current?.replaceRange(range.start, range.end, `${title}: `)
+    requestAnimationFrame(() => richRef.current?.focus())
+  }, [])
+
   const runAtMention = useCallback((path: string) => {
     const range = atRangeRef.current
     if (!range || !sessionId) { dismissAt(); return }
@@ -607,7 +633,18 @@ export function ChatInput({
     } else if (atQuery !== null) {
       dismissAt()
     }
-  }, [sessionId, setDraft, caret, slashQuery, dismissSlash, agentSkills.length, fetchSkills, atQuery, dismissAt, ensureAtFiles])
+
+    const sendToTrigger = detectSendToTrigger(next, cur ?? next.length)
+    if (sendToTrigger) {
+      if (sendToTrigger.query !== sendToQuery) {
+        setSendToQuery(sendToTrigger.query)
+        setSendToActiveIdx(0)
+      }
+      sendToRangeRef.current = { start: sendToTrigger.start, end: sendToTrigger.end }
+    } else if (sendToQuery !== null) {
+      setSendToQuery(null)
+    }
+  }, [sessionId, setDraft, caret, slashQuery, dismissSlash, agentSkills.length, fetchSkills, atQuery, dismissAt, ensureAtFiles, sendToQuery])
 
   const handleEditorCaret = useCallback((c: number | null) => {
     setCaret(c)
@@ -658,6 +695,25 @@ export function ChatInput({
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       // @-mention branch takes precedence when open.
+      if (sendToQuery !== null && sendToMatches.length > 0) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          e.preventDefault()
+          const delta = e.key === 'ArrowDown' ? 1 : -1
+          setSendToActiveIdx((i) => (i + delta + sendToMatches.length) % sendToMatches.length)
+          return
+        }
+        if (e.key === 'Enter' || e.key === 'Tab') {
+          e.preventDefault()
+          runSendToPick(sendToMatches[sendToActiveIdx] ?? sendToMatches[0])
+          return
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          setSendToQuery(null)
+          return
+        }
+      }
+
       if (atQuery !== null) {
         // Empty match list: only Escape is meaningful. Letting Enter fall
         // through means the user can still send the typed `@query` literally
@@ -714,7 +770,7 @@ export function ChatInput({
         dismissSlash()
       }
     },
-    [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands, atQuery, atMatches, atActiveIdx, dismissAt, runAtMention],
+    [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands, atQuery, atMatches, atActiveIdx, dismissAt, runAtMention, sendToQuery, sendToMatches, sendToActiveIdx, runSendToPick],
   )
 
   const handleDragEnter = useCallback((e: DragEvent<HTMLDivElement>) => {
@@ -890,6 +946,16 @@ export function ChatInput({
           />
         )}
         {/* @-mention popover - same anchor; never simultaneously open. */}
+        {sendToQuery !== null && sendToMatches.length > 0 && (
+          <AtMentionMenu
+            query={sendToQuery}
+            matches={sendToMatches}
+            onSelect={runSendToPick}
+            onDismiss={() => setSendToQuery(null)}
+            activeIndex={sendToActiveIdx}
+            onActiveIndexChange={setSendToActiveIdx}
+          />
+        )}
         {atQuery !== null && (
           <AtMentionMenu
             query={atQuery}

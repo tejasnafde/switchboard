@@ -6,7 +6,7 @@
  * must name the candidates rather than pick one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from '../../src/renderer/components/chat/sendToCommand'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger } from '../../src/renderer/components/chat/sendToCommand'
 import { PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 
 const sessions = [
@@ -138,7 +138,8 @@ describe('resolveSendToTarget, review findings', () => {
       { id: 't2', title: 'Docs pass', machineId: 'vm-1' },
     ]
     expect(resolveSendToTarget('Docs pass', mixed, 't1')).toEqual({
-      ok: false, error: 'No open session matches "Docs pass".',
+      ok: false,
+      error: 'The other open chats run on a different machine. A session-to-session message stays on one backend.',
     })
   })
 
@@ -170,5 +171,41 @@ describe('resolveSendToTarget, review findings', () => {
     const out = resolveSendToTarget('Notes', tie, 't1')
     expect(out.ok).toBe(false)
     expect(out.ok === false && out.error).toContain('"Notes", "Notes"')
+  })
+})
+
+describe('resolveSendToTarget with nothing else open', () => {
+  // The likeliest first-use case. "No open session matches X" reads like a
+  // typo, when the real problem is that there is no second chat to message.
+  it('says no other chat is open rather than blaming the name', () => {
+    expect(resolveSendToTarget('anything', [{ id: 't1', title: 'Only chat' }], 't1')).toEqual({
+      ok: false,
+      error: 'No other chat is open. Open the chat you want to message in this window, then try again.',
+    })
+  })
+})
+
+describe('detectSendToTrigger', () => {
+  it('fires while typing the target, before any colon', () => {
+    const body = '/send-to doc'
+    expect(detectSendToTrigger(body, body.length)).toEqual({ query: 'doc', start: 9, end: 12 })
+  })
+
+  it('offers every session immediately after the command', () => {
+    const body = '/send-to '
+    expect(detectSendToTrigger(body, body.length)).toEqual({ query: '', start: 9, end: 9 })
+  })
+
+  it('stops once the target is committed with a colon', () => {
+    const body = '/send-to Docs pass: hello'
+    expect(detectSendToTrigger(body, body.length)).toBeNull()
+  })
+
+  it('ignores a caret parked before the command', () => {
+    expect(detectSendToTrigger('/send-to doc', 3)).toBeNull()
+  })
+
+  it('does not fire for other commands', () => {
+    expect(detectSendToTrigger('/clear', 6)).toBeNull()
   })
 })

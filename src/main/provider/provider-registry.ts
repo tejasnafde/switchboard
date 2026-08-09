@@ -549,7 +549,10 @@ export class ProviderRegistry {
 
       const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
       const verdict = this.peerGuard.check(key, Date.now())
-      if (!verdict.ok) throw new Error(verdict.message)
+      if (!verdict.ok) {
+        log.warn(`peer message refused (${verdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+        throw new Error(verdict.message)
+      }
 
       const body = wrapPeerMessage(input.fromLabel, input.text)
       // Same pre-turn bookkeeping an ordinary send does, or this turn's file
@@ -588,6 +591,7 @@ export class ProviderRegistry {
         log.warn(`failed to persist peer message ${verdict.id}: ${err}`)
       }
 
+      log.info(`peer message delivered ${verdict.id}: ${input.fromThreadId} -> ${targetThreadId} chars=${input.text.length}`)
       this.publish({
         type: 'peer.message', threadId: input.fromThreadId, direction: 'sent',
         messageId: verdict.id, peerThreadId: targetThreadId, peerLabel: targetLabel,

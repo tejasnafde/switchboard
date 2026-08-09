@@ -63,6 +63,18 @@ export function resolveSendToTarget(
   const candidates = sessions.filter(
     (s) => s.id !== fromSessionId && (s.machineId ?? 'local') === (from?.machineId ?? 'local'),
   )
+  // Distinguish "nothing to match against" from "nothing matched": the first
+  // is what first-time use hits, and blaming the name sends the user hunting
+  // for a typo instead of opening a second chat.
+  if (candidates.length === 0) {
+    const elsewhere = sessions.some((s) => s.id !== fromSessionId)
+    return {
+      ok: false,
+      error: elsewhere
+        ? 'The other open chats run on a different machine. A session-to-session message stays on one backend.'
+        : 'No other chat is open. Open the chat you want to message in this window, then try again.',
+    }
+  }
   const query = target.toLowerCase()
 
   const exact = candidates.filter((s) => s.title.toLowerCase() === query)
@@ -114,4 +126,25 @@ export function peerMessageToChatMessage(
     displayBody: `From "${event.peerLabel}": ${event.text}`,
     timestamp: event.at,
   }
+}
+
+/** Span of the target being typed in `/send-to <target>`, or null. */
+export interface SendToTrigger {
+  query: string
+  start: number
+  end: number
+}
+
+/**
+ * Detect that the caret sits in the TARGET half of a `/send-to` command, so
+ * the composer can offer the open chats instead of leaving the user to guess
+ * a title. A colon commits the target, which ends the trigger.
+ */
+export function detectSendToTrigger(body: string, caret: number): SendToTrigger | null {
+  const prefix = '/send-to '
+  if (!body.startsWith(prefix)) return null
+  if (caret < prefix.length) return null
+  const target = body.slice(prefix.length, caret)
+  if (target.includes(':')) return null
+  return { query: target, start: prefix.length, end: caret }
 }
