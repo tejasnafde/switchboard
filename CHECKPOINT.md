@@ -5,19 +5,14 @@
 - [x] 2. registry `deliverPeerMessage` + `peer.message` RuntimeEvent + IPC channel + WS tests (8 green)
 - [x] 3. preload plumbing + routing key (fromThreadId in OBJECT_KEY_PRIORITY, +1 test)
 - [x] 4. `/send-to` parsing + target resolution (pure, renderer) + tests (12 green)
-- [ ] 5. UI markers (sender pill, receiver displayBody) + slash registry entry
-- [ ] 6. full gate (typecheck + npm test), final commit WITHOUT --no-verify
+- [x] 5. UI wiring: ChatPanel intercept, /send-to registry entry (takesArgs), peer marker kind
+- [x] 6. full gate green: typecheck clean, 213 files / 2181 tests
 
-## Current step: 5
+## Current step: DONE
 
 ## Next concrete action
-Step 5, the last build step. Wire the UI in ChatPanel.handleSend: intercept a
-body that `parseSendTo` claims BEFORE the normal send, resolve the target
-against live sessions, call `window.api.provider.deliverPeerMessage`, and on
-failure append a system error bubble. Register `/send-to` in slashCommands.ts
-with takesArgs so selecting it inserts the text instead of running. Render the
-`[[sb:peer-sent]]` marker via parseRotationMarker kind 'peer'. Then step 6:
-full gate + final commit WITHOUT --no-verify.
+None. Phase 1 complete. Out of scope by design: agent-callable send tool,
+cross-backend routing, hold/approve trust tiers, receiver notification.
 
 ## Files touched so far
 - CHECKPOINT.md

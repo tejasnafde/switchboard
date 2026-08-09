@@ -60,6 +60,12 @@ export interface SlashCommand {
   /** Optional argument hint shown after the name (e.g. "<file path>") */
   argumentHint?: string
   /**
+   * Built-in that needs arguments: selecting it inserts `/<name> ` for the
+   * user to finish, the same branch agent-source commands take, instead of
+   * running an action with nothing to act on.
+   */
+  takesArgs?: boolean
+  /**
    * Called when the user selects this command. For agent-source commands
    * this is omitted - selection just inserts the prefix into the textarea.
    */
@@ -99,6 +105,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: 'full',
     description: 'Switch to Full-Access mode (skip all approvals - be careful)',
     run: (ctx) => ctx.setRuntimeMode('full-access'),
+  },
+  {
+    name: 'send-to',
+    description: 'Send a message to another open session',
+    argumentHint: '<session>: <message>',
+    takesArgs: true,
   },
   {
     name: 'clear',

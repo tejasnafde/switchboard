@@ -5,6 +5,7 @@ import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
+import { parseSendTo, resolveSendToTarget } from './sendToCommand'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
@@ -815,6 +816,41 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       },
     ) => {
       if (!sessionId) return
+
+      // `/send-to <session>: <text>` hands the text to another live session
+      // instead of this one's agent, so it is intercepted before every other
+      // send concern. Failures stay in this transcript as a system bubble -
+      // silently swallowing a mistyped target would look like a delivery.
+      const sendTo = parseSendTo(message)
+      if (sendTo) {
+        const fail = (error: string): void => {
+          appendMessage(sessionId, {
+            id: `peererr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            role: 'system',
+            content: error,
+            timestamp: Date.now(),
+          })
+        }
+        if (!sendTo.ok) return fail(sendTo.error)
+        const store = useAgentStore.getState()
+        const target = resolveSendToTarget(
+          sendTo.target,
+          store.sessions.map((s) => ({ id: s.id, title: s.title ?? s.id })),
+          sessionId,
+        )
+        if (!target.ok) return fail(target.error)
+        try {
+          await window.api.provider.deliverPeerMessage({
+            fromThreadId: sessionId,
+            fromLabel: store.sessions.find((s) => s.id === sessionId)?.title ?? sessionId,
+            targetThreadId: target.id,
+            text: sendTo.text,
+          })
+        } catch (err) {
+          fail(err instanceof Error ? err.message : String(err))
+        }
+        return
+      }
 
       // Mid-turn send routing. Claude pushes into its native CLI prompt queue
       // and Codex uses turn/steer - both handled in their adapters, so let them
