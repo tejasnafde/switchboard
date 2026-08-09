@@ -2,6 +2,15 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.17 - A slow update check was reported as a failed one
+
+### Fixed
+- **"Couldn't check: Update check timed out" on a healthy connection.** The check was not failing, it was finishing late: on a network whose connect to `release-assets.githubusercontent.com` stalls (measured 30s to 45s, on BOTH address families, so it is a middlebox rather than the usual IPv6 fallback), a successful check completes at ~77s. The 30s deadline turned that into a red error, and the retry it invited inherited the same in-flight request through electron-updater's dedupe. The deadline is now a 120s backstop against a check that never returns, and a slow one reports itself as still running.
+- **The status row contradicted itself.** A timed-out check rendered as `Couldn't check: Still checking...` in the error colour. Slow checks now have their own status: message verbatim, ordinary colour, check button kept busy while the request is in flight.
+
+### Changed
+- The update toast is frosted glass: translucent fill over a 22px backdrop blur with `saturate(180%)`, a hairline lit top edge, softer corners and a deeper shadow.
+
 ## 0.8.16 - Five bugs the phone found
 
 ### Fixed
