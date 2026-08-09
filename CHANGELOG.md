@@ -2,6 +2,20 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.14 - Context survives a provider switch; dictation learns your codebase
+
+### Added
+- **Cross-provider context handoff.** Switching agent mid-chat (or forking a Codex/OpenCode conversation) used to start the new adapter with zero context. The next send now prefixes the wire message with a capped transcript replay ("Conversation so far: ..."), exactly once, marked by a `[[sb:context-handoff]]` pill. Your bubble shows only your own text (displayBody convention). The pending flag survives session-id rotation (`resolveRootThreadId`) and is cleared before the send fires, so no retry or reload can double-inject. Pattern borrowed from Databricks' omnigent project.
+- **Backend-corrected voice notes.** The phone keeps native STT as the instant draft, persists the raw 16 kHz WAV while recognizing, and ships it to the backend over the existing transport. The backend downloads whisper-server plus a ggml model to userData on first use (same lifecycle as code-server), spawns it on loopback, and biases transcription with an initial prompt built from the project's file list - which is exactly where native STT failed (file paths, identifiers). The draft is replaced only when untouched since recording stopped. JS-only on mobile: ships over the OTA lane. macOS backends without a prebuilt server binary fall back to PATH (`brew install whisper-cpp`).
+
+### Fixed
+- **Composer footer overflowed on a narrow pane.** The provider/model/branch/mode row now measures itself, wraps, drops the decorative hint below 560px, shortens the runtime-mode labels, and never squeezes the context meter under the pane edge.
+- **Updates section blasted every OS's first-run instructions at everyone.** Now one line plus a platform-specific tooltip (Gatekeeper/xattr on macOS, SmartScreen on Windows, nothing on Linux).
+
+### Notes
+- First transcription on a fresh backend downloads a 574 MB model, so it times out client-side by design and later dictations succeed; there is no pre-warm UI yet.
+- A phone-originated first turn after a provider switch sends without the handoff preamble (no backend injection seam yet).
+
 ## 0.8.13 - A live reply rendered into a session with no sidebar entry
 
 A chat can answer to two ids: the synthetic `agent_<ts>` thread it starts
