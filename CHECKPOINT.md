@@ -2,23 +2,28 @@
 
 ## Plan
 - [x] 1. pure guards module `src/shared/peer-messaging.ts` + tests (16 green)
-- [ ] 2. registry `deliverPeerMessage` + `peer.message` RuntimeEvent + IPC channel + WS tests
+- [x] 2. registry `deliverPeerMessage` + `peer.message` RuntimeEvent + IPC channel + WS tests (8 green)
 - [ ] 3. preload plumbing + routing key
 - [ ] 4. `/send-to` parsing + target resolution (pure, renderer) + tests
 - [ ] 5. UI markers (sender pill, receiver displayBody) + slash registry entry
 - [ ] 6. full gate (typecheck + npm test), final commit WITHOUT --no-verify
 
-## Current step: 2
+## Current step: 3
 
 ## Next concrete action
-Write the failing WS harness test `tests/unit/peer-message-delivery-ws.test.ts`
-(modelled on `tests/unit/provider-switch-ws.test.ts`), then add
-`ProviderChannels.DELIVER_PEER_MESSAGE`, the `peer.message` event type, and
-`ProviderRegistry.deliverPeerMessage`.
+Add preload plumbing for `ProviderChannels.DELIVER_PEER_MESSAGE`
+(`window.api.provider.deliverPeerMessage`) and add `fromThreadId` to
+`OBJECT_KEY_PRIORITY` in `src/preload/routing-table.ts` so a remote sender
+routes to the right backend. Then step 4: `/send-to` parsing.
 
 ## Files touched so far
 - CHECKPOINT.md
 - src/shared/peer-messaging.ts (new)
+- src/shared/provider-events.ts (peer.message event)
+- src/shared/ipc-channels.ts (DELIVER_PEER_MESSAGE)
+- src/main/db/database.ts (getConversationTitle)
+- src/main/provider/provider-registry.ts (deliverPeerMessage handler)
+- tests/unit/peer-message-delivery-ws.test.ts (new, 8 green)
 - tests/unit/peer-messaging-guards.test.ts (new)
 
 ## Design decided (do not re-litigate)

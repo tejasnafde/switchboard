@@ -260,6 +260,12 @@ export const ProviderChannels = {
   LIST_MODELS: 'provider:list-models',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
+  /**
+   * Hand a message from one live session to another on the same backend.
+   * User-directed only (the `/send-to` composer command); no agent-callable
+   * tool reaches this. Payload is a `PeerMessageInput`.
+   */
+  DELIVER_PEER_MESSAGE: 'provider:deliver-peer-message',
   EVENT: 'provider:event',
   IS_AVAILABLE: 'provider:is-available',
   /** Proactive remote-auth preflight - args[0] is a threadId purely so the

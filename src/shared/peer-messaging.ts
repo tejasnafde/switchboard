@@ -37,6 +37,12 @@ export interface PeerMessageKey {
   text: string
 }
 
+/** Payload of `ProviderChannels.DELIVER_PEER_MESSAGE`. */
+export interface PeerMessageInput extends PeerMessageKey {
+  /** Sending session's title, quoted to the receiving agent. */
+  fromLabel: string
+}
+
 export type PeerMessageRefusal = 'too-large' | 'rate-limited' | 'duplicate'
 
 export type PeerMessageCheck =

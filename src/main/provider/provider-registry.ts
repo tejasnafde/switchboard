@@ -20,7 +20,13 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { recordThreadSession, updateConversationSessionId, saveMessageIfAbsent } from '../db/database'
+import { recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId } from '../db/database'
+import {
+  PeerMessageGuard,
+  PEER_SENT_MARKER_PREFIX,
+  wrapPeerMessage,
+  type PeerMessageInput,
+} from '@shared/peer-messaging'
 import { defaultClaudeDir } from './claude-session-migrate'
 import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir, checkRemoteClaudeAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
@@ -110,6 +116,12 @@ export class ProviderRegistry {
 
   /** Breaks same-millisecond id collisions, which INSERT OR REPLACE would eat. */
   private savedMessageSeq = 0
+
+  /**
+   * Size, rate and duplicate limits for session-to-session messages. Held by
+   * the backend so every client pointed at these sessions shares one budget.
+   */
+  private readonly peerGuard = new PeerMessageGuard()
 
   /**
    * In-flight assistant text per thread, mirrored to SQLite on turn end.
@@ -455,6 +467,53 @@ export class ProviderRegistry {
       // already consumed the origin from every other client's skip set, so the
       // retry rendered a duplicate bubble everywhere with no retraction.
       this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
+    })
+
+    // Hand one live session's message to another on this backend. Delivery is
+    // an ordinary turn, which is what makes a peer message structurally unable
+    // to answer a pending approval: nothing here reaches respondToRequest.
+    this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) => {
+      const targetThreadId = resolveRootThreadId(input.targetThreadId)
+      const targetLabel = getConversationTitle(targetThreadId) ?? targetThreadId
+      const adapter = this.sessionAdapters.get(targetThreadId)
+      if (!adapter) {
+        throw new Error(`"${targetLabel}" is not running. Open it, then send again.`)
+      }
+
+      const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
+      const verdict = this.peerGuard.check(key, Date.now())
+      if (!verdict.ok) throw new Error(verdict.message)
+
+      const body = wrapPeerMessage(input.fromLabel, input.text)
+      await adapter.sendTurn(targetThreadId, body)
+
+      const at = Date.now()
+      // The receiving turn is persisted under the message id so a redelivery
+      // of the same id cannot double-post, and the sender keeps a marker so
+      // its own transcript says where the message went.
+      try {
+        saveMessageIfAbsent(verdict.id, targetThreadId, 'user', body)
+        saveMessageIfAbsent(
+          `peer_${verdict.id}`,
+          input.fromThreadId,
+          'system',
+          `${PEER_SENT_MARKER_PREFIX} ${input.fromLabel} → ${targetLabel}`,
+        )
+      } catch (err) {
+        log.warn(`failed to persist peer message ${verdict.id}: ${err}`)
+      }
+
+      this.publish({
+        type: 'peer.message', threadId: input.fromThreadId, direction: 'sent',
+        messageId: verdict.id, peerThreadId: targetThreadId, peerLabel: targetLabel,
+        text: input.text, at,
+      })
+      this.publish({
+        type: 'peer.message', threadId: targetThreadId, direction: 'received',
+        messageId: verdict.id, peerThreadId: input.fromThreadId, peerLabel: input.fromLabel,
+        text: input.text, at,
+      })
+      return { id: verdict.id }
     })
 
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {

@@ -72,6 +72,31 @@ export interface RuntimeThreadReadEvent {
   at: number
 }
 
+/**
+ * A message was handed from one session to another on this backend.
+ *
+ * Emitted twice per delivery, once per thread, so both transcripts record it
+ * without either client having to see the other's events. The sending side
+ * renders a compact marker; the receiving side renders the injected turn.
+ *
+ * `text` is the user's own words. The receiver rebuilds the wire body with
+ * `wrapPeerMessage` from shared/peer-messaging rather than the event carrying
+ * the wrapper a second time.
+ */
+export interface RuntimePeerMessageEvent {
+  type: 'peer.message'
+  threadId: string
+  direction: 'sent' | 'received'
+  /** Content-addressed id, identical on both sides of one delivery. */
+  messageId: string
+  /** The thread at the other end of the delivery. */
+  peerThreadId: string
+  /** That thread's title, so a client can label it without its own lookup. */
+  peerLabel: string
+  text: string
+  at: number
+}
+
 export type RuntimeEvent = (
   | RuntimeContentEvent
   | RuntimeUserMessageEvent
@@ -94,6 +119,7 @@ export type RuntimeEvent = (
   | RuntimeWorktreeDriftEvent
   | RuntimeSpendBlockedEvent
   | RuntimeThreadReadEvent
+  | RuntimePeerMessageEvent
 ) & {
   /** Which machine emitted this event ('local' or a remote's id). Stamped by
    *  preload's provider.onEvent, not the adapter - used to reject cross-machine
