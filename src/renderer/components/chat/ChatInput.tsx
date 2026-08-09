@@ -29,6 +29,7 @@ import {
 import { detectAtTrigger, filterAtMatches } from './atMention'
 import { AtMentionMenu } from './AtMentionMenu'
 import { BranchPickerTrigger } from './BranchPicker'
+import { composerFooterLayout } from './composerFooterLayout'
 import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chatInputBody'
 
@@ -222,6 +223,21 @@ export function ChatInput({
   // can re-detect slash triggers without dipping into the editor.
   const [caret, setCaret] = useState<number | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
+  // Pane width drives the footer compaction policy. Media queries cannot see
+  // a pane, only the window, so the footer measures itself.
+  const footerRef = useRef<HTMLDivElement | null>(null)
+  const [footerWidth, setFooterWidth] = useState<number | null>(null)
+  useEffect(() => {
+    const el = footerRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (typeof width === 'number') setFooterWidth(width)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  const footerLayout = composerFooterLayout(footerWidth)
   const [previewImage, setPreviewImage] = useState<ImageAttachment | null>(null)
   // Slash command popover state: `null` when closed; trigger info when open
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
@@ -955,12 +971,17 @@ export function ChatInput({
         </button>
       </div>
 
-      {/* Footer bar: agent selector + mode toggle + hints */}
+      {/* Footer bar: agent selector + mode toggle + hints. Wraps instead of
+          overflowing on a narrow pane; the policy drops the hint and shortens
+          the mode labels first. */}
       <div
+        ref={footerRef}
         style={{
           display: 'flex',
           alignItems: 'center',
+          flexWrap: 'wrap',
           gap: '8px',
+          rowGap: '4px',
           marginTop: '6px',
           fontSize: '11px',
         }}
@@ -1078,23 +1099,28 @@ export function ChatInput({
               outline: 'none',
             }}
           >
-            <option value="sandbox">Sandbox (ask every tool)</option>
-            <option value="accept-edits">Accept Edits (auto-approve file changes)</option>
-            <option value="full-access">Full Access (skip all prompts)</option>
-            <option value="plan">Plan Only (no execution)</option>
+            <option value="sandbox">{footerLayout.shortModeLabels ? 'Sandbox' : 'Sandbox (ask every tool)'}</option>
+            <option value="accept-edits">{footerLayout.shortModeLabels ? 'Accept Edits' : 'Accept Edits (auto-approve file changes)'}</option>
+            <option value="full-access">{footerLayout.shortModeLabels ? 'Full Access' : 'Full Access (skip all prompts)'}</option>
+            <option value="plan">{footerLayout.shortModeLabels ? 'Plan Only' : 'Plan Only (no execution)'}</option>
           </select>
         )}
 
         <span style={{ flex: 1 }} />
 
-        {/* Context meter */}
+        {/* Context meter. flexShrink 0: this is the one footer item that must
+            never be squeezed under the pane edge. */}
         {contextUsage && (
-          <ContextWindowMeter usage={contextUsage} />
+          <span style={{ flexShrink: 0, display: 'inline-flex' }}>
+            <ContextWindowMeter usage={contextUsage} />
+          </span>
         )}
 
-        <span style={{ color: 'var(--text-muted)' }}>
-          Enter send · Shift+Enter newline
-        </span>
+        {footerLayout.showHint && (
+          <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+            Enter send · Shift+Enter newline
+          </span>
+        )}
       </div>
 
       {/* Image lightbox */}

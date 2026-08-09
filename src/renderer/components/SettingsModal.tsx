@@ -4,6 +4,7 @@ import { emitSessionRename } from '../services/session-events'
 import { FEATURE_TOUR_STEPS } from './onboarding/featureRegistry'
 import type { UpdateStatus } from '@shared/update-status'
 import { updateRowView, updateStatusLabel } from './settings/updateRowModel'
+import { updateFooterCopy } from './settings/updateFooterCopy'
 import {
   parseLaunchConfigFile,
   serializeLaunchConfigFile,
@@ -1223,6 +1224,11 @@ function UpdateCheckRow() {
   }, [])
 
   const view = updateRowView(status, { checking: busy, restarting })
+  const footerCopy = updateFooterCopy(
+    navigator.platform.startsWith('Mac') ? 'darwin'
+      : navigator.platform.startsWith('Win') ? 'win32'
+        : 'linux',
+  )
 
   const label = restarting
     ? updateStatusLabel({ kind: 'installing' })
@@ -1294,13 +1300,29 @@ function UpdateCheckRow() {
           </button>
         )}
       </div>
-      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-        Updates are checked automatically when the app launches. Builds are unsigned -
-        on macOS, Gatekeeper may re-quarantine each version (right-click → Open, or run{' '}
-        <code style={{ fontFamily: 'var(--font-mono)' }}>
-          xattr -dr com.apple.quarantine /Applications/Switchboard.app
-        </code>
-        ). On Windows, click "More info → Run anyway" the first time only.
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+        <span>{footerCopy.line}</span>
+        {footerCopy.tooltip && (
+          <span
+            title={footerCopy.tooltip}
+            aria-label={footerCopy.tooltip}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '13px',
+              height: '13px',
+              borderRadius: '50%',
+              border: '1px solid var(--border)',
+              fontSize: '9px',
+              cursor: 'help',
+              userSelect: 'none',
+              flexShrink: 0,
+            }}
+          >
+            ?
+          </span>
+        )}
       </div>
     </div>
   )
