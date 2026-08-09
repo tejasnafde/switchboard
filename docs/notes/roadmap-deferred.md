@@ -326,6 +326,44 @@ our code.
 floor is Electron regardless. The `effect` removal is the exception: it is one
 line, 33 MB, and carries no runtime risk because the import is type-only.
 
+## Researched, specced, not started (2026-08-09)
+
+Both were briefed and scoped from the competitor research below; each died to
+an org spend limit before any code landed. The worktrees were clean, so start
+from these notes rather than looking for a branch.
+
+### 1. Durable event-log resume (highest payoff for the phone)
+
+Today `WsHost` keeps replayable events in a bounded in-memory
+`EventReplayBuffer` and mints a random `epoch` per process, so a server
+RESTART forces every client into a full re-seed (`ready { gap: true }`).
+t3code persists events in SQLite with monotonic sequences and resumes with
+`afterSequence`, which survives restarts and deletes the epoch/gap machinery
+for the common case.
+
+Design constraints worked out already:
+- `content` deltas are high frequency, so the DB is a spillover for restart
+  survival, not the hot path: keep the in-memory buffer, batch DB writes in a
+  transaction on a short interval and on turn boundaries.
+- Persist the epoch in `settings` so a restarted server presents the SAME
+  epoch when its log is intact.
+- Prune on boot and periodically; a pruned-away `since` still answers
+  `gap: true`, so that path stays live, just rare.
+- `NON_REPLAYABLE_EVENT_CHANNELS` (terminal output/exit) stays excluded.
+- Acceptance test: stream events, tear down the WsHost, rebuild over the same
+  store, reconnect with `hello { since }`, assert no gap and exact replay.
+
+### 2. Mobile offline outbox
+
+`ws-transport.ts` already has an in-memory outbox for in-flight invokes; the
+durable gap is the app dying while offline. Queue turn payloads as JSON via
+`expo-file-system`, drain FIFO on reconnect removing each entry only after its
+send resolves, and carry a stable `origin` so a retry cannot double-post
+(`TurnDeduper` on the backend already keys on it). Queued turns render as
+pending and are discardable; removing a connection wipes its entries. Decision
+logic belongs in `apps/mobile/src/lib/outbox.ts` under root vitest per the
+two-runner rule. JS only, so it stays on the OTA lane.
+
 ## Reference index
 
 - vibe-kanban: <https://github.com/BloopAI/vibe-kanban> (sunsetting,

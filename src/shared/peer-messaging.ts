@@ -1,18 +1,10 @@
 /**
  * Cross-session messaging: one chat session hands a summary to another.
  *
- * Phase 1 is user-directed only. A `/send-to` command in the composer is the
- * sole entry point, both sessions live on the same backend, and every accepted
- * message is delivered. There is no agent-callable tool, so an agent cannot
- * message a sibling on its own initiative.
- *
- * This module is the pure core: the wire wrapper, the content-addressed id, and
- * the three guards. `now` is injected on every call - nothing here reads a
- * clock, so the windows are testable without fake timers.
- *
- * No node / electron / react imports: the wrapper is rebuilt in the renderer to
- * render the receiving bubble, so the event does not have to carry the wrapped
- * text a second time.
+ * Phase 1 is user-directed: `/send-to` is the only entry point and both
+ * sessions live on the same backend, so no agent can message a sibling on its
+ * own initiative. This is the pure core - wrapper, content-addressed id, and
+ * the three guards - with `now` injected so the windows need no fake timers.
  */
 
 /** Body cap in utf-8 bytes. A peer message is a summary, not a transcript. */
@@ -99,12 +91,11 @@ export function utf8ByteLength(text: string): number {
 /**
  * The text the receiving agent actually sees.
  *
- * Two things it must say, because the receiver has no other way to know them:
- * the message came from another agent rather than from the human, and the
- * sender has no authority - so a peer asking for an approval gets nothing.
- * Delivery goes through the ordinary turn path, so a peer message is never
- * capable of answering a pending permission request; this line stops the
- * receiver from believing otherwise.
+ * It must say two things the receiver cannot otherwise know: the message came
+ * from another agent, not the human, and the sender carries no authority.
+ * Delivery runs through the ordinary turn path, so a peer message genuinely
+ * cannot answer a permission prompt; this line stops the receiver believing
+ * otherwise.
  */
 export function wrapPeerMessage(fromLabel: string, text: string): string {
   return [
@@ -173,6 +164,22 @@ export class PeerMessageGuard {
     this.sends.set(pair, recent)
     this.seen.set(id, nowMs)
     return { ok: true, id }
+  }
+
+  /**
+   * Undo an accepted send whose delivery then failed.
+   *
+   * Without this the id stays in `seen` and the slot stays spent, so the
+   * user's retry of a message that never arrived is refused as a duplicate.
+   */
+  release(id: string, key: PeerMessageKey): void {
+    this.seen.delete(id)
+    const pair = `${key.fromThreadId}\u0000${key.targetThreadId}`
+    const recent = this.sends.get(pair)
+    if (!recent || recent.length === 0) return
+    recent.pop()
+    if (recent.length === 0) this.sends.delete(pair)
+    else this.sends.set(pair, recent)
   }
 
   private expire(nowMs: number): void {

@@ -19,6 +19,8 @@ export type SendToParse =
 export interface SendToSession {
   id: string
   title: string
+  /** Backend this session runs on. Delivery is same-backend only. */
+  machineId?: string
 }
 
 export type SendToTarget =
@@ -54,7 +56,13 @@ export function resolveSendToTarget(
   sessions: ReadonlyArray<SendToSession>,
   fromSessionId: string,
 ): SendToTarget {
-  const candidates = sessions.filter((s) => s.id !== fromSessionId)
+  // Delivery runs on the sender's backend, so a session on another machine
+  // could resolve here and then fail as "not running", which reads like a bug
+  // rather than a limit. Exclude them from matching instead.
+  const from = sessions.find((s) => s.id === fromSessionId)
+  const candidates = sessions.filter(
+    (s) => s.id !== fromSessionId && (s.machineId ?? 'local') === (from?.machineId ?? 'local'),
+  )
   const query = target.toLowerCase()
 
   const exact = candidates.filter((s) => s.title.toLowerCase() === query)
@@ -63,25 +71,26 @@ export function resolveSendToTarget(
   const scored = candidates
     .map((s) => ({ session: s, score: fuzzyScore(target, s.title) }))
     .filter((c): c is { session: SendToSession; score: number } => c.score !== null)
+    .sort((a, b) => b.score - a.score)
 
   if (scored.length === 0) return { ok: false, error: `No open session matches "${target}".` }
-  if (scored.length > 1) {
-    const names = scored.map((c) => `"${c.session.title}"`).join(', ')
+  // Rank rather than refuse on any second subsequence hit: "api" legitimately
+  // matches "API refactor" and "Add pipeline install". Only a genuine tie is
+  // ambiguous, and then the candidates are named.
+  const tied = scored.filter((c) => c.score === scored[0].score)
+  if (tied.length > 1) {
+    const names = tied.map((c) => `"${c.session.title}"`).join(', ')
     return { ok: false, error: `"${target}" matches several sessions: ${names}. Be more specific.` }
   }
   return { ok: true, id: scored[0].session.id, title: scored[0].session.title }
 }
 
 /**
- * The bubble a `peer.message` event should append, for whichever side of the
- * delivery this thread is on.
- *
- * Ids match what the backend already persisted (`saveMessageIfAbsent` in the
- * registry), so the live bubble and the stored row are the same message and a
- * reload cannot render the delivery twice.
- *
- * `ownLabel` is this thread's own title, needed for the sender marker's
- * `<from> → <to>` shape which the event only carries one half of.
+ * The bubble a `peer.message` event appends, for whichever side of the
+ * delivery this thread is on. Ids match the rows the registry persisted, so
+ * the live bubble and the stored one are the same message and a reload cannot
+ * render the delivery twice. `ownLabel` supplies the half of the sender
+ * marker's `<from> → <to>` shape the event does not carry.
  */
 export function peerMessageToChatMessage(
   event: RuntimePeerMessageEvent,

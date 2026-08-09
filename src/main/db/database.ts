@@ -1278,6 +1278,7 @@ export function saveMessageIfAbsent(
   role: string,
   content: string,
   images?: string,
+  displayBody?: string,
 ): boolean {
   const stmts = saveMessageStmts(getDb())
   if (!stmts.convExists.get(conversationId)) {
@@ -1292,7 +1293,7 @@ export function saveMessageIfAbsent(
     toolCalls: null,
     images: images ?? null,
     now: Date.now(),
-    displayBody: null,
+    displayBody: displayBody ?? null,
     pillsMeta: null,
   })
 }

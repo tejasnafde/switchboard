@@ -840,10 +840,15 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           })
         }
         if (!sendTo.ok) return fail(sendTo.error)
+        // ChatInput has already cleared the tray by now, so an ignored image
+        // would vanish with no trace. Say so instead.
+        if (images && images.length > 0) {
+          return fail('Images cannot be sent with /send-to. Send the text on its own.')
+        }
         const store = useAgentStore.getState()
         const target = resolveSendToTarget(
           sendTo.target,
-          store.sessions.map((s) => ({ id: s.id, title: s.title ?? s.id })),
+          store.sessions.map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
           sessionId,
         )
         if (!target.ok) return fail(target.error)

@@ -26,16 +26,24 @@ vi.mock('../../src/main/db/providerInstances', () => ({
 /** Claude rotates a thread's session id after the first turn; the sidebar then
  *  hands back the rotated UUID. Peer delivery must resolve it like every other
  *  per-conversation lookup, so the mock maps one. */
-const rotated = new Map<string, string>([['rotated-uuid', 'target']])
+const rotated = new Map<string, string>([
+  ['rotated-uuid', 'target'],
+  // The realistic shape: the LIVE thread is keyed by the id it started under,
+  // and that id resolves to an older root with no adapter of its own.
+  ['target', 'agent_stale'],
+])
 const titles = new Map<string, string>([['target', 'API refactor'], ['sender', 'Docs pass']])
-const saved: Array<{ id: string; conversationId: string; role: string; content: string }> = []
+const saved: Array<{ id: string; conversationId: string; role: string; content: string; displayBody?: string }> = []
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   updateConversationSessionId: () => {},
   resolveRootThreadId: (id: string) => rotated.get(id) ?? id,
   getConversationTitle: (id: string) => titles.get(id) ?? null,
-  saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string) => {
-    saved.push({ id, conversationId, role, content })
+  saveMessageIfAbsent: (
+    id: string, conversationId: string, role: string, content: string,
+    _images?: string, displayBody?: string,
+  ) => {
+    saved.push({ id, conversationId, role, content, displayBody })
     return true
   },
 }))
@@ -57,7 +65,8 @@ import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../s
 import type { RuntimeEvent, RuntimePeerMessageEvent } from '../../src/shared/provider-events'
 
 class RecordingAdapter implements ProviderAdapter {
-  readonly provider = 'claude' as const
+  readonly provider: 'claude' | 'opencode'
+  constructor(kind: 'claude' | 'opencode' = 'claude') { this.provider = kind }
   readonly turns: Array<{ threadId: string; message: string }> = []
   readonly responses: Array<{ threadId: string; requestId: string }> = []
   private emit = new Map<string, (e: RuntimeEvent) => void>()
@@ -74,9 +83,18 @@ class RecordingAdapter implements ProviderAdapter {
     }
   }
 
+  /** Set to make the next sendTurn reject, for the failure-path tests. */
+  failNextTurn = false
+  /** When true, no turn.completed fires, so the thread stays mid-turn. */
+  hangTurn = false
+
   async sendTurn(threadId: string, message: string): Promise<void> {
+    if (this.failNextTurn) {
+      this.failNextTurn = false
+      throw new Error('adapter refused the turn')
+    }
     this.turns.push({ threadId, message })
-    this.emit.get(threadId)?.({ type: 'turn.completed', threadId })
+    if (!this.hangTurn) this.emit.get(threadId)?.({ type: 'turn.completed', threadId })
   }
 
   async respondToRequest(threadId: string, requestId: string): Promise<void> {
@@ -98,13 +116,13 @@ let client: WsTransport | null = null
 let registry: ProviderRegistry | null = null
 const scratchDirs: string[] = []
 
-async function setup() {
+async function setup(kind: 'claude' | 'opencode' = 'claude') {
   const cwd = mkdtempSync(join(tmpdir(), 'sb-peer-'))
   scratchDirs.push(cwd)
   wss = new WebSocketServer({ port: 0 })
   const host = new WsHost(wss)
-  const adapter = new RecordingAdapter()
-  registry = new ProviderRegistry(host, new Map([['claude', adapter]]))
+  const adapter = new RecordingAdapter(kind)
+  registry = new ProviderRegistry(host, new Map([[kind, adapter]]))
   registry.registerIpcHandlers()
   await new Promise<void>((res) => wss!.on('listening', () => res()))
   const { port } = wss.address() as AddressInfo
@@ -254,6 +272,49 @@ describe('peer message delivery across the WebSocket boundary', () => {
     expect(receiverBubble.id).toBe(id)
     expect(saved.find((m) => m.id === receiverBubble.id)).toBeDefined()
     expect(saved.find((m) => m.id === senderBubble.id)).toBeDefined()
+  })
+
+
+  // A guard slot spent on a delivery that never happened would refuse the
+  // user's retry as a duplicate for the next ten minutes.
+  it('frees the guard when the adapter rejects, so a retry works', async () => {
+    const { cwd, adapter } = await setup()
+    await startPair(cwd)
+
+    adapter.failNextTurn = true
+    await expect(send()).rejects.toThrow(/refused the turn/)
+    expect(adapter.turns).toHaveLength(0)
+
+    await expect(send()).resolves.toMatchObject({ id: expect.any(String) })
+    expect(adapter.turns).toHaveLength(1)
+  })
+
+  // The receiving bubble must read as the sender's words after a reload too,
+  // not as the wrapper with its "cannot approve" paragraph.
+  it('persists the provenance line as the receiving bubble body', async () => {
+    const { cwd } = await setup()
+    await startPair(cwd)
+    await send()
+    await flush()
+
+    const received = saved.find((m) => m.conversationId === 'target' && m.role === 'user')
+    expect(received?.displayBody).toBe('From "Docs pass": the auth migration landed on main')
+  })
+
+
+  // OpenCode ACP drops a mid-turn send instead of queueing it, so delivering
+  // into a running turn would record a message the agent never received.
+  it('refuses an OpenCode target that is mid-turn', async () => {
+    const { cwd, adapter } = await setup('opencode')
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 'sender', provider: 'opencode', cwd })
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 'target', provider: 'opencode', cwd })
+
+    adapter.hangTurn = true
+    await client!.invoke(ProviderChannels.SEND_TURN, 'target', 'a long running turn')
+    await flush()
+
+    await expect(send()).rejects.toThrow(/mid-turn/)
+    expect(adapter.turns).toHaveLength(1)
   })
 
   it('refuses a target with no live session', async () => {
