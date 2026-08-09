@@ -3,18 +3,19 @@
 ## Plan
 - [x] 1. pure guards module `src/shared/peer-messaging.ts` + tests (16 green)
 - [x] 2. registry `deliverPeerMessage` + `peer.message` RuntimeEvent + IPC channel + WS tests (8 green)
-- [ ] 3. preload plumbing + routing key
+- [x] 3. preload plumbing + routing key (fromThreadId in OBJECT_KEY_PRIORITY, +1 test)
 - [ ] 4. `/send-to` parsing + target resolution (pure, renderer) + tests
 - [ ] 5. UI markers (sender pill, receiver displayBody) + slash registry entry
 - [ ] 6. full gate (typecheck + npm test), final commit WITHOUT --no-verify
 
-## Current step: 3
+## Current step: 4
 
 ## Next concrete action
-Add preload plumbing for `ProviderChannels.DELIVER_PEER_MESSAGE`
-(`window.api.provider.deliverPeerMessage`) and add `fromThreadId` to
-`OBJECT_KEY_PRIORITY` in `src/preload/routing-table.ts` so a remote sender
-routes to the right backend. Then step 4: `/send-to` parsing.
+Step 4: pure `/send-to` parsing + target resolution. Parse
+`/send-to <target>: <message>`; fuzzy-match <target> against live session
+titles with `services/fuzzyScore`. Ambiguous -> error listing candidates,
+no match -> error. Put it in src/renderer/components/chat/sendToCommand.ts
+with tests/unit/send-to-command.test.ts. THEN step 5 wires the UI.
 
 ## Files touched so far
 - CHECKPOINT.md
@@ -24,6 +25,8 @@ routes to the right backend. Then step 4: `/send-to` parsing.
 - src/main/db/database.ts (getConversationTitle)
 - src/main/provider/provider-registry.ts (deliverPeerMessage handler)
 - tests/unit/peer-message-delivery-ws.test.ts (new, 8 green)
+- src/preload/routing-table.ts + tests/unit/routing-table.test.ts (fromThreadId key)
+- src/preload/index.ts (provider.deliverPeerMessage)
 - tests/unit/peer-messaging-guards.test.ts (new)
 
 ## Design decided (do not re-litigate)

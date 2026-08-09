@@ -17,6 +17,12 @@ describe('routingKey', () => {
   it('reads id off a payload object (terminal write({id,data}))', () => {
     expect(routingKey([{ id: 'term_3', data: 'ls' }])).toBe('term_3')
   })
+  // A peer message names two threads and neither key is `threadId`. Without
+  // fromThreadId here the call fell through to the default transport, so a
+  // remote sender's message would be delivered on the local backend.
+  it('routes a peer message by its sending thread', () => {
+    expect(routingKey([{ fromThreadId: 'thr_a', targetThreadId: 'thr_b', text: 'hi' }])).toBe('thr_a')
+  })
   it('reads conversationId off a payload object (app.saveMessage({id, conversationId}))', () => {
     expect(routingKey([{ id: 'msg_1', conversationId: 'conv_1' }])).toBe('conv_1')
   })
