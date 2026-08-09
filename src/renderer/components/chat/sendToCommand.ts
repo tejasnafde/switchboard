@@ -6,6 +6,9 @@
  * instead of picking one.
  */
 import { fuzzyScore } from '../../services/fuzzyScore'
+import { PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '@shared/peer-messaging'
+import type { RuntimePeerMessageEvent } from '@shared/provider-events'
+import type { ChatMessage } from '@shared/types'
 
 export const SEND_TO_USAGE = 'Use /send-to <session>: <message>'
 
@@ -67,4 +70,39 @@ export function resolveSendToTarget(
     return { ok: false, error: `"${target}" matches several sessions: ${names}. Be more specific.` }
   }
   return { ok: true, id: scored[0].session.id, title: scored[0].session.title }
+}
+
+/**
+ * The bubble a `peer.message` event should append, for whichever side of the
+ * delivery this thread is on.
+ *
+ * Ids match what the backend already persisted (`saveMessageIfAbsent` in the
+ * registry), so the live bubble and the stored row are the same message and a
+ * reload cannot render the delivery twice.
+ *
+ * `ownLabel` is this thread's own title, needed for the sender marker's
+ * `<from> → <to>` shape which the event only carries one half of.
+ */
+export function peerMessageToChatMessage(
+  event: RuntimePeerMessageEvent,
+  ownLabel: string,
+): ChatMessage {
+  if (event.direction === 'sent') {
+    return {
+      id: `peer_${event.messageId}`,
+      role: 'system',
+      content: `${PEER_SENT_MARKER_PREFIX} ${ownLabel} → ${event.peerLabel}`,
+      timestamp: event.at,
+    }
+  }
+  return {
+    id: event.messageId,
+    role: 'user',
+    content: wrapPeerMessage(event.peerLabel, event.text),
+    // The wire body carries an instruction block the user never typed, so the
+    // bubble shows the provenance line instead - same convention the handoff
+    // preamble uses.
+    displayBody: `From "${event.peerLabel}": ${event.text}`,
+    timestamp: event.at,
+  }
 }

@@ -51,8 +51,10 @@ import {
   peerMessageId,
   wrapPeerMessage,
 } from '../../src/shared/peer-messaging'
+import { peerMessageToChatMessage } from '../../src/renderer/components/chat/sendToCommand'
+import { parseRotationMarker } from '../../src/renderer/components/chat/rotationMarker'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
-import type { RuntimeEvent } from '../../src/shared/provider-events'
+import type { RuntimeEvent, RuntimePeerMessageEvent } from '../../src/shared/provider-events'
 
 class RecordingAdapter implements ProviderAdapter {
   readonly provider = 'claude' as const
@@ -219,6 +221,39 @@ describe('peer message delivery across the WebSocket boundary', () => {
     await send({ targetThreadId: 'rotated-uuid' })
     await flush()
     expect(adapter.turns[0]?.threadId).toBe('target')
+  })
+
+
+  // End to end for the RENDERER contract: the events a real client receives
+  // must produce a bubble on each side. Unit-testing only the backend hid a
+  // real bug once - the delivery persisted but nothing rendered until reload.
+  it('produces a rendered bubble on both sides from the live events', async () => {
+    const { cwd, events } = await setup()
+    await startPair(cwd)
+    const { id } = await send()
+    await flush()
+
+    const sentEvent = events.find(
+      (e) => e.type === 'peer.message' && 'direction' in e && e.direction === 'sent',
+    ) as RuntimePeerMessageEvent
+    const recvEvent = events.find(
+      (e) => e.type === 'peer.message' && 'direction' in e && e.direction === 'received',
+    ) as RuntimePeerMessageEvent
+
+    const senderBubble = peerMessageToChatMessage(sentEvent, 'Docs pass')
+    expect(senderBubble.role).toBe('system')
+    expect(parseRotationMarker(senderBubble.content)).toEqual({
+      kind: 'peer', fromName: 'Docs pass', toName: 'API refactor',
+    })
+
+    const receiverBubble = peerMessageToChatMessage(recvEvent, 'API refactor')
+    expect(receiverBubble.role).toBe('user')
+    expect(receiverBubble.displayBody).toBe('From "Docs pass": the auth migration landed on main')
+
+    // Ids match the persisted rows, so a reload folds onto the same bubbles.
+    expect(receiverBubble.id).toBe(id)
+    expect(saved.find((m) => m.id === receiverBubble.id)).toBeDefined()
+    expect(saved.find((m) => m.id === senderBubble.id)).toBeDefined()
   })
 
   it('refuses a target with no live session', async () => {

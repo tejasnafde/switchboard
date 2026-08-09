@@ -251,6 +251,8 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             <span>Switched agent: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · conversation replays as context on your next message</span>
           ) : rotation.kind === 'handoff' ? (
             <span>Context handoff: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · earlier conversation replayed to the new agent</span>
+          ) : rotation.kind === 'peer' ? (
+            <span>Sent to <strong>{rotation.toName}</strong></span>
           ) : (
             <span>Switched profile: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong></span>
           )}

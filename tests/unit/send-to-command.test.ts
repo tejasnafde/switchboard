@@ -6,7 +6,8 @@
  * must name the candidates rather than pick one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSendTo, resolveSendToTarget } from '../../src/renderer/components/chat/sendToCommand'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from '../../src/renderer/components/chat/sendToCommand'
+import { PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 
 const sessions = [
   { id: 't1', title: 'API refactor' },
@@ -80,5 +81,48 @@ describe('resolveSendToTarget', () => {
   it('prefers an exact title over a fuzzy rival', () => {
     const withRival = [...sessions, { id: 't4', title: 'Docs pass follow-up' }]
     expect(resolveSendToTarget('Docs pass', withRival, 't1')).toEqual({ ok: true, id: 't2', title: 'Docs pass' })
+  })
+})
+
+describe('peerMessageToChatMessage', () => {
+  const base = {
+    type: 'peer.message' as const,
+    messageId: 'pm_abc123',
+    text: 'the auth migration landed',
+    at: 1700,
+  }
+
+  // Ids must match what the backend persisted, or a reload renders the same
+  // delivery twice: once from the live event, once from the stored row.
+  it('renders the sender side as the persisted marker', () => {
+    const msg = peerMessageToChatMessage({
+      ...base, threadId: 'sender', direction: 'sent',
+      peerThreadId: 'target', peerLabel: 'API refactor',
+    }, 'Docs pass')
+    expect(msg).toEqual({
+      id: 'peer_pm_abc123',
+      role: 'system',
+      content: `${PEER_SENT_MARKER_PREFIX} Docs pass → API refactor`,
+      timestamp: 1700,
+    })
+  })
+
+  it('renders the received side as the wrapped turn under the backend id', () => {
+    const msg = peerMessageToChatMessage({
+      ...base, threadId: 'target', direction: 'received',
+      peerThreadId: 'sender', peerLabel: 'Docs pass',
+    }, 'API refactor')
+    expect(msg.id).toBe('pm_abc123')
+    expect(msg.role).toBe('user')
+    expect(msg.content).toBe(wrapPeerMessage('Docs pass', 'the auth migration landed'))
+  })
+
+  // The bubble must say where it came from, or it reads as the user's own turn.
+  it('labels the received bubble with its origin', () => {
+    const msg = peerMessageToChatMessage({
+      ...base, threadId: 'target', direction: 'received',
+      peerThreadId: 'sender', peerLabel: 'Docs pass',
+    }, 'API refactor')
+    expect(msg.displayBody).toBe('From "Docs pass": the auth migration landed')
   })
 })

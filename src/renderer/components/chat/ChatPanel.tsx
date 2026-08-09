@@ -5,7 +5,7 @@ import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
-import { parseSendTo, resolveSendToTarget } from './sendToCommand'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from './sendToCommand'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
@@ -358,6 +358,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             break
           }
           contentCoalescerRef.current?.push(tid, event.messageId, chunk)
+          break
+        }
+        case 'peer.message': {
+          // Both sides render live. The backend persisted the same ids, so
+          // appendMessage's id-idempotency collapses the stored row onto this
+          // bubble instead of showing the delivery twice after a reload.
+          const ownLabel = useAgentStore.getState().sessions.find((s) => s.id === tid)?.title ?? tid
+          appendMessage(tid, peerMessageToChatMessage(event, ownLabel))
           break
         }
         case 'tool.started': {
