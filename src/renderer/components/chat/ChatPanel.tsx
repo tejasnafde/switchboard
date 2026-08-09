@@ -3,7 +3,8 @@ import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
-import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX } from './rotationMarker'
+import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
+import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
@@ -210,6 +211,20 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         role: marker.role,
         content: marker.content,
       }).catch(() => {})
+    }
+    // Schedule the cross-provider context handoff: the new adapter starts
+    // cold, so the next send replays the transcript as a preamble (see
+    // handleSend). Folded through the persisted flag so a chain of switches
+    // keeps the ORIGINAL source, and switching back to it clears the flag
+    // (that provider resumes its own native context).
+    try {
+      const { from: existing } = await window.api.app.getConversationPendingHandoff(sessionId)
+      const next = nextPendingHandoffFrom(existing, prevType, t, hasPriorMessages)
+      if (next !== existing) {
+        await window.api.app.setConversationPendingHandoff(sessionId, next)
+      }
+    } catch (err) {
+      log.warn('failed to schedule context handoff', err)
     }
     // Write-through to the store so other consumers (StatusBar, sidebar
     // session badges, command-palette filters) see the new agent type
@@ -813,6 +828,45 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         return
       }
 
+      // Cross-provider context handoff. A pending flag - set by an agent
+      // switch over existing history, or by a degraded Codex / OpenCode
+      // fork - means the current adapter has never seen the visible
+      // transcript. Prefix this turn's wire message with the transcript
+      // preamble, exactly once: the flag is cleared before the send fires
+      // so no retry or reload path can re-inject.
+      let wireMessage = message
+      let pendingHandoffFrom: string | null = null
+      try {
+        pendingHandoffFrom = (await window.api.app.getConversationPendingHandoff(sessionId)).from
+      } catch (err) {
+        log.warn('pending-handoff read failed, sending without preamble', err)
+      }
+      if (pendingHandoffFrom) {
+        // Live read - the closure's `messages` lags in-place streamed edits.
+        const history = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.messages ?? []
+        const preamble = buildHandoffPreamble(history)
+        window.api.app.setConversationPendingHandoff(sessionId, null).catch((err) => {
+          log.warn('failed to clear pending handoff flag', err)
+        })
+        if (preamble) {
+          wireMessage = `${preamble}\n\n${message}`
+          const marker: ChatMessage = {
+            id: `handoff_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            role: 'system',
+            content: `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(pendingHandoffFrom as AgentType)} → ${agentLabel(agentType)}`,
+            timestamp: Date.now(),
+          }
+          appendMessage(sessionId, marker)
+          window.api.app.saveMessage({
+            id: marker.id,
+            conversationId: sessionId,
+            role: marker.role,
+            content: marker.content,
+          }).catch((err) => log.warn('failed to persist handoff marker', err))
+        }
+      }
+      const handoffInjected = wireMessage !== message
+
       // Convert attached images to data URLs so they survive session reloads.
       // Downscaled first (longest edge 1920px, JPEG for opaque sources): the
       // base64 body is copied across every hop (store → IPC → DB → adapter
@@ -851,14 +905,18 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       // than of a skip set that has to survive a remount, a hot reload, or a
       // second panel claiming the event.
       const origin = `d${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      // Convention (shared/types.ts): `content` is the text the agent saw,
+      // `displayBody` is what the bubble renders. An injected preamble
+      // therefore lives in `content` and the bubble shows only the user's
+      // own text - same mechanism that keeps pill expansions out of view.
       const userMsg: ChatMessage = {
         id: echoMessageId(origin),
         role: 'user',
-        content: message,
+        content: wireMessage,
         images: messageImages,
         timestamp: Date.now(),
-        displayBody: extras?.displayBody,
-        pillsMeta: extras?.pillsMeta,
+        displayBody: handoffInjected ? (extras?.displayBody ?? message) : extras?.displayBody,
+        pillsMeta: handoffInjected ? (extras?.pillsMeta ?? {}) : extras?.pillsMeta,
       }
       appendMessage(sessionId, userMsg)
       // Optimistic status so the "thinking" indicator shows immediately -
@@ -871,10 +929,10 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         id: userMsg.id,
         conversationId: sessionId,
         role: 'user',
-        content: message,
+        content: wireMessage,
         images: messageImages ? JSON.stringify(messageImages) : undefined,
-        displayBody: extras?.displayBody,
-        pillsMeta: extras?.pillsMeta ? JSON.stringify(extras.pillsMeta) : undefined,
+        displayBody: userMsg.displayBody,
+        pillsMeta: userMsg.pillsMeta ? JSON.stringify(userMsg.pillsMeta) : undefined,
       }).catch(() => {})
 
       // Auto-generate title from first user message
@@ -930,7 +988,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
       }
 
-      providerApi.sendTurn(sessionId, message, runtimeMode, messageImages, origin).catch((err: Error) => {
+      providerApi.sendTurn(sessionId, wireMessage, runtimeMode, messageImages, origin).catch((err: Error) => {
         appendMessage(sessionId, {
           id: `error_${Date.now()}`,
           role: 'system',

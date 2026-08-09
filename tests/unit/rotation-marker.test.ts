@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseRotationMarker, ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX } from '../../src/renderer/components/chat/rotationMarker'
+import { parseRotationMarker, ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from '../../src/renderer/components/chat/rotationMarker'
 
 describe('parseRotationMarker', () => {
   it('parses the canonical "from → to" form', () => {
@@ -10,6 +10,13 @@ describe('parseRotationMarker', () => {
   it('parses an agent-switch marker with kind "agent"', () => {
     const out = parseRotationMarker(`${AGENT_SWITCH_MARKER_PREFIX} Claude Code → Codex`)
     expect(out).toEqual({ kind: 'agent', fromName: 'Claude Code', toName: 'Codex' })
+  })
+
+  it('parses a context-handoff marker with kind "handoff"', () => {
+    const out = parseRotationMarker(`${CONTEXT_HANDOFF_MARKER_PREFIX} Codex → Claude Code`)
+    expect(out).toEqual({ kind: 'handoff', fromName: 'Codex', toName: 'Claude Code' })
+    const ascii = parseRotationMarker(`${CONTEXT_HANDOFF_MARKER_PREFIX} Codex -> OpenCode`)
+    expect(ascii).toEqual({ kind: 'handoff', fromName: 'Codex', toName: 'OpenCode' })
   })
 
   it('tolerates ASCII arrow', () => {

@@ -10,6 +10,7 @@ import {
   listSessionIdsForThread,
   getMessagesForConversation,
   messageRowsToChatMessages,
+  setConversationPendingHandoff,
 } from '../db/database'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
 import { resolveProviderInstance } from '../db/providerInstances'
@@ -341,6 +342,11 @@ async function forkCodex(ctx: ForkContext): Promise<ForkResult> {
     worktreeBranch: worktreeMeta?.branch ?? null,
   })
   bulkSaveMessages(newId, keptMessages.map(toMessageRow))
+  // The new Codex process starts cold (the truncated rollout above is an
+  // audit record, not a resume). Schedule a context handoff so the fork's
+  // first turn carries the transcript preamble - ChatPanel consumes and
+  // clears this flag on send.
+  setConversationPendingHandoff(newId, source.agent_type)
 
   return {
     conversation: {
@@ -390,7 +396,7 @@ async function forkSummaryOnly(ctx: ForkContext, agentType: string): Promise<For
   const { source, input, keptMessages, title, effectiveProjectPath, worktreeMeta } = ctx
   // No JSONL surgery - just clone the row and the message stream. The
   // new agent process will start cold; the renderer prepends a synthetic
-  // system message in `forkAndOpenSession` so the user sees the warning.
+  // system message in `forkAndOpenSession` so the user sees the notice.
   const newId = randomUUID()
   createForkedConversation({
     id: newId,
@@ -403,6 +409,9 @@ async function forkSummaryOnly(ctx: ForkContext, agentType: string): Promise<For
     worktreeBranch: worktreeMeta?.branch ?? null,
   })
   bulkSaveMessages(newId, keptMessages.map(toMessageRow))
+  // Schedule a context handoff (same as the Codex path): the cold agent's
+  // first turn gets the copied transcript replayed as a preamble.
+  setConversationPendingHandoff(newId, source.agent_type)
 
   return {
     conversation: {

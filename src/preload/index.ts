@@ -193,6 +193,10 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_MODEL, id),
     setConversationModel: (id: string, model: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_MODEL, id, model),
+    getConversationPendingHandoff: (id: string): Promise<{ from: string | null }> =>
+      transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, id),
+    setConversationPendingHandoff: (id: string, from: string | null): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, id, from),
     getConversations: (projectPath: string) =>
       transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
     setVibrancy: (enabled: boolean) =>
