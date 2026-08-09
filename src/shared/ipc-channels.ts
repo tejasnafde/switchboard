@@ -82,6 +82,24 @@ export const AppChannels = {
   MOBILE_DEVICES: 'mobile-pairing:devices',
   /** Revoke one device without disturbing the others. */
   MOBILE_DEVICE_REVOKE: 'mobile-pairing:revoke',
+  /**
+   * Run Google consent in a browser and return the credential blob for the
+   * phone's QR. Desktop-only: the phone cannot complete this flow, which is the
+   * whole reason the desktop mints on its behalf.
+   */
+  GOOGLE_MINT: 'mobile-pairing:google-mint',
+  /** Whether an OAuth client is configured, and where it came from. */
+  GOOGLE_CLIENT_STATUS: 'mobile-pairing:google-client-status',
+  /** Save an OAuth client id/secret for minting. */
+  GOOGLE_CLIENT_SET: 'mobile-pairing:google-client-set',
+  /** Key/value settings table shared by the desktop and the phone. */
+  SETTINGS_GET: 'settings:get',
+  /**
+   * Writes are gated per KEY as well as per channel: two of these rows decide
+   * what a session may DO, so `isSettingWriteAllowed` refuses them to a
+   * chat-scoped device even though the channel itself is open.
+   */
+  SETTINGS_SET: 'settings:set',
   /** External IPv4 addresses of this machine - mobile pairing QR host picker. */
   LAN_ADDRESSES: 'app:lan-addresses',
   /**
@@ -258,6 +276,13 @@ export const ProviderChannels = {
   SET_MODEL: 'provider:set-model',
   OPENCODE_LIST_MODELS: 'provider:opencode-list-models',
   LIST_MODELS: 'provider:list-models',
+  /**
+   * Sessions running on this backend right now, whichever client started them.
+   * A client that was not connected when a session started has no other way to
+   * learn it exists: runtime events are broadcast but not replayed from before
+   * the session began.
+   */
+  LIST_SESSIONS: 'provider:list-sessions',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

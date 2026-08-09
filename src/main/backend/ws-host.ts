@@ -15,8 +15,9 @@ import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
 import { encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
-import { isChannelAllowed, FULL_SCOPES, PHONE_SCOPES, type DeviceScope } from '@shared/device-auth'
+import { isChannelAllowed, isSettingWriteAllowed, FULL_SCOPES, PHONE_SCOPES, type DeviceScope } from '@shared/device-auth'
 import { EventReplayBuffer } from '@shared/event-replay-buffer'
+import { AppChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 
@@ -204,6 +205,21 @@ export class WsHost implements BackendHost {
       log.warn(`denied ${frame.ch} - outside this device's scopes (${state.scopes.join(',')})`)
       if (frame.k === 'req') {
         this.reply(socket, { k: 'res', id: frame.id, ok: false, error: `not permitted: ${frame.ch}` })
+      }
+      return
+    }
+    // Arg-level, and next to the channel check rather than in the handler:
+    // `settings:set` is open to every device, but two of its keys decide what a
+    // session is ALLOWED to do, not merely how it looks.
+    if (
+      (frame.k === 'req' || frame.k === 'snd') &&
+      state?.scopes &&
+      frame.ch === AppChannels.SETTINGS_SET &&
+      !isSettingWriteAllowed(state.scopes, (frame.args as unknown[] | undefined)?.[0])
+    ) {
+      log.warn(`denied ${frame.ch} - protected settings key, outside this device's scopes`)
+      if (frame.k === 'req') {
+        this.reply(socket, { k: 'res', id: frame.id, ok: false, error: 'not permitted: protected setting' })
       }
       return
     }

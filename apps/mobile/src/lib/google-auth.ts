@@ -10,6 +10,7 @@ import * as Linking from 'expo-linking'
 import * as SecureStore from 'expo-secure-store'
 import * as WebBrowser from 'expo-web-browser'
 import { createLogger } from '@shared/logger'
+import { isBareRefreshToken, parseCredentialJson } from '@shared/google-oauth'
 
 const log = createLogger('google-auth')
 
@@ -487,25 +488,14 @@ export interface ImportedCredentials {
 export function parseCredentialBlob(raw: string): ImportedCredentials | null {
   const text = raw.trim()
   if (!text) return null
-  if (text.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(text) as Record<string, unknown>
-      const clientId = typeof parsed.clientId === 'string' ? parsed.clientId.trim() : ''
-      const refreshToken =
-        typeof parsed.refreshToken === 'string' ? parsed.refreshToken.trim() : ''
-      const clientSecret =
-        typeof parsed.clientSecret === 'string' ? parsed.clientSecret.trim() : ''
-      if (!clientId || !refreshToken) return null
-      return { clientId, refreshToken, clientSecret: clientSecret || undefined }
-    } catch {
-      // Validator, not an error path: a half-pasted blob is expected, and the
-      // screen reports it. Logging would risk echoing credential fragments.
-      return null
-    }
-  }
-  // Bare refresh token: Google's look like "1//0g..." - require the prefix so a
-  // mis-paste of some other string fails here instead of at the token endpoint.
-  if (!text.startsWith('1//')) return null
+  // The JSON form is the desktop's wire contract, parsed by the shared module
+  // that also writes it, so the two cannot drift.
+  const fromJson = parseCredentialJson(text)
+  if (fromJson) return fromJson
+  if (text.startsWith('{')) return null
+  // Bare refresh token. Only the phone can complete this shape, because the
+  // client id comes from its own app.json rather than from the blob.
+  if (!isBareRefreshToken(text)) return null
   const fallback = readClientConfig()
   if (!fallback) return null
   return { clientId: fallback.clientId, clientSecret: fallback.clientSecret, refreshToken: text }

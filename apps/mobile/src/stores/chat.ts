@@ -103,7 +103,10 @@ interface ChatState {
   addUserMessage: (key: string, text: string, images?: string[], id?: string) => void
   markQuestionAnswered: (key: string, requestId: string, answers: string[][]) => void
   markApprovalResolved: (key: string, requestId: string, decision: 'approve' | 'deny') => void
-  seedItems: (key: string, items: FeedItem[]) => void
+  /** `keepIds` survives the replace. History cannot know about a message still
+   *  in the outbox, so seeding over one would take the user's bubble down and
+   *  let its echo put a second one back. */
+  seedItems: (key: string, items: FeedItem[], keepIds?: string[]) => void
   /** Remove an optimistic user bubble whose message will never be sent. */
   removeUserMessage: (key: string, id: string) => void
   /** Queued: coalesced and applied on the next flush tick. */
@@ -481,9 +484,24 @@ export const useChatStore = create<ChatState>()(
   removeUserMessage: (key, id) =>
     set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ items: t.items.filter((i) => i.id !== id) })) })),
 
-  seedItems: (key, items) =>
+  seedItems: (key, items, keepIds) =>
     // Clearing `cached` is the point: this feed now came from the backend.
-    set((s) => ({ threads: patchThread(s.threads, key, () => ({ items, cached: false })) })),
+    set((s) => ({
+      threads: patchThread(s.threads, key, (t) => {
+        // A send can be delivered and still stay queued when the response frame
+        // is lost, so history may ALREADY contain the message the outbox is
+        // holding. History items are re-keyed `h-<id>`, so the collision is
+        // invisible to an id comparison - hence matching on the suffix.
+        const seeded = new Set(items.map((i) => i.id))
+        const alreadySeeded = (id: string): boolean => seeded.has(id) || seeded.has(`h-${id}`)
+        // Kept items go AFTER the history: they are the newest thing the user
+        // did, and history by definition predates them.
+        const keep = keepIds?.length
+          ? t.items.filter((i) => keepIds.includes(i.id) && !alreadySeeded(i.id))
+          : []
+        return { items: [...items, ...keep], cached: false }
+      }),
+    })),
 
   ingest: (connectionId, event) => enqueue(connectionId, event),
 

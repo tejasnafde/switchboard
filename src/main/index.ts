@@ -28,6 +28,9 @@ import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
 import { MultiHost } from './backend/multi-host'
 import { createPairingCode, listSessionViews, revokeSession } from './backend/device-sessions'
+import { currentGoogleClient, googleClientStatus, setGoogleClient } from './google/client-config'
+import { mintGoogleCredentials } from './google/mint'
+import type { PartialClientConfig } from '@shared/google-oauth'
 import { MobileEndpoint } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
 import { registerSttHandlers } from './ipc/stt'
@@ -578,6 +581,17 @@ app.whenReady().then(() => {
   backendHost.handle(AppChannels.MOBILE_PAIRING_CODE, () => createPairingCode())
   backendHost.handle(AppChannels.MOBILE_DEVICES, () => listSessionViews())
   backendHost.handle(AppChannels.MOBILE_DEVICE_REVOKE, (id: string) => revokeSession(id))
+  // Same scope, for a sharper reason: this one opens a browser on the desktop
+  // and hands back a credential that grants cloud-platform access as the user.
+  backendHost.handle(AppChannels.GOOGLE_CLIENT_STATUS, () => googleClientStatus())
+  backendHost.handle(AppChannels.GOOGLE_CLIENT_SET, (config: PartialClientConfig) =>
+    setGoogleClient(config),
+  )
+  backendHost.handle(AppChannels.GOOGLE_MINT, async () => {
+    const client = currentGoogleClient()
+    if (!client) throw new Error('No Google OAuth client is configured yet.')
+    return await mintGoogleCredentials(client)
+  })
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)

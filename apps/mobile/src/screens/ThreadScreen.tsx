@@ -39,7 +39,7 @@ import { Markdown } from '../components/Markdown'
 import { summarizeTool, toolIcon } from '../lib/toolSummary'
 import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
-import { drain, enqueue, useOutboxStore } from '../stores/outbox'
+import { drain, enqueue, queuedFor, useOutboxStore } from '../stores/outbox'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
 import { ModePicker } from '../components/ModePicker'
@@ -47,6 +47,9 @@ import { ProfilePicker } from '../components/ProfilePicker'
 import { SlashMenu } from '../components/SlashMenu'
 import { allCommands, detectSlash, filterCommands, type SlashCommand } from '../lib/slash'
 import { profilesFor } from '../lib/profiles'
+import { buildTurn } from '../lib/turnSubmit'
+import { keyboardAvoidance } from '../lib/keyboardAvoidance'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { VoiceNoteBar } from '../components/MicButton'
 import { SendMicButton } from '../components/SendMicButton'
@@ -60,12 +63,6 @@ const HISTORY_WINDOW = 250
 const log = createLogger('screen:thread')
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Thread'>
-
-/** Origin for a turn we send. The optimistic bubble uses echoMessageId(origin),
- *  so the broadcast collapses onto it instead of rendering a second copy. */
-function ownTurn(): string {
-  return `m${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
 
 const IMPLEMENT_MESSAGE = 'Implement the plan you proposed.'
 
@@ -124,6 +121,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
   // Real header height: the keyboard offset must clear it, and hardcoding 96
   // was wrong on Android where it was 0.
   const headerHeight = useHeaderHeight()
+  const insets = useSafeAreaInsets()
   const [draft, setDraft] = useState('')
   // The focus-effect cleanup closes over its first render, so it reads the
   // latest text from a ref rather than a stale `draft`.
@@ -245,7 +243,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
               text: `Showing the last ${loaded.messages.length} of ${loaded.total} messages`,
             })
           }
-          store.seedItems(key, seeded)
+          // Anything still queued is newer than this history and invisible to
+          // it, so it has to survive the replace.
+          const pending = queuedFor(connectionId, threadId).map((m) => echoMessageId(m.messageId))
+          store.seedItems(key, seeded, pending)
         }
       } catch (err) {
         reportError(err)
@@ -447,7 +448,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // A backend check here would only cover the cases we can SEE are broken,
     // and the expensive ones are the ambiguous ones: a socket that still reads
     // as open, a reconnect in flight, a turn already running.
-    const messageId = ownTurn()
+    const turn = buildTurn({ connectionId, threadId, text, images, runtimeMode: thread.runtimeMode })
     // Title from the first message, as the desktop does. `isNew` matters: an
     // existing chat whose items were emptied by /clear, or one whose history
     // has not loaded yet, also has no user items - titling those would
@@ -458,21 +459,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
         ?.renameConversation(threadId, title)
         .catch((err: unknown) => log.warn('could not set the chat title', err))
     }
-    useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), echoMessageId(messageId))
-    enqueue({
-      connectionId,
-      threadId,
-      messageId,
-      text,
-      images: images.length > 0 ? images : undefined,
-      runtimeMode: thread.runtimeMode,
-      createdAt: Date.now(),
-      attempts: 0,
-    }).catch((err: unknown) => {
+    useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), turn.bubbleId)
+    enqueue(turn.queued).catch((err: unknown) => {
       // The durable write failed, so the message is out of the queue again.
       // Take the optimistic bubble back down and give the user what they typed,
       // rather than leaving a bubble that reads as sent and never will be.
-      useChatStore.getState().removeUserMessage(key, echoMessageId(messageId))
+      useChatStore.getState().removeUserMessage(key, turn.bubbleId)
       setDraft((current) => (current ? current : text))
       setAttachments(attachments)
       reportError(err)
@@ -501,20 +493,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // implement follow-up.
     useChatStore.getState().setRuntimeMode(key, 'sandbox')
     client.setRuntimeMode(threadId, 'sandbox').catch(reportError)
-    useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE)
     // Through the outbox like every other send, or it is lost off-socket.
-    const messageId = ownTurn()
-    useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE, undefined, echoMessageId(messageId))
-    enqueue({
+    const turn = buildTurn({
       connectionId,
       threadId,
-      messageId,
       text: IMPLEMENT_MESSAGE,
       runtimeMode: 'sandbox',
-      createdAt: Date.now(),
-      attempts: 0,
-    }).catch((err: unknown) => {
-      useChatStore.getState().removeUserMessage(key, echoMessageId(messageId))
+    })
+    useChatStore.getState().addUserMessage(key, IMPLEMENT_MESSAGE, undefined, turn.bubbleId)
+    enqueue(turn.queued).catch((err: unknown) => {
+      useChatStore.getState().removeUserMessage(key, turn.bubbleId)
       reportError(err)
     })
   }, [connectionId, threadId, key, reportError])
@@ -652,10 +640,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     <AnimatedKeyboardAvoidingView
       {...swipeBack.panHandlers}
       style={[styles.screen, { transform: [{ translateX: swipeBack.translateX }] }]}
-      // Edge-to-edge is unconditional in SDK 57, and under it the window is not
-      // resized for the keyboard, so `undefined` left the composer covered.
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={headerHeight}
+      {...keyboardAvoidance(Platform.OS, headerHeight)}
     >
       {/* Expanded detail, shown only when the header accessory is tapped. */}
       {statusOpen && (
@@ -750,7 +735,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
       </Modal>
 
       {/* Composer */}
-      <View style={styles.composer}>
+      {/* The inset, not a constant: under edge-to-edge the gesture bar overlays
+          the app, and it is a different height on every device. Floored so the
+          composer keeps its breathing room on a phone that reports none. */}
+      <View style={[styles.composer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         {/* Dropdowns left, actions right. The left group scrolls if the labels
             overflow; the right group never does, so the mic, attach and Stop
             are always where the thumb expects them. */}
@@ -1554,7 +1542,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingTop: 8,
-    paddingBottom: Platform.OS === 'ios' ? 24 : 12,
     gap: 8,
   },
   controlsRow: {

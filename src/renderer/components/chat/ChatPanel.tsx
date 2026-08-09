@@ -29,6 +29,11 @@ import { echoMessageId } from '@shared/provider-events'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
+import {
+  SETTING_DEFAULT_INSTANCE_ID,
+  defaultModelSettingKey,
+  SETTING_DEFAULT_RUNTIME_MODE,
+} from '@shared/session-defaults'
 
 interface ChatPanelProps {
   /**
@@ -155,7 +160,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // Also remember as the user-level default so brand-new sessions seed
     // with this mode instead of always reverting to 'sandbox'.
     setStoreDefaultRuntimeMode(mode)
-    window.api.settings?.set?.('chat.defaultRuntimeMode', mode).catch(() => {})
+    window.api.settings
+      ?.set?.(SETTING_DEFAULT_RUNTIME_MODE, mode)
+      .catch((err: unknown) => log.warn('could not save the default runtime mode', err))
   }, [sessionId, storeSetRuntimeMode])
 
   const handleModelChange = useCallback((m: string) => {
@@ -169,7 +176,16 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // chat (sidebar, kanban card click) restores the pin instead of losing
     // it the moment the live session object stops matching session.id.
     window.api.app?.setConversationModel?.(sessionId, m).catch(() => {})
-  }, [sessionId, storeSetModel])
+    // And as the machine default, so a session started from anywhere else -
+    // notably the phone, which cannot see this window - opens on the same
+    // model instead of whatever the provider CLI picks.
+    window.api.settings
+      ?.set?.(defaultModelSettingKey(agentType), m)
+      .catch((err: unknown) => log.warn('could not save the default model', err))
+    // `agentType` is read above, so it belongs here: without it the callback
+    // keeps the agent it was created with and files the model under the wrong
+    // one after a provider switch.
+  }, [sessionId, storeSetModel, agentType])
 
   const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
     if (!sessionId) return
@@ -255,6 +271,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     storeSetInstanceId(sessionId, nextInstanceId)
     if (nextInstanceId) {
       window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId).catch(() => {})
+      // Machine default too, so a phone-started session picks the profile the
+      // user actually works with rather than `<agent-type>-default`.
+      window.api.settings
+        ?.set?.(SETTING_DEFAULT_INSTANCE_ID, nextInstanceId)
+        .catch((err: unknown) => log.warn('could not save the default profile', err))
     }
     // Record a rotation marker in the chat stream - only when there's
     // actually a prior conversation to attribute (skip on freshly-opened

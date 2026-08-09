@@ -11,6 +11,12 @@ import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '
 import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
+import {
+  SETTING_DEFAULT_INSTANCE_ID,
+  defaultModelSettingKey,
+  SETTING_DEFAULT_RUNTIME_MODE,
+  type SessionDefaults,
+} from '@shared/session-defaults'
 
 export interface StartSessionOpts {
   threadId: string
@@ -94,6 +100,25 @@ export class SwitchboardClient {
 
   setSetting(key: string, value: string): Promise<unknown> {
     return this.transport.invoke('settings:set', key, value)
+  }
+
+  /**
+   * The machine's default mode / model / profile, so a session started here
+   * opens the way the desktop has it rather than on the phone's own guesses.
+   * Missing keys are normal on a backend nobody has configured; the caller
+   * keeps its own fallbacks for those.
+   */
+  async getSessionDefaults(agentType: string): Promise<SessionDefaults> {
+    const [runtimeMode, model, instanceId] = await Promise.all([
+      this.getSetting(SETTING_DEFAULT_RUNTIME_MODE),
+      this.getSetting(defaultModelSettingKey(agentType)),
+      this.getSetting(SETTING_DEFAULT_INSTANCE_ID),
+    ])
+    return {
+      runtimeMode: runtimeMode ?? undefined,
+      model: model ?? undefined,
+      instanceId: instanceId ?? undefined,
+    }
   }
 
   /** `limit` returns only the newest N; the result reports `total`/`truncated`. */

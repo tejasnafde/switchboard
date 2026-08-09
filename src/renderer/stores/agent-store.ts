@@ -2,6 +2,9 @@ import { create } from 'zustand'
 import type { AgentStatus, AgentType, ChatMessage } from '@shared/types'
 import type { ReasoningEffort } from '@shared/models'
 import { createRendererLogger } from '../logger'
+import { mergeLiveSessions, toAgentStatus, toAgentType } from './liveSessionMerge'
+import type { LiveSessionSummary } from '@shared/live-sessions'
+import { isRuntimeMode } from '@shared/session-defaults'
 
 const log = createRendererLogger('store:agent')
 
@@ -136,6 +139,12 @@ interface AgentStore {
    *  don't spin forever waiting for a turn.completed that will never come
    *  (messages untouched). */
   resetRunningSessionsForMachine: (machineId: string) => void
+  /**
+   * Adopt sessions running on the backend that this window did not start.
+   * Without it, a chat begun on the phone has no row here, so every reducer
+   * no-ops and the chat reads as idle while it streams.
+   */
+  adoptLiveSessions: (live: LiveSessionSummary[], machineId?: string) => void
   appendMessage: (sessionId: string, message: ChatMessage) => void
   updateMessage: (sessionId: string, messageId: string, updates: Partial<ChatMessage>) => void
   setMessages: (sessionId: string, messages: ChatMessage[]) => void
@@ -258,6 +267,30 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           ? { ...s, status: 'idle' }
           : s,
       ),
+    })),
+
+  adoptLiveSessions: (live, machineId) =>
+    set((state) => ({
+      sessions: mergeLiveSessions<AgentSession>({
+        existing: state.sessions,
+        live,
+        create: (s) => ({
+          id: s.threadId,
+          type: toAgentType(s.provider),
+          status: toAgentStatus(s.status),
+          messages: [],
+          // History is loaded lazily when the user opens the chat. Seeding it
+          // here would fetch every running thread's transcript on connect.
+          projectPath: s.cwd,
+          machineId,
+          unreadCount: 0,
+          runtimeMode: isRuntimeMode(s.runtimeMode) ? s.runtimeMode : 'sandbox',
+          model: s.model,
+          instanceId: s.instanceId,
+          resumeSessionId: s.sessionId,
+        }),
+        applyStatus: (row, status) => ({ ...row, status: toAgentStatus(status) }),
+      }),
     })),
 
   appendMessage: (sessionId, message) =>

@@ -31,6 +31,14 @@ vi.mock('../../src/main/db/database', () => ({
     saved.push({ id, conversationId, role, content, images })
     return true
   },
+  // Read by the session-defaults chain on every start. Null throughout, so
+  // these tests keep asserting that the REQUEST wins, which is the tier they
+  // exercise.
+  getConversationRuntimeMode: () => null,
+  getConversationModel: () => null,
+  getConversationAgentType: () => null,
+  getConversationProviderInstanceId: () => null,
+  getSetting: () => null,
 }))
 
 import { WsHost } from '../../src/main/backend/ws-host'
