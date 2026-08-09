@@ -33,6 +33,10 @@ const CHECK_TIMEOUT_RE = /^Update check timed out after \d+ms$/
 export function friendlyUpdateError(raw: string): string {
   if (NETWORK_RE.test(raw)) return 'No internet connection'
   if (isStaleDownloadError(raw)) return 'Update download was interrupted - try again'
-  if (CHECK_TIMEOUT_RE.test(raw)) return 'Update check timed out - try again, or restart the app if it persists'
+  // Not a failure: electron-updater's request is still in flight and usually
+  // lands seconds later, overwriting this with a real status. Measured on a
+  // slow network, the connect to release-assets.githubusercontent.com alone
+  // stalled 30s and the check completed at ~77s.
+  if (CHECK_TIMEOUT_RE.test(raw)) return 'Still checking. This network is slow to reach GitHub, so it will finish in the background.'
   return raw
 }

@@ -37,11 +37,16 @@ export function UpdateToast() {
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        background: 'var(--bg-surface)',
-        border: '1px solid var(--border)',
-        borderRadius: '8px',
+        // Frosted glass: a translucent fill plus a blur of what is behind it,
+        // a hairline top highlight for the lit edge, and a saturate() so the
+        // colours showing through stay lively instead of washing out grey.
+        background: 'color-mix(in srgb, var(--bg-surface) 62%, transparent)',
+        backdropFilter: 'blur(22px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(22px) saturate(180%)',
+        border: '1px solid color-mix(in srgb, var(--border) 65%, transparent)',
+        borderRadius: '12px',
         padding: '10px 14px',
-        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+        boxShadow: '0 8px 28px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.12)',
         zIndex: 2000,
         maxWidth: '360px',
       }}

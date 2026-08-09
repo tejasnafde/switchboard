@@ -46,9 +46,15 @@ let staleDownloadRetried = false
  * cached in-flight promise - so one stalled request pinned the Settings
  * row on "Checking..." until app restart (seen 2026-08-07: a check that
  * never resolved, then "already in progress" on every retry click).
- * Healthy checks resolve in ~2s; 30s is generous.
+ *
+ * Healthy checks resolve in ~2s, but 30s was too tight to be a failure
+ * signal: on a network whose connect to release-assets.githubusercontent.com
+ * stalls (measured 30s to 45s, both address families), the check completes at
+ * ~77s. The old deadline turned a slow success into a red error the user
+ * retried into the same stuck request. This is now a backstop against a check
+ * that never returns, not a verdict on a slow one.
  */
-const CHECK_TIMEOUT_MS = 30_000
+const CHECK_TIMEOUT_MS = 120_000
 
 function send(window: BrowserWindow, status: UpdateStatus): void {
   lastStatus = status
