@@ -636,7 +636,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const isRunning = thread.status === 'running'
   const canSend = draft.trim().length > 0 || attachments.length > 0
-  const dictation = useDictation({ draft, onDraft: setDraft, onNote: setVoiceNote })
+  // Vocabulary bias comes from the tree the agent works in, so a worktree
+  // session biases on the worktree's files.
+  const dictation = useDictation({
+    draft,
+    onDraft: setDraft,
+    onNote: setVoiceNote,
+    refine: { connectionId, projectPath: worktreePath ?? projectPath },
+  })
 
   const contextPct =
     thread.usedTokens != null && thread.maxTokens ? Math.min(1, thread.usedTokens / thread.maxTokens) : null
@@ -780,6 +787,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           </ScrollView>
         </View>
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
+        {dictation.refining && <Text style={styles.queuedNote}>Refining transcript…</Text>}
         {queuedCount > 0 && (
           <Text style={styles.queuedNote}>
             {queuedCount} {queuedCount === 1 ? 'message' : 'messages'} waiting to send

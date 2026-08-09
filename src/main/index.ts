@@ -30,6 +30,7 @@ import { MultiHost } from './backend/multi-host'
 import { createPairingCode, listSessionViews, revokeSession } from './backend/device-sessions'
 import { MobileEndpoint } from './backend/mobile-server'
 import { registerGitHandlers } from './ipc/git'
+import { registerSttHandlers } from './ipc/stt'
 import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
@@ -585,6 +586,7 @@ app.whenReady().then(() => {
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
+  registerSttHandlers(backendHost)
   registerIdeHandlers(backendHost)
   registerKanbanHandlers(backendHost)
   registerProviderInstanceHandlers(backendHost)
@@ -634,6 +636,7 @@ app.whenReady().then(() => {
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
+      registerSttHandlers(reactivatedHost)
       registerIdeHandlers(reactivatedHost)
       registerKanbanHandlers(reactivatedHost)
       registerMachineHandlers(reactivatedHost)

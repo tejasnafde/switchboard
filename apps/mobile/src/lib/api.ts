@@ -5,7 +5,8 @@
  */
 import { WsTransport } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
-import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PushChannels } from '@shared/ipc-channels'
+import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PushChannels, SttChannels } from '@shared/ipc-channels'
+import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
@@ -125,6 +126,17 @@ export class SwitchboardClient {
    */
   listIapTargets(): Promise<SshIapTarget[]> {
     return this.transport.invoke(MachineChannels.LIST_IAP_TARGETS)
+  }
+
+  // ── speech-to-text ──
+  /**
+   * Backend whisper.cpp correction of a dictation recording. Never rejects on
+   * a transcription problem - the handler answers { ok: false } so the caller
+   * keeps the on-device text. The FIRST call on a fresh backend can take
+   * minutes (model download + load), so callers bound their own wait.
+   */
+  transcribe(req: SttTranscribeRequest): Promise<SttTranscribeResult> {
+    return this.transport.invoke(SttChannels.TRANSCRIBE, req)
   }
 
   // ── push ──

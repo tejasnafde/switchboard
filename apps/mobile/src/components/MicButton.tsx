@@ -6,7 +6,7 @@ import { Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { Ionicons } from '@expo/vector-icons'
 import { createLogger } from '@shared/logger'
 import { colors, radius, space, type } from '../theme'
-import { useDictation, type VoiceNote } from '../hooks/useDictation'
+import { useDictation, type RefineConfig, type VoiceNote } from '../hooks/useDictation'
 
 const log = createLogger('mobile:mic')
 
@@ -25,12 +25,14 @@ export function MicButton({
   draft,
   onDraft,
   onNote,
+  refine,
 }: {
   draft: string
   onDraft: (text: string) => void
   onNote: (note: VoiceNote | null) => void
+  refine?: RefineConfig
 }) {
-  const dictation = useDictation({ draft, onDraft, onNote })
+  const dictation = useDictation({ draft, onDraft, onNote, refine })
   if (!dictation.available) return null
   return (
     <Pressable

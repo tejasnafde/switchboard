@@ -238,7 +238,12 @@ export default function NewSessionScreen({ route, navigation }: Props) {
       />
       <View style={styles.voiceRow}>
         {voiceNote ? <VoiceNoteBar note={voiceNote} /> : <View style={styles.voiceSpacer} />}
-        <MicButton draft={firstMessage} onDraft={setFirstMessage} onNote={setVoiceNote} />
+        <MicButton
+          draft={firstMessage}
+          onDraft={setFirstMessage}
+          onNote={setVoiceNote}
+          refine={{ connectionId, projectPath }}
+        />
       </View>
 
       {error && <Text style={styles.errorText}>{error}</Text>}

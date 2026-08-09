@@ -62,6 +62,18 @@ export type VoiceHandlers = {
   /** The session is over: stop(), or a fatal error. */
   onEnd: () => void
   onError: (message: string, code: string) => void
+  /**
+   * Persisted recording of the whole session, when `persistAudio` was
+   * requested. Fires on `audioend` with a file:// uri (null when the
+   * recognizer could not persist). Ordering relative to onEnd is not
+   * guaranteed across platforms - callers hold the uri in a ref.
+   */
+  onAudioFile?: (uri: string | null) => void
+}
+
+export type VoiceOptions = {
+  /** Also write the raw audio to a cache file (16 kHz mono wav on Android). */
+  persistAudio?: boolean
 }
 
 export type VoiceSession = { stop: () => void }
@@ -75,7 +87,7 @@ export type VoiceSession = { stop: () => void }
  * Continuous also means several final results per session, which is why
  * onFinal must accumulate rather than replace.
  */
-export function startListening(handlers: VoiceHandlers): VoiceSession | null {
+export function startListening(handlers: VoiceHandlers, options?: VoiceOptions): VoiceSession | null {
   if (!speech) return null
   const subs = [
     speech.addListener('result', (event: ExpoSpeechRecognitionResultEvent) => {
@@ -86,6 +98,9 @@ export function startListening(handlers: VoiceHandlers): VoiceSession | null {
     speech.addListener('error', (event: ExpoSpeechRecognitionErrorEvent) => {
       log.warn('recognition error', event.error, event.message)
       handlers.onError(event.message, event.error)
+    }),
+    speech.addListener('audioend', (event: { uri: string | null }) => {
+      handlers.onAudioFile?.(event?.uri ?? null)
     }),
     speech.addListener('end', () => {
       for (const sub of subs) sub.remove()
@@ -98,6 +113,17 @@ export function startListening(handlers: VoiceHandlers): VoiceSession | null {
       interimResults: true,
       addsPunctuation: true,
       continuous: true,
+      // iOS options; Android already records 16 kHz mono wav. Int16 at 16 kHz
+      // keeps the upload small enough for the backend's 25 MB cap.
+      ...(options?.persistAudio
+        ? {
+            recordingOptions: {
+              persist: true,
+              outputSampleRate: 16000,
+              outputEncoding: 'pcmFormatInt16' as const,
+            },
+          }
+        : {}),
       androidIntentOptions: {
         EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS: PAUSE_TOLERANCE_MS,
         EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS: PAUSE_TOLERANCE_MS,

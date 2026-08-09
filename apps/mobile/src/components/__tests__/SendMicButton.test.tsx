@@ -14,6 +14,7 @@ function dictation(over: Partial<Dictation> = {}): Dictation {
   return {
     available: true,
     listening: false,
+    refining: false,
     start: jest.fn(async () => true),
     stop: jest.fn(),
     ...over,

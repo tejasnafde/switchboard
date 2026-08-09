@@ -42,6 +42,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 const dictation = (over: Partial<Dictation> = {}): Dictation => ({
   available: true,
   listening: false,
+  refining: false,
   start: async () => true,
   stop: () => {},
   ...over,
