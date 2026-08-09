@@ -2,6 +2,26 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.16 - Five bugs the phone found
+
+### Fixed
+- **The first message you sent from the phone rendered twice.** `NewSessionScreen` appended the optimistic bubble with no id and called `sendTurn` with no `origin`, so the backend's `user.message` echo could not collapse onto it. It was also the only send in the app bypassing the outbox, contradicting that module's own docblock. All three send sites now build their turn through one helper, so origin and bubble id cannot be minted apart. Two adjacent bugs fell out: `implementPlan` appended its bubble twice unconditionally, and a history seed landing mid-send wiped the in-flight bubble and let the echo put a fresh one back.
+- **The keyboard covered the composer while typing the first message.** The screen in question had no keyboard avoidance at all, and the rest of the app had three different policies. There is now one tested policy across four screens. The Android half was wrong wherever it existed: `keyboardVerticalOffset={headerHeight}` double-counts a header the measured frame already excludes, and `behavior: undefined` waits for a window resize that unconditional edge-to-edge never performs. `SafeAreaProvider` was a dependency that was never imported, so the composer now pads for the gesture bar instead of a hardcoded 12dp.
+- **A chat started on the phone looked idle on the desktop while it streamed.** The backend does broadcast every event to every client, but the desktop's reducers are `sessions.map(...)` over a list with no row for a thread that window did not start, so the events were dropped silently. `provider:list-sessions` plus adoption on boot. Re-attaching to a live session also reported a hardcoded `idle` regardless of a turn in flight.
+
+### Added
+- **Google sign-in for work VMs no longer needs the repo.** The sign-in screen told users to run `node scripts/google-mint-token.mjs`, which needs a checkout plus a `personal`-configured gcloud with Secret Manager access - almost nobody running a released build has either. Minting moved into the desktop app under Settings > Mobile: it runs consent in a browser and renders the credential blob as a QR. The blob shape is single-sourced in `shared/`, so the desktop writer and the phone parser cannot drift.
+- **Sessions inherit the machine's defaults.** `START_SESSION` fell straight from the request to a hardcoded `'sandbox'`, never reading the conversation row or any setting, so a chat opened from the phone ignored however the desktop was configured. Three tiers now, resolved per field: request, then the conversation's stored value, then the machine default.
+
+### Security
+- **A paired phone could raise the machine-wide permission default.** Routing session defaults through the settings table made `chat.defaultRuntimeMode` permission-bearing, while `settings:set` is deliberately ungated so the phone can write `projectOrder`. A stolen phone credential could have written `full-access` and then opened any chat. Writes to permission-bearing keys are now gated per key, enforced beside the channel check.
+- The loopback mint server sets an explicit content type and never reflects the query string, so a sniffed body cannot execute on a loopback origin that can reach code-server (`--auth none`). State is compared before the error branch, so a forged `?error=` from any open tab cannot abort a sign-in in flight. Keep-alive sockets are closed and a second attempt cancels the first, rather than the port staying bound and the retry blaming a foreign process.
+
+### Notes
+- The default model setting moved from one global key to `chat.defaultModel.<agentType>`. A model id almost never means anything to another provider, and nothing clears a stored model on an agent switch, so a single key would have pinned a Codex model onto a later Claude session. Any value under the old key is ignored rather than migrated; it self-heals the next time a model is picked.
+- Sub-agent messages now reach the desktop live, but reloading an old thread still will not show them: they exist only in the event stream and the history reader has no format to recover them from. No transcript on this machine contains a `Task` call or `isSidechain: true`, so the backfill was left unbuilt rather than guessed at.
+- The keyboard fix is unit-tested at the policy level only. Layout was not verified on a device before release.
+
 ## 0.8.15 - Sessions can message each other
 
 ### Added
