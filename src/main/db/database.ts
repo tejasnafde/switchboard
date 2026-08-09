@@ -416,6 +416,14 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE conversations ADD COLUMN model TEXT')
   }
 
+  // Migration (2026-08-08): provider of a scheduled cross-provider context
+  // handoff. Set on an agent switch over existing history (and on degraded
+  // Codex / OpenCode forks); consumed and cleared when the next turn gets
+  // the transcript preamble prefixed. Same shape as runtime_mode above.
+  if (!convCols.some((c) => c.name === 'pending_handoff_from')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN pending_handoff_from TEXT')
+  }
+
   // Rebuild FTS index from existing messages
   try {
     const ftsCount = (db.prepare('SELECT count(*) as c FROM messages_fts').get() as { c: number } | undefined)?.c ?? 0
@@ -970,6 +978,29 @@ export function setConversationModel(id: string, model: string): void {
   getDb().prepare(
     'UPDATE conversations SET model = ?, updated_at = ? WHERE id = ?'
   ).run(model, Date.now(), resolveRootThreadId(id))
+}
+
+/**
+ * Provider a pending cross-provider context handoff should attribute its
+ * preamble to, or null when no handoff is scheduled. Set by an agent switch
+ * over existing history and by degraded (non-resumable) forks; cleared when
+ * the next turn is sent with the transcript preamble prefixed.
+ *
+ * Resolves through `resolveRootThreadId` first - see the comment on
+ * `getConversationRuntimeMode` above. Without it a handoff scheduled against
+ * a rotated id would never be consumed (or would re-inject after reload).
+ */
+export function getConversationPendingHandoff(id: string): string | null {
+  const row = getDb().prepare(
+    'SELECT pending_handoff_from FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as { pending_handoff_from: string | null } | undefined
+  return row?.pending_handoff_from ?? null
+}
+
+export function setConversationPendingHandoff(id: string, from: string | null): void {
+  getDb().prepare(
+    'UPDATE conversations SET pending_handoff_from = ?, updated_at = ? WHERE id = ?'
+  ).run(from, Date.now(), resolveRootThreadId(id))
 }
 
 export function archiveConversation(id: string): void {

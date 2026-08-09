@@ -248,7 +248,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         }}>
           <span aria-hidden style={{ fontSize: 10 }}>⇄</span>
           {rotation.kind === 'agent' ? (
-            <span>Switched agent: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · new agent starts with fresh context</span>
+            <span>Switched agent: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · conversation replays as context on your next message</span>
+          ) : rotation.kind === 'handoff' ? (
+            <span>Context handoff: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong> · earlier conversation replayed to the new agent</span>
           ) : (
             <span>Switched profile: <strong>{rotation.fromName}</strong> → <strong>{rotation.toName}</strong></span>
           )}

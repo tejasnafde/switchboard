@@ -41,6 +41,8 @@ import {
   setConversationProviderInstanceId,
   getConversationModel,
   setConversationModel,
+  getConversationPendingHandoff,
+  setConversationPendingHandoff,
   getChildSessionIds,
   getSyntheticParentMap,
   listSessionIdsForThread,
@@ -544,6 +546,18 @@ export function registerAppHandlers(host: BackendHost): void {
   })
   host.handle(AppChannels.SET_CONVERSATION_MODEL, (id: string, model: string) => {
     setConversationModel(id, model)
+    return { ok: true }
+  })
+
+  // Pending cross-provider context handoff. Scheduled by an agent switch
+  // (ChatPanel) or a degraded fork (conversations/fork.ts); the chat panel
+  // consumes it on the next send by prefixing the transcript preamble, then
+  // clears it so a reload cannot re-inject.
+  host.handle(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, (id: string) => {
+    return { from: getConversationPendingHandoff(id) }
+  })
+  host.handle(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, (id: string, from: string | null) => {
+    setConversationPendingHandoff(id, from)
     return { ok: true }
   })
 

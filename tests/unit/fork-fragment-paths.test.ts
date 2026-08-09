@@ -27,6 +27,7 @@ vi.mock('../../src/main/db/database', () => ({
   bulkSaveMessages: vi.fn(),
   getMessagesForConversation: vi.fn(() => []),
   messageRowsToChatMessages: vi.fn(() => []),
+  setConversationPendingHandoff: vi.fn(),
 }))
 
 vi.mock('../../src/main/provider/claude-session-migrate', async (orig) => {

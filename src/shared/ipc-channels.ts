@@ -42,6 +42,8 @@ export const AppChannels = {
   SET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:set-conversation-provider-instance-id',
   GET_CONVERSATION_MODEL: 'app:get-conversation-model',
   SET_CONVERSATION_MODEL: 'app:set-conversation-model',
+  GET_CONVERSATION_PENDING_HANDOFF: 'app:get-conversation-pending-handoff',
+  SET_CONVERSATION_PENDING_HANDOFF: 'app:set-conversation-pending-handoff',
   CHECK_FOR_UPDATES: 'app:check-for-updates',
   RELAUNCH: 'app:relaunch',
   /** main → renderer push: status changes from electron-updater. */

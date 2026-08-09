@@ -60,9 +60,10 @@ export async function forkAndOpenSession(
     model: source?.model,
   })
   // For non-resumable forks (Codex / OpenCode today), prepend a synthetic
-  // system message so the user knows the new agent process is starting
-  // cold and the prior turns are reference-only - without it the fork
-  // looks identical to a real resume.
+  // system message so the user knows the new agent process starts cold -
+  // without it the fork looks identical to a real resume. The main side
+  // schedules a pending context handoff for these forks, so the first
+  // send replays the copied transcript as a preamble (ChatPanel).
   const decorated = resumable
     ? messages
     : [
@@ -72,7 +73,7 @@ export async function forkAndOpenSession(
           // Strip both the plain `· fork` and the `· fork/<branch>` suffix
           // (added by #5 for worktree-backed forks) so the synthetic notice
           // names the *parent* conversation, not the fork itself.
-          content: `Forked from "${conversation.title.replace(/ · fork(\/[^·]*)?$/, '')}" - earlier turns are shown for reference, but ${type === 'codex' ? 'Codex' : type === 'opencode' ? 'OpenCode' : 'this agent'} will start without that context.`,
+          content: `Forked from "${conversation.title.replace(/ · fork(\/[^·]*)?$/, '')}" - ${type === 'codex' ? 'Codex' : type === 'opencode' ? 'OpenCode' : 'this agent'} starts a fresh process here; the earlier turns replay as context with your first message.`,
           timestamp: Date.now(),
         },
         ...messages,

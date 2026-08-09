@@ -27,6 +27,7 @@ const conversations = new Map<string, {
   model?: string | null
   archived?: number
   last_read_at?: number | null
+  pending_handoff_from?: string | null
 }>()
 
 vi.mock('better-sqlite3', () => {
@@ -59,6 +60,10 @@ vi.mock('better-sqlite3', () => {
           if (/SELECT last_read_at FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
             return row ? { last_read_at: row.last_read_at ?? null } : undefined
+          }
+          if (/SELECT pending_handoff_from FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row ? { pending_handoff_from: row.pending_handoff_from ?? null } : undefined
           }
           return undefined
         },
@@ -101,6 +106,13 @@ vi.mock('better-sqlite3', () => {
             row.last_read_at = at
             return { changes: 1 }
           }
+          if (/UPDATE conversations SET pending_handoff_from = \?/.test(sql)) {
+            const [from, , id] = args as [string | null, number, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.pending_handoff_from = from
+            return { changes: 1 }
+          }
           return { changes: 0 }
         },
         all: (...args: unknown[]) => {
@@ -129,6 +141,8 @@ const {
   isConversationArchived,
   setConversationLastRead,
   getConversationLastRead,
+  getConversationPendingHandoff,
+  setConversationPendingHandoff,
 } = await import('../../src/main/db/database')
 
 beforeEach(() => {
@@ -249,5 +263,33 @@ describe('read state covers every id of a rotated thread', () => {
 
   it('reports no change when the thread has no row at all', () => {
     expect(setConversationLastRead('ghost', 5000)).toBe(false)
+  })
+})
+
+describe('pending context handoff survives Claude session-id rotation', () => {
+  it('resolves a rotated UUID back to its synthetic parent when reading', () => {
+    conversations.set('agent_123', { pending_handoff_from: 'codex' })
+    threadSessions.set('uuid-abc', 'agent_123')
+    expect(getConversationPendingHandoff('uuid-abc')).toBe('codex')
+  })
+
+  it('writes through a rotated UUID land on the synthetic parent row, not a new one', () => {
+    conversations.set('agent_123', {})
+    threadSessions.set('uuid-abc', 'agent_123')
+    setConversationPendingHandoff('uuid-abc', 'claude-code')
+    expect(conversations.get('agent_123')?.pending_handoff_from).toBe('claude-code')
+    expect(conversations.has('uuid-abc')).toBe(false)
+  })
+
+  it('clears through a rotated UUID after the preamble is injected', () => {
+    conversations.set('agent_123', { pending_handoff_from: 'codex' })
+    threadSessions.set('uuid-abc', 'agent_123')
+    setConversationPendingHandoff('uuid-abc', null)
+    expect(conversations.get('agent_123')?.pending_handoff_from).toBeNull()
+  })
+
+  it('returns null when no handoff was ever scheduled', () => {
+    conversations.set('agent_789', {})
+    expect(getConversationPendingHandoff('agent_789')).toBeNull()
   })
 })

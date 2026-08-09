@@ -18,18 +18,32 @@ export const ROTATION_MARKER_PREFIX = '[[sb:instance-rotated]]'
  */
 export const AGENT_SWITCH_MARKER_PREFIX = '[[sb:agent-switched]]'
 
+/**
+ * Marker written when a turn was sent with a cross-provider context
+ * handoff preamble prefixed (agent switch over history, or the first
+ * turn on a degraded Codex / OpenCode fork). Distinct from the agent
+ * switch marker above: that one records the switch, this one records
+ * that the transcript was actually replayed to the new agent.
+ */
+export const CONTEXT_HANDOFF_MARKER_PREFIX = '[[sb:context-handoff]]'
+
 export interface RotationMarker {
-  kind: 'instance' | 'agent'
+  kind: 'instance' | 'agent' | 'handoff'
   fromName: string
   toName: string
 }
 
+const MARKER_PREFIXES: Record<RotationMarker['kind'], string> = {
+  instance: ROTATION_MARKER_PREFIX,
+  agent: AGENT_SWITCH_MARKER_PREFIX,
+  handoff: CONTEXT_HANDOFF_MARKER_PREFIX,
+}
+
 export function parseRotationMarker(content: string): RotationMarker | null {
-  const kind = content.startsWith(ROTATION_MARKER_PREFIX)
-    ? ('instance' as const)
-    : content.startsWith(AGENT_SWITCH_MARKER_PREFIX) ? ('agent' as const) : null
+  const kind = (Object.keys(MARKER_PREFIXES) as RotationMarker['kind'][])
+    .find((k) => content.startsWith(MARKER_PREFIXES[k])) ?? null
   if (!kind) return null
-  const prefix = kind === 'instance' ? ROTATION_MARKER_PREFIX : AGENT_SWITCH_MARKER_PREFIX
+  const prefix = MARKER_PREFIXES[kind]
   const rest = content.slice(prefix.length).trim()
   // Tolerate either '→' (default) or '->' for hand-edited cases.
   const arrow = rest.includes('→') ? '→' : (rest.includes('->') ? '->' : null)
