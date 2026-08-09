@@ -2,6 +2,16 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.15 - Sessions can message each other
+
+### Added
+- **`/send-to <session>: <message>`.** Hand context from one chat to another without re-explaining it. The target is fuzzy-matched against open sessions, the receiving agent picks the message up as a turn, and both transcripts record the delivery. Guards: 16 KiB body cap, 5 sends per pair per minute, identical message dropped within 10 minutes, and a session cannot message itself. Delivery goes through the ordinary turn path, so a peer message cannot answer a pending approval prompt - it is not a policy, it is the absence of a code path.
+
+### Notes
+- Phase 1 is user-directed and same-backend. An agent cannot message a sibling on its own initiative, and a session on another machine is excluded from matching rather than resolving and then failing.
+- Review caught six real defects before release, all fixed and covered: a rotated live chat reported as "not running" because the adapter map is keyed by the id the session started under; an OpenCode target mid-turn silently dropping the message while both transcripts claimed delivery; a failed send spending its rate-limit slot so the retry was refused as a duplicate; the peer turn skipping checkpoint bookkeeping so its edits produced no diff cards; the provenance label being live-only so a reload showed the raw wrapper; and `/send-to` silently discarding attached images.
+- Also fixed pre-release: the backend persisted both sides of a delivery but no renderer consumed the events, so messages appeared only after a reload. Same failure shape as the twin-session bug in 0.8.13.
+
 ## 0.8.14 - Context survives a provider switch; dictation learns your codebase
 
 ### Added

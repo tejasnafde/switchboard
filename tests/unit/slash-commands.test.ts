@@ -315,3 +315,19 @@ describe('mergeWithAgentSkills', () => {
     expect(merged).toHaveLength(SLASH_COMMANDS.length)
   })
 })
+
+describe('/send-to', () => {
+  const sendTo = SLASH_COMMANDS.find((c) => c.name === 'send-to')
+
+  // It takes arguments, so selecting it must INSERT the command for the user
+  // to finish rather than fire an action with an empty target.
+  it('is registered as an args-taking built-in with no action', () => {
+    expect(sendTo).toBeDefined()
+    expect(sendTo?.takesArgs).toBe(true)
+    expect(sendTo?.run).toBeUndefined()
+  })
+
+  it('advertises its argument shape', () => {
+    expect(sendTo?.argumentHint).toBe('<session>: <message>')
+  })
+})

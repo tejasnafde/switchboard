@@ -20,8 +20,14 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { recordThreadSession, updateConversationSessionId, saveMessageIfAbsent } from '../db/database'
+import { recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId } from '../db/database'
 import { sessionDefaultsFor } from './session-defaults'
+import {
+  PeerMessageGuard,
+  PEER_SENT_MARKER_PREFIX,
+  wrapPeerMessage,
+  type PeerMessageInput,
+} from '@shared/peer-messaging'
 import { defaultClaudeDir } from './claude-session-migrate'
 import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir, checkRemoteClaudeAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
@@ -122,6 +128,19 @@ export class ProviderRegistry {
   private savedMessageSeq = 0
 
   /**
+   * Size, rate and duplicate limits for session-to-session messages. Held by
+   * the backend so every client pointed at these sessions shares one budget.
+   */
+  private readonly peerGuard = new PeerMessageGuard()
+
+  /**
+   * Threads with a turn in flight. Only OpenCode needs this: its ACP adapter
+   * drops a mid-turn send instead of queueing it, so a peer message aimed at
+   * a busy OpenCode session has to be refused rather than silently lost.
+   */
+  private activeTurns = new Set<string>()
+
+  /**
    * In-flight assistant text per thread, mirrored to SQLite on turn end.
    * Without it a reply lives only in the provider's transcript file, which
    * Claude Code prunes and rotates. Persisted here, not in ChatPanel, for the
@@ -197,6 +216,7 @@ export class ProviderRegistry {
     // running. `listSessions` and the re-attach descriptor both read this.
     if (event.type === 'status') this.sessionStatus.set(event.threadId, event.status)
     this.bufferAssistantText(event)
+    if (event.type === 'turn.completed') this.activeTurns.delete(event.threadId)
     this.bus.publish(event)
 
     // A turn just ended - diff the start-of-turn checkpoint against the
@@ -463,9 +483,11 @@ export class ProviderRegistry {
       // Broadcast the user's turn: adapters only emit the agent's side, so
       // without this a message typed on one client is invisible everywhere
       // else. The sender skips its own echo via `origin`.
+      this.activeTurns.add(threadId)
       try {
         await adapter.sendTurn(threadId, message, runtimeMode, images)
       } catch (err) {
+        this.activeTurns.delete(threadId)
         // Release the origin: the turn did NOT happen, so the client's retry
         // must be allowed through. Holding it would answer the retry with a
         // cheerful success and drop the message silently.
@@ -497,6 +519,86 @@ export class ProviderRegistry {
       // already consumed the origin from every other client's skip set, so the
       // retry rendered a duplicate bubble everywhere with no retraction.
       this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
+    })
+
+    // Hand one live session's message to another on this backend. Delivery is
+    // an ordinary turn, which is what makes a peer message unable to answer a
+    // pending approval: nothing here reaches respondToRequest.
+    this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) => {
+      // `sessionAdapters` is keyed by whatever id startSession ran under, so
+      // try the caller's id before the resolved root. Resolving first reported
+      // a live chat as "not running" whenever its session id had rotated.
+      const targetThreadId = this.sessionAdapters.has(input.targetThreadId)
+        ? input.targetThreadId
+        : resolveRootThreadId(input.targetThreadId)
+      // Prefer the id the caller named: a stale resolved root often has no
+      // title row, and falling back to it labelled the error with a raw id.
+      const targetLabel = getConversationTitle(input.targetThreadId)
+        ?? getConversationTitle(targetThreadId)
+        ?? targetThreadId
+      const adapter = this.sessionAdapters.get(targetThreadId)
+      if (!adapter) {
+        throw new Error(`"${targetLabel}" is not running. Open it, then send again.`)
+      }
+      // OpenCode ACP is one prompt per turn and DROPS a mid-turn send, so
+      // delivering into a running turn would record a message the agent never
+      // saw. The other adapters queue or steer, so they are fine.
+      if (adapter.provider === 'opencode' && this.activeTurns.has(targetThreadId)) {
+        throw new Error(`"${targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`)
+      }
+
+      const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
+      const verdict = this.peerGuard.check(key, Date.now())
+      if (!verdict.ok) throw new Error(verdict.message)
+
+      const body = wrapPeerMessage(input.fromLabel, input.text)
+      // Same pre-turn bookkeeping an ordinary send does, or this turn's file
+      // edits produce no diff cards and notebook mirrors go unwatched.
+      const targetCwd = this.sessionCwd.get(targetThreadId)
+      if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
+      notebookManager.beginTurn(targetThreadId)
+      this.activeTurns.add(targetThreadId)
+      try {
+        await adapter.sendTurn(targetThreadId, body)
+      } catch (err) {
+        this.activeTurns.delete(targetThreadId)
+        // The turn did NOT happen, so release the guard slot: otherwise an
+        // identical retry is refused as a duplicate for the next 10 minutes.
+        this.peerGuard.release(verdict.id, key)
+        throw err
+      }
+
+      const at = Date.now()
+      // The receiving turn is persisted under the message id so a redelivery
+      // of the same id cannot double-post, and the sender keeps a marker so
+      // its own transcript says where the message went. The displayBody keeps
+      // the wrapper out of the bubble after a reload, matching the live one.
+      try {
+        saveMessageIfAbsent(
+          verdict.id, targetThreadId, 'user', body, undefined,
+          `From "${input.fromLabel}": ${input.text}`,
+        )
+        saveMessageIfAbsent(
+          `peer_${verdict.id}`,
+          input.fromThreadId,
+          'system',
+          `${PEER_SENT_MARKER_PREFIX} ${input.fromLabel} → ${targetLabel}`,
+        )
+      } catch (err) {
+        log.warn(`failed to persist peer message ${verdict.id}: ${err}`)
+      }
+
+      this.publish({
+        type: 'peer.message', threadId: input.fromThreadId, direction: 'sent',
+        messageId: verdict.id, peerThreadId: targetThreadId, peerLabel: targetLabel,
+        text: input.text, at,
+      })
+      this.publish({
+        type: 'peer.message', threadId: targetThreadId, direction: 'received',
+        messageId: verdict.id, peerThreadId: input.fromThreadId, peerLabel: input.fromLabel,
+        text: input.text, at,
+      })
+      return { id: verdict.id }
     })
 
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {

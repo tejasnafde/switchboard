@@ -616,6 +616,20 @@ export function updateConversationTitle(id: string, title: string): boolean {
   return info.changes > 0
 }
 
+/**
+ * One conversation's display title, or null when no row exists.
+ *
+ * Resolves through `resolveRootThreadId` for the same reason as the
+ * per-conversation settings below: a caller holding Claude's rotated session
+ * UUID would otherwise read nothing and label the chat with a raw id.
+ */
+export function getConversationTitle(id: string): string | null {
+  const row = getDb().prepare(
+    'SELECT title FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as { title: string } | undefined
+  return row?.title ?? null
+}
+
 export function getConversationsForProject(projectPath: string): ConversationRow[] {
   return getDb().prepare(
     'SELECT * FROM conversations WHERE project_path = ? ORDER BY updated_at DESC'
@@ -1277,6 +1291,7 @@ export function saveMessageIfAbsent(
   role: string,
   content: string,
   images?: string,
+  displayBody?: string,
 ): boolean {
   const stmts = saveMessageStmts(getDb())
   if (!stmts.convExists.get(conversationId)) {
@@ -1291,7 +1306,7 @@ export function saveMessageIfAbsent(
     toolCalls: null,
     images: images ?? null,
     now: Date.now(),
-    displayBody: null,
+    displayBody: displayBody ?? null,
     pillsMeta: null,
   })
 }

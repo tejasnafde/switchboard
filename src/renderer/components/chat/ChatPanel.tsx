@@ -5,6 +5,7 @@ import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from './sendToCommand'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
@@ -378,6 +379,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             break
           }
           contentCoalescerRef.current?.push(tid, event.messageId, chunk)
+          break
+        }
+        case 'peer.message': {
+          // Both sides render live. The backend persisted the same ids, so
+          // appendMessage's id-idempotency collapses the stored row onto this
+          // bubble instead of showing the delivery twice after a reload.
+          const ownLabel = useAgentStore.getState().sessions.find((s) => s.id === tid)?.title ?? tid
+          appendMessage(tid, peerMessageToChatMessage(event, ownLabel))
           break
         }
         case 'tool.started': {
@@ -836,6 +845,46 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       },
     ) => {
       if (!sessionId) return
+
+      // `/send-to <session>: <text>` hands the text to another live session
+      // instead of this one's agent, so it is intercepted before every other
+      // send concern. Failures stay in this transcript as a system bubble -
+      // silently swallowing a mistyped target would look like a delivery.
+      const sendTo = parseSendTo(message)
+      if (sendTo) {
+        const fail = (error: string): void => {
+          appendMessage(sessionId, {
+            id: `peererr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+            role: 'system',
+            content: error,
+            timestamp: Date.now(),
+          })
+        }
+        if (!sendTo.ok) return fail(sendTo.error)
+        // ChatInput has already cleared the tray by now, so an ignored image
+        // would vanish with no trace. Say so instead.
+        if (images && images.length > 0) {
+          return fail('Images cannot be sent with /send-to. Send the text on its own.')
+        }
+        const store = useAgentStore.getState()
+        const target = resolveSendToTarget(
+          sendTo.target,
+          store.sessions.map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
+          sessionId,
+        )
+        if (!target.ok) return fail(target.error)
+        try {
+          await window.api.provider.deliverPeerMessage({
+            fromThreadId: sessionId,
+            fromLabel: store.sessions.find((s) => s.id === sessionId)?.title ?? sessionId,
+            targetThreadId: target.id,
+            text: sendTo.text,
+          })
+        } catch (err) {
+          fail(err instanceof Error ? err.message : String(err))
+        }
+        return
+      }
 
       // Mid-turn send routing. Claude pushes into its native CLI prompt queue
       // and Codex uses turn/steer - both handled in their adapters, so let them

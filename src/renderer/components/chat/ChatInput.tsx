@@ -624,7 +624,7 @@ export function ChatInput({
     // the canonical `/<name> ` and let them fill in any args before
     // hitting Enter. The agent SDK/CLI parses the leading slash from
     // the sent prompt and runs the corresponding handler.
-    if (source !== 'switchboard') {
+    if (source !== 'switchboard' || cmd.takesArgs) {
       const inserted = `/${cmd.name} `
       richRef.current?.replaceRange(range.start, range.end, inserted)
       // replaceRange writes through to onChange → setValue + setDraft.

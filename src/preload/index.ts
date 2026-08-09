@@ -6,6 +6,7 @@ import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
 import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
+import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
@@ -599,6 +600,9 @@ const api = {
 
     answerQuestion: (threadId: string, requestId: string, answers: string[][]) =>
       transport.invoke(ProviderChannels.ANSWER_QUESTION, threadId, requestId, answers),
+
+    deliverPeerMessage: (input: PeerMessageInput) =>
+      transport.invoke(ProviderChannels.DELIVER_PEER_MESSAGE, input) as Promise<{ id: string }>,
 
     respondToRequest: (threadId: string, requestId: string, decision: ApprovalDecision) =>
       transport.invoke(ProviderChannels.RESPOND_TO_REQUEST, threadId, requestId, decision),
