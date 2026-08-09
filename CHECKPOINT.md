@@ -4,18 +4,20 @@
 - [x] 1. pure guards module `src/shared/peer-messaging.ts` + tests (16 green)
 - [x] 2. registry `deliverPeerMessage` + `peer.message` RuntimeEvent + IPC channel + WS tests (8 green)
 - [x] 3. preload plumbing + routing key (fromThreadId in OBJECT_KEY_PRIORITY, +1 test)
-- [ ] 4. `/send-to` parsing + target resolution (pure, renderer) + tests
+- [x] 4. `/send-to` parsing + target resolution (pure, renderer) + tests (12 green)
 - [ ] 5. UI markers (sender pill, receiver displayBody) + slash registry entry
 - [ ] 6. full gate (typecheck + npm test), final commit WITHOUT --no-verify
 
-## Current step: 4
+## Current step: 5
 
 ## Next concrete action
-Step 4: pure `/send-to` parsing + target resolution. Parse
-`/send-to <target>: <message>`; fuzzy-match <target> against live session
-titles with `services/fuzzyScore`. Ambiguous -> error listing candidates,
-no match -> error. Put it in src/renderer/components/chat/sendToCommand.ts
-with tests/unit/send-to-command.test.ts. THEN step 5 wires the UI.
+Step 5, the last build step. Wire the UI in ChatPanel.handleSend: intercept a
+body that `parseSendTo` claims BEFORE the normal send, resolve the target
+against live sessions, call `window.api.provider.deliverPeerMessage`, and on
+failure append a system error bubble. Register `/send-to` in slashCommands.ts
+with takesArgs so selecting it inserts the text instead of running. Render the
+`[[sb:peer-sent]]` marker via parseRotationMarker kind 'peer'. Then step 6:
+full gate + final commit WITHOUT --no-verify.
 
 ## Files touched so far
 - CHECKPOINT.md
@@ -27,6 +29,7 @@ with tests/unit/send-to-command.test.ts. THEN step 5 wires the UI.
 - tests/unit/peer-message-delivery-ws.test.ts (new, 8 green)
 - src/preload/routing-table.ts + tests/unit/routing-table.test.ts (fromThreadId key)
 - src/preload/index.ts (provider.deliverPeerMessage)
+- src/renderer/components/chat/sendToCommand.ts (new) + tests/unit/send-to-command.test.ts (12 green)
 - tests/unit/peer-messaging-guards.test.ts (new)
 
 ## Design decided (do not re-litigate)
