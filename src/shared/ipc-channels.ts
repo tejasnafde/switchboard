@@ -203,6 +203,17 @@ export const IdeChannels = {
   STOP: 'ide:stop',
 } as const
 
+/**
+ * Backend speech-to-text (whisper.cpp server). TRANSCRIBE accepts a base64
+ * audio payload and returns the corrected transcript; STATUS pushes whisper
+ * lifecycle updates (stopped | downloading | starting | ready | error).
+ * Served by both hosts so a paired phone reaches it over WS/TCP too.
+ */
+export const SttChannels = {
+  TRANSCRIBE: 'stt:transcribe',
+  STATUS: 'stt:status',
+} as const
+
 export const BookmarkChannels = {
   SAVE: 'bookmark:save',
   REMOVE: 'bookmark:remove',

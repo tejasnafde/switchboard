@@ -19,6 +19,7 @@ import { attachPushNotifier } from '../main/push/registry'
 import { registerAppHandlers } from '../main/ipc/app'
 import { registerFilesHandlers } from '../main/ipc/files'
 import { registerGitHandlers } from '../main/ipc/git'
+import { registerSttHandlers } from '../main/ipc/stt'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
 import { registerProviderInstanceHandlers } from '../main/ipc/providerInstances'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
@@ -123,6 +124,7 @@ registerAppHandlers(host)
 registerPushHandlers(host)
 registerFilesHandlers(host)
 registerGitHandlers(host)
+registerSttHandlers(host)
 registerKanbanHandlers(host)
 registerProviderInstanceHandlers(host)
 registerTerminalHandlers(host)
