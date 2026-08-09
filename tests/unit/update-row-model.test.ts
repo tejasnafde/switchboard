@@ -89,3 +89,17 @@ describe('updateStatusLabel', () => {
     expect(updateStatusLabel({ kind: 'error', message: 'boom' })).toContain('boom')
   })
 })
+
+describe('slow check', () => {
+  // A check past the deadline is still running, so the row must not say
+  // "Couldn't check" or render in the error colour. It reports the wait.
+  it('reports the wait verbatim rather than prefixing it as a failure', () => {
+    expect(updateStatusLabel({ kind: 'slow', message: 'Still checking. Slow network.' }))
+      .toBe('Still checking. Slow network.')
+  })
+
+  it('keeps the check button busy while the request is still in flight', () => {
+    const view = updateRowView({ kind: 'slow', message: 'Still checking.' }, { checking: false, restarting: false })
+    expect(view.checkDisabled).toBe(true)
+  })
+})

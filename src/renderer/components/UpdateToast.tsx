@@ -37,9 +37,8 @@ export function UpdateToast() {
         display: 'flex',
         alignItems: 'center',
         gap: '12px',
-        // Frosted glass: a translucent fill plus a blur of what is behind it,
-        // a hairline top highlight for the lit edge, and a saturate() so the
-        // colours showing through stay lively instead of washing out grey.
+        // Frosted glass. saturate() keeps colours behind it lively rather than
+        // washing grey; the inset highlight below is the lit top edge.
         background: 'color-mix(in srgb, var(--bg-surface) 62%, transparent)',
         backdropFilter: 'blur(22px) saturate(180%)',
         WebkitBackdropFilter: 'blur(22px) saturate(180%)',

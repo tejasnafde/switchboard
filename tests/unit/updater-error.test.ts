@@ -39,10 +39,8 @@ describe('friendlyUpdateError', () => {
     // electron-updater caches the in-flight check promise, so once one check
     // hangs, every retry click awaits the same hung request - only an app
     // restart truly resets it. The message has to say so.
-    // The check usually COMPLETES after this fires. A network path that stalls
-    // the connect to release-assets.githubusercontent.com for 30s+ makes it
-    // late, not dead, and electron-updater keeps working in the background, so
-    // claiming failure here is a lie the user acts on.
+    // The check usually COMPLETES after this fires, so claiming failure is a
+    // lie the user acts on by retrying into the same in-flight request.
     expect(friendlyUpdateError('Update check timed out after 120000ms')).toBe(
       'Still checking. This network is slow to reach GitHub, so it will finish in the background.',
     )

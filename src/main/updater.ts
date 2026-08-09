@@ -28,7 +28,7 @@ import { AppChannels } from '@shared/ipc-channels'
 import type { UpdateStatus } from '@shared/update-status'
 import { withTimeout } from '@shared/promise-timeout'
 import { createMainLogger } from './logger'
-import { friendlyUpdateError, isStaleDownloadError } from './updater-error'
+import { friendlyUpdateError, isStaleDownloadError, isCheckTimeout } from './updater-error'
 
 const log = createMainLogger('updater')
 
@@ -41,18 +41,12 @@ let lastStatus: UpdateStatus = { kind: 'idle' }
 let staleDownloadRetried = false
 
 /**
- * Deadline on `checkForUpdates()`. Its HTTP request has no timeout of its
- * own, and electron-updater dedups concurrent checks by returning the same
- * cached in-flight promise - so one stalled request pinned the Settings
- * row on "Checking..." until app restart (seen 2026-08-07: a check that
- * never resolved, then "already in progress" on every retry click).
- *
- * Healthy checks resolve in ~2s, but 30s was too tight to be a failure
- * signal: on a network whose connect to release-assets.githubusercontent.com
- * stalls (measured 30s to 45s, both address families), the check completes at
- * ~77s. The old deadline turned a slow success into a red error the user
- * retried into the same stuck request. This is now a backstop against a check
- * that never returns, not a verdict on a slow one.
+ * Backstop against a `checkForUpdates()` that never returns - not a verdict on
+ * a slow one. Healthy checks take ~2s, but a stalled connect to
+ * release-assets.githubusercontent.com (30s to 45s, both address families)
+ * pushes a SUCCESSFUL check to ~77s, and 30s here reported that as an error.
+ * electron-updater dedups concurrent checks, so the retry it invited inherited
+ * the same in-flight request.
  */
 const CHECK_TIMEOUT_MS = 120_000
 
@@ -101,7 +95,10 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`checkForUpdates failed: ${message}`)
-      send(window, { kind: 'error', message: friendlyUpdateError(message) })
+      send(window, {
+        kind: isCheckTimeout(message) ? 'slow' : 'error',
+        message: friendlyUpdateError(message),
+      })
       return lastStatus
     }
   })
@@ -185,7 +182,10 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       log.warn(`initial checkForUpdates failed: ${message}`)
       // Unstick the UI: without this, a hung launch-time check leaves the
       // Settings row on the "checking" status it broadcast at start.
-      send(window, { kind: 'error', message: friendlyUpdateError(message) })
+      send(window, {
+        kind: isCheckTimeout(message) ? 'slow' : 'error',
+        message: friendlyUpdateError(message),
+      })
     })
   }, 3_000)
 }

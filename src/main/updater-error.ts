@@ -30,13 +30,16 @@ export function isStaleDownloadError(raw: string): boolean {
  */
 const CHECK_TIMEOUT_RE = /^Update check timed out after \d+ms$/
 
+/** True when the check passed its deadline but is still running. */
+export function isCheckTimeout(raw: string): boolean {
+  return CHECK_TIMEOUT_RE.test(raw)
+}
+
 export function friendlyUpdateError(raw: string): string {
   if (NETWORK_RE.test(raw)) return 'No internet connection'
   if (isStaleDownloadError(raw)) return 'Update download was interrupted - try again'
-  // Not a failure: electron-updater's request is still in flight and usually
-  // lands seconds later, overwriting this with a real status. Measured on a
-  // slow network, the connect to release-assets.githubusercontent.com alone
-  // stalled 30s and the check completed at ~77s.
+  // Not a failure: the request is still in flight and its real status
+  // overwrites this. Measured, a slow path finished the check at ~77s.
   if (CHECK_TIMEOUT_RE.test(raw)) return 'Still checking. This network is slow to reach GitHub, so it will finish in the background.'
   return raw
 }

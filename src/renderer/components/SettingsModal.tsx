@@ -1234,6 +1234,8 @@ function UpdateCheckRow() {
     ? updateStatusLabel({ kind: 'installing' })
     : updateStatusLabel(status)
 
+  // `slow` deliberately stays secondary: the check is still running, so red
+  // would report a failure that has not happened.
   const labelColor = status.kind === 'error'
     ? 'var(--error, #f85149)'
     : status.kind === 'downloaded' || status.kind === 'available'

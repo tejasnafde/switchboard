@@ -27,6 +27,9 @@ export function updateStatusLabel(status: UpdateStatus): string {
     case 'downloaded': return `Update ready: ${status.version}. Restart to install.`
     case 'installing': return 'Restarting to install the update…'
     case 'error': return `Couldn't check: ${status.message}`
+    // Verbatim: the message already says the check is continuing, so any
+    // "Couldn't" prefix would contradict it.
+    case 'slow': return status.message
     case 'unsupported': return status.reason
   }
 }
@@ -47,6 +50,9 @@ export function updateRowView(
       flags.checking ||
       restarting ||
       status.kind === 'checking' ||
+      // Still in flight past the deadline. Re-enabling the button would only
+      // invite a click that electron-updater answers with the same request.
+      status.kind === 'slow' ||
       status.kind === 'downloading',
   }
 }
