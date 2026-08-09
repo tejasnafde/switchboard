@@ -34,6 +34,29 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
   chat: [],
 }
 
+/**
+ * Settings keys a chat-scoped device must not WRITE.
+ *
+ * `settings:set` is ungated on purpose - the phone owns `projectOrder` - but
+ * the table also holds the mode a session starts in when the client did not
+ * say (the phone routinely does not) and the OAuth client consent runs against.
+ * Writable, those let a stolen phone credential grant itself full access.
+ * Reads stay open: neither is a secret and the phone seeds its picker from one.
+ */
+const ADMIN_ONLY_SETTING_KEYS: readonly string[] = [
+  'chat.defaultRuntimeMode',
+  'google.clientId',
+  'google.clientSecret',
+]
+
+/** Arg-level, because the channel is legitimately open. Enforced beside the
+ *  channel check so no other route reaches the row. */
+export function isSettingWriteAllowed(scopes: readonly DeviceScope[], key: unknown): boolean {
+  if (typeof key !== 'string') return true // shape errors belong to the handler
+  if (!ADMIN_ONLY_SETTING_KEYS.includes(key)) return true
+  return scopes.includes('admin')
+}
+
 /** Whether a session holding `scopes` may call `channel`. */
 export function isChannelAllowed(scopes: readonly DeviceScope[], channel: string): boolean {
   for (const [scope, prefixes] of Object.entries(SCOPE_REQUIRED_PREFIXES) as Array<

@@ -19,6 +19,9 @@ import type {
 } from '@shared/types'
 import type { RuntimeEvent, RuntimeMode, ApprovalDecision } from '@shared/provider-events'
 import type { DeviceSessionView, PairingCode } from '@shared/device-auth'
+import type { PartialClientConfig } from '@shared/google-oauth'
+import type { LiveSessionSummary } from '@shared/live-sessions'
+import type { GoogleClientStatus } from '../main/google/client-config'
 import { createRendererLogger } from '../renderer/logger'
 
 const log = createRendererLogger('preload:provider')
@@ -154,6 +157,16 @@ const api = {
     /** Cut off one device, leaving every other pairing intact. */
     mobileRevokeDevice: (id: string): Promise<boolean> =>
       transport.invoke(AppChannels.MOBILE_DEVICE_REVOKE, id),
+    /** Whether an OAuth client is configured for minting, and from where. */
+    googleClientStatus: (): Promise<GoogleClientStatus> =>
+      transport.invoke(AppChannels.GOOGLE_CLIENT_STATUS),
+    googleSetClient: (config: PartialClientConfig): Promise<GoogleClientStatus> =>
+      transport.invoke(AppChannels.GOOGLE_CLIENT_SET, config),
+    /**
+     * Opens a browser for Google consent and resolves with the phone's QR
+     * payload. Slow by nature - it waits for a human.
+     */
+    googleMint: (): Promise<{ blob: string }> => transport.invoke(AppChannels.GOOGLE_MINT),
     createConversation: (params: CreateConversationParams) =>
       transport.invoke(AppChannels.CREATE_CONVERSATION, params),
     setConversationWorktree: (
@@ -567,6 +580,13 @@ const api = {
      */
     listModels: (threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null> =>
       transport.invoke(ProviderChannels.LIST_MODELS, threadId),
+
+    /**
+     * Sessions running on the backend now, whoever started them. Lets this
+     * window adopt a chat begun on the phone instead of showing it as idle.
+     */
+    listSessions: (): Promise<LiveSessionSummary[]> =>
+      transport.invoke(ProviderChannels.LIST_SESSIONS),
 
     /**
      * Fetch the agent-defined slash commands/skills for a session

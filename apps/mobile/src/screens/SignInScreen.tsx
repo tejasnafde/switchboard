@@ -4,15 +4,28 @@
  * from a phone and needing the laptop open.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import {
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native'
+import { useHeaderHeight } from '@react-navigation/elements'
 import { CameraView, useCameraPermissions } from 'expo-camera'
 import { createLogger } from '@shared/logger'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { getSignedInEmail, importCredentials, parseCredentialBlob, signOut } from '../lib/google-auth'
+import { keyboardAvoidance } from '../lib/keyboardAvoidance'
 
 const log = createLogger('screen:sign-in')
 
 export default function SignInScreen() {
+  const headerHeight = useHeaderHeight()
   const [email, setEmail] = useState<string | null>(null)
   const [busy, setBusy] = useState(true)
   const [showWhy, setShowWhy] = useState(false)
@@ -40,7 +53,7 @@ export default function SignInScreen() {
   const adopt = async (raw: string) => {
     const creds = parseCredentialBlob(raw)
     if (!creds) {
-      setError('That does not look like the blob the mint script printed.')
+      setError('That does not look like the code the desktop app showed you.')
       // Unlatch so the same scan session can try again; otherwise a bad QR
       // wedges the scanner until the user cancels out of it.
       scannedRef.current = false
@@ -81,7 +94,7 @@ export default function SignInScreen() {
     if (!permission?.granted) {
       const next = await requestPermission()
       if (!next.granted) {
-        setError('Camera access is needed to scan the QR from your terminal.')
+        setError('Camera access is needed to scan the QR from the desktop app.')
         return
       }
     }
@@ -104,107 +117,116 @@ export default function SignInScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Google account</Text>
-      <Text style={styles.body}>Needed to reach work VMs with your laptop closed.</Text>
-      {/* The full rationale is worth having, but not worth reading twice - RN has
-          no tooltip, so it collapses behind a disclosure instead. */}
-      <Pressable onPress={() => setShowWhy((v) => !v)} hitSlop={8}>
-        <Text style={styles.whyToggle}>{showWhy ? 'Hide details' : 'Why this is needed'}</Text>
-      </Pressable>
-      {showWhy ? (
-        <Text style={styles.bodyDim}>
-          Work VMs are reached through Google Cloud IAP, a relay needing no VPN and no inbound port.
-          IAP only forwards for a signed-in Google identity, so the app asks Google directly for an
-          access token with cloud-platform scope. The token lives in the device keychain, never in app
-          storage, and refreshes silently. Signing out revokes it at Google.
-        </Text>
-      ) : null}
-
-      {email ? (
-        <View style={styles.accountCard}>
-          <Text style={styles.accountLabel}>Signed in as</Text>
-          <Text style={styles.accountEmail} numberOfLines={1}>
-            {email}
-          </Text>
-        </View>
-      ) : null}
-
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-
-      {busy ? (
-        <View style={styles.busyRow}>
-          <ActivityIndicator color={colors.accent} />
-        </View>
-      ) : email ? (
-        <Pressable
-          onPress={handleSignOut}
-          style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-        >
-          <Text style={styles.secondaryButtonText}>Sign out</Text>
+    // The paste field sits low on a modal screen.
+    <KeyboardAvoidingView style={styles.screen} {...keyboardAvoidance(Platform.OS, headerHeight)}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>Google account</Text>
+        <Text style={styles.body}>Needed to reach work VMs with your laptop closed.</Text>
+        {/* The full rationale is worth having, but not worth reading twice - RN has
+            no tooltip, so it collapses behind a disclosure instead. */}
+        <Pressable onPress={() => setShowWhy((v) => !v)} hitSlop={8}>
+          <Text style={styles.whyToggle}>{showWhy ? 'Hide details' : 'Why this is needed'}</Text>
         </Pressable>
-      ) : (
-        <View>
-          <Text style={styles.stepTitle}>Connect your Google account</Text>
-          <Text style={styles.stepBody}>Needed only to reach work VMs over IAP.</Text>
-          <Text style={styles.code}>node scripts/google-mint-token.mjs</Text>
-          <Text style={styles.stepBody}>Run that on your Mac, then scan the QR it prints.</Text>
+        {showWhy ? (
+          <Text style={styles.bodyDim}>
+            Work VMs are reached through Google Cloud IAP, a relay needing no VPN and no inbound port.
+            IAP only forwards for a signed-in Google identity, so the app asks Google directly for an
+            access token with cloud-platform scope. The token lives in the device keychain, never in app
+            storage, and refreshes silently. Signing out revokes it at Google.
+          </Text>
+        ) : null}
 
-          {scanning ? (
-            <View style={styles.scanBox}>
-              <CameraView
-                style={styles.camera}
-                facing="back"
-                barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-                onBarcodeScanned={handleScanned}
-              />
-              <Pressable
-                onPress={() => setScanning(false)}
-                style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
-              >
-                <Text style={styles.secondaryButtonText}>Cancel scan</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable
-              onPress={startScanning}
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
-            >
-              <Text style={styles.primaryButtonText}>Scan QR from terminal</Text>
-            </Pressable>
-          )}
+        {email ? (
+          <View style={styles.accountCard}>
+            <Text style={styles.accountLabel}>Signed in as</Text>
+            <Text style={styles.accountEmail} numberOfLines={1}>
+              {email}
+            </Text>
+          </View>
+        ) : null}
 
-          <Text style={styles.orText}>or paste it</Text>
-          <TextInput
-            style={styles.blobInput}
-            value={blob}
-            onChangeText={setBlob}
-            placeholder='{"clientId":"...","refreshToken":"1//..."}'
-            placeholderTextColor={colors.textFaint}
-            autoCapitalize="none"
-            autoCorrect={false}
-            multiline
-          />
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        {busy ? (
+          <View style={styles.busyRow}>
+            <ActivityIndicator color={colors.accent} />
+          </View>
+        ) : email ? (
           <Pressable
-            onPress={handleImport}
-            disabled={!blob.trim()}
-            style={({ pressed }) => [
-              styles.primaryButton,
-              !blob.trim() && styles.buttonDisabled,
-              pressed && styles.pressed,
-            ]}
+            onPress={handleSignOut}
+            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
           >
-            <Text style={styles.primaryButtonText}>Import credentials</Text>
+            <Text style={styles.secondaryButtonText}>Sign out</Text>
           </Pressable>
-          <Text style={styles.redirectHint}>Stored in the device keychain. Treat it like a password.</Text>
-        </View>
-      )}
+        ) : (
+          <View>
+            <Text style={styles.stepTitle}>Connect your Google account</Text>
+            <Text style={styles.stepBody}>Needed only to reach work VMs over IAP.</Text>
+            <Text style={styles.stepBody}>
+              On the desktop app, open Settings, then Mobile, then select Connect Google account. Sign
+              in when the browser opens. Scan the QR it shows you.
+            </Text>
 
-    </ScrollView>
+            {scanning ? (
+              <View style={styles.scanBox}>
+                <CameraView
+                  style={styles.camera}
+                  facing="back"
+                  barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+                  onBarcodeScanned={handleScanned}
+                />
+                <Pressable
+                  onPress={() => setScanning(false)}
+                  style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+                >
+                  <Text style={styles.secondaryButtonText}>Cancel scan</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable
+                onPress={startScanning}
+                style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+              >
+                <Text style={styles.primaryButtonText}>Scan QR from desktop</Text>
+              </Pressable>
+            )}
+
+            <Text style={styles.orText}>or paste it</Text>
+            <TextInput
+              style={styles.blobInput}
+              value={blob}
+              onChangeText={setBlob}
+              placeholder='{"clientId":"...","refreshToken":"1//..."}'
+              placeholderTextColor={colors.textFaint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              multiline
+            />
+            <Pressable
+              onPress={handleImport}
+              disabled={!blob.trim()}
+              style={({ pressed }) => [
+                styles.primaryButton,
+                !blob.trim() && styles.buttonDisabled,
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.primaryButtonText}>Import credentials</Text>
+            </Pressable>
+            <Text style={styles.redirectHint}>Stored in the device keychain. Treat it like a password.</Text>
+          </View>
+        )}
+
+      </ScrollView>
+    </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: colors.bg,
+  },
   scanBox: {
     marginBottom: space.md,
   },
@@ -229,15 +251,6 @@ const styles = StyleSheet.create({
   stepBody: {
     ...type.bodySm,
     color: colors.textDim,
-    marginBottom: space.sm,
-  },
-  code: {
-    ...type.mono,
-    color: colors.accent,
-    backgroundColor: colors.surfaceRaised,
-    borderRadius: radius.sm,
-    paddingHorizontal: space.sm,
-    paddingVertical: 6,
     marginBottom: space.sm,
   },
   blobInput: {

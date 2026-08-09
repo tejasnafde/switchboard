@@ -23,6 +23,7 @@ import { agentShortLabel, isAgentType, type ConversationRow } from '@shared/type
 import { formatRelativeTime } from '@shared/format'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
+import { keyboardAvoidance } from '../lib/keyboardAvoidance'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
@@ -262,7 +263,8 @@ function RenameModal({
   return (
     <Modal visible={row !== null} transparent animationType="fade" onRequestClose={onCancel}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        // A transparent modal has no header to offset against.
+        {...keyboardAvoidance(Platform.OS, 0)}
         style={styles.modalBackdrop}
       >
         <Pressable style={StyleSheet.absoluteFill} onPress={onCancel} />

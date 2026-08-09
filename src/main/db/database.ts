@@ -974,6 +974,19 @@ export function getConversationModel(id: string): string | null {
   return row?.model ?? null
 }
 
+/**
+ * Which agent this conversation's stored `model` belongs to. Switching agent
+ * clears the model in the store but not in this table, so a stored model only
+ * means anything next to its agent - `sessionDefaultsFor` drops it otherwise.
+ * Same `resolveRootThreadId` fallback as the other per-conversation getters.
+ */
+export function getConversationAgentType(id: string): string | null {
+  const row = getDb().prepare(
+    'SELECT agent_type FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as { agent_type: string | null } | undefined
+  return row?.agent_type ?? null
+}
+
 export function setConversationModel(id: string, model: string): void {
   getDb().prepare(
     'UPDATE conversations SET model = ?, updated_at = ? WHERE id = ?'

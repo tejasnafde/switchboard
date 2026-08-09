@@ -8,6 +8,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +17,7 @@ import {
   TextInput,
   View,
 } from 'react-native'
+import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, RuntimeMode } from '@shared/provider-events'
 import type { AgentType, ProviderInstance } from '@shared/types'
@@ -26,6 +29,11 @@ import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
+import { enqueue } from '../stores/outbox'
+import { usePrefsStore } from '../stores/prefs'
+import { buildTurn } from '../lib/turnSubmit'
+import { keyboardAvoidance } from '../lib/keyboardAvoidance'
+import { isRuntimeMode } from '@shared/session-defaults'
 import { ModePicker } from '../components/ModePicker'
 import { MicButton, VoiceNoteBar, type VoiceNote } from '../components/MicButton'
 
@@ -41,6 +49,7 @@ const PROVIDERS: { kind: ProviderKind; label: string; blurb: string }[] = [
 
 export default function NewSessionScreen({ route, navigation }: Props) {
   const { connectionId, projectPath, projectName } = route.params
+  const headerHeight = useHeaderHeight()
   const [provider, setProvider] = useState<ProviderKind>('claude')
   const [mode, setMode] = useState<RuntimeMode>('sandbox')
   const [firstMessage, setFirstMessage] = useState('')
@@ -69,6 +78,30 @@ export default function NewSessionScreen({ route, navigation }: Props) {
       cancelled = true
     }
   }, [connectionId])
+
+  // Seed from the machine, not from this screen's own guesses. The phone used
+  // to hardcode claude/sandbox/first-profile, so a session started here ignored
+  // however the desktop was configured. Only fields the backend actually has an
+  // opinion on are applied; the rest keep the fallbacks above.
+  useEffect(() => {
+    const client = getClient(connectionId)
+    if (!client) return
+    let cancelled = false
+    client
+      .getSessionDefaults(agentType)
+      .then((defaults) => {
+        if (cancelled) return
+        if (isRuntimeMode(defaults.runtimeMode)) setMode(defaults.runtimeMode)
+        if (defaults.model) setModel(defaults.model)
+        if (defaults.instanceId) setInstanceId(defaults.instanceId)
+      })
+      .catch((err) => log.warn('could not read the machine defaults - using local ones', err))
+    return () => {
+      cancelled = true
+    }
+    // Re-read per agent: the default model is stored per agent type, because a
+    // model id chosen for one provider means nothing to another.
+  }, [connectionId, agentType])
 
   // Shared with the thread-screen picker so both order profiles identically.
   const agentInstances = useMemo(() => profilesFor(instances, provider), [instances, provider])
@@ -120,8 +153,17 @@ export default function NewSessionScreen({ route, navigation }: Props) {
       const key = threadKey(connectionId, threadId)
       useChatStore.getState().setRuntimeMode(key, mode)
       if (message) {
-        useChatStore.getState().addUserMessage(key, message)
-        client.sendTurn(threadId, message, mode).catch((err) => {
+        // Through the outbox with an origin, like every other send. A raw
+        // sendTurn here made the opening message render twice.
+        const turn = buildTurn({ connectionId, threadId, text: message, runtimeMode: mode })
+        useChatStore.getState().addUserMessage(key, message, undefined, turn.bubbleId)
+        enqueue(turn.queued).catch((err: unknown) => {
+          // The durable write failed, so this message will never be sent. Take
+          // the bubble back down and hand the text to the thread's draft, as
+          // the thread composer does - otherwise the user is left on a new
+          // screen with an error and no copy of what they typed.
+          useChatStore.getState().removeUserMessage(key, turn.bubbleId)
+          usePrefsStore.getState().rememberDraft(key, message)
           useChatStore.getState().ingest(connectionId, {
             type: 'error',
             threadId,
@@ -143,119 +185,122 @@ export default function NewSessionScreen({ route, navigation }: Props) {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-      <Text style={styles.projectName}>{projectName}</Text>
-      <Text style={styles.projectPath} numberOfLines={1} ellipsizeMode="middle">
-        {projectPath}
-      </Text>
+    // The "First message" field sits low on a modal screen.
+    <KeyboardAvoidingView style={styles.screen} {...keyboardAvoidance(Platform.OS, headerHeight)}>
+      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <Text style={styles.projectName}>{projectName}</Text>
+        <Text style={styles.projectPath} numberOfLines={1} ellipsizeMode="middle">
+          {projectPath}
+        </Text>
 
-      <Text style={styles.sectionLabel}>Agent</Text>
-      <View style={styles.providerList}>
-        {PROVIDERS.map((p) => {
-          const active = provider === p.kind
-          return (
-            <Pressable
-              key={p.kind}
-              onPress={() => setProvider(p.kind)}
-              style={[styles.providerRow, active && styles.providerRowActive]}
-            >
-              <View style={styles.providerBody}>
-                <Text style={[styles.providerLabel, active && styles.providerLabelActive]}>{p.label}</Text>
-                <Text style={styles.providerBlurb}>{p.blurb}</Text>
-              </View>
-              <View style={[styles.radio, active && styles.radioActive]}>
-                {active && <View style={styles.radioDot} />}
-              </View>
-            </Pressable>
-          )
-        })}
-      </View>
+        <Text style={styles.sectionLabel}>Agent</Text>
+        <View style={styles.providerList}>
+          {PROVIDERS.map((p) => {
+            const active = provider === p.kind
+            return (
+              <Pressable
+                key={p.kind}
+                onPress={() => setProvider(p.kind)}
+                style={[styles.providerRow, active && styles.providerRowActive]}
+              >
+                <View style={styles.providerBody}>
+                  <Text style={[styles.providerLabel, active && styles.providerLabelActive]}>{p.label}</Text>
+                  <Text style={styles.providerBlurb}>{p.blurb}</Text>
+                </View>
+                <View style={[styles.radio, active && styles.radioActive]}>
+                  {active && <View style={styles.radioDot} />}
+                </View>
+              </Pressable>
+            )
+          })}
+        </View>
 
-      {agentInstances.length > 0 && (
-        <>
-          <Text style={styles.sectionLabel}>Profile</Text>
-          <View style={styles.chipRow}>
-            {agentInstances.map((inst) => {
-              const active = inst.id === selectedInstance?.id
-              return (
-                <Pressable
-                  key={inst.id}
-                  onPress={() => setInstanceId(inst.id)}
-                  style={[styles.chip, active && styles.chipActive]}
-                >
-                  <View
-                    style={[styles.instanceDot, { backgroundColor: inst.accentColor ?? colors.accent }]}
-                  />
-                  <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
-                    {inst.displayName}
-                  </Text>
-                </Pressable>
-              )
-            })}
-          </View>
-        </>
-      )}
-
-      {models.length > 0 && (
-        <>
-          <Text style={styles.sectionLabel}>Model</Text>
-          <View style={styles.chipRow}>
-            <Pressable
-              onPress={() => setModel('')}
-              style={[styles.chip, model === '' && styles.chipActive]}
-            >
-              <Text style={[styles.chipText, model === '' && styles.chipTextActive]}>Default</Text>
-            </Pressable>
-            {models.map((m) => {
-              const active = m.id === model
-              return (
-                <Pressable
-                  key={m.id}
-                  onPress={() => setModel(m.id)}
-                  style={[styles.chip, active && styles.chipActive]}
-                >
-                  <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
-                    {m.label}
-                  </Text>
-                </Pressable>
-              )
-            })}
-          </View>
-        </>
-      )}
-
-      <Text style={styles.sectionLabel}>Runtime mode</Text>
-      <ModePicker value={mode} onChange={setMode} variant="row" />
-
-      <Text style={styles.sectionLabel}>First message (optional)</Text>
-      <TextInput
-        style={styles.input}
-        value={firstMessage}
-        onChangeText={setFirstMessage}
-        placeholder="What should the agent do?"
-        placeholderTextColor={colors.textFaint}
-        multiline
-      />
-      <View style={styles.voiceRow}>
-        {voiceNote ? <VoiceNoteBar note={voiceNote} /> : <View style={styles.voiceSpacer} />}
-        <MicButton
-          draft={firstMessage}
-          onDraft={setFirstMessage}
-          onNote={setVoiceNote}
-          refine={{ connectionId, projectPath }}
-        />
-      </View>
-
-      {error && <Text style={styles.errorText}>{error}</Text>}
-
-      <Pressable style={[styles.startButton, busy && styles.startButtonDisabled]} onPress={() => void start()} disabled={busy}>
-        {busy ? (
-          <ActivityIndicator size="small" color="#08131f" />
-        ) : (
-          <Text style={styles.startLabel}>Start session</Text>
+        {agentInstances.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>Profile</Text>
+            <View style={styles.chipRow}>
+              {agentInstances.map((inst) => {
+                const active = inst.id === selectedInstance?.id
+                return (
+                  <Pressable
+                    key={inst.id}
+                    onPress={() => setInstanceId(inst.id)}
+                    style={[styles.chip, active && styles.chipActive]}
+                  >
+                    <View
+                      style={[styles.instanceDot, { backgroundColor: inst.accentColor ?? colors.accent }]}
+                    />
+                    <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
+                      {inst.displayName}
+                    </Text>
+                  </Pressable>
+                )
+              })}
+            </View>
+          </>
         )}
-      </Pressable>
-    </ScrollView>
+
+        {models.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>Model</Text>
+            <View style={styles.chipRow}>
+              <Pressable
+                onPress={() => setModel('')}
+                style={[styles.chip, model === '' && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, model === '' && styles.chipTextActive]}>Default</Text>
+              </Pressable>
+              {models.map((m) => {
+                const active = m.id === model
+                return (
+                  <Pressable
+                    key={m.id}
+                    onPress={() => setModel(m.id)}
+                    style={[styles.chip, active && styles.chipActive]}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]} numberOfLines={1}>
+                      {m.label}
+                    </Text>
+                  </Pressable>
+                )
+              })}
+            </View>
+          </>
+        )}
+
+        <Text style={styles.sectionLabel}>Runtime mode</Text>
+        <ModePicker value={mode} onChange={setMode} variant="row" />
+
+        <Text style={styles.sectionLabel}>First message (optional)</Text>
+        <TextInput
+          style={styles.input}
+          value={firstMessage}
+          onChangeText={setFirstMessage}
+          placeholder="What should the agent do?"
+          placeholderTextColor={colors.textFaint}
+          multiline
+        />
+        <View style={styles.voiceRow}>
+          {voiceNote ? <VoiceNoteBar note={voiceNote} /> : <View style={styles.voiceSpacer} />}
+          <MicButton
+            draft={firstMessage}
+            onDraft={setFirstMessage}
+            onNote={setVoiceNote}
+            refine={{ connectionId, projectPath }}
+          />
+        </View>
+
+        {error && <Text style={styles.errorText}>{error}</Text>}
+
+        <Pressable style={[styles.startButton, busy && styles.startButtonDisabled]} onPress={() => void start()} disabled={busy}>
+          {busy ? (
+            <ActivityIndicator size="small" color="#08131f" />
+          ) : (
+            <Text style={styles.startLabel}>Start session</Text>
+          )}
+          </Pressable>
+      </ScrollView>
+    </KeyboardAvoidingView>
   )
 }
 

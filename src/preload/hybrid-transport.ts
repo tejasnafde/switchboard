@@ -21,6 +21,18 @@ const LOCAL_CHANNELS = new Set<string>([
   'app:get-log-paths',
   // The machine registry is this laptop's list of remotes, not the VM's.
   ...Object.values(MachineChannels),
+  // Pairing and Google minting belong to the machine the user is sitting at.
+  // Minting in particular opens a consent browser and writes an OAuth client:
+  // routed to a remote backend it would try to open a browser on a headless VM
+  // and store the client in the VM's database.
+  AppChannels.MOBILE_PAIRING_APPLY,
+  AppChannels.MOBILE_PAIRING_STATUS,
+  AppChannels.MOBILE_PAIRING_CODE,
+  AppChannels.MOBILE_DEVICES,
+  AppChannels.MOBILE_DEVICE_REVOKE,
+  AppChannels.GOOGLE_MINT,
+  AppChannels.GOOGLE_CLIENT_STATUS,
+  AppChannels.GOOGLE_CLIENT_SET,
 ])
 
 export class HybridTransport implements Transport {

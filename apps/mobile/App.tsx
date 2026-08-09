@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { StyleSheet, View } from 'react-native'
+import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native'
 import * as Notifications from 'expo-notifications'
 import { usePushStore } from './src/stores/push'
@@ -152,7 +153,9 @@ export default function App() {
     // The update banners sit OUTSIDE NavigationContainer so they overlay every
     // screen and are not torn down by navigation. They drive both update lanes:
     // OTA for JS-only changes, a GitHub-released APK for native ones.
-    <View style={styles.root}>
+    // Android edge-to-edge is unconditional from SDK 57, so the gesture bar
+    // overlays the app and nothing pads for it unless this provider is mounted.
+    <SafeAreaProvider style={styles.root}>
       <NavigationContainer theme={theme} ref={navigationRef} onReady={flushPendingRoute}>
         <StatusBar style="light" />
         <Stack.Navigator
@@ -196,7 +199,7 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
       <UpdateBanner />
-    </View>
+    </SafeAreaProvider>
   )
 }
 

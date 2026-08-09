@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { MobilePairingStatus } from '@shared/types'
 import type { DeviceSessionView } from '@shared/device-auth'
 import QRCode from 'qrcode'
+import { GoogleMintPanel } from './GoogleMintPanel'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('settings:mobile-pairing')
@@ -611,6 +612,8 @@ export function MobilePairingTab() {
           </div>
         </div>
       </div>
+
+      <GoogleMintPanel />
     </div>
   )
 }

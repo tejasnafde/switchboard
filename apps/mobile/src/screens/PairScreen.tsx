@@ -27,12 +27,14 @@ import {
   View,
 } from 'react-native'
 import { CameraView, useCameraPermissions } from 'expo-camera'
+import { useHeaderHeight } from '@react-navigation/elements'
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { SshIapTarget } from '@shared/machines'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
+import { keyboardAvoidance } from '../lib/keyboardAvoidance'
 import {
   getClient,
   parsePairingUrl,
@@ -80,6 +82,7 @@ function Field({
 }
 
 export default function PairScreen() {
+  const headerHeight = useHeaderHeight()
   const navigation = useNavigation<Nav>()
   const route = useRoute<RouteProp<RootStackParamList, 'Pair'>>()
   const editId = route.params?.editId
@@ -274,7 +277,7 @@ export default function PairScreen() {
     return (
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        {...keyboardAvoidance(Platform.OS, headerHeight)}
       >
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
           <Text style={styles.overline}>WORK VM OVER IAP</Text>
@@ -357,7 +360,7 @@ export default function PairScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      {...keyboardAvoidance(Platform.OS, headerHeight)}
     >
       <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
         <Text style={styles.overline}>{editId ? 'EDIT MACHINE' : 'MACHINE ADDRESS'}</Text>

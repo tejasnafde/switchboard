@@ -21,6 +21,7 @@ import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
 import { recordThreadSession, updateConversationSessionId, saveMessageIfAbsent } from '../db/database'
+import { sessionDefaultsFor } from './session-defaults'
 import { defaultClaudeDir } from './claude-session-migrate'
 import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir, checkRemoteClaudeAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
@@ -37,6 +38,11 @@ import { echoMessageId } from '@shared/provider-events'
 
 const log = createLogger('provider:registry')
 
+/** `claude` is spelled `claude-code` everywhere the DB is involved. */
+function agentTypeForProvider(provider: ProviderKind): AgentType {
+  return provider === 'claude' ? 'claude-code' : provider
+}
+
 export class ProviderRegistry {
   private adapters: Map<ProviderKind, ProviderAdapter>
   private opencodeAcp: OpencodeAcpAdapter
@@ -48,6 +54,10 @@ export class ProviderRegistry {
   private sessionAdapters = new Map<string, ProviderAdapter>()
   /** Working-tree root per session, captured at startSession for checkpointing. */
   private sessionCwd = new Map<string, string>()
+  /** Last status published per live thread. Cleared with the session. */
+  private sessionStatus = new Map<string, ProviderSession['status']>()
+  /** Descriptor per live thread, so a late-connecting client can adopt it. */
+  private sessionDescriptors = new Map<string, ProviderSession>()
   /** Worktree list cache per repo folder (10s TTL, failures negatively
    *  cached, refs realpath-normalized once at fill). Drift state lives in
    *  the watcher, turn-scoped. */
@@ -148,6 +158,14 @@ export class ProviderRegistry {
     }
   }
 
+  /** Live sessions with their CURRENT status, not the status they started at. */
+  listSessions(): ProviderSession[] {
+    return [...this.sessionDescriptors.entries()].map(([threadId, session]) => ({
+      ...session,
+      status: this.sessionStatus.get(threadId) ?? session.status,
+    }))
+  }
+
   private publish(event: RuntimeEvent): void {
     // Persisted here, not in ChatPanel, which only exists when a desktop window
     // is attached - a phone on a headless server saw a 529 once and lost it on
@@ -173,6 +191,11 @@ export class ProviderRegistry {
         log.warn(`failed to persist provider session mapping ${event.threadId} -> ${event.sessionId}: ${err}`)
       }
     }
+    // Last known status per thread. The registry published these and kept
+    // nothing, so a client that was not listening at the time - the desktop,
+    // for a chat the phone started - had no way to ever learn a session was
+    // running. `listSessions` and the re-attach descriptor both read this.
+    if (event.type === 'status') this.sessionStatus.set(event.threadId, event.status)
     this.bufferAssistantText(event)
     this.bus.publish(event)
 
@@ -326,8 +349,13 @@ export class ProviderRegistry {
         return {
           threadId: opts.threadId,
           provider: opts.provider,
-          status: 'idle',
-          runtimeMode: opts.runtimeMode ?? 'sandbox',
+          // The real status, not a hardcoded 'idle'. Re-attaching to a session
+          // with a turn in flight used to report it as idle, so the client that
+          // reattached showed a quiet chat that was actively streaming.
+          status: this.sessionStatus.get(opts.threadId) ?? 'idle',
+          runtimeMode: sessionDefaultsFor(opts.threadId, agentTypeForProvider(opts.provider), {
+            runtimeMode: opts.runtimeMode,
+          }).runtimeMode,
           cwd: this.sessionCwd.get(opts.threadId) ?? opts.cwd,
           createdAt: Date.now(),
         } satisfies ProviderSession
@@ -352,12 +380,23 @@ export class ProviderRegistry {
         }
       }
 
-      log.info(`startSession ${opts.threadId} provider=${opts.provider} cwd=${opts.cwd} mode=${opts.runtimeMode ?? 'sandbox'} instance=${opts.instanceId ?? '(default)'}`)
+      // Fill in whatever the client left unsaid from this conversation's own
+      // stored state, then the machine default. Without this a chat reopened
+      // from the phone silently restarted in sandbox with the default profile,
+      // whatever the desktop had set on it.
+      const defaults = sessionDefaultsFor(opts.threadId, agentTypeForProvider(opts.provider), {
+        runtimeMode: opts.runtimeMode,
+        model: opts.model,
+        instanceId: opts.instanceId,
+      })
+      opts = { ...opts, ...defaults }
+
+      log.info(`startSession ${opts.threadId} provider=${opts.provider} cwd=${opts.cwd} mode=${defaults.runtimeMode} instance=${defaults.instanceId ?? '(default)'}`)
       // Catch macOS TCC denials before the adapter spawns - otherwise the
       // SDK fails deep in the stack with cryptic EPERMs.
       await assertCwdReadable(opts.cwd)
 
-      const agentType: AgentType = opts.provider === 'claude' ? 'claude-code' : opts.provider
+      const agentType: AgentType = agentTypeForProvider(opts.provider)
       const instance = resolveProviderInstance(agentType, opts.instanceId)
       // Every known oauth_dir for this agent kind, so the adapter can find a
       // resumeable JSONL across profiles. Includes the default dir so env-mode
@@ -391,6 +430,9 @@ export class ProviderRegistry {
       })
       this.sessionAdapters.set(opts.threadId, adapter)
       this.sessionCwd.set(opts.threadId, session.cwd)
+      // Kept so `listSessions` can describe this session to a client that
+      // connects later, rather than only to the one that started it.
+      this.sessionDescriptors.set(opts.threadId, session)
       await this.attachNotebooks(opts.threadId, session.cwd)
       return session
       } finally {
@@ -509,6 +551,12 @@ export class ProviderRegistry {
       }
     })
 
+    // What is running here, for a client that was not connected when it
+    // started. Without this the desktop could never learn about a session the
+    // phone began: events are broadcast live, never replayed from before the
+    // session existed, and every store reducer no-ops on an unknown threadId.
+    this.host.handle(ProviderChannels.LIST_SESSIONS, () => this.listSessions())
+
     this.host.handle(ProviderChannels.OPENCODE_LIST_MODELS, async () => {
       try {
         return await this.opencodeAcp.listAvailableModels()
@@ -526,6 +574,8 @@ export class ProviderRegistry {
       this.flushAssistantText(threadId)
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
+      this.sessionStatus.delete(threadId)
+      this.sessionDescriptors.delete(threadId)
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
       notebookManager.detach(threadId)

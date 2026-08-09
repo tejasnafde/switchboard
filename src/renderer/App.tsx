@@ -31,6 +31,7 @@ import { initSharedReadState } from './services/readState'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
+import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 import { shouldEvictMessages, needsMessageReload, resolveSessionSelectTarget } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 
@@ -262,11 +263,25 @@ export function App() {
     // the hardcoded 'sandbox'.
     void (async () => {
       try {
-        const stored = await window.api?.settings?.get?.('chat.defaultRuntimeMode')
+        const stored = await window.api?.settings?.get?.(SETTING_DEFAULT_RUNTIME_MODE)
         if (stored === 'plan' || stored === 'sandbox' || stored === 'accept-edits' || stored === 'full-access') {
           setStoreDefaultRuntimeMode(stored as RuntimeMode)
         }
       } catch { /* settings unavailable in tests / first boot */ }
+    })()
+    // Adopt whatever the backend is already running. A chat started on the
+    // phone exists only in the backend until this asks: runtime events are
+    // broadcast to every client, but nothing replays the ones from before this
+    // window connected, and the store drops events for threads it has no row
+    // for. Without this the desktop shows a live chat as idle and never renders
+    // its sub-agent messages, which exist nowhere else.
+    void (async () => {
+      try {
+        const live = await window.api?.provider?.listSessions?.()
+        if (live?.length) useAgentStore.getState().adoptLiveSessions(live)
+      } catch (err) {
+        log.warn('could not adopt running backend sessions', err)
+      }
     })()
   }, [loadSavedTheme])
 

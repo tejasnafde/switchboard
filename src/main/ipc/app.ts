@@ -175,8 +175,8 @@ export function registerAppHandlers(host: BackendHost): void {
   })
 
   // Settings
-  host.handle('settings:get', (key: string) => getSetting(key))
-  host.handle('settings:set', (key: string, value: string) => setSetting(key, value))
+  host.handle(AppChannels.SETTINGS_GET, (key: string) => getSetting(key))
+  host.handle(AppChannels.SETTINGS_SET, (key: string, value: string) => setSetting(key, value))
   host.handle('settings:remove', (key: string) => removeSetting(key))
 
   // Load persisted projects on renderer request
