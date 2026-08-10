@@ -6,7 +6,7 @@
  * instead of picking one.
  */
 import { fuzzyScore } from '../../services/fuzzyScore'
-import { PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '@shared/peer-messaging'
+import { peerSentMarkerPrefix, wrapPeerMessage } from '@shared/peer-messaging'
 import type { RuntimePeerMessageEvent } from '@shared/provider-events'
 import type { ChatMessage } from '@shared/types'
 
@@ -111,7 +111,9 @@ export function peerMessageToChatMessage(
     return {
       id: `peer_${event.messageId}`,
       role: 'system',
-      content: `${PEER_SENT_MARKER_PREFIX} ${ownLabel} → ${event.peerLabel}`,
+      // The prefix carries the provenance, because a reload reads the stored
+      // string and has nothing else to tell an agent send from a typed one.
+      content: `${peerSentMarkerPrefix(event.initiator)} ${ownLabel} → ${event.peerLabel}`,
       timestamp: event.at,
     }
   }

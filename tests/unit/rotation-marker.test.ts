@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseRotationMarker, ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from '../../src/renderer/components/chat/rotationMarker'
+import { parseRotationMarker, ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, PEER_AGENT_SENT_MARKER_PREFIX } from '../../src/renderer/components/chat/rotationMarker'
 
 describe('parseRotationMarker', () => {
   it('parses the canonical "from → to" form', () => {
@@ -17,6 +17,18 @@ describe('parseRotationMarker', () => {
     expect(out).toEqual({ kind: 'handoff', fromName: 'Codex', toName: 'Claude Code' })
     const ascii = parseRotationMarker(`${CONTEXT_HANDOFF_MARKER_PREFIX} Codex -> OpenCode`)
     expect(ascii).toEqual({ kind: 'handoff', fromName: 'Codex', toName: 'OpenCode' })
+  })
+
+  it('parses a user-sent peer marker with kind "peer"', () => {
+    const out = parseRotationMarker(`${PEER_SENT_MARKER_PREFIX} Docs pass → API refactor`)
+    expect(out).toEqual({ kind: 'peer', fromName: 'Docs pass', toName: 'API refactor' })
+  })
+
+  // The two peer prefixes share a stem, and the dispatch is startsWith, so an
+  // agent send must not be read as a user send with a stray "-agent]]" name.
+  it('parses an agent-sent peer marker with kind "peer-agent"', () => {
+    const out = parseRotationMarker(`${PEER_AGENT_SENT_MARKER_PREFIX} Docs pass → API refactor`)
+    expect(out).toEqual({ kind: 'peer-agent', fromName: 'Docs pass', toName: 'API refactor' })
   })
 
   it('tolerates ASCII arrow', () => {

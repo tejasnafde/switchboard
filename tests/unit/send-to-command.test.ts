@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger } from '../../src/renderer/components/chat/sendToCommand'
-import { PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
+import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 
 const sessions = [
   { id: 't1', title: 'API refactor' },
@@ -92,6 +92,7 @@ describe('peerMessageToChatMessage', () => {
     messageId: 'pm_abc123',
     text: 'the auth migration landed',
     at: 1700,
+    initiator: 'user' as const,
   }
 
   // Ids must match what the backend persisted, or a reload renders the same
@@ -107,6 +108,16 @@ describe('peerMessageToChatMessage', () => {
       content: `${PEER_SENT_MARKER_PREFIX} Docs pass → API refactor`,
       timestamp: 1700,
     })
+  })
+
+  // "The agent messaged another chat on its own" is a different event to the
+  // user typing /send-to, and reads as a bug when the two look identical.
+  it('marks an agent-initiated send apart from a typed one', () => {
+    const msg = peerMessageToChatMessage({
+      ...base, initiator: 'agent', threadId: 'sender', direction: 'sent',
+      peerThreadId: 'target', peerLabel: 'API refactor',
+    }, 'Docs pass')
+    expect(msg.content).toBe(`${PEER_AGENT_SENT_MARKER_PREFIX} Docs pass → API refactor`)
   })
 
   it('renders the received side as the wrapped turn under the backend id', () => {

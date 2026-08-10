@@ -15,18 +15,17 @@ itself, plus the guards that make that safe unattended.
       `setPeerToolHost?`
 - [x] 4. Claude adapter: `createSdkMcpServer` wired into queryOptions,
       list-tool auto-allow in canUseTool
-- [ ] 5. UI: agent-initiated sender marker + `initiator` on `peer.message`
+- [x] 5. UI: agent-initiated sender marker + `initiator` on `peer.message`
 - [ ] 6. Docs: CLAUDE.md feature note + /help line
 - [ ] 7. Gate: typecheck + full `npm test`, then FINAL commit WITHOUT
       `--no-verify`
 
-## Current step: 5
+## Current step: 6
 
 ## Next concrete action
-UI: make `peerMessageToChatMessage` pick the marker prefix from
-`event.initiator`, add kind `'peer-agent'` to `parseRotationMarker`, render it
-in `MessageBubble`, and add `initiator: 'user'` to the event fixture in
-`tests/unit/send-to-command.test.ts`.
+Docs: add the feature note to the repo CLAUDE.md (tools, guards, Claude-only
+limit) and check whether `/help` lists capabilities worth a line
+(`src/renderer/components/chat/slashCommands.ts` + the help overlay).
 
 ## Files touched so far
 - CHECKPOINT.md
@@ -43,6 +42,11 @@ in `MessageBubble`, and add `initiator: 'user'` to the event fixture in
 - src/main/provider/adapters/claude-adapter.ts (mcpServers + list-tool allow)
 - package.json (zod as a direct dependency)
 - tests/unit/claude-peer-tools.test.ts (new, 4 green)
+- src/renderer/components/chat/rotationMarker.ts (kind 'peer-agent')
+- src/renderer/components/chat/sendToCommand.ts (prefix from initiator)
+- src/renderer/components/chat/MessageBubble.tsx (agent-send pill copy)
+- tests/unit/rotation-marker.test.ts (+2), tests/unit/send-to-command.test.ts
+  (+1, fixture gained `initiator`)
 
 ## Design decided for THIS phase (do not re-litigate)
 - Tool names, as the model sees them: `mcp__switchboard__list_agent_sessions`

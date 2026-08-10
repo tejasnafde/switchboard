@@ -1,4 +1,4 @@
-import { PEER_SENT_MARKER_PREFIX } from '@shared/peer-messaging'
+import { PEER_AGENT_SENT_MARKER_PREFIX, PEER_SENT_MARKER_PREFIX } from '@shared/peer-messaging'
 
 /**
  * In-band marker for "user switched provider instance mid-conversation".
@@ -32,22 +32,27 @@ export const CONTEXT_HANDOFF_MARKER_PREFIX = '[[sb:context-handoff]]'
 /**
  * `${PEER_SENT_MARKER_PREFIX} <fromTitle> → <toTitle>` - written by the
  * backend when one session sends a message to another, so the SENDER's
- * transcript records where it went. It lives in shared/peer-messaging because
- * main writes it; re-exported so every marker prefix is reachable from here.
+ * transcript records where it went. The `-agent` variant records that the
+ * MODEL chose to send rather than the user typing `/send-to`. Both live in
+ * shared/peer-messaging because main writes them; re-exported so every marker
+ * prefix is reachable from here.
  */
-export { PEER_SENT_MARKER_PREFIX }
+export { PEER_SENT_MARKER_PREFIX, PEER_AGENT_SENT_MARKER_PREFIX }
 
 export interface RotationMarker {
-  kind: 'instance' | 'agent' | 'handoff' | 'peer'
+  kind: 'instance' | 'agent' | 'handoff' | 'peer' | 'peer-agent'
   fromName: string
   toName: string
 }
 
+// Order matters only in that no prefix may be a prefix of another; the two
+// peer markers differ before their closing brackets, so they cannot collide.
 const MARKER_PREFIXES: Record<RotationMarker['kind'], string> = {
   instance: ROTATION_MARKER_PREFIX,
   agent: AGENT_SWITCH_MARKER_PREFIX,
   handoff: CONTEXT_HANDOFF_MARKER_PREFIX,
   peer: PEER_SENT_MARKER_PREFIX,
+  'peer-agent': PEER_AGENT_SENT_MARKER_PREFIX,
 }
 
 export function parseRotationMarker(content: string): RotationMarker | null {
