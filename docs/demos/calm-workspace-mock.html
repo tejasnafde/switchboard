@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Switchboard — calm workspace</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --window: #0b0c0d;
+    --sidebar: #111213;
+    --panel: #0d0e0f;
+    --selected: #1b1d1f;
+    --hover: rgba(255,255,255,.045);
+    --border: rgba(255,255,255,.075);
+    --border-strong: rgba(255,255,255,.14);
+    --text: #e8e8e8;
+    --secondary: #a1a1a1;
+    --muted: #6e6e6e;
+    --focus: #8cbcff;
+    --warning: #caa15b;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--window);
+    color: var(--text);
+    font: 13px/1.45 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  body.crystal {
+    --window: transparent;
+    --sidebar: rgba(10,11,12,.38);
+    --panel: rgba(7,8,9,.27);
+    --selected: rgba(255,255,255,.09);
+    --hover: rgba(255,255,255,.065);
+    --border: rgba(255,255,255,.09);
+    --border-strong: rgba(255,255,255,.17);
+    --secondary: rgba(255,255,255,.68);
+    --muted: rgba(255,255,255,.40);
+    background:
+      radial-gradient(850px 720px at 3% 3%, rgba(37,92,110,.65), transparent 64%),
+      radial-gradient(900px 780px at 100% 100%, rgba(75,56,92,.58), transparent 66%),
+      #172226;
+  }
+  button { font: inherit; }
+  button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+
+  .app { height: 100%; display: grid; grid-template-rows: 38px minmax(0,1fr) 22px; }
+  .topbar {
+    display: grid;
+    grid-template-columns: 286px 1fr auto;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    background: var(--sidebar);
+  }
+  body.crystal .topbar,
+  body.crystal .statusbar { backdrop-filter: blur(34px) saturate(125%); }
+  .window-space { padding-left: 13px; color: var(--muted); font-size: 12px; }
+  .view-switch { justify-self: center; display: flex; gap: 17px; align-items: center; height: 100%; }
+  .view-switch button {
+    height: 100%; border: 0; border-bottom: 1px solid transparent; background: transparent;
+    color: var(--muted); padding: 0 2px; cursor: pointer; font-size: 11.5px;
+  }
+  .view-switch button.active { color: var(--text); border-bottom-color: var(--secondary); }
+  .top-actions { display: flex; align-items: center; gap: 16px; padding-right: 13px; color: var(--muted); }
+  .plain-action { border: 0; background: transparent; color: inherit; padding: 5px; border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .plain-action:hover { color: var(--text); background: var(--hover); }
+
+  .workspace { min-height: 0; display: grid; grid-template-columns: 286px minmax(560px,1fr) 385px; }
+
+  .sidebar {
+    min-height: 0; overflow: auto; background: var(--sidebar); border-right: 1px solid var(--border);
+    padding: 13px 9px 24px;
+  }
+  body.crystal .sidebar { backdrop-filter: blur(34px) saturate(120%); }
+  .sidebar-head { display: flex; align-items: center; height: 31px; padding: 0 6px 7px; }
+  .sidebar-title { font-weight: 620; }
+  .sidebar-head .plain-action { margin-left: auto; font-size: 16px; line-height: 1; }
+  .section-title {
+    display: flex; align-items: center; height: 29px; padding: 0 7px; color: var(--muted);
+    font-size: 11px; font-weight: 530;
+  }
+  .section-title button { margin-left: auto; border: 0; background: transparent; color: var(--muted); padding: 4px; cursor: pointer; }
+  .sidebar-list { display: grid; gap: 1px; }
+  .sidebar-row {
+    position: relative; width: 100%; min-width: 0; height: 34px; display: flex; align-items: center;
+    border: 0; border-radius: 5px; padding: 0 8px; background: transparent; color: var(--secondary);
+    text-align: left; cursor: pointer;
+  }
+  .sidebar-row:hover { background: var(--hover); color: var(--text); }
+  .sidebar-row.active { background: var(--selected); color: var(--text); font-weight: 540; }
+  .sidebar-row.receded { color: var(--muted); }
+  .sidebar-row .label { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .row-detail { margin-left: auto; padding-left: 10px; flex: none; color: var(--muted); font-size: 10.5px; }
+  .row-detail.actionable { color: var(--secondary); font-weight: 560; }
+  .row-actions {
+    position: absolute; right: 5px; top: 4px; opacity: 0; display: flex; background: var(--selected);
+    transition: opacity 100ms ease;
+  }
+  .sidebar-row:hover .row-actions,
+  .sidebar-row:focus-visible .row-actions { opacity: 1; }
+  .row-action { width: 26px; height: 26px; border: 0; background: transparent; color: var(--secondary); border-radius: 4px; cursor: pointer; }
+  .row-action:hover { background: var(--hover); color: var(--text); }
+  .rule { height: 1px; background: var(--border); margin: 12px 6px 6px; }
+  .tree { overflow: hidden; }
+  .tree[hidden] { display: none; }
+  .tree .sidebar-row { height: 31px; font-size: 12px; }
+  .tree .machine { padding-left: 8px; color: var(--text); font-weight: 560; }
+  .tree .workspace-row { padding-left: 24px; }
+  .tree .project-row { padding-left: 42px; }
+  .tree .thread-row { padding-left: 60px; color: var(--muted); }
+  .disclosure { display: inline-block; width: 14px; color: var(--muted); font-size: 10px; }
+
+  .chat { min-width: 0; min-height: 0; display: grid; grid-template-rows: 48px minmax(0,1fr) auto; background: var(--panel); }
+  .chat-header { border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 18px; gap: 7px; min-width: 0; }
+  .breadcrumb { min-width: 0; display: flex; align-items: center; gap: 7px; color: var(--muted); white-space: nowrap; overflow: hidden; }
+  .breadcrumb span { overflow: hidden; text-overflow: ellipsis; }
+  .breadcrumb .current { color: var(--text); font-weight: 560; }
+  .breadcrumb .separator { color: var(--muted); overflow: visible; }
+  .thread-meta { margin-left: auto; flex: none; color: var(--muted); font: 10.5px var(--mono); }
+  .chat-header .plain-action { margin-left: 6px; }
+
+  .feed { min-height: 0; overflow: auto; padding: 34px max(34px,7vw) 40px; }
+  .transcript { max-width: 740px; margin: 0 auto; }
+  .message { margin-bottom: 30px; }
+  .message.user { display: flex; justify-content: flex-end; }
+  .user-copy {
+    max-width: 78%; padding: 10px 13px; border-radius: 13px; background: var(--selected);
+    color: var(--text); line-height: 1.55;
+  }
+  body.crystal .user-copy { background: rgba(20,22,24,.58); backdrop-filter: blur(16px); }
+  .assistant { color: var(--text); font-size: 13.5px; line-height: 1.65; }
+  .assistant p { margin: 0 0 13px; }
+  .assistant code { font: 12px var(--mono); color: #c9c9c9; }
+
+  .work-summary,
+  .changes-summary {
+    width: 100%; display: flex; align-items: center; gap: 7px; border: 0; background: transparent;
+    color: var(--muted); text-align: left; cursor: pointer; padding: 5px 0; border-radius: 3px;
+    font-size: 11.5px;
+  }
+  .work-summary:hover,
+  .changes-summary:hover { color: var(--secondary); }
+  .work-summary .arrow,
+  .changes-summary .arrow { width: 11px; transition: transform 110ms ease; }
+  .work-summary.open .arrow,
+  .changes-summary.open .arrow { transform: rotate(90deg); }
+  .work-detail,
+  .changes-detail { display: none; margin: 3px 0 8px 5px; border-left: 1px solid var(--border); padding: 3px 0 3px 14px; }
+  .work-detail.open,
+  .changes-detail.open { display: block; }
+  .work-row { display: grid; grid-template-columns: 56px 1fr; gap: 10px; padding: 3px 0; color: var(--muted); font-size: 11.5px; }
+  .work-row .verb { color: var(--secondary); }
+  .changes-wrap { margin-top: 14px; padding-top: 9px; border-top: 1px solid var(--border); }
+  .changes-summary { padding: 6px 0; color: var(--secondary); }
+  .changes-summary .stats { margin-left: auto; color: var(--muted); font: 10.5px var(--mono); }
+  .review-link { margin-left: 10px; border: 0; background: transparent; color: var(--secondary); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 3px; cursor: pointer; padding: 2px; }
+  .file-row { display: grid; grid-template-columns: 1fr auto; padding: 5px 0; color: var(--muted); font: 10.5px var(--mono); }
+  .file-row .file-stats { color: var(--muted); }
+
+  .composer-zone { padding: 12px 22px 16px; background: linear-gradient(transparent, var(--panel) 28%); }
+  body.crystal .composer-zone { background: linear-gradient(transparent, rgba(7,8,9,.34) 30%); }
+  .composer {
+    max-width: 740px; margin: 0 auto; border: 1px solid rgba(202,161,91,.46); border-radius: 9px;
+    background: #121314; box-shadow: 0 14px 34px rgba(0,0,0,.20); overflow: hidden;
+  }
+  body.crystal .composer { background: rgba(13,14,15,.76); backdrop-filter: blur(24px) saturate(120%); }
+  .composer-input { height: 62px; padding: 12px 13px; color: var(--muted); }
+  .composer-footer { height: 35px; border-top: 1px solid var(--border); display: flex; align-items: center; padding: 0 7px 0 11px; }
+  .composer-settings { border: 0; background: transparent; color: var(--muted); padding: 5px 4px; border-radius: 4px; cursor: pointer; font-size: 10.5px; }
+  .composer-settings:hover { color: var(--text); background: var(--hover); }
+  .full-access { margin-left: 7px; color: var(--warning); font-size: 10.5px; }
+  .send { margin-left: auto; width: 25px; height: 25px; border: 0; border-radius: 5px; background: #dedede; color: #101010; cursor: pointer; font-weight: 700; }
+
+  .editor { min-width: 0; display: grid; grid-template-rows: 35px minmax(0,1fr); border-left: 1px solid var(--border); background: #0c0d0e; }
+  body.crystal .editor { background: rgba(8,9,10,.34); backdrop-filter: blur(28px) saturate(115%); }
+  .editor-tabs { display: flex; align-items: end; gap: 17px; padding: 0 13px; border-bottom: 1px solid var(--border); }
+  .editor-tabs button { height: 31px; border: 0; border-bottom: 1px solid transparent; background: transparent; color: var(--muted); padding: 0; font-size: 10.5px; }
+  .editor-tabs button.active { color: var(--secondary); border-bottom-color: var(--secondary); }
+  .code { overflow: hidden; padding: 17px 13px; color: #8d8d8d; font: 10.5px/1.75 var(--mono); counter-reset: line; }
+  .code div { white-space: pre; }
+  .code div::before { counter-increment: line; content: counter(line); display: inline-block; width: 29px; color: #444; user-select: none; }
+  .kw { color: #b9a1d8; }.fn { color: #9abbd7; }.str { color: #9eb68f; }.comment { color: #555; }
+
+  .statusbar { display: flex; align-items: center; gap: 13px; padding: 0 10px; border-top: 1px solid var(--border); background: var(--sidebar); color: var(--muted); font-size: 9.5px; }
+  .statusbar .right { margin-left: auto; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="topbar">
+    <div class="window-space">Switchboard</div>
+    <nav class="view-switch" aria-label="Workspace view"><button class="active">Chats</button><button>Board</button></nav>
+    <div class="top-actions"><button class="plain-action" id="themeToggle">Crystal Glass</button><button class="plain-action" aria-label="Quick open">⌘P</button></div>
+  </header>
+
+  <div class="workspace">
+    <aside class="sidebar" aria-label="Workspace navigation">
+      <div class="sidebar-head"><span class="sidebar-title">Conversations</span><button class="plain-action" aria-label="New conversation">＋</button></div>
+
+      <div class="section-title">Recents</div>
+      <nav class="sidebar-list" aria-label="Recent conversations">
+        <button class="sidebar-row active" aria-current="page"><span class="label">Calm workspace polish</span><span class="row-detail">now</span><span class="row-actions"><span class="row-action">•••</span></span></button>
+        <button class="sidebar-row"><span class="label">Fix auth retry race</span><span class="row-detail actionable">Approval</span><span class="row-actions"><span class="row-action">•••</span></span></button>
+        <button class="sidebar-row"><span class="label">Mobile voice refinement</span><span class="row-detail">12m</span><span class="row-actions"><span class="row-action">•••</span></span></button>
+        <button class="sidebar-row receded"><span class="label">Audit provider lifecycle</span><span class="row-detail">1h</span><span class="row-actions"><span class="row-action">•••</span></span></button>
+      </nav>
+
+      <div class="rule"></div>
+      <div class="section-title">Workspace browser <button id="treeToggle" aria-label="Toggle workspace browser" aria-expanded="true">⌄</button></div>
+      <nav class="tree" id="workspaceTree" aria-label="Machines, workspaces, projects, and conversations">
+        <button class="sidebar-row machine" aria-expanded="true"><span class="disclosure">⌄</span><span class="label">This Mac</span><span class="row-actions"><span class="row-action">•••</span></span></button>
+        <button class="sidebar-row workspace-row" aria-expanded="true"><span class="disclosure">⌄</span><span class="label">Product</span><span class="row-actions"><span class="row-action">＋</span><span class="row-action">•••</span></span></button>
+        <button class="sidebar-row project-row" aria-expanded="true"><span class="disclosure">⌄</span><span class="label">switchboard</span><span class="row-actions"><span class="row-action">＋</span><span class="row-action">•••</span></span></button>
+        <button class="sidebar-row thread-row"><span class="disclosure"></span><span class="label">Calm workspace polish</span></button>
+        <button class="sidebar-row thread-row"><span class="disclosure"></span><span class="label">Mobile voice refinement</span></button>
+        <button class="sidebar-row project-row receded" aria-expanded="false"><span class="disclosure">›</span><span class="label">tejas-skills</span><span class="row-actions"><span class="row-action">＋</span><span class="row-action">•••</span></span></button>
+        <button class="sidebar-row machine" aria-expanded="false"><span class="disclosure">›</span><span class="label">prod-vm</span><span class="row-detail actionable">Approval</span></button>
+        <button class="sidebar-row machine receded" aria-expanded="false"><span class="disclosure">›</span><span class="label">staging</span><span class="row-detail">Offline</span></button>
+      </nav>
+    </aside>
+
+    <section class="chat" aria-label="Conversation">
+      <header class="chat-header">
+        <nav class="breadcrumb" aria-label="Conversation location">
+          <span>This Mac</span><span class="separator">/</span><span>switchboard</span><span class="separator">/</span><span class="current">Calm workspace polish</span>
+        </nav>
+        <span class="thread-meta">sb/calm-workspace</span>
+        <button class="plain-action" aria-label="Conversation actions">•••</button>
+      </header>
+
+      <div class="feed">
+        <div class="transcript">
+          <article class="message user"><div class="user-copy">Can you make the workspace feel calmer without removing any of its power?</div></article>
+
+          <article class="message assistant">
+            <p>The problem is mostly hierarchy. The conversation should remain the dominant layer; operational detail should be available without being continuously presented.</p>
+
+            <button class="work-summary" id="activityToggle" aria-expanded="false" aria-controls="activityDetail"><span class="arrow">›</span><span>6 tool calls, 18s</span></button>
+            <div class="work-detail" id="activityDetail">
+              <div class="work-row"><span class="verb">Read</span><span>Sidebar.tsx and MessageList.tsx</span></div>
+              <div class="work-row"><span class="verb">Searched</span><span>file.edited event grouping</span></div>
+              <div class="work-row"><span class="verb">Edited</span><span>3 files</span></div>
+              <div class="work-row"><span class="verb">Tested</span><span>12 focused tests passed</span></div>
+            </div>
+
+            <p>Recents now provide the fast path. The complete machine hierarchy remains below it, but normal state no longer needs an icon, color, or label.</p>
+
+            <div class="changes-wrap">
+              <button class="changes-summary" id="changesToggle" aria-expanded="false" aria-controls="changesDetail"><span class="arrow">›</span><span>3 changed files</span><span class="stats">+86 −24</span></button>
+              <div class="changes-detail" id="changesDetail">
+                <div class="file-row"><span>src/renderer/components/sidebar/Sidebar.tsx</span><span class="file-stats">+38 −12</span></div>
+                <div class="file-row"><span>src/renderer/components/sidebar/MachineLayer.tsx</span><span class="file-stats">+31 −8</span></div>
+                <div class="file-row"><span>src/renderer/components/chat/MessageList.tsx</span><span class="file-stats">+17 −4</span></div>
+              </div>
+              <button class="review-link">Review changes</button>
+            </div>
+          </article>
+        </div>
+      </div>
+
+      <div class="composer-zone">
+        <div class="composer">
+          <div class="composer-input">Ask a follow-up…</div>
+          <div class="composer-footer"><button class="composer-settings">Codex / GPT-5.3</button><span class="full-access">Full access</span><button class="send" aria-label="Send message">↑</button></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="editor" aria-label="IDE preview">
+      <div class="editor-tabs"><button class="active">Sidebar.tsx</button><button>Terminal</button></div>
+      <div class="code" aria-hidden="true">
+        <div><span class="kw">function</span> <span class="fn">ConversationRow</span>({ session }) {</div>
+        <div>  <span class="kw">return</span> (</div>
+        <div>    &lt;<span class="fn">button</span></div>
+        <div>      type=<span class="str">&quot;button&quot;</span></div>
+        <div>      aria-current={active ? <span class="str">&quot;page&quot;</span> : undefined}</div>
+        <div>      className={cx(<span class="str">&quot;sidebar-row&quot;</span>, { active })}</div>
+        <div>      onClick={() =&gt; open(session.id)}</div>
+        <div>    &gt;</div>
+        <div>      {session.title}</div>
+        <div>      {session.needsInput &amp;&amp; &lt;span&gt;Approval&lt;/span&gt;}</div>
+        <div>    &lt;/<span class="fn">button</span>&gt;</div>
+        <div>  )</div>
+        <div>}</div>
+        <div></div>
+        <div><span class="comment">// Normal state is intentionally unlabelled.</span></div>
+        <div><span class="comment">// Actions appear on hover and keyboard focus.</span></div>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="statusbar"><span>switchboard</span><span>Codex</span><span class="right">3 changed files</span></footer>
+</main>
+
+<script>
+  const params = new URLSearchParams(location.search);
+  const themeToggle = document.getElementById('themeToggle');
+  if (params.get('theme') === 'crystal') {
+    document.body.classList.add('crystal');
+    themeToggle.textContent = 'Solid Charcoal';
+  }
+  themeToggle.addEventListener('click', () => {
+    const crystal = document.body.classList.toggle('crystal');
+    themeToggle.textContent = crystal ? 'Solid Charcoal' : 'Crystal Glass';
+  });
+
+  function disclosure(buttonId, detailId) {
+    const button = document.getElementById(buttonId);
+    const detail = document.getElementById(detailId);
+    button.addEventListener('click', () => {
+      const open = button.getAttribute('aria-expanded') !== 'true';
+      button.setAttribute('aria-expanded', String(open));
+      button.classList.toggle('open', open);
+      detail.classList.toggle('open', open);
+    });
+  }
+  disclosure('activityToggle', 'activityDetail');
+  disclosure('changesToggle', 'changesDetail');
+
+  const treeToggle = document.getElementById('treeToggle');
+  const tree = document.getElementById('workspaceTree');
+  treeToggle.addEventListener('click', () => {
+    const open = treeToggle.getAttribute('aria-expanded') !== 'true';
+    treeToggle.setAttribute('aria-expanded', String(open));
+    tree.hidden = !open;
+    treeToggle.textContent = open ? '⌄' : '›';
+  });
+</script>
+</body>
+</html>
