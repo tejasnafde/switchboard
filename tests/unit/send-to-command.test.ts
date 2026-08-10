@@ -6,7 +6,7 @@
  * must name the candidates rather than pick one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger } from '../../src/renderer/components/chat/sendToCommand'
+import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage, detectSendToTrigger, sendToPickerItems } from '../../src/renderer/components/chat/sendToCommand'
 import { PEER_SENT_MARKER_PREFIX, wrapPeerMessage } from '../../src/shared/peer-messaging'
 
 const sessions = [
@@ -207,5 +207,78 @@ describe('detectSendToTrigger', () => {
 
   it('does not fire for other commands', () => {
     expect(detectSendToTrigger('/clear', 6)).toBeNull()
+  })
+})
+
+describe('sendToPickerItems', () => {
+  const withProjects = [
+    { id: 't1', title: 'Sender', projectPath: '/Users/x/switchboard' },
+    { id: 't2', title: 'Issue 172', projectPath: '/Users/x/tejasnafde.github.io' },
+    { id: 't3', title: 'cohesive website', projectPath: '/Users/x/tejasnafde.github.io' },
+  ]
+
+  // Titles alone were unreadable: the screenshot had "Issue 172" twice and
+  // "v0" twice with nothing to tell them apart.
+  it('labels each chat with its project folder', () => {
+    expect(sendToPickerItems(withProjects, 't1')).toEqual([
+      { id: 't2', label: 'Issue 172 · tejasnafde.github.io' },
+      { id: 't3', label: 'cohesive website · tejasnafde.github.io' },
+    ])
+  })
+
+  it('excludes the sending chat', () => {
+    expect(sendToPickerItems(withProjects, 't2').some((i) => i.id === 't2')).toBe(false)
+  })
+
+  // Same title AND same project happens (two chats opened on one issue), and
+  // an identical label would make the pick arbitrary.
+  it('disambiguates chats whose title and project both collide', () => {
+    const dupes = [
+      { id: 'sender', title: 'Sender', projectPath: '/p/one' },
+      { id: 'abc12345', title: '10aug issues', projectPath: '/p/two' },
+      { id: 'def67890', title: '10aug issues', projectPath: '/p/two' },
+    ]
+    expect(sendToPickerItems(dupes, 'sender').map((i) => i.label)).toEqual([
+      '10aug issues · two (abc1)',
+      '10aug issues · two (def6)',
+    ])
+  })
+
+  it('falls back to the id when a chat has no title', () => {
+    const untitled = [
+      { id: 'sender', title: undefined, projectPath: '/p/one' },
+      { id: 'agent_9', title: undefined, projectPath: '/p/two' },
+    ]
+    expect(sendToPickerItems(untitled, 'sender')).toEqual([
+      { id: 'agent_9', label: 'agent_9 · two' },
+    ])
+  })
+
+  it('keeps only chats on the sender machine', () => {
+    const mixed = [
+      { id: 't1', title: 'Sender', projectPath: '/p/one', machineId: 'local' },
+      { id: 't2', title: 'Remote', projectPath: '/p/two', machineId: 'vm-1' },
+    ]
+    expect(sendToPickerItems(mixed, 't1')).toEqual([])
+  })
+})
+
+describe('resolveSendToTarget by id', () => {
+  // The picker inserts `#<id>` rather than a title: two chats can share a
+  // title, and the pick has already decided which one the user meant.
+  it('resolves an exact id reference', () => {
+    expect(resolveSendToTarget('#t2', sessions, 't1')).toEqual({ ok: true, id: 't2', title: 'Docs pass' })
+  })
+
+  it('refuses an id that is not open, without falling back to fuzzy', () => {
+    expect(resolveSendToTarget('#gone', sessions, 't1')).toEqual({
+      ok: false, error: 'That chat is no longer open. Pick another with /send-to.',
+    })
+  })
+
+  it('never resolves an id back to the sending chat', () => {
+    expect(resolveSendToTarget('#t1', sessions, 't1')).toEqual({
+      ok: false, error: 'That chat is no longer open. Pick another with /send-to.',
+    })
   })
 })
