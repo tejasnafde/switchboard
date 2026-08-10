@@ -8,7 +8,7 @@ itself, plus the guards that make that safe unattended.
 ## Plan
 - [x] 1. Pure guards in `src/shared/peer-messaging.ts` + tests
       (`nextHopDepth`, `PeerAgentSendGuard`, initiator type)
-- [ ] 2. `src/main/provider/peer-tools.ts`: tool names, descriptions,
+- [x] 2. `src/main/provider/peer-tools.ts`: tool names, descriptions,
       `PeerToolHost`, `createPeerToolHandlers` + tests
 - [ ] 3. Registry: extract `deliverPeerMessage(input)` as a public method,
       add `listPeerSessions`, `turnDepth`, agent guard; `types.ts` gains
@@ -20,17 +20,22 @@ itself, plus the guards that make that safe unattended.
 - [ ] 7. Gate: typecheck + full `npm test`, then FINAL commit WITHOUT
       `--no-verify`
 
-## Current step: 2
+## Current step: 3
 
 ## Next concrete action
-Write `tests/unit/peer-tools.test.ts` against the not-yet-existing
-`src/main/provider/peer-tools.ts` (tool names, descriptions, handler output,
-refusal passthrough), see it fail, then write the module.
+Extract the `DELIVER_PEER_MESSAGE` handler body in
+`src/main/provider/provider-registry.ts` into a public
+`deliverPeerMessage(input)`, add `listPeerSessions` + `turnDepth` +
+`peerAgentGuard`, and add `setPeerToolHost?` to `ProviderAdapter`. Write
+`tests/unit/peer-agent-tools-ws.test.ts` first (harness copied from
+peer-message-delivery-ws.test.ts).
 
 ## Files touched so far
 - CHECKPOINT.md
 - src/shared/peer-messaging.ts (hop depth, agent guard, initiator, marker)
 - tests/unit/peer-messaging-guards.test.ts (16 -> 30 green)
+- src/main/provider/peer-tools.ts (new: names, descriptions, handlers)
+- tests/unit/peer-tools.test.ts (new, 12 green)
 
 ## Design decided for THIS phase (do not re-litigate)
 - Tool names, as the model sees them: `mcp__switchboard__list_agent_sessions`
