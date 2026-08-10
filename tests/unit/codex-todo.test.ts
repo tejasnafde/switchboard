@@ -9,7 +9,7 @@
  * in provider/policy.ts), intercepted separately, so nothing here is one.
  */
 import { describe, it, expect } from 'vitest'
-import { parseCodexTodoItems } from '../../src/main/provider/adapters/codex-todo'
+import { parseCodexTodoItems, parseCodexTodoMarkdown } from '../../src/main/provider/adapters/codex-todo'
 
 describe('parseCodexTodoItems', () => {
   it('reads step text and status', () => {
@@ -42,5 +42,42 @@ describe('parseCodexTodoItems', () => {
     expect(parseCodexTodoItems({})).toEqual([])
     expect(parseCodexTodoItems({ plan: 'nope' })).toEqual([])
     expect(parseCodexTodoItems(undefined)).toEqual([])
+  })
+})
+
+describe('parseCodexTodoMarkdown', () => {
+  // The `item/completed` notification carries the checklist as markdown text,
+  // not a plan array. Feeding it to the array parser returned nothing, which
+  // silently dropped the list instead of rendering it.
+  it('reads checkbox lines', () => {
+    expect(parseCodexTodoMarkdown('- [x] Review the UI\n- [ ] Clarify the user')).toEqual([
+      { text: 'Review the UI', status: 'completed' },
+      { text: 'Clarify the user', status: 'pending' },
+    ])
+  })
+
+  it('accepts asterisk bullets and stray indentation', () => {
+    expect(parseCodexTodoMarkdown('  * [X] done\n* [ ] todo')).toEqual([
+      { text: 'done', status: 'completed' },
+      { text: 'todo', status: 'pending' },
+    ])
+  })
+
+  it('falls back to plain bullet lines with no checkbox', () => {
+    expect(parseCodexTodoMarkdown('- first\n- second')).toEqual([
+      { text: 'first', status: 'pending' },
+      { text: 'second', status: 'pending' },
+    ])
+  })
+
+  it('ignores blank and non-list lines', () => {
+    expect(parseCodexTodoMarkdown('Plan:\n\n- [ ] only this\n')).toEqual([
+      { text: 'only this', status: 'pending' },
+    ])
+  })
+
+  it('returns nothing for empty input', () => {
+    expect(parseCodexTodoMarkdown('')).toEqual([])
+    expect(parseCodexTodoMarkdown('   ')).toEqual([])
   })
 })

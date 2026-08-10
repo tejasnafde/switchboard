@@ -26,3 +26,19 @@ export function parseCodexTodoItems(params: unknown): TodoItem[] {
   }
   return items
 }
+
+/**
+ * The same checklist when it arrives as markdown text rather than a plan
+ * array, which is the shape of the `item/completed` notification.
+ */
+export function parseCodexTodoMarkdown(text: string): TodoItem[] {
+  const items: TodoItem[] = []
+  for (const line of text.split('\n')) {
+    const match = /^\s*[-*]\s+(?:\[( |x|X)\]\s+)?(.*)$/.exec(line)
+    if (!match) continue
+    const body = match[2].trim()
+    if (!body) continue
+    items.push({ text: body, status: match[1]?.toLowerCase() === 'x' ? 'completed' : 'pending' })
+  }
+  return items
+}

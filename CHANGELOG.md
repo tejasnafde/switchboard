@@ -2,6 +2,16 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.20 - A Codex checklist is a checklist, not a plan to approve
+
+### Fixed
+- **Codex's own todo list rendered as an approval-gated plan.** `update_plan` is the model's progress checklist and arrives repeatedly through a turn, but both handling sites emitted `plan.proposed`, so the UI drew a PROPOSED PLAN card with Implement and Iterate buttons under a list that asks nothing, and redrew it on every update. A genuine Codex plan proposal is the `exit_plan_mode` tool, intercepted separately, so neither site was ever one. Checklists now render as a plain list with per-step state and a done count, replaced in place so updates fold onto one bubble.
+
+### Notes
+- Review of this fix caught a regression inside it: the two Codex sites carry the checklist in different shapes, an array of steps and a markdown block, and the first version parsed only the array. The markdown site would have silently rendered nothing. Both shapes are parsed and tested now.
+- Neither site had any test before this, which is why the mismapping shipped unnoticed.
+- The replace-in-place behaviour lives in `ChatPanel`, which has no component tests, so that part is verified by reading rather than by a test.
+
 ## 0.8.19 - A session can now message a sibling on its own
 
 `/send-to` shipped in 0.8.15 as a command you typed, which made it copy-paste

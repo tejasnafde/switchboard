@@ -1,11 +1,8 @@
 import type { TodoItem } from '@shared/provider-events'
 
 /**
- * The agent's progress checklist, as a plain list.
- *
- * Deliberately not a card with actions: this used to render through PlanCard,
- * which put Implement and Iterate buttons under a list that answers no
- * question and changes several times a turn.
+ * The agent's progress checklist. Deliberately not a card with actions: it used
+ * to render through PlanCard, which offered a decision nobody had asked for.
  */
 export function TodoList({ items }: { items: TodoItem[] }) {
   const done = items.filter((i) => i.status === 'completed').length

@@ -18,7 +18,7 @@ import type {
   ApprovalDecision,
 } from '../types'
 import { decidePermission, denialMessage } from '../policy'
-import { parseCodexTodoItems } from './codex-todo'
+import { parseCodexTodoItems, parseCodexTodoMarkdown } from './codex-todo'
 import { applyEnvOverlay } from '../env-overlay'
 import type { ProviderSkill } from '@shared/types'
 import { withTimeout } from '@shared/promise-timeout'
@@ -787,11 +787,11 @@ export class CodexAdapter implements ProviderAdapter {
       return
     }
 
-    // Same artefact as `turn/plan/updated` above, arriving as a thread item:
-    // a checklist, not an approval request. Rendered as the same todo list so
-    // the two cannot disagree about what a Codex "plan" is.
+    // The same checklist arriving as a thread item, so it renders as one too.
     if (itemType === 'plan' && notification.method === 'item/completed') {
-      const items = parseCodexTodoItems(item)
+      // This shape carries the checklist as markdown text, not a plan array.
+      const text = typeof item.text === 'string' ? item.text : ''
+      const items = parseCodexTodoMarkdown(text)
       if (items.length > 0) {
         active.onEvent({ type: 'todo.updated', threadId, todoId: itemId, items })
       }
@@ -1125,11 +1125,9 @@ export class CodexAdapter implements ProviderAdapter {
         })
       }
     } else if (method === 'turn/plan/updated') {
-      // `update_plan` is the model's own checklist, so this is a todo update,
-      // not a plan awaiting approval. Emitting `plan.proposed` here drew an
-      // Implement / Iterate card for a decision nobody had asked for, and did
-      // it again on every update. A real Codex plan is the `exit_plan_mode`
-      // tool, intercepted through CUSTOM_UI_TOOLS.
+      // `update_plan` is the model's own checklist, not a plan awaiting
+      // approval: emitting `plan.proposed` drew Implement / Iterate buttons for
+      // a decision nobody asked for. A real Codex plan is `exit_plan_mode`.
       const params = asRecord(notification.params)
       const items = parseCodexTodoItems(params)
       if (items.length > 0) {
