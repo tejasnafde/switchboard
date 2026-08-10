@@ -27,7 +27,7 @@ import {
   type SlashCommandContext,
 } from './slashCommands'
 import { detectAtTrigger, filterAtMatches } from './atMention'
-import { detectSendToTrigger } from './sendToCommand'
+import { detectSendToTrigger, sendToPickerItems } from './sendToCommand'
 import { fuzzyScore } from '../../services/fuzzyScore'
 import { AtMentionMenu } from './AtMentionMenu'
 import { BranchPickerTrigger } from './BranchPicker'
@@ -258,15 +258,12 @@ export function ChatInput({
   const [atLoading, setAtLoading] = useState(false)
   // Read on demand, not subscribed: `sessions` changes identity on every
   // streamed token, so subscribing would re-render the composer per token.
-  const sendToMatches = useMemo(() => {
-    if (sendToQuery === null) return []
-    const all = useAgentStore.getState().sessions
-    const self = all.find((x) => x.id === sessionId)
-    return all
-      .filter((x) => x.id !== sessionId && (x.machineId ?? 'local') === (self?.machineId ?? 'local'))
-      .map((x) => x.title ?? x.id)
-      .filter((t) => sendToQuery === '' || fuzzyScore(sendToQuery, t) !== null)
+  const sendToItems = useMemo(() => {
+    if (sendToQuery === null || !sessionId) return []
+    return sendToPickerItems(useAgentStore.getState().sessions, sessionId)
+      .filter((i) => sendToQuery === '' || fuzzyScore(sendToQuery, i.label) !== null)
   }, [sendToQuery, sessionId])
+  const sendToMatches = useMemo(() => sendToItems.map((i) => i.label), [sendToItems])
 
   // Single fuzzy scan per keystroke, shared by the keyboard handler and the
   // menu. Previously the keydown handler re-ran filterAtMatches (a full-list
@@ -557,13 +554,16 @@ export function ChatInput({
   }, [repoRoot])
 
   /** Commit a picked chat title as the `/send-to` target, colon included. */
-  const runSendToPick = useCallback((title: string) => {
+  const runSendToPick = useCallback((label: string) => {
     const range = sendToRangeRef.current
+    const picked = sendToItems.find((i) => i.label === label)
     setSendToQuery(null)
-    if (!range) return
-    richRef.current?.replaceRange(range.start, range.end, `${title}: `)
+    if (!range || !picked) return
+    // The id goes into the body, not the title: two chats can share a title,
+    // and the picker already resolved which one the user meant.
+    richRef.current?.replaceRange(range.start, range.end, `#${picked.id}: `)
     requestAnimationFrame(() => richRef.current?.focus())
-  }, [])
+  }, [sendToItems])
 
   const runAtMention = useCallback((path: string) => {
     const range = atRangeRef.current
@@ -953,6 +953,7 @@ export function ChatInput({
         {sendToQuery !== null && sendToMatches.length > 0 && (
           <AtMentionMenu
             query={sendToQuery}
+            heading="Chats"
             matches={sendToMatches}
             onSelect={runSendToPick}
             onDismiss={() => setSendToQuery(null)}

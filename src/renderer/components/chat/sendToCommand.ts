@@ -74,6 +74,14 @@ export function resolveSendToTarget(
         : 'No other chat is open. Open the chat you want to message in this window, then try again.',
     }
   }
+  // `#<id>` is what the picker inserts. It is exact by construction, so it
+  // must never fall through to fuzzy matching on the id string.
+  if (target.startsWith('#')) {
+    const byId = candidates.find((s) => s.id === target.slice(1))
+    return byId
+      ? { ok: true, id: byId.id, title: byId.title }
+      : { ok: false, error: 'That chat is no longer open. Pick another with /send-to.' }
+  }
   const query = target.toLowerCase()
 
   const exact = candidates.filter((s) => s.title.toLowerCase() === query)
@@ -147,4 +155,45 @@ export function detectSendToTrigger(body: string, caret: number): SendToTrigger 
   const target = body.slice(prefix.length, caret)
   if (target.includes(':')) return null
   return { query: target, start: prefix.length, end: caret }
+}
+
+/** One row of the `/send-to` target picker. */
+export interface SendToPickerItem {
+  id: string
+  label: string
+}
+
+/** A store session as the picker sees it: title and project may be absent. */
+export interface SendToPickerSession {
+  id: string
+  title?: string
+  projectPath?: string
+  machineId?: string
+}
+
+/**
+ * Rows for the target picker, labelled `<title> · <project folder>`.
+ *
+ * Titles alone were ambiguous in practice: several chats share one ("Issue
+ * 172" twice, "v0" twice), and a bare list gave no way to tell them apart.
+ * When title AND project both collide, a short id suffix breaks the tie so
+ * the pick is never arbitrary.
+ */
+export function sendToPickerItems(
+  sessions: ReadonlyArray<SendToPickerSession>,
+  fromSessionId: string,
+): SendToPickerItem[] {
+  const from = sessions.find((s) => s.id === fromSessionId)
+  const rows = sessions
+    .filter((s) => s.id !== fromSessionId && (s.machineId ?? 'local') === (from?.machineId ?? 'local'))
+    .map((s) => ({
+      id: s.id,
+      base: `${s.title ?? s.id} · ${s.projectPath?.split('/').filter(Boolean).pop() ?? 'unknown'}`,
+    }))
+  const counts = new Map<string, number>()
+  for (const r of rows) counts.set(r.base, (counts.get(r.base) ?? 0) + 1)
+  return rows.map((r) => ({
+    id: r.id,
+    label: (counts.get(r.base) ?? 0) > 1 ? `${r.base} (${r.id.slice(0, 4)})` : r.base,
+  }))
 }

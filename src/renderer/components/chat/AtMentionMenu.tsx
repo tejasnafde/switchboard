@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react'
 
 interface AtMentionMenuProps {
   query: string
+  /** Section heading. Defaults to Files; the send-to picker lists chats. */
+  heading?: string
   /**
    * Precomputed matches from the parent (ChatInput). The parent needs the
    * same list for its keyboard handler, so the fuzzy scan over the full
@@ -27,6 +29,7 @@ interface AtMentionMenuProps {
  */
 export function AtMentionMenu({
   query,
+  heading = 'Files',
   matches,
   loading,
   onSelect,
@@ -74,7 +77,7 @@ export function AtMentionMenu({
         fontWeight: 600,
         borderBottom: '1px solid var(--border)',
       }}>
-        Files
+        {heading}
       </div>
       <div style={{ maxHeight: '240px', overflowY: 'auto', padding: '4px' }}>
         {matches.map((path, i) => {
