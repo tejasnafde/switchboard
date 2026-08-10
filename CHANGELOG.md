@@ -2,6 +2,13 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.18 - /send-to tells you who you can send to
+
+### Fixed
+- **`/send-to` was unusable without knowing a chat's exact title.** Typing `/send-to ` now lists the open chats and arrow keys plus Enter commit one with its colon, reusing the at-mention menu's keyboard model. Nothing showed the titles before, so the command asked for something the user had no way to recall.
+- **Its failure message blamed the name.** With only one chat open, any target answered `No open session matches "..."`, which reads like a typo when the real problem is that there is no second chat. Empty-candidate cases now say what to do: open another chat, or that the others run on a different backend.
+- **The delivery handler was silent.** It logged nothing on success or refusal, so a failed attempt left no trace to diagnose. Both paths log now.
+
 ## 0.8.17 - A slow update check was reported as a failed one
 
 ### Fixed
