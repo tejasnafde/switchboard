@@ -1,64 +1,100 @@
-# Task: cross-session messaging phase 1 (same backend, user-directed)
+# Task: cross-session messaging phase 2 (AGENT-initiated peer sends, Claude only)
+
+Phase 1 (`/send-to`, user-typed) already shipped on main - see the "Design
+decided" section at the bottom, which is still authoritative. This phase adds
+two SDK MCP tools so the CLAUDE model can hand context to a sibling session
+itself, plus the guards that make that safe unattended.
 
 ## Plan
-- [x] 1. pure guards module `src/shared/peer-messaging.ts` + tests (16 green)
-- [x] 2. registry `deliverPeerMessage` + `peer.message` RuntimeEvent + IPC channel + WS tests (8 green)
-- [x] 3. preload plumbing + routing key (fromThreadId in OBJECT_KEY_PRIORITY, +1 test)
-- [x] 4. `/send-to` parsing + target resolution (pure, renderer) + tests (12 green)
-- [x] 5. UI wiring: ChatPanel intercept, /send-to registry entry (takesArgs), peer marker kind
-- [x] 6. full gate green: typecheck clean, 213 files / 2181 tests
+- [ ] 1. Pure guards in `src/shared/peer-messaging.ts` + tests
+      (`nextHopDepth`, `PeerAgentSendGuard`, initiator type)
+- [ ] 2. `src/main/provider/peer-tools.ts`: tool names, descriptions,
+      `PeerToolHost`, `createPeerToolHandlers` + tests
+- [ ] 3. Registry: extract `deliverPeerMessage(input)` as a public method,
+      add `listPeerSessions`, `turnDepth`, agent guard; `types.ts` gains
+      `setPeerToolHost?`
+- [ ] 4. Claude adapter: `createSdkMcpServer` wired into queryOptions,
+      list-tool auto-allow in canUseTool
+- [ ] 5. UI: agent-initiated sender marker + `initiator` on `peer.message`
+- [ ] 6. Docs: CLAUDE.md feature note + /help line
+- [ ] 7. Gate: typecheck + full `npm test`, then FINAL commit WITHOUT
+      `--no-verify`
 
-## Current step: DONE
+## Current step: 1
 
 ## Next concrete action
-None. Phase 1 complete. Out of scope by design: agent-callable send tool,
-cross-backend routing, hold/approve trust tiers, receiver notification.
+Write the failing tests for `nextHopDepth` + `PeerAgentSendGuard` in
+`tests/unit/peer-messaging-guards.test.ts`, run them, see them fail.
 
 ## Files touched so far
 - CHECKPOINT.md
-- src/shared/peer-messaging.ts (new)
-- src/shared/provider-events.ts (peer.message event)
-- src/shared/ipc-channels.ts (DELIVER_PEER_MESSAGE)
-- src/main/db/database.ts (getConversationTitle)
-- src/main/provider/provider-registry.ts (deliverPeerMessage handler)
-- tests/unit/peer-message-delivery-ws.test.ts (new, 8 green)
-- src/preload/routing-table.ts + tests/unit/routing-table.test.ts (fromThreadId key)
-- src/preload/index.ts (provider.deliverPeerMessage)
-- src/renderer/components/chat/sendToCommand.ts (new) + tests/unit/send-to-command.test.ts (12 green)
-- tests/unit/peer-messaging-guards.test.ts (new)
 
-## Design decided (do not re-litigate)
-- Guard constants: 16 KiB body cap, 5 sends per (from,target) per 60_000 ms,
-  identical content-addressed id dropped within 10 min. `now` is injected on
-  every call; no clock inside the module.
-- Content-addressed id: `pm_<16 hex>` = pure-TS FNV-1a 64 over
-  `fromThreadId \0 targetThreadId \0 text`. No node:crypto - `src/shared/*`
-  has zero node imports and is consumed by the RN app.
-- Wire wrapper lives in shared (`wrapPeerMessage`) so the renderer can rebuild
-  the receiver bubble's `content` without the event carrying it twice.
-- Delivery goes through the SAME code path as `ProviderChannels.SEND_TURN`
-  (extracted private `runSendTurn`). `respondToRequest` is never called, so a
-  peer message structurally cannot resolve a pending approval.
-- Target resolved through `resolveRootThreadId` before the adapter lookup
-  (CLAUDE.md gotcha: sidebar surfaces the rotated Claude session UUID).
-- New event `peer.message` with `direction: 'sent' | 'received'` - one type,
-  emitted on both threads. Sender renders a marker pill, receiver a user
-  bubble whose `displayBody` names the provenance.
-- Sender marker prefix `[[sb:peer-sent]]` lives in shared/peer-messaging.ts
-  (main writes it too, so it cannot live in renderer/rotationMarker.ts).
-  `parseRotationMarker` gains kind `'peer'`; the `<from> → <to>` shape is
-  exactly what that parser already reads.
-- `getSystemMarkerMessages` already matches `content LIKE '[[sb:%'`, so the
-  sender marker survives a JSONL reload with no DB change.
-- `/send-to` is an args-taking built-in: selecting it in the menu INSERTS
-  `/send-to ` (like agent-source skills) instead of running. `SlashCommand`
-  gains `takesArgs?: true` for that branch.
+## Design decided for THIS phase (do not re-litigate)
+- Tool names, as the model sees them: `mcp__switchboard__list_agent_sessions`
+  and `mcp__switchboard__send_agent_message`. SDK MCP server name
+  `switchboard`, registered per Claude session in `startDraining`.
+- **The approval gate is the EXISTING one.** SDK MCP tools route through the
+  CLI's permission system, so `canUseTool` fires for them (verified in
+  `sdk.mjs`: `can_use_tool` is generic on `tool_name`). `decidePermission`
+  therefore already gives exactly the required behaviour: prompt in
+  sandbox/accept-edits, allow in full-access, deny in plan. No parallel prompt.
+  `list_agent_sessions` gets an early auto-allow in `canUseTool` next to the
+  ExitPlanMode / AskUserQuestion branches: it reads only titles the sidebar
+  already shows, and prompting for it would train the user to click through.
+- **Hop depth** counts consecutive AGENT-initiated hops since the last human
+  message. `PEER_MESSAGE_MAX_HOP_DEPTH = 1`: a delivery creates depth
+  senderDepth+1 and is refused when that exceeds 1, so only a turn the user
+  started may originate an agent send. That kills A -> B -> A outright rather
+  than allowing one round trip.
+  - A USER-initiated `/send-to` sets the target's depth to 0, not +1: the human
+    authored that text, so the recipient is not "one hop from a human".
+  - Depth is NOT cleared on `turn.completed`, only on a user turn (set 0) or
+    `STOP_SESSION` (deleted). A session that acted on a peer message therefore
+    cannot originate one until the user speaks to it again, which is the whole
+    point of the guard.
+- **Per-sender budget** `PEER_AGENT_SEND_BUDGET = 6` per
+  `PEER_AGENT_SEND_WINDOW_MS = 600_000` (10 min), keyed on the SENDING thread
+  only. The existing per-pair limit is 5/60s, so five siblings would otherwise
+  allow 25/min. 6 per 10 min is deliberately below 5x the pair limit, and still
+  covers handing a finding to each of a handful of siblings once.
+- Both guards refuse BEFORE recording, and both are released when `sendTurn`
+  throws, exactly like the existing `PeerMessageGuard`.
+- Refusals reach the MODEL as tool output with `isError: true`, never as a
+  thrown MCP error, so it can adapt instead of retrying blindly.
+- `PeerMessageInput.fromLabel` becomes optional: the adapter cannot know the
+  sending conversation's title, so `deliverPeerMessage` falls back to
+  `getConversationTitle(fromThreadId) ?? fromThreadId`.
+- ONE delivery path. `ProviderRegistry.deliverPeerMessage` is public and both
+  the IPC handler (`initiator: 'user'`) and the tool handler
+  (`initiator: 'agent'`) call it. A test spies the method and drives both.
+- Sender marker gains a second prefix `[[sb:peer-sent-agent]]` ->
+  `parseRotationMarker` kind `'peer-agent'`. `[[sb:peer-sent]]` is not a string
+  prefix of it (`-` follows, not `]]`), so the existing startsWith dispatch
+  stays unambiguous.
+- Codex and OpenCode stay valid TARGETS and cannot SEND: the tools are Claude
+  SDK MCP tools. Nothing about the registry path is Claude-specific, so a
+  Codex/OpenCode equivalent is adapter work only.
+- `zod` moves into `dependencies` (was transitive via the agent SDK, deduped
+  at 4.3.6): `sdk.tool()` needs a Zod raw shape for `inputSchema`.
 
 ## Gotchas learned
 - `npm install` is required in a fresh worktree (done).
-- Registry handlers register in `ProviderRegistry.registerIpcHandlers()`, which
-  both `ElectronIpcHost` and `WsHost` construct - no separate server wiring.
-- `tests/unit/provider-switch-ws.test.ts` mocks `src/main/db/database`; any new
-  DB function the registry calls must be added to that mock or the test throws.
-- `RoutingTable.resolve` keys on `OBJECT_KEY_PRIORITY`; `fromThreadId` must be
-  added there or a remote sender's call silently lands on the local backend.
+- `tests/unit/provider-switch-ws.test.ts` and the peer WS tests mock
+  `src/main/db/database`; any new DB function the registry calls must be added
+  to those mocks or the test throws.
+- The per-pair rate limit (5) is LOWER than the per-sender budget (6), so a
+  budget test must fan out over two targets or the pair limit fires first.
+
+## Design decided in PHASE 1 (still authoritative)
+- Guard constants: 16 KiB body cap, 5 sends per (from,target) per 60_000 ms,
+  identical content-addressed id dropped within 10 min. `now` is injected on
+  every call; no clock inside the module.
+- Content-addressed id: `pm_<16 hex>` = pure-TS FNV-1a 64. No node:crypto -
+  `src/shared/*` has zero node imports and is consumed by the RN app.
+- Delivery goes through the SAME code path as `ProviderChannels.SEND_TURN`.
+  `respondToRequest` is never called, so a peer message structurally cannot
+  resolve a pending approval.
+- Target resolved through `resolveRootThreadId` before the adapter lookup
+  (CLAUDE.md gotcha: sidebar surfaces the rotated Claude session UUID).
+- `getSystemMarkerMessages` already matches `content LIKE '[[sb:%'`, so a
+  sender marker survives a JSONL reload with no DB change.
