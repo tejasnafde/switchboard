@@ -18,6 +18,7 @@ import type {
   ApprovalDecision,
 } from '../types'
 import { decidePermission, denialMessage } from '../policy'
+import { parseCodexTodoItems } from './codex-todo'
 import { applyEnvOverlay } from '../env-overlay'
 import type { ProviderSkill } from '@shared/types'
 import { withTimeout } from '@shared/promise-timeout'
@@ -786,15 +787,13 @@ export class CodexAdapter implements ProviderAdapter {
       return
     }
 
+    // Same artefact as `turn/plan/updated` above, arriving as a thread item:
+    // a checklist, not an approval request. Rendered as the same todo list so
+    // the two cannot disagree about what a Codex "plan" is.
     if (itemType === 'plan' && notification.method === 'item/completed') {
-      const text = typeof item.text === 'string' ? item.text.trim() : ''
-      if (text) {
-        active.onEvent({
-          type: 'plan.proposed',
-          threadId,
-          planId: itemId,
-          planMarkdown: text,
-        })
+      const items = parseCodexTodoItems(item)
+      if (items.length > 0) {
+        active.onEvent({ type: 'todo.updated', threadId, todoId: itemId, items })
       }
       return
     }
@@ -1126,23 +1125,19 @@ export class CodexAdapter implements ProviderAdapter {
         })
       }
     } else if (method === 'turn/plan/updated') {
+      // `update_plan` is the model's own checklist, so this is a todo update,
+      // not a plan awaiting approval. Emitting `plan.proposed` here drew an
+      // Implement / Iterate card for a decision nobody had asked for, and did
+      // it again on every update. A real Codex plan is the `exit_plan_mode`
+      // tool, intercepted through CUSTOM_UI_TOOLS.
       const params = asRecord(notification.params)
-      const plan = Array.isArray(params?.plan) ? params.plan : []
-      const markdown = plan
-        .map((step) => {
-          const obj = asRecord(step)
-          const text = typeof obj?.step === 'string' ? obj.step : ''
-          const status = typeof obj?.status === 'string' ? obj.status : 'pending'
-          return text ? `- [${status === 'completed' ? 'x' : ' '}] ${text}` : ''
-        })
-        .filter(Boolean)
-        .join('\n')
-      if (markdown) {
+      const items = parseCodexTodoItems(params)
+      if (items.length > 0) {
         active.onEvent({
-          type: 'plan.proposed',
+          type: 'todo.updated',
           threadId,
-          planId: typeof params?.turnId === 'string' ? params.turnId : `plan_${Date.now()}`,
-          planMarkdown: markdown,
+          todoId: typeof params?.turnId === 'string' ? params.turnId : `todo_${threadId}`,
+          items,
         })
       }
     } else if (method === 'turn/diff/updated') {

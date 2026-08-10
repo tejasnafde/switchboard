@@ -226,6 +226,11 @@ export interface ChatMessage {
   }
   /** Plan proposal from agent exiting plan mode */
   plan?: PlanAttachment
+  /**
+   * The agent's own progress checklist. No decision attached, unlike `plan`,
+   * so it renders without Implement / Iterate controls.
+   */
+  todos?: { id: string; items: Array<{ text: string; status: 'pending' | 'in_progress' | 'completed' }> }
   /** AskUserQuestion request */
   question?: QuestionAttachment
   /** Per-file diff card (git-checkpoint derived) with accept/reject controls */

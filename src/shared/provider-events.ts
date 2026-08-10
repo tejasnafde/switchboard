@@ -104,6 +104,29 @@ export interface RuntimePeerMessageEvent {
   at: number
 }
 
+/** One entry of an agent's own progress checklist. */
+export type TodoStatus = 'pending' | 'in_progress' | 'completed'
+export interface TodoItem {
+  text: string
+  status: TodoStatus
+}
+
+/**
+ * The agent's progress checklist changed (Codex `update_plan`, and Claude's
+ * TodoWrite if it is wired later).
+ *
+ * Distinct from `plan.proposed`, which asks the user to approve a plan before
+ * work starts. A todo list needs no decision, and it is replaced in place
+ * rather than appended, because it updates many times per turn.
+ */
+export interface RuntimeTodoUpdatedEvent {
+  type: 'todo.updated'
+  threadId: string
+  /** Stable per list, so an update replaces its predecessor. */
+  todoId: string
+  items: TodoItem[]
+}
+
 export type RuntimeEvent = (
   | RuntimeContentEvent
   | RuntimeUserMessageEvent
@@ -127,6 +150,7 @@ export type RuntimeEvent = (
   | RuntimeSpendBlockedEvent
   | RuntimeThreadReadEvent
   | RuntimePeerMessageEvent
+  | RuntimeTodoUpdatedEvent
 ) & {
   /** Which machine emitted this event ('local' or a remote's id). Stamped by
    *  preload's provider.onEvent, not the adapter - used to reject cross-machine

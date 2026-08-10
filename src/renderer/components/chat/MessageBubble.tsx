@@ -18,6 +18,7 @@ import { parseSlashCommandWrapper, splitSkillMentions } from './slashCommands'
 import { SkillChip } from './SkillChip'
 import { forkAndOpenSession } from '../../services/forkSession'
 import { parseRotationMarker } from './rotationMarker'
+import { TodoList } from './TodoList'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 
 interface MessageBubbleProps {
@@ -269,6 +270,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     && !message.approval
     && !message.images?.length
     && !message.plan
+    && !message.todos?.items.length
     && !message.question
     && !message.fileDiff
     && !message.denial) {
@@ -488,6 +490,11 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             onApprove={() => onPlanAction?.(message.plan!.id, 'implement')}
             onReject={() => onPlanAction?.(message.plan!.id, 'iterate')}
           />
+        )}
+
+        {/* The agent's own checklist. No buttons: nothing is being asked. */}
+        {message.todos && message.todos.items.length > 0 && (
+          <TodoList items={message.todos.items} />
         )}
 
         {/* AskUserQuestion request */}

@@ -553,6 +553,26 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           })
           break
         }
+        case 'todo.updated': {
+          // Replaced in place, not appended: Codex re-sends the whole list on
+          // every step change, so appending would stack a card per update.
+          const todoMsgId = `todo_${event.todoId}`
+          const store = useAgentStore.getState()
+          const has = store.sessions.find((s) => s.id === tid)?.messages
+            .some((m) => m.id === todoMsgId)
+          if (has) {
+            updateMessage(tid, todoMsgId, { todos: { id: event.todoId, items: event.items } })
+          } else {
+            appendMessage(tid, {
+              id: todoMsgId,
+              role: 'assistant',
+              content: '',
+              timestamp: Date.now(),
+              todos: { id: event.todoId, items: event.items },
+            })
+          }
+          break
+        }
         case 'question.asked': {
           appendMessage(tid, {
             id: `question_${event.requestId}`,
