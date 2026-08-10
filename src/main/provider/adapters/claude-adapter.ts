@@ -251,6 +251,8 @@ import {
 } from '../claude-session-migrate'
 import { shapeQuestionAnswers } from './question-answers'
 import { TurnWatchdog, StderrTail, countToolBrackets } from '../turn-watchdog'
+import { buildPeerToolServer } from './claude-peer-tools'
+import { PEER_LIST_TOOL, PEER_TOOL_SERVER_NAME, type PeerToolHost } from '../peer-tools'
 
 /**
  * Silence this long inside a turn is reported to the UI. Generous because
@@ -479,6 +481,17 @@ export class ClaudeAdapter implements ProviderAdapter {
 
   readonly provider = 'claude' as const
   private sessions = new Map<string, ActiveSession>()
+
+  /**
+   * Backend seam for the cross-session peer tools. Null until the registry
+   * hands it over, and then every session gets the tools - they are per
+   * thread only in that each binds to its own sending thread id.
+   */
+  private peerHost: PeerToolHost | null = null
+
+  setPeerToolHost(host: PeerToolHost): void {
+    this.peerHost = host
+  }
 
   async isAvailable(): Promise<boolean> {
     try {
@@ -718,6 +731,19 @@ export class ClaudeAdapter implements ProviderAdapter {
         log.warn(`AskUserQuestion: parseQuestions returned 0 - falling through to regular approval`)
       }
 
+      // ── Special: list_agent_sessions ─────────────────────────
+      // Reads nothing but the titles and folders of chats the user already has
+      // open in front of them, and the model needs an id before it can send
+      // anything at all. Prompting for it would put an approval in front of a
+      // read the user cannot be harmed by, which trains them to click through
+      // the one that follows. `send_agent_message` is NOT listed here: it
+      // falls through to decidePermission, so it prompts in sandbox and
+      // accept-edits, is denied in plan, and only runs unattended in
+      // full-access - the same gate every other side effect gets.
+      if (toolName === PEER_LIST_TOOL) {
+        return { behavior: 'allow', updatedInput: toolInput } as PermissionResult
+      }
+
       const currentMode = active.session.runtimeMode
       const policy = decidePermission(currentMode, toolName)
 
@@ -853,10 +879,18 @@ export class ClaudeAdapter implements ProviderAdapter {
     // passing a plain string adds exactly this text and nothing else.
     const notebookPrompt = notebookManager.systemPromptFor(threadId)
 
+    // Cross-session messaging, as two in-process MCP tools. Built per query
+    // because the server binds to this thread id, which is what makes
+    // `send_agent_message` unable to spoof a different sender.
+    const peerTools = this.peerHost
+      ? buildPeerToolServer(sdk, this.peerHost, threadId)
+      : null
+
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,
       ...(active.session.model ? { model: active.session.model } : {}),
       ...(notebookPrompt ? { systemPrompt: notebookPrompt } : {}),
+      ...(peerTools ? { mcpServers: { [PEER_TOOL_SERVER_NAME]: peerTools } } : {}),
       permissionMode,
       // Always enable the dangerously-skip-permissions CLI flag so the user
       // can toggle to Full Access mid-session. Our `canUseTool` is the

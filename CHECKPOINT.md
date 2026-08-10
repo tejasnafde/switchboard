@@ -13,21 +13,20 @@ itself, plus the guards that make that safe unattended.
 - [x] 3. Registry: extract `deliverPeerMessage(input)` as a public method,
       add `listPeerSessions`, `turnDepth`, agent guard; `types.ts` gains
       `setPeerToolHost?`
-- [ ] 4. Claude adapter: `createSdkMcpServer` wired into queryOptions,
+- [x] 4. Claude adapter: `createSdkMcpServer` wired into queryOptions,
       list-tool auto-allow in canUseTool
 - [ ] 5. UI: agent-initiated sender marker + `initiator` on `peer.message`
 - [ ] 6. Docs: CLAUDE.md feature note + /help line
 - [ ] 7. Gate: typecheck + full `npm test`, then FINAL commit WITHOUT
       `--no-verify`
 
-## Current step: 4
+## Current step: 5
 
 ## Next concrete action
-Wire the SDK MCP server into the Claude adapter: add `zod` to dependencies,
-write `src/main/provider/adapters/claude-peer-tools.ts` (binding only), call it
-from `startDraining`'s queryOptions, and auto-allow `PEER_LIST_TOOL` early in
-`canUseTool`. Test the binding with a fake sdk in
-`tests/unit/claude-peer-tools.test.ts`.
+UI: make `peerMessageToChatMessage` pick the marker prefix from
+`event.initiator`, add kind `'peer-agent'` to `parseRotationMarker`, render it
+in `MessageBubble`, and add `initiator: 'user'` to the event fixture in
+`tests/unit/send-to-command.test.ts`.
 
 ## Files touched so far
 - CHECKPOINT.md
@@ -40,6 +39,10 @@ from `startDraining`'s queryOptions, and auto-allow `PEER_LIST_TOOL` early in
 - src/main/provider/types.ts (setPeerToolHost? on ProviderAdapter)
 - src/shared/provider-events.ts (initiator on peer.message)
 - tests/unit/peer-agent-tools-ws.test.ts (new, 14 green)
+- src/main/provider/adapters/claude-peer-tools.ts (new: SDK MCP binding)
+- src/main/provider/adapters/claude-adapter.ts (mcpServers + list-tool allow)
+- package.json (zod as a direct dependency)
+- tests/unit/claude-peer-tools.test.ts (new, 4 green)
 
 ## Design decided for THIS phase (do not re-litigate)
 - Tool names, as the model sees them: `mcp__switchboard__list_agent_sessions`
@@ -96,6 +99,10 @@ from `startDraining`'s queryOptions, and auto-allow `PEER_LIST_TOOL` early in
   to those mocks or the test throws.
 - The per-pair rate limit (5) is LOWER than the per-sender budget (6), so a
   budget test must fan out over two targets or the pair limit fires first.
+- MCP `CallToolResult` declares an index signature, so `PeerToolResult` needs
+  `[key: string]: unknown` or the handler will not typecheck at the SDK edge.
+- Tests are NOT typechecked (`tsconfig.*.json` include only `src/**`), so a
+  stale event fixture in a test compiles even when the type gained a field.
 
 ## Design decided in PHASE 1 (still authoritative)
 - Guard constants: 16 KiB body cap, 5 sends per (from,target) per 60_000 ms,

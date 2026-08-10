@@ -74,10 +74,16 @@ export interface PeerToolHost {
   deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }>
 }
 
-/** The MCP `CallToolResult` subset we produce. */
+/**
+ * The MCP `CallToolResult` subset we produce. The index signature is there
+ * because `CallToolResult` declares one, and without a match the handler is
+ * not assignable at the SDK boundary. Everything here comes out of `say`, so
+ * nothing else relies on excess-property checking.
+ */
 export interface PeerToolResult {
   content: Array<{ type: 'text'; text: string }>
   isError?: boolean
+  [key: string]: unknown
 }
 
 function say(text: string, isError = false): PeerToolResult {
