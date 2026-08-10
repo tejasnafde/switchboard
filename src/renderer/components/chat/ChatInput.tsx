@@ -810,6 +810,8 @@ export function ChatInput({
 
   return (
     <div
+      className="chat-composer"
+      data-runtime-mode={runtimeMode}
       style={{
         padding: '8px 12px 10px',
         borderTop: '1px solid var(--border)',

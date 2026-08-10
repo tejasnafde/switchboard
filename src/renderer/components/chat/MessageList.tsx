@@ -4,6 +4,7 @@ import { MessageBubble } from './MessageBubble'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
+import { activitySummaryLabel, projectTurnPresentation } from './turnPresentation'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -46,6 +47,7 @@ export function groupIntoTurns(messages: ChatMessage[]): ChatMessage[][] {
       !msg.approval &&
       !msg.question &&
       !msg.plan &&
+      !msg.todos?.items.length &&
       !msg.fileDiff &&
       !msg.images?.length &&
       !msg.denial
@@ -282,6 +284,27 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
           const isUser = role === 'user'
           const isSystem = role === 'system'
           const timestamp = group[group.length - 1].timestamp
+          const presentation = projectTurnPresentation(group)
+          const activity = presentation.find((item) => item.kind === 'activity')
+          const turnDurationMs = group.reduce<number | undefined>(
+            (duration, message) => typeof message.turnDurationMs === 'number' ? message.turnDurationMs : duration,
+            undefined,
+          )
+          const hasActivity = activity?.kind === 'activity'
+
+          const renderMessage = (msg: ChatMessage, hideTurnDuration = hasActivity) => (
+            <MessageBubble
+              key={msg.id}
+              message={msg}
+              sessionId={sessionId ?? undefined}
+              knownSkillNames={knownSkillNames}
+              onApproval={onApproval}
+              onAnswerQuestion={onAnswerQuestion}
+              onPlanAction={onPlanAction}
+              onFileDiffResolve={onFileDiffResolve}
+              hideTurnDuration={hideTurnDuration}
+            />
+          )
 
           return (
             <div
@@ -308,19 +331,32 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
                 {roleLabel(role, agentType)}
               </div>
 
-              {/* All messages in this turn */}
-              {group.map((msg) => (
-                <MessageBubble
-                  key={msg.id}
-                  message={msg}
-                  sessionId={sessionId ?? undefined}
-                  knownSkillNames={knownSkillNames}
-                  onApproval={onApproval}
-                  onAnswerQuestion={onAnswerQuestion}
-                  onPlanAction={onPlanAction}
-                  onFileDiffResolve={onFileDiffResolve}
-                />
-              ))}
+              {/* Preserve message objects and handlers while lowering the
+                  default prominence of implementation detail. */}
+              {presentation.map((item) => {
+                if (item.kind === 'message') return renderMessage(item.message)
+                if (item.kind === 'activity') {
+                  const running = item.messages.some((message) =>
+                    message.toolCalls?.some((tool) => tool.output === undefined),
+                  )
+                  return (
+                    <details className="turn-activity" key={item.messages[0].id} open={running}>
+                      <summary>{activitySummaryLabel(item.toolCount, turnDurationMs)}</summary>
+                      <div className="turn-activity-body">
+                        {item.messages.map((message) => renderMessage(message, true))}
+                      </div>
+                    </details>
+                  )
+                }
+                return (
+                  <section className="turn-files" key={item.messages[0].id}>
+                    <header>
+                      Changed {item.messages.length} {item.messages.length === 1 ? 'file' : 'files'}
+                    </header>
+                    {item.messages.map((message) => renderMessage(message))}
+                  </section>
+                )
+              })}
 
               {/* Turn timestamp */}
               <div style={{

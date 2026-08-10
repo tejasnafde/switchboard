@@ -47,6 +47,8 @@ interface MessageBubbleProps {
   onPlanAction?: (planId: string, action: 'implement' | 'iterate') => void
   /** Resolve a file-diff card: write the chosen content back + persist status. */
   onFileDiffResolve?: (messageId: string, status: FileDiffResolveStatus, contentToWrite: string | null) => void | Promise<void>
+  /** The containing turn already presents duration in its compact activity summary. */
+  hideTurnDuration?: boolean
 }
 
 export function resolveBubbleProjectPath(
@@ -87,7 +89,7 @@ function resolveFileCached(projectPath: string, path: string): Promise<boolean> 
   return cached
 }
 
-export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageBubbleProps) {
+export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve, hideTurnDuration = false }: MessageBubbleProps) {
   const renderedContent = useMemo(() => {
     if (!message.content) return ''
     // Escape lone tildes used as "approximately" (e.g. ~34) so they don't
@@ -551,7 +553,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 
         {/* Per-turn duration ("Worked for 1.4s") - Cursor-style indicator
             shown only on the last assistant message of a completed turn. */}
-        {message.role === 'assistant' && typeof message.turnDurationMs === 'number' && (
+        {!hideTurnDuration && message.role === 'assistant' && typeof message.turnDurationMs === 'number' && (
           <div
             style={{
               fontSize: '10.5px',

@@ -3,11 +3,13 @@ import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
+import { useMachineStore } from '../../stores/machine-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
 import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from './sendToCommand'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
+import { chatIdentity } from './chatIdentity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
@@ -141,7 +143,16 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   const projectPath = activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
   const chatTitle = activeSession?.title ?? 'New conversation'
-  const folderName = projectPath?.split('/').pop() ?? ''
+  const remoteMachineName = useMachineStore((state) =>
+    state.remotes.find((machine) => machine.id === activeSession?.machineId)?.name,
+  )
+  const identity = useMemo(() => chatIdentity({
+    machineId: activeSession?.machineId,
+    machineName: remoteMachineName,
+    projectPath,
+    title: chatTitle,
+    worktreeBranch: activeSession?.worktreeBranch,
+  }), [activeSession?.machineId, activeSession?.worktreeBranch, chatTitle, projectPath, remoteMachineName])
   const runtimeMode = activeSession?.runtimeMode ?? 'sandbox'
   const model = activeSession?.model
   const resolvedModel = activeSession?.resolvedModel
@@ -1231,6 +1242,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       )}
       {/* ── Top bar: folder / chat name ──────────────────────── */}
       <div
+        className="chat-panel-header"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1243,57 +1255,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           minHeight: '32px',
         }}
       >
-        {/* Status dot */}
-        <span
-          style={{
-            width: '6px',
-            height: '6px',
-            borderRadius: '50%',
-            flexShrink: 0,
-            background:
-              status === 'running' || status === 'thinking'
-                ? 'var(--success)'
-                : status === 'error'
-                  ? 'var(--error)'
-                  : 'var(--text-muted)',
-            boxShadow:
-              status === 'running' || status === 'thinking'
-                ? '0 0 6px var(--success)'
-                : 'none',
-          }}
-        />
-
-        {/* Folder / Chat name - flex group that truncates cleanly */}
+        {/* Plain identity breadcrumb; only consequential state receives color. */}
         {hasSession ? (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            flex: '1 1 0%',
-            minWidth: 0,
-            overflow: 'hidden',
-          }}>
-            {folderName && (
-              <>
-                <span
-                  title={projectPath}
-                  style={{
-                    color: 'var(--text-muted)',
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '11px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flexShrink: 1,
-                    minWidth: 0,
-                    maxWidth: '40%',
-                  }}
-                >
-                  {folderName}
-                </span>
-                <span style={{ color: 'var(--text-muted)', fontSize: '10px', flexShrink: 0 }}>/</span>
-              </>
-            )}
+          <div className="chat-identity" title={projectPath}>
+            {identity.breadcrumb.slice(0, -1).map((part, index) => (
+              <span className="chat-identity-parent" key={`${part}-${index}`}>
+                {part}<span className="chat-identity-separator">/</span>
+              </span>
+            ))}
             {editingTitle ? (
               <input
                 ref={titleInputRef}
@@ -1317,20 +1286,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
                 }}
               />
             ) : (
-              <span
-                title={chatTitle}
-                style={{
-                  color: 'var(--text-primary)',
-                  fontWeight: 500,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  flexShrink: 1,
-                  minWidth: 0,
-                }}
-              >
-                {chatTitle}
-              </span>
+              <span className="chat-identity-title" title={chatTitle}>{chatTitle}</span>
             )}
             {!editingTitle && (
               <button
@@ -1355,6 +1311,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
                   <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
                 </svg>
               </button>
+            )}
+            {identity.branch && (
+              <span className="chat-identity-branch" title={activeSession?.worktreePath ?? identity.branch}>
+                {identity.branch}
+              </span>
             )}
           </div>
         ) : (

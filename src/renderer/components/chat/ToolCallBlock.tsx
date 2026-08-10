@@ -23,19 +23,6 @@ function classifyTool(name: string): ToolKind {
   return 'other'
 }
 
-const KIND_COLORS: Record<ToolKind, { fg: string; bg: string }> = {
-  bash:  { fg: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' },
-  read:  { fg: '#3b82f6', bg: 'rgba(59, 130, 246, 0.1)' },
-  edit:  { fg: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },
-  write: { fg: '#f59e0b', bg: 'rgba(245, 158, 11, 0.1)' },
-  glob:  { fg: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)' },
-  grep:  { fg: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.1)' },
-  agent: { fg: '#ec4899', bg: 'rgba(236, 72, 153, 0.1)' },
-  web:   { fg: '#06b6d4', bg: 'rgba(6, 182, 212, 0.1)' },
-  todo:  { fg: '#a78bfa', bg: 'rgba(167, 139, 250, 0.1)' },
-  other: { fg: 'var(--text-muted)', bg: 'var(--bg-tertiary)' },
-}
-
 function Icon({ kind }: { kind: ToolKind }) {
   const props = { width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const }
   switch (kind) {
@@ -307,28 +294,28 @@ function DiffChunk({ type, content }: { type: 'add' | 'remove'; content: string 
 export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false)
   const kind = classifyTool(toolCall.name)
-  const colors = KIND_COLORS[kind]
   const summary = useMemo(() => summarizeTool(kind, toolCall.name, toolCall.input), [kind, toolCall.name, toolCall.input])
   const hasRunning = !toolCall.output
 
   return (
     <div
+      className="tool-call-row"
       style={{
-        border: '1px solid var(--border)',
-        borderRadius: 'var(--radius)',
-        marginTop: '6px',
+        marginTop: '2px',
         overflow: 'hidden',
         fontSize: '12px',
       }}
     >
       <button
+        type="button"
+        aria-expanded={expanded}
         onClick={() => setExpanded(!expanded)}
         style={{
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
           width: '100%',
-          padding: '6px 10px',
+          padding: '5px 8px',
           background: 'transparent',
           border: 'none',
           color: 'var(--text-secondary)',
@@ -337,16 +324,14 @@ export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
           fontSize: '12px',
         }}
       >
-        {/* Colored icon pill */}
+        {/* Neutral glyph: tool type is useful; decorative category color is not. */}
         <span style={{
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          width: '22px',
-          height: '22px',
-          borderRadius: '4px',
-          background: colors.bg,
-          color: colors.fg,
+          width: '16px',
+          height: '16px',
+          color: 'var(--text-muted)',
           flexShrink: 0,
         }}>
           <Icon kind={kind} />
@@ -379,15 +364,11 @@ export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
 
         {!summary.detail && <span style={{ flex: 1 }} />}
 
-        {/* Status dot */}
-        <span style={{
-          width: '6px',
-          height: '6px',
-          borderRadius: '50%',
-          background: hasRunning ? 'var(--warning)' : 'var(--success)',
-          flexShrink: 0,
-          opacity: 0.7,
-        }} />
+        {hasRunning && (
+          <span style={{ color: 'var(--text-muted)', fontSize: '10px', flexShrink: 0 }}>
+            Running
+          </span>
+        )}
 
         {/* Chevron */}
         <span style={{

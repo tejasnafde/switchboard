@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { groupIntoTurns, roleLabel } from '../../src/renderer/components/chat/MessageList'
+import { activitySummaryLabel, projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
 
 /**
  * Regression tests for MessageList.groupIntoTurns.
@@ -172,6 +173,15 @@ describe('groupIntoTurns', () => {
     expect(groups[1][0].content).toBe('got your image')
   })
 
+  it('keeps assistant messages that only have a todo list', () => {
+    const messages = [msg({
+      id: 'todos',
+      todos: { id: 'list', items: [{ text: 'Ship it', status: 'in_progress' }] },
+    })]
+
+    expect(groupIntoTurns(messages)[0]?.[0]).toBe(messages[0])
+  })
+
   it('groups consecutive assistant messages into a single turn', () => {
     const messages: ChatMessage[] = [
       msg({ role: 'user', content: 'hi' }),
@@ -201,6 +211,52 @@ describe('groupIntoTurns', () => {
       msg({ role: 'assistant', content: '' }),
     ]
     expect(groupIntoTurns(messages)).toEqual([])
+  })
+})
+
+describe('projectTurnPresentation', () => {
+  it('formats a restrained tool-and-duration summary', () => {
+    expect(activitySummaryLabel(1)).toBe('Used 1 tool')
+    expect(activitySummaryLabel(6, 18_000)).toBe('Used 6 tools · 18s')
+  })
+
+  it('groups adjacent tool-only activity without hiding conversational content', () => {
+    const activityA = msg({ id: 'tool-a', toolCalls: [{ id: 'a', name: 'Read', input: 'a.ts' }] })
+    const activityB = msg({ id: 'tool-b', toolCalls: [{ id: 'b', name: 'Bash', input: 'npm test' }] })
+    const prose = msg({
+      id: 'answer',
+      content: 'The tests pass.',
+      toolCalls: [{ id: 'c', name: 'Read', input: 'package.json' }],
+    })
+
+    const projected = projectTurnPresentation([activityA, activityB, prose])
+
+    expect(projected).toEqual([
+      { kind: 'activity', messages: [activityA, activityB], toolCount: 2 },
+      { kind: 'message', message: prose },
+    ])
+  })
+
+  it('groups changed files and preserves every renderable message object exactly once', () => {
+    const fileA = msg({ id: 'diff-a', fileDiff: {
+      fileEditId: 'turn:a.ts', repoRoot: '/repo', relPath: 'a.ts', changeKind: 'modify',
+      oldContent: 'a', newContent: 'b', status: 'pending',
+    } })
+    const fileB = msg({ id: 'diff-b', fileDiff: {
+      fileEditId: 'turn:b.ts', repoRoot: '/repo', relPath: 'b.ts', changeKind: 'add',
+      oldContent: '', newContent: 'b', status: 'pending',
+    } })
+    const approval = msg({ id: 'approval', approval: { toolName: 'Bash', detail: 'npm test', status: 'pending' } })
+    const input = [fileA, fileB, approval]
+
+    const projected = projectTurnPresentation(input)
+    const output = projected.flatMap((item) => item.kind === 'message' ? [item.message] : item.messages)
+
+    expect(projected[0]).toEqual({ kind: 'files', messages: [fileA, fileB] })
+    expect(output).toEqual(input)
+    expect(output[0]).toBe(fileA)
+    expect(output[1]).toBe(fileB)
+    expect(output[2]).toBe(approval)
   })
 })
 

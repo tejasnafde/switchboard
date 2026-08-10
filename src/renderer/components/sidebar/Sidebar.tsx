@@ -39,6 +39,8 @@ import {
 import type { Workspace } from '@shared/types'
 import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
+import { RecentSessionsSection } from './RecentSessionsSection'
+import { deriveRecentSessions, type RecentLiveSession } from './recentSessions'
 
 import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
 
@@ -102,6 +104,36 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
   const [savedOpen, setSavedOpen] = useState(false)
   const editRef = useRef<HTMLInputElement>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
+  const machineProjects = useMachineStore((s) => s.projects)
+  const [recentLiveSessions, setRecentLiveSessions] = useState<RecentLiveSession[]>(() =>
+    useAgentStore.getState().sessions.map(({ id, machineId, status, messages }) => ({
+      id,
+      machineId,
+      status,
+      messages,
+    })),
+  )
+  const recentSignalRef = useRef('')
+
+  // Agent sessions change identity on every streamed token. Subscribe outside
+  // React and update the sidebar only when recents-relevant state changes, so
+  // a streaming answer never re-renders the whole machine/workspace tree.
+  useEffect(() => useAgentStore.subscribe((state) => {
+    const next = state.sessions.map(({ id, machineId, status, messages }) => ({
+      id,
+      machineId,
+      status,
+      messages,
+    }))
+    const signal = next.map((session) => {
+      const pendingApproval = session.messages.some((message) => message.approval?.status === 'pending')
+      const pendingQuestion = session.messages.some((message) => message.question?.status === 'pending')
+      return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pendingApproval ? 1 : 0}:${pendingQuestion ? 1 : 0}`
+    }).join('|')
+    if (signal === recentSignalRef.current) return
+    recentSignalRef.current = signal
+    setRecentLiveSessions(next)
+  }), [])
 
   // Persisted collapse state - single source of truth lives in layout-store
   // so it survives reload (and the SidebarFilter's auto-expand only touches
@@ -522,6 +554,12 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     [projects, workspaces]
   )
   const filtered = useMemo(() => applySidebarFilter(filterQuery, groups), [filterQuery, groups])
+  const recentSessions = useMemo(() => deriveRecentSessions({
+    localProjects: projects,
+    remoteProjects: machineProjects,
+    liveSessions: recentLiveSessions,
+    limit: 4,
+  }), [projects, machineProjects, recentLiveSessions])
   const isFiltering = filterQuery.trim().length > 0
   const isProjectCollapsed = (path: string) => {
     if (isFiltering && filtered.expandProjects.has(path)) return false
@@ -544,7 +582,6 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
       <div className="sidebar-project">
         <div
           className="sidebar-project-header"
-          onClick={() => !isDragging && toggleCollapse(project.path)}
           onContextMenu={(e) => {
             e.preventDefault()
             e.stopPropagation()
@@ -574,36 +611,49 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
               <circle cx="6" cy="10" r="1.2" />
             </svg>
           </span>
-          <span className="sidebar-chevron">
-            {isCollapsed ? '\u25B6' : '\u25BC'}
-          </span>
-          <ProjectFavicon projectPath={project.path} />
           {renamingProjectPath === project.path ? (
-            <input
-              ref={editRef}
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitProjectRename(project.path)
-                if (e.key === 'Escape') setRenamingProjectPath(null)
-              }}
-              onBlur={() => commitProjectRename(project.path)}
-              onClick={(e) => e.stopPropagation()}
-              className="sidebar-rename-input"
-            />
+            <>
+              <button
+                type="button"
+                className="sidebar-project-toggle sidebar-project-toggle-compact"
+                onClick={() => !isDragging && toggleCollapse(project.path)}
+                aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${project.name}`}
+                aria-expanded={!isCollapsed}
+              >
+                <span className="sidebar-chevron">{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+                <ProjectFavicon projectPath={project.path} />
+              </button>
+              <input
+                ref={editRef}
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') commitProjectRename(project.path)
+                  if (e.key === 'Escape') setRenamingProjectPath(null)
+                }}
+                onBlur={() => commitProjectRename(project.path)}
+                className="sidebar-rename-input"
+              />
+            </>
           ) : (
-            <span className="sidebar-project-name">
-              {project.name}
-            </span>
+            <button
+              type="button"
+              className="sidebar-project-toggle"
+              onClick={() => !isDragging && toggleCollapse(project.path)}
+              aria-expanded={!isCollapsed}
+            >
+              <span className="sidebar-chevron">{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+              <ProjectFavicon projectPath={project.path} />
+              <span className="sidebar-project-name">{project.name}</span>
+              <GroupUnreadBadge
+                sessionIds={project.sessions.map((s) => s.id)}
+                expanded={!isCollapsed}
+              />
+              <span className="sidebar-project-count">{project.sessions.length || ''}</span>
+            </button>
           )}
-          <GroupUnreadBadge
-            sessionIds={project.sessions.map((s) => s.id)}
-            expanded={!isCollapsed}
-          />
-          <span className="sidebar-project-count">
-            {project.sessions.length || ''}
-          </span>
           <button
+            type="button"
             className="sidebar-project-compose"
             disabled={composePending}
             // Hover-revealed button: keep it visible while pending so the
@@ -634,11 +684,6 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
                   <div
                     key={s.id}
                     className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''}`}
-                    onClick={() => {
-                      if (editingId !== s.id) {
-                        onSessionSelect?.(s, project.path)
-                      }
-                    }}
                     onContextMenu={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
@@ -678,16 +723,20 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
                       </div>
                     ) : (
                       <>
-                        <span className={`sidebar-thread-dot ${
-                          isActive ? 'sidebar-thread-dot-active' : ''
-                        }`} />
-                        <span className="sidebar-thread-title">
-                          {s.title}
-                        </span>
-                        <UnreadBadge sessionId={s.id} />
-                        <span className="sidebar-thread-time">
-                          {formatRelativeTime(s.startedAt)}
-                        </span>
+                        <button
+                          type="button"
+                          className="sidebar-thread-main"
+                          aria-current={isActive ? 'page' : undefined}
+                          onClick={() => onSessionSelect?.(s, project.path)}
+                        >
+                          <span className="sidebar-thread-title">
+                            {s.title}
+                          </span>
+                          <UnreadBadge sessionId={s.id} />
+                          <span className="sidebar-thread-time">
+                            {formatRelativeTime(s.startedAt)}
+                          </span>
+                        </button>
                         <button
                           className="sidebar-thread-archive"
                           onClick={(e) => {
@@ -759,6 +808,17 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
 
       {/* Project + thread list */}
       <div className="sidebar-list">
+        {!isFiltering && (
+          <RecentSessionsSection
+            items={recentSessions}
+            activeSessionId={activeSessionId}
+            onSelect={(item) => onSessionSelect?.(
+              item.session,
+              item.projectPath,
+              item.machineId === 'local' ? undefined : item.machineId,
+            )}
+          />
+        )}
         {/* ── Saved bookmarks (top of sidebar - keeps the list discoverable
               without burying it under projects) ────────────────────────── */}
         {bookmarks.length > 0 && (
@@ -847,9 +907,11 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
                   className={`sidebar-workspace ${wsCollapsed ? 'collapsed' : ''} ${group.workspace ? '' : 'ungrouped'}`}
                   style={{ ['--spine' as string]: spineColor } as React.CSSProperties}
                 >
-                  <header
+                  <button
+                    type="button"
                     className="sidebar-workspace-header"
                     onClick={() => toggleSidebarWorkspace(wsId)}
+                    aria-expanded={!wsCollapsed}
                     onContextMenu={(e) => {
                       // Right-clicking a workspace header opens the manager
                       // \u2014 keeps the menu surface tiny without a second flavor.
@@ -872,7 +934,7 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
                     >
                       {group.projects.length}{'\u00B7'}{sessionTotal}
                     </span>
-                  </header>
+                  </button>
                   {!wsCollapsed && (
                     <div className="sidebar-workspace-body">
                       {group.projects.map((project) => (
@@ -1397,4 +1459,3 @@ function SavedItem({
     </div>
   )
 }
-

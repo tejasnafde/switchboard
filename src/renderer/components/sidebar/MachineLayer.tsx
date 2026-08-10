@@ -13,7 +13,7 @@ import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { useMachineStore } from '../../stores/machine-store'
 import { useAgentStore } from '../../stores/agent-store'
-import { buildMachineList, type MachineNode, type MachineStatus } from './machineList'
+import { buildMachineList, type MachineNode } from './machineList'
 import { syncedAgoLabel, cachedProjects } from './machineSnapshot'
 import { formatRelativeTime } from './sidebar-helpers'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
@@ -40,13 +40,6 @@ export function ComposeSpinner() {
       }}
     />
   )
-}
-
-const PIP_COLOR: Record<MachineStatus, string> = {
-  connected: 'var(--success)',
-  connecting: 'var(--warning)',
-  offline: 'var(--text-muted)',
-  error: 'var(--error)',
 }
 
 function SortableMachine({
@@ -111,7 +104,7 @@ function RemoteProject({
         opacity: isDragging ? 0.7 : 1,
       }}
     >
-      <div className="sidebar-project-header" onClick={() => !isDragging && onToggle()}>
+      <div className="sidebar-project-header">
         <span
           {...attributes}
           {...listeners}
@@ -126,7 +119,6 @@ function RemoteProject({
             transition: 'opacity 0.12s',
           }}
           title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
         >
           <svg width="8" height="12" viewBox="0 0 8 12" fill="currentColor">
             <circle cx="2" cy="2" r="1.2" />
@@ -137,13 +129,21 @@ function RemoteProject({
             <circle cx="6" cy="10" r="1.2" />
           </svg>
         </span>
-        <span className="sidebar-chevron">{collapsed ? '▶' : '▼'}</span>
-        <ProjectFavicon projectPath={project.path} />
-        <span className="sidebar-project-name">{project.name}</span>
-        <GroupUnreadBadge sessionIds={project.sessions.map((s) => s.id)} expanded={!collapsed} />
-        <span className="sidebar-project-count">{project.sessions.length || ''}</span>
+        <button
+          type="button"
+          className="sidebar-project-toggle"
+          onClick={() => !isDragging && onToggle()}
+          aria-expanded={!collapsed}
+        >
+          <span className="sidebar-chevron">{collapsed ? '▶' : '▼'}</span>
+          <ProjectFavicon projectPath={project.path} />
+          <span className="sidebar-project-name">{project.name}</span>
+          <GroupUnreadBadge sessionIds={project.sessions.map((s) => s.id)} expanded={!collapsed} />
+          <span className="sidebar-project-count">{project.sessions.length || ''}</span>
+        </button>
         {onNewChat && (
           <button
+            type="button"
             className="sidebar-project-compose"
             disabled={newChatPending}
             // Hover-revealed button: keep it visible while pending so the
@@ -173,13 +173,18 @@ function RemoteProject({
               <div
                 key={s.id}
                 className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''}`}
-                onClick={() => onOpen?.(s)}
                 onContextMenu={onContextMenu ? (e) => onContextMenu(e, s) : undefined}
               >
-                <span className={`sidebar-thread-dot ${isActive ? 'sidebar-thread-dot-active' : ''}`} />
-                <span className="sidebar-thread-title">{s.title}</span>
-                <UnreadBadge sessionId={s.id} />
-                <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
+                <button
+                  type="button"
+                  className="sidebar-thread-main"
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={() => onOpen?.(s)}
+                >
+                  <span className="sidebar-thread-title">{s.title}</span>
+                  <UnreadBadge sessionId={s.id} />
+                  <span className="sidebar-thread-time">{formatRelativeTime(s.startedAt)}</span>
+                </button>
               </div>
             )
           })}
@@ -371,11 +376,13 @@ export function MachineLayer({
                   filePath: '',
                 }
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={s.id}
                     className={`cached-chat${s.id === activeSessionId ? ' sidebar-thread-active' : ''}`}
                     data-openable={openable || undefined}
                     title={openable ? undefined : 'Connect to this machine to open'}
+                    disabled={!openable}
                     onClick={openable ? () => onOpenRemoteSession!(node.id, p.path, summary) : undefined}
                     onContextMenu={
                       // Menu actions route to the machine - connected only.
@@ -389,7 +396,7 @@ export function MachineLayer({
                     }
                   >
                     {s.title}
-                  </div>
+                  </button>
                 )
               })}
             </div>
@@ -401,31 +408,43 @@ export function MachineLayer({
 
   const renderNode = (node: MachineNode, dragHandleProps?: Record<string, unknown>) => {
     const isCollapsed = collapsed.has(node.id)
+    const machineState = reconnecting[node.id]
+      ? 'Reconnecting…'
+      : node.status === 'connecting'
+        ? 'Connecting…'
+        : node.status === 'offline'
+          ? 'Offline'
+          : node.status === 'error'
+            ? 'Connection failed'
+            : null
     return (
       <section className="sidebar-machine">
-        <header className="sidebar-machine-header" onClick={() => toggleCollapsed(node.id)}>
+        <header className="sidebar-machine-header">
           {/* Grip is an absolute overlay in the left padding gutter, so local +
               remote headers align without reserving layout width. */}
           {dragHandleProps && (
-            <span className="machine-grip" onClick={(e) => e.stopPropagation()} {...dragHandleProps}>
+            <span className="machine-grip" {...dragHandleProps}>
               ⠿
             </span>
           )}
-          <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
-          {/* An auto-reconnecting error shows the amber connecting pip, not red - it's in progress, not dead. */}
-          <span
-            className="machine-pip"
-            style={{ background: PIP_COLOR[node.status === 'error' && reconnecting[node.id] ? 'connecting' : node.status] }}
-          />
-          <span className="sidebar-machine-name">{node.name}</span>
-          {node.kind === 'local' ? (
-            <span className="machine-tag">local</span>
-          ) : (
-            <span className="machine-host">
-              {node.sshUser ? `${node.sshUser}@` : ''}
-              {node.sshHost}
-            </span>
-          )}
+          <button
+            type="button"
+            className="sidebar-machine-toggle"
+            onClick={() => toggleCollapsed(node.id)}
+            aria-expanded={!isCollapsed}
+          >
+            <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
+            <span className="sidebar-machine-name">{node.name}</span>
+            {node.kind === 'remote' && (
+              <span className="machine-host">
+                {node.sshUser ? `${node.sshUser}@` : ''}
+                {node.sshHost}
+              </span>
+            )}
+            {machineState && (
+              <span className="machine-state" data-state={node.status}>{machineState}</span>
+            )}
+          </button>
           {node.kind === 'remote' && onEditMachine && (
             <button
               className="machine-edit"
