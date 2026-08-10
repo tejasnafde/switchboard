@@ -11,6 +11,7 @@
  */
 
 import type { OverageScope } from './claude-rate-limit'
+import type { PeerMessageInitiator } from './peer-messaging'
 
 export type ProviderSessionStatus =
   | 'connecting'
@@ -87,6 +88,12 @@ export interface RuntimePeerMessageEvent {
   type: 'peer.message'
   threadId: string
   direction: 'sent' | 'received'
+  /**
+   * Who decided to send. The sending transcript says so, because "the agent
+   * messaged another chat on its own" is a different event to the user typing
+   * `/send-to` and reads as a bug if the two look alike.
+   */
+  initiator: PeerMessageInitiator
   /** Content-addressed id, identical on both sides of one delivery. */
   messageId: string
   /** The thread at the other end of the delivery. */

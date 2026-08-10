@@ -23,11 +23,14 @@ import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerIn
 import { recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId } from '../db/database'
 import { sessionDefaultsFor } from './session-defaults'
 import {
+  PeerAgentSendGuard,
   PeerMessageGuard,
-  PEER_SENT_MARKER_PREFIX,
+  nextHopDepth,
+  peerSentMarkerPrefix,
   wrapPeerMessage,
   type PeerMessageInput,
 } from '@shared/peer-messaging'
+import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
 import { defaultClaudeDir } from './claude-session-migrate'
 import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir, checkRemoteClaudeAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
@@ -49,7 +52,7 @@ function agentTypeForProvider(provider: ProviderKind): AgentType {
   return provider === 'claude' ? 'claude-code' : provider
 }
 
-export class ProviderRegistry {
+export class ProviderRegistry implements PeerToolHost {
   private adapters: Map<ProviderKind, ProviderAdapter>
   private opencodeAcp: OpencodeAcpAdapter
   private host: BackendHost
@@ -106,6 +109,9 @@ export class ProviderRegistry {
     ])
     this.bus = new RuntimeEventBus()
     this.rendererUnsub = this.bus.subscribe((event) => this.forwardToRenderer(event))
+    // Lets an adapter expose the peer tools to its model. Only the Claude
+    // adapter implements it; the others stay valid targets that cannot send.
+    for (const adapter of this.adapters.values()) adapter.setPeerToolHost?.(this)
     // Invalid mirror edits are fs-watch findings with no tool result to ride
     // on - surface them in chat as error events through this registry's bus.
     notebookManager.setPublisher((event) => this.publish(event))
@@ -132,6 +138,23 @@ export class ProviderRegistry {
    * the backend so every client pointed at these sessions shares one budget.
    */
   private readonly peerGuard = new PeerMessageGuard()
+
+  /**
+   * Hop depth and per-sender budget for sends the AGENT chose to make. The
+   * user's own `/send-to` skips both: a human pressing enter is the approval,
+   * and there is nobody to run away from.
+   */
+  private readonly peerAgentGuard = new PeerAgentSendGuard()
+
+  /**
+   * Hop depth of each thread's current turn - how many consecutive
+   * agent-initiated peer messages stand between it and a human message.
+   *
+   * Deliberately NOT cleared at turn end. A session that acted on a peer
+   * message stays at that depth until the user speaks to it again, so an
+   * unattended chain cannot continue past the limit by waiting a turn.
+   */
+  private turnDepth = new Map<string, number>()
 
   /**
    * Threads with a turn in flight. Only OpenCode needs this: its ACP adapter
@@ -183,6 +206,160 @@ export class ProviderRegistry {
       ...session,
       status: this.sessionStatus.get(threadId) ?? session.status,
     }))
+  }
+
+  /**
+   * The other live sessions, for the `list_agent_sessions` tool.
+   *
+   * Keyed on the id each session started under, which is the id
+   * `deliverPeerMessage` can look an adapter up by, so a model that passes one
+   * back verbatim always resolves. Titles come from the DB rather than the
+   * descriptor because that is what the user reads in the sidebar.
+   */
+  listPeerSessions(fromThreadId: string): PeerSessionSummary[] {
+    const ownRoot = resolveRootThreadId(fromThreadId)
+    const out: PeerSessionSummary[] = []
+    for (const [threadId, session] of this.sessionDescriptors) {
+      if (threadId === fromThreadId || resolveRootThreadId(threadId) === ownRoot) continue
+      out.push({
+        sessionId: threadId,
+        title: getConversationTitle(threadId) ?? threadId,
+        folder: this.sessionCwd.get(threadId) ?? session.cwd,
+        provider: session.provider,
+        midTurn: this.activeTurns.has(threadId),
+      })
+    }
+    return out
+  }
+
+  /**
+   * Hand one live session's message to another on this backend.
+   *
+   * The ONE delivery path: the `/send-to` IPC handler calls it with
+   * `initiator: 'user'` and the `send_agent_message` tool with
+   * `initiator: 'agent'`. A second copy is how the guards, the approval gate or
+   * the persistence would quietly diverge between the two.
+   *
+   * Delivery is an ordinary turn, which is what makes a peer message unable to
+   * answer a pending approval: nothing here reaches `respondToRequest`.
+   */
+  async deliverPeerMessage(input: PeerMessageInput): Promise<{ id: string }> {
+    const initiator = input.initiator ?? 'user'
+    // `sessionAdapters` is keyed by whatever id startSession ran under, so
+    // try the caller's id before the resolved root. Resolving first reported
+    // a live chat as "not running" whenever its session id had rotated.
+    const targetThreadId = this.sessionAdapters.has(input.targetThreadId)
+      ? input.targetThreadId
+      : resolveRootThreadId(input.targetThreadId)
+    // The adapter cannot know its own conversation's title, so the agent path
+    // omits it. Without the fallback the peer is told the message came from
+    // `agent_1712`.
+    const fromLabel = input.fromLabel
+      ?? getConversationTitle(input.fromThreadId)
+      ?? input.fromThreadId
+    // Prefer the id the caller named: a stale resolved root often has no
+    // title row, and falling back to it labelled the error with a raw id.
+    const targetLabel = getConversationTitle(input.targetThreadId)
+      ?? getConversationTitle(targetThreadId)
+      ?? targetThreadId
+    // A session messaging itself loops. The composer already excludes it, but
+    // the model picks its target from a list and can misread its own id.
+    if (
+      targetThreadId === input.fromThreadId
+      || resolveRootThreadId(input.fromThreadId) === resolveRootThreadId(targetThreadId)
+    ) {
+      throw new Error('That is this session. Pick one of the OTHER open sessions.')
+    }
+    const adapter = this.sessionAdapters.get(targetThreadId)
+    if (!adapter) {
+      throw new Error(`"${targetLabel}" is not running. Open it, then send again.`)
+    }
+    // OpenCode ACP is one prompt per turn and DROPS a mid-turn send, so
+    // delivering into a running turn would record a message the agent never
+    // saw. The other adapters queue or steer, so they are fine.
+    if (adapter.provider === 'opencode' && this.activeTurns.has(targetThreadId)) {
+      throw new Error(`"${targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`)
+    }
+
+    // Exact for the agent path: `fromThreadId` there is the id the adapter runs
+    // its session under, which is the id a turn was recorded against.
+    const senderDepth = this.turnDepth.get(input.fromThreadId) ?? 0
+    if (initiator === 'agent') {
+      const agentVerdict = this.peerAgentGuard.check(
+        { fromThreadId: input.fromThreadId, senderDepth },
+        Date.now(),
+      )
+      if (!agentVerdict.ok) {
+        log.warn(`agent peer send refused (${agentVerdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+        throw new Error(agentVerdict.message)
+      }
+    }
+
+    const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
+    const verdict = this.peerGuard.check(key, Date.now())
+    if (!verdict.ok) {
+      if (initiator === 'agent') this.peerAgentGuard.release(input.fromThreadId)
+      log.warn(`peer message refused (${verdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
+      throw new Error(verdict.message)
+    }
+
+    const body = wrapPeerMessage(fromLabel, input.text)
+    // Same pre-turn bookkeeping an ordinary send does, or this turn's file
+    // edits produce no diff cards and notebook mirrors go unwatched.
+    const targetCwd = this.sessionCwd.get(targetThreadId)
+    if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
+    notebookManager.beginTurn(targetThreadId)
+    this.activeTurns.add(targetThreadId)
+    // Set before the send, not after: the receiving model may call the peer
+    // tool the moment its turn starts, and the depth has to already be there.
+    const previousDepth = this.turnDepth.get(targetThreadId)
+    this.turnDepth.set(targetThreadId, nextHopDepth(senderDepth, initiator))
+    try {
+      await adapter.sendTurn(targetThreadId, body)
+    } catch (err) {
+      this.activeTurns.delete(targetThreadId)
+      // The turn did NOT happen, so release the guard slot: otherwise an
+      // identical retry is refused as a duplicate for the next 10 minutes.
+      this.peerGuard.release(verdict.id, key)
+      if (initiator === 'agent') this.peerAgentGuard.release(input.fromThreadId)
+      if (previousDepth === undefined) this.turnDepth.delete(targetThreadId)
+      else this.turnDepth.set(targetThreadId, previousDepth)
+      throw err
+    }
+
+    const at = Date.now()
+    // The receiving turn is persisted under the message id so a redelivery
+    // of the same id cannot double-post, and the sender keeps a marker so
+    // its own transcript says where the message went, and who decided. The
+    // displayBody keeps the wrapper out of the bubble after a reload,
+    // matching the live one.
+    try {
+      saveMessageIfAbsent(
+        verdict.id, targetThreadId, 'user', body, undefined,
+        `From "${fromLabel}": ${input.text}`,
+      )
+      saveMessageIfAbsent(
+        `peer_${verdict.id}`,
+        input.fromThreadId,
+        'system',
+        `${peerSentMarkerPrefix(initiator)} ${fromLabel} → ${targetLabel}`,
+      )
+    } catch (err) {
+      log.warn(`failed to persist peer message ${verdict.id}: ${err}`)
+    }
+
+    log.info(`peer message delivered ${verdict.id} by ${initiator}: ${input.fromThreadId} -> ${targetThreadId} chars=${input.text.length}`)
+    this.publish({
+      type: 'peer.message', threadId: input.fromThreadId, direction: 'sent', initiator,
+      messageId: verdict.id, peerThreadId: targetThreadId, peerLabel: targetLabel,
+      text: input.text, at,
+    })
+    this.publish({
+      type: 'peer.message', threadId: targetThreadId, direction: 'received', initiator,
+      messageId: verdict.id, peerThreadId: input.fromThreadId, peerLabel: fromLabel,
+      text: input.text, at,
+    })
+    return { id: verdict.id }
   }
 
   private publish(event: RuntimeEvent): void {
@@ -480,6 +657,9 @@ export class ProviderRegistry {
       const cwd = this.sessionCwd.get(threadId)
       if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
       notebookManager.beginTurn(threadId)
+      // The human is back in the loop, so this thread is zero hops from a
+      // message the user wrote and its agent may hand a finding on again.
+      this.turnDepth.set(threadId, 0)
       // Broadcast the user's turn: adapters only emit the agent's side, so
       // without this a message typed on one client is invisible everywhere
       // else. The sender skips its own echo via `origin`.
@@ -521,89 +701,11 @@ export class ProviderRegistry {
       this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
     })
 
-    // Hand one live session's message to another on this backend. Delivery is
-    // an ordinary turn, which is what makes a peer message unable to answer a
-    // pending approval: nothing here reaches respondToRequest.
-    this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) => {
-      // `sessionAdapters` is keyed by whatever id startSession ran under, so
-      // try the caller's id before the resolved root. Resolving first reported
-      // a live chat as "not running" whenever its session id had rotated.
-      const targetThreadId = this.sessionAdapters.has(input.targetThreadId)
-        ? input.targetThreadId
-        : resolveRootThreadId(input.targetThreadId)
-      // Prefer the id the caller named: a stale resolved root often has no
-      // title row, and falling back to it labelled the error with a raw id.
-      const targetLabel = getConversationTitle(input.targetThreadId)
-        ?? getConversationTitle(targetThreadId)
-        ?? targetThreadId
-      const adapter = this.sessionAdapters.get(targetThreadId)
-      if (!adapter) {
-        throw new Error(`"${targetLabel}" is not running. Open it, then send again.`)
-      }
-      // OpenCode ACP is one prompt per turn and DROPS a mid-turn send, so
-      // delivering into a running turn would record a message the agent never
-      // saw. The other adapters queue or steer, so they are fine.
-      if (adapter.provider === 'opencode' && this.activeTurns.has(targetThreadId)) {
-        throw new Error(`"${targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`)
-      }
-
-      const key = { fromThreadId: input.fromThreadId, targetThreadId, text: input.text }
-      const verdict = this.peerGuard.check(key, Date.now())
-      if (!verdict.ok) {
-        log.warn(`peer message refused (${verdict.reason}): ${input.fromThreadId} -> ${targetThreadId}`)
-        throw new Error(verdict.message)
-      }
-
-      const body = wrapPeerMessage(input.fromLabel, input.text)
-      // Same pre-turn bookkeeping an ordinary send does, or this turn's file
-      // edits produce no diff cards and notebook mirrors go unwatched.
-      const targetCwd = this.sessionCwd.get(targetThreadId)
-      if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
-      notebookManager.beginTurn(targetThreadId)
-      this.activeTurns.add(targetThreadId)
-      try {
-        await adapter.sendTurn(targetThreadId, body)
-      } catch (err) {
-        this.activeTurns.delete(targetThreadId)
-        // The turn did NOT happen, so release the guard slot: otherwise an
-        // identical retry is refused as a duplicate for the next 10 minutes.
-        this.peerGuard.release(verdict.id, key)
-        throw err
-      }
-
-      const at = Date.now()
-      // The receiving turn is persisted under the message id so a redelivery
-      // of the same id cannot double-post, and the sender keeps a marker so
-      // its own transcript says where the message went. The displayBody keeps
-      // the wrapper out of the bubble after a reload, matching the live one.
-      try {
-        saveMessageIfAbsent(
-          verdict.id, targetThreadId, 'user', body, undefined,
-          `From "${input.fromLabel}": ${input.text}`,
-        )
-        saveMessageIfAbsent(
-          `peer_${verdict.id}`,
-          input.fromThreadId,
-          'system',
-          `${PEER_SENT_MARKER_PREFIX} ${input.fromLabel} → ${targetLabel}`,
-        )
-      } catch (err) {
-        log.warn(`failed to persist peer message ${verdict.id}: ${err}`)
-      }
-
-      log.info(`peer message delivered ${verdict.id}: ${input.fromThreadId} -> ${targetThreadId} chars=${input.text.length}`)
-      this.publish({
-        type: 'peer.message', threadId: input.fromThreadId, direction: 'sent',
-        messageId: verdict.id, peerThreadId: targetThreadId, peerLabel: targetLabel,
-        text: input.text, at,
-      })
-      this.publish({
-        type: 'peer.message', threadId: targetThreadId, direction: 'received',
-        messageId: verdict.id, peerThreadId: input.fromThreadId, peerLabel: input.fromLabel,
-        text: input.text, at,
-      })
-      return { id: verdict.id }
-    })
+    // A client asked, so the user typed it. `initiator` is forced rather than
+    // read: honouring a claimed `'agent'` would let a client take the agent
+    // path's budget while skipping the approval canUseTool gives it.
+    this.host.handle(ProviderChannels.DELIVER_PEER_MESSAGE, async (input: PeerMessageInput) =>
+      this.deliverPeerMessage({ ...input, initiator: 'user' }))
 
     this.host.handle(ProviderChannels.INTERRUPT, async (threadId: string) => {
       const adapter = this.sessionAdapters.get(threadId)
@@ -682,6 +784,7 @@ export class ProviderRegistry {
       this.sessionCwd.delete(threadId)
       this.sessionStatus.delete(threadId)
       this.sessionDescriptors.delete(threadId)
+      this.turnDepth.delete(threadId)
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
       notebookManager.detach(threadId)

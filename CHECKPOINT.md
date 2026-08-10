@@ -10,7 +10,7 @@ itself, plus the guards that make that safe unattended.
       (`nextHopDepth`, `PeerAgentSendGuard`, initiator type)
 - [x] 2. `src/main/provider/peer-tools.ts`: tool names, descriptions,
       `PeerToolHost`, `createPeerToolHandlers` + tests
-- [ ] 3. Registry: extract `deliverPeerMessage(input)` as a public method,
+- [x] 3. Registry: extract `deliverPeerMessage(input)` as a public method,
       add `listPeerSessions`, `turnDepth`, agent guard; `types.ts` gains
       `setPeerToolHost?`
 - [ ] 4. Claude adapter: `createSdkMcpServer` wired into queryOptions,
@@ -20,15 +20,14 @@ itself, plus the guards that make that safe unattended.
 - [ ] 7. Gate: typecheck + full `npm test`, then FINAL commit WITHOUT
       `--no-verify`
 
-## Current step: 3
+## Current step: 4
 
 ## Next concrete action
-Extract the `DELIVER_PEER_MESSAGE` handler body in
-`src/main/provider/provider-registry.ts` into a public
-`deliverPeerMessage(input)`, add `listPeerSessions` + `turnDepth` +
-`peerAgentGuard`, and add `setPeerToolHost?` to `ProviderAdapter`. Write
-`tests/unit/peer-agent-tools-ws.test.ts` first (harness copied from
-peer-message-delivery-ws.test.ts).
+Wire the SDK MCP server into the Claude adapter: add `zod` to dependencies,
+write `src/main/provider/adapters/claude-peer-tools.ts` (binding only), call it
+from `startDraining`'s queryOptions, and auto-allow `PEER_LIST_TOOL` early in
+`canUseTool`. Test the binding with a fake sdk in
+`tests/unit/claude-peer-tools.test.ts`.
 
 ## Files touched so far
 - CHECKPOINT.md
@@ -36,6 +35,11 @@ peer-message-delivery-ws.test.ts).
 - tests/unit/peer-messaging-guards.test.ts (16 -> 30 green)
 - src/main/provider/peer-tools.ts (new: names, descriptions, handlers)
 - tests/unit/peer-tools.test.ts (new, 12 green)
+- src/main/provider/provider-registry.ts (public deliverPeerMessage,
+  listPeerSessions, turnDepth, peerAgentGuard, setPeerToolHost fan-out)
+- src/main/provider/types.ts (setPeerToolHost? on ProviderAdapter)
+- src/shared/provider-events.ts (initiator on peer.message)
+- tests/unit/peer-agent-tools-ws.test.ts (new, 14 green)
 
 ## Design decided for THIS phase (do not re-litigate)
 - Tool names, as the model sees them: `mcp__switchboard__list_agent_sessions`

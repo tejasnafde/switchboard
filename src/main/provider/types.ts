@@ -180,6 +180,17 @@ export interface ProviderAdapter {
    * Optional - providers without a live model registry can omit it.
    */
   listModels?(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>>
+
+  /**
+   * Give the adapter the seam it needs to expose the cross-session peer tools
+   * (`list_agent_sessions` / `send_agent_message`) to its own model. Called
+   * once by the registry, which is the host.
+   *
+   * Optional, and only Claude implements it: the tools ride the Claude SDK's
+   * in-process MCP server. Codex and OpenCode sessions stay valid TARGETS -
+   * they receive peer messages as ordinary turns - and simply cannot send.
+   */
+  setPeerToolHost?(host: import('./peer-tools').PeerToolHost): void
 }
 
 // Re-export Effect for internal adapter use (avoids extra imports elsewhere)
