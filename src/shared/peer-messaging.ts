@@ -1,10 +1,10 @@
 /**
  * Cross-session messaging: one chat session hands a summary to another.
  *
- * Phase 1 is user-directed: `/send-to` is the only entry point and both
- * sessions live on the same backend, so no agent can message a sibling on its
- * own initiative. This is the pure core - wrapper, content-addressed id, and
- * the three guards - with `now` injected so the windows need no fake timers.
+ * Two entry points, both on one backend: the user types `/send-to`, or the
+ * Claude model calls the `send_agent_message` tool. This is the pure core -
+ * wrapper, content-addressed id, and the guards - with `now` injected so the
+ * windows need no fake timers.
  */
 
 /** Body cap in utf-8 bytes. A peer message is a summary, not a transcript. */
@@ -16,12 +16,49 @@ export const PEER_MESSAGE_RATE_WINDOW_MS = 60_000
 export const PEER_MESSAGE_DEDUPE_WINDOW_MS = 10 * 60_000
 
 /**
+ * Deepest hop an agent-initiated delivery may create, counting consecutive
+ * agent-initiated hops since the last human message.
+ *
+ * At 1, only a turn the user started may originate a send: the session that
+ * receives it is already at the limit and cannot pass the message on. That
+ * refuses A -> B -> A outright rather than letting one round trip through.
+ * Rate limits do not substitute for it, because a two-session ping-pong stays
+ * inside every per-pair budget while burning tokens unattended.
+ */
+export const PEER_MESSAGE_MAX_HOP_DEPTH = 1
+
+/**
+ * Agent-initiated sends allowed per SENDING session inside its window,
+ * whatever the targets.
+ *
+ * `PEER_MESSAGE_RATE_LIMIT` is per pair, so five open siblings would otherwise
+ * permit 25 sends a minute. This budget is deliberately far below 5x the pair
+ * limit while still covering a hand-off to each of a handful of siblings.
+ */
+export const PEER_AGENT_SEND_BUDGET = 6
+export const PEER_AGENT_SEND_WINDOW_MS = 10 * 60_000
+
+/**
  * Marker written on the SENDING thread, in `<from> → <to>` form so
  * `parseRotationMarker` reads it with the other in-band markers. Lives here
  * rather than in the renderer's rotationMarker.ts because the backend writes
  * it - the sending window may be closed, or may not exist at all.
  */
 export const PEER_SENT_MARKER_PREFIX = '[[sb:peer-sent]]'
+
+/**
+ * Same shape for a send the AGENT decided to make. A separate prefix rather
+ * than a field, because the marker is a plain string in the messages table and
+ * a reload has nothing else to read the provenance from.
+ */
+export const PEER_AGENT_SENT_MARKER_PREFIX = '[[sb:peer-sent-agent]]'
+
+/** Who decided to send: the user typing `/send-to`, or the model's own tool call. */
+export type PeerMessageInitiator = 'user' | 'agent'
+
+export function peerSentMarkerPrefix(initiator: PeerMessageInitiator): string {
+  return initiator === 'agent' ? PEER_AGENT_SENT_MARKER_PREFIX : PEER_SENT_MARKER_PREFIX
+}
 
 export interface PeerMessageKey {
   fromThreadId: string
@@ -31,8 +68,25 @@ export interface PeerMessageKey {
 
 /** Payload of `ProviderChannels.DELIVER_PEER_MESSAGE`. */
 export interface PeerMessageInput extends PeerMessageKey {
-  /** Sending session's title, quoted to the receiving agent. */
-  fromLabel: string
+  /**
+   * Sending session's title, quoted to the receiving agent. Optional because
+   * the agent tool runs inside the adapter, which knows a thread id and no
+   * title; the backend resolves it then.
+   */
+  fromLabel?: string
+  /** Defaults to `'user'`: absent means a client asked, and only a user can. */
+  initiator?: PeerMessageInitiator
+}
+
+/**
+ * Hop depth of the turn a delivery creates in the target.
+ *
+ * A user-initiated delivery resets to 0 however deep the sender was: the human
+ * authored that text, so the recipient is not one hop from a human, it IS the
+ * human's turn. Only agent-initiated deliveries accumulate.
+ */
+export function nextHopDepth(senderDepth: number, initiator: PeerMessageInitiator): number {
+  return initiator === 'agent' ? senderDepth + 1 : 0
 }
 
 export type PeerMessageRefusal = 'too-large' | 'rate-limited' | 'duplicate'
@@ -190,6 +244,91 @@ export class PeerMessageGuard {
     }
     for (const [id, at] of this.seen) {
       if (nowMs - at >= this.dedupeWindowMs) this.seen.delete(id)
+    }
+  }
+}
+
+export type PeerAgentRefusal = 'hop-depth' | 'budget'
+
+export type PeerAgentCheck =
+  | { ok: true }
+  | { ok: false; reason: PeerAgentRefusal; message: string }
+
+export interface PeerAgentSend {
+  fromThreadId: string
+  /** Hop depth of the turn the model is running right now. */
+  senderDepth: number
+}
+
+/**
+ * The two limits that only apply when the AGENT chose to send.
+ *
+ * A user-initiated `/send-to` skips both: a human pressing enter is the
+ * approval, and there is nobody to run away from. These exist because an
+ * agent-initiated send is unattended in full-access, where the approval gate
+ * that covers every other mode allows the tool outright.
+ *
+ * Refusal messages address the MODEL - they are returned as tool output, so
+ * they have to say what to do instead of just what failed.
+ */
+export class PeerAgentSendGuard {
+  /** Accepted send timestamps per sending thread. */
+  private readonly sends = new Map<string, number[]>()
+
+  constructor(
+    private readonly budget = PEER_AGENT_SEND_BUDGET,
+    private readonly windowMs = PEER_AGENT_SEND_WINDOW_MS,
+    private readonly maxHopDepth = PEER_MESSAGE_MAX_HOP_DEPTH,
+  ) {}
+
+  /**
+   * Decide whether this agent-initiated send may proceed, recording it when it
+   * may. Hop depth is checked first and charges nothing: a chain that cannot
+   * continue must not spend budget it can never use.
+   */
+  check(input: PeerAgentSend, nowMs: number): PeerAgentCheck {
+    if (nextHopDepth(input.senderDepth, 'agent') > this.maxHopDepth) {
+      return {
+        ok: false,
+        reason: 'hop-depth',
+        message:
+          'This turn is itself acting on a message from another session, so you cannot pass it on. ' +
+          'Answer in this transcript and let the user decide who else needs to know.',
+      }
+    }
+
+    this.expire(nowMs)
+    const recent = this.sends.get(input.fromThreadId) ?? []
+    if (recent.length >= this.budget) {
+      return {
+        ok: false,
+        reason: 'budget',
+        message:
+          `This session has sent ${this.budget} messages to other sessions in the last ` +
+          `${Math.round(this.windowMs / 60_000)} minutes, which is its limit across all sessions. ` +
+          'Continue on your own and tell the user what the other sessions still need to hear.',
+      }
+    }
+
+    recent.push(nowMs)
+    this.sends.set(input.fromThreadId, recent)
+    return { ok: true }
+  }
+
+  /** Give back the slot an accepted send took when its delivery then failed. */
+  release(fromThreadId: string): void {
+    const recent = this.sends.get(fromThreadId)
+    if (!recent || recent.length === 0) return
+    recent.pop()
+    if (recent.length === 0) this.sends.delete(fromThreadId)
+    else this.sends.set(fromThreadId, recent)
+  }
+
+  private expire(nowMs: number): void {
+    for (const [threadId, times] of this.sends) {
+      const kept = times.filter((at) => nowMs - at < this.windowMs)
+      if (kept.length === 0) this.sends.delete(threadId)
+      else this.sends.set(threadId, kept)
     }
   }
 }

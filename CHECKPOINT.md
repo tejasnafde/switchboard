@@ -6,7 +6,7 @@ two SDK MCP tools so the CLAUDE model can hand context to a sibling session
 itself, plus the guards that make that safe unattended.
 
 ## Plan
-- [ ] 1. Pure guards in `src/shared/peer-messaging.ts` + tests
+- [x] 1. Pure guards in `src/shared/peer-messaging.ts` + tests
       (`nextHopDepth`, `PeerAgentSendGuard`, initiator type)
 - [ ] 2. `src/main/provider/peer-tools.ts`: tool names, descriptions,
       `PeerToolHost`, `createPeerToolHandlers` + tests
@@ -20,14 +20,17 @@ itself, plus the guards that make that safe unattended.
 - [ ] 7. Gate: typecheck + full `npm test`, then FINAL commit WITHOUT
       `--no-verify`
 
-## Current step: 1
+## Current step: 2
 
 ## Next concrete action
-Write the failing tests for `nextHopDepth` + `PeerAgentSendGuard` in
-`tests/unit/peer-messaging-guards.test.ts`, run them, see them fail.
+Write `tests/unit/peer-tools.test.ts` against the not-yet-existing
+`src/main/provider/peer-tools.ts` (tool names, descriptions, handler output,
+refusal passthrough), see it fail, then write the module.
 
 ## Files touched so far
 - CHECKPOINT.md
+- src/shared/peer-messaging.ts (hop depth, agent guard, initiator, marker)
+- tests/unit/peer-messaging-guards.test.ts (16 -> 30 green)
 
 ## Design decided for THIS phase (do not re-litigate)
 - Tool names, as the model sees them: `mcp__switchboard__list_agent_sessions`

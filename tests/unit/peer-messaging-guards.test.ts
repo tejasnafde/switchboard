@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vitest'
 import {
+  PeerAgentSendGuard,
   PeerMessageGuard,
+  nextHopDepth,
   peerMessageId,
+  peerSentMarkerPrefix,
   wrapPeerMessage,
+  PEER_AGENT_SENT_MARKER_PREFIX,
+  PEER_AGENT_SEND_BUDGET,
+  PEER_AGENT_SEND_WINDOW_MS,
   PEER_MESSAGE_MAX_BYTES,
+  PEER_MESSAGE_MAX_HOP_DEPTH,
   PEER_MESSAGE_RATE_LIMIT,
   PEER_MESSAGE_RATE_WINDOW_MS,
   PEER_MESSAGE_DEDUPE_WINDOW_MS,
+  PEER_SENT_MARKER_PREFIX,
 } from '../../src/shared/peer-messaging'
 
 const base = { fromThreadId: 'a', targetThreadId: 'b', text: 'ship it' }
@@ -132,5 +140,121 @@ describe('PeerMessageGuard', () => {
     guard.check(base, 1_000)
     const dup = guard.check(base, 1_100)
     expect(dup.ok === false && dup.message.length).toBeGreaterThan(0)
+  })
+})
+
+describe('nextHopDepth', () => {
+  // The human authored the text, so the recipient is not one hop from a human.
+  it('resets to zero for a user-initiated delivery, whatever the sender depth', () => {
+    expect(nextHopDepth(0, 'user')).toBe(0)
+    expect(nextHopDepth(3, 'user')).toBe(0)
+  })
+
+  it('counts one more hop for an agent-initiated delivery', () => {
+    expect(nextHopDepth(0, 'agent')).toBe(1)
+    expect(nextHopDepth(1, 'agent')).toBe(2)
+  })
+})
+
+describe('PeerAgentSendGuard hop depth', () => {
+  it('lets a turn the user started originate a send', () => {
+    const guard = new PeerAgentSendGuard()
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 0 }, 1_000).ok).toBe(true)
+  })
+
+  // The boundary: depth 1 is already the deepest a peer message may create, so
+  // a send from there would make depth 2 and start A -> B -> A.
+  it('refuses a send from a turn that a peer message started', () => {
+    const guard = new PeerAgentSendGuard()
+    const out = guard.check({ fromThreadId: 'a', senderDepth: PEER_MESSAGE_MAX_HOP_DEPTH }, 1_000)
+    expect(out.ok).toBe(false)
+    expect(out.ok === false && out.reason).toBe('hop-depth')
+    expect(out.ok === false && out.message).toMatch(/user/i)
+  })
+
+  it('refuses every depth past the limit', () => {
+    const guard = new PeerAgentSendGuard()
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 2 }, 1_000).ok).toBe(false)
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 9 }, 1_000).ok).toBe(false)
+  })
+
+  // A hop-depth refusal is not the sender's fault in the budget sense, and
+  // charging it would let a blocked chain eat the budget it can never spend.
+  it('does not charge a hop-depth refusal against the budget', () => {
+    const guard = new PeerAgentSendGuard()
+    for (let i = 0; i < PEER_AGENT_SEND_BUDGET + 2; i++) {
+      guard.check({ fromThreadId: 'a', senderDepth: 1 }, 1_000 + i)
+    }
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 0 }, 2_000).ok).toBe(true)
+  })
+})
+
+describe('PeerAgentSendGuard budget', () => {
+  const spend =(guard: PeerAgentSendGuard, count: number, from = 'a') => {
+    for (let i = 0; i < count; i++) {
+      expect(guard.check({ fromThreadId: from, senderDepth: 0 }, 1_000 + i).ok).toBe(true)
+    }
+  }
+
+  it('accepts exactly the budget and refuses the next one', () => {
+    const guard = new PeerAgentSendGuard()
+    spend(guard, PEER_AGENT_SEND_BUDGET)
+    const over = guard.check({ fromThreadId: 'a', senderDepth: 0 }, 1_000 + PEER_AGENT_SEND_BUDGET)
+    expect(over.ok).toBe(false)
+    expect(over.ok === false && over.reason).toBe('budget')
+    expect(over.ok === false && over.message).toMatch(/sessions/i)
+  })
+
+  // The point of this guard: the per-pair limit cannot be multiplied by
+  // opening more targets, because the budget never looks at the target.
+  it('counts every target against one sending-session budget', () => {
+    const guard = new PeerAgentSendGuard()
+    spend(guard, PEER_AGENT_SEND_BUDGET)
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 0 }, 1_500).ok).toBe(false)
+  })
+
+  it('gives each sending session its own budget', () => {
+    const guard = new PeerAgentSendGuard()
+    spend(guard, PEER_AGENT_SEND_BUDGET)
+    expect(guard.check({ fromThreadId: 'b', senderDepth: 0 }, 1_500).ok).toBe(true)
+  })
+
+  it('lets the window slide', () => {
+    const guard = new PeerAgentSendGuard()
+    spend(guard, PEER_AGENT_SEND_BUDGET)
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 0 }, 1_500).ok).toBe(false)
+    // Only the oldest send ages out, so exactly one slot reopens.
+    const afterOldest = 1_000 + PEER_AGENT_SEND_WINDOW_MS
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 0 }, afterOldest).ok).toBe(true)
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 0 }, afterOldest).ok).toBe(false)
+  })
+
+  // Delivery can still fail after the guard accepts. Holding the slot would
+  // charge the sender for a message that never arrived.
+  it('release frees one slot', () => {
+    const guard = new PeerAgentSendGuard()
+    spend(guard, PEER_AGENT_SEND_BUDGET)
+    guard.release('a')
+    expect(guard.check({ fromThreadId: 'a', senderDepth: 0 }, 1_500).ok).toBe(true)
+  })
+
+  it('release on an unknown sender is harmless', () => {
+    const guard = new PeerAgentSendGuard()
+    guard.release('never-sent')
+    expect(guard.check({ fromThreadId: 'never-sent', senderDepth: 0 }, 1_000).ok).toBe(true)
+  })
+})
+
+describe('peerSentMarkerPrefix', () => {
+  it('marks the two initiators apart', () => {
+    expect(peerSentMarkerPrefix('user')).toBe(PEER_SENT_MARKER_PREFIX)
+    expect(peerSentMarkerPrefix('agent')).toBe(PEER_AGENT_SENT_MARKER_PREFIX)
+  })
+
+  // parseRotationMarker dispatches on startsWith, so one prefix must not be a
+  // prefix of the other or every agent send would render as a user send.
+  it('keeps neither prefix a prefix of the other', () => {
+    expect(PEER_AGENT_SENT_MARKER_PREFIX.startsWith(PEER_SENT_MARKER_PREFIX)).toBe(false)
+    expect(PEER_SENT_MARKER_PREFIX.startsWith(PEER_AGENT_SENT_MARKER_PREFIX)).toBe(false)
   })
 })
