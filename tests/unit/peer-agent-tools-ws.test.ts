@@ -151,10 +151,14 @@ describe('list_agent_sessions against the registry', () => {
     await startAll(cwd)
 
     const body = text(await toolsFor('sender').listSessions())
-    expect(body).toContain('"sessionId": "target"')
-    expect(body).toContain('"title": "API refactor"')
-    expect(body).toContain(cwd)
-    expect(body).not.toContain('"sessionId": "sender"')
+    // Parsed, not substring-matched: the payload is JSON, so a Windows cwd
+    // arrives with escaped separators and a raw contains() on the path fails.
+    const listed = JSON.parse(body.slice(body.indexOf('['))) as Array<{
+      sessionId: string; title: string; folder: string
+    }>
+    expect(listed.map((s) => s.sessionId)).toEqual(['target'])
+    expect(listed[0].title).toBe('API refactor')
+    expect(listed[0].folder).toBe(cwd)
   })
 
   it('reports a session that is mid-turn', async () => {

@@ -293,3 +293,25 @@ describe('resolveSendToTarget by id', () => {
     })
   })
 })
+
+describe('sendToPickerItems on Windows paths', () => {
+  // split('/') leaves a backslash path whole, so the label showed the entire
+  // C:\Users\...\project string instead of the folder name.
+  it('takes the folder name from a backslash path', () => {
+    const win = [
+      { id: 'sender', title: 'Sender', projectPath: 'C:\\Users\\tejas\\code\\switchboard' },
+      { id: 't2', title: 'Docs', projectPath: 'C:\\Users\\tejas\\code\\watchwithmi' },
+    ]
+    expect(sendToPickerItems(win, 'sender')).toEqual([
+      { id: 't2', label: 'Docs · watchwithmi' },
+    ])
+  })
+
+  it('still handles a trailing separator', () => {
+    const win = [
+      { id: 'sender', title: 'Sender', projectPath: 'C:\\a\\b' },
+      { id: 't2', title: 'Docs', projectPath: 'C:\\a\\proj\\' },
+    ]
+    expect(sendToPickerItems(win, 'sender')[0].label).toBe('Docs · proj')
+  })
+})

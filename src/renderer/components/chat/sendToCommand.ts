@@ -188,7 +188,9 @@ export function sendToPickerItems(
     .filter((s) => s.id !== fromSessionId && (s.machineId ?? 'local') === (from?.machineId ?? 'local'))
     .map((s) => ({
       id: s.id,
-      base: `${s.title ?? s.id} · ${s.projectPath?.split('/').filter(Boolean).pop() ?? 'unknown'}`,
+      // Both separators: a Windows projectPath left whole by a `/`-only split
+      // put the entire C:\Users\...\project string in the label.
+      base: `${s.title ?? s.id} · ${s.projectPath?.split(/[\\/]/).filter(Boolean).pop() ?? 'unknown'}`,
     }))
   const counts = new Map<string, number>()
   for (const r of rows) counts.set(r.base, (counts.get(r.base) ?? 0) + 1)
