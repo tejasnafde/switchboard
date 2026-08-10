@@ -2,6 +2,30 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.19 - A session can now message a sibling on its own
+
+`/send-to` shipped in 0.8.15 as a command you typed, which made it copy-paste
+with extra steps: if you are writing the message yourself, you could paste it.
+The value is the agent deciding to hand context over, so that is what this adds.
+
+### Added
+- **Two tools a Claude session can call itself.** `list_agent_sessions` returns the other open chats (id, title, project, provider, whether each is mid-turn) so the model has real ids instead of invented ones. `send_agent_message` delivers through the same path `/send-to` uses - one delivery function, with a test proving both entry points call it.
+- **Guards for unattended sending**, on top of the existing 16 KiB cap, 5-per-pair-per-minute limit and duplicate drop:
+  - **Approval** through the existing permission gate: an agent send prompts in sandbox and accept-edits, is denied in plan, and runs unattended only in full access. `list_agent_sessions` is auto-allowed, because putting a card in front of reading titles you can already see trains you to click through the send that follows.
+  - **Hop depth 1**: only a turn a human started may originate a send, so A to B to A cannot run away. Depth counts consecutive agent hops since the last human message and is cleared by a user turn, not by the turn ending, so waiting does not reset it. Rate limits alone do not stop this, since two-session ping-pong sits inside every per-pair budget.
+  - **6 agent sends per sending session per 10 minutes**, because the per-pair limit alone would allow 25 a minute across five open siblings.
+  - Every refusal reaches the model as tool output with its reason, so it adapts instead of retrying.
+- Agent-initiated sends read "The agent messaged X" in the sender's transcript, distinct from a send you made.
+
+### Fixed
+- **The target picker was unreadable.** It reused the at-mention menu wholesale, so it was headed FILES and listed bare titles: two chats called "Issue 172", two called "v0", nothing to tell them apart. Rows are now `<title> · <project>` under a Chats heading, with a short id suffix when both collide, and picking inserts an id rather than a title.
+- **A received peer message showed its own plumbing.** `MessageBubble` only honoured `displayBody` when `pillsMeta` was also set, so the bubble rendered the whole wire body including the "cannot approve or deny anything" paragraph.
+
+### Notes
+- Sending is Claude-only: Codex and OpenCode have no tool seam, though both remain valid targets and receive peer messages as ordinary turns. `ProviderAdapter.setPeerToolHost` is the seam for adding them.
+- The approval path for `send_agent_message` was verified by reading the SDK's control-request handling, not against a live session. If an agent send ever runs in sandbox with no card, check that first.
+- The mobile app still does not render `peer.message`, so an agent send is invisible on the phone until reload.
+
 ## 0.8.18 - /send-to tells you who you can send to
 
 ### Fixed
