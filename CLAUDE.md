@@ -260,6 +260,33 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 5. User answers → `provider.answerQuestion(threadId, requestId, answers)` resolves the blocked Promise
 6. `canUseTool` returns allow + `updatedInput` with the answer payload
 
+### Cross-session messaging (`/send-to` + agent-initiated sends)
+
+One session hands a self-contained summary to another on the SAME backend. Two entry points, ONE delivery method - `ProviderRegistry.deliverPeerMessage(input)`:
+
+- **User-typed**: `/send-to <session>: <message>` (parsing + fuzzy target resolution in `renderer/components/chat/sendToCommand.ts`) → `ProviderChannels.DELIVER_PEER_MESSAGE` → the registry with `initiator: 'user'`. The handler FORCES the initiator; a client claiming `'agent'` would take the agent path's budget while skipping the approval that path relies on.
+- **Agent-initiated (CLAUDE ONLY)**: two in-process SDK MCP tools (`createSdkMcpServer`, server name `switchboard`, built per query in `claude-adapter.ts`'s `startDraining`), so the model sees `mcp__switchboard__list_agent_sessions` and `mcp__switchboard__send_agent_message`. Names, descriptions and handler behaviour live in `provider/peer-tools.ts` (SDK-free); `adapters/claude-peer-tools.ts` is the zod + `sdk.tool()` binding. **Codex and OpenCode stay valid TARGETS and cannot SEND** - the seam is `ProviderAdapter.setPeerToolHost?`, which only Claude implements, so an equivalent for them is adapter work only.
+
+Delivery is an ordinary `sendTurn`, which is what makes a peer message structurally unable to answer an approval: nothing on the path reaches `respondToRequest`. The receiving body is `wrapPeerMessage`, which tells the peer the message is not from the user and carries no authority.
+
+Guards, all pure in `shared/peer-messaging.ts` and held by the BACKEND so every client shares one budget:
+
+| Guard | Value | Why |
+|---|---|---|
+| Body cap | 16 KiB | A peer message is a summary, not a transcript |
+| Per-pair rate | 5 / 60s | Both initiators |
+| Dedupe | identical (from, target, text) inside 10 min | Content-addressed id `pm_<16 hex>` |
+| **Hop depth** | `PEER_MESSAGE_MAX_HOP_DEPTH = 1` | Agent sends only. Depth counts consecutive AGENT hops since the last human message, so a session acting on a peer message cannot pass one on: that is the A -> B -> A guard, and rate limits do not substitute for it |
+| **Per-sender budget** | 6 / 10 min per SENDING session | Agent sends only. The per-pair limit is multiplied by fan-out otherwise (5 siblings = 25/min) |
+
+Traps:
+
+- **The approval gate is the EXISTING one.** SDK MCP tools route through `canUseTool`, so `decidePermission` already prompts in sandbox / accept-edits, denies in plan and allows in full-access. Do NOT add a parallel prompt. That routing was confirmed by reading the SDK bundle (`processControlRequest` handles `can_use_tool` generically on `tool_name`), NOT against a live Claude session - if an agent send ever runs in sandbox with no approval card, this is the first thing to check. `list_agent_sessions` is auto-allowed early in `canUseTool` next to `ExitPlanMode`: it reads only titles the sidebar already shows, and prompting for a harmless read trains the user to click through the send that follows.
+- **Hop depth is NOT cleared at turn end**, only by a user turn (set to 0 in `SEND_TURN`) or `STOP_SESSION`. Clearing it per turn would let an unattended chain continue by waiting.
+- **Refusals go back to the model as tool output with `isError`, never as a throw** - a thrown MCP error reaches it as an unreadable transport failure and it retries the same call.
+- The per-pair limit (5) is LOWER than the per-sender budget (6), so any test of the budget must fan out over two targets or the pair limit fires first.
+- Sender-side provenance is a marker prefix, not a field: `[[sb:peer-sent]]` vs `[[sb:peer-sent-agent]]` (`parseRotationMarker` kinds `peer` / `peer-agent`), because a reload reads the stored string and has nothing else to tell the two apart.
+
 ### Archive system
 
 - `archived INTEGER` column on `conversations` table
@@ -375,6 +402,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - **Project favicons** in the sidebar via `sb-favicon://`
 - **Bookmarks** (`bookmark-store` + `bookmarks` DB table) - bookmark messages/sessions
 - **In-chat diff review** (2026-06-02): after each turn, changed files surface as Cursor-style diff cards in chat with per-hunk accept/reject. Git checkpoint at turn start (`src/main/git/checkpoint.ts` + `checkpoint-tracker.ts`); `fileDiffResolve.ts` applies/reverts hunks; `file.edited` events are provider-agnostic (git is the source of truth). `FileDiffCard.tsx` renders the cards.
+- **Cross-session messaging**: `/send-to <session>: <message>`, plus two Claude-only SDK MCP tools (`list_agent_sessions` / `send_agent_message`) that let the model hand a finding to a sibling session itself, behind the ordinary approval gate and two extra guards (hop depth, per-sender budget) - see Cross-session messaging above
 - **Rate-limit event handling** (2026-06-10): Claude SDK `rate_limit_event` surfaced as a chat status message with window type + reset time; subprocess leak on `stopSession` fixed (6 new tests in `claude-adapter-stop-session.test.ts`)
 - Single-instance lock
 - Native app menu (`⌘,` for settings, standard Edit/View/Window)
@@ -464,10 +492,12 @@ src/
 │   │   ├── event-bus.ts               # RuntimeEventBus (decoupled fan-out)
 │   │   ├── env-overlay.ts             # instance env merge · claude-session-migrate.ts # oauth_dir rotation
 │   │   ├── instance-env.ts            # resolveInstanceEnv (shared by Test + usage probes)
+│   │   ├── peer-tools.ts              # cross-session tool names/descriptions/handlers + PeerToolHost
 │   │   ├── usage/                     # claude-keychain · claude-usage (HTTP) · codex-usage (app-server probe) · index (dispatch/cache)
 │   │   ├── types.ts                   # ProviderAdapter + re-exports from shared/provider-events
 │   │   └── adapters/
 │   │       ├── claude-adapter.ts      # SDK integration, canUseTool, image blocks
+│   │       ├── claude-peer-tools.ts   # binds peer-tools.ts into an SDK MCP server (zod schemas)
 │   │       ├── codex-adapter.ts       # JSON-RPC over stdio (images + plan + AskUserQuestion done)
 │   │       ├── opencode-acp-adapter.ts # OpenCode (ACP / JSON-RPC over stdio) - only OpenCode adapter
 │   │       ├── opencode/env.ts        # Shared env-probe helper

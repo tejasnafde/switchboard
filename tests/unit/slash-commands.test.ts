@@ -330,4 +330,10 @@ describe('/send-to', () => {
   it('advertises its argument shape', () => {
     expect(sendTo?.argumentHint).toBe('<session>: <message>')
   })
+
+  // The /help overlay renders these descriptions, and it is the only place a
+  // user learns that Claude can start one of these sends on its own.
+  it('says Claude can send one itself', () => {
+    expect(sendTo?.description).toMatch(/claude/i)
+  })
 })

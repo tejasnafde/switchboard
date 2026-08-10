@@ -16,16 +16,24 @@ itself, plus the guards that make that safe unattended.
 - [x] 4. Claude adapter: `createSdkMcpServer` wired into queryOptions,
       list-tool auto-allow in canUseTool
 - [x] 5. UI: agent-initiated sender marker + `initiator` on `peer.message`
-- [ ] 6. Docs: CLAUDE.md feature note + /help line
-- [ ] 7. Gate: typecheck + full `npm test`, then FINAL commit WITHOUT
+- [x] 6. Docs: CLAUDE.md feature note + /help line
+- [x] 7. Gate: typecheck + full `npm test`, then FINAL commit WITHOUT
       `--no-verify`
 
-## Current step: 6
+## Current step: DONE
 
 ## Next concrete action
-Docs: add the feature note to the repo CLAUDE.md (tools, guards, Claude-only
-limit) and check whether `/help` lists capabilities worth a line
-(`src/renderer/components/chat/slashCommands.ts` + the help overlay).
+None. Typecheck clean, 221 files / 2311 tests green (was 202 files / 2091
+before the mobile install, 2181 at the end of phase 1).
+
+Deliberately deferred, not forgotten:
+- Codex and OpenCode cannot SEND. They are valid targets. `setPeerToolHost?` is
+  the seam; an equivalent is adapter work only.
+- The mobile app does not render `peer.message` at all (pre-existing gap from
+  phase 1), so an agent send is invisible on the phone until reload.
+- The canUseTool approval for `send_agent_message` was confirmed by reading
+  `sdk.mjs`, not against a live Claude session. If an agent send ever runs in
+  sandbox with no approval card, check that first.
 
 ## Files touched so far
 - CHECKPOINT.md
@@ -47,6 +55,9 @@ limit) and check whether `/help` lists capabilities worth a line
 - src/renderer/components/chat/MessageBubble.tsx (agent-send pill copy)
 - tests/unit/rotation-marker.test.ts (+2), tests/unit/send-to-command.test.ts
   (+1, fixture gained `initiator`)
+- src/renderer/components/chat/slashCommands.ts + tests/unit/slash-commands.test.ts
+  (/send-to description now says Claude can send one itself, +1 test)
+- CLAUDE.md (Cross-session messaging section, what's-working bullet, file tree)
 
 ## Design decided for THIS phase (do not re-litigate)
 - Tool names, as the model sees them: `mcp__switchboard__list_agent_sessions`

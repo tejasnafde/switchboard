@@ -120,8 +120,8 @@ export function createPeerToolHandlers(host: PeerToolHost, fromThreadId: string)
     },
 
     async sendMessage(args: { sessionId: string; message: string }): Promise<PeerToolResult> {
-      const sessionId = args.sessionId?.trim() ?? ''
-      const message = args.message?.trim() ?? ''
+      const sessionId = args.sessionId.trim()
+      const message = args.message.trim()
       if (!sessionId) {
         return say(`No sessionId given. Call ${PEER_LIST_TOOL_NAME} and use one of the ids it returns.`, true)
       }

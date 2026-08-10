@@ -108,7 +108,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   },
   {
     name: 'send-to',
-    description: 'Send a message to another open session',
+    description: 'Send a message to another open session (Claude can also send one itself, with your approval)',
     argumentHint: '<session>: <message>',
     takesArgs: true,
   },
