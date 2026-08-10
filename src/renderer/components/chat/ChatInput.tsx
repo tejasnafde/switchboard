@@ -249,27 +249,29 @@ export function ChatInput({
   // is open at a time (different trigger chars on the same token).
   const [atQuery, setAtQuery] = useState<string | null>(null)
   const [atActiveIdx, setAtActiveIdx] = useState(0)
-  // Target picker for `/send-to`: the command needs a chat title the user has
-  // no way to recall exactly, so offer the open ones.
+  // `/send-to` target picker: the command needs an exact chat title, so
+  // offer the open ones rather than making the user recall one.
   const [sendToQuery, setSendToQuery] = useState<string | null>(null)
   const [sendToActiveIdx, setSendToActiveIdx] = useState(0)
   const sendToRangeRef = useRef<{ start: number; end: number } | null>(null)
   const [atFiles, setAtFiles] = useState<string[]>([])
   const [atLoading, setAtLoading] = useState(false)
+  // Read on demand, not subscribed: `sessions` changes identity on every
+  // streamed token, so subscribing would re-render the composer per token.
+  const sendToMatches = useMemo(() => {
+    if (sendToQuery === null) return []
+    const all = useAgentStore.getState().sessions
+    const self = all.find((x) => x.id === sessionId)
+    return all
+      .filter((x) => x.id !== sessionId && (x.machineId ?? 'local') === (self?.machineId ?? 'local'))
+      .map((x) => x.title ?? x.id)
+      .filter((t) => sendToQuery === '' || fuzzyScore(sendToQuery, t) !== null)
+  }, [sendToQuery, sessionId])
+
   // Single fuzzy scan per keystroke, shared by the keyboard handler and the
   // menu. Previously the keydown handler re-ran filterAtMatches (a full-list
   // fuzzyScore pass, 10k+ files) unmemoized on every keydown, on top of the
   // menu's own memoized copy.
-  const sendToTitles = useAgentStore((st) => st.sessions)
-  const sendToMatches = useMemo(() => {
-    if (sendToQuery === null) return []
-    const self = sendToTitles.find((x) => x.id === sessionId)
-    return sendToTitles
-      .filter((x) => x.id !== sessionId && (x.machineId ?? 'local') === (self?.machineId ?? 'local'))
-      .map((x) => x.title ?? x.id)
-      .filter((t) => sendToQuery === '' || fuzzyScore(sendToQuery, t) !== null)
-  }, [sendToQuery, sendToTitles, sessionId])
-
   const atMatches = useMemo(
     () => (atQuery !== null ? filterAtMatches(atQuery, atFiles) : []),
     [atQuery, atFiles],
@@ -694,7 +696,8 @@ export function ChatInput({
   // RichChatTextarea's `onEnter` prop instead.
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      // @-mention branch takes precedence when open.
+      // Target picker first: it only opens inside `/send-to`, where the other
+      // two triggers cannot be live.
       if (sendToQuery !== null && sendToMatches.length > 0) {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
           e.preventDefault()
@@ -714,6 +717,7 @@ export function ChatInput({
         }
       }
 
+      // @-mention branch takes precedence over the slash menu when open.
       if (atQuery !== null) {
         // Empty match list: only Escape is meaningful. Letting Enter fall
         // through means the user can still send the typed `@query` literally
@@ -945,7 +949,7 @@ export function ChatInput({
             commands={mergedCommands}
           />
         )}
-        {/* @-mention popover - same anchor; never simultaneously open. */}
+        {/* `/send-to` target picker - reuses the at-mention menu below. */}
         {sendToQuery !== null && sendToMatches.length > 0 && (
           <AtMentionMenu
             query={sendToQuery}
@@ -956,6 +960,7 @@ export function ChatInput({
             onActiveIndexChange={setSendToActiveIdx}
           />
         )}
+        {/* @-mention popover - same anchor; never simultaneously open. */}
         {atQuery !== null && (
           <AtMentionMenu
             query={atQuery}

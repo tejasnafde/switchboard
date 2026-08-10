@@ -63,9 +63,8 @@ export function resolveSendToTarget(
   const candidates = sessions.filter(
     (s) => s.id !== fromSessionId && (s.machineId ?? 'local') === (from?.machineId ?? 'local'),
   )
-  // Distinguish "nothing to match against" from "nothing matched": the first
-  // is what first-time use hits, and blaming the name sends the user hunting
-  // for a typo instead of opening a second chat.
+  // "Nothing to match against" is not "nothing matched": first-time use hits
+  // the former, and blaming the name sends the user hunting for a typo.
   if (candidates.length === 0) {
     const elsewhere = sessions.some((s) => s.id !== fromSessionId)
     return {
@@ -136,9 +135,8 @@ export interface SendToTrigger {
 }
 
 /**
- * Detect that the caret sits in the TARGET half of a `/send-to` command, so
- * the composer can offer the open chats instead of leaving the user to guess
- * a title. A colon commits the target, which ends the trigger.
+ * True when the caret sits in the TARGET half of `/send-to`, so the composer
+ * can offer the open chats. A colon commits the target and ends the trigger.
  */
 export function detectSendToTrigger(body: string, caret: number): SendToTrigger | null {
   const prefix = '/send-to '
