@@ -2,7 +2,7 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
-## 0.8.21 - Codex works on the remote machine too
+## 0.8.22 - Codex works on the remote machine too
 
 ### Added
 - **Remote Codex sessions.** The remote backend now provisions a pinned Codex CLI, keeps authentication isolated per provider profile under `CODEX_HOME`, surfaces a device-auth banner when the VM is not logged in, and supports Codex anywhere a remote Claude session can run. OpenCode remains local-only.
@@ -17,6 +17,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ### Notes
 - Review caught the model-fetch gate and a compatibility regression where older Codex question requests would have received the new keyed-answer response. Both paths have focused regressions.
 - The gcloud command was checked against the production alias with `--dry-run`; the release gate covered 2,368 tests plus the main, preload, renderer, remote-server, and packaged-main smoke builds. A live VM connection remains the post-release manual test.
+- `v0.8.21` did not publish: Windows CI exposed two path/newline assumptions in source-inspection tests before any packaging job ran. Those tests are platform-neutral in this release.
 
 ## 0.8.20 - A Codex checklist is a checklist, not a plan to approve
 

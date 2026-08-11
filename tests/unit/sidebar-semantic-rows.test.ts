@@ -5,11 +5,11 @@ import { describe, expect, it } from 'vitest'
 const sidebarSource = readFileSync(
   resolve(__dirname, '../../src/renderer/components/sidebar/Sidebar.tsx'),
   'utf8',
-)
+).replace(/\r\n/g, '\n')
 const machineLayerSource = readFileSync(
   resolve(__dirname, '../../src/renderer/components/sidebar/MachineLayer.tsx'),
   'utf8',
-)
+).replace(/\r\n/g, '\n')
 
 describe('sidebar conversation row semantics', () => {
   it('uses a native button as the primary local conversation action', () => {

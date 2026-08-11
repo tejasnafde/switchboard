@@ -52,7 +52,7 @@ describe('remote Codex auth', () => {
     const dir = tmpDir()
     const missing = checkRemoteProviderAuth('codex', dir)
     expect(missing).toMatchObject({ loggedIn: false, configDir: dir })
-    expect(missing.loginCommand).toBe(`CODEX_HOME="${dir}" codex login --device-auth`)
+    expect(missing.loginCommand).toMatch(/^CODEX_HOME=".+" codex login --device-auth$/)
     expect(remoteProviderLoginPrompt('codex', dir)).toContain('codex login --device-auth')
 
     writeFileSync(join(dir, 'auth.json'), '{"tokens":{}}')
