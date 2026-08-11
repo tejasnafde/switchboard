@@ -164,6 +164,11 @@ function stringifyMaybe(value: unknown): string | undefined {
   }
 }
 
+function isMissingThreadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  return /thread(?:\s+\S+)?\s+(?:is\s+)?not (?:found|loaded)\b|no rollout found\b/i.test(message)
+}
+
 function codexModelTier(id: string): 'fast' | 'balanced' | 'max' {
   const normalized = id.toLowerCase()
   if (/mini|nano|flash|fast/.test(normalized)) return 'fast'
@@ -633,7 +638,7 @@ export class CodexAdapter implements ProviderAdapter {
     const sandbox = RUNTIME_MODE_TO_CODEX_THREAD_SANDBOX[active.session.runtimeMode] ?? 'read-only'
     const sandboxPolicy = RUNTIME_MODE_TO_CODEX_TURN_SANDBOX[active.session.runtimeMode] ?? { type: 'readOnly' }
 
-    try {
+    const ensureThread = async (): Promise<void> => {
       if (!active.threadId) {
         const result = await this.sendRpc(active, 'thread/start', {
           cwd: active.session.cwd,
@@ -649,7 +654,9 @@ export class CodexAdapter implements ProviderAdapter {
         active.session.sessionId = active.threadId
         active.onEvent({ type: 'session', threadId, sessionId: active.threadId })
       }
+    }
 
+    const startTurn = async (): Promise<void> => {
       const started = await this.sendRpc(active, 'turn/start', {
         threadId: active.threadId,
         input: content,
@@ -661,13 +668,26 @@ export class CodexAdapter implements ProviderAdapter {
       })
       const startedTurnId = (started as { turn?: { id?: string } } | null)?.turn?.id
       if (typeof startedTurnId === 'string') active.activeTurnId = startedTurnId
+    }
+
+    try {
+      await ensureThread()
+      try {
+        await startTurn()
+      } catch (err) {
+        if (!isMissingThreadError(err)) throw err
+        log.warn(`codex thread disappeared, retrying turn on a fresh thread: ${err instanceof Error ? err.message : String(err)}`)
+        active.threadId = null
+        active.session.sessionId = undefined
+        await ensureThread()
+        await startTurn()
+      }
     } catch (err) {
-      active.session.status = 'error'
-      active.onEvent({
-        type: 'error',
-        threadId,
-        message: err instanceof Error ? err.message : String(err),
-      })
+      active.session.status = 'idle'
+      active.activeTurnId = null
+      active.turnStartedAt = null
+      active.onEvent({ type: 'status', threadId, status: 'idle' })
+      throw err
     }
   }
 

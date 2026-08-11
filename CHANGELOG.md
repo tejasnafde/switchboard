@@ -2,6 +2,15 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.23 - Codex recovers when its native thread disappears
+
+### Fixed
+- **A Codex send could fail with `thread not found` and leave the composer stuck on “Working”.** Missing native threads now trigger one safe retry on a fresh Codex thread. Any final start failure rejects normally and restores the session to idle, so registry turn state and the composer cannot remain active forever.
+
+### Notes
+- The reported screenshot came from a Switchboard 0.8.20 process that had remained open through the 0.8.22 release. That older adapter sent `turn/start` directly against the prior Claude UUID. Version 0.8.22 already added `thread/resume` with a fresh-thread fallback; this release also makes the turn path self-healing if app-server loses a thread after startup.
+- The fix was developed test-first. Review added a regression proving that an unrelated `model not loaded` error is not mistaken for a missing thread, and the deslop pass found no unnecessary casts, defensive branches, or comments to remove.
+
 ## 0.8.22 - Codex works on the remote machine too
 
 ### Added

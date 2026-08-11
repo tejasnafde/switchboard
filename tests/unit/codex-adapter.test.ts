@@ -11,6 +11,7 @@ vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 })
 
 const writes: string[] = []
 let emitFailedTurn = false
+let turnStartErrors: string[] = []
 let stallInitialize = false
 let initStderrChunks: string[] = []
 let lastChild: MockChild | null = null
@@ -117,6 +118,15 @@ function makeChild(): MockChild {
       }
       if (message.method === 'turn/start') {
         queueMicrotask(() => {
+          const turnStartError = turnStartErrors.shift()
+          if (turnStartError) {
+            stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              error: { code: -32600, message: turnStartError },
+            }) + '\n')
+            return
+          }
           if (emitFailedTurn) {
             stdout.write(JSON.stringify({
               jsonrpc: '2.0',
@@ -325,6 +335,7 @@ describe('CodexAdapter', () => {
   beforeEach(() => {
     writes.length = 0
     emitFailedTurn = false
+    turnStartErrors = []
     stallInitialize = false
     initStderrChunks = []
     lastChild = null
@@ -453,6 +464,49 @@ describe('CodexAdapter', () => {
         threadId: 'codex-thread-existing',
         input: [{ type: 'text', text: 'resume here' }],
       },
+    })
+  })
+
+  it('replaces a stale resumed thread and retries the turn once', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    turnStartErrors = ['thread not found: codex-thread-existing']
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      resumeSessionId: 'codex-thread-existing',
+    }, vi.fn())
+
+    await adapter.sendTurn('switchboard-thread-1', 'recover this turn')
+
+    const messages = writes.map((line) => JSON.parse(line))
+    const turnStarts = messages.filter((message) => message.method === 'turn/start')
+    expect(turnStarts.map((message) => message.params.threadId)).toEqual([
+      'codex-thread-existing',
+      'codex-thread-1',
+    ])
+    expect(messages.filter((message) => message.method === 'thread/start')).toHaveLength(1)
+  })
+
+  it('rejects a non-recoverable turn-start failure and restores idle status', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    turnStartErrors = ['model not loaded']
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    await expect(adapter.sendTurn('thread-1', 'do not hang')).rejects.toThrow('model not loaded')
+    expect(onEvent).toHaveBeenLastCalledWith({
+      type: 'status',
+      threadId: 'thread-1',
+      status: 'idle',
     })
   })
 
