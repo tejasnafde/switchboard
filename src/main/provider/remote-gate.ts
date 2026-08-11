@@ -2,10 +2,9 @@
  * Remote-machine helpers for the provider registry.
  *
  * Two concerns live here, both pure enough to unit-test:
- *   1. Gating Codex / OpenCode off remote machines (only Claude Code runs on
- *      remote VMs today).
- *   2. Detecting when a remote Claude session's config dir has no credentials
- *      and building the actionable per-device-login prompt shown in chat.
+ *   1. Gating unsupported providers off remote machines.
+ *   2. Detecting missing remote provider credentials and building the
+ *      actionable per-device-login prompt shown in chat.
  */
 
 import { readdirSync, statSync } from 'node:fs'
@@ -14,16 +13,16 @@ import { basename, join } from 'node:path'
 import { oauthInteractiveLoginCommand } from '@shared/provider-auth-format'
 import { createMainLogger } from '../logger'
 import type { ProviderKind } from './types'
+import type { AgentType } from '@shared/types'
 
 const log = createMainLogger('provider:remote-gate')
 
 /**
  * Human label for a provider that isn't available on remote machines yet, or
- * null when it is (Claude). Drives both the hard-deny at session start and the
+ * null when it is. Drives both the hard-deny at session start and the
  * IS_AVAILABLE gray-out.
  */
 export function remoteBlockedProviderLabel(provider: ProviderKind): string | null {
-  if (provider === 'codex') return 'Codex'
   if (provider === 'opencode') return 'OpenCode'
   return null
 }
@@ -38,14 +37,43 @@ export function formatRemoteClaudeLoginPrompt(cmd: string): string {
   return `This machine is not logged in to Claude. Open a terminal on it and run:\n\n    ${command}\n\nThen sign in with /login - open the URL it prints in your local browser and paste the code back into the same terminal (keep it running). Once signed in, send your message again.`
 }
 
-/** True if the dir holds a NON-EMPTY .credentials.json (an interrupted or
- *  touched login can leave a zero-byte file that would falsely read as ready). */
-function hasCredentials(configDir: string): boolean {
+function hasNonEmptyFile(path: string): boolean {
   try {
-    return statSync(join(configDir, '.credentials.json')).size > 0
+    return statSync(path).size > 0
   } catch {
     return false
   }
+}
+
+type RemoteAuthAgent = Extract<AgentType, 'claude-code' | 'codex'>
+
+export interface RemoteProviderAuthCheck {
+  loggedIn: boolean
+  loginCommand: string
+  configDir: string
+}
+
+export function checkRemoteProviderAuth(
+  agentType: RemoteAuthAgent,
+  configDir: string,
+): RemoteProviderAuthCheck {
+  const codex = agentType === 'codex'
+  const loggedIn = codex
+    ? Boolean(process.env.OPENAI_API_KEY) || hasNonEmptyFile(join(configDir, 'auth.json'))
+    : Boolean(process.env.ANTHROPIC_API_KEY) || hasNonEmptyFile(join(configDir, '.credentials.json'))
+  const loginCommand = codex
+    ? `CODEX_HOME="${configDir.replace(/(["\\`])/g, '\\$1')}" codex login --device-auth`
+    : oauthInteractiveLoginCommand('claude-code', configDir) || 'claude'
+  return { loggedIn, loginCommand, configDir }
+}
+
+export function remoteProviderLoginPrompt(agentType: RemoteAuthAgent, configDir: string): string | null {
+  const check = checkRemoteProviderAuth(agentType, configDir)
+  if (check.loggedIn) return null
+  if (agentType === 'codex') {
+    return `This machine is not logged in to Codex. Open a terminal on it and run:\n\n    ${check.loginCommand}\n\nComplete the device sign-in in your local browser, then send your message again.`
+  }
+  return formatRemoteClaudeLoginPrompt(check.loginCommand)
 }
 
 /**
@@ -54,11 +82,7 @@ function hasCredentials(configDir: string): boolean {
  * feeds the renderer's chat-open banner, so it carries the raw pieces - the
  * verdict, the copyable login command, and the dir that was checked.
  */
-export interface RemoteClaudeAuthCheck {
-  loggedIn: boolean
-  loginCommand: string
-  configDir: string
-}
+export type RemoteClaudeAuthCheck = RemoteProviderAuthCheck
 
 /**
  * Pure check: is a remote Claude session rooted at `configDir` able to
@@ -67,12 +91,7 @@ export interface RemoteClaudeAuthCheck {
  * structured data instead of a prose prompt.
  */
 export function checkRemoteClaudeAuth(configDir: string): RemoteClaudeAuthCheck {
-  const loggedIn = Boolean(process.env.ANTHROPIC_API_KEY) || hasCredentials(configDir)
-  return {
-    loggedIn,
-    loginCommand: oauthInteractiveLoginCommand('claude-code', configDir) || 'claude',
-    configDir,
-  }
+  return checkRemoteProviderAuth('claude-code', configDir)
 }
 
 /**
@@ -82,10 +101,7 @@ export function checkRemoteClaudeAuth(configDir: string): RemoteClaudeAuthCheck 
  * per-device-login message to surface in chat.
  */
 export function remoteClaudeLoginPrompt(configDir: string): string | null {
-  if (process.env.ANTHROPIC_API_KEY) return null
-  if (hasCredentials(configDir)) return null
-  const cmd = oauthInteractiveLoginCommand('claude-code', configDir)
-  return formatRemoteClaudeLoginPrompt(cmd)
+  return remoteProviderLoginPrompt('claude-code', configDir)
 }
 
 /**
@@ -96,10 +112,14 @@ export function remoteClaudeLoginPrompt(configDir: string): string | null {
  * `[A-Za-z0-9._-]` is removed; an empty result or a `.`/`..` segment falls back
  * to `.claude`.
  */
-export function sanitizeConfigSegment(name: string | undefined): string {
+function sanitizeSegment(name: string | undefined, fallback: string): string {
   const cleaned = (name ?? '').replace(/[^A-Za-z0-9._-]/g, '')
-  if (!cleaned || cleaned === '.' || cleaned === '..') return '.claude'
+  if (!cleaned || cleaned === '.' || cleaned === '..') return fallback
   return cleaned
+}
+
+export function sanitizeConfigSegment(name: string | undefined): string {
+  return sanitizeSegment(name, '.claude')
 }
 
 let remoteDirsCache: { at: number; dirs: string[] } | null = null
@@ -154,6 +174,13 @@ export function listRemoteClaudeConfigDirs(home: string = homedir()): string[] {
  * a single segment first so a hostile payload can't traverse out of `$HOME`.
  */
 export function remoteClaudeConfigDir(remoteConfigDir: string | undefined): string {
-  if (!remoteConfigDir) return join(homedir(), '.claude')
-  return join(homedir(), sanitizeConfigSegment(remoteConfigDir))
+  return remoteProviderConfigDir('claude-code', remoteConfigDir)
+}
+
+export function remoteProviderConfigDir(
+  agentType: RemoteAuthAgent,
+  remoteConfigDir: string | undefined,
+): string {
+  const fallback = agentType === 'codex' ? '.codex' : '.claude'
+  return join(homedir(), sanitizeSegment(remoteConfigDir, fallback))
 }

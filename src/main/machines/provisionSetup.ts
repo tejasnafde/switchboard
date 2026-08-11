@@ -8,6 +8,7 @@ import { JUPYTER_EXTENSION_IDS, BRIDGE_EXTENSION_DIRNAME } from '../ide/code-ser
 // Fork that ships the linux prebuilds upstream node-pty omits. Bump + validate
 // on a VM if our node-pty API surface outgrows what the fork tracks.
 const REMOTE_NODE_PTY = 'npm:@homebridge/node-pty-prebuilt-multiarch@^0.12.0'
+export const REMOTE_CODEX_VERSION = '0.144.1'
 
 export interface RemotePackageJson {
   name: string
@@ -33,6 +34,7 @@ export function remotePackageJson(
       // Externalized from the bundle, so it must install on the VM; npm pulls
       // the matching platform CLI via its optionalDependencies.
       '@anthropic-ai/claude-agent-sdk': claudeSdkVersion,
+      '@openai/codex': REMOTE_CODEX_VERSION,
     },
   }
 }
@@ -143,6 +145,18 @@ export function claudeSymlinkScript(): string {
     'chmod +x "$BIN" 2>/dev/null || true',
     'mkdir -p "$HOME/.local/bin"',
     'ln -sf "$BIN" "$HOME/.local/bin/claude"',
+  ].join('\n')
+}
+
+/** Ensure Codex exists even when the server marker predates Codex support. */
+export function codexEnsureScript(): string {
+  return [
+    `D=${REMOTE_SERVER_DIR}`,
+    'BIN="$D/node_modules/.bin/codex"',
+    `if [ -x "$BIN" ]; then :; else cd "$D" && npm install --omit=dev --no-audit --no-fund @openai/codex@${REMOTE_CODEX_VERSION}; fi`,
+    'test -x "$BIN"',
+    'mkdir -p "$HOME/.local/bin"',
+    'ln -sf "$BIN" "$HOME/.local/bin/codex"',
   ].join('\n')
 }
 

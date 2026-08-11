@@ -11,7 +11,7 @@ import { MachineChannels } from '@shared/ipc-channels'
 import { createMainLogger } from '../logger'
 import { listMachines, createMachine, updateMachine, deleteMachine, reorderMachines, getMachineSnapshots, saveMachineSnapshot, type MachineInput } from '../db/machines'
 import type { MachineSnapshot } from '@shared/machines'
-import { parseSshConfig, parseIapTargets } from '../machines/sshConfig'
+import { iapTransportForMachine, parseSshConfig, parseIapTargets } from '../machines/sshConfig'
 import { ConnectionManager } from '../machines/connectionManager'
 import { allocatePort, spawnTunnel, waitForHealth, REMOTE_PORT, REMOTE_COMMAND, REMOTE_IDE_PORT } from '../machines/connectDeps'
 import { makeProvision } from '../machines/provisionDeps'
@@ -50,6 +50,23 @@ function portFree(port: number): Promise<boolean> {
 let connections: ConnectionManager | null = null
 let currentHost: BackendHost | null = null
 
+async function readSshConfig(): Promise<string> {
+  return readFile(join(homedir(), '.ssh', 'config'), 'utf-8')
+}
+
+async function enrichIapTransport(machine: ReturnType<typeof listMachines>[number]) {
+  try {
+    const patch = iapTransportForMachine(machine, parseIapTargets(await readSshConfig()))
+    if (!patch) return machine
+    const updated = updateMachine(machine.id, patch, Date.now()) ?? machine
+    log.info(`resolved ${machine.name} through gcloud IAP (${updated.iapProject}/${updated.iapZone}/${updated.iapInstance})`)
+    return updated
+  } catch (err) {
+    log.info(`could not inspect ssh config for IAP transport: ${err instanceof Error ? err.message : String(err)}`)
+    return machine
+  }
+}
+
 export function registerMachineHandlers(host: BackendHost): void {
   currentHost = host
   if (!connections) {
@@ -72,17 +89,20 @@ export function registerMachineHandlers(host: BackendHost): void {
   }
   const mgr = connections
 
-  host.handle(MachineChannels.CONNECT, (id: string) => {
+  host.handle(MachineChannels.CONNECT, async (id: string) => {
     log.info(`connect requested: ${id}`)
-    const machine = listMachines().find((m) => m.id === id)
-    if (!machine) return { ok: false as const, error: 'unknown machine' }
+    const saved = listMachines().find((m) => m.id === id)
+    if (!saved) return { ok: false as const, error: 'unknown machine' }
+    const machine = await enrichIapTransport(saved)
     void mgr.connect(machine)
     return { ok: true as const }
   })
 
   host.handle(MachineChannels.LIST, () => listMachines())
 
-  host.handle(MachineChannels.CREATE, (input: MachineInput) => createMachine(input, Date.now()))
+  host.handle(MachineChannels.CREATE, async (input: MachineInput) =>
+    enrichIapTransport(createMachine(input, Date.now())),
+  )
 
   host.handle(MachineChannels.UPDATE, (id: string, patch: Partial<MachineInput>) =>
     updateMachine(id, patch, Date.now()),
@@ -117,7 +137,7 @@ export function registerMachineHandlers(host: BackendHost): void {
 
   host.handle(MachineChannels.LIST_SSH_HOSTS, async () => {
     try {
-      const text = await readFile(join(homedir(), '.ssh', 'config'), 'utf-8')
+      const text = await readSshConfig()
       return parseSshConfig(text)
     } catch (err) {
       // No ~/.ssh/config (or unreadable) is normal - the picker just shows none.
@@ -131,7 +151,7 @@ export function registerMachineHandlers(host: BackendHost): void {
   // without anyone retyping it.
   host.handle(MachineChannels.LIST_IAP_TARGETS, async () => {
     try {
-      const text = await readFile(join(homedir(), '.ssh', 'config'), 'utf-8')
+      const text = await readSshConfig()
       return parseIapTargets(text)
     } catch (err) {
       log.info(`no ssh config for IAP targets: ${err instanceof Error ? err.message : String(err)}`)

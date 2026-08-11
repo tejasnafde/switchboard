@@ -123,6 +123,7 @@ interface PendingRpc {
 interface PendingApproval {
   jsonRpcId: number
   requestId: string
+  questionIds?: string[]
 }
 
 interface ActiveSession {
@@ -138,6 +139,7 @@ interface ActiveSession {
   threadId: string | null
   /** Cached `skills/list` response. Populated on first listSkills() call. */
   skills: ProviderSkill[] | null
+  models: Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
   /** Active codex turn id (from turn/start response or turn/started); null
@@ -160,6 +162,30 @@ function stringifyMaybe(value: unknown): string | undefined {
   } catch {
     return String(value)
   }
+}
+
+function codexModelTier(id: string): 'fast' | 'balanced' | 'max' {
+  const normalized = id.toLowerCase()
+  if (/mini|nano|flash|fast/.test(normalized)) return 'fast'
+  if (/sol|pro|max|ultra/.test(normalized)) return 'max'
+  return 'balanced'
+}
+
+export function parseCodexModels(input: unknown): Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> {
+  const root = asRecord(input)
+  const entries = Array.isArray(root?.data) ? root.data : []
+  return entries.flatMap((entry) => {
+    const model = asRecord(entry)
+    const id = typeof model?.id === 'string'
+      ? model.id
+      : (typeof model?.model === 'string' ? model.model : null)
+    if (!id || model?.hidden === true) return []
+    return [{
+      id,
+      label: typeof model?.displayName === 'string' ? model.displayName : id,
+      tier: codexModelTier(id),
+    }]
+  })
 }
 
 function codexToolName(item: Record<string, unknown>): string | null {
@@ -236,17 +262,25 @@ function codexToolOutput(item: Record<string, unknown>): string | undefined {
  * Be defensive - accept top-level array too in case the schema shifts.
  */
 export function parseCodexSkills(input: unknown): ProviderSkill[] {
-  const arr = Array.isArray(input)
-    ? input
-    : (input && typeof input === 'object' && Array.isArray((input as { skills?: unknown }).skills))
-      ? (input as { skills: unknown[] }).skills
-      : []
+  const root = asRecord(input)
+  const grouped = Array.isArray(root?.data) ? root.data : null
+  const arr = grouped
+    ? grouped.flatMap((entry) => {
+        const group = asRecord(entry)
+        return Array.isArray(group?.skills) ? group.skills : []
+      })
+    : Array.isArray(input)
+      ? input
+      : Array.isArray(root?.skills)
+        ? root.skills
+        : []
   const out: ProviderSkill[] = []
   for (const entry of arr) {
     if (!entry || typeof entry !== 'object') continue
     const obj = entry as Record<string, unknown>
     const rawName = typeof obj.name === 'string' ? obj.name : null
     if (!rawName) continue
+    if (obj.enabled === false) continue
     const name = rawName.replace(/^\$/, '').replace(/^\//, '').trim()
     if (!name) continue
     const description = typeof obj.description === 'string' ? obj.description : undefined
@@ -257,6 +291,7 @@ export function parseCodexSkills(input: unknown): ProviderSkill[] {
       name,
       ...(description ? { description } : {}),
       ...(argumentHint ? { argumentHint } : {}),
+      ...(typeof obj.path === 'string' ? { path: obj.path } : {}),
       source: 'codex',
     })
   }
@@ -368,6 +403,7 @@ export class CodexAdapter implements ProviderAdapter {
       startedSyntheticTools: new Set(),
       threadId: resumeThreadId,
       skills: null,
+      models: null,
       turnStartedAt: null,
       activeTurnId: null,
       steerUnsupported: false,
@@ -457,6 +493,32 @@ export class CodexAdapter implements ProviderAdapter {
       )
       captureInitStderr = false
       this.sendNotification(active, 'initialized')
+      if (resumeThreadId) {
+        const approvalPolicy = RUNTIME_MODE_TO_CODEX_POLICY[session.runtimeMode] ?? 'on-request'
+        const sandbox = RUNTIME_MODE_TO_CODEX_THREAD_SANDBOX[session.runtimeMode] ?? 'read-only'
+        try {
+          const resumed = await this.sendRpc(active, 'thread/resume', {
+            threadId: resumeThreadId,
+            cwd: session.cwd,
+            approvalPolicy,
+            sandbox,
+            ...(session.model ? { model: session.model } : {}),
+          })
+          const result = resumed as { thread?: { id?: string } } | null
+          const resumedId = result?.thread?.id ?? resumeThreadId
+          active.threadId = resumedId
+          session.sessionId = resumedId
+          onEvent({ type: 'session', threadId: opts.threadId, sessionId: resumedId })
+        } catch (err) {
+          active.threadId = null
+          session.sessionId = undefined
+          onEvent({
+            type: 'error',
+            threadId: opts.threadId,
+            message: `Could not resume Codex thread ${resumeThreadId}; the next turn will start a new thread. ${err instanceof Error ? err.message : String(err)}`,
+          })
+        }
+      }
       active.session.status = 'idle'
       onEvent({ type: 'status', threadId: opts.threadId, status: 'idle' })
     } catch (err) {
@@ -515,7 +577,17 @@ export class CodexAdapter implements ProviderAdapter {
     // Build current Codex app-server v2 user input blocks.
     const content: Array<Record<string, unknown>> = []
     if (message) {
-      content.push({ type: 'text', text: message })
+      const skillMention = message.match(/^\s*\$([A-Za-z][\w-]*)(?:\s+([\s\S]*))?$/)
+      const skill = skillMention
+        ? active.skills?.find((candidate) => candidate.name.toLowerCase() === skillMention[1].toLowerCase())
+        : undefined
+      if (skill?.path) {
+        content.push({ type: 'skill', name: skill.name, path: skill.path })
+        const instruction = skillMention?.[2]?.trim()
+        if (instruction) content.push({ type: 'text', text: instruction })
+      } else {
+        content.push({ type: 'text', text: message })
+      }
     }
     if (images && images.length > 0) {
       for (const img of images) {
@@ -625,6 +697,26 @@ export class CodexAdapter implements ProviderAdapter {
     }
   }
 
+  async listModels(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>> {
+    const active = this.sessions.get(threadId)
+    if (!active?.child) return []
+    if (active.models) return active.models
+    try {
+      const result = await this.sendRpc(active, 'model/list', { limit: 100, includeHidden: false })
+      active.models = parseCodexModels(result)
+      return active.models
+    } catch (err) {
+      log.warn(`model/list failed: ${err instanceof Error ? err.message : String(err)}`)
+      return []
+    }
+  }
+
+  async setModel(threadId: string, model: string): Promise<void> {
+    const active = this.sessions.get(threadId)
+    if (!active) return
+    active.session.model = model
+  }
+
   async interruptTurn(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.child || !active.threadId) return
@@ -652,11 +744,12 @@ export class CodexAdapter implements ProviderAdapter {
 
     active.pendingApprovals.delete(requestId)
 
+    const codexDecision = decision === 'approve' ? 'accept' : 'decline'
     // Send JSON-RPC response back to codex
     this.writeMessage(active, {
       jsonrpc: '2.0',
       id: pending.jsonRpcId,
-      result: { decision },
+      result: { decision: codexDecision },
     })
 
     active.onEvent({
@@ -684,11 +777,18 @@ export class CodexAdapter implements ProviderAdapter {
     if (!pending) return
     active.pendingApprovals.delete(requestId)
 
+    const result = pending.questionIds
+      ? {
+          answers: Object.fromEntries(
+            pending.questionIds.map((id, index) => [id, { answers: answers[index] ?? [] }]),
+          ),
+        }
+      : { answers }
     // Respond to the server's original userInput request with the answers.
     this.writeMessage(active, {
       jsonrpc: '2.0',
       id: pending.jsonRpcId,
-      result: { answers },
+      result,
     })
 
     active.onEvent({ type: 'question.answered', threadId, requestId, answers })
@@ -893,7 +993,7 @@ export class CodexAdapter implements ProviderAdapter {
         this.writeMessage(active, {
           jsonrpc: '2.0',
           id: request.id,
-          result: { decision: 'approve' },
+          result: { decision: 'accept' },
         })
         return
       }
@@ -909,7 +1009,7 @@ export class CodexAdapter implements ProviderAdapter {
         this.writeMessage(active, {
           jsonrpc: '2.0',
           id: request.id,
-          result: { decision: 'deny' },
+          result: { decision: 'decline' },
         })
         return
       }
@@ -935,7 +1035,7 @@ export class CodexAdapter implements ProviderAdapter {
     // AskUserQuestion equivalent - Codex may surface interactive questions
     // under a different method name. If observed, route through the same
     // question.asked flow so QuestionCard renders for Codex too.
-    if (method === 'item/userInput/request' || method === 'askUserQuestion') {
+    if (method === 'item/tool/requestUserInput' || method === 'item/userInput/request' || method === 'askUserQuestion') {
       const requestId = `q_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
       const params = request.params ?? {}
       const questions = Array.isArray(params.questions)
@@ -945,6 +1045,13 @@ export class CodexAdapter implements ProviderAdapter {
       active.pendingApprovals.set(requestId, {
         jsonRpcId: request.id,
         requestId,
+        ...(method === 'item/tool/requestUserInput'
+          ? {
+              questionIds: questions.map((q: Record<string, unknown>, idx: number) =>
+                typeof q.id === 'string' ? q.id : `q_${idx}`,
+              ),
+            }
+          : {}),
       })
 
       active.onEvent({

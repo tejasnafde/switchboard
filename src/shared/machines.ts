@@ -9,6 +9,11 @@ export interface Machine {
   sshPort: number
   /** Run remote work as this user via sudo (e.g. 'ubuntu'); null = the ssh login user. */
   remoteUser: string | null
+  /** Connection launcher. `gcloud-iap` delegates SSH identity/key resolution to gcloud. */
+  transportKind: 'ssh' | 'gcloud-iap'
+  iapInstance: string | null
+  iapProject: string | null
+  iapZone: string | null
   sortOrder: number
   createdAt: number
   updatedAt: number
@@ -22,6 +27,10 @@ export interface MachineInput {
   sshUser?: string | null
   sshPort?: number
   remoteUser?: string | null
+  transportKind?: 'ssh' | 'gcloud-iap'
+  iapInstance?: string | null
+  iapProject?: string | null
+  iapZone?: string | null
 }
 
 /** A host candidate parsed from ~/.ssh/config for the "Add machine" picker. */

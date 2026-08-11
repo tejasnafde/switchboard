@@ -13,6 +13,7 @@ const writes: string[] = []
 let emitFailedTurn = false
 let stallInitialize = false
 let initStderrChunks: string[] = []
+let lastChild: MockChild | null = null
 
 type MockChild = EventEmitter & {
   stdout: PassThrough
@@ -62,6 +63,54 @@ function makeChild(): MockChild {
               thread: { id: 'codex-thread-1' },
               cwd: '/tmp/project',
               model: 'gpt-5.4',
+            },
+          }) + '\n')
+        })
+      }
+      if (message.method === 'thread/resume') {
+        queueMicrotask(() => {
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            result: {
+              thread: { id: message.params.threadId },
+              cwd: '/tmp/project',
+              model: 'gpt-5.4',
+            },
+          }) + '\n')
+        })
+      }
+      if (message.method === 'model/list') {
+        queueMicrotask(() => {
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            result: {
+              data: [
+                { id: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', hidden: false, isDefault: true },
+                { id: 'gpt-5-mini', displayName: 'GPT-5 mini', hidden: false, isDefault: false },
+              ],
+              nextCursor: null,
+            },
+          }) + '\n')
+        })
+      }
+      if (message.method === 'skills/list') {
+        queueMicrotask(() => {
+          stdout.write(JSON.stringify({
+            jsonrpc: '2.0',
+            id: message.id,
+            result: {
+              data: [{
+                cwd: '/tmp/project',
+                errors: [],
+                skills: [{
+                  name: 'review',
+                  description: 'Review changes',
+                  path: '/tmp/skills/review/SKILL.md',
+                  enabled: true,
+                }],
+              }],
             },
           }) + '\n')
         })
@@ -253,6 +302,7 @@ function makeChild(): MockChild {
     }),
   }
   child.kill = vi.fn()
+  lastChild = child
   return child
 }
 
@@ -277,6 +327,7 @@ describe('CodexAdapter', () => {
     emitFailedTurn = false
     stallInitialize = false
     initStderrChunks = []
+    lastChild = null
     vi.clearAllMocks()
   })
 
@@ -310,6 +361,22 @@ describe('CodexAdapter', () => {
       jsonrpc: '2.0',
       method: 'initialized',
     })
+  })
+
+  it('parses the current cwd-grouped skills/list response including skill paths', async () => {
+    const { parseCodexSkills } = await import('../../src/main/provider/adapters/codex-adapter')
+    expect(parseCodexSkills({
+      data: [{
+        cwd: '/tmp/project',
+        errors: [],
+        skills: [{ name: 'review', description: 'Review changes', path: '/tmp/skills/review/SKILL.md', enabled: true }],
+      }],
+    })).toEqual([{
+      name: 'review',
+      description: 'Review changes',
+      path: '/tmp/skills/review/SKILL.md',
+      source: 'codex',
+    }])
   })
 
   it('starts a codex thread before sending the first turn with v2 input', async () => {
@@ -358,7 +425,7 @@ describe('CodexAdapter', () => {
     expect(turnStart.params).not.toHaveProperty('reasoningEffort')
   })
 
-  it('uses a persisted codex thread id when resuming instead of starting a new thread', async () => {
+  it('loads a persisted codex thread with thread/resume before sending another turn', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
@@ -369,16 +436,190 @@ describe('CodexAdapter', () => {
       resumeSessionId: 'codex-thread-existing',
     }, vi.fn())
 
+    const messages = writes.map((line) => JSON.parse(line))
+    expect(messages.find((message) => message.method === 'thread/resume')).toMatchObject({
+      params: {
+        threadId: 'codex-thread-existing',
+        cwd: '/tmp/project',
+      },
+    })
+
     await adapter.sendTurn('switchboard-thread-1', 'resume here')
 
-    const messages = writes.map((line) => JSON.parse(line))
-    expect(messages.some((message) => message.method === 'thread/start')).toBe(false)
-    expect(messages.find((message) => message.method === 'turn/start')).toMatchObject({
+    const afterTurn = writes.map((line) => JSON.parse(line))
+    expect(afterTurn.some((message) => message.method === 'thread/start')).toBe(false)
+    expect(afterTurn.find((message) => message.method === 'turn/start')).toMatchObject({
       params: {
         threadId: 'codex-thread-existing',
         input: [{ type: 'text', text: 'resume here' }],
       },
     })
+  })
+
+  it('lists the live Codex model catalog instead of relying on stale static ids', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, vi.fn())
+
+    await expect(adapter.listModels?.('thread-1')).resolves.toEqual([
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', tier: 'max' },
+      { id: 'gpt-5-mini', label: 'GPT-5 mini', tier: 'fast' },
+    ])
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual(expect.objectContaining({
+      method: 'model/list',
+      params: { limit: 100, includeHidden: false },
+    }))
+  })
+
+  it('uses a model selected after session startup on the next Codex turn', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      model: 'gpt-5-mini',
+    }, vi.fn())
+    await adapter.setModel?.('thread-1', 'gpt-5.6-sol')
+    await adapter.sendTurn('thread-1', 'use the new model')
+
+    const frames = writes.map((line) => JSON.parse(line))
+    expect(frames.find((message) => message.method === 'thread/start')?.params.model).toBe('gpt-5.6-sol')
+    expect(frames.find((message) => message.method === 'turn/start')?.params.model).toBe('gpt-5.6-sol')
+  })
+
+  it('maps Switchboard approval decisions to Codex accept/decline values', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      runtimeMode: 'sandbox',
+    }, onEvent)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 900,
+      method: 'item/commandExecution/requestApproval',
+      params: { threadId: 'codex-thread-1', turnId: 'turn-1', itemId: 'cmd-1', command: 'npm test' },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+    const opened = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'request.opened')
+    expect(opened).toBeTruthy()
+
+    await adapter.respondToRequest('thread-1', opened.requestId, 'approve')
+
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual({
+      jsonrpc: '2.0',
+      id: 900,
+      result: { decision: 'accept' },
+    })
+  })
+
+  it('handles current item/tool/requestUserInput requests and keys answers by question id', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 901,
+      method: 'item/tool/requestUserInput',
+      params: {
+        threadId: 'codex-thread-1',
+        turnId: 'turn-1',
+        itemId: 'question-tool-1',
+        autoResolutionMs: null,
+        questions: [{
+          id: 'deploy_target',
+          header: 'Target',
+          question: 'Where should this deploy?',
+          isOther: true,
+          isSecret: false,
+          options: [{ label: 'Production', description: 'Deploy to prod' }],
+        }],
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+    const asked = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'question.asked')
+    expect(asked?.questions[0]).toMatchObject({
+      id: 'deploy_target',
+      header: 'Target',
+      question: 'Where should this deploy?',
+    })
+
+    await adapter.answerQuestion?.('thread-1', asked.requestId, [['Production']])
+
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual({
+      jsonrpc: '2.0',
+      id: 901,
+      result: { answers: { deploy_target: { answers: ['Production'] } } },
+    })
+  })
+
+  it('keeps the legacy user-input response shape for older Codex builds', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 902,
+      method: 'item/userInput/request',
+      params: {
+        questions: [{ header: 'Target', question: 'Where?', options: [] }],
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+    const asked = onEvent.mock.calls.map(([event]) => event).find((event) => event.type === 'question.asked')
+
+    await adapter.answerQuestion?.('thread-1', asked.requestId, [['Production']])
+
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual({
+      jsonrpc: '2.0',
+      id: 902,
+      result: { answers: [['Production']] },
+    })
+  })
+
+  it('sends a selected Codex skill as a typed skill input block', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, vi.fn())
+    await adapter.listSkills('thread-1')
+    await adapter.sendTurn('thread-1', '$review focus on auth')
+
+    const turn = writes.map((line) => JSON.parse(line)).find((message) => message.method === 'turn/start')
+    expect(turn.params.input).toEqual([
+      { type: 'skill', name: 'review', path: '/tmp/skills/review/SKILL.md' },
+      { type: 'text', text: 'focus on auth' },
+    ])
   })
 
   it('emits session and status events from codex thread and turn notifications', async () => {

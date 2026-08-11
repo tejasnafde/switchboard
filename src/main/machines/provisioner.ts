@@ -3,7 +3,7 @@ import type { Machine } from '@shared/machines'
 import { buildProbeCommand, buildRemoteShellCommand, REMOTE_SERVER_DIR } from './provisionCommands'
 import { parseProbeOutput } from './remoteProbe'
 import { planProvision, type ProvisionAction } from './provisionPlan'
-import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript, codeServerEnsureScript, bridgeSeedScript, bridgeMarker, type BridgeFile } from './provisionSetup'
+import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, codexEnsureScript, versionMarkerScript, codeServerEnsureScript, bridgeSeedScript, bridgeMarker, type BridgeFile } from './provisionSetup'
 import { CODE_SERVER_VERSION } from '../ide/code-server-manager'
 import { asUserScript, asUserUpload } from './remoteExec'
 import { summarizeSshError } from './sshError'
@@ -111,7 +111,15 @@ export async function provisionRemote(
     }
   }
 
-  if (plan.action === 'ready' || plan.action === 'no-node') return plan
+  if (plan.action === 'ready') {
+    try {
+      await run('ensure Codex CLI', asUserScript(u, codexEnsureScript()))
+    } catch (err) {
+      log?.(`provision ${machine.id}: Codex install failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
+    return plan
+  }
+  if (plan.action === 'no-node') return plan
   await run('mkdir server dir', asUserScript(u, `mkdir -p ${REMOTE_SERVER_DIR}`))
   await run('upload server bundle', asUserUpload(u, `cat > ${REMOTE_SERVER_DIR}/index.cjs`), { file: inputs.bundlePath })
   await run(
@@ -127,6 +135,12 @@ export async function provisionRemote(
     await run('link claude CLI onto PATH', asUserScript(u, claudeSymlinkScript()))
   } catch (err) {
     log?.(`provision ${machine.id}: claude CLI symlink failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  try {
+    await run('ensure Codex CLI', asUserScript(u, codexEnsureScript()))
+  } catch (err) {
+    log?.(`provision ${machine.id}: Codex install failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
   }
 
   // Marker last: a half-finished install must never probe as ready.

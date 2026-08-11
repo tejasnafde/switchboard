@@ -12,6 +12,16 @@ const mk = (over: Partial<Machine>): Machine => ({
   sshPort: 22, remoteUser: null, sortOrder: 0, createdAt: 0, updatedAt: 0, ...over,
 })
 
+const iap = (): Machine => mk({
+  sshAlias: 'geoiq-retailiq-v2-in-prod',
+  sshHost: 'geoiq-retailiq-v2-in-prod',
+  sshUser: 'tejas_geoiq_io',
+  transportKind: 'gcloud-iap',
+  iapInstance: 'geoiq-retailiq-v2-in-prod',
+  iapProject: 'prj-geoiq-product-in-prod',
+  iapZone: 'asia-south1-b',
+})
+
 // The remote command is wrapped through `printf %s '<b64>' | base64 -d | bash`
 // (asUserScript), including the login-user passthrough case, so decode it to
 // inspect the actual remote command.
@@ -21,6 +31,27 @@ const decode = (remote: string): string | null => {
 }
 
 describe('buildTunnelCommand', () => {
+  it('uses gcloud compute ssh for an IAP machine instead of the stale plain-ssh identity', () => {
+    const { command, args } = buildTunnelCommand(iap(), {
+      localPort: 7681,
+      remotePort: 8765,
+      remoteCommand: 'node server.js',
+    })
+
+    expect(command).toBe('gcloud')
+    expect(args.slice(0, 2)).toEqual(['compute', 'ssh'])
+    expect(args).toEqual(expect.arrayContaining([
+      'geoiq-retailiq-v2-in-prod',
+      '--zone', 'asia-south1-b',
+      '--project', 'prj-geoiq-product-in-prod',
+      '--tunnel-through-iap',
+      '--command',
+    ]))
+    expect(args).not.toContain('tejas_geoiq_io@geoiq-retailiq-v2-in-prod')
+    expect(args.some((arg) => arg.includes('7681:127.0.0.1:8765'))).toBe(true)
+    expect(decode(args[args.indexOf('--command') + 1])?.endsWith('node server.js')).toBe(true)
+  })
+
   it('forwards localPort -> remotePort and runs the server command', () => {
     const { command, args } = buildTunnelCommand(mk({}), { localPort: 7681, remotePort: 8765, remoteCommand: 'node server.js' })
     expect(command).toBe('ssh')

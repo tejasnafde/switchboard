@@ -34,13 +34,21 @@ function runner(probe: Record<string, unknown>) {
 const full = { node: 'v20', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16' }
 
 describe('provisionRemote', () => {
-  it('ready: probes + IDE ensure only, no upload/install', async () => {
+  it('ready: probes and runs idempotent IDE/Codex ensures, with no server upload', async () => {
     const r = runner(full)
     const res = await provisionRemote(machine, inputs, r)
     expect(res.action).toBe('ready')
-    // probe + the idempotent remote-IDE ensure (fast no-op when installed)
-    expect(r.exec).toHaveBeenCalledTimes(2)
+    // probe + idempotent remote-IDE and Codex ensures (fast no-ops when installed)
+    expect(r.exec).toHaveBeenCalledTimes(3)
     expect(decode(r.calls[1].args[r.calls[1].args.length - 1])).toContain('code-server')
+  })
+
+  it('ensures Codex is installed for an already-provisioned remote server', async () => {
+    const r = runner(full)
+    await provisionRemote(machine, inputs, r)
+    const remotes = r.calls.map((call) => decode(call.args[call.args.length - 1]))
+    expect(remotes.some((script) => script.includes('@openai/codex@'))).toBe(true)
+    expect(remotes.some((script) => script.includes('.local/bin/codex'))).toBe(true)
   })
 
   it('no-node: stops after the probe', async () => {
@@ -62,7 +70,8 @@ describe('provisionRemote', () => {
     expect(remotes[4]).toMatch(/cat > .*package\.json/)
     expect(remotes[5]).toMatch(/npm install/)
     expect(remotes[6]).toMatch(/ln -sf .*\.local\/bin\/claude/)
-    expect(remotes[7]).toMatch(/printf %s 0\.4\.16 > version/)
+    expect(remotes[7]).toContain('.local/bin/codex')
+    expect(remotes[8]).toMatch(/printf %s 0\.4\.16 > version/)
     expect(r.calls[3].stdin).toEqual({ file: '/fake/out/server/index.cjs' })
     expect(r.calls[4].stdin).toContain('better-sqlite3')
   })
@@ -146,15 +155,16 @@ describe('provisionRemote', () => {
       'upload package.json',
       'npm install (this can take a minute)',
       'link claude CLI onto PATH',
+      'ensure Codex CLI',
       'write version marker',
     ])
   })
 
-  it('fires only the probe + IDE steps when the remote is already ready', async () => {
+  it('fires only the probe + idempotent ensure steps when the remote is already ready', async () => {
     const steps: string[] = []
     const r = runner(full)
     await provisionRemote(machine, inputs, r, undefined, (label) => steps.push(label))
-    expect(steps).toEqual(['checking remote', 'ensure remote IDE (one-time download)'])
+    expect(steps).toEqual(['checking remote', 'ensure remote IDE (one-time download)', 'ensure Codex CLI'])
   })
 
   it('accepts node versions at or above the minimum', async () => {

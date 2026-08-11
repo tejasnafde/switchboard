@@ -218,9 +218,19 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
    * first turn because the ref never clears.
    */
   const handleAgentTypeChange = useCallback(async (t: AgentType) => {
+    if (t === 'terminal') return
     const prevType = agentType
     setAgentType(t)
     if (!sessionId) return
+    // Persist first so a failed write cannot leave the picker and DB on
+    // different providers.
+    try {
+      await window.api.app.setConversationProviderSelection(sessionId, t, defaultInstanceId(t))
+    } catch (err) {
+      setAgentType(prevType)
+      log.warn('failed to persist provider selection', err)
+      return
+    }
     // Persisted in-chat marker: an agent swap silently drops all context
     // (the new adapter starts cold), so make the switch - and its cost -
     // visible and auditable, mirroring the instance-rotation marker below.
@@ -262,10 +272,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // leaving the orphan id in place caused ModelPicker to fall into
     // its "custom" branch on the new agent.
     storeSetAgentType(sessionId, t)
-    // Reset persisted instance id to the new kind's default - the previous
-    // instance belongs to the old agent kind and `resolveProviderInstance`
-    // would reject it on kind mismatch.
-    window.api.app.setConversationProviderInstanceId(sessionId, defaultInstanceId(t)).catch(() => {})
     providerStartedRef.current.delete(sessionId)
     agentStartedRef.current.delete(sessionId)
     await window.api.provider?.stopSession?.(sessionId).catch(() => {})

@@ -61,11 +61,8 @@ export interface SessionStartOpts {
   /** Per-instance config dir → CLAUDE_CONFIG_DIR (claude) or CODEX_HOME (codex). */
   resolvedOauthDir?: string | null
   /**
-   * Remote-only: the basename of the local instance's oauth_dir (e.g.
-   * `.claude-akshaya`), forwarded from the desktop so a remote Claude session
-   * mirrors the local per-instance config dir under the VM's `$HOME`. Safe
-   * metadata (a single path segment, not a credential); sanitized on the
-   * remote before use. Unset → the remote falls back to `~/.claude`.
+   * Remote-only oauth_dir basename. It is sanitized into a single path segment
+   * under the VM user's home; unset uses the provider's default config dir.
    */
   remoteConfigDir?: string
   /**

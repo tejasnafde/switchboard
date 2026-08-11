@@ -5,7 +5,7 @@
  * quotes so it survives the remote shell inside the double-quoted `-e` arg.
  */
 import type { Machine } from '@shared/machines'
-import { sshHostArgs, SSH_COMMON_OPTS } from './sshTunnel'
+import { buildMachineRemoteCommand, SSH_COMMON_OPTS } from './sshTunnel'
 import { asUserScript } from './remoteExec'
 import { BRIDGE_EXTENSION_DIRNAME } from '../ide/code-server-manager'
 
@@ -24,20 +24,14 @@ const PROBE_SOURCE =
   'process.stdout.write(JSON.stringify({node:process.version,platform:process.platform,arch:process.arch,abi:process.versions.modules,server:s,bridge:b}))'
 
 export function buildProbeCommand(machine: Machine): { command: string; args: string[] } {
-  return {
-    command: 'ssh',
-    args: [
-      ...SSH_COMMON_OPTS,
-      ...sshHostArgs(machine),
-      asUserScript(machine.remoteUser, `node -e "${PROBE_SOURCE}" 2>/dev/null || true`),
-    ],
-  }
+  return buildMachineRemoteCommand(
+    machine,
+    asUserScript(machine.remoteUser, `node -e "${PROBE_SOURCE}" 2>/dev/null || true`),
+    SSH_COMMON_OPTS,
+  )
 }
 
 /** ssh that runs an arbitrary remote shell command (stdin is forwarded). */
 export function buildRemoteShellCommand(machine: Machine, remoteCommand: string): { command: string; args: string[] } {
-  return {
-    command: 'ssh',
-    args: [...SSH_COMMON_OPTS, ...sshHostArgs(machine), remoteCommand],
-  }
+  return buildMachineRemoteCommand(machine, remoteCommand, SSH_COMMON_OPTS)
 }

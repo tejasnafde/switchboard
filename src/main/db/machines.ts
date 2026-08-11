@@ -17,6 +17,10 @@ interface DbRow {
   ssh_user: string | null
   ssh_port: number
   remote_user: string | null
+  transport_kind: 'ssh' | 'gcloud-iap'
+  iap_instance: string | null
+  iap_project: string | null
+  iap_zone: string | null
   sort_order: number
   created_at: number
   updated_at: number
@@ -31,6 +35,10 @@ function toRow(r: DbRow): Machine {
     sshUser: r.ssh_user,
     sshPort: r.ssh_port,
     remoteUser: r.remote_user,
+    transportKind: r.transport_kind ?? 'ssh',
+    iapInstance: r.iap_instance ?? null,
+    iapProject: r.iap_project ?? null,
+    iapZone: r.iap_zone ?? null,
     sortOrder: r.sort_order,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
@@ -50,8 +58,10 @@ export function createMachine(input: MachineInput, now: number): Machine {
     (getDb().prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM machines').get() as { m: number }).m + 1
   getDb()
     .prepare(
-      `INSERT INTO machines (id, name, ssh_alias, ssh_host, ssh_user, ssh_port, remote_user, sort_order, created_at, updated_at)
-       VALUES (@id, @name, @sshAlias, @sshHost, @sshUser, @sshPort, @remoteUser, @sortOrder, @createdAt, @updatedAt)`,
+      `INSERT INTO machines (id, name, ssh_alias, ssh_host, ssh_user, ssh_port, remote_user,
+       transport_kind, iap_instance, iap_project, iap_zone, sort_order, created_at, updated_at)
+       VALUES (@id, @name, @sshAlias, @sshHost, @sshUser, @sshPort, @remoteUser,
+       @transportKind, @iapInstance, @iapProject, @iapZone, @sortOrder, @createdAt, @updatedAt)`,
     )
     .run({
       id,
@@ -61,6 +71,10 @@ export function createMachine(input: MachineInput, now: number): Machine {
       sshUser: input.sshUser ?? null,
       sshPort: input.sshPort ?? 22,
       remoteUser: input.remoteUser ?? null,
+      transportKind: input.transportKind ?? 'ssh',
+      iapInstance: input.iapInstance ?? null,
+      iapProject: input.iapProject ?? null,
+      iapZone: input.iapZone ?? null,
       sortOrder: nextOrder,
       createdAt: now,
       updatedAt: now,
@@ -78,10 +92,16 @@ export function updateMachine(id: string, patch: Partial<MachineInput>, now: num
   if (patch.sshUser !== undefined) merged.sshUser = patch.sshUser
   if (patch.sshPort !== undefined) merged.sshPort = patch.sshPort
   if (patch.remoteUser !== undefined) merged.remoteUser = patch.remoteUser
+  if (patch.transportKind !== undefined) merged.transportKind = patch.transportKind
+  if (patch.iapInstance !== undefined) merged.iapInstance = patch.iapInstance
+  if (patch.iapProject !== undefined) merged.iapProject = patch.iapProject
+  if (patch.iapZone !== undefined) merged.iapZone = patch.iapZone
   getDb()
     .prepare(
       `UPDATE machines SET name=@name, ssh_alias=@sshAlias, ssh_host=@sshHost,
-       ssh_user=@sshUser, ssh_port=@sshPort, remote_user=@remoteUser, updated_at=@updatedAt WHERE id=@id`,
+       ssh_user=@sshUser, ssh_port=@sshPort, remote_user=@remoteUser,
+       transport_kind=@transportKind, iap_instance=@iapInstance, iap_project=@iapProject,
+       iap_zone=@iapZone, updated_at=@updatedAt WHERE id=@id`,
     )
     .run({
       id,
@@ -91,6 +111,10 @@ export function updateMachine(id: string, patch: Partial<MachineInput>, now: num
       sshUser: merged.sshUser,
       sshPort: merged.sshPort,
       remoteUser: merged.remoteUser,
+      transportKind: merged.transportKind,
+      iapInstance: merged.iapInstance,
+      iapProject: merged.iapProject,
+      iapZone: merged.iapZone,
       updatedAt: now,
     })
   return toRow(getDb().prepare('SELECT * FROM machines WHERE id = ?').get(id) as DbRow)

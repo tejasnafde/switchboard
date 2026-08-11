@@ -41,6 +41,7 @@ import {
   setConversationProviderInstanceId,
   getConversationModel,
   setConversationModel,
+  setConversationProviderSelection,
   getConversationPendingHandoff,
   setConversationPendingHandoff,
   getChildSessionIds,
@@ -546,6 +547,14 @@ export function registerAppHandlers(host: BackendHost): void {
   })
   host.handle(AppChannels.SET_CONVERSATION_MODEL, (id: string, model: string) => {
     setConversationModel(id, model)
+    return { ok: true }
+  })
+  host.handle(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, (
+    id: string,
+    agentType: string,
+    instanceId: string,
+  ) => {
+    setConversationProviderSelection(id, agentType, instanceId)
     return { ok: true }
   })
 

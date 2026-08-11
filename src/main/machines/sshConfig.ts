@@ -3,7 +3,7 @@
  * aliases (no wildcards) that have a HostName, with their User and Port.
  * Not a full ssh_config implementation - no Match, Include, or token expansion.
  */
-import type { SshHost, SshIapTarget } from '@shared/machines'
+import type { Machine, MachineInput, SshHost, SshIapTarget } from '@shared/machines'
 
 interface Block {
   aliases: string[]
@@ -117,4 +117,27 @@ export function parseIapTargets(text: string): SshIapTarget[] {
   }
   flush()
   return targets
+}
+
+/** Durable transport patch for a saved machine whose SSH alias is an IAP target. */
+export function iapTransportForMachine(
+  machine: Machine,
+  targets: SshIapTarget[],
+): Partial<MachineInput> | null {
+  const key = machine.sshAlias ?? machine.sshHost
+  const target = targets.find((candidate) => candidate.alias === key)
+  if (!target) return null
+  if (
+    machine.transportKind === 'gcloud-iap' &&
+    machine.iapInstance === target.instance &&
+    machine.iapProject === target.project &&
+    machine.iapZone === target.zone
+  ) return null
+
+  return {
+    transportKind: 'gcloud-iap',
+    iapInstance: target.instance,
+    iapProject: target.project,
+    iapZone: target.zone,
+  }
 }

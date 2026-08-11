@@ -2,6 +2,22 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.21 - Codex works on the remote machine too
+
+### Added
+- **Remote Codex sessions.** The remote backend now provisions a pinned Codex CLI, keeps authentication isolated per provider profile under `CODEX_HOME`, surfaces a device-auth banner when the VM is not logged in, and supports Codex anywhere a remote Claude session can run. OpenCode remains local-only.
+- **Current Codex app-server parity.** Codex now loads its live model catalog, switches models between turns, resumes persisted threads with `thread/resume`, uses current approval and question response shapes, and sends selected skills as typed `$skill` input blocks.
+- **GCP IAP as a first-class machine transport.** A saved machine whose SSH alias contains a gcloud IAP `ProxyCommand` is upgraded automatically and connected through `gcloud compute ssh --tunnel-through-iap`. Gcloud owns OS Login identity and key resolution; Switchboard still runs the backend, terminals, and agents as the configured runtime user through `sudo -H`.
+
+### Fixed
+- **The production VM failed with `Permission denied (publickey)` even though the shell alias worked.** Switchboard bypassed the alias's gcloud/IAP launcher and called plain `ssh` with a stale user/key tuple. Probe, provisioning, uploads, and the long-lived tunnel now share the resolved transport.
+- **Switching providers could reopen a Claude chat with a Codex model, or vice versa.** Provider kind, credential profile, model pin, and native resume id are now changed in one database statement, and the picker rolls back if that write fails.
+- **Codex's live models existed behind an adapter method the renderer never called.** The active-session model fetch now covers both Claude and Codex.
+
+### Notes
+- Review caught the model-fetch gate and a compatibility regression where older Codex question requests would have received the new keyed-answer response. Both paths have focused regressions.
+- The gcloud command was checked against the production alias with `--dry-run`; the release gate covered 2,368 tests plus the main, preload, renderer, remote-server, and packaged-main smoke builds. A live VM connection remains the post-release manual test.
+
 ## 0.8.20 - A Codex checklist is a checklist, not a plan to approve
 
 ### Fixed

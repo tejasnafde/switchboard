@@ -5,6 +5,7 @@ import {
   parseLeadingSlashCommand,
   parseSlashCommandWrapper,
   splitSkillMentions,
+  commandInsertion,
   SLASH_COMMANDS,
 } from '../../src/renderer/components/chat/slashCommands'
 
@@ -220,6 +221,17 @@ describe('splitSkillMentions', () => {
       { type: 'skill', name: 'plan' },
       { type: 'text', value: ' world' },
     ])
+  })
+})
+
+describe('commandInsertion', () => {
+  it('inserts Codex skills with the $ prefix expected by app-server', () => {
+    expect(commandInsertion({ name: 'review', description: 'Review', source: 'codex' })).toBe('$review ')
+  })
+
+  it('keeps slash prefixes for Claude and Switchboard commands', () => {
+    expect(commandInsertion({ name: 'commit', description: 'Commit', source: 'claude-code' })).toBe('/commit ')
+    expect(commandInsertion({ name: 'send-to', description: 'Send', takesArgs: true })).toBe('/send-to ')
   })
 })
 

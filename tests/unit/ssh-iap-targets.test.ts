@@ -5,7 +5,8 @@
  * including the quoted and unquoted flag styles that coexist there.
  */
 import { describe, it, expect } from 'vitest'
-import { parseIapTargets } from '../../src/main/machines/sshConfig'
+import { iapTransportForMachine, parseIapTargets } from '../../src/main/machines/sshConfig'
+import type { Machine } from '@shared/machines'
 
 describe('parseIapTargets', () => {
   it('extracts project and zone from a quoted ProxyCommand', () => {
@@ -100,5 +101,24 @@ Host three
     const targets = parseIapTargets(config)
     expect(targets).toHaveLength(2)
     expect(targets[1]).toMatchObject({ alias: 'two', project: 'p2', zone: 'z2' })
+  })
+})
+
+describe('iapTransportForMachine', () => {
+  it('repairs an existing plain-SSH machine by matching its saved alias', () => {
+    const machine = {
+      id: 'm1', name: 'prod', sshAlias: 'prod', sshHost: 'prod', sshUser: 'stale-user',
+      sshPort: 22, remoteUser: 'ubuntu', transportKind: 'ssh', iapInstance: null,
+      iapProject: null, iapZone: null, sortOrder: 0, createdAt: 0, updatedAt: 0,
+    } satisfies Machine
+
+    expect(iapTransportForMachine(machine, [{
+      alias: 'prod', instance: 'prod-instance', project: 'prod-project', zone: 'asia-south1-b',
+    }])).toEqual({
+      transportKind: 'gcloud-iap',
+      iapInstance: 'prod-instance',
+      iapProject: 'prod-project',
+      iapZone: 'asia-south1-b',
+    })
   })
 })

@@ -89,6 +89,25 @@ describe('buildProbeCommand', () => {
     expect(decode(args[args.length - 1])).toMatch(/node -e/)
   })
 
+  it('runs the probe through gcloud for an IAP machine', () => {
+    const { command, args } = buildProbeCommand(mk({
+      transportKind: 'gcloud-iap',
+      iapInstance: 'prod-instance',
+      iapProject: 'prod-project',
+      iapZone: 'asia-south1-b',
+    }))
+
+    expect(command).toBe('gcloud')
+    expect(args.slice(0, 3)).toEqual(['compute', 'ssh', 'prod-instance'])
+    expect(args).toEqual(expect.arrayContaining([
+      '--zone', 'asia-south1-b',
+      '--project', 'prod-project',
+      '--tunnel-through-iap',
+      '--command',
+    ]))
+    expect(decode(args[args.indexOf('--command') + 1])).toMatch(/node -e/)
+  })
+
   it('the probe source has no double quotes (survives the remote shell)', () => {
     const { args } = buildProbeCommand(mk())
     const remoteCmd = decode(args.at(-1) as string)

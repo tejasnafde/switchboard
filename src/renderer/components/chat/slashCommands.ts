@@ -72,6 +72,10 @@ export interface SlashCommand {
   run?: (ctx: SlashCommandContext) => void
 }
 
+export function commandInsertion(command: Pick<SlashCommand, 'name' | 'source'>): string {
+  return `${command.source === 'codex' ? '$' : '/'}${command.name} `
+}
+
 /**
  * Build SlashCommand entries from agent-provided skills. Pure - easy to
  * unit-test the merge order.

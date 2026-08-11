@@ -1,14 +1,14 @@
 /**
  * Proactive remote-auth banner for SSH-machine sessions.
  *
- * A remote Claude session with no VM credentials used to error only at first
+ * A remote provider session with no VM credentials used to error only at first
  * send (the START_SESSION backstop throws the login prompt). This banner runs
  * the same check at chat-open via `provider.checkRemoteAuth` and, when the VM
  * isn't logged in, renders a slim non-blocking strip above the chat input with
  * the copyable login command and a Re-check button. It never prevents typing
  * or sending - the START_SESSION backstop still catches any race.
  *
- * Results are cached per (machineId, config-dir segment) in module state so
+ * Results are cached per (machineId, provider, config-dir segment) so
  * tab-switching doesn't re-probe; Re-check and instance rotation invalidate.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -26,8 +26,8 @@ export interface RemoteAuthCheckResult {
 }
 
 /**
- * Pure banner decision: show only for a remote (non-local machine) Claude
- * session whose completed check says it is NOT logged in. A missing check
+ * Pure banner decision: show only for a supported remote provider whose
+ * completed check says it is NOT logged in. A missing check
  * (still probing, or the probe itself failed - e.g. machine offline) renders
  * nothing.
  */
@@ -37,13 +37,17 @@ export function shouldShowRemoteAuthBanner(
 ): boolean {
   if (!session || !check) return false
   if (!session.machineId || session.machineId === 'local') return false
-  if (session.agentType !== 'claude-code') return false
+  if (session.agentType !== 'claude-code' && session.agentType !== 'codex') return false
   return !check.loggedIn
 }
 
-/** Cache key: one auth verdict per (machine, config-dir segment). */
-export function remoteAuthCacheKey(machineId: string, configSegment: string | null | undefined): string {
-  return `${machineId}::${configSegment ?? '.claude'}`
+/** Cache key: one auth verdict per machine, provider, and config directory. */
+export function remoteAuthCacheKey(
+  machineId: string,
+  configSegment: string | null | undefined,
+  agentType: 'claude-code' | 'codex' = 'claude-code',
+): string {
+  return `${machineId}::${agentType}::${configSegment ?? (agentType === 'codex' ? '.codex' : '.claude')}`
 }
 
 const checkCache = new Map<string, RemoteAuthCheckResult>()
@@ -68,11 +72,14 @@ export function invalidateRemoteAuthCache(machineId?: string): void {
  * to resolve the instance's oauth_dir basename (a path segment, not a
  * secret) so the remote check probes the mirrored per-instance config dir.
  */
-async function resolveConfigSegment(instanceId: string | undefined): Promise<string | null> {
+async function resolveConfigSegment(
+  instanceId: string | undefined,
+  agentType: 'claude-code' | 'codex',
+): Promise<string | null> {
   return window.api.routing.invokeOn<string | null>(
     'local',
     ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
-    'claude-code',
+    agentType,
     instanceId,
   )
 }
@@ -91,7 +98,9 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
   const copyTimerRef = useRef<number | null>(null)
   const successTimerRef = useRef<number | null>(null)
 
-  const isRemoteClaude = Boolean(sessionId) && Boolean(machineId) && machineId !== 'local' && agentType === 'claude-code'
+  const authAgentType = agentType === 'codex' ? 'codex' : 'claude-code'
+  const isRemoteProvider = Boolean(sessionId) && Boolean(machineId) && machineId !== 'local'
+    && (agentType === 'claude-code' || agentType === 'codex')
   // While the machine is disconnected its session-id bindings are wiped, so a
   // probe would silently route to the LOCAL backend and cache a false
   // "logged in". Only probe while connected.
@@ -103,18 +112,18 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
     setResult(null)
     setRecheckState('idle')
     setCopied(false)
-    if (!sessionId || !machineId || !isRemoteClaude || !machineConnected) return
+    if (!sessionId || !machineId || !isRemoteProvider || !machineConnected) return
     let cancelled = false
     ;(async () => {
       try {
-        const seg = await resolveConfigSegment(instanceId)
-        const key = remoteAuthCacheKey(machineId, seg)
+        const seg = await resolveConfigSegment(instanceId, authAgentType)
+        const key = remoteAuthCacheKey(machineId, seg, authAgentType)
         const cached = checkCache.get(key)
         if (cached) {
           if (!cancelled) setResult(cached)
           return
         }
-        const res = await window.api.provider.checkRemoteAuth(sessionId, seg ?? undefined)
+        const res = await window.api.provider.checkRemoteAuth(sessionId, authAgentType, seg ?? undefined)
         checkCache.set(key, res)
         if (!cancelled) setResult(res)
       } catch (err) {
@@ -126,7 +135,7 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
     return () => {
       cancelled = true
     }
-  }, [sessionId, machineId, instanceId, isRemoteClaude, machineConnected])
+  }, [sessionId, machineId, instanceId, isRemoteProvider, machineConnected, authAgentType])
 
   // Clear feedback timers on unmount so a dead component never sets state.
   useEffect(() => () => {
@@ -151,10 +160,10 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
     if (!sessionId || !machineId || !machineConnected || recheckState === 'checking') return
     setRecheckState('checking')
     try {
-      const seg = await resolveConfigSegment(instanceId)
-      checkCache.delete(remoteAuthCacheKey(machineId, seg))
-      const res = await window.api.provider.checkRemoteAuth(sessionId, seg ?? undefined)
-      checkCache.set(remoteAuthCacheKey(machineId, seg), res)
+      const seg = await resolveConfigSegment(instanceId, authAgentType)
+      checkCache.delete(remoteAuthCacheKey(machineId, seg, authAgentType))
+      const res = await window.api.provider.checkRemoteAuth(sessionId, authAgentType, seg ?? undefined)
+      checkCache.set(remoteAuthCacheKey(machineId, seg, authAgentType), res)
       if (res.loggedIn) {
         // Brief "Logged in" confirmation, then dismiss (setResult flips
         // shouldShowRemoteAuthBanner to false).
@@ -172,7 +181,7 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
       log.warn('remote auth re-check failed', { sessionId, machineId, err })
       setRecheckState('idle')
     }
-  }, [sessionId, machineId, instanceId, recheckState, machineConnected])
+  }, [sessionId, machineId, instanceId, recheckState, machineConnected, authAgentType])
 
   if (!shouldShowRemoteAuthBanner({ machineId, agentType }, result)) return null
 
@@ -193,7 +202,7 @@ export function RemoteAuthBanner({ sessionId, machineId, agentType, instanceId }
       }}
     >
       <span aria-hidden="true" style={{ color: '#f59e0b', fontSize: '13px', lineHeight: 1 }}>⚠</span>
-      <span>This machine isn't logged in to Claude</span>
+      <span>This machine isn't logged in to {agentType === 'codex' ? 'Codex' : 'Claude'}</span>
       {result?.loginCommand && (
         <button
           onClick={handleCopy}

@@ -22,6 +22,7 @@ import {
   detectSlashTrigger,
   filterSlashCommands,
   mergeWithAgentSkills,
+  commandInsertion,
   SLASH_COMMANDS,
   type SlashCommand,
   type SlashCommandContext,
@@ -39,6 +40,14 @@ type RuntimeMode = 'plan' | 'sandbox' | 'full-access' | 'accept-edits'
 
 export function shouldFetchProviderSkills(agentType: AgentType): boolean {
   return agentType !== 'terminal'
+}
+
+export function shouldFetchLiveModels(
+  agentType: AgentType,
+  sessionId: string | null | undefined,
+  sessionIsActive: boolean,
+): boolean {
+  return Boolean(sessionId) && sessionIsActive && (agentType === 'claude-code' || agentType === 'codex')
 }
 
 interface ChatInputProps {
@@ -161,15 +170,14 @@ export function ChatInput({
     return () => { cancelled = true }
   }, [agentType, sessionId, persistDynamicModels])
 
-  // Claude: the live query only exists once the first turn starts, so key the
-  // fetch on the session going active - a mount-time retry loop always
-  // exhausted before the user sent anything.
+  // Provider catalogs only exist after startup, so fetch when the first turn
+  // activates the session.
   const sessionIsActive = useAgentStore((s) => {
     const st = s.sessions.find((x) => x.id === sessionId)?.status
     return st === 'running' || st === 'thinking'
   })
   useEffect(() => {
-    if (agentType !== 'claude-code' || !sessionId || !sessionIsActive) return
+    if (!sessionId || !shouldFetchLiveModels(agentType, sessionId, sessionIsActive)) return
     let cancelled = false
     let attempts = 0
     const tryFetch = () => {
@@ -664,7 +672,7 @@ export function ChatInput({
     // hitting Enter. The agent SDK/CLI parses the leading slash from
     // the sent prompt and runs the corresponding handler.
     if (source !== 'switchboard' || cmd.takesArgs) {
-      const inserted = `/${cmd.name} `
+      const inserted = commandInsertion(cmd)
       richRef.current?.replaceRange(range.start, range.end, inserted)
       // replaceRange writes through to onChange → setValue + setDraft.
       dismissSlash()

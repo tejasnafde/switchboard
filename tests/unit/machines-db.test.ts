@@ -12,6 +12,11 @@ interface DbRow {
   ssh_host: string
   ssh_user: string | null
   ssh_port: number
+  remote_user: string | null
+  transport_kind: 'ssh' | 'gcloud-iap'
+  iap_instance: string | null
+  iap_project: string | null
+  iap_zone: string | null
   sort_order: number
   created_at: number
   updated_at: number
@@ -49,6 +54,11 @@ function prepare(sql: string) {
           ssh_host: p.sshHost as string,
           ssh_user: (p.sshUser ?? null) as string | null,
           ssh_port: p.sshPort as number,
+          remote_user: (p.remoteUser ?? null) as string | null,
+          transport_kind: (p.transportKind ?? 'ssh') as 'ssh' | 'gcloud-iap',
+          iap_instance: (p.iapInstance ?? null) as string | null,
+          iap_project: (p.iapProject ?? null) as string | null,
+          iap_zone: (p.iapZone ?? null) as string | null,
           sort_order: p.sortOrder as number,
           created_at: p.createdAt as number,
           updated_at: p.updatedAt as number,
@@ -70,6 +80,11 @@ function prepare(sql: string) {
           ssh_host: p.sshHost,
           ssh_user: p.sshUser,
           ssh_port: p.sshPort,
+          remote_user: p.remoteUser,
+          transport_kind: p.transportKind,
+          iap_instance: p.iapInstance,
+          iap_project: p.iapProject,
+          iap_zone: p.iapZone,
           updated_at: p.updatedAt,
         })
       },
@@ -111,6 +126,25 @@ describe('machines CRUD', () => {
     expect(b.sortOrder).toBe(1)
     expect(a).toMatchObject({ name: 'prod-vm', sshHost: '10.0.4.12', sshUser: 'ubuntu', sshPort: 2222 })
     expect(b).toMatchObject({ sshUser: null, sshPort: 22 })
+  })
+
+  it('round-trips GCP IAP transport metadata', () => {
+    const machine = createMachine({
+      name: 'prod',
+      sshAlias: 'prod',
+      sshHost: 'prod-instance',
+      transportKind: 'gcloud-iap',
+      iapInstance: 'prod-instance',
+      iapProject: 'prod-project',
+      iapZone: 'asia-south1-b',
+    }, 1000)
+
+    expect(machine).toMatchObject({
+      transportKind: 'gcloud-iap',
+      iapInstance: 'prod-instance',
+      iapProject: 'prod-project',
+      iapZone: 'asia-south1-b',
+    })
   })
 
   it('listMachines returns rows ordered by sort_order', () => {

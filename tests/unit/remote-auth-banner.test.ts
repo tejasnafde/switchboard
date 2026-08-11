@@ -36,8 +36,8 @@ describe('shouldShowRemoteAuthBanner', () => {
     expect(shouldShowRemoteAuthBanner({ machineId: 'vm-1', agentType: 'claude-code' }, loggedIn)).toBe(false)
   })
 
-  it('never shows for remote codex or opencode sessions', () => {
-    expect(shouldShowRemoteAuthBanner({ machineId: 'vm-1', agentType: 'codex' }, notLoggedIn)).toBe(false)
+  it('shows for remote codex but not maintenance-only opencode sessions', () => {
+    expect(shouldShowRemoteAuthBanner({ machineId: 'vm-1', agentType: 'codex' }, notLoggedIn)).toBe(true)
     expect(shouldShowRemoteAuthBanner({ machineId: 'vm-1', agentType: 'opencode' }, notLoggedIn)).toBe(false)
   })
 
@@ -54,12 +54,21 @@ describe('shouldShowRemoteAuthBanner', () => {
 
 describe('remoteAuthCacheKey', () => {
   it('keys by machine and config segment', () => {
-    expect(remoteAuthCacheKey('vm-1', '.claude-work')).toBe('vm-1::.claude-work')
+    expect(remoteAuthCacheKey('vm-1', '.claude-work')).toBe('vm-1::claude-code::.claude-work')
   })
 
   it('falls back to .claude for a missing segment, matching the remote default dir', () => {
-    expect(remoteAuthCacheKey('vm-1', null)).toBe('vm-1::.claude')
-    expect(remoteAuthCacheKey('vm-1', undefined)).toBe('vm-1::.claude')
+    expect(remoteAuthCacheKey('vm-1', null)).toBe('vm-1::claude-code::.claude')
+    expect(remoteAuthCacheKey('vm-1', undefined)).toBe('vm-1::claude-code::.claude')
+  })
+
+  it('uses the Codex default home when that provider has no profile segment', () => {
+    expect(remoteAuthCacheKey('vm-1', null, 'codex')).toBe('vm-1::codex::.codex')
+  })
+
+  it('separates providers even when their profile segment is the same', () => {
+    expect(remoteAuthCacheKey('vm-1', 'work', 'claude-code'))
+      .not.toBe(remoteAuthCacheKey('vm-1', 'work', 'codex'))
   })
 
   it('separates the same segment on different machines', () => {

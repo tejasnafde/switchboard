@@ -446,6 +446,10 @@ function migrate(db: Database.Database): void {
       ssh_user    TEXT,
       ssh_port    INTEGER NOT NULL DEFAULT 22,
       remote_user TEXT,
+      transport_kind TEXT NOT NULL DEFAULT 'ssh',
+      iap_instance TEXT,
+      iap_project  TEXT,
+      iap_zone     TEXT,
       sort_order  INTEGER NOT NULL DEFAULT 0,
       created_at  INTEGER NOT NULL,
       updated_at  INTEGER NOT NULL
@@ -462,6 +466,18 @@ function migrate(db: Database.Database): void {
   const machineCols = db.prepare('PRAGMA table_info(machines)').all() as Array<{ name: string }>
   if (!machineCols.some((c) => c.name === 'remote_user')) {
     db.exec('ALTER TABLE machines ADD COLUMN remote_user TEXT')
+  }
+  if (!machineCols.some((c) => c.name === 'transport_kind')) {
+    db.exec("ALTER TABLE machines ADD COLUMN transport_kind TEXT NOT NULL DEFAULT 'ssh'")
+  }
+  if (!machineCols.some((c) => c.name === 'iap_instance')) {
+    db.exec('ALTER TABLE machines ADD COLUMN iap_instance TEXT')
+  }
+  if (!machineCols.some((c) => c.name === 'iap_project')) {
+    db.exec('ALTER TABLE machines ADD COLUMN iap_project TEXT')
+  }
+  if (!machineCols.some((c) => c.name === 'iap_zone')) {
+    db.exec('ALTER TABLE machines ADD COLUMN iap_zone TEXT')
   }
 
   log.info('database migrated')
@@ -1005,6 +1021,22 @@ export function setConversationModel(id: string, model: string): void {
   getDb().prepare(
     'UPDATE conversations SET model = ?, updated_at = ? WHERE id = ?'
   ).run(model, Date.now(), resolveRootThreadId(id))
+}
+
+/**
+ * Persist a provider switch as one SQLite statement. Provider, credential
+ * profile, model pin, and native resume id must never describe different
+ * providers after a reload.
+ */
+export function setConversationProviderSelection(
+  id: string,
+  agentType: string,
+  instanceId: string,
+): void {
+  getDb().prepare(
+    `UPDATE conversations SET agent_type = ?, model = NULL, provider_instance_id = ?,
+     session_id = NULL, updated_at = ? WHERE id = ?`
+  ).run(agentType, instanceId, Date.now(), resolveRootThreadId(id))
 }
 
 /**
@@ -1612,4 +1644,3 @@ export function listBookmarks(): BookmarkRow[] {
     .prepare('SELECT * FROM bookmarks ORDER BY saved_at DESC')
     .all() as BookmarkRow[]
 }
-

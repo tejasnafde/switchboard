@@ -10,6 +10,9 @@ import {
   sanitizeConfigSegment,
   remoteClaudeConfigDir,
   listRemoteClaudeConfigDirs,
+  checkRemoteProviderAuth,
+  remoteProviderConfigDir,
+  remoteProviderLoginPrompt,
 } from '../../src/main/provider/remote-gate'
 
 describe('remoteBlockedProviderLabel', () => {
@@ -17,9 +20,44 @@ describe('remoteBlockedProviderLabel', () => {
     expect(remoteBlockedProviderLabel('claude')).toBeNull()
   })
 
-  it('blocks codex and opencode with readable labels', () => {
-    expect(remoteBlockedProviderLabel('codex')).toBe('Codex')
+  it('allows codex but keeps opencode maintenance-only on remote', () => {
+    expect(remoteBlockedProviderLabel('codex')).toBeNull()
     expect(remoteBlockedProviderLabel('opencode')).toBe('OpenCode')
+  })
+})
+
+describe('remote Codex auth', () => {
+  const dirs: string[] = []
+  const savedKey = process.env.OPENAI_API_KEY
+
+  afterEach(() => {
+    for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
+    if (savedKey === undefined) delete process.env.OPENAI_API_KEY
+    else process.env.OPENAI_API_KEY = savedKey
+  })
+
+  function tmpDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-remote-codex-'))
+    dirs.push(dir)
+    return dir
+  }
+
+  it('uses a durable CODEX_HOME under the runtime user home', () => {
+    expect(remoteProviderConfigDir('codex', '.codex-work')).toBe(join(homedir(), '.codex-work'))
+    expect(remoteProviderConfigDir('codex', undefined)).toBe(join(homedir(), '.codex'))
+  })
+
+  it('recognizes Codex auth.json and otherwise recommends device auth', () => {
+    delete process.env.OPENAI_API_KEY
+    const dir = tmpDir()
+    const missing = checkRemoteProviderAuth('codex', dir)
+    expect(missing).toMatchObject({ loggedIn: false, configDir: dir })
+    expect(missing.loginCommand).toBe(`CODEX_HOME="${dir}" codex login --device-auth`)
+    expect(remoteProviderLoginPrompt('codex', dir)).toContain('codex login --device-auth')
+
+    writeFileSync(join(dir, 'auth.json'), '{"tokens":{}}')
+    expect(checkRemoteProviderAuth('codex', dir).loggedIn).toBe(true)
+    expect(remoteProviderLoginPrompt('codex', dir)).toBeNull()
   })
 })
 

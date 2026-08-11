@@ -41,8 +41,7 @@ export interface StartSessionOpts {
   reasoningEffort?: 'low' | 'medium' | 'high'
   /** Provider instance id (named credential set). Falls back to default. */
   instanceId?: string
-  /** Remote-only: oauth_dir basename, attached by startSession below (not the
-   *  renderer) so a remote Claude session mirrors the per-instance config dir. */
+  /** Remote-only: oauth_dir basename attached by startSession below. */
   remoteConfigDir?: string
 }
 
@@ -207,6 +206,12 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_MODEL, id),
     setConversationModel: (id: string, model: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_MODEL, id, model),
+    setConversationProviderSelection: (
+      id: string,
+      agentType: 'claude-code' | 'codex' | 'opencode',
+      instanceId: string,
+    ): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, id, agentType, instanceId),
     getConversationPendingHandoff: (id: string): Promise<{ from: string | null }> =>
       transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, id),
     setConversationPendingHandoff: (id: string, from: string | null): Promise<{ ok: boolean }> =>
@@ -536,18 +541,16 @@ const api = {
   // ProviderAdapter interface.
   provider: {
     startSession: async (opts: StartSessionOpts) => {
-      // When a Claude session routes to a remote VM, forward the local
-      // instance's oauth_dir basename (a path segment like `.claude-akshaya`,
-      // not a credential) so the remote mirrors the per-instance config dir
-      // under its own $HOME. The VM's DB has no instances, so it can't derive
-      // this itself. Local sessions dispatch unchanged.
+      // Remote backends have no local provider-instance DB, so forward the
+      // selected profile's config-dir basename.
       const target = routingTable.resolve(ProviderChannels.START_SESSION, [opts])
-      if (target !== 'local' && opts.provider === 'claude') {
+      if (target !== 'local' && (opts.provider === 'claude' || opts.provider === 'codex')) {
         try {
+          const agentType = opts.provider === 'claude' ? 'claude-code' : 'codex'
           const seg = await router.invokeOn<string | null>(
             'local',
             ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
-            'claude-code',
+            agentType,
             opts.instanceId,
           )
           if (seg) opts = { ...opts, remoteConfigDir: seg }
@@ -622,9 +625,10 @@ const api = {
      */
     checkRemoteAuth: (
       threadId: string,
+      agentType: 'claude-code' | 'codex',
       remoteConfigDir?: string,
     ): Promise<{ loggedIn: boolean; loginCommand?: string; configDir?: string }> =>
-      transport.invoke(ProviderChannels.CHECK_REMOTE_AUTH, threadId, remoteConfigDir),
+      transport.invoke(ProviderChannels.CHECK_REMOTE_AUTH, threadId, agentType, remoteConfigDir),
 
     // Stamp the emitting transport's machineId so two machines emitting the
     // same threadId don't merge into one chat downstream.

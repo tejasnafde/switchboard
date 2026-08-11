@@ -1,6 +1,6 @@
 /** Remote setup payload: the package.json + install script we drop on a VM. */
 import { describe, it, expect } from 'vitest'
-import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, versionMarkerScript, bridgeSeedScript, bridgeMarker, codeServerEnsureScript, REMOTE_SERVER_DIR } from '../../src/main/machines/provisionSetup'
+import { remotePackageJson, remoteInstallScript, claudeSymlinkScript, codexEnsureScript, versionMarkerScript, bridgeSeedScript, bridgeMarker, codeServerEnsureScript, REMOTE_CODEX_VERSION, REMOTE_SERVER_DIR } from '../../src/main/machines/provisionSetup'
 import { BRIDGE_EXTENSION_DIRNAME } from '../../src/main/ide/code-server-manager'
 
 describe('remotePackageJson', () => {
@@ -17,6 +17,10 @@ describe('remotePackageJson', () => {
 
   it('installs the Claude SDK as a real dep (it self-locates its CLI, cannot be bundled)', () => {
     expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBe('0.2.114')
+  })
+
+  it('installs a pinned Codex CLI whose optional dependency supplies the remote Linux binary', () => {
+    expect(pkg.dependencies['@openai/codex']).toBe(REMOTE_CODEX_VERSION)
   })
 
   it('aliases node-pty to the multiarch fork (ships linux prebuilds)', () => {
@@ -117,6 +121,21 @@ describe('claudeSymlinkScript', () => {
 
   it('exits non-zero when neither variant is installed so the caller can log the miss', () => {
     expect(script).toContain('exit 1')
+  })
+})
+
+describe('codexEnsureScript', () => {
+  const script = codexEnsureScript()
+
+  it('installs the pinned CLI only when the remote binary is absent', () => {
+    expect(script).toContain(`@openai/codex@${REMOTE_CODEX_VERSION}`)
+    expect(script).toContain('BIN="$D/node_modules/.bin/codex"')
+    expect(script).toContain('if [ -x "$BIN" ]')
+  })
+
+  it('links Codex into the runtime user PATH', () => {
+    expect(script).toContain('mkdir -p "$HOME/.local/bin"')
+    expect(script).toContain('ln -sf "$BIN" "$HOME/.local/bin/codex"')
   })
 })
 

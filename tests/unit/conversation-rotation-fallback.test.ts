@@ -22,6 +22,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const threadSessions = new Map<string, string>() // claude_session_id -> thread_id
 const conversations = new Map<string, {
+  agent_type?: string
+  session_id?: string | null
   provider_instance_id?: string | null
   runtime_mode?: string | null
   model?: string | null
@@ -64,6 +66,10 @@ vi.mock('better-sqlite3', () => {
           if (/SELECT pending_handoff_from FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
             return row ? { pending_handoff_from: row.pending_handoff_from ?? null } : undefined
+          }
+          if (/SELECT agent_type FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row ? { agent_type: row.agent_type ?? null } : undefined
           }
           return undefined
         },
@@ -113,6 +119,18 @@ vi.mock('better-sqlite3', () => {
             row.pending_handoff_from = from
             return { changes: 1 }
           }
+          if (sql.includes('UPDATE conversations SET agent_type = ?, model = NULL, provider_instance_id = ?')) {
+            const [agentType, instanceId, , id] = args as [string, string, number, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            Object.assign(row, {
+              agent_type: agentType,
+              model: null,
+              provider_instance_id: instanceId,
+              session_id: null,
+            })
+            return { changes: 1 }
+          }
           return { changes: 0 }
         },
         all: (...args: unknown[]) => {
@@ -143,6 +161,7 @@ const {
   getConversationLastRead,
   getConversationPendingHandoff,
   setConversationPendingHandoff,
+  setConversationProviderSelection,
 } = await import('../../src/main/db/database')
 
 beforeEach(() => {
@@ -173,6 +192,26 @@ describe('provider instance survives Claude session-id rotation', () => {
   it('returns null when neither the id nor its resolved root has a saved instance', () => {
     conversations.set('agent_789', {})
     expect(getConversationProviderInstanceId('agent_789')).toBeNull()
+  })
+})
+
+describe('atomic conversation provider selection', () => {
+  it('changes provider while clearing incompatible model and native session state', () => {
+    conversations.set('agent_123', {
+      agent_type: 'claude-code',
+      model: 'claude-opus-4',
+      provider_instance_id: 'claude-work',
+      session_id: 'claude-native-id',
+    })
+
+    setConversationProviderSelection('agent_123', 'codex', 'codex-default')
+
+    expect(conversations.get('agent_123')).toMatchObject({
+      agent_type: 'codex',
+      model: null,
+      provider_instance_id: 'codex-default',
+      session_id: null,
+    })
   })
 })
 

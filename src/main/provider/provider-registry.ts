@@ -32,7 +32,7 @@ import {
 } from '@shared/peer-messaging'
 import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
 import { defaultClaudeDir } from './claude-session-migrate'
-import { remoteBlockedProviderLabel, remoteClaudeLoginPrompt, remoteClaudeConfigDir, checkRemoteClaudeAuth } from './remote-gate'
+import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
 import type {
   ProviderAdapter,
@@ -526,9 +526,13 @@ export class ProviderRegistry implements PeerToolHost {
     // never uses it. Locally there is nothing to preflight, so a non-remote
     // backend always reports logged in; the START_SESSION backstop below
     // still catches any race.
-    this.host.handle(ProviderChannels.CHECK_REMOTE_AUTH, async (_threadId: string, remoteConfigDir?: string) => {
+    this.host.handle(ProviderChannels.CHECK_REMOTE_AUTH, async (
+      _threadId: string,
+      agentType: Extract<AgentType, 'claude-code' | 'codex'>,
+      remoteConfigDir?: string,
+    ) => {
       if (!process.env.SWITCHBOARD_REMOTE) return { loggedIn: true }
-      return checkRemoteClaudeAuth(remoteClaudeConfigDir(remoteConfigDir))
+      return checkRemoteProviderAuth(agentType, remoteProviderConfigDir(agentType, remoteConfigDir))
     })
 
     this.host.handle(ProviderChannels.START_SESSION, async (opts: SessionStartOpts) => {
@@ -560,19 +564,20 @@ export class ProviderRegistry implements PeerToolHost {
       this.startingSessions.add(opts.threadId)
       try {
 
-      // On a remote VM only Claude Code runs. Reject Codex / OpenCode with a
-      // readable message the chat surfaces instead of a deep adapter failure.
-      let remoteClaudeConfig: string | null = null
+      // Remote backends support Claude Code and Codex. Reject maintenance-only
+      // OpenCode with a readable message instead of a deep adapter failure.
+      let remoteProviderConfig: string | null = null
       if (process.env.SWITCHBOARD_REMOTE) {
         const blocked = remoteBlockedProviderLabel(opts.provider)
         if (blocked) {
-          throw new Error(`${blocked} is not available on remote machines yet - only Claude Code runs on remote VMs.`)
+          throw new Error(`${blocked} is not available on remote machines; use Claude Code or Codex.`)
         }
         // Per-device login: resolve this VM's per-instance config dir and, if
-        // it has no creds, fail with the login command instead of a raw 401.
-        if (opts.provider === 'claude') {
-          remoteClaudeConfig = remoteClaudeConfigDir(opts.remoteConfigDir)
-          const prompt = remoteClaudeLoginPrompt(remoteClaudeConfig)
+        // it has no creds, fail with the provider-specific login command.
+        if (opts.provider === 'claude' || opts.provider === 'codex') {
+          const remoteAgentType = opts.provider === 'claude' ? 'claude-code' : 'codex'
+          remoteProviderConfig = remoteProviderConfigDir(remoteAgentType, opts.remoteConfigDir)
+          const prompt = remoteProviderLoginPrompt(remoteAgentType, remoteProviderConfig)
           if (prompt) throw new Error(prompt)
         }
       }
@@ -600,7 +605,7 @@ export class ProviderRegistry implements PeerToolHost {
       // sessions (no oauth_dir) are discoverable too.
       const candidateOauthDirs = Array.from(new Set([
         ...listOauthDirsForAgent(agentType),
-        defaultClaudeDir(),
+        agentType === 'codex' ? remoteProviderConfigDir('codex', undefined) : defaultClaudeDir(),
       ]))
       const enrichedOpts: SessionStartOpts = {
         ...opts,
@@ -609,8 +614,8 @@ export class ProviderRegistry implements PeerToolHost {
         resolvedOauthDir: instance?.oauthDir ?? null,
         candidateOauthDirs,
       }
-      // Remote: point CLAUDE_CONFIG_DIR at the per-instance dir under this VM's $HOME.
-      if (remoteClaudeConfig) enrichedOpts.resolvedOauthDir = remoteClaudeConfig
+      // Remote: point the provider config env at its durable per-instance dir under this VM's $HOME.
+      if (remoteProviderConfig) enrichedOpts.resolvedOauthDir = remoteProviderConfig
       log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${enrichedOpts.resolvedOauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
 
       const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))

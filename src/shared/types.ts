@@ -99,6 +99,8 @@ export interface ProviderSkill {
   name: string
   description?: string
   argumentHint?: string
+  /** Codex app-server requires the resolved SKILL.md path in a skill input block. */
+  path?: string
   source: 'claude-code' | 'codex' | 'opencode'
 }
 

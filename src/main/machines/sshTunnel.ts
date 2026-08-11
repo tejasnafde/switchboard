@@ -32,6 +32,20 @@ function assertSafeSshArg(field: string, value: string): void {
   }
 }
 
+function assertIapMachine(machine: Machine): asserts machine is Machine & {
+  transportKind: 'gcloud-iap'
+  iapInstance: string
+  iapProject: string
+  iapZone: string
+} {
+  if (!machine.iapInstance || !machine.iapProject || !machine.iapZone) {
+    throw new Error('gcloud IAP machine is missing instance, project, or zone')
+  }
+  assertSafeSshArg('IAP instance', machine.iapInstance)
+  assertSafeSshArg('IAP project', machine.iapProject)
+  assertSafeSshArg('IAP zone', machine.iapZone)
+}
+
 /**
  * Options every ssh invocation shares.
  *
@@ -72,8 +86,53 @@ export function sshHostArgs(machine: Machine): string[] {
   return args
 }
 
+function asGcloudSshFlags(args: string[]): string[] {
+  const flags: string[] = []
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]
+    if ((arg === '-o' || arg === '-L' || arg === '-R' || arg === '-D') && args[i + 1]) {
+      flags.push(`--ssh-flag=${arg} ${args[++i]}`)
+    } else {
+      flags.push(`--ssh-flag=${arg}`)
+    }
+  }
+  return flags
+}
+
+/**
+ * Build one remote invocation through the machine's declared transport.
+ * gcloud owns login identity/key/host-key/IAP resolution; Switchboard only
+ * supplies the target metadata, remote command, and SSH forwarding options.
+ */
+export function buildMachineRemoteCommand(
+  machine: Machine,
+  remoteCommand: string,
+  sshFlags: string[] = SSH_COMMON_OPTS,
+): { command: string; args: string[] } {
+  if (machine.transportKind === 'gcloud-iap') {
+    assertIapMachine(machine)
+    return {
+      command: 'gcloud',
+      args: [
+        'compute', 'ssh', machine.iapInstance,
+        '--zone', machine.iapZone,
+        '--project', machine.iapProject,
+        '--tunnel-through-iap',
+        '--quiet',
+        '--command', remoteCommand,
+        ...asGcloudSshFlags(sshFlags),
+      ],
+    }
+  }
+
+  return {
+    command: 'ssh',
+    args: [...sshFlags, ...sshHostArgs(machine), remoteCommand],
+  }
+}
+
 export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { command: string; args: string[] } {
-  const args = [
+  const sshFlags = [
     ...SSH_COMMON_OPTS,
     // 15s x 2 missed keepalives = a dead tunnel is noticed in ~30s, not the
     // OpenSSH default 30s x 3 = 90s.
@@ -82,8 +141,6 @@ export function buildTunnelCommand(machine: Machine, opts: TunnelOpts): { comman
     '-o', 'ExitOnForwardFailure=yes',
     '-L', `${opts.localPort}:127.0.0.1:${opts.remotePort}`,
     ...(opts.extraForwards ?? []).flatMap((f) => ['-L', `${f.localPort}:127.0.0.1:${f.remotePort}`]),
-    ...sshHostArgs(machine),
-    asUserScript(machine.remoteUser, opts.remoteCommand),
   ]
-  return { command: 'ssh', args }
+  return buildMachineRemoteCommand(machine, asUserScript(machine.remoteUser, opts.remoteCommand), sshFlags)
 }
