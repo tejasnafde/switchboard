@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import * as sessionUtils from '../../src/renderer/utils/session-eviction'
 import { shouldEvictMessages, needsMessageReload, resolveSessionSelectTarget } from '../../src/renderer/utils/session-eviction'
 
 describe('resolveSessionSelectTarget', () => {
@@ -16,6 +17,28 @@ describe('resolveSessionSelectTarget', () => {
 
   it('keeps the clicked id when the backend sent no root', () => {
     expect(resolveSessionSelectTarget('uuid-1', undefined, ['agent_1'])).toBe('uuid-1')
+  })
+})
+
+describe('resolveSessionOpenAgentType', () => {
+  it('uses the canonical current provider after a mixed-provider history load', () => {
+    const resolve = (sessionUtils as unknown as {
+      resolveSessionOpenAgentType?: (scanned: string, loaded?: string) => string
+    }).resolveSessionOpenAgentType
+
+    expect(resolve?.('claude-code', 'codex')).toBe('codex')
+  })
+})
+
+describe('shouldRetrySessionLoadAfterCreate', () => {
+  it('retries a disk-scanned session after its missing conversation row is created', () => {
+    const decide = (sessionUtils as unknown as {
+      shouldRetrySessionLoadAfterCreate?: (metaPresent: boolean, filePath: string) => boolean
+    }).shouldRetrySessionLoadAfterCreate
+
+    expect(decide?.(false, '/provider/session.jsonl')).toBe(true)
+    expect(decide?.(true, '/provider/session.jsonl')).toBe(false)
+    expect(decide?.(false, '')).toBe(false)
   })
 })
 

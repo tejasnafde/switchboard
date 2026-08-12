@@ -22,7 +22,9 @@ import { parseCodexTodoItems, parseCodexTodoMarkdown } from './codex-todo'
 import { applyEnvOverlay } from '../env-overlay'
 import type { ProviderSkill } from '@shared/types'
 import { withTimeout } from '@shared/promise-timeout'
-import { listSessionIdsForThread } from '../../db/database'
+import { conversationSessionHints, resolveResumeSegment } from '../../db/database'
+import { scanCodexSessionCopies } from '../../projects/session-scanner'
+import { codexCandidateDirs } from '../codex-session-dirs'
 
 /**
  * Map our runtime modes to Codex app-server approval policies.
@@ -439,7 +441,7 @@ export class CodexAdapter implements ProviderAdapter {
       reasoningEffort: opts.reasoningEffort,
       instanceId: opts.instanceId,
     }
-    const resumeThreadId = this.resolveResumeThreadId(opts)
+    const resumeThreadId = await this.resolveResumeThreadId(opts)
     if (resumeThreadId) session.sessionId = resumeThreadId
 
     const active: ActiveSession = {
@@ -560,6 +562,7 @@ export class CodexAdapter implements ProviderAdapter {
           session.sessionId = resumedId
           onEvent({ type: 'session', threadId: opts.threadId, sessionId: resumedId })
         } catch (err) {
+          if (!isMissingThreadError(err)) throw err
           active.threadId = null
           session.sessionId = undefined
           onEvent({
@@ -599,12 +602,22 @@ export class CodexAdapter implements ProviderAdapter {
     return session
   }
 
-  private resolveResumeThreadId(opts: SessionStartOpts): string | null {
-    if (opts.resumeSessionId && opts.resumeSessionId !== opts.threadId) {
-      return opts.resumeSessionId
+  private async resolveResumeThreadId(opts: SessionStartOpts): Promise<string | null> {
+    try {
+      const typed = resolveResumeSegment(opts.threadId, 'codex', opts.instanceId)
+      if (typed) return typed.provider_session_id
+    } catch {
+      // Legacy databases or startup failures still have the old lineage path.
     }
     try {
-      return listSessionIdsForThread(opts.threadId).find((id) => id !== opts.threadId) ?? null
+      const candidates = [
+        ...conversationSessionHints(opts.threadId).reverse(),
+        ...(opts.resumeSessionId && opts.resumeSessionId !== opts.threadId ? [opts.resumeSessionId] : []),
+      ]
+      if (candidates.length === 0) return null
+      const copies = await scanCodexSessionCopies(new Set(candidates), codexCandidateDirs())
+      const available = new Set(copies.map((copy) => copy.id))
+      return candidates.find((candidate) => available.has(candidate)) ?? null
     } catch {
       return null
     }

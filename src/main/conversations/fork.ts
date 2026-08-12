@@ -1,20 +1,21 @@
 import { readFile, writeFile, readdir, mkdir } from 'fs/promises'
 import { join, dirname } from 'path'
-import { homedir } from 'os'
 import { randomUUID } from 'crypto'
 import { createMainLogger as createLogger } from '../logger'
 import {
   getConversationById,
   createForkedConversation,
   bulkSaveMessages,
+  conversationSessionHints,
+  listConversationSegments,
   listSessionIdsForThread,
-  getMessagesForConversation,
-  messageRowsToChatMessages,
   setConversationPendingHandoff,
 } from '../db/database'
 import { encodeClaudeProjectPath } from '../projects/session-scanner'
 import { resolveProviderInstance } from '../db/providerInstances'
-import { claudeCandidateDirs, defaultClaudeDir, listClaudeSessionCopies } from '../provider/claude-session-migrate'
+import { claudeCandidateDirs, compareSessionCopies, defaultClaudeDir, listClaudeSessionCopies } from '../provider/claude-session-migrate'
+import { codexCandidateDirs } from '../provider/codex-session-dirs'
+import { loadConversationHistory } from './history'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import {
   truncateCodexJsonl,
@@ -155,7 +156,6 @@ export async function forkConversation(input: ForkInput): Promise<ForkResult> {
     source,
     input,
     keptMessages,
-    upToVisibleIndex,
     title: displayTitle,
     effectiveProjectPath,
     worktreeMeta,
@@ -179,7 +179,6 @@ interface ForkContext {
   source: ReturnType<typeof getConversationById> & object
   input: ForkInput
   keptMessages: ChatMessage[]
-  upToVisibleIndex: number
   title: string
   /** The path the *new* conversation should be rooted at - equals
    *  `source.project_path` for non-worktree forks and the new worktree
@@ -187,6 +186,23 @@ interface ForkContext {
   effectiveProjectPath: string
   /** Set iff the worktree was successfully created. */
   worktreeMeta: { path: string; branch: string } | null
+}
+
+export function resolveNativeForkIndex(
+  unifiedMessages: readonly ChatMessage[],
+  nativeMessages: readonly ChatMessage[],
+  unifiedIndex: number,
+): number | null {
+  const selected = unifiedMessages[unifiedIndex]
+  if (!selected) return null
+  const exact = nativeMessages.findIndex((message) => message.id === selected.id)
+  if (exact >= 0) return exact
+  const legacy = nativeMessages.findIndex((message) =>
+    message.role === selected.role
+    && message.content === selected.content
+    && Math.abs(message.timestamp - selected.timestamp) <= 60_000
+  )
+  return legacy >= 0 ? legacy : null
 }
 
 /**
@@ -209,7 +225,7 @@ function stripForSlug(body: string): string {
 // ── Claude ────────────────────────────────────────────────────────
 
 async function forkClaude(ctx: ForkContext): Promise<ForkResult> {
-  const { source, input, keptMessages, upToVisibleIndex, title, effectiveProjectPath, worktreeMeta } = ctx
+  const { source, input, keptMessages, title, effectiveProjectPath, worktreeMeta } = ctx
   // Fragments are located by session id across every profile, because a
   // hardcoded ~/.claude found nothing for 355 of the 361 locatable transcripts
   // on a real install - `claude-code-default` does not even point at ~/.claude.
@@ -227,9 +243,12 @@ async function forkClaude(ctx: ForkContext): Promise<ForkResult> {
   // fragments must come along verbatim or the resume context is broken.
   const fragmentPaths = listClaudeFragmentPaths(source.id)
   const fragments: string[] = []
+  const nativeMessages: ChatMessage[] = []
   for (const p of fragmentPaths) {
     const raw = await readFile(p, 'utf-8').catch(() => null)
     if (raw !== null) fragments.push(raw)
+    const parsed = await loadJsonlCached(p, 'claude-code')
+    if (parsed) nativeMessages.push(...parsed)
   }
 
   if (fragments.length === 0) {
@@ -237,8 +256,14 @@ async function forkClaude(ctx: ForkContext): Promise<ForkResult> {
     return await forkSummaryOnly(ctx, 'claude-code')
   }
 
+  const nativeIndex = resolveNativeForkIndex(keptMessages, nativeMessages, keptMessages.length - 1)
+  if (nativeIndex === null) {
+    log.warn(`fork: selected message is outside Claude-native history for ${source.id}; degrading to summary-only`)
+    return await forkSummaryOnly(ctx, 'claude-code')
+  }
+
   const newId = randomUUID()
-  const truncated = assembleClaudeFork(fragments, upToVisibleIndex, { newSessionId: newId })
+  const truncated = assembleClaudeFork(fragments, nativeIndex + 1, { newSessionId: newId })
 
   if (!truncated.anchorUuid || truncated.keptVisibleCount === 0) {
     log.warn(`fork: claude truncate produced empty result for ${source.id}; degrading`)
@@ -296,7 +321,7 @@ export function listClaudeFragmentPaths(threadId: string): string[] {
   for (const sid of listSessionIdsForThread(threadId)) {
     const copies = dirs.flatMap((dir) => listClaudeSessionCopies(dir, sid))
     if (copies.length === 0) continue
-    copies.sort((a, b) => b.mtimeMs - a.mtimeMs)
+    copies.sort(compareSessionCopies)
     paths.push(copies[0].path)
   }
   return paths
@@ -305,7 +330,7 @@ export function listClaudeFragmentPaths(threadId: string): string[] {
 // ── Codex ─────────────────────────────────────────────────────────
 
 async function forkCodex(ctx: ForkContext): Promise<ForkResult> {
-  const { source, input, keptMessages, upToVisibleIndex, title, effectiveProjectPath, worktreeMeta } = ctx
+  const { source, input, keptMessages, title, effectiveProjectPath, worktreeMeta } = ctx
   // Codex stores rollouts under `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`.
   // We can locate the source by scanning, but reusing a forked rollout for
   // genuine resume requires Codex app-server cooperation we haven't wired
@@ -317,11 +342,13 @@ async function forkCodex(ctx: ForkContext): Promise<ForkResult> {
   // rollout - see kickoff doc step 4.
   const newId = randomUUID()
   try {
-    const sourceFile = await findCodexRollout(source.id)
+    const sourceFile = await findCodexRolloutForConversation(source.id)
     if (sourceFile) {
       const raw = await readFile(sourceFile, 'utf-8')
-      const truncated = truncateCodexJsonl(raw, upToVisibleIndex)
-      if (truncated.keptVisibleCount > 0) {
+      const nativeMessages = await loadJsonlCached(sourceFile, 'codex') ?? []
+      const nativeIndex = resolveNativeForkIndex(keptMessages, nativeMessages, keptMessages.length - 1)
+      const truncated = nativeIndex === null ? null : truncateCodexJsonl(raw, nativeIndex + 1)
+      if (truncated && truncated.keptVisibleCount > 0) {
         const target = join(dirname(sourceFile), `rollout-fork-${newId}.jsonl`)
         await writeFile(target, truncated.newContent, 'utf-8')
         log.info(`fork(codex): wrote truncated rollout ${target} (resume best-effort)`)
@@ -365,15 +392,30 @@ async function forkCodex(ctx: ForkContext): Promise<ForkResult> {
   }
 }
 
-async function findCodexRollout(threadId: string): Promise<string | null> {
+export async function findCodexRolloutForConversation(conversationId: string): Promise<string | null> {
+  const segments = listConversationSegments(conversationId)
+  for (let i = segments.length - 1; i >= 0; i--) {
+    if (segments[i].provider !== 'codex') continue
+    const path = await findCodexRollout(segments[i].provider_session_id)
+    if (path) return path
+  }
+  const candidates = [...conversationSessionHints(conversationId).reverse(), conversationId]
+  for (const candidate of candidates) {
+    const path = await findCodexRollout(candidate)
+    if (path) return path
+  }
+  return null
+}
+
+export async function findCodexRollout(threadId: string): Promise<string | null> {
   // Walk the dated tree and grep for `<threadId>.jsonl` suffix. The id
   // appears in the filename for sessions created by the Codex CLI itself.
-  const root = join(homedir(), '.codex', 'sessions')
-  const found = await walkForSuffix(root, `${threadId}.jsonl`, 4) // YYYY/MM/DD/file
-  if (!found) {
-    log.warn(`fork(codex): no rollout file for thread ${threadId} under ${root}`)
+  for (const base of codexCandidateDirs()) {
+    const found = await walkForSuffix(join(base, 'sessions'), `${threadId}.jsonl`, 4)
+    if (found) return found
   }
-  return found
+  log.warn(`fork(codex): no rollout file for thread ${threadId} in configured Codex homes`)
+  return null
 }
 
 async function walkForSuffix(dir: string, suffix: string, maxDepth: number): Promise<string | null> {
@@ -435,39 +477,7 @@ async function forkSummaryOnly(ctx: ForkContext, agentType: string): Promise<For
 async function loadSourceMessages(
   source: { id: string; project_path: string; agent_type: string },
 ): Promise<ChatMessage[]> {
-  const sessionIds = listSessionIdsForThread(source.id)
-  const all: ChatMessage[] = []
-
-  if (source.agent_type === 'claude-code') {
-    // Same resolution as the truncate flow, so the index space the renderer
-    // forks against matches the fragments we actually splice.
-    const paths = listClaudeFragmentPaths(source.id)
-    for (const path of paths) {
-      // Shared (mtime,size) cache with the LOAD_SESSION handlers - a fork
-      // usually follows a load of the same transcript moments earlier.
-      const msgs = await loadJsonlCached(path, 'claude-code')
-      if (msgs) all.push(...msgs)
-    }
-  } else if (source.agent_type === 'codex') {
-    for (const sid of sessionIds) {
-      const path = await findCodexRollout(sid)
-      if (!path) continue
-      const msgs = await loadJsonlCached(path, 'codex')
-      if (msgs) all.push(...msgs)
-    }
-  }
-  if (all.length > 0) {
-    all.sort((a, b) => a.timestamp - b.timestamp)
-    const seen = new Set<string>()
-    return all.filter((m) => seen.has(m.id) ? false : (seen.add(m.id), true))
-  }
-
-  // Fallback: pull directly from the messages table. Every streamed message
-  // is persisted in real-time by `saveMessage`, so the DB is always
-  // authoritative - JSONL parse can miss when the rollout file is in a
-  // non-standard location (Codex `agent_*` ids), when we haven't wired up
-  // on-disk parsing (OpenCode), or when the thread hasn't compacted yet.
-  return messageRowsToChatMessages(getMessagesForConversation(source.id))
+  return (await loadConversationHistory(source.id, source.project_path)).messages
 }
 
 function makeForkTitle(sourceTitle: string): string {

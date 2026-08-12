@@ -44,11 +44,17 @@ export type MigrateResult =
 export interface SessionCopy {
   path: string
   mtimeMs: number
+  size: number
+}
+
+export function compareSessionCopies(a: SessionCopy, b: SessionCopy): number {
+  return b.size - a.size || b.mtimeMs - a.mtimeMs
 }
 
 /**
- * Every `<sessionId>.jsonl` under `<dir>/projects/*`, newest first. One copy
- * per cwd the chat has run in, and only the last-appended one is complete.
+ * Every `<sessionId>.jsonl` under `<dir>/projects/*`, most complete first.
+ * Same-id files are append-only copies/prefixes; compaction rotates to a new
+ * session id. Size therefore protects against a newer truncated copy.
  */
 export function listClaudeSessionCopies(dir: string, sessionId: string): SessionCopy[] {
   const file = `${sessionId}.jsonl`
@@ -70,12 +76,12 @@ export function listClaudeSessionCopies(dir: string, sessionId: string): Session
       // throwIfNoEntry covers ENOENT only; EACCES still throws, and this runs
       // mid-turn where a throw would wedge the query.
       const st = statSync(path, { throwIfNoEntry: false })
-      if (st) found.push({ path, mtimeMs: st.mtimeMs })
+      if (st) found.push({ path, mtimeMs: st.mtimeMs, size: st.size })
     } catch (err) {
       log.warn(`cannot stat ${path}: ${(err as { code?: string }).code ?? String(err)}`)
     }
   }
-  return found.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  return found.sort(compareSessionCopies)
 }
 
 /**
@@ -121,7 +127,7 @@ export function ensureClaudeSessionResumable(opts: {
   const dirs = Array.from(new Set([opts.toDir, ...opts.candidates]))
   const copies = dirs
     .flatMap((dir) => listClaudeSessionCopies(dir, opts.sessionId))
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)
+    .sort(compareSessionCopies)
   if (copies.length === 0) return { ok: false, reason: 'source-missing' }
 
   const dstPath = claudeSessionResumePath(opts.toDir, opts.sessionId, opts.cwd)
@@ -129,7 +135,7 @@ export function ensureClaudeSessionResumable(opts: {
   if (newest.path === dstPath) return { ok: true, copied: false }
 
   const dst = copies.find((c) => c.path === dstPath)
-  if (dst && dst.mtimeMs >= newest.mtimeMs) return { ok: true, copied: false }
+  if (dst && compareSessionCopies(dst, newest) <= 0) return { ok: true, copied: false }
 
   return copyToResumePath(newest.path, dstPath)
 }

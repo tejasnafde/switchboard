@@ -305,6 +305,22 @@ function migrate(db: Database.Database): void {
       recorded_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
     );
     CREATE INDEX IF NOT EXISTS idx_thread_sessions_thread ON thread_sessions(thread_id);
+
+    CREATE TABLE IF NOT EXISTS conversation_segments (
+      id                   TEXT PRIMARY KEY,
+      conversation_id      TEXT NOT NULL,
+      provider             TEXT NOT NULL,
+      provider_session_id  TEXT NOT NULL,
+      provider_instance_id TEXT,
+      ordinal              INTEGER NOT NULL,
+      created_at           INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      updated_at           INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+      UNIQUE(conversation_id, provider, provider_session_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_conversation_segments_order
+      ON conversation_segments(conversation_id, ordinal);
+    CREATE INDEX IF NOT EXISTS idx_conversation_segments_resume
+      ON conversation_segments(conversation_id, provider, provider_instance_id, ordinal DESC);
   `)
 
   // Migration: flatten any chain rows left over from before we started
@@ -916,6 +932,21 @@ export function threadFamilyIds(id: string): string[] {
   return listSessionIdsForThread(resolveRootThreadId(id))
 }
 
+/** Native-session ids persisted before typed segments shipped. */
+export function conversationSessionHints(id: string): string[] {
+  const familyIds = threadFamilyIds(id)
+  const hints: string[] = []
+  const seen = new Set<string>()
+  const stmt = getDb().prepare('SELECT session_id FROM conversations WHERE id = ?')
+  for (const familyId of familyIds) {
+    const row = stmt.get(familyId) as { session_id: string | null } | undefined
+    if (!row?.session_id || seen.has(row.session_id)) continue
+    seen.add(row.session_id)
+    hints.push(row.session_id)
+  }
+  return hints
+}
+
 export function listSessionIdsForThread(threadId: string): string[] {
   const db = getDb()
   const directStmt = db.prepare(
@@ -937,6 +968,92 @@ export function listSessionIdsForThread(threadId: string): string[] {
     }
   }
   return result
+}
+
+export type ConversationSegmentProvider = 'claude-code' | 'codex' | 'opencode'
+
+export interface ConversationSegmentRow {
+  id: string
+  conversation_id: string
+  provider: ConversationSegmentProvider
+  provider_session_id: string
+  provider_instance_id: string | null
+  ordinal: number
+  created_at: number
+  updated_at: number
+}
+
+export function recordConversationSegment(input: {
+  conversationId: string
+  provider: ConversationSegmentProvider
+  providerSessionId: string
+  providerInstanceId?: string | null
+}): void {
+  const database = getDb()
+  const conversationId = resolveRootThreadId(input.conversationId)
+  const now = Date.now()
+  database.transaction(() => {
+    const existing = database.prepare(
+      `SELECT id FROM conversation_segments
+       WHERE conversation_id = ? AND provider = ? AND provider_session_id = ?`
+    ).get(conversationId, input.provider, input.providerSessionId) as { id: string } | undefined
+    if (existing) {
+      database.prepare(
+        `UPDATE conversation_segments
+         SET provider_instance_id = COALESCE(?, provider_instance_id), updated_at = ?
+         WHERE id = ?`
+      ).run(input.providerInstanceId ?? null, now, existing.id)
+      return
+    }
+    const next = database.prepare(
+      'SELECT COALESCE(MAX(ordinal), -1) + 1 AS ordinal FROM conversation_segments WHERE conversation_id = ?'
+    ).get(conversationId) as { ordinal: number }
+    database.prepare(
+      `INSERT INTO conversation_segments (
+         id, conversation_id, provider, provider_session_id,
+         provider_instance_id, ordinal, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      `${conversationId}:${input.provider}:${input.providerSessionId}`,
+      conversationId,
+      input.provider,
+      input.providerSessionId,
+      input.providerInstanceId ?? null,
+      next.ordinal,
+      now,
+      now,
+    )
+  })()
+}
+
+export function listConversationSegments(conversationId: string): ConversationSegmentRow[] {
+  return getDb().prepare(
+    `SELECT * FROM conversation_segments
+     WHERE conversation_id = ? ORDER BY ordinal ASC, created_at ASC`
+  ).all(resolveRootThreadId(conversationId)) as ConversationSegmentRow[]
+}
+
+export function resolveResumeSegment(
+  conversationId: string,
+  provider: ConversationSegmentProvider,
+  providerInstanceId?: string | null,
+): ConversationSegmentRow | null {
+  return selectResumeSegment(listConversationSegments(conversationId), provider, providerInstanceId)
+}
+
+export function selectResumeSegment(
+  segments: readonly ConversationSegmentRow[],
+  provider: ConversationSegmentProvider,
+  providerInstanceId?: string | null,
+): ConversationSegmentRow | null {
+  let providerFallback: ConversationSegmentRow | null = null
+  for (let i = segments.length - 1; i >= 0; i--) {
+    const segment = segments[i]
+    if (segment.provider !== provider) continue
+    providerFallback ??= segment
+    if (!providerInstanceId || segment.provider_instance_id === providerInstanceId) return segment
+  }
+  return providerFallback
 }
 
 /**

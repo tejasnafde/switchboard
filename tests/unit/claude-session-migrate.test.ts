@@ -101,6 +101,17 @@ describe('transcript placement', () => {
     expect(readResume(profileA, TMP_WORKTREE)).toBe('twenty one turns\n')
   })
 
+  it('prefers a more complete prefix over a newer truncated copy', () => {
+    const complete = Array.from({ length: 25 }, (_, i) => `turn ${i + 1}`).join('\n') + '\n'
+    seed(profileA, REPO, complete, 3600)
+    seed(profileB, REPO, 'turn 1\n', 0)
+
+    const result = ensure(profileA, TMP_WORKTREE, [profileA, profileB])
+
+    expect(result.ok).toBe(true)
+    expect(readResume(profileA, TMP_WORKTREE)).toBe(complete)
+  })
+
   it('refreshes a stale destination after a round trip between profiles', () => {
     // A -> B -> A. B kept growing, A froze at the first switch.
     seed(profileA, REPO, 'turns 1-5\n', 3600)

@@ -1,4 +1,4 @@
-import type { AgentStatus, ChatMessage } from '@shared/types'
+import type { AgentStatus, AgentType, ChatMessage } from '@shared/types'
 
 /** Returns true when a session's messages should be cleared on switch-away. */
 export function shouldEvictMessages(session: {
@@ -27,4 +27,17 @@ export function resolveSessionSelectTarget(
 ): string {
   if (!rootThreadId || rootThreadId === clickedId) return clickedId
   return storeSessionIds.includes(rootThreadId) ? rootThreadId : clickedId
+}
+
+export function resolveSessionOpenAgentType(
+  scannedAgentType: Exclude<AgentType, 'terminal'>,
+  loadedAgentType?: string,
+): Exclude<AgentType, 'terminal'> {
+  return loadedAgentType === 'claude-code' || loadedAgentType === 'codex' || loadedAgentType === 'opencode'
+    ? loadedAgentType
+    : scannedAgentType
+}
+
+export function shouldRetrySessionLoadAfterCreate(metaPresent: boolean, filePath: string): boolean {
+  return !metaPresent && filePath.length > 0
 }

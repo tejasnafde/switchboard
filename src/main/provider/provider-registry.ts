@@ -20,7 +20,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId } from '../db/database'
+import { recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId } from '../db/database'
 import { sessionDefaultsFor } from './session-defaults'
 import {
   PeerAgentSendGuard,
@@ -48,7 +48,7 @@ import { echoMessageId } from '@shared/provider-events'
 const log = createLogger('provider:registry')
 
 /** `claude` is spelled `claude-code` everywhere the DB is involved. */
-function agentTypeForProvider(provider: ProviderKind): AgentType {
+function agentTypeForProvider(provider: ProviderKind): Exclude<AgentType, 'terminal'> {
   return provider === 'claude' ? 'claude-code' : provider
 }
 
@@ -625,7 +625,21 @@ export class ProviderRegistry implements PeerToolHost {
       if (remoteProviderConfig) enrichedOpts.resolvedOauthDir = remoteProviderConfig
       log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${enrichedOpts.resolvedOauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
 
-      const session = await adapter.startSession(enrichedOpts, (event) => this.publish(event))
+      const session = await adapter.startSession(enrichedOpts, (event) => {
+        if (event.type === 'session') {
+          try {
+            recordConversationSegment({
+              conversationId: event.threadId,
+              provider: agentType,
+              providerSessionId: event.sessionId,
+              providerInstanceId: instance?.id ?? opts.instanceId ?? null,
+            })
+          } catch (err) {
+            log.warn(`failed to persist typed provider segment ${event.threadId} -> ${event.sessionId}: ${err}`)
+          }
+        }
+        this.publish(event)
+      })
       if (instance) session.instanceId = instance.id
       // Tell every client which profile this thread now runs on. A rotation
       // done on one client would otherwise leave the others showing the old

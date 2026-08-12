@@ -12,6 +12,7 @@ import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions } from '../projects/session-scanner'
 import { addProject, getArchivedConversationIds } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
+import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import type { Project } from '@shared/types'
 
 const log = createLogger('ipc:app-desktop')
@@ -66,7 +67,7 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
 
     addProject(folderPath, name)
 
-    const rawSessions = await scanAllSessions(folderPath, claudeCandidateDirs())
+    const rawSessions = await scanAllSessions(folderPath, claudeCandidateDirs(), codexCandidateDirs())
     const archivedSet = getArchivedConversationIds()
     const sessions = rawSessions.filter((s) => !archivedSet.has(s.id))
     log.info(`found ${sessions.length} sessions for ${folderPath} (${rawSessions.length - sessions.length} archived)`)

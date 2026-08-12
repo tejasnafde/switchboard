@@ -1,5 +1,5 @@
 import { readdir, readFile, stat, open } from 'fs/promises'
-import { join, basename } from 'path'
+import { join, basename, resolve } from 'path'
 import { homedir } from 'os'
 import { generateTitle } from '@shared/auto-title'
 import type { SessionSummary, SessionSource } from '@shared/types'
@@ -29,6 +29,17 @@ export function encodeClaudeProjectPath(projectPath: string): string {
  */
 export function isClaudeDirForProject(dir: string, projectPath: string): boolean {
   return dir === encodeClaudeProjectPath(projectPath)
+}
+
+async function readHead(fullPath: string, maxBytes: number): Promise<string> {
+  const fh = await open(fullPath, 'r')
+  try {
+    const buf = Buffer.alloc(maxBytes)
+    const { bytesRead } = await fh.read(buf, 0, maxBytes, 0)
+    return buf.toString('utf-8', 0, bytesRead)
+  } finally {
+    await fh.close()
+  }
 }
 
 /**
@@ -137,71 +148,115 @@ async function scanClaudeProjectsDir(
  * Scan for Codex sessions associated with a project path.
  * Codex stores sessions in ~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl
  */
-export async function scanCodexSessions(projectPath: string): Promise<SessionSummary[]> {
-  const codexDir = join(homedir(), '.codex', 'sessions')
+export async function scanCodexSessions(
+  projectPath: string,
+  codexBaseDirs: string[] = [join(homedir(), '.codex')],
+): Promise<SessionSummary[]> {
   const sessions: SessionSummary[] = []
 
-  try {
-    await scanCodexDir(codexDir, projectPath, sessions)
-  } catch {
-    // ~/.codex/sessions doesn't exist
+  for (const base of codexBaseDirs) {
+    await scanCodexDir(join(base, 'sessions'), projectPath, sessions)
   }
 
+  sessions.sort((a, b) => b.startedAt - a.startedAt)
+  const seen = new Set<string>()
+  return sessions.filter((session) => {
+    if (seen.has(session.id)) return false
+    seen.add(session.id)
+    return true
+  })
+}
+
+/** Every on-disk copy of known native sessions, without cwd filtering or dedupe. */
+export async function scanCodexSessionCopies(
+  sessionIds: ReadonlySet<string>,
+  codexBaseDirs: string[] = [join(homedir(), '.codex')],
+): Promise<SessionSummary[]> {
+  const sessions: SessionSummary[] = []
+  for (const base of codexBaseDirs) {
+    await scanCodexDir(join(base, 'sessions'), null, sessions, sessionIds)
+  }
   return sessions.sort((a, b) => b.startedAt - a.startedAt)
 }
 
-// Cache the 2 KB head of each rollout file, keyed by path, so the
+// Cache the immutable session metadata of each rollout file, keyed by path, so the
 // ever-growing Codex history isn't re-read on every scan. Holds the in-flight
 // Promise (not the resolved value) so the concurrent per-project scans from
 // GET_PROJECTS share one read instead of stampeding the same file N times -
-// that stampede OOM'd v0.5.3 on real-world Codex histories. Headers are
+// that stampede OOM'd v0.5.3 on real-world Codex histories. Metadata is
 // immutable once written, so no mtime invalidation is needed.
-const codexHeadCache = new Map<string, Promise<string>>()
+const codexMetaCache = new Map<string, Promise<CodexSessionMeta | null>>()
 
-const HEAD_BYTES = 2000
+interface CodexSessionMeta {
+  id: string
+  cwd: string
+}
 
-// Session files run to tens of MB; read only the head bytes instead of
-// readFile-ing the whole file to inspect the first few lines.
-async function readHead(fullPath: string, maxBytes: number): Promise<string> {
+const MAX_CODEX_META_BYTES = 1024 * 1024
+const CODEX_META_CHUNK_BYTES = 16 * 1024
+
+async function readCodexSessionMeta(fullPath: string): Promise<CodexSessionMeta | null> {
   const fh = await open(fullPath, 'r')
   try {
-    const buf = Buffer.alloc(maxBytes)
-    const { bytesRead } = await fh.read(buf, 0, maxBytes, 0)
-    return buf.toString('utf-8', 0, bytesRead)
+    const chunks: Buffer[] = []
+    let total = 0
+    while (total < MAX_CODEX_META_BYTES) {
+      const buf = Buffer.alloc(Math.min(CODEX_META_CHUNK_BYTES, MAX_CODEX_META_BYTES - total))
+      const { bytesRead } = await fh.read(buf, 0, buf.length, total)
+      if (bytesRead === 0) break
+      const chunk = buf.subarray(0, bytesRead)
+      const newline = chunk.indexOf(0x0a)
+      chunks.push(newline >= 0 ? chunk.subarray(0, newline) : chunk)
+      total += newline >= 0 ? newline : bytesRead
+      if (newline >= 0) break
+    }
+    const firstLine = Buffer.concat(chunks).toString('utf-8').trim()
+    if (!firstLine) return null
+    const event = JSON.parse(firstLine) as {
+      type?: string
+      payload?: { id?: unknown; cwd?: unknown }
+    }
+    if (event.type !== 'session_meta') return null
+    const id = event.payload?.id
+    const cwd = event.payload?.cwd
+    return typeof id === 'string' && id.length > 0 && typeof cwd === 'string' && cwd.length > 0
+      ? { id, cwd }
+      : null
   } finally {
     await fh.close()
   }
 }
 
-function getCachedCodexHead(fullPath: string): Promise<string> {
-  let head = codexHeadCache.get(fullPath)
-  if (!head) {
-    head = readHead(fullPath, HEAD_BYTES)
-    codexHeadCache.set(fullPath, head)
+function getCachedCodexMeta(fullPath: string): Promise<CodexSessionMeta | null> {
+  let meta = codexMetaCache.get(fullPath)
+  if (!meta) {
+    meta = readCodexSessionMeta(fullPath)
+    codexMetaCache.set(fullPath, meta)
   }
-  return head
+  return meta
 }
 
 async function scanCodexDir(
   dir: string,
-  projectPath: string,
-  sessions: SessionSummary[]
+  projectPath: string | null,
+  sessions: SessionSummary[],
+  sessionIds?: ReadonlySet<string>,
 ): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
 
   for (const entry of entries) {
     const fullPath = join(dir, entry.name)
     if (entry.isDirectory()) {
-      await scanCodexDir(fullPath, projectPath, sessions)
+      await scanCodexDir(fullPath, projectPath, sessions, sessionIds)
     } else if (entry.name.endsWith('.jsonl')) {
-      // Quick check: read first few lines to see if CWD matches
       try {
-        const head = await getCachedCodexHead(fullPath)
-        if (!head.includes(projectPath)) continue
+        const meta = await getCachedCodexMeta(fullPath)
+        if (!meta) continue
+        if (sessionIds ? !sessionIds.has(meta.id) : !projectPath || resolve(meta.cwd) !== resolve(projectPath)) continue
         const fileStat = await stat(fullPath).catch(() => null)
         if (!fileStat) continue
         sessions.push({
-          id: entry.name.replace('.jsonl', ''),
+          id: meta.id,
           source: 'codex',
           title: `Codex ${sessions.length + 1}`,
           startedAt: fileStat.mtimeMs,
@@ -209,7 +264,7 @@ async function scanCodexDir(
           filePath: fullPath,
         })
       } catch {
-        codexHeadCache.delete(fullPath)
+        codexMetaCache.delete(fullPath)
         // Skip unreadable files
       }
     }
@@ -264,10 +319,11 @@ export async function scanOpenCodeSessions(projectPath: string): Promise<Session
 export async function scanAllSessions(
   projectPath: string,
   claudeBaseDirs?: string[],
+  codexBaseDirs?: string[],
 ): Promise<SessionSummary[]> {
   const [claude, codex, opencode] = await Promise.all([
     scanClaudeCodeSessions(projectPath, claudeBaseDirs),
-    scanCodexSessions(projectPath),
+    scanCodexSessions(projectPath, codexBaseDirs),
     scanOpenCodeSessions(projectPath),
   ])
   return [...claude, ...codex, ...opencode].sort((a, b) => b.startedAt - a.startedAt)

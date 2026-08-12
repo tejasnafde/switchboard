@@ -20,6 +20,10 @@ let omitFileChangesAtStart = false
 let stallInitialize = false
 let initStderrChunks: string[] = []
 let lastChild: MockChild | null = null
+let persistedSessionIds: string[] = []
+let persistedSessionHints: string[] = []
+let typedResumeSessionId: string | null = null
+let threadResumeError: string | null = null
 
 type MockChild = EventEmitter & {
   stdout: PassThrough
@@ -75,6 +79,14 @@ function makeChild(): MockChild {
       }
       if (message.method === 'thread/resume') {
         queueMicrotask(() => {
+          if (threadResumeError) {
+            stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              error: { code: -32000, message: threadResumeError },
+            }) + '\n')
+            return
+          }
           stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             id: message.id,
@@ -390,6 +402,24 @@ vi.mock('electron', () => ({
   },
 }))
 
+vi.mock('../../src/main/db/database', () => ({
+  listSessionIdsForThread: vi.fn(() => persistedSessionIds),
+  threadFamilyIds: vi.fn(() => persistedSessionIds),
+  conversationSessionHints: vi.fn(() => persistedSessionHints),
+  resolveResumeSegment: vi.fn(() => typedResumeSessionId ? {
+    provider_session_id: typedResumeSessionId,
+  } : null),
+}))
+
+vi.mock('../../src/main/projects/session-scanner', () => ({
+  scanCodexSessionCopies: vi.fn((ids: Set<string>) =>
+    [...ids].map((id) => ({ id, filePath: `/codex/${id}.jsonl` }))),
+}))
+
+vi.mock('../../src/main/provider/codex-session-dirs', () => ({
+  codexCandidateDirs: () => ['/codex'],
+}))
+
 describe('CodexAdapter', () => {
   beforeEach(() => {
     writes.length = 0
@@ -403,6 +433,10 @@ describe('CodexAdapter', () => {
     stallInitialize = false
     initStderrChunks = []
     lastChild = null
+    persistedSessionIds = []
+    persistedSessionHints = []
+    typedResumeSessionId = null
+    threadResumeError = null
     vi.clearAllMocks()
   })
 
@@ -529,6 +563,73 @@ describe('CodexAdapter', () => {
         input: [{ type: 'text', text: 'resume here' }],
       },
     })
+  })
+
+  it('resumes the newest persisted provider session after multiple rotations', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    persistedSessionHints = ['codex-thread-stale', 'codex-thread-newest']
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      resumeSessionId: 'claude-session',
+    }, vi.fn())
+
+    const resume = writes.map((line) => JSON.parse(line))
+      .find((message) => message.method === 'thread/resume')
+    expect(resume?.params.threadId).toBe('codex-thread-newest')
+  })
+
+  it('resumes a legacy conversations.session_id before ambiguous family ids', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    persistedSessionIds = ['switchboard-thread-1', 'claude-session']
+    persistedSessionHints = ['codex-native-session']
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, vi.fn())
+
+    const resume = writes.map((line) => JSON.parse(line))
+      .find((message) => message.method === 'thread/resume')
+    expect(resume?.params.threadId).toBe('codex-native-session')
+  })
+
+  it('prefers the newest typed Codex segment over ambiguous legacy lineage', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    typedResumeSessionId = 'codex-thread-typed'
+    persistedSessionIds = ['switchboard-thread-1', 'legacy-ambiguous']
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      instanceId: 'codex-work',
+    }, vi.fn())
+
+    const resume = writes.map((line) => JSON.parse(line))
+      .find((message) => message.method === 'thread/resume')
+    expect(resume?.params.threadId).toBe('codex-thread-typed')
+  })
+
+  it('does not discard resumable context after a transient resume failure', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    threadResumeError = 'authentication service unavailable'
+
+    await expect(adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      resumeSessionId: 'codex-thread-existing',
+    }, vi.fn())).rejects.toThrow('authentication service unavailable')
+
+    expect(writes.map((line) => JSON.parse(line)).some((message) => message.method === 'thread/start')).toBe(false)
   })
 
   it('replaces a stale resumed thread and retries the turn once', async () => {

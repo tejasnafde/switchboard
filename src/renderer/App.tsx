@@ -32,7 +32,7 @@ import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
-import { shouldEvictMessages, needsMessageReload, resolveSessionSelectTarget } from './utils/session-eviction'
+import { needsMessageReload, resolveSessionOpenAgentType, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 
 const log = createRendererLogger('app')
@@ -591,7 +591,7 @@ export function App() {
       // mode resumes in its worktree, not the parent repo.
       addSession({
         id: session.id,
-        type: agentTypeForSource(session.source),
+        type: resolveSessionOpenAgentType(agentTypeForSource(session.source), loaded?.meta?.agentType),
         status: 'idle',
         projectPath,
         machineId: effectiveMachineId,
@@ -610,6 +610,14 @@ export function App() {
         agentType: agentTypeForSource(session.source),
         title: session.title,
       }).catch(() => {})
+
+      if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
+        try {
+          loaded = await window.api.app.loadSessionById(session.id) as LoadedSession
+        } catch (err) {
+          log.warn('session history reload after create failed', { sessionId: session.id, err })
+        }
+      }
 
       // Hydrate the persisted runtime mode, provider instance, and pinned
       // model (if the user previously picked one for this conversation).

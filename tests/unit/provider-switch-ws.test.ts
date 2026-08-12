@@ -24,8 +24,15 @@ vi.mock('../../src/main/db/providerInstances', () => ({
 }))
 /** Records what the registry persists, so a missing method cannot pass as a log line. */
 const saved: Array<{ id: string; conversationId: string; role: string; content: string; images?: string }> = []
+const recordedSegments: Array<{
+  conversationId: string
+  provider: string
+  providerSessionId: string
+  providerInstanceId?: string | null
+}> = []
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
+  recordConversationSegment: (segment: typeof recordedSegments[number]) => recordedSegments.push(segment),
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string, images?: string) => {
     saved.push({ id, conversationId, role, content, images })
@@ -124,6 +131,14 @@ class DeferredStartAdapter extends MockEchoAdapter {
   }
 }
 
+class SessionPublishingAdapter extends MockEchoAdapter {
+  override async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
+    const session = await super.startSession(opts, onEvent)
+    onEvent({ type: 'session', threadId: opts.threadId, sessionId: 'provider-session-1' })
+    return session
+  }
+}
+
 let wss: WebSocketServer | null = null
 let client: WsTransport | null = null
 let registry: ProviderRegistry | null = null
@@ -160,6 +175,25 @@ afterEach(async () => {
 })
 
 describe('provider switching over the WebSocket boundary', () => {
+  it('records typed provider lineage when an adapter assigns a native session id', async () => {
+    recordedSegments.length = 0
+    const { cwd } = await setup(new SessionPublishingAdapter())
+
+    await client!.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't1',
+      provider: 'claude',
+      cwd,
+      instanceId: 'claude-work',
+    })
+
+    expect(recordedSegments).toEqual([{
+      conversationId: 't1',
+      provider: 'claude-code',
+      providerSessionId: 'provider-session-1',
+      providerInstanceId: 'claude-work',
+    }])
+  })
+
   it('waits for an in-flight provider start before accepting a rapid follow-up', async () => {
     const adapter = new DeferredStartAdapter()
     const { cwd } = await setup(adapter)

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import * as messagesModule from '../../src/main/agent/dedupe-messages'
 import { dedupeMessagesById } from '../../src/main/agent/dedupe-messages'
 import type { ChatMessage } from '../../src/shared/types'
 
@@ -59,5 +60,60 @@ describe('dedupeMessagesById', () => {
     expect(r.messages).toHaveLength(3)
     expect(r.removed).toBe(9)
     expect(r.conflicts).toBe(0)
+  })
+})
+
+describe('mergeConversationMessages', () => {
+  const merge = (disk: ChatMessage[], database: ChatMessage[]): ChatMessage[] => {
+    const candidate = (messagesModule as unknown as {
+      mergeConversationMessages?: (diskMessages: ChatMessage[], databaseMessages: ChatMessage[]) => ChatMessage[]
+    }).mergeConversationMessages
+    return candidate?.(disk, database) ?? []
+  }
+
+  it('retains a SQLite-only prefix when a surviving JSONL contains only the tail', () => {
+    const database = [
+      msg('db-old', { role: 'user', content: 'old turn', timestamp: 100 }),
+      msg('same-tail', { content: 'new turn', timestamp: 200 }),
+    ]
+    const disk = [msg('same-tail', {
+      content: 'new turn',
+      timestamp: 200,
+      toolCalls: [{ id: 't', name: 'Read', input: '{}' }],
+    })]
+
+    const merged = merge(disk, database)
+
+    expect(merged.map((message) => message.content)).toEqual(['old turn', 'new turn'])
+    expect(merged[1].toolCalls).toHaveLength(1)
+  })
+
+  it('collapses legacy random DB ids against stable rollout ids by matching the same turn', () => {
+    const database = [msg('msg_legacy_random', { content: 'fleet complete', timestamp: 10_500 })]
+    const disk = [msg('codex_stable', { content: 'fleet complete', timestamp: 10_000 })]
+
+    const merged = merge(disk, database)
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0].id).toBe('codex_stable')
+  })
+
+  it('keeps equal content when it occurs in distinct turns far apart', () => {
+    const database = [msg('db-later', { content: 'yes', timestamp: 120_000 })]
+    const disk = [msg('disk-earlier', { content: 'yes', timestamp: 1_000 })]
+
+    expect(merge(disk, database)).toHaveLength(2)
+  })
+
+  it('reconciles a large legacy transcript without scanning the full disk list per row', () => {
+    const disk = Array.from({ length: 20_000 }, (_, index) =>
+      msg(`disk-${index}`, { content: `turn-${index}`, timestamp: index * 100_000 }))
+    const database = disk.map((message, index) => ({ ...message, id: `legacy-${index}` }))
+
+    const startedAt = performance.now()
+    const merged = merge(disk, database)
+
+    expect(merged).toHaveLength(disk.length)
+    expect(performance.now() - startedAt).toBeLessThan(1_000)
   })
 })

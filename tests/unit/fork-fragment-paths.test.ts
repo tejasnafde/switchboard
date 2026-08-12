@@ -35,6 +35,10 @@ vi.mock('../../src/main/provider/claude-session-migrate', async (orig) => {
   return { ...actual, claudeCandidateDirs: () => [profileA, profileB] }
 })
 
+vi.mock('../../src/main/provider/codex-session-dirs', () => ({
+  codexCandidateDirs: () => [profileA, profileB],
+}))
+
 function seed(dir: string, cwd: string, sid: string, agoSeconds = 0): string {
   const projectDir = join(dir, 'projects', encodeClaudeProjectPath(cwd))
   mkdirSync(projectDir, { recursive: true })
@@ -88,5 +92,18 @@ describe('listClaudeFragmentPaths', () => {
     const { listClaudeFragmentPaths } = await import('../../src/main/conversations/fork')
     const only = seed(profileA, REPO, SID)
     expect(listClaudeFragmentPaths(ROOT_ID)).toEqual([only])
+  })
+
+  it('finds a Codex rollout in a non-default CODEX_HOME', async () => {
+    const forkModule = await import('../../src/main/conversations/fork')
+    const findCodexRollout = (forkModule as unknown as {
+      findCodexRollout?: (threadId: string) => Promise<string | null>
+    }).findCodexRollout
+    const dir = join(profileB, 'sessions', '2026', '08', '12')
+    mkdirSync(dir, { recursive: true })
+    const path = join(dir, `rollout-2026-08-12-${SID}.jsonl`)
+    writeFileSync(path, '{"type":"session_meta"}\n')
+
+    expect(await findCodexRollout?.(SID)).toBe(path)
   })
 })

@@ -14,7 +14,7 @@ import { homedir } from 'os'
 import { join, sep } from 'path'
 import { promisify } from 'util'
 import { createMainLogger as createLogger } from '../../logger'
-import { recordThreadSession, listSessionIdsForThread } from '../../db/database'
+import { recordThreadSession, listSessionIdsForThread, resolveResumeSegment } from '../../db/database'
 
 /**
  * Claude Code CLI only accepts UUID session ids (or exact titles) for
@@ -36,17 +36,29 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  *      pick the most recent UUID.
  *   3. If nothing matches, return undefined → SDK starts a fresh session.
  */
+export function selectClaudeResumeId(
+  typedId: string | undefined,
+  hint: string | undefined,
+  familyIds: readonly string[],
+  transcriptExists: (id: string) => boolean,
+): string | undefined {
+  for (const id of [typedId, hint]) {
+    if (id && UUID_RE.test(id) && transcriptExists(id)) return id
+  }
+  for (let i = familyIds.length - 1; i >= 0; i--) {
+    const id = familyIds[i]
+    if (UUID_RE.test(id) && transcriptExists(id)) return id
+  }
+  return undefined
+}
+
 function resolveClaudeResumeId(threadId: string, hint?: string): string | undefined {
-  if (hint && UUID_RE.test(hint)) return hint
   try {
+    const typedId = resolveResumeSegment(threadId, 'claude-code')?.provider_session_id
     const ids = listSessionIdsForThread(threadId)
-    // listSessionIdsForThread returns [threadId, ...children] with children
-    // ordered by recorded_at ASC. Walk end-to-start to get the most recent
-    // UUID child; skip the threadId itself if it isn't a UUID.
-    for (let i = ids.length - 1; i >= 0; i--) {
-      const id = ids[i]
-      if (UUID_RE.test(id)) return id
-    }
+    return selectClaudeResumeId(typedId, hint, ids, (id) =>
+      claudeCandidateDirs().some((dir) => listClaudeSessionCopies(dir, id).length > 0)
+    )
   } catch { /* DB might not be ready yet - fine, we'll start fresh */ }
   return undefined
 }
@@ -248,6 +260,8 @@ import {
   locateResumeTranscript,
   describeResumeFailure,
   defaultClaudeDir,
+  claudeCandidateDirs,
+  listClaudeSessionCopies,
 } from '../claude-session-migrate'
 import { shapeQuestionAnswers } from './question-answers'
 import { TurnWatchdog, StderrTail, countToolBrackets } from '../turn-watchdog'

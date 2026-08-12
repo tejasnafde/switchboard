@@ -599,6 +599,26 @@ describe('JsonlParser - Codex source', () => {
     }) + '\n')
     expect(messages).toHaveLength(0)
   })
+
+  it('produces the same message id when the same rollout is parsed again', () => {
+    const event = {
+      timestamp: '2026-08-12T18:40:34.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'input_text', text: 'launch the fleet' }],
+      },
+    }
+    const parse = () => {
+      const messages: any[] = []
+      const parser = new JsonlParser((message) => messages.push(message), 'codex')
+      parser.feed(`${JSON.stringify(event)}\n`)
+      return messages[0]
+    }
+
+    expect(parse().id).toBe(parse().id)
+  })
 })
 
 /**
@@ -687,4 +707,3 @@ describe('JsonlParser: stable message ids', () => {
     expect(out[0].id).toBe('uuid-wins')
   })
 })
-

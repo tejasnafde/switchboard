@@ -1,4 +1,5 @@
 import type { ChatMessage, ToolCall, MessageImage } from '@shared/types'
+import { createHash } from 'crypto'
 
 export type JsonlSource = 'claude-code' | 'codex'
 
@@ -269,11 +270,18 @@ export function normalizeCodexEvent(event: Record<string, unknown>): ChatMessage
     : Date.now()
 
   return {
-    id: generateId(),
+    id: stableCodexId(event),
     role: role as 'user' | 'assistant',
     content,
     timestamp: Number.isFinite(ts) ? ts : Date.now(),
   }
+}
+
+function stableCodexId(event: Record<string, unknown>): string {
+  const payload = event.payload as Record<string, unknown> | undefined
+  const providerId = payload?.id
+  if (typeof providerId === 'string' && providerId.length > 0) return providerId
+  return `codex_${createHash('sha256').update(JSON.stringify(event)).digest('hex').slice(0, 24)}`
 }
 
 function extractCodexText(content: unknown): string {

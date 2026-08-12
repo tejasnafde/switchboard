@@ -59,16 +59,14 @@ import {
   reorderWorkspaces,
   setProjectWorkspace,
   organizeProjects,
-  getDisplayBodyEnrichments,
-  getSystemMarkerMessages,
   getMessagesForConversation,
   messageRowsToChatMessages,
   setConversationLastRead,
 } from '../db/database'
-import { claudeCandidateDirs, listClaudeSessionCopies } from '../provider/claude-session-migrate'
-import { enrichMessagesWithDisplayBody } from './enrichDisplayBody'
+import { claudeCandidateDirs } from '../provider/claude-session-migrate'
+import { codexCandidateDirs } from '../provider/codex-session-dirs'
+import { loadConversationHistory } from '../conversations/history'
 import { loadJsonlCached } from '../agent/jsonl-cache'
-import { dedupeMessagesById } from '../agent/dedupe-messages'
 import { forkConversation } from '../conversations/fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
@@ -108,7 +106,7 @@ function capTail<T extends { messages: ChatMessage[] }>(
  * event, keyed on threadId, was dropped by the desktop.
  */
 export async function visibleSessionsForProject(projectPath: string): Promise<SessionSummary[]> {
-  const sessions = await scanAllSessions(projectPath, claudeCandidateDirs())
+  const sessions = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
   const archivedSet = getArchivedConversationIds()
   const childSet = getChildSessionIds()
   const syntheticParents = getSyntheticParentMap()
@@ -197,7 +195,7 @@ export function registerAppHandlers(host: BackendHost): void {
     // was previously awaited one project at a time, serializing every sidebar/
     // settings/kanban refresh over the full session filesystem.
     const projects: Project[] = await Promise.all(rows.map(async (row) => {
-      const sessions = await scanAllSessions(row.path, candidateDirs)
+      const sessions = await scanAllSessions(row.path, candidateDirs, codexCandidateDirs())
       const dbConversations = convsByProject.get(row.path) ?? []
       const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
       const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
@@ -250,7 +248,7 @@ export function registerAppHandlers(host: BackendHost): void {
     const name = basename(dirPath)
     addProject(dirPath, name)
 
-    const rawSessions = await scanAllSessions(dirPath, claudeCandidateDirs())
+    const rawSessions = await scanAllSessions(dirPath, claudeCandidateDirs(), codexCandidateDirs())
     const archivedSet = getArchivedConversationIds()
     const sessions = rawSessions.filter((s) => !archivedSet.has(s.id))
     log.info(`add-project-path: found ${sessions.length} sessions for ${dirPath} (${rawSessions.length - sessions.length} archived)`)
@@ -389,7 +387,8 @@ export function registerAppHandlers(host: BackendHost): void {
   }> => {
     const row = getConversationById(conversationId)
     if (!row) return capTail({ messages: [], meta: null }, opts)
-    const source: 'claude-code' | 'codex' = row.agent_type === 'codex' ? 'codex' : 'claude-code'
+    const rootThreadId = resolveRootThreadId(row.id)
+    const rootRow = getConversationById(rootThreadId)
     // rootThreadId lets the renderer avoid building a twin session: the sidebar
     // lists a chat under its SDK session UUID, but a live adapter keys events to
     // the synthetic agent_<ts> thread. See resolveSessionSelectTarget.
@@ -397,98 +396,20 @@ export function registerAppHandlers(host: BackendHost): void {
       id: row.id,
       title: row.title,
       projectPath: row.project_path,
-      agentType: row.agent_type,
-      rootThreadId: resolveRootThreadId(row.id),
+      agentType: rootRow?.agent_type ?? row.agent_type,
+      rootThreadId,
     }
 
-    // All session_ids that belong to this thread (root + children).
-    const sessionIds = listSessionIdsForThread(conversationId)
-
-    if (source === 'claude-code') {
-      // Every profile dir, and within each, every project dir - NOT just
-      // `encode(project_path)`. The CLI files a transcript under the encoded
-      // cwd, so a chat that ran in a worktree writes somewhere this handler
-      // used to never look: it kept returning the last snapshot left under the
-      // project dir, and re-entering the chat replaced live history with it.
-      const candidateDirs = claudeCandidateDirs()
-      const all: ChatMessage[] = []
-      for (const sid of sessionIds) {
-        for (const dir of candidateDirs) {
-          for (const copy of listClaudeSessionCopies(dir, sid)) {
-            const msgs = await loadJsonlCached(copy.path, 'claude-code')
-            if (msgs) all.push(...msgs)
-          }
-        }
-      }
-      // Merge in timestamp order so fragments interleave correctly.
-      all.sort((a, b) => a.timestamp - b.timestamp)
-      // Fold the same message arriving from several profile dirs back to one.
-      const { messages: deduped, removed, conflicts } = dedupeMessagesById(all)
-      if (conflicts > 0) {
-        // Profile copies are byte-prefixes of one another, so this should be
-        // unreachable. If it fires, "first wins" dropped a differing version.
-        log.warn(`load-by-id: ${conversationId} had ${conflicts} id(s) with conflicting content`)
-      }
-      // JSONL gone (Claude Code prunes/rotates ~/.claude/projects), but the
-      // messages are mirrored in SQLite - recover from the DB so the
-      // conversation still renders instead of showing an empty chat.
-      if (deduped.length === 0) {
-        const dbMsgs = messageRowsToChatMessages(getMessagesForConversation(conversationId))
-        if (dbMsgs.length > 0) {
-          log.info(`load-by-id: ${conversationId} → no JSONL, recovered ${dbMsgs.length} messages from DB`)
-          return capTail({ messages: dbMsgs, meta }, opts)
-        }
-      }
-      const enriched = enrichMessagesWithDisplayBody(deduped, getDisplayBodyEnrichments(conversationId))
-      // Merge in any persisted system markers (currently provider-instance
-      // rotation markers) - these live in SQLite, not JSONL, and need to
-      // appear in chronological order alongside agent turns.
-      const markers = getSystemMarkerMessages(conversationId).map((m) => ({
-        id: m.id,
-        role: 'system' as const,
-        content: m.content,
-        timestamp: m.timestamp,
-      }))
-      const merged = [...enriched, ...markers].sort((a, b) => a.timestamp - b.timestamp)
-      log.info(`load-by-id: ${conversationId} → ${deduped.length} messages (${removed} dupes removed) across ${sessionIds.length} fragment(s), +${markers.length} marker(s)`)
-      return capTail({ messages: merged, meta }, opts)
-    }
-
-    // Codex fallback - scan all sessions for this project, find matching id(s)
     try {
-      const sessions = await scanAllSessions(row.project_path)
-      const all: ChatMessage[] = []
-      for (const sid of sessionIds) {
-        const match = sessions.find((s) => s.id === sid)
-        if (!match?.filePath) continue
-        const msgs = await loadJsonlCached(match.filePath, 'codex')
-        if (msgs) all.push(...msgs)
-      }
-      all.sort((a, b) => a.timestamp - b.timestamp)
-      const seenCodex = new Set<string>()
-      const dedupedCodex = all.filter((m) => {
-        if (seenCodex.has(m.id)) return false
-        seenCodex.add(m.id)
-        return true
-      })
-      if (dedupedCodex.length === 0) {
-        const dbMsgs = messageRowsToChatMessages(getMessagesForConversation(conversationId))
-        if (dbMsgs.length > 0) {
-          log.info(`load-by-id (codex): ${conversationId} → no JSONL, recovered ${dbMsgs.length} messages from DB`)
-          return capTail({ messages: dbMsgs, meta }, opts)
-        }
-      }
-      const enrichedCodex = enrichMessagesWithDisplayBody(dedupedCodex, getDisplayBodyEnrichments(conversationId))
-      const markersCodex = getSystemMarkerMessages(conversationId).map((m) => ({
-        id: m.id,
-        role: 'system' as const,
-        content: m.content,
-        timestamp: m.timestamp,
-      }))
-      const mergedCodex = [...enrichedCodex, ...markersCodex].sort((a, b) => a.timestamp - b.timestamp)
-      return capTail({ messages: mergedCodex, meta }, opts)
+      const history = await loadConversationHistory(conversationId, row.project_path)
+      log.info(
+        `load-by-id: ${conversationId} -> ${history.messages.length} messages ` +
+        `(${history.diskMessageCount} disk, ${history.databaseMessageCount} DB) ` +
+        `across ${history.familyIds.length} family id(s)`,
+      )
+      return capTail({ messages: history.messages, meta }, opts)
     } catch (err) {
-      log.warn(`load-by-id (codex) failed for ${conversationId}: ${err}`)
+      log.warn(`load-by-id failed for ${conversationId}: ${err}`)
       return capTail({ messages: [], meta }, opts)
     }
   })

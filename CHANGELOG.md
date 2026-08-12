@@ -2,6 +2,19 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.29 - Long conversations survive provider and transcript rotation
+
+### Fixed
+- **A Claude conversation continued in Codex could reopen at the end of its Claude history.** Switchboard now records typed provider segments and assembles one chronological history from every Claude and Codex transcript copy plus the SQLite mirror.
+- **Rotated, pruned, truncated, or relocated JSONL files could hide messages.** History loading unions all known native session IDs across configured provider homes and worktree CWDs, retains SQLite-only prefixes and completions, and uses stable Codex message identities.
+- **Legacy mixed-provider conversations could resume the wrong native UUID.** Untyped Claude and Codex candidates are now verified against the corresponding provider's on-disk transcript, while the legacy `conversations.session_id` bridge recovers chats created before typed segments existed.
+- **Forking a mixed-provider conversation applied a unified message index to one provider's JSONL.** Native forks now map the selected visible message back to its provider-owned index or deliberately degrade to a context handoff when an exact native cut is impossible.
+- **Very long legacy histories reconciled quadratically.** Semantic reconciliation now uses indexed timestamp queues; the 20,000-message regression case dropped from roughly 2.8 seconds to about 60 milliseconds locally.
+
+### Notes
+- The reported `v0` RetailIQ/panel-agent conversation was backed up before repair. Its legacy Codex continuation was verified under the Lenskart Codex home and is now reachable through the provider-validated legacy hint path.
+- The implementation was developed test-first and passed repeated adversarial review. The final gate passed 2,440 tests across 240 files, both typechecks, all production bundles, and the packaged-main smoke test.
+
 ## 0.8.28 - Organize workspaces without losing their order
 
 ### Added

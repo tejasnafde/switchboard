@@ -34,11 +34,22 @@ vi.mock('../../src/main/db/database', () => ({
   createForkedConversation: (row: unknown) => createForkedConversation(row),
   bulkSaveMessages: vi.fn(),
   listSessionIdsForThread: (id: string) => [id],
+  threadFamilyIds: (id: string) => [id],
+  listConversationSegments: vi.fn(() => []),
+  conversationSessionHints: vi.fn(() => []),
   getMessagesForConversation: vi.fn(() => []),
   messageRowsToChatMessages: vi.fn(() => sourceMessages),
+  getDisplayBodyEnrichments: vi.fn(() => new Map()),
   setConversationPendingHandoff: (id: string, from: string | null) =>
     setConversationPendingHandoff(id, from),
 }))
+
+vi.mock('../../src/main/provider/claude-session-migrate', async (orig) => {
+  const actual = await orig<typeof import('../../src/main/provider/claude-session-migrate')>()
+  return { ...actual, claudeCandidateDirs: () => [], listClaudeSessionCopies: () => [] }
+})
+
+vi.mock('../../src/main/provider/codex-session-dirs', () => ({ codexCandidateDirs: () => [] }))
 
 const { forkConversation } = await import('../../src/main/conversations/fork')
 

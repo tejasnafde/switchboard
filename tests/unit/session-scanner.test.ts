@@ -1,9 +1,13 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect } from 'vitest'
 import { homedir } from 'os'
 import { join } from 'path'
+import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
+import { tmpdir } from 'os'
 import {
   encodeClaudeProjectPath,
   isClaudeDirForProject,
+  scanCodexSessionCopies,
+  scanCodexSessions,
 } from '../../src/main/projects/session-scanner'
 
 describe('session scanner - Claude Code paths', () => {
@@ -110,5 +114,95 @@ describe('session scanner - Codex paths', () => {
   it('Codex sessions stored in dated directories', () => {
     const codexDir = join(homedir(), '.codex', 'sessions')
     expect(codexDir).toContain(join('.codex', 'sessions'))
+  })
+})
+
+describe('session scanner - Codex metadata', () => {
+  const tempDirs: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  })
+
+  async function writeRollout(
+    codexHome: string,
+    filename: string,
+    metadata: { id: string; cwd: string },
+  ): Promise<void> {
+    const dir = join(codexHome, 'sessions', '2026', '08', '12')
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, filename), `${JSON.stringify({
+      timestamp: '2026-08-12T18:20:56.000Z',
+      type: 'session_meta',
+      payload: metadata,
+    })}\n`)
+  }
+
+  it('uses session_meta.payload.id instead of the rollout filename stem', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'sb-codex-scan-'))
+    tempDirs.push(home)
+    await writeRollout(
+      home,
+      'rollout-2026-08-12T18-20-56-thread-uuid.jsonl',
+      { id: 'thread-uuid', cwd: '/repo/panel-agent' },
+    )
+
+    const sessions = await scanCodexSessions('/repo/panel-agent', [home])
+
+    expect(sessions.map((session) => session.id)).toEqual(['thread-uuid'])
+  })
+
+  it('does not match parent, child, or prefix-colliding project paths', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'sb-codex-scan-'))
+    tempDirs.push(home)
+    await writeRollout(
+      home,
+      'rollout-2026-08-12T18-20-55-exact.jsonl',
+      { id: 'exact', cwd: '/repo/panel-agent' },
+    )
+    await writeRollout(
+      home,
+      'rollout-2026-08-12T18-20-56-child.jsonl',
+      { id: 'child', cwd: '/repo/panel-agent-next' },
+    )
+
+    const sessions = await scanCodexSessions('/repo/panel-agent', [home])
+
+    expect(sessions.map((session) => session.id)).toEqual(['exact'])
+  })
+
+  it('searches every configured CODEX_HOME', async () => {
+    const firstHome = await mkdtemp(join(tmpdir(), 'sb-codex-scan-a-'))
+    const secondHome = await mkdtemp(join(tmpdir(), 'sb-codex-scan-b-'))
+    tempDirs.push(firstHome, secondHome)
+    await writeRollout(
+      secondHome,
+      'rollout-2026-08-12T18-20-56-lenskart.jsonl',
+      { id: 'lenskart-thread', cwd: '/repo/panel-agent' },
+    )
+
+    const sessions = await scanCodexSessions('/repo/panel-agent', [firstHome, secondHome])
+
+    expect(sessions.map((session) => session.id)).toEqual(['lenskart-thread'])
+  })
+
+  it('returns every copy of a known session regardless of cwd or provider home', async () => {
+    const firstHome = await mkdtemp(join(tmpdir(), 'sb-codex-copy-a-'))
+    const secondHome = await mkdtemp(join(tmpdir(), 'sb-codex-copy-b-'))
+    tempDirs.push(firstHome, secondHome)
+    await writeRollout(firstHome, 'rollout-old-known.jsonl', {
+      id: 'known-thread', cwd: '/repo/original',
+    })
+    await writeRollout(secondHome, 'rollout-new-known.jsonl', {
+      id: 'known-thread', cwd: '/repo/worktree',
+    })
+    await writeRollout(secondHome, 'rollout-unrelated.jsonl', {
+      id: 'other-thread', cwd: '/repo/original',
+    })
+
+    const copies = await scanCodexSessionCopies(new Set(['known-thread']), [firstHome, secondHome])
+
+    expect(copies).toHaveLength(2)
+    expect(copies.every((session) => session.id === 'known-thread')).toBe(true)
   })
 })
