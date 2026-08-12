@@ -80,19 +80,20 @@
 }
 
 /* ─── Translucent theme ─────────────────────────────────────────── */
-/* Translucent - main surfaces transparent so macOS vibrancy shows through. */
+/* Translucent - a dark material tint keeps content legible while macOS
+   vibrancy supplies the color and depth beneath it. */
 .theme-translucent {
-  --bg-primary: transparent;
-  --bg-secondary: rgba(0, 0, 0, 0.03);
-  --bg-tertiary: rgba(255, 255, 255, 0.04);
-  --bg-surface: rgba(0, 0, 0, 0.05);
-  --bg-glass: rgba(0, 0, 0, 0.04);
-  --bg-hover: rgba(255, 255, 255, 0.05);
-  --bg-active: rgba(88, 166, 255, 0.12);
+  --bg-primary: rgba(8, 10, 14, 0.7);
+  --bg-secondary: rgba(8, 10, 14, 0.36);
+  --bg-tertiary: rgba(255, 255, 255, 0.07);
+  --bg-surface: rgba(12, 14, 19, 0.82);
+  --bg-glass: rgba(8, 10, 14, 0.72);
+  --bg-hover: rgba(255, 255, 255, 0.07);
+  --bg-active: rgba(88, 166, 255, 0.16);
   --text-primary: rgba(255, 255, 255, 0.95);
   --text-secondary: rgba(255, 255, 255, 0.7);
   --text-muted: rgba(255, 255, 255, 0.45);
-  --border: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.1);
   --border-focus: rgba(88, 166, 255, 0.35);
   --accent: #58a6ff;
   --accent-hover: #79c0ff;
@@ -100,7 +101,7 @@
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
-  --terminal-bg: rgba(0, 0, 0, 0.03);
+  --terminal-bg: rgba(8, 10, 14, 0.76);
   --terminal-fg: rgba(255, 255, 255, 0.95);
   --terminal-cursor: #58a6ff;
   --shadow-sm: none;
@@ -114,13 +115,17 @@
   --workspace-color-6: #ffaaa3;
 }
 
-/* Translucent: root, body, html fully transparent for vibrancy */
+/* The native window stays transparent; the renderer supplies one continuous
+   tint so wallpaper color cannot wash out individual panels. */
 html.theme-translucent,
-.theme-translucent,
-.theme-translucent body,
-.theme-translucent #root {
+html.theme-translucent body {
   background: transparent !important;
   background-color: transparent !important;
+}
+
+html.theme-translucent #root {
+  background: var(--bg-primary) !important;
+  background-color: var(--bg-primary) !important;
 }
 
 /* macOS fullscreen fallback: vibrancy doesn't work in fullscreen mode so
@@ -148,16 +153,16 @@ html[data-fullscreen="true"] .theme-translucent {
   --terminal-bg: #0a0a0a;
 }
 
-/* Main panels: ChatPanel, Sidebar, TerminalStrip - fully transparent in translucent mode.
-   Do NOT add new borders here - the surrounding layout (App.tsx) already
-   renders panel borders via `--border` which applies in all themes. An
-   extra border here caused a 1px layout shift when switching themes. */
+/* Sidebar gets a lighter material layer for hierarchy. Panel borders remain
+   owned by the surrounding layout, so switching themes cannot shift geometry. */
 .theme-translucent .sidebar-root {
-  background: transparent !important;
+  background: var(--bg-secondary) !important;
 }
 
 .theme-translucent .titlebar-drag {
-  background: transparent !important;
+  background: rgba(8, 10, 14, 0.46) !important;
+  backdrop-filter: blur(20px) saturate(125%);
+  -webkit-backdrop-filter: blur(20px) saturate(125%);
 }
 
 /* Settings modal must always be opaque - even in translucent mode */
@@ -717,11 +722,35 @@ html, body, #root {
 }
 
 .turn-activity > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   width: fit-content;
   cursor: pointer;
   user-select: none;
-  list-style-position: outside;
-  padding: 3px 2px;
+  list-style: none;
+  min-height: 24px;
+  padding: 3px 0;
+  line-height: 18px;
+}
+
+.turn-activity > summary::-webkit-details-marker {
+  display: none;
+}
+
+.turn-activity > summary::before {
+  content: '▸';
+  width: 10px;
+  color: var(--text-muted);
+  font-size: 9px;
+  line-height: 1;
+  text-align: center;
+  transform-origin: 50% 50%;
+  transition: transform 120ms ease;
+}
+
+.turn-activity[open] > summary::before {
+  transform: rotate(90deg);
 }
 
 .turn-activity > summary:hover {
@@ -736,8 +765,39 @@ html, body, #root {
 
 .turn-activity-body {
   margin: 2px 0 6px;
-  padding-left: 8px;
+  margin-left: 5px;
+  padding-left: 7px;
   border-left: 1px solid var(--border);
+}
+
+.turn-activity-body .message-bubble-row {
+  width: 100%;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+
+.turn-activity-body .message-bubble {
+  width: 100%;
+}
+
+.tool-call-row {
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 12px;
+}
+
+.tool-call-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
 }
 
 .turn-files {
@@ -820,28 +880,30 @@ html, body, #root {
 }
 
 .chat-composer {
-  transition: box-shadow 160ms ease, background-color 160ms ease;
+  transition: background-color 160ms ease;
 }
 
-.chat-composer[data-runtime-mode='full-access'] {
-  box-shadow: inset 0 2px 0 color-mix(in srgb, var(--warning) 72%, transparent);
+.runtime-mode-select[data-runtime-mode='full-access'] {
+  background: color-mix(in srgb, var(--warning) 10%, var(--bg-tertiary)) !important;
+  border-color: var(--warning) !important;
+  color: var(--text-primary) !important;
 }
 
 .theme-translucent .chat-panel-header {
-  background: rgba(12, 12, 14, 0.26) !important;
+  background: rgba(8, 10, 14, 0.56) !important;
   backdrop-filter: blur(20px) saturate(125%);
   -webkit-backdrop-filter: blur(20px) saturate(125%);
 }
 
 .theme-translucent .chat-composer {
-  background: rgba(12, 12, 14, 0.5) !important;
+  background: rgba(8, 10, 14, 0.7) !important;
   backdrop-filter: blur(24px) saturate(130%);
   -webkit-backdrop-filter: blur(24px) saturate(130%);
 }
 
 .theme-translucent .chat-composer .sb-rci-content {
-  background: rgba(8, 8, 10, 0.5) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(5, 7, 10, 0.66) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 .theme-translucent .turn-files {

@@ -135,7 +135,6 @@ interface ActiveSession {
   pendingApprovals: Map<string, PendingApproval>
   assistantMessageText: Map<string, string>
   toolOutputText: Map<string, string>
-  startedSyntheticTools: Set<string>
   threadId: string | null
   /** Cached `skills/list` response. Populated on first listSkills() call. */
   skills: ProviderSkill[] | null
@@ -167,6 +166,53 @@ function stringifyMaybe(value: unknown): string | undefined {
 function isMissingThreadError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return /thread(?:\s+\S+)?\s+(?:is\s+)?not (?:found|loaded)\b|no rollout found\b/i.test(message)
+}
+
+function codexFileEdits(item: Record<string, unknown>): Array<{
+  file_path: string
+  move_path?: string
+  old_string: string
+  new_string: string
+}> {
+  if (!Array.isArray(item.changes)) return []
+  return item.changes.flatMap((value) => {
+    const change = asRecord(value)
+    if (typeof change?.path !== 'string' || typeof change.diff !== 'string') return []
+    const filePath = change.path
+    const kind = asRecord(change.kind)
+    const movePath = typeof kind?.move_path === 'string' ? kind.move_path : undefined
+    const hunks: Array<{ oldLines: string[]; newLines: string[] }> = []
+    let hunk: { oldLines: string[]; newLines: string[] } | null = null
+    for (const line of change.diff.split('\n')) {
+      if (line.startsWith('@@')) {
+        hunk = { oldLines: [], newLines: [] }
+        hunks.push(hunk)
+        continue
+      }
+      if (!hunk || line === '\\ No newline at end of file') continue
+      if (line.startsWith('-')) hunk.oldLines.push(line.slice(1))
+      else if (line.startsWith('+')) hunk.newLines.push(line.slice(1))
+      else if (line.startsWith(' ')) {
+        hunk.oldLines.push(line.slice(1))
+        hunk.newLines.push(line.slice(1))
+      }
+    }
+    const edits = hunks.map(({ oldLines, newLines }) => ({
+      file_path: filePath,
+      ...(movePath ? { move_path: movePath } : {}),
+      old_string: oldLines.join('\n'),
+      new_string: newLines.join('\n'),
+    }))
+    if (edits.length > 0 || !movePath) return edits
+    return [{ file_path: filePath, move_path: movePath, old_string: '', new_string: '' }]
+  })
+}
+
+function codexFileChangeOutput(status: unknown): string {
+  if (status === 'completed') return 'Applied'
+  if (status === 'declined') return 'Declined'
+  if (status === 'failed') return 'Failed'
+  return 'Finished'
 }
 
 function codexModelTier(id: string): 'fast' | 'balanced' | 'max' {
@@ -405,7 +451,6 @@ export class CodexAdapter implements ProviderAdapter {
       pendingApprovals: new Map(),
       assistantMessageText: new Map(),
       toolOutputText: new Map(),
-      startedSyntheticTools: new Set(),
       threadId: resumeThreadId,
       skills: null,
       models: null,
@@ -929,6 +974,25 @@ export class CodexAdapter implements ProviderAdapter {
       return
     }
 
+    if (itemType === 'fileChange') {
+      const edits = codexFileEdits(item)
+      for (const [index, input] of edits.entries()) {
+        const toolId = `${itemId}:${index}`
+        if (notification.method === 'item/started' || notification.method === 'item/completed') {
+          active.onEvent({ type: 'tool.started', threadId, toolId, toolName: 'Edit', input })
+        }
+        if (notification.method === 'item/completed') {
+          active.onEvent({
+            type: 'tool.completed',
+            threadId,
+            toolId,
+            output: codexFileChangeOutput(item.status),
+          })
+        }
+      }
+      return
+    }
+
     const toolName = codexToolName(item)
     if (!toolName) return
 
@@ -1157,13 +1221,25 @@ export class CodexAdapter implements ProviderAdapter {
       const message = notification.params?.error?.message
         ?? notification.params?.message
         ?? 'Codex reported an error'
-      log.error(`codex error notification: ${message}`, notification.params ?? {})
-      active.onEvent({
-        type: 'error',
-        threadId,
-        message,
-      })
-      if (!notification.params?.willRetry) {
+      const turnId = typeof notification.params?.turnId === 'string'
+        ? notification.params.turnId
+        : active.activeTurnId
+      if (notification.params?.willRetry) {
+        log.warn(`codex retry notification: ${message}`, notification.params ?? {})
+        active.onEvent({
+          type: 'turn.retrying',
+          threadId,
+          turnId: turnId ?? 'active',
+          message,
+        })
+      } else {
+        log.error(`codex error notification: ${message}`, notification.params ?? {})
+        active.onEvent({
+          type: 'error',
+          threadId,
+          message,
+          ...(turnId ? { turnId } : {}),
+        })
         active.session.status = 'error'
         active.onEvent({ type: 'status', threadId, status: 'error' })
       }
@@ -1171,9 +1247,15 @@ export class CodexAdapter implements ProviderAdapter {
       const turnStatus = notification.params?.turn?.status
       if (turnStatus === 'failed') {
         const message = notification.params?.turn?.error?.message ?? 'Codex turn failed'
+        const turnId = notification.params?.turn?.id
         log.error(`codex turn failed: ${message}`, notification.params ?? {})
         active.session.status = 'error'
-        active.onEvent({ type: 'error', threadId, message })
+        active.onEvent({
+          type: 'error',
+          threadId,
+          message,
+          ...(typeof turnId === 'string' ? { turnId } : {}),
+        })
         active.onEvent({ type: 'status', threadId, status: 'error' })
       } else {
         active.session.status = 'idle'
@@ -1183,6 +1265,9 @@ export class CodexAdapter implements ProviderAdapter {
         active.onEvent({
           type: 'turn.completed',
           threadId,
+          ...(typeof notification.params?.turn?.id === 'string'
+            ? { turnId: notification.params.turn.id }
+            : {}),
           costUsd: notification.params?.totalCostUsd,
           numTurns: notification.params?.numTurns,
           ...(durationMs !== undefined ? { durationMs } : {}),
@@ -1194,7 +1279,6 @@ export class CodexAdapter implements ProviderAdapter {
       // the Claude/OpenCode adapters).
       active.assistantMessageText.clear()
       active.toolOutputText.clear()
-      active.startedSyntheticTools.clear()
       active.activeTurnId = null
     } else if (method === 'turn/started') {
       active.session.status = 'running'
@@ -1236,21 +1320,22 @@ export class CodexAdapter implements ProviderAdapter {
           output: fullOutput,
         })
       }
-    } else if (method === 'item/fileChange/outputDelta' || method === 'item/fileChange/patchUpdated') {
-      const toolId = notification.params?.itemId
-      const output = stringifyMaybe(notification.params?.delta ?? notification.params?.patch ?? notification.params?.changes)
-      if (typeof toolId === 'string' && output) {
-        const fullOutput = method.endsWith('outputDelta')
-          ? `${active.toolOutputText.get(toolId) ?? ''}${output}`
-          : output
-        active.toolOutputText.set(toolId, fullOutput)
+    } else if (method === 'item/fileChange/patchUpdated') {
+      const params = asRecord(notification.params)
+      const itemId = typeof params?.itemId === 'string' ? params.itemId : null
+      if (!itemId) return
+      const edits = codexFileEdits({ changes: params?.changes })
+      for (const [index, input] of edits.entries()) {
         active.onEvent({
-          type: 'tool.completed',
+          type: 'tool.started',
           threadId,
-          toolId,
-          output: fullOutput,
+          toolId: `${itemId}:${index}`,
+          toolName: 'Edit',
+          input,
         })
       }
+    } else if (method === 'item/fileChange/outputDelta' || method === 'turn/diff/updated') {
+      return
     } else if (method === 'turn/plan/updated') {
       // `update_plan` is the model's own checklist, not a plan awaiting
       // approval: emitting `plan.proposed` drew Implement / Iterate buttons for
@@ -1263,27 +1348,6 @@ export class CodexAdapter implements ProviderAdapter {
           threadId,
           todoId: typeof params?.turnId === 'string' ? params.turnId : `todo_${threadId}`,
           items,
-        })
-      }
-    } else if (method === 'turn/diff/updated') {
-      const diff = typeof notification.params?.diff === 'string' ? notification.params.diff : ''
-      if (diff) {
-        const toolId = `diff_${notification.params?.turnId ?? Date.now()}`
-        if (!active.startedSyntheticTools.has(toolId)) {
-          active.startedSyntheticTools.add(toolId)
-          active.onEvent({
-            type: 'tool.started',
-            threadId,
-            toolId,
-            toolName: 'Edit',
-            input: { source: 'turn/diff/updated' },
-          })
-        }
-        active.onEvent({
-          type: 'tool.completed',
-          threadId,
-          toolId,
-          output: diff,
         })
       }
     } else if (method === 'thread/tokenUsage/updated') {

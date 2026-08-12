@@ -136,6 +136,7 @@ export type RuntimeEvent = (
   | RuntimeRequestOpenedEvent
   | RuntimeRequestClosedEvent
   | RuntimeTurnCompletedEvent
+  | RuntimeTurnRetryingEvent
   | RuntimeErrorEvent
   | RuntimeStatusEvent
   | RuntimeSessionEvent
@@ -256,6 +257,7 @@ export interface RuntimeRequestClosedEvent {
 export interface RuntimeTurnCompletedEvent {
   type: 'turn.completed'
   threadId: string
+  turnId?: string
   costUsd?: number
   usedTokens?: number
   maxTokens?: number
@@ -269,10 +271,18 @@ export interface RuntimeTurnCompletedEvent {
   durationMs?: number
 }
 
+export interface RuntimeTurnRetryingEvent {
+  type: 'turn.retrying'
+  threadId: string
+  turnId: string
+  message: string
+}
+
 export interface RuntimeErrorEvent {
   type: 'error'
   threadId: string
   message: string
+  turnId?: string
 }
 
 export interface RuntimeStatusEvent {

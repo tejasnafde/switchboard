@@ -1168,6 +1168,8 @@ export function ChatInput({
         {/* Runtime mode selector (per-session) */}
         {runtimeMode && onRuntimeModeChange && (
           <select
+            className="runtime-mode-select"
+            data-runtime-mode={runtimeMode}
             value={runtimeMode}
             onChange={(e) => onRuntimeModeChange(e.target.value as RuntimeMode)}
             style={{

@@ -12,6 +12,11 @@ vi.setConfig({ testTimeout: 20_000, hookTimeout: 20_000 })
 const writes: string[] = []
 let emitFailedTurn = false
 let turnStartErrors: string[] = []
+let turnRetryMessages: string[] = []
+let fileChanges: Array<{ path: string; kind: { type: string; move_path?: string | null }; diff: string }> = []
+let fileChangePatchUpdates: typeof fileChanges[] = []
+let fileChangeStatus = 'completed'
+let omitFileChangesAtStart = false
 let stallInitialize = false
 let initStderrChunks: string[] = []
 let lastChild: MockChild | null = null
@@ -158,6 +163,18 @@ function makeChild(): MockChild {
               turn: { id: 'turn-1', status: 'inProgress' },
             },
           }) + '\n')
+          for (const retryMessage of turnRetryMessages) {
+            stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'error',
+              params: {
+                error: { message: retryMessage },
+                willRetry: true,
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+              },
+            }) + '\n')
+          }
           stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             method: 'thread/status/changed',
@@ -233,6 +250,48 @@ function makeChild(): MockChild {
               },
             },
           }) + '\n')
+          if (fileChanges.length > 0) {
+            stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'item/started',
+              params: {
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+                item: {
+                  id: 'file-1',
+                  type: 'fileChange',
+                  changes: omitFileChangesAtStart ? [] : fileChanges,
+                  status: 'inProgress',
+                },
+              },
+            }) + '\n')
+            for (const changes of fileChangePatchUpdates) {
+              stdout.write(JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'item/fileChange/patchUpdated',
+                params: {
+                  threadId: 'codex-thread-1',
+                  turnId: 'turn-1',
+                  itemId: 'file-1',
+                  changes,
+                },
+              }) + '\n')
+            }
+            stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'item/completed',
+              params: {
+                threadId: 'codex-thread-1',
+                turnId: 'turn-1',
+                item: {
+                  id: 'file-1',
+                  type: 'fileChange',
+                  changes: fileChanges,
+                  status: fileChangeStatus,
+                },
+              },
+            }) + '\n')
+          }
           stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             method: 'turn/diff/updated',
@@ -336,6 +395,11 @@ describe('CodexAdapter', () => {
     writes.length = 0
     emitFailedTurn = false
     turnStartErrors = []
+    turnRetryMessages = []
+    fileChanges = []
+    fileChangePatchUpdates = []
+    fileChangeStatus = 'completed'
+    omitFileChangesAtStart = false
     stallInitialize = false
     initStderrChunks = []
     lastChild = null
@@ -508,6 +572,32 @@ describe('CodexAdapter', () => {
       threadId: 'thread-1',
       status: 'idle',
     })
+  })
+
+  it('emits retry progress instead of errors while Codex reconnects a turn', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    turnRetryMessages = ['Reconnecting... 1/5', 'Reconnecting... 2/5']
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    await adapter.sendTurn('thread-1', 'keep going')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'turn.retrying',
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+      message: 'Reconnecting... 2/5',
+    })
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'error',
+      message: expect.stringContaining('Reconnecting'),
+    }))
   })
 
   it('lists the live Codex model catalog instead of relying on stale static ids', async () => {
@@ -763,7 +853,7 @@ describe('CodexAdapter', () => {
     })
   })
 
-  it('shows Codex turn diffs as Edit tool output', async () => {
+  it('does not render the aggregate turn diff as a duplicate raw Edit card', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
@@ -776,18 +866,194 @@ describe('CodexAdapter', () => {
 
     await adapter.sendTurn('thread-1', 'hello codex')
 
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      toolId: 'diff_turn-1',
+    }))
+  })
+
+  it('maps every Codex fileChange hunk to a Claude-compatible Edit card', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    fileChanges = [
+      {
+        path: '/tmp/project/src/a.ts',
+        kind: { type: 'update', move_path: null },
+        diff: '@@ -1,2 +1,2 @@\n const value = 1\n-oldCall()\n+newCall()\n@@ -20 +20 @@\n---counter\n+++counter\n',
+      },
+      {
+        path: '/tmp/project/src/b.ts',
+        kind: { type: 'add' },
+        diff: '@@ -0,0 +1 @@\n+export const added = true\n',
+      },
+    ]
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+    await adapter.sendTurn('thread-1', 'edit both files')
+
     expect(onEvent).toHaveBeenCalledWith({
       type: 'tool.started',
       threadId: 'thread-1',
-      toolId: 'diff_turn-1',
+      toolId: 'file-1:0',
       toolName: 'Edit',
-      input: { source: 'turn/diff/updated' },
+      input: {
+        file_path: '/tmp/project/src/a.ts',
+        old_string: 'const value = 1\noldCall()',
+        new_string: 'const value = 1\nnewCall()',
+      },
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.started',
+      threadId: 'thread-1',
+      toolId: 'file-1:1',
+      toolName: 'Edit',
+      input: {
+        file_path: '/tmp/project/src/a.ts',
+        old_string: '--counter',
+        new_string: '++counter',
+      },
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.started',
+      threadId: 'thread-1',
+      toolId: 'file-1:2',
+      toolName: 'Edit',
+      input: {
+        file_path: '/tmp/project/src/b.ts',
+        old_string: '',
+        new_string: 'export const added = true',
+      },
     })
     expect(onEvent).toHaveBeenCalledWith({
       type: 'tool.completed',
       threadId: 'thread-1',
-      toolId: 'diff_turn-1',
-      output: 'diff --git a/a.txt b/a.txt\n+hello\n',
+      toolId: 'file-1:0',
+      output: 'Applied',
+    })
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      toolId: 'file-1',
+      output: expect.stringContaining('changes'),
+    }))
+  })
+
+  it('does not call a failed Codex file change Applied', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    fileChanges = [{
+      path: '/tmp/project/src/a.ts',
+      kind: { type: 'update', move_path: null },
+      diff: '@@ -1 +1 @@\n-old\n+new\n',
+    }]
+    fileChangeStatus = 'failed'
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'try the edit')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.completed',
+      threadId: 'thread-1',
+      toolId: 'file-1:0',
+      output: 'Failed',
+    })
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      toolId: 'file-1:0',
+      output: 'Applied',
+    }))
+  })
+
+  it('renders a Codex edit when the diff arrives only with item/completed', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    fileChanges = [{
+      path: '/tmp/project/src/a.ts',
+      kind: { type: 'update', move_path: null },
+      diff: '@@ -1 +1 @@\n-old\n+new\n',
+    }]
+    omitFileChangesAtStart = true
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'make the edit')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.started',
+      threadId: 'thread-1',
+      toolId: 'file-1:0',
+      toolName: 'Edit',
+      input: {
+        file_path: '/tmp/project/src/a.ts',
+        old_string: 'old',
+        new_string: 'new',
+      },
+    })
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.completed',
+      threadId: 'thread-1',
+      toolId: 'file-1:0',
+      output: 'Applied',
+    })
+  })
+
+  it('refreshes an Edit card when Codex expands a file patch', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    fileChanges = [{
+      path: '/tmp/project/src/a.ts',
+      kind: { type: 'update', move_path: null },
+      diff: '@@ -1,2 +1,2 @@\n-old()\n+new()\n keep()\n',
+    }]
+    fileChangePatchUpdates = [[{
+      path: '/tmp/project/src/a.ts',
+      kind: { type: 'update', move_path: null },
+      diff: '@@ -1,3 +1,3 @@\n-old()\n+new()\n keep()\n-tail()\n+replacement()\n',
+    }]]
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'expand the edit')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.started',
+      threadId: 'thread-1',
+      toolId: 'file-1:0',
+      toolName: 'Edit',
+      input: {
+        file_path: '/tmp/project/src/a.ts',
+        old_string: 'old()\nkeep()\ntail()',
+        new_string: 'new()\nkeep()\nreplacement()',
+      },
+    })
+  })
+
+  it('renders a rename-only Codex file change', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+    fileChanges = [{
+      path: '/tmp/project/src/old.ts',
+      kind: { type: 'update', move_path: '/tmp/project/src/new.ts' },
+      diff: '',
+    }]
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'rename the file')
+
+    expect(onEvent).toHaveBeenCalledWith({
+      type: 'tool.started',
+      threadId: 'thread-1',
+      toolId: 'file-1:0',
+      toolName: 'Edit',
+      input: {
+        file_path: '/tmp/project/src/old.ts',
+        move_path: '/tmp/project/src/new.ts',
+        old_string: '',
+        new_string: '',
+      },
     })
   })
 
@@ -958,6 +1224,7 @@ describe('CodexAdapter', () => {
     expect(onEvent).toHaveBeenCalledWith({
       type: 'error',
       threadId: 'thread-1',
+      turnId: 'turn-1',
       message: 'Mock Codex failure',
     })
     expect(onEvent).toHaveBeenCalledWith({

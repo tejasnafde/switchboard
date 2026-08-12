@@ -55,7 +55,12 @@ function summarizeTool(kind: ToolKind, name: string, input: string): ToolSummary
       case 'read':
         return { label: 'Read', detail: shortenPath(p.file_path) }
       case 'edit':
-        return { label: 'Edit', detail: shortenPath(p.file_path) }
+        return {
+          label: p.move_path ? 'Rename' : 'Edit',
+          detail: p.move_path
+            ? `${shortenPath(p.file_path)} → ${shortenPath(p.move_path)}`
+            : shortenPath(p.file_path),
+        }
       case 'write':
         return { label: 'Write', detail: shortenPath(p.file_path) }
       case 'glob':
@@ -113,6 +118,11 @@ function ExpandedBody({ kind, toolCall }: { kind: ToolKind; toolCall: ToolCall }
     return (
       <div style={{ padding: '8px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
         <FileLabel path={parsed.file_path} />
+        {parsed.move_path && (
+          <div style={{ color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+            → {parsed.move_path}
+          </div>
+        )}
         {kind === 'edit' ? (
           <>
             {parsed.old_string && <DiffChunk type="remove" content={parsed.old_string} />}
@@ -298,31 +308,12 @@ export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
   const hasRunning = !toolCall.output
 
   return (
-    <div
-      className="tool-call-row"
-      style={{
-        marginTop: '2px',
-        overflow: 'hidden',
-        fontSize: '12px',
-      }}
-    >
+    <div className="tool-call-row">
       <button
+        className="tool-call-trigger"
         type="button"
         aria-expanded={expanded}
         onClick={() => setExpanded(!expanded)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          width: '100%',
-          padding: '5px 8px',
-          background: 'transparent',
-          border: 'none',
-          color: 'var(--text-secondary)',
-          cursor: 'pointer',
-          textAlign: 'left',
-          fontSize: '12px',
-        }}
       >
         {/* Neutral glyph: tool type is useful; decorative category color is not. */}
         <span style={{

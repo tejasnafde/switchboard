@@ -7,6 +7,7 @@ import { useMachineStore } from '../../stores/machine-store'
 import { ROTATION_MARKER_PREFIX, AGENT_SWITCH_MARKER_PREFIX, CONTEXT_HANDOFF_MARKER_PREFIX } from './rotationMarker'
 import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
 import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from './sendToCommand'
+import { clearProviderRetry, upsertProviderRetry } from './providerRetry'
 import { MessageList } from './MessageList'
 import { ChatInput } from './ChatInput'
 import { chatIdentity } from './chatIdentity'
@@ -407,6 +408,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
         case 'tool.started': {
+          const existing = useAgentStore.getState().sessions
+            .find((s) => s.id === tid)?.messages
+            .find((m) => m.toolCalls?.some((tc) => tc.id === event.toolId))
+          if (existing) {
+            updateMessage(tid, existing.id, {
+              toolCalls: existing.toolCalls?.map((tc) => tc.id === event.toolId
+                ? { ...tc, name: event.toolName, input: typeof event.input === 'string' ? event.input : JSON.stringify(event.input, null, 2) }
+                : tc),
+            })
+            break
+          }
           appendMessage(tid, {
             id: `tool_${event.toolId}`,
             role: 'assistant',
@@ -480,6 +492,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
         case 'turn.completed': {
+          clearProviderRetry(tid)
           // Flush buffered content if streaming was off this turn.
           if (!streamingEnabledRef.current) {
             const drained = drainTurn(streamingBuffer, tid)
@@ -522,6 +535,10 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
               onClick: () => store.setActiveSession(tid),
             })
           }
+          break
+        }
+        case 'turn.retrying': {
+          upsertProviderRetry(tid, event.message)
           break
         }
         case 'context_window': {
@@ -666,6 +683,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
         case 'error': {
+          clearProviderRetry(tid)
           const errMsg: ChatMessage = {
             id: `error_${Date.now()}`,
             role: 'system',
@@ -680,6 +698,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
         case 'status': {
           updateStatus(tid, event.status as AgentStatus)
+          if (event.status !== 'running') clearProviderRetry(tid)
           break
         }
       }

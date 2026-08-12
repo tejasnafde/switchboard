@@ -117,6 +117,23 @@ describe('agent-store', () => {
     expect(session.messages).toHaveLength(0)
   })
 
+  it('removes one temporary message without changing the transcript around it', () => {
+    const store = useAgentStore.getState()
+    store.addSession({ id: 's1', type: 'codex', status: 'running' })
+    store.setMessages('s1', [
+      { id: 'user-1', role: 'user', content: 'keep going', timestamp: 1000 },
+      { id: 'retry-turn-1', role: 'system', content: 'Codex disconnected · retrying 2/5', timestamp: 2000 },
+      { id: 'assistant-1', role: 'assistant', content: 'Done', timestamp: 3000 },
+    ])
+
+    useAgentStore.getState().removeMessage('s1', 'retry-turn-1')
+
+    expect(useAgentStore.getState().sessions[0].messages.map((message) => message.id)).toEqual([
+      'user-1',
+      'assistant-1',
+    ])
+  })
+
   it('removeSession calls provider.stopSession to tear down the main-process adapter', () => {
     // Tab close / archive must kill the adapter session in main, not just
     // drop the renderer state - otherwise the Codex / OpenCode child

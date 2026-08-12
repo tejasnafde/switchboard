@@ -13,7 +13,7 @@
  * Requires a display (macOS desktop, or xvfb on Linux).
  */
 import { _electron as electron } from 'playwright'
-import { mkdtempSync, existsSync } from 'node:fs'
+import { mkdtempSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
 
@@ -24,6 +24,10 @@ if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
 }
 
 const userDataDir = mkdtempSync(join(tmpdir(), 'sb-e2e-'))
+const cleanup = () => rmSync(userDataDir, { recursive: true, force: true })
+process.once('exit', cleanup)
+process.once('SIGINT', () => process.exit(130))
+process.once('SIGTERM', () => process.exit(143))
 let failures = 0
 const check = (cond, msg) => {
   console.log(`${cond ? '✓' : '✗'} ${msg}`)
@@ -31,10 +35,23 @@ const check = (cond, msg) => {
 }
 
 const app = await electron.launch({
-  args: ['.', `--user-data-dir=${userDataDir}`],
+  args: ['.'],
   cwd: repoRoot,
-  env: { ...process.env, ELECTRON_RUN_AS_NODE: '', ELECTRON_DISABLE_SECURITY_WARNINGS: '1' },
+  env: {
+    ...process.env,
+    ELECTRON_RUN_AS_NODE: '',
+    ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
+    SB_USER_DATA: userDataDir,
+  },
 })
+
+async function closeApp() {
+  const closed = await Promise.race([
+    app.close().then(() => true, () => true),
+    new Promise((resolve) => setTimeout(() => resolve(false), 5_000)),
+  ])
+  if (!closed) app.process().kill('SIGKILL')
+}
 
 try {
   const win = await app.firstWindow()
@@ -109,7 +126,8 @@ try {
   console.error('✗ harness error:', err?.message ?? err)
   failures++
 } finally {
-  await app.close().catch(() => {})
+  await closeApp()
+  cleanup()
 }
 
 console.log(failures === 0 ? '\nE2E PASSED' : `\nE2E FAILED (${failures} check(s))`)

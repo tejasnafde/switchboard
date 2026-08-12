@@ -147,6 +147,7 @@ interface AgentStore {
   adoptLiveSessions: (live: LiveSessionSummary[], machineId?: string) => void
   appendMessage: (sessionId: string, message: ChatMessage) => void
   updateMessage: (sessionId: string, messageId: string, updates: Partial<ChatMessage>) => void
+  removeMessage: (sessionId: string, messageId: string) => void
   setMessages: (sessionId: string, messages: ChatMessage[]) => void
   clearMessages: (sessionId: string) => void
   setConversationId: (sessionId: string, conversationId: string) => void
@@ -325,6 +326,15 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
               ),
             }
           : s
+      ),
+    })),
+
+  removeMessage: (sessionId, messageId) =>
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.id === sessionId
+          ? { ...session, messages: session.messages.filter((message) => message.id !== messageId) }
+          : session
       ),
     })),
 
