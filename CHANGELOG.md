@@ -2,6 +2,19 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.24 - Codex retries and diffs render like first-class UI
+
+### Fixed
+- **Recoverable Codex reconnects filled the transcript with permanent red errors even when the turn ultimately succeeded.** Retry notifications now update one temporary status card in place, disappear when the turn succeeds or stops, and persist only a final failure.
+- **Codex file edits rendered as raw JSON instead of the same readable diff cards used by Claude.** File-change hunks now become structured Edit cards, live patch updates refresh the existing card, rename-only changes remain visible, and the aggregate raw turn diff is suppressed instead of appearing as a duplicate.
+- **The translucent theme lost contrast against bright wallpaper.** The renderer now applies one charcoal material tint rather than stacking translucent backgrounds across the document, with stable panel, composer, terminal, and border contrast.
+- **Tool summaries were double-indented and their disclosure marker, tree rule, icon, and label did not align.** The summary and nested tool rows now share one optical grid with explicit disclosure and button styling.
+- **Full Access drew a yellow line across the entire composer.** The warning accent is confined to the runtime-mode selector.
+
+### Notes
+- A new Electron Playwright visual test exercises the real renderer with isolated user data, checks the translucent material and tool-summary geometry, and compares a macOS pixel baseline. The backend-host E2E and visual harness both clean temporary data and forcibly terminate Electron if graceful shutdown stalls.
+- Review caught evolving Codex patches, rename-only changes, compounded translucent opacity, ineffective screenshot coverage, and E2E process leaks before release. The final gate passed 2,378 tests across 228 files, both typechecks, lint, all production bundles, the packaged-main smoke test, and both Electron E2E flows.
+
 ## 0.8.23 - Codex recovers when its native thread disappears
 
 ### Fixed
