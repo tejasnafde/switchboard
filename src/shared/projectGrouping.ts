@@ -5,28 +5,6 @@
  */
 import type { Project, Workspace } from './types'
 
-/**
- * Sort projects by a saved `projectOrder` (array of paths). Paths missing from
- * the order keep their relative position at the end. Used by the local sidebar
- * (settings key on the local DB) and by connected remote machines (same key on
- * the remote's own DB).
- */
-export function applyProjectOrder<T extends { path: string }>(projects: T[], order: string[] | null): T[] {
-  // `order` comes from a persisted setting - a corrupt row can hold valid JSON
-  // that isn't an array. Guard here so every caller falls back to scan order
-  // instead of throwing outside its parse try/catch.
-  if (!Array.isArray(order) || order.length === 0) return projects
-  const idx = new Map(order.map((p, i) => [p, i]))
-  return [...projects].sort((a, b) => {
-    const ai = idx.get(a.path) ?? -1
-    const bi = idx.get(b.path) ?? -1
-    if (ai === -1 && bi === -1) return 0
-    if (ai === -1) return 1
-    if (bi === -1) return -1
-    return ai - bi
-  })
-}
-
 export interface WorkspaceGroup {
   workspace: Workspace | null // null = the implicit "Ungrouped" pseudo-workspace
   projects: Project[]
@@ -80,4 +58,3 @@ export function colorTokenForWorkspace(w: Workspace): string {
   const idx = Math.abs(h) % 6 + 1
   return `var(--workspace-color-${idx})`
 }
-

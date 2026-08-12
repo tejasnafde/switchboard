@@ -196,7 +196,6 @@ function RemoteProject({
 
 export function MachineLayer({
   children,
-  onAddMachine,
   onEditMachine,
   onOpenRemoteSession,
   onNewRemoteChat,
@@ -204,7 +203,6 @@ export function MachineLayer({
   onSessionContextMenu,
 }: {
   children: ReactNode
-  onAddMachine: () => void
   onEditMachine?: (machine: Machine) => void
   onOpenRemoteSession?: (machineId: string, projectPath: string, session: SessionSummary) => void
   onNewRemoteChat?: (machineId: string, projectPath: string) => void
@@ -493,9 +491,6 @@ export function MachineLayer({
           ))}
         </SortableContext>
       </DndContext>
-      <button className="sidebar-add-machine" onClick={onAddMachine}>
-        <span style={{ fontSize: '13px', lineHeight: 1 }}>+</span> Add machine
-      </button>
       {addProjectFor && (
         <AddRemoteProjectModal machineId={addProjectFor} onClose={() => setAddProjectFor(null)} />
       )}

@@ -42,8 +42,8 @@ describe('isChannelAllowed', () => {
   })
 
   it('keeps a phone from raising the machine-wide permission default', () => {
-    // `settings:set` is deliberately ungated - the phone writes projectOrder
-    // through it. But the settings table now also holds the runtime mode that
+    // `settings:set` is deliberately ungated for ordinary preferences. But
+    // the settings table also holds the runtime mode that
     // a session starts in when nobody said otherwise, and the phone starts
     // sessions without one. Left open, a stolen phone credential could write
     // `full-access` and then open any chat to get an agent with full file and

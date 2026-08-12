@@ -15,8 +15,8 @@
  *
  * Why rendered order matters: `groupProjectsByWorkspace` emits buckets
  * by `workspace.sortOrder`, so the rendered flat order can differ from
- * `projects` array order whenever the saved `projectOrder` interleaves
- * workspaces. Using raw-array indices to drive `arrayMove` on a flat
+ * `projects` array order when projects move between workspace buckets.
+ * Using raw-array indices to drive `arrayMove` on a flat
  * rendered drag was the source of the "swap adjacent items across
  * workspace boundary" bug.
  *

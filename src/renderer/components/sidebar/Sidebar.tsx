@@ -32,11 +32,15 @@ import {
   groupProjectsByWorkspace,
   applySidebarFilter,
   colorTokenForWorkspace,
-  applyProjectOrder,
   formatRelativeTime,
   type WorkspaceGroup,
 } from './sidebar-helpers'
 import type { Workspace } from '@shared/types'
+import {
+  moveProjectToWorkspace,
+  projectOrganizationItems,
+  reorderWorkspacesById,
+} from '@shared/workspaceOrganization'
 import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { RecentSessionsSection } from './RecentSessionsSection'
@@ -106,10 +110,14 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
   const [editValue, setEditValue] = useState('')
   const [filterQuery, setFilterQuery] = useState('')
   const [managerOpen, setManagerOpen] = useState(false)
+  const [managerStartsCreating, setManagerStartsCreating] = useState(false)
+  const [managerWorkspaceId, setManagerWorkspaceId] = useState<string | null | undefined>(undefined)
+  const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [addMachineOpen, setAddMachineOpen] = useState(false)
   const [editMachine, setEditMachine] = useState<Machine | null>(null)
   const [savedOpen, setSavedOpen] = useState(false)
   const editRef = useRef<HTMLInputElement>(null)
+  const createTriggerRef = useRef<HTMLButtonElement>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
   const machineProjects = useMachineStore((s) => s.projects)
   const [recentLimit, setRecentLimit] = useState<RecentSessionLimit>(DEFAULT_RECENT_SESSION_LIMIT)
@@ -182,6 +190,11 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     y: number
     project: Project
   } | null>(null)
+  const [workspaceMenu, setWorkspaceMenu] = useState<{
+    x: number
+    y: number
+    workspace: Workspace
+  } | null>(null)
   // Remote (MachineLayer) session rows - actions route to the machine and
   // mutate the snapshot, not `projects`.
   const [remoteMenu, setRemoteMenu] = useState<{
@@ -201,29 +214,43 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   )
 
+  useEffect(() => {
+    if (!createMenuOpen) return
+    const close = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Element) || !target.closest('.sidebar-create-wrap')) setCreateMenuOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setCreateMenuOpen(false)
+        createTriggerRef.current?.focus()
+      }
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [createMenuOpen])
+
+  useEffect(() => {
+    if (!createMenuOpen) return
+    requestAnimationFrame(() => {
+      document.querySelector<HTMLButtonElement>('.sidebar-create-menu [role="menuitem"]')?.focus()
+    })
+  }, [createMenuOpen])
+
   const refreshWorkspaces = useCallback(() => {
     window.api.app.workspaces.list().then((list) => setWorkspaces(list ?? [])).catch(() => {})
   }, [])
 
-  // Every refetch goes through this. Applying projectOrder only at mount meant
-  // any later refresh reinstated the DB's added_at order and silently undid a
-  // user's drag - and handleDragEnd would then persist that reset order.
   const loadProjects = useCallback(async (firstRun = false): Promise<void> => {
     const saved: Project[] = await window.api.app.getProjects()
-    if (!saved?.length) return
     if (firstRun && useLayoutStore.getState().sidebarCollapsedProjects.length === 0) {
       setSidebarCollapsedProjects(saved.map((p) => p.path))
     }
-    const orderJson = await window.api.settings.get('projectOrder')
-    let order: string[] | null = null
-    if (orderJson) {
-      try {
-        order = JSON.parse(orderJson)
-      } catch {
-        order = null // corrupt setting - fall back to scan order
-      }
-    }
-    setProjects(order ? applyProjectOrder(saved, order) : saved)
+    setProjects(saved)
   }, [setSidebarCollapsedProjects])
 
   useEffect(() => {
@@ -475,12 +502,14 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     })
   }, [])
 
-  const handleAssignWorkspace = useCallback(async (projectPath: string, workspaceId: string | null) => {
-    setProjects((prev) => prev.map((p) => p.path === projectPath ? { ...p, workspaceId } : p))
-    try {
-      await window.api.app.assignProjectWorkspace(projectPath, workspaceId)
-    } catch { /* optimistic - next refresh will correct */ }
-  }, [])
+  const handleAssignWorkspace = useCallback((projectPath: string, workspaceId: string | null) => {
+    setProjects((prev) => {
+      const next = moveProjectToWorkspace(prev, projectPath, workspaceId)
+      void window.api.app.organizeProjects(projectOrganizationItems(next))
+        .catch(() => { void loadProjects() })
+      return next
+    })
+  }, [loadProjects])
 
   // Inline edit, not window.prompt - Electron renderers don't implement
   // prompt() (returns null), so the prompt version silently did nothing.
@@ -548,23 +577,18 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     setProjects((prev) => {
       const byPath = new Map(prev.map((p) => [p.path, p]))
       const reordered = newRenderedOrder
-        .map((path) => byPath.get(path)!)
+        .map((path) => byPath.get(path))
+        .filter((project): project is Project => project !== undefined)
         .map((p) =>
           outcome.type === 'reassign' && p.path === outcome.projectPath
             ? { ...p, workspaceId: outcome.targetWorkspaceId }
             : p,
         )
-      const order = reordered.map((p) => p.path)
-      window.api.settings.set('projectOrder', JSON.stringify(order)).catch(() => {})
+      void window.api.app.organizeProjects(projectOrganizationItems(reordered))
+        .catch(() => { void loadProjects() })
       return reordered
     })
-
-    if (outcome.type === 'reassign') {
-      void window.api.app
-        .assignProjectWorkspace(outcome.projectPath, outcome.targetWorkspaceId)
-        .catch(() => { /* optimistic - next refresh corrects */ })
-    }
-  }, [projects, workspaces])
+  }, [loadProjects, projects, workspaces])
 
   // Compute the workspace-grouped tree, then apply the (debounced) filter.
   // The filter expansion sets are merged with the persisted collapse sets:
@@ -899,7 +923,6 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
         )}
 
         <MachineLayer
-          onAddMachine={() => setAddMachineOpen(true)}
           onEditMachine={(machine) => setEditMachine(machine)}
           onOpenRemoteSession={(machineId, projectPath, session) => onSessionSelect?.(session, projectPath, machineId)}
           onNewRemoteChat={(machineId, projectPath) => onNewChat?.(projectPath, machineId)}
@@ -918,44 +941,73 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
             strategy={verticalListSortingStrategy}
           >
             {filtered.groups.map((group) => {
-              const wsId = group.workspace?.id ?? ungroupedKey
+              const workspace = group.workspace
+              const wsId = workspace?.id ?? ungroupedKey
               const wsCollapsed = isWorkspaceCollapsed(wsId)
               const sessionTotal = group.projects.reduce((acc, p) => acc + p.sessions.length, 0)
-              const spineColor = group.workspace ? colorTokenForWorkspace(group.workspace) : 'var(--text-muted)'
+              const spineColor = workspace ? colorTokenForWorkspace(workspace) : 'var(--text-muted)'
               return (
                 <section
                   key={wsId}
-                  className={`sidebar-workspace ${wsCollapsed ? 'collapsed' : ''} ${group.workspace ? '' : 'ungrouped'}`}
+                  className={`sidebar-workspace ${wsCollapsed ? 'collapsed' : ''} ${workspace ? '' : 'ungrouped'}`}
                   style={{ ['--spine' as string]: spineColor } as React.CSSProperties}
                 >
-                  <button
-                    type="button"
-                    className="sidebar-workspace-header"
-                    onClick={() => toggleSidebarWorkspace(wsId)}
-                    aria-expanded={!wsCollapsed}
-                    onContextMenu={(e) => {
-                      // Right-clicking a workspace header opens the manager
-                      // \u2014 keeps the menu surface tiny without a second flavor.
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setManagerOpen(true)
-                    }}
-                  >
-                    <span className="sidebar-chevron">{wsCollapsed ? '\u25B6' : '\u25BC'}</span>
-                    <span className="sidebar-workspace-name">
-                      {group.workspace?.name ?? 'Ungrouped'}
-                    </span>
-                    <GroupUnreadBadge
-                      sessionIds={group.projects.flatMap((p) => p.sessions.map((s) => s.id))}
-                      expanded={!wsCollapsed}
-                    />
-                    <span
-                      className="sidebar-workspace-count"
-                      title={`${group.projects.length} project${group.projects.length === 1 ? '' : 's'}, ${sessionTotal} thread${sessionTotal === 1 ? '' : 's'}`}
+                  <div className="sidebar-workspace-header-row">
+                    <button
+                      type="button"
+                      className="sidebar-workspace-header"
+                      onClick={() => toggleSidebarWorkspace(wsId)}
+                      aria-expanded={!wsCollapsed}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        if (workspace) {
+                          setWorkspaceMenu({
+                            x: event.clientX,
+                            y: event.clientY,
+                            workspace,
+                          })
+                        }
+                      }}
                     >
-                      {group.projects.length}{'\u00B7'}{sessionTotal}
-                    </span>
-                  </button>
+                      <span className="sidebar-chevron">{wsCollapsed ? '\u25B6' : '\u25BC'}</span>
+                      <span className="sidebar-workspace-name">
+                        {workspace?.name ?? 'Ungrouped'}
+                      </span>
+                      <GroupUnreadBadge
+                        sessionIds={group.projects.flatMap((p) => p.sessions.map((s) => s.id))}
+                        expanded={!wsCollapsed}
+                      />
+                      <span
+                        className="sidebar-workspace-count"
+                        title={`${group.projects.length} project${group.projects.length === 1 ? '' : 's'}, ${sessionTotal} thread${sessionTotal === 1 ? '' : 's'}`}
+                      >
+                        {group.projects.length}{'\u00B7'}{sessionTotal}
+                      </span>
+                    </button>
+                    {workspace && (
+                      <button
+                        type="button"
+                        className="sidebar-workspace-actions"
+                        aria-label={`Actions for ${workspace.name}`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          const rect = event.currentTarget.getBoundingClientRect()
+                          setWorkspaceMenu({
+                            x: rect.right,
+                            y: rect.bottom,
+                            workspace,
+                          })
+                        }}
+                      >
+                        <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                          <circle cx="5" cy="12" r="1.6" />
+                          <circle cx="12" cy="12" r="1.6" />
+                          <circle cx="19" cy="12" r="1.6" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                   {!wsCollapsed && (
                     <div className="sidebar-workspace-body">
                       {group.projects.map((project) => (
@@ -995,21 +1047,88 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
 
       {/* Footer */}
       <div className="sidebar-footer">
-        <button onClick={handleAddProject} className="sidebar-add-project-btn">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Add Project
-        </button>
+        <div className="sidebar-create-wrap">
+          <button
+            ref={createTriggerRef}
+            type="button"
+            className="sidebar-create-trigger"
+            aria-haspopup="menu"
+            aria-expanded={createMenuOpen}
+            onClick={() => setCreateMenuOpen((open) => !open)}
+          >
+            <svg aria-hidden="true" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Create
+            <svg aria-hidden="true" className="sidebar-create-caret" width="10" height="10" viewBox="0 0 20 20" fill="currentColor">
+              <path d="m5 7.5 5 5 5-5Z" />
+            </svg>
+          </button>
+          {createMenuOpen && (
+            <div
+              className="sidebar-create-menu sb-floating-surface"
+              role="menu"
+              onKeyDown={(event) => {
+                if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+                event.preventDefault()
+                const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+                const current = items.indexOf(document.activeElement as HTMLButtonElement)
+                const delta = event.key === 'ArrowDown' ? 1 : -1
+                items[(current + delta + items.length) % items.length]?.focus()
+              }}
+            >
+              <button type="button" role="menuitem" onClick={() => {
+                setCreateMenuOpen(false)
+                void handleAddProject()
+              }}>
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M3 7a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+                  <path d="M12 10v6M9 13h6" />
+                </svg>
+                <span><strong>New project</strong><small>Add a folder from this Mac</small></span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => {
+                setCreateMenuOpen(false)
+                setManagerWorkspaceId(undefined)
+                setManagerStartsCreating(true)
+                setManagerOpen(true)
+              }}>
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path d="M4 6h16M4 12h16M4 18h10" />
+                </svg>
+                <span><strong>New workspace</strong><small>Group related projects</small></span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => {
+                setCreateMenuOpen(false)
+                setAddMachineOpen(true)
+              }}>
+                <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <rect x="3" y="4" width="18" height="6" rx="1" />
+                  <rect x="3" y="14" width="18" height="6" rx="1" />
+                  <path d="M7 7h.01M7 17h.01" />
+                </svg>
+                <span><strong>New machine</strong><small>Connect over SSH or IAP</small></span>
+              </button>
+            </div>
+          )}
+        </div>
         <button
-          onClick={() => setManagerOpen(true)}
-          className="sidebar-add-project-btn"
-          title="Manage workspaces"
+          type="button"
+          onClick={() => {
+            setManagerWorkspaceId(undefined)
+            setManagerStartsCreating(false)
+            setManagerOpen(true)
+          }}
+          className="sidebar-organize-btn"
+          aria-label="Organize workspaces and projects"
+          title="Organize sidebar"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 7h18M3 12h18M3 17h18" />
+          <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+            <circle cx="9" cy="6" r="1.7" fill="var(--bg-elevated)" />
+            <circle cx="15" cy="12" r="1.7" fill="var(--bg-elevated)" />
+            <circle cx="11" cy="18" r="1.7" fill="var(--bg-elevated)" />
           </svg>
-          Workspaces
         </button>
       </div>
 
@@ -1090,6 +1209,51 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
         />
       )}
 
+      {workspaceMenu && (
+        <SidebarContextMenu
+          x={workspaceMenu.x}
+          y={workspaceMenu.y}
+          onClose={() => setWorkspaceMenu(null)}
+          items={[
+            {
+              label: 'Organize workspace…',
+              onClick: () => {
+                setManagerWorkspaceId(workspaceMenu.workspace.id)
+                setManagerStartsCreating(false)
+                setManagerOpen(true)
+                setWorkspaceMenu(null)
+              },
+            },
+            ...(workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id) > 0
+              ? [{
+                  label: 'Move workspace up',
+                  onClick: () => {
+                    const index = workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id)
+                    const next = reorderWorkspacesById(workspaces, workspaceMenu.workspace.id, workspaces[index - 1].id)
+                    setWorkspaces(next)
+                    void window.api.app.workspaces.reorder(next.map((workspace) => workspace.id))
+                      .catch(refreshWorkspaces)
+                    setWorkspaceMenu(null)
+                  },
+                }]
+              : []),
+            ...(workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id) < workspaces.length - 1
+              ? [{
+                  label: 'Move workspace down',
+                  onClick: () => {
+                    const index = workspaces.findIndex((workspace) => workspace.id === workspaceMenu.workspace.id)
+                    const next = reorderWorkspacesById(workspaces, workspaceMenu.workspace.id, workspaces[index + 1].id)
+                    setWorkspaces(next)
+                    void window.api.app.workspaces.reorder(next.map((workspace) => workspace.id))
+                      .catch(refreshWorkspaces)
+                    setWorkspaceMenu(null)
+                  },
+                }]
+              : []),
+          ]}
+        />
+      )}
+
       {/* Right-click on a project header - workspace assignment */}
       {projectMenu && (
         <SidebarContextMenu
@@ -1121,6 +1285,8 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
             {
               label: 'Manage workspaces…',
               onClick: () => {
+                setManagerWorkspaceId(projectMenu.project.workspaceId ?? null)
+                setManagerStartsCreating(false)
                 setManagerOpen(true)
                 setProjectMenu(null)
               },
@@ -1148,15 +1314,19 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
       {managerOpen && (
         <WorkspaceManager
           workspaces={workspaces}
-          onClose={() => setManagerOpen(false)}
+          projects={projects}
+          startCreating={managerStartsCreating}
+          initialWorkspaceId={managerWorkspaceId}
+          onWorkspacesChanged={setWorkspaces}
+          onProjectsChanged={setProjects}
+          onClose={() => {
+            setManagerOpen(false)
+            setManagerStartsCreating(false)
+            setManagerWorkspaceId(undefined)
+          }}
           onMutated={() => {
             refreshWorkspaces()
-            // Re-fetch projects too: deleting a workspace SET NULL'd their
-            // workspace_id on the main side; the renderer cache needs a refresh
-            // to reflect the move-back-to-Ungrouped.
-            window.api.app.getProjects().then((saved: Project[]) => {
-              if (saved?.length) setProjects(saved)
-            }).catch(() => {})
+            void loadProjects().catch(() => {})
           }}
         />
       )}

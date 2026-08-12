@@ -123,7 +123,7 @@ interface LayoutStore {
 }
 
 // Persistence keys for sidebar collapse state - kept tight so we don't
-// accidentally collide with the existing `projectOrder` / `theme` keys.
+// accidentally collide with existing theme and provider preference keys.
 const COLLAPSE_PROJECTS_KEY = 'sidebar.collapsed.projects'
 const COLLAPSE_WORKSPACES_KEY = 'sidebar.collapsed.workspaces'
 const RIGHT_PANE_MODE_KEY = 'layout.rightPaneMode'

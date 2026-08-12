@@ -1,34 +1,9 @@
 /**
- * Projects-screen helpers: the saved order parse and the search filter.
+ * Projects-screen search helpers.
  */
 import { describe, it, expect } from 'vitest'
-import { parseOrder, matchesQuery } from '../../apps/mobile/src/lib/projectList'
+import { matchesQuery } from '../../apps/mobile/src/lib/projectList'
 import { initialsFromEmail } from '../../apps/mobile/src/lib/account'
-
-describe('parseOrder', () => {
-  it('reads a JSON array of paths', () => {
-    expect(parseOrder('["/a","/b"]')).toEqual(['/a', '/b'])
-  })
-
-  it('returns null for absent or empty input', () => {
-    expect(parseOrder(null)).toBeNull()
-    expect(parseOrder('')).toBeNull()
-  })
-
-  it('returns null rather than throwing on invalid JSON', () => {
-    // A settings row can hold anything; the screen must fall back to scan order.
-    expect(parseOrder('{not json')).toBeNull()
-  })
-
-  it('returns null when the value is valid JSON but not an array', () => {
-    expect(parseOrder('{"a":1}')).toBeNull()
-    expect(parseOrder('"a string"')).toBeNull()
-  })
-
-  it('drops non-string entries instead of trusting the whole array', () => {
-    expect(parseOrder('["/a",2,null,"/b"]')).toEqual(['/a', '/b'])
-  })
-})
 
 describe('matchesQuery', () => {
   const project = { name: 'Switchboard', path: '/Users/t/Desktop/projects/switchboard' }

@@ -74,7 +74,7 @@ describe('theme CSS contracts', () => {
     expect(translucent).toMatch(/--terminal-bg:\s*rgba\(0,\s*0,\s*0,\s*0\.03\)/)
     expect(exactRule('.theme-translucent .sidebar-root')).toMatch(/background:\s*transparent\s*!important/)
     expect(exactRule('.theme-translucent .titlebar-drag')).toMatch(/background:\s*transparent\s*!important/)
-    expect(exactRule('.theme-translucent .sidebar-add-machine')).toMatch(/background:\s*rgba\(0,\s*0,\s*0,\s*0\.12\)/)
+    expect(css).toMatch(/\.sidebar-create-trigger,\s*\.sidebar-organize-btn\s*\{[^}]*background:\s*var\(--bg-tertiary\)/s)
   })
 
   it('does not turn Full Access into an amber glowing control', () => {

@@ -58,6 +58,7 @@ import {
   deleteWorkspace,
   reorderWorkspaces,
   setProjectWorkspace,
+  organizeProjects,
   getDisplayBodyEnrichments,
   getSystemMarkerMessages,
   getMessagesForConversation,
@@ -292,6 +293,9 @@ export function registerAppHandlers(host: BackendHost): void {
   })
   host.handle(AppChannels.ASSIGN_PROJECT_WORKSPACE, (projectPath: string, workspaceId: string | null) => {
     setProjectWorkspace(projectPath, workspaceId); return { ok: true }
+  })
+  host.handle(AppChannels.PROJECT_ORGANIZE, (items: import('@shared/types').ProjectOrganizationItem[]) => {
+    organizeProjects(items); return { ok: true }
   })
 
   host.handle(

@@ -10,7 +10,6 @@ import type { Project, SessionSummary, Workspace } from '@shared/types'
 import type { WorkspaceGroup } from '@shared/projectGrouping'
 
 export {
-  applyProjectOrder,
   groupProjectsByWorkspace,
   colorTokenForWorkspace,
   type WorkspaceGroup,

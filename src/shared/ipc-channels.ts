@@ -58,6 +58,7 @@ export const AppChannels = {
   WORKSPACE_DELETE: 'app:workspace-delete',
   WORKSPACE_REORDER: 'app:workspace-reorder',
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
+  PROJECT_ORGANIZE: 'app:project-organize',
   FORK_CONVERSATION: 'app:fork-conversation',
   /** backend → renderer push: any client created or renamed a conversation. */
   CONVERSATIONS_CHANGED: 'app:conversations-changed',

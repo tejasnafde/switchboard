@@ -2,6 +2,20 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.28 - Organize workspaces without losing their order
+
+### Added
+- **Workspaces now have a dedicated organizer.** A compact two-pane view supports creating, renaming, recoloring, deleting, and reordering workspaces, plus moving and reordering projects with drag-and-drop or Option+Arrow keyboard controls.
+- **The sidebar creation flow is unified.** One restrained Create menu replaces the separate project, workspace, and machine actions, while workspace rows expose contextual organization controls only on hover or focus.
+
+### Fixed
+- **Projects could shuffle within their workspaces after launch.** Project position now lives in the database beside workspace position, with a one-time migration from the legacy setting and deterministic ordering across desktop, remote machines, mobile, and full app relaunches.
+- **Workspace edits could refresh through a second, differently sorted project path.** All organizer mutations now return through the canonical project loader, so the sidebar cannot briefly or permanently disagree with the persisted order.
+
+### Notes
+- The organizer reuses the existing theme tokens and native translucent surfaces; it adds no opaque theme layer, gradients, or hard-coded card palette. Packaged Electron Playwright checks Dark, Light, and Translucent modes, tour dismissal, keyboard reordering, transparent-root composition, and order persistence after a full quit and relaunch.
+- The final local gate passed 2,414 tests across 236 files, both typechecks, mobile typecheck, lint, all production bundles, the packaged-main smoke test, and Playwright against the packaged macOS app.
+
 ## 0.8.27 - Make remote sends wait for their session
 
 ### Fixed

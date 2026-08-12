@@ -15,6 +15,7 @@ vi.mock('better-sqlite3', () => {
   class FakeDb {
     pragma() {}
     exec() {}
+    transaction(fn: () => void) { return fn }
     prepare(sql: string) {
       return {
         run: (...args: unknown[]) => { runCalls.push({ sql, args }); return { changes: 1 } },

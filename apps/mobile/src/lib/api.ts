@@ -93,7 +93,7 @@ export class SwitchboardClient {
     return this.transport.invoke(AppChannels.WORKSPACE_LIST)
   }
 
-  /** The same settings table the desktop writes, so `projectOrder` matches. */
+  /** Shared backend settings used by theme and provider preferences. */
   getSetting(key: string): Promise<string | null> {
     return this.transport.invoke('settings:get', key)
   }

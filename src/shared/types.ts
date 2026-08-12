@@ -322,6 +322,11 @@ export interface Project {
   workspaceId?: string | null
 }
 
+export interface ProjectOrganizationItem {
+  path: string
+  workspaceId: string | null
+}
+
 /**
  * Sidebar workspace - the outer grouping above projects. Users assign
  * projects to a workspace; projects with `workspaceId == null` render

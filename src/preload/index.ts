@@ -286,6 +286,8 @@ const api = {
     },
     assignProjectWorkspace: (projectPath: string, workspaceId: string | null) =>
       transport.invoke(AppChannels.ASSIGN_PROJECT_WORKSPACE, projectPath, workspaceId),
+    organizeProjects: (items: import('@shared/types').ProjectOrganizationItem[]) =>
+      transport.invoke(AppChannels.PROJECT_ORGANIZE, items),
 
     /**
      * Spawn a new conversation cloned from the first N messages of an

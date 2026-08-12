@@ -26,4 +26,11 @@ describe('visual regression harness safety', () => {
     expect(fullscreen).toContain('await win.reload()')
     expect(fullscreen).toMatch(/reload[\s\S]*?dataset\.fullscreen === 'true'/)
   })
+
+  it('checks the production workspace organizer in every theme and across relaunch', () => {
+    expect(source).toContain('async function assertWorkspaceOrganizer')
+    expect(source).toContain("for (const themeName of ['Dark', 'Light', 'Translucent'])")
+    expect(source).toContain('workspace order did not persist across relaunch')
+    expect(source).toContain("getByRole('button', { name: 'Skip tour' })")
+  })
 })

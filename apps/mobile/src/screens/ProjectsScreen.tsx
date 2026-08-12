@@ -17,8 +17,8 @@ import { Ionicons } from '@expo/vector-icons'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { Project, Workspace } from '@shared/types'
-import { applyProjectOrder, groupProjectsByWorkspace } from '@shared/projectGrouping'
-import { matchesQuery, parseOrder } from '../lib/projectList'
+import { groupProjectsByWorkspace } from '@shared/projectGrouping'
+import { matchesQuery } from '../lib/projectList'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
 import { usePrefsStore, UNGROUPED_WORKSPACE_KEY } from '../stores/prefs'
@@ -51,7 +51,6 @@ export default function ProjectsScreen({ route, navigation }: Props) {
   const { connectionId } = route.params
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
-  const [order, setOrder] = useState<string[] | null>(null)
   const [query, setQuery] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
@@ -70,14 +69,12 @@ export default function ProjectsScreen({ route, navigation }: Props) {
       try {
         // Same backend tables the desktop sidebar reads, so grouping matches.
         // Neither is essential - a server that cannot answer still lists projects.
-        const [result, ws, orderJson] = await Promise.all([
+        const [result, ws] = await Promise.all([
           client.getProjects(),
           client.listWorkspaces().catch(() => [] as Workspace[]),
-          client.getSetting('projectOrder').catch(() => null),
         ])
         setProjects(result)
         setWorkspaces(ws)
-        setOrder(parseOrder(orderJson))
         setError(null)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
@@ -97,8 +94,7 @@ export default function ProjectsScreen({ route, navigation }: Props) {
   const sections = useMemo(() => {
     if (projects === null) return []
     const filtered = projects.filter((p) => matchesQuery(p, query))
-    const ordered = applyProjectOrder(filtered, order)
-    const groups = groupProjectsByWorkspace(ordered, workspaces)
+    const groups = groupProjectsByWorkspace(filtered, workspaces)
       // A workspace with no matches is noise while searching.
       .filter((g) => g.projects.length > 0)
     // A single group renders no header, so it has nothing to tap and must not
@@ -115,7 +111,7 @@ export default function ProjectsScreen({ route, navigation }: Props) {
         data: collapsed ? [] : g.projects,
       }
     })
-  }, [projects, workspaces, order, query, collapsedWorkspaces])
+  }, [projects, workspaces, query, collapsedWorkspaces])
 
   if (projects === null && error !== null) {
     // The transport may still be dialing (reconnects are internal to it), so

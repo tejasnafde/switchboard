@@ -11,9 +11,9 @@ import { create } from 'zustand'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type { Project, SessionSummary } from '@shared/types'
 import { AppChannels } from '@shared/ipc-channels'
+import { projectOrganizationItems } from '@shared/workspaceOrganization'
 import type { MachineStatus } from '../components/sidebar/machineList'
 import { projectsToSnapshot } from '../components/sidebar/machineSnapshot'
-import { applyProjectOrder } from '../components/sidebar/sidebar-helpers'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:machines')
@@ -72,7 +72,7 @@ interface MachineStore {
   loadSnapshots: () => Promise<void>
   /** Scan a connected remote's projects and cache them for offline browse. */
   syncMachine: (id: string) => Promise<void>
-  /** Reorder a connected machine's projects; persists to the REMOTE's own projectOrder setting. */
+  /** Reorder a connected machine's projects in the remote database. */
   reorderMachineProjects: (machineId: string, paths: string[]) => Promise<void>
   /** Optimistically add a just-created chat to a machine's snapshot so its row
    *  appears immediately (a rescan can't see an empty conversation yet). */
@@ -206,20 +206,11 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   syncMachine: async (id) => {
     try {
       const fetched = await window.api.routing.invokeOn<Project[]>(id, AppChannels.GET_PROJECTS)
-      // The remote keeps its own project order (same settings key, its DB).
-      let order: string[] | null = null
-      try {
-        const raw = await window.api.routing.invokeOn<string | null>(id, 'settings:get', 'projectOrder')
-        if (raw) order = JSON.parse(raw)
-      } catch (err) {
-        log.warn('remote projectOrder read failed, using scan order', err)
-      }
-      const ordered = applyProjectOrder(fetched, order)
-      const snapshot = projectsToSnapshot(ordered, Date.now())
+      const snapshot = projectsToSnapshot(fetched, Date.now())
       await window.api.machines.saveSnapshot(id, snapshot)
       set((s) => ({
         snapshots: { ...s.snapshots, [id]: snapshot },
-        projects: { ...s.projects, [id]: ordered },
+        projects: { ...s.projects, [id]: fetched },
       }))
       // Route path-keyed IPC (files/git/kanban/workspace) for every project
       // on this machine to it, not just the id-keyed session/terminal calls.
@@ -245,7 +236,11 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     }))
     try {
       await window.api.machines.saveSnapshot(machineId, snapshot)
-      await window.api.routing.invokeOn(machineId, 'settings:set', 'projectOrder', JSON.stringify(paths))
+      await window.api.routing.invokeOn(
+        machineId,
+        AppChannels.PROJECT_ORGANIZE,
+        projectOrganizationItems(next),
+      )
     } catch (err) {
       log.warn('remote project reorder persist failed', err)
     }

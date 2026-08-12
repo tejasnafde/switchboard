@@ -37,8 +37,8 @@ const SCOPE_REQUIRED_PREFIXES: Record<DeviceScope, readonly string[]> = {
 /**
  * Settings keys a chat-scoped device must not WRITE.
  *
- * `settings:set` is ungated on purpose - the phone owns `projectOrder` - but
- * the table also holds the mode a session starts in when the client did not
+ * `settings:set` is ungated for ordinary client preferences, but the table
+ * also holds the mode a session starts in when the client did not
  * say (the phone routinely does not) and the OAuth client consent runs against.
  * Writable, those let a stolen phone credential grant itself full access.
  * Reads stay open: neither is a secret and the phone seeds its picker from one.

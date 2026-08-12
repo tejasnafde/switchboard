@@ -5,6 +5,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { useMachineStore } from '../../src/renderer/stores/machine-store'
 import type { Machine } from '@shared/machines'
+import { AppChannels } from '@shared/ipc-channels'
 
 const mk = (id: string, sortOrder: number): Machine => ({
   id, name: id, sshAlias: null, sshHost: `${id}.host`, sshUser: null,
@@ -147,6 +148,24 @@ describe('machine-store', () => {
     const snap = useMachineStore.getState().snapshots.m1
     expect(snap.projects).toEqual([{ path: '/r/api', name: 'api', sessions: [{ id: 's1', title: 't1', agentType: 'codex' }] }])
     expect(bind).toHaveBeenCalledWith('/r/api', 'm1')
+  })
+
+  it('persists remote project reorder through the backend ordering operation', async () => {
+    const one = { path: '/r/one', name: 'one', sessions: [], workspaceId: null }
+    const two = { path: '/r/two', name: 'two', sessions: [], workspaceId: 'work' }
+    useMachineStore.setState({
+      projects: { m1: [one, two] },
+      snapshots: { m1: { syncedAt: 10, projects: [] } },
+    })
+
+    await useMachineStore.getState().reorderMachineProjects('m1', ['/r/two', '/r/one'])
+
+    expect(invokeOn).toHaveBeenCalledWith('m1', AppChannels.PROJECT_ORGANIZE, [
+      { path: '/r/two', workspaceId: 'work' },
+      { path: '/r/one', workspaceId: null },
+    ])
+    expect(useMachineStore.getState().projects.m1.map((project) => project.path))
+      .toEqual(['/r/two', '/r/one'])
   })
 
   it('subscribeStatus does not register a transport while still connecting', () => {

@@ -22,6 +22,7 @@ const settingsScreenshotPath = join(artifactDir, 'update-help.png')
 const nativeScreenshotPath = join(artifactDir, 'native-glass.png')
 const nativeWorkspaceScreenshotPath = join(artifactDir, 'native-workspace.png')
 const nativeDarkScreenshotPath = join(artifactDir, 'native-dark.png')
+const organizerScreenshotPath = (theme) => join(artifactDir, `workspace-organizer-${theme.toLowerCase()}.png`)
 const snapshotPath = join(repoRoot, 'e2e', 'snapshots', `visual-regressions-translucent-${process.platform}.png`)
 let app
 
@@ -249,6 +250,103 @@ async function assertFullscreenFallback(win) {
   }
 }
 
+async function chooseTheme(win, themeName) {
+  await win.getByTitle('Settings').click()
+  await win.getByRole('button', { name: new RegExp(themeName) }).click()
+  await win.keyboard.press('Escape')
+  await win.waitForTimeout(150)
+}
+
+async function assertWorkspaceOrganizer(win) {
+  const create = win.getByRole('button', { name: 'Create', exact: true })
+  await create.click()
+  const createMenu = win.getByRole('menu')
+  await createMenu.waitFor({ state: 'visible' })
+  for (const label of ['New project', 'New workspace', 'New machine']) {
+    if (!await win.getByRole('menuitem', { name: new RegExp(label) }).isVisible()) {
+      throw new Error(`Create menu is missing ${label}`)
+    }
+  }
+  await win.keyboard.press('Escape')
+  await createMenu.waitFor({ state: 'hidden' })
+
+  let reordered = false
+  for (const themeName of ['Dark', 'Light', 'Translucent']) {
+    await chooseTheme(win, themeName)
+    await win.getByRole('button', { name: 'Organize workspaces and projects' }).click()
+    const dialog = win.getByRole('dialog', { name: 'Organize sidebar' })
+    await dialog.waitFor({ state: 'visible' })
+    const metrics = await win.evaluate(() => {
+      const root = document.querySelector('#root')
+      const dialog = document.querySelector('.workspace-organizer')
+      const nav = document.querySelector('.workspace-organizer-nav')
+      const detail = document.querySelector('.workspace-organizer-detail')
+      if (!root || !dialog || !nav || !detail) return null
+      const dialogBox = dialog.getBoundingClientRect()
+      const navBox = nav.getBoundingClientRect()
+      const detailBox = detail.getBoundingClientRect()
+      return {
+        rootBackground: getComputedStyle(root).backgroundColor,
+        dialogRight: dialogBox.right,
+        viewportWidth: window.innerWidth,
+        navRight: navBox.right,
+        detailLeft: detailBox.left,
+        navWidth: navBox.width,
+        detailWidth: detailBox.width,
+        overflow: dialog.scrollWidth - dialog.clientWidth,
+      }
+    })
+    if (!metrics || metrics.navWidth < 150 || metrics.detailWidth < 280) {
+      throw new Error(`${themeName} organizer panes collapsed: ${JSON.stringify(metrics)}`)
+    }
+    if (Math.abs(metrics.navRight - metrics.detailLeft) > 1 || metrics.dialogRight > metrics.viewportWidth || metrics.overflow > 1) {
+      throw new Error(`${themeName} organizer alignment overflowed: ${JSON.stringify(metrics)}`)
+    }
+    if (themeName === 'Translucent' && metrics.rootBackground !== 'rgba(0, 0, 0, 0)') {
+      throw new Error(`organizer obscured the translucent root: ${metrics.rootBackground}`)
+    }
+
+    if (!reordered) {
+      const workspaceGrip = win.getByRole('button', { name: 'Reorder Visual Alpha' })
+      await workspaceGrip.focus()
+      await win.keyboard.press('Alt+ArrowDown')
+      const workspaceNames = await win.locator('.workspace-organizer-nav-name').allTextContents()
+      if (workspaceNames.join('|') !== 'Visual Beta|Visual Alpha') {
+        throw new Error(`workspace keyboard reorder failed: ${workspaceNames.join('|')}`)
+      }
+
+      const projectGrip = win.getByRole('button', { name: 'Reorder Visual Recents' })
+      await projectGrip.focus()
+      await win.keyboard.press('Alt+ArrowDown')
+      const projectNames = await win.locator('.workspace-organizer-project-name').allTextContents()
+      if (projectNames.join('|') !== 'Visual Extra|Visual Recents') {
+        throw new Error(`project keyboard reorder failed: ${projectNames.join('|')}`)
+      }
+      reordered = true
+    }
+
+    await dialog.screenshot({ path: organizerScreenshotPath(themeName) })
+    await win.getByRole('button', { name: 'Done' }).click()
+    await dialog.waitFor({ state: 'hidden' })
+  }
+}
+
+async function assertWorkspaceOrderPersisted(win) {
+  await win.getByRole('button', { name: 'Organize workspaces and projects' }).click()
+  const dialog = win.getByRole('dialog', { name: 'Organize sidebar' })
+  await dialog.waitFor({ state: 'visible' })
+  const workspaceNames = await win.locator('.workspace-organizer-nav-name').allTextContents()
+  if (workspaceNames.join('|') !== 'Visual Beta|Visual Alpha') {
+    throw new Error(`workspace order did not persist across relaunch: ${workspaceNames.join('|')}`)
+  }
+  await win.locator('.workspace-organizer-nav-main').filter({ hasText: 'Visual Alpha' }).click()
+  const projectNames = await win.locator('.workspace-organizer-project-name').allTextContents()
+  if (projectNames.join('|') !== 'Visual Extra|Visual Recents') {
+    throw new Error(`project order did not persist across relaunch: ${projectNames.join('|')}`)
+  }
+  await win.getByRole('button', { name: 'Done' }).click()
+}
+
 async function closeApp() {
   if (!app) return
   const closing = app
@@ -281,11 +379,19 @@ async function launchSwitchboard() {
 function seedRecentConversations() {
   if (process.platform !== 'darwin') return false
   const projectPath = join(userDataDir, 'recent-project')
+  const extraPath = join(userDataDir, 'extra-project')
+  const betaPath = join(userDataDir, 'beta-project')
   mkdirSync(projectPath, { recursive: true })
+  mkdirSync(extraPath, { recursive: true })
+  mkdirSync(betaPath, { recursive: true })
   const now = Date.now()
   const quote = (value) => `'${String(value).replaceAll("'", "''")}'`
   const statements = [
-    `INSERT INTO projects (path, name, added_at) VALUES (${quote(projectPath)}, 'Visual Recents', ${now});`,
+    `INSERT INTO project_workspaces (id, name, color, sort_order, created_at) VALUES ('visual-alpha', 'Visual Alpha', 'var(--workspace-color-2)', 0, ${now});`,
+    `INSERT INTO project_workspaces (id, name, color, sort_order, created_at) VALUES ('visual-beta', 'Visual Beta', 'var(--workspace-color-5)', 1, ${now + 1});`,
+    `INSERT INTO projects (path, name, added_at, workspace_id) VALUES (${quote(projectPath)}, 'Visual Recents', ${now}, 'visual-alpha');`,
+    `INSERT INTO projects (path, name, added_at, workspace_id) VALUES (${quote(extraPath)}, 'Visual Extra', ${now - 1}, 'visual-alpha');`,
+    `INSERT INTO projects (path, name, added_at, workspace_id) VALUES (${quote(betaPath)}, 'Visual Beta Project', ${now - 2}, 'visual-beta');`,
   ]
   for (let index = 0; index < 7; index++) {
     statements.push(`INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at) VALUES ('visual-recent-${index}', ${quote(projectPath)}, 'claude-code', 'Visual Recent ${index + 1}', ${now - index}, ${now - index});`)
@@ -330,6 +436,8 @@ try {
       throw new Error('Recents rendered a generic blinking status dot')
     }
   }
+
+  if (hasSeededRecents) await assertWorkspaceOrganizer(win)
 
   await assertNativeGlassTransmitsColor(win)
   await assertFullscreenFallback(win)
@@ -441,6 +549,7 @@ try {
     if (await relaunched.win.locator('.sidebar-recent-row').count() !== 6) {
       throw new Error('Recents baseline did not persist across relaunch')
     }
+    await assertWorkspaceOrderPersisted(relaunched.win)
   }
   await assertNativeGlassTransmitsColor(relaunched.win, 'relaunch')
 

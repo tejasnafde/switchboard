@@ -1,7 +1,7 @@
 /**
  * Client preferences that survive a restart, keyed `connectionId:threadId`.
  * Only choices about how THIS client drives a thread live here - anything the
- * desktop owns (projectOrder, workspaces) is read from the backend instead.
+ * desktop owns (project and workspace organization) is read from the backend.
  */
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'

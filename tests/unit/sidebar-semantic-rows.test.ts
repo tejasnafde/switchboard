@@ -25,7 +25,7 @@ describe('sidebar conversation row semantics', () => {
 
   it('uses native controls for local hierarchy disclosure', () => {
     expect(sidebarSource).toContain('className="sidebar-project-toggle"')
-    expect(sidebarSource).toContain('<button\n                    type="button"\n                    className="sidebar-workspace-header"')
+    expect(sidebarSource).toMatch(/<button\s+type="button"\s+className="sidebar-workspace-header"/)
   })
 
   it('uses native controls for remote hierarchy and conversations', () => {
