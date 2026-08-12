@@ -2,6 +2,24 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.26 - Make translucent mode actual crystal glass
+
+### Added
+- **Recents can match larger working sets.** Settings → General now lets the collapsed section show 4, 6, 8, or 12 conversations, while an inline Show more / Show less control exposes the full list without adding another sidebar scrollbar.
+- **Recents now carries useful activity.** Approval, Input, Working, Failed, and unread Done states use restrained semantic icons and labels instead of generic blinking dots; ordinary conversations retain their relative timestamp.
+
+### Fixed
+- **Translucent mode could still render over an opaque black native window.** Every macOS window is now created transparency-capable, so switching from Dark or Light can activate native vibrancy without a relaunch. Dark and Light continue to paint solid renderer surfaces.
+- **The translucent palette buried native glass under charcoal layers.** The workspace, sidebar, and titlebar now expose the macOS material directly, while headers, the composer, terminals, and controls use only restrained local tints.
+- **The fullscreen fallback targeted a descendant theme class that does not exist.** Solid fallback variables and panel backgrounds now match the theme class on `<html>` when macOS disables transparency in fullscreen.
+- **Tool summaries expanded and collapsed on every tool event.** “Used N tools” now stays collapsed and stationary while Claude or Codex works; only the user controls its disclosure state.
+- **The documented native rebuild command skipped the database module.** `npm run rebuild` now rebuilds both `node-pty` and `better-sqlite3` for Electron, preventing locally packaged apps from failing before their first window opens with an ABI mismatch.
+
+### Notes
+- The packaged Playwright test now places a controlled magenta/cyan native window behind Switchboard and verifies the colors through an OS-level screen capture. It compares identical app pixels with native vibrancy enabled and disabled, reloads while fullscreen, checks Recents configuration and relaunch persistence, dismisses the tour, and verifies tool-summary and updater-help geometry.
+- Review caught fullscreen reload synchronization, a failed-launch process leak, a platform-specific fixture command, a weak native-material comparison, a late-settings race, and Approval/Input ordering. All were fixed before the deslop and full release gates.
+- The final local gate passed 2,401 tests across 233 files, both typechecks, lint, all production bundles, the packaged-main smoke test, and Playwright against a locally packaged macOS app.
+
 ## 0.8.25 - Restore translucency and finish updater recovery
 
 ### Fixed

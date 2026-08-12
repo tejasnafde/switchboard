@@ -336,11 +336,8 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
               {presentation.map((item) => {
                 if (item.kind === 'message') return renderMessage(item.message)
                 if (item.kind === 'activity') {
-                  const running = item.messages.some((message) =>
-                    message.toolCalls?.some((tool) => tool.output === undefined),
-                  )
                   return (
-                    <details className="turn-activity" key={item.messages[0].id} open={running}>
+                    <details className="turn-activity" key={item.messages[0].id}>
                       <summary>{activitySummaryLabel(item.toolCount, turnDurationMs)}</summary>
                       <div className="turn-activity-body">
                         {item.messages.map((message) => renderMessage(message, true))}

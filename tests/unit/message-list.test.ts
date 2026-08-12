@@ -1,7 +1,10 @@
+import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { groupIntoTurns, roleLabel } from '../../src/renderer/components/chat/MessageList'
 import { activitySummaryLabel, projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
+
+const messageListSource = readFileSync(new URL('../../src/renderer/components/chat/MessageList.tsx', import.meta.url), 'utf8')
 
 /**
  * Regression tests for MessageList.groupIntoTurns.
@@ -215,6 +218,10 @@ describe('groupIntoTurns', () => {
 })
 
 describe('projectTurnPresentation', () => {
+  it('keeps tool activity collapsed and user-controlled while tools run', () => {
+    expect(messageListSource).not.toMatch(/<details[^>]*open=\{running\}/)
+  })
+
   it('formats a restrained tool-and-duration summary', () => {
     expect(activitySummaryLabel(1)).toBe('Used 1 tool')
     expect(activitySummaryLabel(6, 18_000)).toBe('Used 6 tools · 18s')

@@ -16,6 +16,36 @@ import type { Project } from '@shared/types'
 
 const log = createLogger('ipc:app-desktop')
 
+export type ResolvedTheme = 'dark' | 'light' | 'translucent'
+
+export function applyMacWindowTheme(
+  window: BrowserWindow,
+  theme: ResolvedTheme,
+  fullscreen = window.isFullScreen(),
+): void {
+  if (process.platform !== 'darwin') return
+  if (theme === 'translucent' && !fullscreen) {
+    // The visual-effect view is created with the BrowserWindow and must stay
+    // alive; frame invalidation makes AppKit composite it after first paint.
+    window.setVibrancy('sidebar')
+    window.setBackgroundColor('#00000000')
+    const bounds = window.getBounds()
+    window.setBounds({ ...bounds, height: bounds.height + 1 })
+    window.setBounds(bounds)
+    return
+  }
+  // Keep the construction-time visual-effect view and transparent backing
+  // alive. Opaque renderer surfaces cover them in Dark, Light, and fullscreen.
+  window.setBackgroundColor('#00000000')
+}
+
+export function restoreMacWindowGlass(window: BrowserWindow): void {
+  if (process.platform !== 'darwin' || window.isDestroyed() || window.isFullScreen()) return
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- null clears vibrancy (Electron types lag)
+  window.setVibrancy(null as any)
+  applyMacWindowTheme(window, 'translucent', false)
+}
+
 export function registerAppDesktopHandlers(window: BrowserWindow): void {
   ipcMain.removeHandler(AppChannels.OPEN_FOLDER)
   ipcMain.removeHandler(AppChannels.EXPORT_MARKDOWN)
@@ -69,17 +99,11 @@ export function registerAppDesktopHandlers(window: BrowserWindow): void {
     }
   })
 
-  ipcMain.handle(AppChannels.SET_VIBRANCY, (_event, enabled: boolean) => {
+  ipcMain.handle(AppChannels.SET_VIBRANCY, (_event, theme: 'dark' | 'light' | 'translucent') => {
     if (window.isDestroyed()) return
-    if (process.platform === 'darwin') {
-      if (enabled) {
-        window.setVibrancy('sidebar')
-        window.setBackgroundColor('#00000000')
-      } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Electron types reject null but it is the documented way to clear vibrancy
-        window.setVibrancy(null as any)
-        window.setBackgroundColor('#0a0a0a')
-      }
+    applyMacWindowTheme(window, theme)
+    if (process.platform === 'darwin' && theme === 'translucent' && window.isFullScreen()) {
+      window.webContents.send('app:fullscreen-changed', true)
     }
   })
 }

@@ -41,6 +41,13 @@ import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { RecentSessionsSection } from './RecentSessionsSection'
 import { deriveRecentSessions, type RecentLiveSession } from './recentSessions'
+import {
+  DEFAULT_RECENT_SESSION_LIMIT,
+  RECENT_SESSION_LIMIT_CHANGED,
+  RECENT_SESSION_LIMIT_SETTING,
+  parseRecentSessionLimit,
+  type RecentSessionLimit,
+} from './recentSessionLimit'
 
 import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
 
@@ -105,12 +112,14 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
   const editRef = useRef<HTMLInputElement>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
   const machineProjects = useMachineStore((s) => s.projects)
+  const [recentLimit, setRecentLimit] = useState<RecentSessionLimit>(DEFAULT_RECENT_SESSION_LIMIT)
   const [recentLiveSessions, setRecentLiveSessions] = useState<RecentLiveSession[]>(() =>
-    useAgentStore.getState().sessions.map(({ id, machineId, status, messages }) => ({
+    useAgentStore.getState().sessions.map(({ id, machineId, status, messages, unreadCount }) => ({
       id,
       machineId,
       status,
       messages,
+      unreadCount,
     })),
   )
   const recentSignalRef = useRef('')
@@ -119,21 +128,33 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
   // React and update the sidebar only when recents-relevant state changes, so
   // a streaming answer never re-renders the whole machine/workspace tree.
   useEffect(() => useAgentStore.subscribe((state) => {
-    const next = state.sessions.map(({ id, machineId, status, messages }) => ({
+    const next = state.sessions.map(({ id, machineId, status, messages, unreadCount }) => ({
       id,
       machineId,
       status,
       messages,
+      unreadCount,
     }))
     const signal = next.map((session) => {
       const pendingApproval = session.messages.some((message) => message.approval?.status === 'pending')
       const pendingQuestion = session.messages.some((message) => message.question?.status === 'pending')
-      return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pendingApproval ? 1 : 0}:${pendingQuestion ? 1 : 0}`
+      return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pendingApproval ? 1 : 0}:${pendingQuestion ? 1 : 0}:${session.unreadCount ?? 0}`
     }).join('|')
     if (signal === recentSignalRef.current) return
     recentSignalRef.current = signal
     setRecentLiveSessions(next)
   }), [])
+
+  useEffect(() => {
+    void window.api.settings.get(RECENT_SESSION_LIMIT_SETTING).then((value) => {
+      setRecentLimit(parseRecentSessionLimit(value))
+    })
+    const onChanged = (event: Event) => {
+      setRecentLimit((event as CustomEvent<RecentSessionLimit>).detail)
+    }
+    window.addEventListener(RECENT_SESSION_LIMIT_CHANGED, onChanged)
+    return () => window.removeEventListener(RECENT_SESSION_LIMIT_CHANGED, onChanged)
+  }, [])
 
   // Persisted collapse state - single source of truth lives in layout-store
   // so it survives reload (and the SidebarFilter's auto-expand only touches
@@ -558,7 +579,6 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     localProjects: projects,
     remoteProjects: machineProjects,
     liveSessions: recentLiveSessions,
-    limit: 4,
   }), [projects, machineProjects, recentLiveSessions])
   const isFiltering = filterQuery.trim().length > 0
   const isProjectCollapsed = (path: string) => {
@@ -811,6 +831,7 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
         {!isFiltering && (
           <RecentSessionsSection
             items={recentSessions}
+            initialLimit={recentLimit}
             activeSessionId={activeSessionId}
             onSelect={(item) => onSessionSelect?.(
               item.session,

@@ -219,8 +219,8 @@ const api = {
       transport.invoke(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, id, from),
     getConversations: (projectPath: string) =>
       transport.invoke(AppChannels.GET_CONVERSATIONS, projectPath),
-    setVibrancy: (enabled: boolean) =>
-      transport.invoke(AppChannels.SET_VIBRANCY, enabled),
+    setVibrancy: (theme: 'dark' | 'light' | 'translucent') =>
+      transport.invoke(AppChannels.SET_VIBRANCY, theme),
     saveSessionLayout: (sessionId: string, layoutJson: string, launchConfigName?: string | null) =>
       transport.invoke(AppChannels.SAVE_SESSION_LAYOUT, sessionId, layoutJson, launchConfigName ?? null),
     getSessionLayout: (sessionId: string) =>

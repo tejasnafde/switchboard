@@ -84,16 +84,16 @@
    preserve legibility without hiding the desktop behind a window-wide wash. */
 .theme-translucent {
   --bg-primary: transparent;
-  --bg-secondary: rgba(8, 10, 14, 0.18);
-  --bg-tertiary: rgba(255, 255, 255, 0.07);
-  --bg-surface: rgba(12, 14, 19, 0.55);
-  --bg-glass: rgba(8, 10, 14, 0.36);
-  --bg-hover: rgba(255, 255, 255, 0.07);
-  --bg-active: rgba(88, 166, 255, 0.16);
+  --bg-secondary: rgba(0, 0, 0, 0.03);
+  --bg-tertiary: rgba(255, 255, 255, 0.04);
+  --bg-surface: rgba(0, 0, 0, 0.05);
+  --bg-glass: rgba(0, 0, 0, 0.04);
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-active: rgba(88, 166, 255, 0.12);
   --text-primary: rgba(255, 255, 255, 0.95);
   --text-secondary: rgba(255, 255, 255, 0.7);
   --text-muted: rgba(255, 255, 255, 0.66);
-  --border: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.06);
   --border-focus: rgba(88, 166, 255, 0.35);
   --accent: #58a6ff;
   --accent-hover: #79c0ff;
@@ -101,7 +101,7 @@
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
-  --terminal-bg: rgba(8, 10, 14, 0.3);
+  --terminal-bg: rgba(0, 0, 0, 0.03);
   --terminal-fg: rgba(255, 255, 255, 0.95);
   --terminal-cursor: #58a6ff;
   --shadow-sm: none;
@@ -130,18 +130,9 @@ html.theme-translucent #root {
    the main process disables it and sends app:fullscreen-changed. The renderer
    sets data-fullscreen="true" on <html> so we can restore solid backgrounds
    and avoid the black void that transparent windows show in fullscreen. */
-html[data-fullscreen="true"].theme-translucent,
-html[data-fullscreen="true"] .theme-translucent,
-html[data-fullscreen="true"] .theme-translucent body,
-html[data-fullscreen="true"] .theme-translucent #root {
+html[data-fullscreen="true"].theme-translucent {
   background: #0a0a0a !important;
   background-color: #0a0a0a !important;
-}
-html[data-fullscreen="true"] .theme-translucent .sidebar-root,
-html[data-fullscreen="true"] .theme-translucent .titlebar-drag {
-  background: #111111 !important;
-}
-html[data-fullscreen="true"] .theme-translucent {
   --bg-primary: #0a0a0a;
   --bg-secondary: #111111;
   --bg-tertiary: #1a1a1a;
@@ -150,17 +141,22 @@ html[data-fullscreen="true"] .theme-translucent {
   --bg-glass: rgba(10, 10, 10, 0.95);
   --terminal-bg: #0a0a0a;
 }
+html[data-fullscreen="true"].theme-translucent body,
+html[data-fullscreen="true"].theme-translucent #root {
+  background: #0a0a0a !important;
+  background-color: #0a0a0a !important;
+}
+html[data-fullscreen="true"].theme-translucent .sidebar-root,
+html[data-fullscreen="true"].theme-translucent .titlebar-drag {
+  background: #111111 !important;
+}
 
-/* Sidebar gets a lighter material layer for hierarchy. Panel borders remain
-   owned by the surrounding layout, so switching themes cannot shift geometry. */
 .theme-translucent .sidebar-root {
-  background: var(--bg-secondary) !important;
+  background: transparent !important;
 }
 
 .theme-translucent .titlebar-drag {
-  background: rgba(8, 10, 14, 0.22) !important;
-  backdrop-filter: blur(20px) saturate(125%);
-  -webkit-backdrop-filter: blur(20px) saturate(125%);
+  background: transparent !important;
 }
 
 /* Settings modal must always be opaque - even in translucent mode */
@@ -398,9 +394,42 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
-.sidebar-recent-detail.actionable {
-  color: var(--text-secondary);
-  font-weight: 600;
+.sidebar-recent-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  font-size: 10.5px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-recent-status.approval { color: var(--warning); }
+.sidebar-recent-status.input { color: var(--workspace-color-2); }
+.sidebar-recent-status.working { color: var(--accent); }
+.sidebar-recent-status.failed { color: var(--error); }
+.sidebar-recent-status.done { color: var(--success); }
+
+.sidebar-recents-more {
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 7px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10.5px;
+  text-align: left;
+}
+
+.sidebar-recents-more:hover {
+  color: var(--text-primary);
+}
+
+.sidebar-recents-more:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: -2px;
+  border-radius: var(--radius);
 }
 
 /* ─── Workspace group (outer sidebar grouping above projects) ───── */
@@ -882,26 +911,20 @@ html, body, #root {
 }
 
 .theme-translucent .chat-panel-header {
-  background: rgba(8, 10, 14, 0.26) !important;
-  backdrop-filter: blur(20px) saturate(125%);
-  -webkit-backdrop-filter: blur(20px) saturate(125%);
+  background: rgba(0, 0, 0, 0.04) !important;
 }
 
 .theme-translucent .chat-composer {
-  background: rgba(8, 10, 14, 0.32) !important;
-  backdrop-filter: blur(24px) saturate(130%);
-  -webkit-backdrop-filter: blur(24px) saturate(130%);
+  background: rgba(0, 0, 0, 0.06) !important;
 }
 
 .theme-translucent .chat-composer .sb-rci-content {
-  background: rgba(5, 7, 10, 0.42) !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
+  background: rgba(0, 0, 0, 0.08) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 .theme-translucent .turn-files {
-  background: rgba(12, 12, 14, 0.4);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background: rgba(0, 0, 0, 0.12);
 }
 
 .update-help-button {
@@ -1545,15 +1568,13 @@ mark.sb-search-mark.active {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-/* Translucent: --bg-secondary is 3% alpha, so rows scrolling under the
-   sticky button ghosted through it. Same recipe as .sb-floating-surface. */
 .theme-translucent .sidebar-add-machine {
-  background: rgba(20, 20, 20, 0.75);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
+  background: rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(18px) saturate(120%);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
 }
 .theme-translucent .sidebar-add-machine:hover {
-  background: rgba(40, 40, 40, 0.8);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* ── Add-machine modal ──────────────────────────────────────────────── */

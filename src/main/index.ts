@@ -22,7 +22,7 @@ import { registerAgentHandlers } from './ipc/agent'
 import { registerPushHandlers } from './ipc/push'
 import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers } from './ipc/app'
-import { registerAppDesktopHandlers } from './ipc/app-desktop'
+import { applyMacWindowTheme, registerAppDesktopHandlers, restoreMacWindowGlass } from './ipc/app-desktop'
 import { registerMachineHandlers, stopAllMachineConnections } from './ipc/machines'
 import { registerFilesHandlers } from './ipc/files'
 import { ElectronIpcHost, type BackendHost } from './backend/host'
@@ -210,11 +210,6 @@ function loadWindowBounds(): SavedBounds | null {
 function createWindow(): BrowserWindow {
   const iconPath = join(app.getAppPath(), 'resources/icons/switchboard-logo-1024.png')
 
-  // Check saved theme so we can set vibrancy BEFORE window shows
-  let savedTheme: string | null = null
-  try { savedTheme = getSetting('theme') } catch (err) { log.warn('theme read failed at window creation', err) }
-  const isTranslucent = savedTheme === 'translucent'
-
   const saved = loadWindowBounds()
 
   const window = new BrowserWindow({
@@ -228,10 +223,10 @@ function createWindow(): BrowserWindow {
     icon: nativeImage.createFromPath(iconPath),
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 12, y: 12 },
-    backgroundColor: isTranslucent ? '#00000000' : '#0a0a0a',
-    vibrancy: isTranslucent ? 'sidebar' : undefined,
+    backgroundColor: process.platform === 'darwin' ? '#00000000' : '#0a0a0a',
+    vibrancy: process.platform === 'darwin' ? 'sidebar' : undefined,
     visualEffectState: 'active',
-    transparent: isTranslucent,
+    transparent: process.platform === 'darwin',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -240,19 +235,14 @@ function createWindow(): BrowserWindow {
     },
   })
 
-  // macOS quirk: a window created with `transparent: true` + vibrancy does
-  // not composite the NSVisualEffectView until the frame is invalidated -
-  // the translucent theme rendered as a dark void until the user resized or
-  // zoomed the window. Nudge a re-composite once the first paint is in.
-  if (process.platform === 'darwin' && isTranslucent) {
-    window.webContents.once('did-finish-load', () => {
+  if (process.platform === 'darwin') {
+    window.webContents.on('did-finish-load', () => {
       if (window.isDestroyed()) return
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- null clears vibrancy (Electron types lag)
-      window.setVibrancy(null as any)
-      window.setVibrancy('sidebar')
-      const b = window.getBounds()
-      window.setBounds({ ...b, height: b.height + 1 })
-      window.setBounds(b)
+      const fullscreen = window.isFullScreen()
+      if (getSetting('theme') === 'translucent') {
+        applyMacWindowTheme(window, 'translucent', fullscreen)
+      }
+      window.webContents.send('app:fullscreen-changed', fullscreen)
     })
   }
 
@@ -264,17 +254,12 @@ function createWindow(): BrowserWindow {
   if (process.platform === 'darwin') {
     window.on('enter-full-screen', () => {
       const theme = getSetting('theme')
-      if (theme !== 'translucent') return
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      window.setVibrancy(null as any)
-      window.setBackgroundColor('#0a0a0a')
+      if (theme === 'translucent') applyMacWindowTheme(window, 'translucent', true)
       window.webContents.send('app:fullscreen-changed', true)
     })
     window.on('leave-full-screen', () => {
       const theme = getSetting('theme')
-      if (theme !== 'translucent') return
-      window.setVibrancy('sidebar')
-      window.setBackgroundColor('#00000000')
+      if (theme === 'translucent') setTimeout(() => restoreMacWindowGlass(window), 500)
       window.webContents.send('app:fullscreen-changed', false)
     })
   }

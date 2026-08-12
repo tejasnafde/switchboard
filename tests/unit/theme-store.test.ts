@@ -21,6 +21,9 @@ Object.defineProperty(globalThis, 'window', {
         set: vi.fn().mockResolvedValue(undefined),
         get: vi.fn().mockResolvedValue(null),
       },
+      app: {
+        setVibrancy: vi.fn().mockResolvedValue(undefined),
+      },
     },
   },
   writable: true,
@@ -28,6 +31,7 @@ Object.defineProperty(globalThis, 'window', {
 
 describe('theme-store', () => {
   beforeEach(() => {
+    vi.clearAllMocks()
     useThemeStore.setState({ theme: 'dark' })
     mockClassList.className = ''
   })
@@ -53,6 +57,9 @@ describe('theme-store', () => {
 
     setTheme('translucent')
     expect(useThemeStore.getState().theme).toBe('translucent')
+    expect(window.api.app.setVibrancy).toHaveBeenNthCalledWith(1, 'dark')
+    expect(window.api.app.setVibrancy).toHaveBeenNthCalledWith(2, 'light')
+    expect(window.api.app.setVibrancy).toHaveBeenNthCalledWith(3, 'translucent')
   })
 
   it('system theme resolves to the OS appearance', () => {
@@ -62,9 +69,11 @@ describe('theme-store', () => {
     useThemeStore.getState().setTheme('system')
     expect(useThemeStore.getState().theme).toBe('system')
     expect(mockClassList.className).toBe('theme-dark')
+    expect(window.api.app.setVibrancy).toHaveBeenLastCalledWith('dark')
 
     matchMedia.mockReturnValue({ matches: false, addEventListener: vi.fn() })
     useThemeStore.getState().setTheme('system')
     expect(mockClassList.className).toBe('theme-light')
+    expect(window.api.app.setVibrancy).toHaveBeenLastCalledWith('light')
   })
 })

@@ -30,6 +30,15 @@ import {
 } from '../services/streamingPref'
 import { ProvidersTab } from './settings/ProvidersTab'
 import { MobilePairingTab } from './settings/MobilePairingTab'
+import {
+  DEFAULT_RECENT_SESSION_LIMIT,
+  RECENT_SESSION_LIMIT_CHANGED,
+  RECENT_SESSION_LIMIT_SETTING,
+  RECENT_SESSION_LIMITS,
+  parseRecentSessionLimit,
+  resolveLoadedRecentSessionLimit,
+  type RecentSessionLimit,
+} from './sidebar/recentSessionLimit'
 
 interface SettingsModalProps {
   open: boolean
@@ -401,6 +410,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* Threads - default workspace mode for new sessions */}
               <SettingsSection title="Threads">
                 <DefaultEnvModeToggle />
+                <RecentConversationsSetting />
               </SettingsSection>
 
               {/* Embedded IDE - idle shutdown TTL */}
@@ -867,6 +877,54 @@ function DefaultEnvModeToggle() {
       >
         <option value="local">Local (project root)</option>
         <option value="worktree">New worktree</option>
+      </select>
+    </div>
+  )
+}
+
+export function RecentConversationsSetting() {
+  const [limit, setLimit] = useState<RecentSessionLimit>(DEFAULT_RECENT_SESSION_LIMIT)
+  const selectedSinceLoadStarted = useRef(false)
+  useEffect(() => {
+    let cancelled = false
+    window.api.settings.get(RECENT_SESSION_LIMIT_SETTING).then((value) => {
+      const loaded = resolveLoadedRecentSessionLimit(value, selectedSinceLoadStarted.current)
+      if (!cancelled && loaded !== null) setLimit(loaded)
+    })
+    return () => { cancelled = true }
+  }, [])
+  const onChange = async (next: RecentSessionLimit) => {
+    selectedSinceLoadStarted.current = true
+    setLimit(next)
+    await window.api.settings.set(RECENT_SESSION_LIMIT_SETTING, String(next))
+    window.dispatchEvent(new CustomEvent(RECENT_SESSION_LIMIT_CHANGED, { detail: next }))
+  }
+  return (
+    <div style={{ marginTop: '16px' }}>
+      <div style={{ fontSize: '12.5px', color: 'var(--text-primary)', marginBottom: '4px' }}>
+        Recent conversations
+      </div>
+      <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+        Rows shown before the Recents section offers Show more.
+      </div>
+      <select
+        aria-label="Recent conversations"
+        value={limit}
+        onChange={(event) => void onChange(Number(event.target.value) as RecentSessionLimit)}
+        style={{
+          background: 'var(--bg-tertiary)',
+          color: 'var(--text-primary)',
+          border: '1px solid var(--border)',
+          borderRadius: '4px',
+          padding: '4px 8px',
+          fontSize: '12px',
+          cursor: 'pointer',
+          outline: 'none',
+        }}
+      >
+        {RECENT_SESSION_LIMITS.map((value) => (
+          <option key={value} value={value}>{value} conversations</option>
+        ))}
       </select>
     </div>
   )

@@ -19,7 +19,7 @@ function apply(theme: ThemeName) {
   // flash before the async settings-DB read lands).
   try { localStorage.setItem('sb-theme', resolved) } catch { /* quota / private mode - flash is cosmetic */ }
   updateAllTerminalThemes()
-  window.api?.app?.setVibrancy?.(resolved === 'translucent').catch(() => {})
+  window.api?.app?.setVibrancy?.(resolved).catch(() => {})
 }
 
 interface ThemeStore {
