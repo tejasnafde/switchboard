@@ -84,8 +84,8 @@ export class ProviderRegistry implements PeerToolHost {
   private checkpoints = new CheckpointTracker()
   /** Turn origins already accepted, so a client retry cannot run twice. */
   private turnDedupe = new TurnDeduper()
-  /** Threads with a startSession in flight. Claimed before the first await. */
-  private startingSessions = new Set<string>()
+  /** Provider startup shared by every client that reaches a thread before its adapter exists. */
+  private startingSessions = new Map<string, Promise<ProviderSession>>()
 
   /**
    * Event bus that decouples adapter event emission from the consumer.
@@ -539,20 +539,15 @@ export class ProviderRegistry implements PeerToolHost {
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
 
-      // Idempotent re-attach: a second START_SESSION for a live thread (screen
-      // remount, second client on the same backend) must not spawn a second
-      // adapter process over the same JSONL. Returns a descriptor instead.
-      // Also against a set claimed SYNCHRONOUSLY below: the adapter map is
-      // written after `await adapter.startSession`, so two clients racing that
-      // window both passed this guard and both spawned a process.
-      if (this.sessionAdapters.has(opts.threadId) || this.startingSessions.has(opts.threadId)) {
+      // Idempotent re-attach: a second client must share a completed or
+      // in-flight provider start instead of spawning another adapter process.
+      if (this.sessionAdapters.has(opts.threadId)) {
         log.info(`startSession ${opts.threadId} already live - re-attaching`)
         return {
           threadId: opts.threadId,
           provider: opts.provider,
-          // The real status, not a hardcoded 'idle'. Re-attaching to a session
-          // with a turn in flight used to report it as idle, so the client that
-          // reattached showed a quiet chat that was actively streaming.
+          // A descriptor captures startup state; the registry tracks the live
+          // status so a client attaching mid-turn does not render the chat idle.
           status: this.sessionStatus.get(opts.threadId) ?? 'idle',
           runtimeMode: sessionDefaultsFor(opts.threadId, agentTypeForProvider(opts.provider), {
             runtimeMode: opts.runtimeMode,
@@ -561,7 +556,19 @@ export class ProviderRegistry implements PeerToolHost {
           createdAt: Date.now(),
         } satisfies ProviderSession
       }
-      this.startingSessions.add(opts.threadId)
+      const existingStart = this.startingSessions.get(opts.threadId)
+      if (existingStart) {
+        log.info(`startSession ${opts.threadId} already starting - waiting`)
+        return existingStart
+      }
+      let resolveStart!: (session: ProviderSession) => void
+      let rejectStart!: (reason: unknown) => void
+      const startPromise = new Promise<ProviderSession>((resolve, reject) => {
+        resolveStart = resolve
+        rejectStart = reject
+      })
+      void startPromise.catch(() => {})
+      this.startingSessions.set(opts.threadId, startPromise)
       try {
 
       // Remote backends support Claude Code and Codex. Reject maintenance-only
@@ -636,13 +643,19 @@ export class ProviderRegistry implements PeerToolHost {
       // connects later, rather than only to the one that started it.
       this.sessionDescriptors.set(opts.threadId, session)
       await this.attachNotebooks(opts.threadId, session.cwd)
+      resolveStart(session)
       return session
+      } catch (err) {
+        rejectStart(err)
+        throw err
       } finally {
         this.startingSessions.delete(opts.threadId)
       }
     })
 
     this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) => {
+      const starting = this.startingSessions.get(threadId)
+      if (starting) await starting
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
         log.warn(`sendTurn ${threadId} - no adapter (session not started?)`)

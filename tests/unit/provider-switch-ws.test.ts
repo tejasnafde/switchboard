@@ -52,7 +52,7 @@ import type { RuntimeEvent } from '../../src/shared/provider-events'
 // model switch is observable in the stream. One adapter instance, many threads.
 class MockEchoAdapter implements ProviderAdapter {
   readonly provider = 'claude' as const
-  private emit = new Map<string, (e: RuntimeEvent) => void>()
+  protected emit = new Map<string, (e: RuntimeEvent) => void>()
   private model = new Map<string, string>()
   private turn = 0
 
@@ -97,6 +97,31 @@ class MockEchoAdapter implements ProviderAdapter {
   async isAvailable(): Promise<boolean> {
     return true
   }
+
+  publishStatus(threadId: string, status: 'idle' | 'running'): void {
+    this.emit.get(threadId)?.({ type: 'status', threadId, status })
+  }
+}
+
+class DeferredStartAdapter extends MockEchoAdapter {
+  private releaseStart!: () => void
+  readonly startEntered = new Promise<void>((resolve) => {
+    this.releaseStart = resolve
+  })
+  private continueStart!: () => void
+  private readonly startGate = new Promise<void>((resolve) => {
+    this.continueStart = resolve
+  })
+
+  override async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
+    this.releaseStart()
+    await this.startGate
+    return super.startSession(opts, onEvent)
+  }
+
+  finishStart(): void {
+    this.continueStart()
+  }
 }
 
 let wss: WebSocketServer | null = null
@@ -106,12 +131,12 @@ let registry: ProviderRegistry | null = null
  *  pile up dirs under TMPDIR. */
 const scratchDirs: string[] = []
 
-async function setup() {
+async function setup(adapter: ProviderAdapter = new MockEchoAdapter()) {
   const cwd = mkdtempSync(join(tmpdir(), 'sb-prov-'))
   scratchDirs.push(cwd)
   wss = new WebSocketServer({ port: 0 })
   const host = new WsHost(wss)
-  registry = new ProviderRegistry(host, new Map([['claude', new MockEchoAdapter()]]))
+  registry = new ProviderRegistry(host, new Map([['claude', adapter]]))
   registry.registerIpcHandlers()
   await new Promise<void>((res) => wss!.on('listening', () => res()))
   const { port } = wss.address() as AddressInfo
@@ -135,6 +160,37 @@ afterEach(async () => {
 })
 
 describe('provider switching over the WebSocket boundary', () => {
+  it('waits for an in-flight provider start before accepting a rapid follow-up', async () => {
+    const adapter = new DeferredStartAdapter()
+    const { cwd } = await setup(adapter)
+
+    const start = client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    await adapter.startEntered
+    const send = client!.invoke(ProviderChannels.SEND_TURN, 't1', 'attached image').then(
+      () => ({ ok: true as const }),
+      (error: unknown) => ({ ok: false as const, error }),
+    )
+    await flush()
+
+    adapter.finishStart()
+    await expect(start).resolves.toMatchObject({ threadId: 't1' })
+    await expect(send).resolves.toEqual({ ok: true })
+  })
+
+  it('re-attaches with the live status after startup has completed', async () => {
+    const adapter = new MockEchoAdapter()
+    const { cwd } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    adapter.publishStatus('t1', 'running')
+
+    const session = await client!.invoke<ProviderSession>(
+      ProviderChannels.START_SESSION,
+      { threadId: 't1', provider: 'claude', cwd },
+    )
+
+    expect(session.status).toBe('running')
+  })
+
   it('is-available, start, send, and event streaming all traverse the wire', async () => {
     const { cwd, events } = await setup()
 

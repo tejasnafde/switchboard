@@ -14,6 +14,7 @@ import { createMainLogger } from '../logger'
 import { appVersion } from '../runtime'
 import { REMOTE_SERVER_DIR } from './provisionCommands'
 import { summarizeSshError } from './sshError'
+import { childProcessEnv } from '../shell-env'
 import type { TunnelProcess } from './connectionManager'
 
 const log = createMainLogger('machines:tunnel')
@@ -82,7 +83,7 @@ export function allocatePort(): Promise<number> {
 
 export function spawnTunnel(command: string, args: string[]): TunnelProcess {
   log.info('spawn tunnel', { command, args })
-  const child = spawn(command, args)
+  const child = spawn(command, args, { env: childProcessEnv() })
   // Keep the tail of stderr so a dying tunnel can report WHY it died
   // ("Permission denied", "Connection refused") instead of a bare error pip.
   let stderrTail = ''

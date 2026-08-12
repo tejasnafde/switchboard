@@ -1,8 +1,12 @@
 /** provisionRemote: probe -> plan -> (upload + install) over a faked runner. */
 import { describe, it, expect, vi } from 'vitest'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { provisionRemote } from '../../src/main/machines/provisioner'
 import { bridgeMarker } from '../../src/main/machines/provisionSetup'
 import { execProc } from '../../src/main/machines/provisionDeps'
+import { _resetShellEnvCacheForTests } from '../../src/main/shell-env'
 import type { Machine } from '@shared/machines'
 
 const machine: Machine = {
@@ -179,6 +183,36 @@ describe('provisionRemote', () => {
 })
 
 describe('execProc (real child processes)', () => {
+  it('finds gcloud on the login-shell path when Finder supplied a minimal PATH', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'sb-gcloud-path-'))
+    const bin = join(root, 'bin')
+    const shell = join(root, 'login-shell')
+    const gcloud = join(bin, 'gcloud')
+    const previousPath = process.env.PATH
+    const previousShell = process.env.SHELL
+    try {
+      mkdirSync(bin)
+      writeFileSync(shell, `#!/bin/sh\nprintf 'PATH=${bin}:/usr/bin:/bin\\0'\n`)
+      writeFileSync(gcloud, '#!/bin/sh\nprintf fake-gcloud\n')
+      chmodSync(shell, 0o755)
+      chmodSync(gcloud, 0o755)
+      process.env.PATH = '/usr/bin:/bin'
+      process.env.SHELL = shell
+      _resetShellEnvCacheForTests()
+
+      const res = await execProc('gcloud', ['--version'])
+
+      expect(res).toEqual({ code: 0, stdout: 'fake-gcloud', stderr: '' })
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH
+      else process.env.PATH = previousPath
+      if (previousShell === undefined) delete process.env.SHELL
+      else process.env.SHELL = previousShell
+      _resetShellEnvCacheForTests()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('resolves with code + captured output on normal completion', async () => {
     const res = await execProc('sh', ['-c', 'printf hi; printf oops >&2; exit 3'])
     expect(res).toEqual({ code: 3, stdout: 'hi', stderr: 'oops' })

@@ -7,12 +7,13 @@
  * exclusively while both are in-tree behind the feature flag.
  */
 
-import { spawnSync, execSync } from 'child_process'
-import { basename, join as joinPath } from 'path'
+import { execSync } from 'child_process'
+import { join as joinPath } from 'path'
 import { readFileSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { createMainLogger as createLogger } from '../../../logger'
 import { getSetting } from '../../../db/database'
+import { _resetShellEnvCacheForTests, loadShellEnv } from '../../../shell-env'
 
 const log = createLogger('provider:opencode:env')
 
@@ -62,54 +63,6 @@ export function findOpencodePath(): string | null {
     cachedPath = null
   }
   return cachedPath
-}
-
-let cachedShellEnv: Record<string, string> | null | undefined
-
-/**
- * Load env vars from the user's login shell. Electron on macOS doesn't
- * source ~/.zshrc when launched from Finder, so NVIDIA_API_KEY etc. would
- * otherwise be missing from process.env. Pattern from OpenCode's own
- * desktop app (packages/desktop-electron/src/main/shell-env.ts).
- */
-export function loadShellEnv(): Record<string, string> | null {
-  if (cachedShellEnv !== undefined) return cachedShellEnv
-  if (process.platform === 'win32') {
-    log.info('shell env probe skipped on Windows')
-    cachedShellEnv = null
-    return null
-  }
-  const shell = process.env.SHELL || '/bin/sh'
-  const name = basename(shell).toLowerCase()
-  if (name === 'nu' || name === 'nu.exe') {
-    cachedShellEnv = null
-    return null
-  }
-  const tryProbe = (flag: '-il' | '-l'): Record<string, string> | null => {
-    const out = spawnSync(shell, [flag, '-c', 'env -0'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 5000,
-      windowsHide: true,
-    })
-    if (out.error || out.status !== 0) return null
-    const env: Record<string, string> = {}
-    for (const line of out.stdout.toString('utf8').split('\0')) {
-      if (!line) continue
-      const ix = line.indexOf('=')
-      if (ix <= 0) continue
-      env[line.slice(0, ix)] = line.slice(ix + 1)
-    }
-    return Object.keys(env).length > 0 ? env : null
-  }
-  const env = tryProbe('-il') ?? tryProbe('-l')
-  cachedShellEnv = env
-  if (env) {
-    const hasNvidia = 'NVIDIA_API_KEY' in env
-    log.info(`shell env loaded: ${Object.keys(env).length} vars (NVIDIA_API_KEY ${hasNvidia ? 'present' : 'MISSING'})`)
-  } else {
-    log.warn('shell env probe failed - opencode may not see API keys from ~/.zshrc')
-  }
-  return env
 }
 
 /**
@@ -218,6 +171,6 @@ export function dedupeModelIds(ids: string[]): string[] {
  */
 export function _resetOpencodeEnvCachesForTests(): void {
   cachedPath = undefined
-  cachedShellEnv = undefined
+  _resetShellEnvCacheForTests()
   cachedUserProviders = undefined
 }

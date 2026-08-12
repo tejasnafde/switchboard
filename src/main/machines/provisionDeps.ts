@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import type { Machine } from '@shared/machines'
 import { appRootDir, appVersion } from '../runtime'
 import { bundledBridgeFiles } from '../ide/bundled'
+import { childProcessEnv } from '../shell-env'
 import { provisionRemote, type ProcRunner } from './provisioner'
 
 // Cap on captured child output. `cat > file` produces no stdout, but a
@@ -20,7 +21,7 @@ const EXEC_TIMEOUT_MS = 10 * 60 * 1000
 
 export const execProc: ProcRunner['exec'] = (command, args, stdin, timeoutMs = EXEC_TIMEOUT_MS) =>
   new Promise((resolve) => {
-    const child = spawn(command, args)
+    const child = spawn(command, args, { env: childProcessEnv() })
     const timer = setTimeout(() => {
       child.kill()
       finish(1, `command timed out after ${Math.round(timeoutMs / 1000)}s`)

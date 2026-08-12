@@ -13,6 +13,10 @@
  * ungraceful tunnel drop can't keep holding the port.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { _resetShellEnvCacheForTests } from '../../src/main/shell-env'
 
 interface Listeners {
   open: Array<() => void>
@@ -189,6 +193,41 @@ describe('waitForHealth', () => {
 })
 
 describe('spawnTunnel', () => {
+  it('finds gcloud on the login-shell path when Finder supplied a minimal PATH', async () => {
+    vi.useRealTimers()
+    const root = mkdtempSync(join(tmpdir(), 'sb-gcloud-tunnel-'))
+    const bin = join(root, 'bin')
+    const shell = join(root, 'login-shell')
+    const gcloud = join(bin, 'gcloud')
+    const previousPath = process.env.PATH
+    const previousShell = process.env.SHELL
+    try {
+      mkdirSync(bin)
+      writeFileSync(shell, `#!/bin/sh\nprintf 'PATH=${bin}:/usr/bin:/bin\\0'\n`)
+      writeFileSync(gcloud, '#!/bin/sh\nexit 0\n')
+      chmodSync(shell, 0o755)
+      chmodSync(gcloud, 0o755)
+      process.env.PATH = '/usr/bin:/bin'
+      process.env.SHELL = shell
+      _resetShellEnvCacheForTests()
+
+      const proc = spawnTunnel('gcloud', ['--version'])
+      const exited = await Promise.race([
+        new Promise<boolean>((resolve) => proc.onExit(() => resolve(true))),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)),
+      ])
+
+      expect(exited).toBe(true)
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH
+      else process.env.PATH = previousPath
+      if (previousShell === undefined) delete process.env.SHELL
+      else process.env.SHELL = previousShell
+      _resetShellEnvCacheForTests()
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   // Real child processes: their exit events are plain IO, so the fake timers
   // installed by beforeEach are irrelevant here - but switch back anyway so a
   // slow spawn can never interleave with a queued fake-timer tick.
