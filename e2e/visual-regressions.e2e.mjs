@@ -7,13 +7,16 @@ import { join } from 'node:path'
 import { PNG } from 'pngjs'
 
 const repoRoot = process.cwd()
-if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
+const packagedExecutable = process.env.SB_PACKAGED_EXECUTABLE
+if (!packagedExecutable && !existsSync(join(repoRoot, 'out/main/index.js'))) {
   console.error('out/main/index.js missing - run npm run build:fast first')
   process.exit(1)
 }
 
 const userDataDir = mkdtempSync(join(tmpdir(), 'sb-visual-e2e-'))
 const screenshotPath = join(tmpdir(), 'switchboard-visual-translucent.png')
+const windowScreenshotPath = join(tmpdir(), 'switchboard-visual-translucent-window.png')
+const settingsScreenshotPath = join(tmpdir(), 'switchboard-visual-update-help.png')
 const snapshotPath = join(repoRoot, 'e2e', 'snapshots', `visual-regressions-translucent-${process.platform}.png`)
 let app
 
@@ -61,7 +64,7 @@ async function closeApp() {
 
 try {
   app = await electron.launch({
-    args: ['.'],
+    ...(packagedExecutable ? { executablePath: packagedExecutable, args: [] } : { args: ['.'] }),
     cwd: repoRoot,
     env: {
       ...process.env,
@@ -75,7 +78,9 @@ try {
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
 
   await win.waitForTimeout(600)
-  await win.keyboard.press('Escape')
+  const skipTour = win.getByRole('button', { name: 'Skip tour' })
+  if (await skipTour.isVisible()) await skipTour.click()
+  await win.getByTitle('Settings').waitFor({ state: 'visible' })
   await win.getByTitle('Settings').click()
   const translucent = win.getByRole('button', { name: /Translucent/ })
   await translucent.waitFor({ state: 'visible' })
@@ -97,6 +102,7 @@ try {
       sidebarBackground: sidebar ? getComputedStyle(sidebar).backgroundColor : null,
       composerShadow: getComputedStyle(document.querySelector('.chat-composer')).boxShadow,
       modeBorder: getComputedStyle(document.querySelector('.runtime-mode-select')).borderTopColor,
+      modeShadow: getComputedStyle(document.querySelector('.runtime-mode-select')).boxShadow,
     }
   })
 
@@ -134,23 +140,51 @@ try {
   compareScreenshot(screenshot)
 
   if (theme.className !== 'theme-translucent') throw new Error(`theme class: ${theme.className}`)
-  if (theme.primary !== 'rgba(8, 10, 14, 0.7)') throw new Error(`primary tint: ${theme.primary}`)
-  if (theme.rootBackground !== 'rgba(8, 10, 14, 0.7)') {
+  if (theme.primary !== 'transparent') throw new Error(`primary tint: ${theme.primary}`)
+  if (theme.rootBackground !== 'rgba(0, 0, 0, 0)') {
     throw new Error(`root background: ${theme.rootBackground}`)
   }
-  if (theme.sidebarBackground !== 'rgba(8, 10, 14, 0.36)') {
+  const sidebarAlpha = Number(theme.sidebarBackground?.match(/[\d.]+\)$/)?.[0]?.slice(0, -1))
+  if (!Number.isFinite(sidebarAlpha) || sidebarAlpha > 0.4) {
     throw new Error(`sidebar background: ${theme.sidebarBackground}`)
   }
   if (theme.composerShadow !== 'none') throw new Error(`composer shadow: ${theme.composerShadow}`)
-  if (theme.modeBorder !== 'rgb(210, 153, 34)') throw new Error(`mode border: ${theme.modeBorder}`)
+  if (theme.modeBorder === 'rgb(210, 153, 34)' || theme.modeShadow !== 'none') {
+    throw new Error(`full access warning glow: border=${theme.modeBorder} shadow=${theme.modeShadow}`)
+  }
   if (toolLayout.summaryDisplay !== 'flex' || toolLayout.summaryAlign !== 'center') {
     throw new Error(`tool summary alignment: ${JSON.stringify(toolLayout)}`)
   }
   if (toolLayout.rowPaddingLeft !== '0px' || toolLayout.alignmentDelta > 2) {
     throw new Error(`tool tree padding: ${JSON.stringify(toolLayout)}`)
   }
+  await win.evaluate(() => document.querySelector('[data-visual-fixture="tool-summary"]')?.remove())
+  await win.screenshot({ path: windowScreenshotPath })
 
-  console.log(`E2E PASSED - translucent theme screenshot: ${screenshotPath}`)
+  await win.getByTitle('Settings').click()
+  await win.getByRole('button', { name: 'About' }).click()
+  const updateHelp = win.getByRole('button', { name: 'About unsigned updates' })
+  await updateHelp.click()
+  const tooltip = win.getByRole('tooltip')
+  await tooltip.waitFor({ state: 'visible' })
+  const tooltipBox = await tooltip.boundingBox()
+  const modalBox = await win.locator('.settings-modal-content').boundingBox()
+  if (!tooltipBox || !modalBox || tooltipBox.y < modalBox.y || tooltipBox.y + tooltipBox.height > modalBox.y + modalBox.height) {
+    throw new Error(`update tooltip clipped: tooltip=${JSON.stringify(tooltipBox)} modal=${JSON.stringify(modalBox)}`)
+  }
+  const checkButtonBox = await win.getByRole('button', { name: 'Check for updates' }).boundingBox()
+  const overlaps = (a, b) => a && b && a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
+  if (overlaps(tooltipBox, checkButtonBox)) {
+    throw new Error(`update tooltip overlaps controls: tooltip=${JSON.stringify(tooltipBox)} check=${JSON.stringify(checkButtonBox)}`)
+  }
+  await win.screenshot({ path: settingsScreenshotPath })
+  await win.keyboard.press('Escape')
+  await tooltip.waitFor({ state: 'hidden' })
+  if (!await win.locator('.settings-modal-content').isVisible()) {
+    throw new Error('Escape closed Settings instead of only dismissing update help')
+  }
+
+  console.log(`E2E PASSED${packagedExecutable ? ' (packaged)' : ''} - translucent theme screenshot: ${screenshotPath}`)
 } catch (error) {
   console.error(`E2E FAILED - ${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1

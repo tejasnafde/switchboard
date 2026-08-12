@@ -16,7 +16,7 @@
   --bg-active: rgba(88, 166, 255, 0.10);
   --text-primary: #e2e8f0;
   --text-secondary: #8b949e;
-  --text-muted: #484f58;
+  --text-muted: #768390;
   --border: rgba(255, 255, 255, 0.07);
   --border-focus: rgba(88, 166, 255, 0.4);
   --accent: #58a6ff;
@@ -80,19 +80,19 @@
 }
 
 /* ─── Translucent theme ─────────────────────────────────────────── */
-/* Translucent - a dark material tint keeps content legible while macOS
-   vibrancy supplies the color and depth beneath it. */
+/* Native macOS vibrancy is the base material. Component-level tints below
+   preserve legibility without hiding the desktop behind a window-wide wash. */
 .theme-translucent {
-  --bg-primary: rgba(8, 10, 14, 0.7);
-  --bg-secondary: rgba(8, 10, 14, 0.36);
+  --bg-primary: transparent;
+  --bg-secondary: rgba(8, 10, 14, 0.18);
   --bg-tertiary: rgba(255, 255, 255, 0.07);
-  --bg-surface: rgba(12, 14, 19, 0.82);
-  --bg-glass: rgba(8, 10, 14, 0.72);
+  --bg-surface: rgba(12, 14, 19, 0.55);
+  --bg-glass: rgba(8, 10, 14, 0.36);
   --bg-hover: rgba(255, 255, 255, 0.07);
   --bg-active: rgba(88, 166, 255, 0.16);
   --text-primary: rgba(255, 255, 255, 0.95);
   --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-muted: rgba(255, 255, 255, 0.45);
+  --text-muted: rgba(255, 255, 255, 0.66);
   --border: rgba(255, 255, 255, 0.1);
   --border-focus: rgba(88, 166, 255, 0.35);
   --accent: #58a6ff;
@@ -101,7 +101,7 @@
   --success: #3fb950;
   --warning: #d29922;
   --error: #f85149;
-  --terminal-bg: rgba(8, 10, 14, 0.76);
+  --terminal-bg: rgba(8, 10, 14, 0.3);
   --terminal-fg: rgba(255, 255, 255, 0.95);
   --terminal-cursor: #58a6ff;
   --shadow-sm: none;
@@ -115,8 +115,6 @@
   --workspace-color-6: #ffaaa3;
 }
 
-/* The native window stays transparent; the renderer supplies one continuous
-   tint so wallpaper color cannot wash out individual panels. */
 html.theme-translucent,
 html.theme-translucent body {
   background: transparent !important;
@@ -124,8 +122,8 @@ html.theme-translucent body {
 }
 
 html.theme-translucent #root {
-  background: var(--bg-primary) !important;
-  background-color: var(--bg-primary) !important;
+  background: transparent !important;
+  background-color: transparent !important;
 }
 
 /* macOS fullscreen fallback: vibrancy doesn't work in fullscreen mode so
@@ -160,7 +158,7 @@ html[data-fullscreen="true"] .theme-translucent {
 }
 
 .theme-translucent .titlebar-drag {
-  background: rgba(8, 10, 14, 0.46) !important;
+  background: rgba(8, 10, 14, 0.22) !important;
   backdrop-filter: blur(20px) saturate(125%);
   -webkit-backdrop-filter: blur(20px) saturate(125%);
 }
@@ -883,33 +881,74 @@ html, body, #root {
   transition: background-color 160ms ease;
 }
 
-.runtime-mode-select[data-runtime-mode='full-access'] {
-  background: color-mix(in srgb, var(--warning) 10%, var(--bg-tertiary)) !important;
-  border-color: var(--warning) !important;
-  color: var(--text-primary) !important;
-}
-
 .theme-translucent .chat-panel-header {
-  background: rgba(8, 10, 14, 0.56) !important;
+  background: rgba(8, 10, 14, 0.26) !important;
   backdrop-filter: blur(20px) saturate(125%);
   -webkit-backdrop-filter: blur(20px) saturate(125%);
 }
 
 .theme-translucent .chat-composer {
-  background: rgba(8, 10, 14, 0.7) !important;
+  background: rgba(8, 10, 14, 0.32) !important;
   backdrop-filter: blur(24px) saturate(130%);
   -webkit-backdrop-filter: blur(24px) saturate(130%);
 }
 
 .theme-translucent .chat-composer .sb-rci-content {
-  background: rgba(5, 7, 10, 0.66) !important;
+  background: rgba(5, 7, 10, 0.42) !important;
   border-color: rgba(255, 255, 255, 0.12) !important;
 }
 
 .theme-translucent .turn-files {
-  background: rgba(12, 12, 14, 0.7);
+  background: rgba(12, 12, 14, 0.4);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
+}
+
+.update-help-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.update-help-button::before {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+
+.update-help-button:hover,
+.update-help-button:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--border-focus);
+}
+
+.update-help-button:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.update-help-tooltip {
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.55;
 }
 
 .sidebar-thread:hover {

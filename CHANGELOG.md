@@ -2,6 +2,18 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.25 - Restore translucency and finish updater recovery
+
+### Fixed
+- **The 0.8.24 translucent theme was effectively opaque.** The renderer root is transparent again so native macOS vibrancy remains visible, while restrained local tints keep the sidebar, header, composer, input, terminal, and diff surfaces readable.
+- **Dark-theme metadata was too dim, and Full Access glowed amber.** Meaningful muted text now clears a 4.5:1 contrast floor, and the runtime-mode selector uses the same neutral surface as every other mode.
+- **A completed update could stay stuck on “downloading.”** Updater state is now process-owned, broadcasts to every live window, and can be queried when Settings mounts after the terminal event.
+- **The unsigned-build help tooltip was unreliable and clipped.** It is now a keyboard-accessible disclosure with a 40px effective hit target, stays inside the Settings layout without covering controls, closes independently on Escape, and supports outside-click dismissal.
+
+### Notes
+- TDD captured each released failure before implementation, including packaged-app assertions for transparent root composition, neutral Full Access styling, tour dismissal, tool-summary geometry, help-panel clipping/overlap, and Escape behavior.
+- The final local gate passed 2,383 tests across 230 files, both typechecks, lint, all production bundles, the packaged-main smoke test, and Playwright against a locally packaged macOS app.
+
 ## 0.8.24 - Codex retries and diffs render like first-class UI
 
 ### Fixed

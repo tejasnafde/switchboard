@@ -1180,18 +1180,15 @@ function UpdateCheckRow() {
   const [status, setStatus] = useState<UpdateStatus>({ kind: 'idle' })
   const [busy, setBusy] = useState(false)
   const [restarting, setRestarting] = useState(false)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpRef = useRef<HTMLDivElement>(null)
   // Main drops repeat fires too; this keeps the UI honest while teardown runs.
   const restartFired = useRef(false)
 
-  // Subscribe to live status events from main. Coexists with the
-  // launch-time auto-check, so by the time this mounts there may
-  // already be a `checking` or `up-to-date` event in flight; we'll
-  // pick up the next one.
   useEffect(() => {
-    const api = window.api.app as unknown as {
-      onUpdateStatus: (cb: (s: UpdateStatus) => void) => () => void
-    }
-    return api.onUpdateStatus((s) => {
+    let receivedLiveStatus = false
+    const unsubscribe = window.api.app.onUpdateStatus((s) => {
+      receivedLiveStatus = true
       setStatus(s)
       // Main un-latches and reports an error when the install never starts.
       // Clear the optimistic flag too, or the button stays dead for good.
@@ -1200,15 +1197,35 @@ function UpdateCheckRow() {
         setRestarting(false)
       }
     })
+    void window.api.app.getUpdateStatus().then((current) => {
+      if (!receivedLiveStatus) setStatus(current)
+    })
+    return unsubscribe
   }, [])
+
+  useEffect(() => {
+    if (!helpOpen) return
+    const closeOnPointerDown = (event: PointerEvent) => {
+      if (!helpRef.current?.contains(event.target as Node)) setHelpOpen(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      setHelpOpen(false)
+    }
+    document.addEventListener('pointerdown', closeOnPointerDown)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnPointerDown)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [helpOpen])
 
   const check = useCallback(async () => {
     setBusy(true)
     try {
-      const api = window.api.app as unknown as {
-        checkForUpdates: () => Promise<UpdateStatus>
-      }
-      const result = await api.checkForUpdates()
+      const result = await window.api.app.checkForUpdates()
       setStatus(result)
     } finally {
       setBusy(false)
@@ -1219,8 +1236,7 @@ function UpdateCheckRow() {
     if (restartFired.current) return
     restartFired.current = true
     setRestarting(true)
-    const api = window.api.app as unknown as { quitAndInstall: () => void }
-    api.quitAndInstall()
+    window.api.app.quitAndInstall()
   }, [])
 
   const view = updateRowView(status, { checking: busy, restarting })
@@ -1302,31 +1318,32 @@ function UpdateCheckRow() {
           </button>
         )}
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-        <span>{footerCopy.line}</span>
-        {footerCopy.tooltip && (
-          <span
-            title={footerCopy.tooltip}
-            aria-label={footerCopy.tooltip}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              width: '13px',
-              height: '13px',
-              borderRadius: '50%',
-              border: '1px solid var(--border)',
-              fontSize: '9px',
-              cursor: 'help',
-              userSelect: 'none',
-              flexShrink: 0,
-            }}
+      <div ref={helpRef} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '10.5px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
+          <span>{footerCopy.line}</span>
+          {footerCopy.tooltip && (
+            <button
+              type="button"
+              className="update-help-button"
+              aria-label="About unsigned updates"
+              aria-expanded={helpOpen}
+              aria-describedby={helpOpen ? 'update-help-tooltip' : undefined}
+              onClick={() => setHelpOpen((open) => !open)}
+            >
+              ?
+            </button>
+          )}
+        </div>
+        {footerCopy.tooltip && helpOpen && (
+          <div
+            id="update-help-tooltip"
+            role="tooltip"
+            className="update-help-tooltip"
           >
-            ?
-          </span>
+            {footerCopy.tooltip}
+          </div>
         )}
       </div>
     </div>
   )
 }
-

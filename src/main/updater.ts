@@ -37,6 +37,7 @@ export type { UpdateStatus }
 
 let registered = false
 let lastStatus: UpdateStatus = { kind: 'idle' }
+const updaterWindows = new Set<BrowserWindow>()
 /** Guards the one-shot re-download after a purged staging file. */
 let staleDownloadRetried = false
 
@@ -50,14 +51,23 @@ let staleDownloadRetried = false
  */
 const CHECK_TIMEOUT_MS = 120_000
 
-function send(window: BrowserWindow, status: UpdateStatus): void {
+function trackWindow(window: BrowserWindow): void {
+  if (updaterWindows.has(window)) return
+  updaterWindows.add(window)
+  window.once('closed', () => updaterWindows.delete(window))
+}
+
+function send(status: UpdateStatus): void {
   lastStatus = status
-  if (!window.isDestroyed()) {
-    window.webContents.send(AppChannels.UPDATE_STATUS, status)
+  for (const window of updaterWindows) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(AppChannels.UPDATE_STATUS, status)
+    }
   }
 }
 
 export function registerAutoUpdater(window: BrowserWindow): void {
+  trackWindow(window)
   // Idempotent - `app.on('activate', ...)` calls this on macOS reopens.
   // Without the guard each window-recreate adds another set of
   // autoUpdater listeners and the renderer would see duplicate events.
@@ -74,11 +84,11 @@ export function registerAutoUpdater(window: BrowserWindow): void {
         kind: 'unsupported',
         reason: 'Auto-update is only available in packaged builds.',
       }
-      send(window, status)
+      send(status)
       return status
     }
     try {
-      send(window, { kind: 'checking' })
+      send({ kind: 'checking' })
       // Timed so a stall is measurable. Healthy checks take ~2s; three stalls
       // (2026-08-07 x2, 08-08) each ran ~77s, the shape of a TCP connect that
       // black-holes until the OS gives up. electron-updater dedups concurrent
@@ -89,19 +99,21 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       // No `result` means the channel file was missing or unreachable;
       // electron-updater logs the underlying reason. Surface as error.
       if (!result) {
-        send(window, { kind: 'error', message: 'Could not reach update server' })
+        send({ kind: 'error', message: 'Could not reach update server' })
       }
       return lastStatus
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.error(`checkForUpdates failed: ${message}`)
-      send(window, {
+      send({
         kind: isCheckTimeout(message) ? 'slow' : 'error',
         message: friendlyUpdateError(message),
       })
       return lastStatus
     }
   })
+  ipcMain.removeHandler(AppChannels.GET_UPDATE_STATUS)
+  ipcMain.handle(AppChannels.GET_UPDATE_STATUS, () => lastStatus)
 
   // Skip the actual updater in dev - autoUpdater throws or no-ops with
   // confusing messages when there's no `app-update.yml` next to the
@@ -128,21 +140,21 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     debug: (m: unknown) => log.info(`[updater:debug] ${String(m)}`),
   }
 
-  autoUpdater.on('checking-for-update', () => send(window, { kind: 'checking' }))
+  autoUpdater.on('checking-for-update', () => send({ kind: 'checking' }))
   autoUpdater.on('update-available', (info) =>
-    send(window, { kind: 'available', version: info?.version ?? 'unknown' }),
+    send({ kind: 'available', version: info?.version ?? 'unknown' }),
   )
   autoUpdater.on('update-not-available', (info) =>
-    send(window, { kind: 'up-to-date', version: info?.version ?? app.getVersion() }),
+    send({ kind: 'up-to-date', version: info?.version ?? app.getVersion() }),
   )
   autoUpdater.on('download-progress', (p) =>
-    send(window, { kind: 'downloading', percent: Math.round(p.percent ?? 0) }),
+    send({ kind: 'downloading', percent: Math.round(p.percent ?? 0) }),
   )
   autoUpdater.on('update-downloaded', (info) => {
     // A download that completes re-arms the stale-cache retry below, so a
     // later update in the same session gets its own attempt.
     staleDownloadRetried = false
-    send(window, { kind: 'downloaded', version: info?.version ?? 'unknown' })
+    send({ kind: 'downloaded', version: info?.version ?? 'unknown' })
   })
   autoUpdater.on('error', (err) => {
     const msg = err.message ?? String(err)
@@ -151,7 +163,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     // via git tag only). Treat it as "up to date" so the UI stays quiet.
     if (msg.includes('latest-mac.yml') || msg.includes('latest.yml')) {
       log.info('no release artifact found - skipping update check')
-      send(window, { kind: 'up-to-date', version: app.getVersion() })
+      send({ kind: 'up-to-date', version: app.getVersion() })
       return
     }
     // The staging file was purged mid-download (see isStaleDownloadError).
@@ -161,15 +173,15 @@ export function registerAutoUpdater(window: BrowserWindow): void {
     if (isStaleDownloadError(msg) && !staleDownloadRetried) {
       staleDownloadRetried = true
       log.warn('update staging file vanished mid-download - retrying once')
-      send(window, { kind: 'checking' })
+      send({ kind: 'checking' })
       withTimeout(autoUpdater.checkForUpdates(), CHECK_TIMEOUT_MS, 'Update check').catch((retryErr) => {
         const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr)
         log.error(`stale-download retry failed: ${retryMsg}`)
-        send(window, { kind: 'error', message: friendlyUpdateError(retryMsg) })
+        send({ kind: 'error', message: friendlyUpdateError(retryMsg) })
       })
       return
     }
-    send(window, { kind: 'error', message: friendlyUpdateError(msg) })
+    send({ kind: 'error', message: friendlyUpdateError(msg) })
   })
 
   // Kick off the initial check after a short delay so the renderer has
@@ -182,7 +194,7 @@ export function registerAutoUpdater(window: BrowserWindow): void {
       log.warn(`initial checkForUpdates failed: ${message}`)
       // Unstick the UI: without this, a hung launch-time check leaves the
       // Settings row on the "checking" status it broadcast at start.
-      send(window, {
+      send({
         kind: isCheckTimeout(message) ? 'slow' : 'error',
         message: friendlyUpdateError(message),
       })
@@ -202,5 +214,6 @@ export function quitAndInstall(): void {
 
 /** Record + broadcast a status, so a remounted Settings row sees it too. */
 export function reportInstallStatus(window: BrowserWindow, status: UpdateStatus): void {
-  send(window, status)
+  trackWindow(window)
+  send(status)
 }

@@ -46,6 +46,7 @@ export const AppChannels = {
   GET_CONVERSATION_PENDING_HANDOFF: 'app:get-conversation-pending-handoff',
   SET_CONVERSATION_PENDING_HANDOFF: 'app:set-conversation-pending-handoff',
   CHECK_FOR_UPDATES: 'app:check-for-updates',
+  GET_UPDATE_STATUS: 'app:get-update-status',
   RELAUNCH: 'app:relaunch',
   /** main → renderer push: status changes from electron-updater. */
   UPDATE_STATUS: 'app:update-status',

@@ -23,6 +23,7 @@ import type { DeviceSessionView, PairingCode } from '@shared/device-auth'
 import type { PartialClientConfig } from '@shared/google-oauth'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import type { GoogleClientStatus } from '../main/google/client-config'
+import type { UpdateStatus } from '@shared/update-status'
 import { createRendererLogger } from '../renderer/logger'
 
 const log = createRendererLogger('preload:provider')
@@ -247,16 +248,18 @@ const api = {
      * status the main process saw (or `unsupported` in dev). Live
      * progress flows through `onUpdateStatus` below.
      */
-    checkForUpdates: () =>
+    checkForUpdates: (): Promise<UpdateStatus> =>
       transport.invoke(AppChannels.CHECK_FOR_UPDATES),
+    getUpdateStatus: (): Promise<UpdateStatus> =>
+      transport.invoke(AppChannels.GET_UPDATE_STATUS),
     /**
      * Subscribe to update lifecycle events from the main-process
      * autoUpdater (checking → available → downloading → downloaded |
      * up-to-date | error). The Settings UI uses this to render a
      * status line that reflects what the updater is doing.
      */
-    onUpdateStatus: (callback: (status: import('@shared/update-status').UpdateStatus) => void) =>
-      transport.on<[import('@shared/update-status').UpdateStatus]>(AppChannels.UPDATE_STATUS, (status) =>
+    onUpdateStatus: (callback: (status: UpdateStatus) => void) =>
+      transport.on<[UpdateStatus]>(AppChannels.UPDATE_STATUS, (status) =>
         callback(status)),
     /**
      * Quit the app and relaunch into the downloaded update. Only valid

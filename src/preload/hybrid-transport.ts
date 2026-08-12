@@ -14,6 +14,7 @@ const LOCAL_CHANNELS = new Set<string>([
   AppChannels.RELAUNCH,
   AppChannels.SET_VIBRANCY,
   AppChannels.CHECK_FOR_UPDATES,
+  AppChannels.GET_UPDATE_STATUS,
   // Desktop-only, handled by bare ipcMain listeners in main/index.ts - no
   // AppChannels entry because they're not part of the ProviderAdapter-facing API.
   'app:close-window',
