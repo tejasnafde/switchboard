@@ -1,0 +1,888 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#08090b" />
+  <title>Switchboard — Workspace flows</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas: #08090b;
+      --panel: #101114;
+      --panel-raised: #15171b;
+      --panel-hover: #1b1d22;
+      --line: rgba(255, 255, 255, 0.09);
+      --line-strong: rgba(255, 255, 255, 0.16);
+      --text: #f0f1f3;
+      --secondary: #b1b5bd;
+      --muted: #777c86;
+      --blue: #58a6ff;
+      --blue-soft: rgba(88, 166, 255, 0.12);
+      --danger: #ff6b6b;
+      --radius: 7px;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.48), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+
+    html, body { min-height: 100%; }
+
+    body {
+      margin: 0;
+      background:
+        linear-gradient(var(--line) 1px, transparent 1px),
+        linear-gradient(90deg, var(--line) 1px, transparent 1px),
+        var(--canvas);
+      background-size: 40px 40px;
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input { font: inherit; }
+    button { color: inherit; touch-action: manipulation; }
+
+    .page {
+      width: min(1320px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 34px 0 48px;
+    }
+
+    .brief {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 32px;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow, .section-label, .kbd-label {
+      color: var(--muted);
+      font: 600 10px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 720px;
+      margin: 7px 0 0;
+      font-size: clamp(25px, 3vw, 40px);
+      line-height: 1.05;
+      letter-spacing: -.035em;
+      text-wrap: balance;
+    }
+
+    .brief-note {
+      max-width: 390px;
+      margin: 0;
+      color: var(--secondary);
+      font-size: 13px;
+      line-height: 1.55;
+      text-wrap: pretty;
+    }
+
+    .stage {
+      display: grid;
+      grid-template-columns: 286px minmax(0, 1fr);
+      min-height: 700px;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 10px;
+      background: #0b0c0e;
+      box-shadow: var(--shadow);
+    }
+
+    .sidebar {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #0e0f12;
+      border-right: 1px solid var(--line);
+    }
+
+    .titlebar {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      color: var(--secondary);
+      font-size: 11px;
+    }
+
+    .app-mark {
+      width: 15px;
+      height: 15px;
+      border: 1px solid var(--line-strong);
+      border-radius: 4px;
+      display: grid;
+      place-items: center;
+      font: 700 8px ui-monospace, SFMono-Regular, Menlo, monospace;
+      color: var(--text);
+    }
+
+    .search {
+      position: relative;
+      margin: 10px 10px 8px;
+    }
+
+    .search svg {
+      position: absolute;
+      left: 9px;
+      top: 8px;
+      color: var(--muted);
+    }
+
+    .search input {
+      width: 100%;
+      height: 30px;
+      padding: 0 30px;
+      color: var(--text);
+      background: #121318;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      outline: none;
+      font-size: 11px;
+    }
+
+    .search input:focus-visible { border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-soft); }
+
+    .tree { flex: 1; overflow: auto; padding: 4px 8px 88px; }
+
+    .machine-row, .workspace-head, .project-row, .footer-action, .menu-item,
+    .workspace-row, .organizer-project {
+      border: 0;
+      background: transparent;
+    }
+
+    .machine-row {
+      width: 100%;
+      height: 30px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 7px;
+      color: var(--secondary);
+      font-size: 11px;
+      text-align: left;
+    }
+
+    .machine-row .right { margin-left: auto; color: var(--muted); font-size: 10px; }
+    .chev { color: var(--muted); font-size: 8px; width: 8px; }
+
+    .workspace-block { position: relative; margin-top: 4px; padding-left: 7px; }
+    .workspace-block::before {
+      content: "";
+      position: absolute;
+      left: 3px;
+      top: 11px;
+      bottom: 7px;
+      width: 2px;
+      border-radius: 2px;
+      background: var(--workspace-color, #8bd5ff);
+      opacity: .8;
+    }
+
+    .workspace-head {
+      width: 100%;
+      height: 32px;
+      display: grid;
+      grid-template-columns: 18px minmax(0, 1fr) auto auto;
+      align-items: center;
+      gap: 5px;
+      padding: 0 3px 0 7px;
+      border-radius: 5px;
+      text-align: left;
+      cursor: default;
+    }
+
+    .workspace-head:hover, .workspace-head[data-menu="open"] { background: var(--panel-hover); }
+
+    .grip {
+      color: var(--muted);
+      opacity: 0;
+      cursor: grab;
+      font: 700 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: -2px;
+      transition: opacity 140ms cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .workspace-head:hover .grip, .workspace-row:hover .grip, .workspace-row.dragging .grip { opacity: 1; }
+
+    .workspace-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--secondary);
+      font-size: 10px;
+      font-weight: 650;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+
+    .workspace-count {
+      color: var(--muted);
+      font: 500 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .icon-btn {
+      position: relative;
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .icon-btn:hover, .icon-btn[aria-expanded="true"] { background: rgba(255,255,255,.06); color: var(--text); }
+    .icon-btn:active, .footer-action:active, .menu-item:active { transform: scale(.96); }
+    .icon-btn:focus-visible, .footer-action:focus-visible, .menu-item:focus-visible,
+    .workspace-row:focus-visible, .project-row:focus-visible, .organizer-project:focus-visible,
+    .new-workspace:focus-visible, .swatch:focus-visible {
+      outline: 2px solid var(--blue);
+      outline-offset: 1px;
+    }
+
+    .project-row {
+      width: calc(100% - 10px);
+      height: 29px;
+      margin-left: 10px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 9px;
+      border-radius: 5px;
+      color: var(--secondary);
+      font-size: 11px;
+      text-align: left;
+    }
+
+    .project-row:hover { background: rgba(255,255,255,.035); color: var(--text); }
+    .project-icon { color: var(--muted); }
+    .project-meta { margin-left: auto; color: var(--muted); font-size: 9px; }
+
+    .sidebar-footer {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: grid;
+      grid-template-columns: 1fr 38px;
+      gap: 6px;
+      padding: 9px;
+      background: rgba(14, 15, 18, .96);
+      border-top: 1px solid var(--line);
+    }
+
+    .footer-action {
+      height: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      color: var(--secondary);
+      background: #15161a;
+      cursor: pointer;
+      font-size: 11px;
+      transition: background 140ms cubic-bezier(.2, 0, 0, 1), border-color 140ms cubic-bezier(.2, 0, 0, 1), transform 80ms;
+    }
+
+    .footer-action:hover { background: #1c1e23; border-color: var(--line-strong); color: var(--text); }
+
+    .popover {
+      position: absolute;
+      z-index: 20;
+      width: 218px;
+      padding: 5px;
+      border: 1px solid var(--line-strong);
+      border-radius: 8px;
+      background: #17181c;
+      box-shadow: 0 16px 44px rgba(0,0,0,.55);
+    }
+
+    .create-popover { left: 9px; bottom: 51px; }
+    .workspace-popover { right: 2px; top: 31px; width: 178px; }
+    .popover[hidden] { display: none; }
+
+    .menu-label { padding: 6px 9px 5px; }
+
+    .menu-item {
+      width: 100%;
+      min-height: 36px;
+      display: grid;
+      grid-template-columns: 24px minmax(0,1fr) auto;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 8px;
+      border-radius: 5px;
+      color: var(--secondary);
+      text-align: left;
+      cursor: pointer;
+      font-size: 11px;
+    }
+
+    .menu-item:hover { color: var(--text); background: rgba(255,255,255,.055); }
+    .menu-item svg { color: var(--muted); }
+    .menu-item small { display: block; margin-top: 1px; color: var(--muted); font-size: 9px; }
+    .shortcut { color: var(--muted); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .menu-rule { height: 1px; margin: 5px; background: var(--line); }
+    .danger { color: var(--danger); }
+
+    .main {
+      position: relative;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: #090a0c;
+    }
+
+    .main-bar {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .canvas-label {
+      position: absolute;
+      left: 22px;
+      bottom: 18px;
+      color: var(--muted);
+      font: 10px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .organizer-wrap {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+
+    .organizer {
+      width: min(800px, 100%);
+      height: 590px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 9px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overscroll-behavior: contain;
+    }
+
+    .organizer-header {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 16px 0 18px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .organizer-title { flex: 1; }
+    .organizer-title strong { display: block; font-size: 13px; letter-spacing: -.01em; }
+    .organizer-title span { display: block; margin-top: 3px; color: var(--muted); font-size: 10px; }
+
+    .new-workspace {
+      height: 30px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 10px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel-raised);
+      color: var(--secondary);
+      cursor: pointer;
+      font-size: 10px;
+    }
+
+    .organizer-body {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(230px, 35%) minmax(0, 1fr);
+    }
+
+    .workspace-list {
+      min-width: 0;
+      padding: 10px;
+      overflow: auto;
+      border-right: 1px solid var(--line);
+      background: #0d0e11;
+    }
+
+    .workspace-row {
+      width: 100%;
+      min-height: 49px;
+      display: grid;
+      grid-template-columns: 18px 10px minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 7px;
+      border-radius: 6px;
+      text-align: left;
+      cursor: pointer;
+      transition: background 140ms cubic-bezier(.2, 0, 0, 1), transform 140ms cubic-bezier(.2, 0, 0, 1);
+    }
+
+    .workspace-row:hover { background: rgba(255,255,255,.04); }
+    .workspace-row.selected { background: var(--blue-soft); box-shadow: inset 0 0 0 1px rgba(88,166,255,.22); }
+    .workspace-row.dragging { opacity: .55; transform: scale(.985); user-select: none; }
+    .workspace-row.drop-before { box-shadow: inset 0 2px var(--blue); }
+    .color-dot { width: 7px; height: 18px; border-radius: 3px; background: var(--row-color); }
+
+    .row-copy { min-width: 0; }
+    .row-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--text); font-size: 11px; white-space: nowrap; }
+    .row-copy span { display: block; margin-top: 3px; color: var(--muted); font-size: 9px; font-variant-numeric: tabular-nums; }
+
+    .detail {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 17px 18px;
+    }
+
+    .detail-head { display: flex; align-items: flex-start; gap: 12px; padding-bottom: 14px; }
+    .detail-name { flex: 1; min-width: 0; }
+    .detail-name input {
+      width: 100%;
+      height: 31px;
+      padding: 0 8px;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      outline: none;
+      background: transparent;
+      color: var(--text);
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: -.015em;
+    }
+
+    .detail-name input:hover { border-color: var(--line); }
+    .detail-name input:focus-visible { border-color: var(--blue); background: #121318; box-shadow: 0 0 0 2px var(--blue-soft); }
+    .detail-name span { display: block; margin: 3px 9px 0; color: var(--muted); font-size: 10px; }
+
+    .palette { display: flex; align-items: center; gap: 6px; padding-top: 4px; }
+    .swatch {
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border: 2px solid var(--panel);
+      border-radius: 50%;
+      background: var(--swatch);
+      box-shadow: 0 0 0 1px var(--line-strong);
+      cursor: pointer;
+    }
+    .swatch.selected { box-shadow: 0 0 0 2px var(--text); }
+
+    .project-section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 30px;
+      border-bottom: 1px solid var(--line);
+    }
+    .project-section-head span:last-child { color: var(--muted); font-size: 9px; }
+
+    .project-list { flex: 1; overflow: auto; padding: 7px 0; }
+
+    .organizer-project {
+      width: 100%;
+      min-height: 42px;
+      display: grid;
+      grid-template-columns: 22px 22px minmax(0,1fr) auto;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: 5px;
+      text-align: left;
+      cursor: grab;
+    }
+
+    .organizer-project:hover { background: rgba(255,255,255,.035); }
+    .organizer-project.dragging { opacity: .45; user-select: none; }
+    .organizer-project.drop-before { box-shadow: inset 0 2px var(--blue); }
+    .folder { color: var(--muted); }
+    .project-copy { min-width: 0; }
+    .project-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; color: var(--secondary); font-size: 11px; white-space: nowrap; }
+    .project-copy span { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
+    .thread-count { color: var(--muted); font: 9px ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+    .durability {
+      min-height: 43px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 9px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 9px;
+    }
+    .durability svg { color: #79d99a; }
+
+    .organizer-footer {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 9px;
+    }
+
+    kbd {
+      padding: 2px 5px;
+      border: 1px solid var(--line);
+      border-bottom-color: var(--line-strong);
+      border-radius: 4px;
+      background: #17181c;
+      color: var(--secondary);
+      font: 9px ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+
+    .close-btn { width: auto; padding: 0 11px; }
+
+    @media (max-width: 940px) {
+      .page { width: min(680px, calc(100vw - 24px)); padding-top: 20px; }
+      .brief { align-items: flex-start; flex-direction: column; }
+      .stage { grid-template-columns: 1fr; }
+      .sidebar { min-height: 610px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .main { min-height: 720px; }
+      .organizer-wrap { padding: 18px; }
+    }
+
+    @media (max-width: 620px) {
+      .organizer-body { grid-template-columns: 1fr; }
+      .workspace-list { max-height: 190px; border-right: 0; border-bottom: 1px solid var(--line); }
+      .organizer { height: 680px; }
+      .palette .swatch:nth-child(n+5) { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="brief">
+      <div>
+        <div class="eyebrow">Switchboard / interaction mock / 01</div>
+        <h1>Organize in place. Reorder with intent.</h1>
+      </div>
+      <p class="brief-note">A hybrid workspace flow: lightweight actions stay in the sidebar; durable ordering and bulk organization live in one focused editor.</p>
+    </header>
+
+    <section class="stage" aria-label="Workspace flow mockup">
+      <aside class="sidebar" aria-label="Switchboard sidebar mockup">
+        <div class="titlebar"><span class="app-mark">S</span> switchboard</div>
+        <label class="search">
+          <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input name="sidebar-filter" autocomplete="off" aria-label="Filter projects and chats" placeholder="Filter projects and chats…" />
+        </label>
+
+        <div class="tree">
+          <button class="machine-row"><span class="chev">▼</span><span>Local</span><span class="right">5 projects</span></button>
+
+          <section class="workspace-block" style="--workspace-color:#8ee6a8">
+            <div class="workspace-head">
+              <span class="grip" aria-hidden="true">⠿</span>
+              <span class="workspace-name">SSG</span>
+              <span class="workspace-count">1·4</span>
+              <button class="icon-btn workspace-more" aria-label="SSG workspace actions" aria-expanded="false">•••</button>
+            </div>
+            <button class="project-row"><span class="project-icon">⌁</span><span>Switchboard</span><span class="project-meta">4</span></button>
+          </section>
+
+          <section class="workspace-block" style="--workspace-color:#d8a2ff">
+            <div class="workspace-head" data-menu="open">
+              <span class="grip" aria-hidden="true">⠿</span>
+              <span class="workspace-name">RetailIQ</span>
+              <span class="workspace-count">2·11</span>
+              <button class="icon-btn workspace-more" aria-label="RetailIQ workspace actions" aria-expanded="true">•••</button>
+              <div class="popover workspace-popover" role="menu">
+                <button class="menu-item" role="menuitem"><span>✎</span><span>Rename</span></button>
+                <button class="menu-item" role="menuitem"><span>●</span><span>Change Color</span></button>
+                <div class="menu-rule"></div>
+                <button class="menu-item danger" role="menuitem"><span>×</span><span>Delete Workspace…</span></button>
+              </div>
+            </div>
+            <button class="project-row"><span class="project-icon">⌁</span><span>Backend</span><span class="project-meta">7</span></button>
+            <button class="project-row"><span class="project-icon">⌁</span><span>Dashboard</span><span class="project-meta">4</span></button>
+          </section>
+
+          <section class="workspace-block" style="--workspace-color:#ff98a4">
+            <div class="workspace-head">
+              <span class="grip" aria-hidden="true">⠿</span>
+              <span class="workspace-name">Projects</span>
+              <span class="workspace-count">1·2</span>
+              <button class="icon-btn workspace-more" aria-label="Projects workspace actions" aria-expanded="false">•••</button>
+            </div>
+            <button class="project-row"><span class="project-icon">⌁</span><span>tejas-skills</span><span class="project-meta">2</span></button>
+          </section>
+
+          <section class="workspace-block" style="--workspace-color:#ffd28a">
+            <div class="workspace-head">
+              <span class="grip" aria-hidden="true">⠿</span>
+              <span class="workspace-name">OSS</span>
+              <span class="workspace-count">1·5</span>
+              <button class="icon-btn workspace-more" aria-label="OSS workspace actions" aria-expanded="false">•••</button>
+            </div>
+            <button class="project-row"><span class="project-icon">⌁</span><span>omnigent</span><span class="project-meta">5</span></button>
+          </section>
+
+          <button class="machine-row" style="margin-top:10px"><span class="chev">▶</span><span>Production</span><span class="right">offline</span></button>
+        </div>
+
+        <div class="sidebar-footer">
+          <button class="footer-action" id="createButton" aria-expanded="true">
+            <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Create
+          </button>
+          <button class="footer-action" id="organizeButton" aria-label="Organize workspaces" title="Organize workspaces">
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h6M14 17h6"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="12" cy="17" r="2"/></svg>
+          </button>
+
+          <div class="popover create-popover" id="createMenu" role="menu">
+            <div class="menu-label section-label">Create</div>
+            <button class="menu-item" role="menuitem">
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 19V5a2 2 0 0 1 2-2h5l2 3h7a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg>
+              <span>Project<small>Add a local folder</small></span><span class="shortcut">⌘O</span>
+            </button>
+            <button class="menu-item" role="menuitem">
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 4v16"/></svg>
+              <span>Workspace<small>Group related projects</small></span>
+            </button>
+            <button class="menu-item" role="menuitem">
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+              <span>Machine<small>Connect over SSH</small></span>
+            </button>
+            <div class="menu-rule"></div>
+            <button class="menu-item" role="menuitem" id="menuOrganize"><span>↕</span><span>Organize workspaces</span></button>
+          </div>
+        </div>
+      </aside>
+
+      <section class="main">
+        <div class="main-bar">Workspace organizer</div>
+        <div class="organizer-wrap">
+          <section class="organizer" role="dialog" aria-modal="false" aria-labelledby="organizerTitle">
+            <header class="organizer-header">
+              <div class="organizer-title">
+                <strong id="organizerTitle">Organize workspaces</strong>
+                <span>Drag to set the exact order shown in the sidebar.</span>
+              </div>
+              <button class="new-workspace">＋ New Workspace</button>
+              <button class="icon-btn" id="closeOrganizer" aria-label="Close organizer">×</button>
+            </header>
+
+            <div class="organizer-body">
+              <nav class="workspace-list" aria-label="Workspace order" id="workspaceList">
+                <button class="workspace-row selected" type="button" draggable="true" data-workspace="retailiq" style="--row-color:#d8a2ff">
+                  <span class="grip">⠿</span><span class="color-dot"></span>
+                  <span class="row-copy"><strong>RetailIQ</strong><span>2 projects · 11 threads</span></span>
+                  <span class="workspace-count">01</span>
+                </button>
+                <button class="workspace-row" type="button" draggable="true" data-workspace="ssg" style="--row-color:#8ee6a8">
+                  <span class="grip">⠿</span><span class="color-dot"></span>
+                  <span class="row-copy"><strong>SSG</strong><span>1 project · 4 threads</span></span>
+                  <span class="workspace-count">02</span>
+                </button>
+                <button class="workspace-row" type="button" draggable="true" data-workspace="projects" style="--row-color:#ff98a4">
+                  <span class="grip">⠿</span><span class="color-dot"></span>
+                  <span class="row-copy"><strong>Projects</strong><span>1 project · 2 threads</span></span>
+                  <span class="workspace-count">03</span>
+                </button>
+                <button class="workspace-row" type="button" draggable="true" data-workspace="oss" style="--row-color:#ffd28a">
+                  <span class="grip">⠿</span><span class="color-dot"></span>
+                  <span class="row-copy"><strong>OSS</strong><span>1 project · 5 threads</span></span>
+                  <span class="workspace-count">04</span>
+                </button>
+                <button class="workspace-row" type="button" draggable="true" data-workspace="site" style="--row-color:#8bd5ff">
+                  <span class="grip">⠿</span><span class="color-dot"></span>
+                  <span class="row-copy"><strong>Site</strong><span>1 project · 3 threads</span></span>
+                  <span class="workspace-count">05</span>
+                </button>
+              </nav>
+
+              <section class="detail">
+                <div class="detail-head">
+                  <label class="detail-name">
+                    <input id="workspaceName" name="workspace-name" autocomplete="off" aria-label="Workspace name" value="RetailIQ" />
+                    <span>Changes save when you leave the field.</span>
+                  </label>
+                  <div class="palette" aria-label="Workspace color">
+                    <button class="swatch" style="--swatch:#8ee6a8" aria-label="Green"></button>
+                    <button class="swatch selected" style="--swatch:#d8a2ff" aria-label="Purple"></button>
+                    <button class="swatch" style="--swatch:#ff98a4" aria-label="Red"></button>
+                    <button class="swatch" style="--swatch:#ffd28a" aria-label="Amber"></button>
+                    <button class="swatch" style="--swatch:#8bd5ff" aria-label="Blue"></button>
+                  </div>
+                </div>
+
+                <div class="project-section-head">
+                  <span class="section-label">Projects in this workspace</span>
+                  <span>Drag or press ⌥↑/↓</span>
+                </div>
+                <div class="project-list" id="projectList">
+                  <button class="organizer-project" draggable="true">
+                    <span class="grip">⠿</span><span class="folder">⌁</span>
+                    <span class="project-copy"><strong>Backend</strong><span>~/Desktop/work/geoiq-backend</span></span>
+                    <span class="thread-count">7 threads</span>
+                  </button>
+                  <button class="organizer-project" draggable="true">
+                    <span class="grip">⠿</span><span class="folder">⌁</span>
+                    <span class="project-copy"><strong>Dashboard</strong><span>~/Desktop/work/retailiq-dashboard</span></span>
+                    <span class="thread-count">4 threads</span>
+                  </button>
+                </div>
+
+                <div class="durability">
+                  <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4L19 6"/></svg>
+                  Order is saved per workspace and restored before projects render.
+                </div>
+              </section>
+            </div>
+
+            <footer class="organizer-footer">
+              <span>Drag a project onto another workspace to move it. Use ⌥↑/↓ to reorder.</span>
+              <span><kbd>Esc</kbd> close</span>
+            </footer>
+          </section>
+        </div>
+        <div class="canvas-label">MOCK STATE: CREATE MENU + WORKSPACE MENU + ORGANIZER</div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const createButton = document.querySelector('#createButton')
+    const createMenu = document.querySelector('#createMenu')
+    const organizeButton = document.querySelector('#organizeButton')
+    const menuOrganize = document.querySelector('#menuOrganize')
+    const organizer = document.querySelector('.organizer')
+    const closeOrganizer = document.querySelector('#closeOrganizer')
+
+    function toggleCreate(force) {
+      const open = typeof force === 'boolean' ? force : createMenu.hidden
+      createMenu.hidden = !open
+      createButton.setAttribute('aria-expanded', String(open))
+    }
+
+    createButton.addEventListener('click', () => toggleCreate())
+    function showOrganizer() {
+      organizer.hidden = false
+      organizer.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+
+    organizeButton.addEventListener('click', showOrganizer)
+    menuOrganize.addEventListener('click', () => { toggleCreate(false); showOrganizer() })
+    closeOrganizer.addEventListener('click', () => { organizer.hidden = true; organizeButton.focus() })
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return
+      toggleCreate(false)
+      document.querySelectorAll('.workspace-popover').forEach((menu) => { menu.hidden = true })
+      document.querySelectorAll('.workspace-more').forEach((button) => button.setAttribute('aria-expanded', 'false'))
+    })
+
+    document.querySelectorAll('.workspace-more').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation()
+        const head = button.closest('.workspace-head')
+        const menu = head.querySelector('.workspace-popover')
+        if (!menu) return
+        const open = menu.hidden
+        menu.hidden = !open
+        button.setAttribute('aria-expanded', String(open))
+        head.dataset.menu = open ? 'open' : ''
+      })
+    })
+
+    document.querySelectorAll('.swatch').forEach((swatch) => {
+      swatch.addEventListener('click', () => {
+        document.querySelectorAll('.swatch').forEach((item) => item.classList.remove('selected'))
+        swatch.classList.add('selected')
+        document.querySelector('.workspace-row.selected').style.setProperty('--row-color', getComputedStyle(swatch).getPropertyValue('--swatch'))
+      })
+    })
+
+    function makeSortable(container, selector) {
+      let dragged = null
+
+      function refreshOrder() {
+        container.querySelectorAll(selector).forEach((row, index) => {
+          row.classList.remove('dragging', 'drop-before')
+          const number = row.querySelector('.workspace-count')
+          if (number) number.textContent = String(index + 1).padStart(2, '0')
+        })
+      }
+
+      container.addEventListener('dragstart', (event) => {
+        dragged = event.target.closest(selector)
+        if (!dragged) return
+        dragged.classList.add('dragging')
+        event.dataTransfer.effectAllowed = 'move'
+      })
+      container.addEventListener('dragover', (event) => {
+        event.preventDefault()
+        const target = event.target.closest(selector)
+        container.querySelectorAll(selector).forEach((row) => row.classList.remove('drop-before'))
+        if (target && target !== dragged) target.classList.add('drop-before')
+      })
+      container.addEventListener('drop', (event) => {
+        event.preventDefault()
+        const target = event.target.closest(selector)
+        if (dragged && target && target !== dragged) container.insertBefore(dragged, target)
+      })
+      container.addEventListener('dragend', () => {
+        refreshOrder()
+        dragged = null
+      })
+
+      container.addEventListener('keydown', (event) => {
+        if (!event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return
+        const row = event.target.closest(selector)
+        if (!row) return
+        event.preventDefault()
+        const sibling = event.key === 'ArrowUp' ? row.previousElementSibling : row.nextElementSibling
+        if (!sibling || !sibling.matches(selector)) return
+        if (event.key === 'ArrowUp') container.insertBefore(row, sibling)
+        else container.insertBefore(sibling, row)
+        refreshOrder()
+        row.focus()
+      })
+    }
+
+    makeSortable(document.querySelector('#workspaceList'), '.workspace-row')
+    makeSortable(document.querySelector('#projectList'), '.organizer-project')
+
+    document.querySelectorAll('.workspace-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        document.querySelectorAll('.workspace-row').forEach((item) => item.classList.remove('selected'))
+        row.classList.add('selected')
+        document.querySelector('#workspaceName').value = row.querySelector('strong').textContent
+      })
+    })
+  </script>
+</body>
+</html>
