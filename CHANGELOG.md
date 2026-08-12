@@ -2,6 +2,16 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.27 - Make remote sends wait for their session
+
+### Fixed
+- **A message with an image could race remote provider startup and fail with `No session: agent_*`.** Concurrent starts and sends now share the same in-flight startup promise, so a quick attachment send waits for the adapter to exist instead of leaving the composer stuck in Working.
+- **Finder-launched builds could not find `gcloud` even though it worked in the terminal.** Provisioning and long-lived tunnels now inherit the login shell's PATH while preserving the packaged app's remaining environment, so Homebrew and Google Cloud SDK installations resolve normally.
+
+### Notes
+- TDD reproduced both failures through the real WebSocket provider boundary and real child processes running with Finder's minimal PATH. Review also caught and fixed stale status reporting when a second renderer reattached during startup.
+- The final gate passed 2,405 tests across 233 files, both typechecks, lint, all production bundles, the packaged-main smoke test, and packaged Electron Playwright. macOS, Windows, and Ubuntu CI passed before tagging.
+
 ## 0.8.26 - Make translucent mode actual crystal glass
 
 ### Added
