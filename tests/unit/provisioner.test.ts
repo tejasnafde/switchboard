@@ -183,7 +183,7 @@ describe('provisionRemote', () => {
 })
 
 describe('execProc (real child processes)', () => {
-  it('finds gcloud on the login-shell path when Finder supplied a minimal PATH', async () => {
+  it.skipIf(process.platform === 'win32')('finds gcloud on the login-shell path when Finder supplied a minimal PATH', async () => {
     const root = mkdtempSync(join(tmpdir(), 'sb-gcloud-path-'))
     const bin = join(root, 'bin')
     const shell = join(root, 'login-shell')

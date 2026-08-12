@@ -193,7 +193,7 @@ describe('waitForHealth', () => {
 })
 
 describe('spawnTunnel', () => {
-  it('finds gcloud on the login-shell path when Finder supplied a minimal PATH', async () => {
+  it.skipIf(process.platform === 'win32')('finds gcloud on the login-shell path when Finder supplied a minimal PATH', async () => {
     vi.useRealTimers()
     const root = mkdtempSync(join(tmpdir(), 'sb-gcloud-tunnel-'))
     const bin = join(root, 'bin')
