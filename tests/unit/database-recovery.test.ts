@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const state = vi.hoisted(() => ({
@@ -81,9 +82,9 @@ describe('database reset safety', () => {
 
     expect(() => getDb()).not.toThrow()
     expect(state.renames.map(([from]) => from)).toEqual([
-      '/tmp/switchboard-db-recovery-test/data/switchboard.db',
-      '/tmp/switchboard-db-recovery-test/data/switchboard.db-wal',
-      '/tmp/switchboard-db-recovery-test/data/switchboard.db-shm',
+      join('/tmp/switchboard-db-recovery-test', 'data', 'switchboard.db'),
+      join('/tmp/switchboard-db-recovery-test', 'data', 'switchboard.db-wal'),
+      join('/tmp/switchboard-db-recovery-test', 'data', 'switchboard.db-shm'),
     ])
   })
 })
