@@ -892,6 +892,79 @@ describe('CodexAdapter', () => {
     })
   })
 
+  it('does not replace the foreground session when Codex announces a subagent thread', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+    await adapter.sendTurn('switchboard-thread-1', 'start parent')
+    onEvent.mockClear()
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'thread/started',
+      params: {
+        thread: {
+          id: 'codex-child-1',
+          source: {
+            subAgent: {
+              thread_spawn: { parent_thread_id: 'codex-thread-1', depth: 1 },
+            },
+          },
+        },
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+    await adapter.sendTurn('switchboard-thread-1', 'continue parent')
+
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'session',
+      sessionId: 'codex-child-1',
+    }))
+    const turn = writes.map((line) => JSON.parse(line)).findLast((message) => message.method === 'turn/start')
+    expect(turn.params.threadId).toBe('codex-thread-1')
+  })
+
+  it('does not mix child-thread status or content into the foreground conversation', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'switchboard-thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+    await adapter.sendTurn('switchboard-thread-1', 'start parent')
+    onEvent.mockClear()
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'thread/status/changed',
+      params: { threadId: 'codex-child-1', status: { type: 'active' } },
+    }) + '\n')
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'item/agentMessage/delta',
+      params: { threadId: 'codex-child-1', itemId: 'child-msg', delta: 'worker-only output' },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'status',
+      status: 'running',
+    }))
+    expect(onEvent).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'content',
+      messageId: 'child-msg',
+    }))
+  })
+
   it('uses Codex last token usage as current context instead of cumulative total processed tokens', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

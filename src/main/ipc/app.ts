@@ -3,9 +3,10 @@ import { stat } from 'fs/promises'
 import { notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
-import { scanAllSessions, encodeClaudeProjectPath } from '../projects/session-scanner'
-import { synthesizeDbOnlySessions, stampAgentTypes, sessionSummaryToConversationRow } from './terminal-sessions'
+import { scanAllSessions } from '../projects/session-scanner'
+import { projectManagedRootSessions, sessionSummaryToConversationRow } from './terminal-sessions'
 import { homedir, networkInterfaces } from 'os'
+import { randomUUID } from 'crypto'
 import { basename, join as joinPath } from 'path'
 import {
   addProject,
@@ -22,8 +23,8 @@ import {
   listBookmarks,
   updateConversationTitle,
   saveMessage,
-  getConversationsForProject,
-  getConversationsForProjects,
+  getManagedRootConversationsForProject,
+  getManagedRootConversationsForProjects,
   saveSessionLayout,
   getSessionLayout,
   searchMessages,
@@ -31,8 +32,6 @@ import {
   archiveConversation,
   unarchiveConversation,
   getArchivedConversations,
-  getArchivedConversationIds,
-  ensureConversation,
   isConversationArchived,
   getConversationById,
   getConversationRuntimeMode,
@@ -44,8 +43,6 @@ import {
   setConversationProviderSelection,
   getConversationPendingHandoff,
   setConversationPendingHandoff,
-  getChildSessionIds,
-  getSyntheticParentMap,
   listSessionIdsForThread,
   resolveRootThreadId,
   recordThreadSession,
@@ -62,6 +59,9 @@ import {
   getMessagesForConversation,
   messageRowsToChatMessages,
   setConversationLastRead,
+  promoteConversationToManaged,
+  recordConversationSegment,
+  findManagedConversationForNativeSession,
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
@@ -70,6 +70,7 @@ import { loadJsonlCached } from '../agent/jsonl-cache'
 import { forkConversation } from '../conversations/fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
+import { logicalImportConversationId } from '../db/conversationSidebarRole'
 
 const log = createLogger('ipc:app')
 
@@ -95,59 +96,11 @@ function capTail<T extends { messages: ChatMessage[] }>(
   return { ...result, messages: result.messages.slice(total - limit), total, truncated: true }
 }
 
-/**
- * The visible session list for a project: disk scan merged with DB rows, minus
- * archived chats and rotated child sessions, newest first.
- *
- * One definition of "visible", because there used to be two. The phone listed
- * `getConversationsForProject` raw, so it showed 169 chats where this returned
- * 32 - and where a chat exists as both an `agent_<ms>` row and a Claude UUID
- * row, this picks the UUID, so the phone opened the twin and every runtime
- * event, keyed on threadId, was dropped by the desktop.
- */
+/** One authoritative sidebar projection for desktop and remote clients.
+ * Provider files are deliberately absent; SCAN_SESSIONS exposes those only in
+ * the explicit Import/Recovery surface. */
 export async function visibleSessionsForProject(projectPath: string): Promise<SessionSummary[]> {
-  const sessions = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
-  const archivedSet = getArchivedConversationIds()
-  const childSet = getChildSessionIds()
-  const syntheticParents = getSyntheticParentMap()
-  const dbConversations = getConversationsForProject(projectPath)
-  const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
-  const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
-  // Worktree pointers per conversation id - stamped onto the
-  // SessionSummary so the renderer can route the agent's cwd via
-  // `worktreePath ?? projectPath`.
-  const worktreeMap = new Map(
-    dbConversations
-      .filter((c) => c.worktree_path)
-      .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
-  )
-  const scannedIds = new Set(sessions.map((s) => s.id))
-  const filtered = sessions
-    // Hide archived chats (global set - across project paths) and child
-    // session_ids produced by Claude SDK rotation (tracked in thread_sessions).
-    .filter((s) => !archivedSet.has(s.id) && !childSet.has(s.id))
-    .map((s) => {
-      // Direct title match (UUID is the canonical conversation id)
-      const direct = titleMap.get(s.id)
-      const wt = worktreeMap.get(s.id) ?? worktreeMap.get(syntheticParents.get(s.id) ?? '')
-      const withWorktree = wt ? { ...s, worktreePath: wt.path, worktreeBranch: wt.branch } : s
-      const withAgentType = stampAgentTypes([withWorktree], agentTypeMap)[0]
-      if (direct) return { ...withAgentType, title: direct }
-      // Title inheritance: UUID has a synthetic `agent_<ts>` parent in
-      // thread_sessions. Look up the parent's title from conversations.
-      const parentId = syntheticParents.get(s.id)
-      if (parentId) {
-        const parentTitle = titleMap.get(parentId)
-        if (parentTitle) return { ...withAgentType, title: parentTitle }
-      }
-      return withAgentType
-    })
-
-  const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, scannedIds, childSet)
-  // Sorted for the same reason GET_PROJECTS is: concatenating puts every
-  // db-only row last regardless of recency, and a worktree-run chat is
-  // ALWAYS a db-only row, so they all sank to the bottom of this list.
-  return [...filtered, ...dbOnlySessions].sort((a, b) => b.startedAt - a.startedAt)
+  return projectManagedRootSessions(getManagedRootConversationsForProject(projectPath))
 }
 
 export function registerAppHandlers(host: BackendHost): void {
@@ -155,9 +108,57 @@ export function registerAppHandlers(host: BackendHost): void {
 
   host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {
     log.info(`scan-sessions: ${projectPath}`)
-    const result = await visibleSessionsForProject(projectPath)
-    log.info(`scan complete: ${result.length} visible`)
+    const result = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
+    log.info(`recovery scan complete: ${result.length} native transcripts`)
     return result
+  })
+
+  host.handle(AppChannels.IMPORT_SESSION, async (
+    projectPath: string,
+    sessionId: string,
+    source: 'claude-code' | 'codex',
+  ) => {
+    const candidates = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
+    const candidate = candidates.find((session) => session.id === sessionId && session.source === source)
+    if (!candidate) return { ok: false, error: 'Native session is no longer available' }
+    if (!candidate.filePath) return { ok: false, error: 'This provider has no importable transcript' }
+
+    const delegated = candidate.nativeRole === 'subagent' || candidate.nativeRole === 'utility'
+    const existingId = findManagedConversationForNativeSession(source, candidate.id, delegated)
+    if (existingId) {
+      return { ok: true, session: projectManagedRootSessions(
+        getManagedRootConversationsForProject(projectPath),
+      ).find((session) => session.id === existingId) ?? null }
+    }
+
+    const messages = await loadJsonlCached(candidate.filePath, source === 'codex' ? 'codex' : 'claude-code')
+    if (!messages) return { ok: false, error: 'The native transcript could not be read' }
+    // Promotion creates a new logical root. Reusing the physical child id
+    // would either stay hidden by its existing lineage row or mutate the
+    // parent's ancestry, both of which violate the explicit-promotion model.
+    const conversationId = logicalImportConversationId(
+      candidate.id,
+      resolveRootThreadId(candidate.id),
+      delegated,
+      `import_${randomUUID()}`,
+    )
+    const title = delegated ? `${candidate.title} · promoted` : candidate.title
+    promoteConversationToManaged(conversationId, projectPath, source, title)
+    recordConversationSegment({
+      conversationId,
+      provider: source,
+      providerSessionId: candidate.id,
+    })
+    bulkSaveMessages(conversationId, messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      timestamp: message.timestamp,
+    })))
+    host.emit(AppChannels.CONVERSATIONS_CHANGED)
+    return { ok: true, session: projectManagedRootSessions(
+      getManagedRootConversationsForProject(projectPath),
+    ).find((session) => session.id === conversationId) ?? null }
   })
 
   // External IPv4 addresses - host candidates for the mobile pairing QR.
@@ -182,49 +183,12 @@ export function registerAppHandlers(host: BackendHost): void {
   // Load persisted projects on renderer request
   host.handle(AppChannels.GET_PROJECTS, async () => {
     const rows = getProjects()
-    // Global exclusion sets - archived + session_ids that are children of
-    // another thread (fragmented by Claude SDK session-id rotation).
-    const archivedSet = getArchivedConversationIds()
-    const childSet = getChildSessionIds()
-    const syntheticParents = getSyntheticParentMap()
-    const candidateDirs = claudeCandidateDirs()
-    // One IN query for all projects' conversations instead of one query per
-    // project inside the loop.
-    const convsByProject = getConversationsForProjects(rows.map((r) => r.path))
-    // Scan projects concurrently - each scanAllSessions is independent I/O and
-    // was previously awaited one project at a time, serializing every sidebar/
-    // settings/kanban refresh over the full session filesystem.
-    const projects: Project[] = await Promise.all(rows.map(async (row) => {
-      const sessions = await scanAllSessions(row.path, candidateDirs, codexCandidateDirs())
-      const dbConversations = convsByProject.get(row.path) ?? []
-      const titleMap = new Map(dbConversations.map((c) => [c.id, c.title]))
-      const agentTypeMap = new Map(dbConversations.map((c) => [c.id, c.agent_type]))
-      const worktreeMap = new Map(
-        dbConversations
-          .filter((c) => c.worktree_path)
-          .map((c) => [c.id, { path: c.worktree_path ?? null, branch: c.worktree_branch ?? null }]),
-      )
-      const scannedIds = new Set(sessions.map((s) => s.id))
-      const filtered = sessions
-        .filter((s) => !archivedSet.has(s.id) && !childSet.has(s.id))
-        .map((s) => {
-          const wt = worktreeMap.get(s.id) ?? worktreeMap.get(syntheticParents.get(s.id) ?? '')
-          const withWorktree = wt ? { ...s, worktreePath: wt.path, worktreeBranch: wt.branch } : s
-          const withAgentType = stampAgentTypes([withWorktree], agentTypeMap)[0]
-          const direct = titleMap.get(s.id)
-          if (direct) return { ...withAgentType, title: direct }
-          const parentId = syntheticParents.get(s.id)
-          if (parentId) {
-            const parentTitle = titleMap.get(parentId)
-            if (parentTitle) return { ...withAgentType, title: parentTitle }
-          }
-          return withAgentType
-        })
-      const dbOnlySessions = synthesizeDbOnlySessions(dbConversations, archivedSet, scannedIds, childSet)
-      // Sorted, not concatenated: dbOnlySessions used to land after every
-      // scanned session, so a brand-new chat appeared at the bottom.
-      const merged = [...filtered, ...dbOnlySessions].sort((a, b) => b.startedAt - a.startedAt)
-      return { path: row.path, name: row.name, sessions: merged, workspaceId: row.workspace_id ?? null }
+    const convsByProject = getManagedRootConversationsForProjects(rows.map((row) => row.path))
+    const projects: Project[] = rows.map((row) => ({
+      path: row.path,
+      name: row.name,
+      sessions: projectManagedRootSessions(convsByProject.get(row.path) ?? []),
+      workspaceId: row.workspace_id ?? null,
     }))
     return projects
   })
@@ -248,10 +212,7 @@ export function registerAppHandlers(host: BackendHost): void {
     const name = basename(dirPath)
     addProject(dirPath, name)
 
-    const rawSessions = await scanAllSessions(dirPath, claudeCandidateDirs(), codexCandidateDirs())
-    const archivedSet = getArchivedConversationIds()
-    const sessions = rawSessions.filter((s) => !archivedSet.has(s.id))
-    log.info(`add-project-path: found ${sessions.length} sessions for ${dirPath} (${rawSessions.length - sessions.length} archived)`)
+    const sessions = projectManagedRootSessions(getManagedRootConversationsForProject(dirPath))
 
     return { path: dirPath, name, sessions, workspaceId: null }
   })
@@ -537,11 +498,7 @@ export function registerAppHandlers(host: BackendHost): void {
   })
 
   // Archive / unarchive conversations
-  host.handle(AppChannels.ARCHIVE_CONVERSATION, (id: string, projectPath?: string, title?: string) => {
-    // Ensure row exists (for scanned-but-not-yet-persisted sessions)
-    if (projectPath) {
-      ensureConversation(id, projectPath, 'claude-code', title ?? 'Session')
-    }
+  host.handle(AppChannels.ARCHIVE_CONVERSATION, (id: string) => {
     archiveConversation(id)
     return { ok: true, archived: isConversationArchived(id) }
   })

@@ -312,6 +312,10 @@ export interface SessionSummary {
   worktreeBranch?: string | null
   /** Populated from DB - lets the renderer skip JSONL load for terminal sessions. */
   agentType?: string | null
+  /** Native discovery classification. Present only in Import/Recovery. */
+  nativeRole?: 'foreground' | 'subagent' | 'utility' | 'unknown'
+  parentSessionId?: string | null
+  depth?: number | null
 }
 
 export interface Project {

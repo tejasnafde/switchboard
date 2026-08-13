@@ -16,6 +16,7 @@ export const TerminalChannels = {
 export const AppChannels = {
   OPEN_FOLDER: 'app:open-folder',
   SCAN_SESSIONS: 'app:scan-sessions',
+  IMPORT_SESSION: 'app:import-session',
   GET_PROJECTS: 'app:get-projects',
   CREATE_CONVERSATION: 'app:create-conversation',
   LOAD_SESSION: 'app:load-session',

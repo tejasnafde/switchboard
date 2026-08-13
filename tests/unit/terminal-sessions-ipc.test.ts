@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  projectManagedRootSessions,
   synthesizeDbOnlySessions,
   stampAgentTypes,
   sessionSummaryToConversationRow,
@@ -166,6 +167,37 @@ describe('synthesizeDbOnlySessions', () => {
 
   it('returns empty array for empty input', () => {
     expect(synthesizeDbOnlySessions([], new Set(), new Set())).toHaveLength(0)
+  })
+})
+
+describe('projectManagedRootSessions', () => {
+  it('uses managed database conversations as the complete sidebar source', () => {
+    const rows = [
+      makeRow({ id: 'v0', title: 'v0', updated_at: 9000 }),
+      makeRow({ id: 'codex-child', agent_type: 'codex', title: 'Codex 45', updated_at: 9500 }),
+    ]
+
+    const result = projectManagedRootSessions(rows, new Set(['codex-child']))
+
+    expect(result.map((session) => session.id)).toEqual(['v0'])
+    expect(result[0]).toMatchObject({ title: 'v0', startedAt: 9000, filePath: '' })
+  })
+
+  it('excludes archived rows from the normal sidebar projection', () => {
+    const rows = [
+      makeRow({ id: 'active', updated_at: 10 }),
+      makeRow({ id: 'archived', archived: 1, updated_at: 20 }),
+    ]
+
+    expect(projectManagedRootSessions(rows).map((session) => session.id)).toEqual(['active'])
+  })
+
+  it('keeps user-created forks as roots even though they have fork lineage', () => {
+    const rows = [
+      makeRow({ id: 'fork', parent_conversation_id: 'source', title: 'source · fork/fix' }),
+    ]
+
+    expect(projectManagedRootSessions(rows).map((session) => session.id)).toEqual(['fork'])
   })
 })
 

@@ -11,6 +11,7 @@ import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ProjectOrganizationItem } from '@shared/types'
 import { deriveProjectPositions } from './projectOrdering'
+import type { ConversationSidebarRole } from './conversationSidebarRole'
 
 const log = createLogger('db')
 
@@ -81,7 +82,7 @@ function notifyDbReset(backupPath: string): void {
     const { dialog } = require('electron') as typeof import('electron')
     dialog.showErrorBox(
       'Switchboard database was reset',
-      `The local database could not be opened, so it was moved to:\n${backupPath}\n\nA fresh database was created. Agent chat history (Claude/Codex session files) is stored separately and will be re-scanned.`,
+      `The local database could not be opened, so it was moved to:\n${backupPath}\n\nA fresh database was created. Provider session files are still available through Import conversations in the sidebar.`,
     )
   } catch (dialogErr) {
     log.warn('could not show DB-reset dialog', dialogErr)
@@ -226,6 +227,9 @@ function migrate(db: Database.Database): void {
     // no read point, and null is not the same as "read at time 0".
     if (!cols.some((c) => c.name === 'last_read_at')) {
       db.exec('ALTER TABLE conversations ADD COLUMN last_read_at INTEGER')
+    }
+    if (!cols.some((c) => c.name === 'sidebar_role')) {
+      db.exec("ALTER TABLE conversations ADD COLUMN sidebar_role TEXT")
     }
   } catch { /* ignore */ }
 
@@ -521,6 +525,27 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE machines ADD COLUMN iap_zone TEXT')
   }
 
+  // Rows created before managed-root projection may have come from the raw
+  // filesystem scanner. Keep only rows with durable app-owned evidence in the
+  // normal sidebar; everything else remains intact and recoverable.
+  db.exec(`
+    UPDATE conversations
+    SET sidebar_role = CASE
+      WHEN id LIKE 'agent\_%' ESCAPE '\' THEN 'managed'
+      WHEN EXISTS (SELECT 1 FROM messages WHERE messages.conversation_id = conversations.id) THEN 'managed'
+      WHEN EXISTS (SELECT 1 FROM conversation_segments WHERE conversation_segments.conversation_id = conversations.id) THEN 'managed'
+      WHEN forked_at_message_id IS NOT NULL THEN 'managed'
+      WHEN EXISTS (SELECT 1 FROM thread_sessions WHERE thread_sessions.thread_id = conversations.id) THEN 'managed'
+      WHEN EXISTS (SELECT 1 FROM kanban_cards WHERE kanban_cards.conversation_id = conversations.id) THEN 'managed'
+      WHEN EXISTS (SELECT 1 FROM bookmarks WHERE bookmarks.session_id = conversations.id) THEN 'managed'
+      ELSE 'recovery'
+    END
+    WHERE sidebar_role IS NULL;
+    CREATE INDEX IF NOT EXISTS idx_conversations_sidebar_roots
+      ON conversations(project_path, updated_at DESC)
+      WHERE sidebar_role = 'managed' AND archived = 0;
+  `)
+
   log.info('database migrated')
 }
 
@@ -707,8 +732,8 @@ export function createConversation(
 ): boolean {
   const now = Date.now()
   const info = getDb().prepare(
-    `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title, created_at, updated_at, worktree_path, worktree_branch)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title, created_at, updated_at, worktree_path, worktree_branch, sidebar_role)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'managed')`
   ).run(
     id,
     projectPath,
@@ -720,6 +745,22 @@ export function createConversation(
     worktreeBranch ?? null,
   )
   return info.changes > 0
+}
+
+export function promoteConversationToManaged(
+  id: string,
+  projectPath: string,
+  agentType: string,
+  title: string,
+): void {
+  const database = getDb()
+  createConversation(id, projectPath, agentType, title)
+  database.prepare(
+    `UPDATE conversations
+     SET sidebar_role = 'managed', archived = 0, agent_type = ?, title = ?,
+         session_id = COALESCE(session_id, ?), updated_at = ?
+     WHERE id = ? AND project_path = ?`
+  ).run(agentType, title, id, Date.now(), id, projectPath)
 }
 
 /**
@@ -771,6 +812,44 @@ export function getConversationsForProject(projectPath: string): ConversationRow
   ).all(projectPath) as ConversationRow[]
 }
 
+const MANAGED_ROOT_PREDICATE = `
+  c.sidebar_role = 'managed' AND c.archived = 0
+  AND NOT EXISTS (
+    SELECT 1
+    FROM thread_sessions ts
+    JOIN conversations root ON root.id = ts.thread_id
+    WHERE ts.claude_session_id = c.id
+      AND ts.thread_id != c.id
+      AND root.sidebar_role = 'managed'
+  )
+`
+
+export function getManagedRootConversationsForProject(projectPath: string): ConversationRow[] {
+  return getDb().prepare(
+    `SELECT c.* FROM conversations c
+     WHERE c.project_path = ? AND ${MANAGED_ROOT_PREDICATE}
+     ORDER BY c.updated_at DESC`
+  ).all(projectPath) as ConversationRow[]
+}
+
+export function getManagedRootConversationsForProjects(projectPaths: string[]): Map<string, ConversationRow[]> {
+  const result = new Map<string, ConversationRow[]>()
+  for (const path of projectPaths) result.set(path, [])
+  const database = getDb()
+  const chunkSize = 500
+  for (let offset = 0; offset < projectPaths.length; offset += chunkSize) {
+    const chunk = projectPaths.slice(offset, offset + chunkSize)
+    const placeholders = chunk.map(() => '?').join(',')
+    const rows = database.prepare(
+      `SELECT c.* FROM conversations c
+       WHERE c.project_path IN (${placeholders}) AND ${MANAGED_ROOT_PREDICATE}
+       ORDER BY c.updated_at DESC`
+    ).all(...chunk) as ConversationRow[]
+    for (const row of rows) result.get(row.project_path)?.push(row)
+  }
+  return result
+}
+
 /**
  * Batched variant of getConversationsForProject: one IN query for all
  * projects instead of one query per project (GET_PROJECTS runs on every
@@ -803,6 +882,7 @@ export interface ConversationRow {
   created_at: number
   updated_at: number
   archived: number
+  sidebar_role?: ConversationSidebarRole | null
   /** ID of the source conversation a fork was spun from. Null for native conversations. */
   parent_conversation_id?: string | null
   /** ID of the source message the fork was anchored at. Null for non-forks. */
@@ -840,8 +920,8 @@ export function createForkedConversation(args: {
        id, project_path, agent_type, session_id, title,
        created_at, updated_at,
        parent_conversation_id, forked_at_message_id,
-       worktree_path, worktree_branch
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+       worktree_path, worktree_branch, sidebar_role
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed')`
   ).run(
     args.id, args.projectPath, args.agentType,
     args.sessionId ?? null, args.title,
@@ -1031,6 +1111,27 @@ export function listConversationSegments(conversationId: string): ConversationSe
     `SELECT * FROM conversation_segments
      WHERE conversation_id = ? ORDER BY ordinal ASC, created_at ASC`
   ).all(resolveRootThreadId(conversationId)) as ConversationSegmentRow[]
+}
+
+/** Resolve an explicitly managed root that already owns a native session.
+ * `promotedOnly` keeps a delegated run from resolving to its original parent;
+ * promotion is a new root and is idempotent on subsequent imports. */
+export function findManagedConversationForNativeSession(
+  provider: ConversationSegmentProvider,
+  providerSessionId: string,
+  promotedOnly = false,
+): string | null {
+  const row = getDb().prepare(
+    `SELECT c.id
+     FROM conversation_segments s
+     JOIN conversations c ON c.id = s.conversation_id
+     WHERE s.provider = ? AND s.provider_session_id = ?
+       AND c.sidebar_role = 'managed'
+       AND (? = 0 OR c.id LIKE 'import\_%' ESCAPE '\')
+     ORDER BY s.ordinal DESC
+     LIMIT 1`
+  ).get(provider, providerSessionId, promotedOnly ? 1 : 0) as { id: string } | undefined
+  return row?.id ?? null
 }
 
 export function resolveResumeSegment(
@@ -1302,7 +1403,18 @@ function setConversationArchived(id: string, archived: 0 | 1): void {
 
 export function getArchivedConversations(): Array<{ id: string; project_path: string; title: string; updated_at: number }> {
   return getDb().prepare(
-    'SELECT id, project_path, title, updated_at FROM conversations WHERE archived = 1 ORDER BY updated_at DESC'
+    `SELECT c.id, c.project_path, c.title, c.updated_at
+     FROM conversations c
+     WHERE c.archived = 1 AND c.sidebar_role = 'managed'
+       AND NOT EXISTS (
+         SELECT 1
+         FROM thread_sessions ts
+         JOIN conversations root ON root.id = ts.thread_id
+         WHERE ts.claude_session_id = c.id
+           AND ts.thread_id != c.id
+           AND root.sidebar_role = 'managed'
+       )
+     ORDER BY c.updated_at DESC`
   ).all() as Array<{ id: string; project_path: string; title: string; updated_at: number }>
 }
 
@@ -1332,8 +1444,8 @@ export function getArchivedConversationIds(): Set<string> {
  */
 export function ensureConversation(id: string, projectPath: string, agentType: string, title: string): void {
   getDb().prepare(
-    `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title)
-     VALUES (?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title, sidebar_role)
+     VALUES (?, ?, ?, ?, 'managed')`
   ).run(id, projectPath, agentType, title)
 }
 
@@ -1648,13 +1760,18 @@ export function searchMessages(query: string, limit = 50): SearchResult[] {
     return getDb().prepare(`
       SELECT
         m.id as messageId,
-        m.conversation_id as conversationId,
+        COALESCE(root.id, m.conversation_id) as conversationId,
         m.role,
         m.content,
         snippet(messages_fts, 0, '**', '**', '...', 40) as snippet
       FROM messages_fts
       JOIN messages m ON messages_fts.rowid = m.rowid
+      JOIN conversations c ON c.id = m.conversation_id
+      LEFT JOIN thread_sessions ts ON ts.claude_session_id = m.conversation_id
+      LEFT JOIN conversations root ON root.id = ts.thread_id
       WHERE messages_fts MATCH ?
+        AND COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'
+        AND COALESCE(root.archived, c.archived) = 0
       ORDER BY rank
       LIMIT ?
     `).all(sanitized, limit) as SearchResult[]
@@ -1662,13 +1779,18 @@ export function searchMessages(query: string, limit = 50): SearchResult[] {
     // FTS query syntax error - fall back to LIKE
     return getDb().prepare(`
       SELECT
-        id as messageId,
-        conversation_id as conversationId,
-        role,
-        content,
-        substr(content, max(1, instr(lower(content), lower(?)) - 20), 80) as snippet
-      FROM messages
-      WHERE content LIKE ?
+        m.id as messageId,
+        COALESCE(root.id, m.conversation_id) as conversationId,
+        m.role,
+        m.content,
+        substr(m.content, max(1, instr(lower(m.content), lower(?)) - 20), 80) as snippet
+      FROM messages m
+      JOIN conversations c ON c.id = m.conversation_id
+      LEFT JOIN thread_sessions ts ON ts.claude_session_id = m.conversation_id
+      LEFT JOIN conversations root ON root.id = ts.thread_id
+      WHERE m.content LIKE ?
+        AND COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'
+        AND COALESCE(root.archived, c.archived) = 0
       LIMIT ?
     `).all(sanitized, `%${sanitized}%`, limit) as SearchResult[]
   }

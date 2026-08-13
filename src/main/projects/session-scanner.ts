@@ -98,6 +98,7 @@ async function scanClaudeProjectsDir(
           startedAt: entry.startedAt ?? entry.timestamp ?? Date.now(),
           messageCount: entry.messageCount ?? 0,
           filePath: join(projectDir, entry.path ?? `${entry.id}.jsonl`),
+          nativeRole: 'foreground',
         })
       }
     }
@@ -139,6 +140,7 @@ async function scanClaudeProjectsDir(
         startedAt: fileStat?.mtimeMs ?? Date.now(),
         messageCount: 0,
         filePath,
+        nativeRole: 'foreground',
       })
     }
   }
@@ -187,13 +189,54 @@ export async function scanCodexSessionCopies(
 // immutable once written, so no mtime invalidation is needed.
 const codexMetaCache = new Map<string, Promise<CodexSessionMeta | null>>()
 
-interface CodexSessionMeta {
+export interface CodexSessionMeta {
   id: string
   cwd: string
+  relationship: 'foreground' | 'subagent' | 'utility'
+  parentSessionId: string | null
+  depth: number | null
 }
 
 const MAX_CODEX_META_BYTES = 1024 * 1024
 const CODEX_META_CHUNK_BYTES = 16 * 1024
+
+export function parseCodexSessionMetaRecord(event: unknown): CodexSessionMeta | null {
+  if (!event || typeof event !== 'object') return null
+  const record = event as { type?: unknown; payload?: unknown }
+  if (record.type !== 'session_meta' || !record.payload || typeof record.payload !== 'object') return null
+  const payload = record.payload as { id?: unknown; cwd?: unknown; source?: unknown; originator?: unknown }
+  if (typeof payload.id !== 'string' || !payload.id || typeof payload.cwd !== 'string' || !payload.cwd) return null
+  const source = payload.source && typeof payload.source === 'object'
+    ? payload.source as Record<string, unknown>
+    : null
+  const subagent = source?.subagent && typeof source.subagent === 'object'
+    ? source.subagent as Record<string, unknown>
+    : source?.subAgent && typeof source.subAgent === 'object'
+      ? source.subAgent as Record<string, unknown>
+      : null
+  const spawn = subagent?.thread_spawn && typeof subagent.thread_spawn === 'object'
+    ? subagent.thread_spawn as Record<string, unknown>
+    : subagent?.threadSpawn && typeof subagent.threadSpawn === 'object'
+      ? subagent.threadSpawn as Record<string, unknown>
+      : null
+  const parentSessionId = typeof spawn?.parent_thread_id === 'string'
+    ? spawn.parent_thread_id
+    : typeof spawn?.parentThreadId === 'string'
+      ? spawn.parentThreadId
+      : null
+  const depth = typeof spawn?.depth === 'number' ? spawn.depth : null
+  return {
+    id: payload.id,
+    cwd: payload.cwd,
+    relationship: parentSessionId
+      ? 'subagent'
+      : payload.source === 'exec' && payload.originator === 'codex_exec'
+        ? 'utility'
+        : 'foreground',
+    parentSessionId,
+    depth,
+  }
+}
 
 async function readCodexSessionMeta(fullPath: string): Promise<CodexSessionMeta | null> {
   const fh = await open(fullPath, 'r')
@@ -212,16 +255,7 @@ async function readCodexSessionMeta(fullPath: string): Promise<CodexSessionMeta 
     }
     const firstLine = Buffer.concat(chunks).toString('utf-8').trim()
     if (!firstLine) return null
-    const event = JSON.parse(firstLine) as {
-      type?: string
-      payload?: { id?: unknown; cwd?: unknown }
-    }
-    if (event.type !== 'session_meta') return null
-    const id = event.payload?.id
-    const cwd = event.payload?.cwd
-    return typeof id === 'string' && id.length > 0 && typeof cwd === 'string' && cwd.length > 0
-      ? { id, cwd }
-      : null
+    return parseCodexSessionMetaRecord(JSON.parse(firstLine))
   } finally {
     await fh.close()
   }
@@ -262,6 +296,9 @@ async function scanCodexDir(
           startedAt: fileStat.mtimeMs,
           messageCount: 0,
           filePath: fullPath,
+          nativeRole: meta.relationship,
+          parentSessionId: meta.parentSessionId,
+          depth: meta.depth,
         })
       } catch {
         codexMetaCache.delete(fullPath)
@@ -296,6 +333,7 @@ export async function scanOpenCodeSessions(projectPath: string): Promise<Session
           startedAt: summary.startedAt,
           messageCount: 0, // Summary file doesn't have this
           filePath: '', // No single file for the whole session
+          nativeRole: 'foreground',
         })
       } catch (err) {
         log.warn(`skipping malformed OpenCode summary ${file}: ${err instanceof Error ? err.message : String(err)}`)

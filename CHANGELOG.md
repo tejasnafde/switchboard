@@ -2,6 +2,21 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.30 - Keep provider workers out of the conversation list
+
+### Added
+- **Native Claude and Codex transcripts now have an explicit Import/Recovery surface.** Provider files no longer manufacture sidebar chats just because they share a project path. Foreground transcripts can be imported, while delegated and utility runs can be deliberately promoted to independent conversations without mutating their parent lineage.
+
+### Fixed
+- **Codex subagents could split one logical chat into dozens of sidebar rows.** The normal sidebar, remote client list, archive list, and search navigation now project only app-owned managed roots from SQLite; raw provider sessions remain intact as recovery inventory.
+- **A Codex child thread could replace its parent's resume cursor or stream worker output into the parent chat.** Foreground identity now comes only from correlated start/resume responses, and notifications carrying another native thread ID are isolated from the parent.
+- **Legacy scanner rows could survive merely because they had been clicked once.** The additive migration uses durable ownership evidence and treats pane-layout state as non-authoritative, preserving ambiguous rows and all messages without showing them as conversations.
+- **Pruned or rotated provider JSONL could make an app-owned chat disappear.** Sidebar identity no longer depends on provider files; typed foreground segments and the SQLite transcript remain the durable logical conversation.
+
+### Notes
+- The migration was rehearsed on a consistent copy of the 487 MB production database. It preserved all 174,844 messages and moved the reported evidence-free `Codex 38`, `Codex 40`, and `Codex 45` rows to recovery instead of deleting them.
+- The implementation passed 2,452 tests across 242 files, both TypeScript projects, all production bundles, and the packaged-main smoke test. Claude's backend profile authenticated successfully, but its repository review process produced no result before the required timeout; the release proceeds on the green gate, fixture rehearsal, and Codex review.
+
 ## 0.8.29 - Long conversations survive provider and transcript rotation
 
 ### Fixed

@@ -28,6 +28,7 @@ import { PromptModal } from './PromptModal'
 import { MachineLayer, ComposeSpinner } from './MachineLayer'
 import { AddMachineModal } from './AddMachineModal'
 import { ProjectFavicon } from './ProjectFavicon'
+import { NativeSessionImportModal } from './NativeSessionImportModal'
 import {
   groupProjectsByWorkspace,
   applySidebarFilter,
@@ -102,7 +103,10 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [scanning, setScanning] = useState<string | null>(null)
-  const [scannedPaths, setScannedPaths] = useState<Set<string>>(new Set())
+  const [importProject, setImportProject] = useState<Project | null>(null)
+  const [importCandidates, setImportCandidates] = useState<SessionSummary[]>([])
+  const [importingId, setImportingId] = useState<string | null>(null)
+  const [importError, setImportError] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [renamingProjectPath, setRenamingProjectPath] = useState<string | null>(null)
   // Remote session rename uses a modal (MachineLayer rows have no inline-edit anchor).
@@ -271,14 +275,33 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     setScanning(projectPath)
     try {
       const sessions = await window.api.app.scanSessions(projectPath)
-      setProjects((prev) =>
-        prev.map((p) => (p.path === projectPath ? { ...p, sessions } : p))
-      )
+      const project = projects.find((item) => item.path === projectPath)
+      if (project) setImportProject(project)
+      setImportCandidates(sessions)
+      setImportError(null)
     } finally {
       setScanning(null)
-      setScannedPaths((prev) => new Set(prev).add(projectPath))
     }
-  }, [])
+  }, [projects])
+
+  const handleImportNative = useCallback(async (session: SessionSummary) => {
+    if (!importProject || (session.source !== 'claude-code' && session.source !== 'codex')) return
+    setImportingId(session.id)
+    setImportError(null)
+    try {
+      const result = await window.api.app.importSession(importProject.path, session.id, session.source)
+      if (!result?.ok) {
+        setImportError(result?.error ?? 'Import failed')
+        return
+      }
+      await loadProjects()
+      setImportCandidates((current) => current.filter((item) => item.id !== session.id))
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'Import failed')
+    } finally {
+      setImportingId(null)
+    }
+  }, [importProject, loadProjects])
 
   const toggleCollapse = useCallback((path: string) => {
     toggleSidebarProject(path)
@@ -309,12 +332,6 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
         }
       })
     )
-    window.api.app.createConversation({
-      id: sessionId,
-      projectPath,
-      agentType: 'claude-code',
-      title: newTitle,
-    }).catch(() => {})
     window.api.app.renameConversation(sessionId, newTitle).catch(() => {})
     emitSessionRename(sessionId, newTitle)
     setEditingId(null)
@@ -800,8 +817,6 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
                   </div>
                 )
               })
-            ) : scannedPaths.has(project.path) ? (
-              <div className="sidebar-empty">No conversations found</div>
             ) : (
               <button
                 onClick={(e) => { e.stopPropagation(); handleScan(project.path) }}
@@ -1292,6 +1307,13 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
               },
             },
             {
+              label: 'Import or recover conversations…',
+              onClick: () => {
+                void handleScan(projectMenu.project.path)
+                setProjectMenu(null)
+              },
+            },
+            {
               label: 'Rename project…',
               onClick: () => {
                 void handleRenameProject(projectMenu.project)
@@ -1350,6 +1372,22 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
           onPick={(rootId) => {
             void handleMerge(mergePickerFor, rootId)
             setMergePickerFor(null)
+          }}
+        />
+      )}
+
+      {importProject && (
+        <NativeSessionImportModal
+          projectName={importProject.name}
+          candidates={importCandidates}
+          importingId={importingId}
+          error={importError}
+          onImport={(session) => void handleImportNative(session)}
+          onClose={() => {
+            if (importingId) return
+            setImportProject(null)
+            setImportCandidates([])
+            setImportError(null)
           }}
         />
       )}

@@ -1,17 +1,28 @@
-/**
- * Pure helpers for surfacing DB-only sessions in SCAN_SESSIONS / GET_PROJECTS.
- *
- * The sidebar list is disk-scan-first: `scanAllSessions` finds provider JSONL
- * under ~/.claude/projects, ~/.codex, etc. But some conversations have no live
- * JSONL - terminal sessions never had one, and Claude Code prunes/rotates its
- * projects dir out from under us. Those conversations still live in SQLite
- * (with their messages), so we synthesize SessionSummary entries for any DB
- * conversation the file scanner didn't turn up. Without this, a conversation
- * whose JSONL was pruned vanishes from the sidebar entirely even though all its
- * messages are safe in the DB.
- */
+/** Pure sidebar projections. Managed SQLite roots are authoritative; the
+ * older scan-merging helpers remain below for migration tests and rollback. */
 import type { ConversationRow } from '../db/database'
 import type { SessionSummary, SessionSource } from '@shared/types'
+
+/** Project the app-owned roots that are allowed in the normal sidebar. */
+export function projectManagedRootSessions(
+  dbConversations: ConversationRow[],
+  delegatedConversationIds: ReadonlySet<string> = new Set(),
+): SessionSummary[] {
+  return dbConversations
+    .filter((conversation) => conversation.archived === 0 && !delegatedConversationIds.has(conversation.id))
+    .map((conversation) => ({
+      id: conversation.id,
+      source: (conversation.agent_type === 'terminal' ? 'switchboard' : conversation.agent_type) as SessionSource,
+      title: conversation.title,
+      startedAt: conversation.updated_at,
+      messageCount: 0,
+      filePath: '',
+      agentType: conversation.agent_type,
+      worktreePath: conversation.worktree_path ?? null,
+      worktreeBranch: conversation.worktree_branch ?? null,
+    }))
+    .sort((a, b) => b.startedAt - a.startedAt)
+}
 
 /**
  * Build SessionSummary entries for DB conversations the file scanner missed.

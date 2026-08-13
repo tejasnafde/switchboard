@@ -1176,6 +1176,21 @@ export class CodexAdapter implements ProviderAdapter {
     const method = notification.method as string
     if (WIRE_LOG) log.debug(`handling codex notification ${method}: ${truncateLogPayload(JSON.stringify(notification.params ?? {}))}`)
 
+    // App-server multiplexes foreground and delegated threads over one stdio
+    // connection. A notification carrying a different native thread belongs
+    // to a worker and must never mutate or render inside the logical parent.
+    // Foreground identity is established only by correlated start/resume RPCs.
+    const notificationParams = asRecord(notification.params) ?? {}
+    const notificationThread = asRecord(notificationParams.thread) ?? {}
+    const nativeThreadId = typeof notificationParams.threadId === 'string'
+      ? notificationParams.threadId
+      : typeof notificationThread.id === 'string'
+        ? notificationThread.id
+        : null
+    if (method === 'thread/started' || (nativeThreadId && active.threadId && nativeThreadId !== active.threadId)) {
+      return
+    }
+
     if (method === 'item/reasoning/summaryTextDelta' || method === 'item/reasoning/textDelta') {
       const text = notification.params?.delta ?? notification.params?.text ?? ''
       const messageId = notification.params?.itemId ?? `reason_${Date.now()}`
@@ -1310,13 +1325,6 @@ export class CodexAdapter implements ProviderAdapter {
       } else if (statusType === 'error') {
         active.session.status = 'error'
         active.onEvent({ type: 'status', threadId, status: 'error' })
-      }
-    } else if (method === 'thread/started') {
-      const codexThreadId = notification.params?.thread?.id
-      if (typeof codexThreadId === 'string' && codexThreadId && codexThreadId !== active.threadId) {
-        active.threadId = codexThreadId
-        active.session.sessionId = codexThreadId
-        active.onEvent({ type: 'session', threadId, sessionId: codexThreadId })
       }
     } else if (method === 'item/started' || method === 'item/completed') {
       this.handleItemLifecycle(threadId, active, notification)
