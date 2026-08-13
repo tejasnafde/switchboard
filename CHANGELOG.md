@@ -2,6 +2,16 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.31 - Never mistake a migration failure for corruption
+
+### Fixed
+- **The 0.8.30 sidebar-role migration reset healthy databases at startup.** Its JavaScript template literal collapsed a SQLite `ESCAPE` clause into an empty string, so the migration failed with `ESCAPE expression must be a single character`. The prefix match now uses `GLOB`, which needs no escaping.
+- **Any database initialization error could trigger destructive recovery.** Switchboard now moves a database aside only for SQLite's explicit `SQLITE_CORRUPT` and `SQLITE_NOTADB` codes. Migration, permission, I/O, and configuration failures leave every database file untouched and surface the real error.
+
+### Notes
+- Databases reset by 0.8.30 remain recoverable from their timestamped `.corrupt-*` files; the failure did not corrupt their contents.
+- Regression coverage proves ordinary migration errors cannot move a database and verifies the sidebar-role SQL no longer contains the broken escape expression.
+
 ## 0.8.30 - Keep provider workers out of the conversation list
 
 ### Added

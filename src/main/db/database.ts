@@ -47,10 +47,14 @@ export function getDb(): Database.Database {
           'run it under Electron as node (`npm run server`) or rebuild for plain node.',
       )
     }
-    // A corrupt/unopenable DB used to throw uncaught here, leaving the app
-    // running with no window and no explanation. Move the bad file aside
-    // (preserved for manual recovery), start fresh, and tell the user.
-    // Agent-side history (Claude/Codex JSONL) is unaffected by a reset.
+    if (code !== 'SQLITE_CORRUPT' && code !== 'SQLITE_NOTADB') {
+      log.error(`database initialization failed - NOT touching ${dbPath}`, err)
+      throw err
+    }
+    // Only SQLite's explicit corruption codes justify moving the database.
+    // Migration, permission, I/O, and configuration failures must leave it in
+    // place so a corrected build can retry without turning an app bug into
+    // apparent data loss.
     log.error(`database open failed, moving aside and recreating: ${dbPath}`, err)
     const backup = `${dbPath}.corrupt-${Date.now()}`
     for (const suffix of ['', '-wal', '-shm']) {
@@ -531,7 +535,7 @@ function migrate(db: Database.Database): void {
   db.exec(`
     UPDATE conversations
     SET sidebar_role = CASE
-      WHEN id LIKE 'agent\_%' ESCAPE '\' THEN 'managed'
+      WHEN id GLOB 'agent_*' THEN 'managed'
       WHEN EXISTS (SELECT 1 FROM messages WHERE messages.conversation_id = conversations.id) THEN 'managed'
       WHEN EXISTS (SELECT 1 FROM conversation_segments WHERE conversation_segments.conversation_id = conversations.id) THEN 'managed'
       WHEN forked_at_message_id IS NOT NULL THEN 'managed'
