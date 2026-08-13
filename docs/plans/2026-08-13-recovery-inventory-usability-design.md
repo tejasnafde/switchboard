@@ -26,6 +26,16 @@ handler uses the same title rule. Re-importing a known managed segment promotes
 the existing canonical root again, which also unarchives it, rather than
 returning a successful no-op.
 
+When the same Claude session exists in multiple credential roots, the scanner
+chooses the most complete readable copy instead of whichever root happens to be
+configured first. It compares file size first and modification time second.
+This prevents an older profile copy from truncating a recovered conversation.
+
+Reviving an existing logical root updates only recovery-owned presentation
+state: `sidebar_role`, archive state, title, and activity time. It preserves the
+root's active provider, provider instance, model, runtime mode, and resume
+cursor. Only a genuinely new promoted root receives provider defaults.
+
 ## Boundaries
 
 - Provider transcripts remain outside the ordinary sidebar until explicitly
@@ -33,6 +43,7 @@ returning a successful no-op.
 - Delegated runs remain labeled and require explicit promotion.
 - Search is renderer-local; scanning and import IPC contracts stay additive.
 - No transcript or database row is deleted or rewritten during inventory.
+- Existing mixed-provider roots keep their current provider selection.
 
 ## Verification
 
@@ -40,5 +51,6 @@ returning a successful no-op.
   no-results state, Escape/backdrop/close dismissal, and import selection.
 - Pure/main-process tests cover durable-title precedence and revival of an
   archived canonical root.
+- Scanner tests cover duplicate native copies and prevent stale-prefix imports.
 - The full typecheck, unit suite, production build, and release asset verifier
   must pass before shipping.

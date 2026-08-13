@@ -60,6 +60,8 @@ import {
   messageRowsToChatMessages,
   setConversationLastRead,
   promoteConversationToManaged,
+  reviveConversationForRecovery,
+  getRecoveryConversationTitles,
   recordConversationSegment,
   findManagedConversationForNativeSession,
 } from '../db/database'
@@ -70,7 +72,7 @@ import { loadJsonlCached } from '../agent/jsonl-cache'
 import { forkConversation } from '../conversations/fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
-import { logicalImportConversationId } from '../db/conversationSidebarRole'
+import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversationSidebarRole'
 
 const log = createLogger('ipc:app')
 
@@ -103,12 +105,23 @@ export async function visibleSessionsForProject(projectPath: string): Promise<Se
   return projectManagedRootSessions(getManagedRootConversationsForProject(projectPath))
 }
 
+function enrichRecoveryCandidates(candidates: SessionSummary[]): SessionSummary[] {
+  return candidates.map((candidate) => {
+    const titles = getRecoveryConversationTitles(candidate.id)
+    return {
+      ...candidate,
+      title: recoveryCandidateTitle(candidate.title, titles.nativeTitle, titles.rootTitle),
+    }
+  })
+}
+
 export function registerAppHandlers(host: BackendHost): void {
   setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
 
   host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {
     log.info(`scan-sessions: ${projectPath}`)
-    const result = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
+    const scanned = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
+    const result = enrichRecoveryCandidates(scanned)
     log.info(`recovery scan complete: ${result.length} native transcripts`)
     return result
   })
@@ -118,7 +131,8 @@ export function registerAppHandlers(host: BackendHost): void {
     sessionId: string,
     source: 'claude-code' | 'codex',
   ) => {
-    const candidates = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
+    const scanned = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
+    const candidates = enrichRecoveryCandidates(scanned)
     const candidate = candidates.find((session) => session.id === sessionId && session.source === source)
     if (!candidate) return { ok: false, error: 'Native session is no longer available' }
     if (!candidate.filePath) return { ok: false, error: 'This provider has no importable transcript' }
@@ -126,9 +140,12 @@ export function registerAppHandlers(host: BackendHost): void {
     const delegated = candidate.nativeRole === 'subagent' || candidate.nativeRole === 'utility'
     const existingId = findManagedConversationForNativeSession(source, candidate.id, delegated)
     if (existingId) {
-      return { ok: true, session: projectManagedRootSessions(
-        getManagedRootConversationsForProject(projectPath),
-      ).find((session) => session.id === existingId) ?? null }
+      const reviveResult = reviveConversationForRecovery(existingId, projectPath, candidate.title)
+      if (reviveResult !== 'revived') {
+        return reviveResult === 'project-mismatch'
+          ? { ok: false, error: 'This conversation belongs to another project in Switchboard' }
+          : { ok: false, error: 'The stored conversation no longer exists' }
+      }
     }
 
     const messages = await loadJsonlCached(candidate.filePath, source === 'codex' ? 'codex' : 'claude-code')
@@ -136,14 +153,22 @@ export function registerAppHandlers(host: BackendHost): void {
     // Promotion creates a new logical root. Reusing the physical child id
     // would either stay hidden by its existing lineage row or mutate the
     // parent's ancestry, both of which violate the explicit-promotion model.
-    const conversationId = logicalImportConversationId(
-      candidate.id,
-      resolveRootThreadId(candidate.id),
-      delegated,
-      `import_${randomUUID()}`,
+    const conversationId = existingId ?? logicalImportConversationId(
+      candidate.id, resolveRootThreadId(candidate.id), delegated, `import_${randomUUID()}`,
     )
     const title = delegated ? `${candidate.title} · promoted` : candidate.title
-    promoteConversationToManaged(conversationId, projectPath, source, title)
+    if (!existingId) {
+      if (getConversationById(conversationId)) {
+        const reviveResult = reviveConversationForRecovery(conversationId, projectPath, title)
+        if (reviveResult !== 'revived') {
+          return reviveResult === 'project-mismatch'
+            ? { ok: false, error: 'This conversation belongs to another project in Switchboard' }
+            : { ok: false, error: 'The stored conversation no longer exists' }
+        }
+      } else {
+        promoteConversationToManaged(conversationId, projectPath, source, title)
+      }
+    }
     recordConversationSegment({
       conversationId,
       provider: source,

@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SessionSummary } from '@shared/types'
 
 interface Props {
@@ -9,6 +10,28 @@ interface Props {
   onClose: () => void
 }
 
+function recoveryRole(session: SessionSummary): string {
+  if (session.nativeRole === 'subagent') {
+    return `Subagent${session.depth != null ? ` · depth ${session.depth}` : ''}`
+  }
+  if (session.nativeRole === 'utility') return 'Utility run'
+  return 'Conversation'
+}
+
+export function filterRecoveryCandidates(
+  candidates: SessionSummary[],
+  query: string,
+): SessionSummary[] {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return candidates
+  return candidates.filter((session) => [
+    session.title,
+    session.id,
+    session.source === 'codex' ? 'codex' : session.source === 'claude-code' ? 'claude' : session.source,
+    recoveryRole(session),
+  ].some((value) => value.toLowerCase().includes(needle)))
+}
+
 export function NativeSessionImportModal({
   projectName,
   candidates,
@@ -17,58 +40,117 @@ export function NativeSessionImportModal({
   onImport,
   onClose,
 }: Props) {
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLElement>(null)
+  const filtered = useMemo(
+    () => filterRecoveryCandidates(candidates, query),
+    [candidates, query],
+  )
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || importingId) return
+      event.preventDefault()
+      onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape, true)
+    return () => window.removeEventListener('keydown', closeOnEscape, true)
+  }, [importingId, onClose])
+
+  useEffect(() => {
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const frame = requestAnimationFrame(() => searchRef.current?.focus())
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !dialogRef.current) return
+      const controls = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])',
+      ))
+      if (controls.length === 0) return
+      const current = controls.indexOf(document.activeElement as HTMLElement)
+      const next = event.shiftKey
+        ? (current <= 0 ? controls.length - 1 : current - 1)
+        : (current === controls.length - 1 ? 0 : current + 1)
+      event.preventDefault()
+      controls[next].focus()
+    }
+    document.addEventListener('keydown', trapFocus, true)
+    return () => {
+      cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', trapFocus, true)
+      previous?.focus()
+    }
+  }, [])
+
+  const resultLabel = `${filtered.length} ${filtered.length === 1 ? 'transcript' : 'transcripts'}`
+
   return (
-    <div className="modal-overlay" onMouseDown={onClose}>
+    <div
+      className="recovery-modal-overlay"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !importingId) onClose()
+      }}
+    >
       <section
-        className="modal-content"
+        ref={dialogRef}
+        className="recovery-modal-content sb-floating-surface"
+        role="dialog"
         aria-modal="true"
-        aria-label="Import native conversations"
-        onMouseDown={(event) => event.stopPropagation()}
-        style={{ width: 'min(680px, calc(100vw - 32px))', maxHeight: '76vh' }}
+        aria-labelledby="recovery-modal-title"
       >
-        <header style={{ padding: '18px 20px 12px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', letterSpacing: '.08em', textTransform: 'uppercase' }}>
-            Recovery inventory · {projectName}
+        <header className="recovery-modal-header">
+          <div className="recovery-modal-heading">
+            <div className="recovery-modal-eyebrow">Recovery inventory · {projectName}</div>
+            <h2 id="recovery-modal-title">Import a native conversation</h2>
+            <p>Provider files stay outside the sidebar until you choose one. Delegated agents remain nested under their parent.</p>
           </div>
-          <h2 style={{ margin: '6px 0 4px', fontSize: 18, fontWeight: 600 }}>Import a native conversation</h2>
-          <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: 12.5, lineHeight: 1.5 }}>
-            Provider files stay outside the sidebar until you choose one. Delegated agents remain nested under their parent.
-          </p>
+          <button
+            type="button"
+            className="recovery-modal-close"
+            aria-label="Close recovery inventory"
+            disabled={importingId !== null}
+            onClick={onClose}
+          >
+            ×
+          </button>
         </header>
 
-        <div style={{ overflowY: 'auto', padding: '8px' }}>
-          {candidates.length === 0 ? (
-            <div style={{ padding: '28px 16px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              No native transcripts found for this project.
+        <div className="recovery-modal-toolbar">
+          <input
+            ref={searchRef}
+            className="recovery-modal-search"
+            type="search"
+            aria-label="Search native transcripts"
+            placeholder={`Search ${candidates.length} transcripts by title, provider, role, or ID`}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <span className="recovery-modal-count" aria-live="polite">{resultLabel}</span>
+        </div>
+
+        <div className="recovery-modal-results">
+          {filtered.length === 0 ? (
+            <div className="recovery-modal-empty">
+              {candidates.length === 0
+                ? 'No native transcripts found for this project.'
+                : `No transcripts match “${query.trim()}”.`}
             </div>
-          ) : candidates.map((session) => {
+          ) : filtered.map((session) => {
             const importable = Boolean(session.filePath)
             const delegated = session.nativeRole === 'subagent' || session.nativeRole === 'utility'
-            const role = session.nativeRole === 'subagent'
-              ? `Subagent${session.depth != null ? ` · depth ${session.depth}` : ''}`
-              : session.nativeRole === 'utility' ? 'Utility run' : 'Conversation'
             return (
               <div
+                className="recovery-modal-row"
                 key={`${session.source}:${session.id}`}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '76px minmax(0, 1fr) auto',
-                  gap: 12,
-                  alignItems: 'center',
-                  padding: '10px 12px',
-                  borderBottom: '1px solid color-mix(in srgb, var(--border) 70%, transparent)',
-                  opacity: importable ? 1 : 0.62,
-                }}
+                data-unavailable={!importable || undefined}
               >
-                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--accent)' }}>
+                <span className="recovery-modal-provider">
                   {session.source === 'codex' ? 'CODEX' : 'CLAUDE'}
                 </span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
-                    {session.title}
-                  </div>
-                  <div style={{ marginTop: 3, fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-muted)' }}>
-                    {role} · {session.id.slice(0, 18)}
+                <div className="recovery-modal-summary">
+                  <div className="recovery-modal-title" title={session.title}>{session.title}</div>
+                  <div className="recovery-modal-meta">
+                    {recoveryRole(session)} · {session.id}
                   </div>
                 </div>
                 {importable ? (
@@ -80,16 +162,16 @@ export function NativeSessionImportModal({
                     {importingId === session.id ? 'Importing…' : delegated ? 'Promote' : 'Import'}
                   </button>
                 ) : (
-                  <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>Unavailable</span>
+                  <span className="recovery-modal-unavailable">Unavailable</span>
                 )}
               </div>
             )
           })}
         </div>
 
-        <footer style={{ minHeight: 42, padding: '8px 14px', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ color: 'var(--danger)', fontSize: 11.5 }}>{error}</span>
-          <button className="settings-button" onClick={onClose}>Close</button>
+        <footer className="recovery-modal-footer">
+          <span className="recovery-modal-error" aria-live="assertive">{error}</span>
+          <span>Esc to close</span>
         </footer>
       </section>
     </div>

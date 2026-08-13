@@ -767,6 +767,47 @@ export function promoteConversationToManaged(
   ).run(agentType, title, id, Date.now(), id, projectPath)
 }
 
+export type RecoveryReviveResult = 'revived' | 'missing' | 'project-mismatch'
+
+/** Restore an existing logical conversation without changing how it resumes. */
+export function reviveConversationForRecovery(
+  id: string,
+  projectPath: string,
+  title: string,
+): RecoveryReviveResult {
+  const database = getDb()
+  const existing = database.prepare(
+    'SELECT project_path FROM conversations WHERE id = ?'
+  ).get(id) as { project_path: string } | undefined
+  if (!existing) return 'missing'
+  if (existing.project_path !== projectPath) return 'project-mismatch'
+  const result = database.prepare(
+    `UPDATE conversations
+     SET sidebar_role = 'managed', archived = 0, title = ?, updated_at = ?
+     WHERE id = ? AND project_path = ?`
+  ).run(title, Date.now(), id, projectPath)
+  return result.changes > 0 ? 'revived' : 'missing'
+}
+
+export function getRecoveryConversationTitles(nativeSessionId: string): {
+  nativeTitle: string | null
+  rootTitle: string | null
+} {
+  const database = getDb()
+  const native = database.prepare(
+    'SELECT title FROM conversations WHERE id = ?'
+  ).get(nativeSessionId) as { title: string } | undefined
+  const rootId = resolveRootThreadId(nativeSessionId)
+  const root = rootId === nativeSessionId
+    ? native
+    : database.prepare('SELECT title FROM conversations WHERE id = ?')
+      .get(rootId) as { title: string } | undefined
+  return {
+    nativeTitle: native?.title ?? null,
+    rootTitle: root?.title ?? null,
+  }
+}
+
 /**
  * Update the worktree pointer on an existing conversation. Used by the
  * branch picker when the user picks a branch that already has a

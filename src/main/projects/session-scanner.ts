@@ -56,22 +56,36 @@ export async function scanClaudeCodeSessions(
   projectPath: string,
   claudeBaseDirs: string[] = [join(homedir(), '.claude')],
 ): Promise<SessionSummary[]> {
-  const sessions: SessionSummary[] = []
-  const seenIds = new Set<string>()
+  const copies: ClaudeSessionCopy[] = []
 
   for (const base of claudeBaseDirs) {
     const claudeDir = join(base, 'projects')
-    await scanClaudeProjectsDir(claudeDir, projectPath, sessions, seenIds)
+    await scanClaudeProjectsDir(claudeDir, projectPath, copies)
   }
 
-  return sessions.sort((a, b) => b.startedAt - a.startedAt)
+  const preferred = new Map<string, ClaudeSessionCopy>()
+  for (const copy of copies) {
+    const current = preferred.get(copy.summary.id)
+    if (!current
+      || copy.size > current.size
+      || (copy.size === current.size && copy.summary.startedAt > current.summary.startedAt)) {
+      preferred.set(copy.summary.id, copy)
+    }
+  }
+  return [...preferred.values()]
+    .map((copy) => copy.summary)
+    .sort((a, b) => b.startedAt - a.startedAt)
+}
+
+interface ClaudeSessionCopy {
+  summary: SessionSummary
+  size: number
 }
 
 async function scanClaudeProjectsDir(
   claudeDir: string,
   projectPath: string,
-  sessions: SessionSummary[],
-  seenIds: Set<string>,
+  copies: ClaudeSessionCopy[],
 ): Promise<void> {
   // The match is exact (encodeClaudeProjectPath), so target that one directory
   // directly instead of readdir-ing the whole projects folder and scanning
@@ -87,20 +101,24 @@ async function scanClaudeProjectsDir(
     const index = JSON.parse(indexContent)
 
     if (Array.isArray(index)) {
-      for (const entry of index) {
+      const indexedCopies = await Promise.all(index.map(async (entry): Promise<ClaudeSessionCopy> => {
         const id: string = entry.id ?? entry.sessionId ?? basename(entry.path ?? '')
-        if (seenIds.has(id)) continue
-        seenIds.add(id)
-        sessions.push({
-          id,
-          source: 'claude-code',
-          title: entry.title ?? entry.summary ?? `Session ${sessions.length + 1}`,
-          startedAt: entry.startedAt ?? entry.timestamp ?? Date.now(),
-          messageCount: entry.messageCount ?? 0,
-          filePath: join(projectDir, entry.path ?? `${entry.id}.jsonl`),
-          nativeRole: 'foreground',
-        })
-      }
+        const filePath = join(projectDir, entry.path ?? `${entry.id}.jsonl`)
+        const fileStat = await stat(filePath).catch(() => null)
+        return {
+          summary: {
+            id,
+            source: 'claude-code',
+            title: entry.title ?? entry.summary ?? `Session ${copies.length + 1}`,
+            startedAt: entry.startedAt ?? entry.timestamp ?? fileStat?.mtimeMs ?? Date.now(),
+            messageCount: entry.messageCount ?? 0,
+            filePath,
+            nativeRole: 'foreground',
+          },
+          size: fileStat?.size ?? 0,
+        }
+      }))
+      copies.push(...indexedCopies)
     }
   } catch {
     // No index file - scan for .jsonl files directly
@@ -108,13 +126,11 @@ async function scanClaudeProjectsDir(
     for (const file of files) {
       if (!file.endsWith('.jsonl')) continue
       const id = file.replace('.jsonl', '')
-      if (seenIds.has(id)) continue
-      seenIds.add(id)
       const filePath = join(projectDir, file)
       const fileStat = await stat(filePath).catch(() => null)
 
       // Try to extract title from first user message
-      let title = `Session ${sessions.length + 1}`
+      let title = `Session ${copies.length + 1}`
       try {
         const head = await readHead(filePath, 5000)
         const firstUserMsg = head.split('\n').find((line) => {
@@ -133,14 +149,17 @@ async function scanClaudeProjectsDir(
         }
       } catch { /* title extraction failed - use default */ }
 
-      sessions.push({
-        id,
-        source: 'claude-code',
-        title,
-        startedAt: fileStat?.mtimeMs ?? Date.now(),
-        messageCount: 0,
-        filePath,
-        nativeRole: 'foreground',
+      copies.push({
+        summary: {
+          id,
+          source: 'claude-code',
+          title,
+          startedAt: fileStat?.mtimeMs ?? Date.now(),
+          messageCount: 0,
+          filePath,
+          nativeRole: 'foreground',
+        },
+        size: fileStat?.size ?? 0,
       })
     }
   }

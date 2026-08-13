@@ -2,15 +2,23 @@ import { afterEach, describe, it, expect } from 'vitest'
 import { homedir } from 'os'
 import { join } from 'path'
 import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises'
+import { readFileSync } from 'fs'
 import { tmpdir } from 'os'
 import {
   encodeClaudeProjectPath,
   isClaudeDirForProject,
+  scanClaudeCodeSessions,
   scanCodexSessionCopies,
   scanCodexSessions,
 } from '../../src/main/projects/session-scanner'
 
 describe('session scanner - Claude Code paths', () => {
+  const tempDirs: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })))
+  })
+
   it('Claude Code directory exists at ~/.claude/projects', () => {
     const claudeDir = join(homedir(), '.claude', 'projects')
     expect(typeof claudeDir).toBe('string')
@@ -60,6 +68,31 @@ describe('session scanner - Claude Code paths', () => {
     expect(sorted[0].id).toBe('3')
     expect(sorted[1].id).toBe('2')
     expect(sorted[2].id).toBe('1')
+  })
+
+  it('chooses the most complete copy when a Claude session exists in multiple profiles', async () => {
+    const projectPath = '/repo/panel-agent'
+    const staleHome = await mkdtemp(join(tmpdir(), 'sb-claude-stale-'))
+    const completeHome = await mkdtemp(join(tmpdir(), 'sb-claude-complete-'))
+    tempDirs.push(staleHome, completeHome)
+    const encoded = encodeClaudeProjectPath(projectPath)
+    const staleDir = join(staleHome, 'projects', encoded)
+    const completeDir = join(completeHome, 'projects', encoded)
+    await mkdir(staleDir, { recursive: true })
+    await mkdir(completeDir, { recursive: true })
+    const first = JSON.stringify({ type: 'user', message: { content: 'recover v0' } })
+    await writeFile(join(staleDir, 'native-v0.jsonl'), `${first}\n`)
+    await writeFile(join(completeDir, 'native-v0.jsonl'), `${first}\n${'x'.repeat(4096)}\n`)
+
+    const sessions = await scanClaudeCodeSessions(projectPath, [staleHome, completeHome])
+
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].filePath).toBe(join(completeDir, 'native-v0.jsonl'))
+  })
+
+  it('stats indexed Claude copies concurrently instead of serializing large recovery inventories', async () => {
+    const source = readFileSync(new URL('../../src/main/projects/session-scanner.ts', import.meta.url), 'utf8')
+    expect(source).toMatch(/await Promise\.all\(index\.map\(async \(entry/)
   })
 })
 

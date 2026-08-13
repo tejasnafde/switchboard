@@ -33,3 +33,14 @@ export function logicalImportConversationId(
   if (delegated) return promotedId
   return resolvedRootId || nativeSessionId
 }
+
+/** Preserve a user-assigned native title across scanner fallback names. */
+export function recoveryCandidateTitle(
+  scannerTitle: string,
+  nativeConversationTitle: string | null,
+  rootConversationTitle: string | null,
+): string {
+  return nativeConversationTitle?.trim()
+    || rootConversationTitle?.trim()
+    || scannerTitle
+}

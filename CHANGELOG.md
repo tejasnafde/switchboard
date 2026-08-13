@@ -2,6 +2,20 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.32 - Make conversation recovery usable and complete
+
+### Fixed
+- **The recovery inventory rendered as an unscrollable sidebar section.** It is now a bounded application modal with an independently scrollable list, title/provider/role/ID search, result counts, backdrop/Escape/close dismissal, and trapped/restored keyboard focus.
+- **The reported `v0` transcript was hidden under its first prompt and sorted last.** Recovery candidates prefer Switchboard's durable conversation title, so the archived mixed-provider chat appears as `v0` and is directly searchable.
+- **Duplicate Claude profiles could select a stale, truncated transcript copy.** Recovery now compares copies by completeness and freshness, choosing the full transcript regardless of provider-profile order while statting indexed candidates concurrently.
+- **Reviving an archived mixed-provider root could overwrite its active Codex provider metadata.** Existing roots now change only recovery-owned visibility and title state; provider, instance, model, runtime mode, and resume cursor remain intact.
+- **A repeated import could report success without restoring or refreshing the chat.** Known segments are unarchived and re-mirrored from the current native transcript, while cross-project or dangling lineage fails before any segment or message write.
+
+### Notes
+- The `v0` recovery fixture resolves native Claude session `b58253b1-d3c4-42a3-aea2-917b7831168b` to canonical root `agent_1786000350667` without mutating its Codex/Lenskart/model selection.
+- Claude's backend profile review was diagnosed as a non-converging tool-exploration loop. A bounded exploration followed by tools-disabled synthesis completed successfully and found the final data-integrity and accessibility issues fixed in this release.
+- The final local gate passed 2,467 tests across 244 files, both typechecks, all production bundles, and the packaged-main smoke test.
+
 ## 0.8.31 - Never mistake a migration failure for corruption
 
 ### Fixed

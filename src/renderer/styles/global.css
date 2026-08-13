@@ -335,6 +335,201 @@ html, body, #root {
   padding: 2px 0 4px;
 }
 
+/* Recovery inventory is application-level UI even though Sidebar owns its
+   state. Keep it out of the sidebar's flex layout and bound the result list. */
+.recovery-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.recovery-modal-content {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(78vh, 760px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.recovery-modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.recovery-modal-heading {
+  min-width: 0;
+  flex: 1;
+}
+
+.recovery-modal-eyebrow {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.recovery-modal-heading h2 {
+  margin: 6px 0 4px;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.recovery-modal-heading p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.recovery-modal-close {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.recovery-modal-close:hover,
+.recovery-modal-close:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.recovery-modal-close:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.recovery-modal-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.recovery-modal-search {
+  min-width: 0;
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.recovery-modal-search:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 2px var(--accent-subtle);
+}
+
+.recovery-modal-count {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.recovery-modal-results {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  flex: 1;
+  padding: 6px 8px;
+}
+
+.recovery-modal-row {
+  display: grid;
+  grid-template-columns: 70px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  min-height: 58px;
+  padding: 9px 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 58px;
+}
+
+.recovery-modal-row[data-unavailable] {
+  opacity: 0.62;
+}
+
+.recovery-modal-provider {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.recovery-modal-summary {
+  min-width: 0;
+}
+
+.recovery-modal-title,
+.recovery-modal-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recovery-modal-title {
+  font-size: 13px;
+}
+
+.recovery-modal-meta {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.recovery-modal-unavailable {
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.recovery-modal-empty {
+  padding: 32px 16px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.recovery-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 40px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10.5px;
+}
+
+.recovery-modal-error {
+  color: var(--error);
+  font-size: 11.5px;
+}
+
 .sidebar-recents {
   padding: 2px 8px 8px;
   border-bottom: 1px solid var(--border);
