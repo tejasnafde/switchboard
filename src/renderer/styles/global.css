@@ -508,6 +508,49 @@ html, body, #root {
   font-size: 10.5px;
 }
 
+.recovery-modal-action {
+  appearance: none;
+  min-width: 72px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 48%, var(--border));
+  border-radius: var(--radius);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+  scale: 1;
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    scale 120ms ease;
+}
+
+.recovery-modal-action:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text-primary);
+}
+
+.recovery-modal-action:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.recovery-modal-action:active:not(:disabled) {
+  scale: 0.96;
+}
+
+.recovery-modal-action:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
 .recovery-modal-empty {
   padding: 32px 16px;
   color: var(--text-muted);

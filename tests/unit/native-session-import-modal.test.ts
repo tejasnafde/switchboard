@@ -63,6 +63,25 @@ describe('NativeSessionImportModal', () => {
     expect(css).toMatch(/\.recovery-modal-results\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/s)
   })
 
+  it('styles row actions without falling back to a native browser button', () => {
+    const markup = renderToStaticMarkup(createElement(recoveryModal.NativeSessionImportModal, {
+      projectName: 'GEOIQ-LK-PANEL-AGENT-IN',
+      candidates,
+      importingId: null,
+      error: null,
+      onImport: () => {},
+      onClose: () => {},
+    }))
+
+    expect(markup).toContain('class="recovery-modal-action"')
+    expect(markup).not.toContain('class="settings-button"')
+    expect(css).toMatch(/\.recovery-modal-action\s*\{[^}]*appearance:\s*none[^}]*min-height:\s*40px/s)
+    expect(css).toMatch(/\.recovery-modal-action:hover/)
+    expect(css).toMatch(/\.recovery-modal-action:focus-visible/)
+    expect(css).toMatch(/\.recovery-modal-action:active:not\(:disabled\)\s*\{[^}]*scale:\s*0\.96/s)
+    expect(css).toMatch(/\.recovery-modal-action:disabled/)
+  })
+
   it('traps keyboard focus and restores the recovery trigger on close', () => {
     expect(modalSource).toMatch(/const dialogRef = useRef/)
     expect(modalSource).toMatch(/event\.key !== 'Tab'/)

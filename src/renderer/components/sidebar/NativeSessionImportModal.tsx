@@ -155,8 +155,10 @@ export function NativeSessionImportModal({
                 </div>
                 {importable ? (
                   <button
-                    className="settings-button"
+                    type="button"
+                    className="recovery-modal-action"
                     disabled={importingId !== null}
+                    aria-busy={importingId === session.id || undefined}
                     onClick={() => onImport(session)}
                   >
                     {importingId === session.id ? 'Importing…' : delegated ? 'Promote' : 'Import'}
