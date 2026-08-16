@@ -32,7 +32,7 @@ import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
-import { needsMessageReload, resolveSessionOpenAgentType, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
+import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 
 const log = createRendererLogger('app')
@@ -100,6 +100,7 @@ export function App() {
   const setActiveSession = useAgentStore((s) => s.setActiveSession)
   const setMessages = useAgentStore((s) => s.setMessages)
   const clearMessages = useAgentStore((s) => s.clearMessages)
+  const setTitle = useAgentStore((s) => s.setTitle)
   const { loadSavedTheme } = useThemeStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
@@ -531,6 +532,7 @@ export function App() {
 
       if (existing) {
         setActiveSession(session.id)
+        setTitle(session.id, resolveSessionDisplayTitle(session.title, existing.title))
         // Messages may have been evicted - reload from disk if so.
         if (needsMessageReload(existing)) {
           try {

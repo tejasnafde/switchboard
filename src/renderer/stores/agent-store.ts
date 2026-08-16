@@ -289,6 +289,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           model: s.model,
           instanceId: s.instanceId,
           resumeSessionId: s.sessionId,
+          title: s.title,
         }),
         applyStatus: (row, status) => ({ ...row, status: toAgentStatus(status) }),
       }),

@@ -394,7 +394,7 @@ function seedRecentConversations() {
     `INSERT INTO projects (path, name, added_at, workspace_id) VALUES (${quote(betaPath)}, 'Visual Beta Project', ${now - 2}, 'visual-beta');`,
   ]
   for (let index = 0; index < 7; index++) {
-    statements.push(`INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at) VALUES ('visual-recent-${index}', ${quote(projectPath)}, 'claude-code', 'Visual Recent ${index + 1}', ${now - index}, ${now - index});`)
+    statements.push(`INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at, sidebar_role) VALUES ('visual-recent-${index}', ${quote(projectPath)}, 'claude-code', 'Visual Recent ${index + 1}', ${now - index}, ${now - index}, 'managed');`)
   }
   execFileSync('sqlite3', [join(userDataDir, 'data', 'switchboard.db'), statements.join('\n')])
   return true
@@ -425,6 +425,11 @@ try {
   await win.waitForTimeout(300)
 
   if (hasSeededRecents) {
+    await win.waitForFunction(
+      () => document.querySelectorAll('.sidebar-recent-row').length === 6,
+      null,
+      { timeout: 10_000 },
+    )
     const recentRows = win.locator('.sidebar-recent-row')
     if (await recentRows.count() !== 6) throw new Error(`configured Recents baseline rendered ${await recentRows.count()} rows`)
     const showMore = win.getByRole('button', { name: 'Show 1 more' })
@@ -435,6 +440,8 @@ try {
     if (await win.locator('.sidebar-recents .pulse, .sidebar-recents .blink, .sidebar-recents .sidebar-thread-dot').count() !== 0) {
       throw new Error('Recents rendered a generic blinking status dot')
     }
+    await win.locator('.sidebar-recent-row').filter({ hasText: 'Visual Recent 1' }).click()
+    await win.locator('.chat-identity-title').filter({ hasText: 'Visual Recent 1' }).waitFor({ state: 'visible' })
   }
 
   if (hasSeededRecents) await assertWorkspaceOrganizer(win)

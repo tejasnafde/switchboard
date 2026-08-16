@@ -33,6 +33,20 @@ describe('agent-store', () => {
     expect(state.sessions[0].messages).toEqual([])
   })
 
+  it('keeps the persisted title when adopting a live provider session', () => {
+    useAgentStore.getState().adoptLiveSessions([{
+      threadId: 'agent_1786814211280',
+      provider: 'codex',
+      status: 'running',
+      runtimeMode: 'full-access',
+      cwd: '/projects/learnlang',
+      createdAt: Date.now(),
+      title: 'branding',
+    }], 'local')
+
+    expect(useAgentStore.getState().sessions[0].title).toBe('branding')
+  })
+
   it('should append messages to a session', () => {
     const { addSession, appendMessage } = useAgentStore.getState()
     addSession({ id: 's1', type: 'claude-code', status: 'idle' })

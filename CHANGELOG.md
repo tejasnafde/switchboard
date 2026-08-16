@@ -2,6 +2,19 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.33 - Unstick Codex turns and keep conversation identity intact
+
+### Fixed
+- **Codex could wait forever after an MCP server requested structured input.** Standard MCP form elicitations now render through Switchboard's question UI and return schema-shaped values; unsupported elicitation modes are cancelled instead of leaving the app-server blocked.
+- **Stop sent an invalid Codex request and left the composer on Working.** Interrupts now include the required native turn ID, have a bounded deadline, restore idle state immediately, and terminate the wedged provider session if interruption fails.
+- **A stale Codex turn ID could create a second concurrent turn.** Switchboard now adopts the live turn ID reported by app-server and retries steering once instead of falling through to `turn/start`.
+- **A recent named `branding` could open under `New conversation`.** Live-session summaries now carry the persisted database title, and selecting an already-adopted session reconciles its header with the sidebar title.
+- **The recovery import action lacked the modal's button treatment.** Its primary action now uses the established recovery-modal styling and focus states.
+
+### Notes
+- The reported `branding` session was `agent_1786814211280`. Its packaged log showed an unanswered `mcpServer/elicitation/request`, followed by `turn/interrupt` failing with `missing field turnId`; these exact protocol paths now have regressions.
+- The Electron Playwright fixture now seeds managed conversations on the current schema, waits for hydration, and asserts a recent title survives into the chat header. The final local gate passed 2,474 tests across 244 files, lint, both typechecks, all production bundles, the remote server, packaged-main smoke test, and the full Electron visual flow.
+
 ## 0.8.32 - Make conversation recovery usable and complete
 
 ### Fixed

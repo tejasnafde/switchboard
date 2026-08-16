@@ -29,6 +29,10 @@ export function resolveSessionSelectTarget(
   return storeSessionIds.includes(rootThreadId) ? rootThreadId : clickedId
 }
 
+export function resolveSessionDisplayTitle(selectedTitle: string, loadedTitle?: string | null): string {
+  return selectedTitle.trim() || loadedTitle?.trim() || 'New conversation'
+}
+
 export function resolveSessionOpenAgentType(
   scannedAgentType: Exclude<AgentType, 'terminal'>,
   loadedAgentType?: string,

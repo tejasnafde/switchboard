@@ -24,6 +24,7 @@ let persistedSessionIds: string[] = []
 let persistedSessionHints: string[] = []
 let typedResumeSessionId: string | null = null
 let threadResumeError: string | null = null
+let turnSteerErrors: string[] = []
 
 type MockChild = EventEmitter & {
   stdout: PassThrough
@@ -364,6 +365,15 @@ function makeChild(): MockChild {
       }
       if (message.method === 'turn/steer') {
         queueMicrotask(() => {
+          const error = turnSteerErrors.shift()
+          if (error) {
+            stdout.write(JSON.stringify({
+              jsonrpc: '2.0',
+              id: message.id,
+              error: { code: -32600, message: error },
+            }) + '\n')
+            return
+          }
           stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             id: message.id,
@@ -437,6 +447,7 @@ describe('CodexAdapter', () => {
     persistedSessionHints = []
     typedResumeSessionId = null
     threadResumeError = null
+    turnSteerErrors = []
     vi.clearAllMocks()
   })
 
@@ -814,6 +825,116 @@ describe('CodexAdapter', () => {
       jsonrpc: '2.0',
       id: 901,
       result: { answers: { deploy_target: { answers: ['Production'] } } },
+    })
+  })
+
+  it('answers MCP form elicitations instead of leaving the Codex turn blocked', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 903,
+      method: 'mcpServer/elicitation/request',
+      params: {
+        threadId: 'codex-thread-1',
+        turnId: 'turn-1',
+        serverName: 'imagegen',
+        mode: 'form',
+        message: 'Choose how the image should be generated.',
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            direction: {
+              type: 'string',
+              title: 'Direction',
+              description: 'Pick a visual direction.',
+              enum: ['Editorial', 'Playful'],
+            },
+            transparent: {
+              type: 'boolean',
+              title: 'Transparency',
+              description: 'Use a transparent background?',
+            },
+          },
+          required: ['direction', 'transparent'],
+        },
+        _meta: null,
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const asked = onEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'question.asked')
+    expect(asked?.questions).toEqual([
+      {
+        id: 'direction',
+        header: 'Direction',
+        question: 'Pick a visual direction.',
+        options: [{ label: 'Editorial' }, { label: 'Playful' }],
+        multiSelect: false,
+      },
+      {
+        id: 'transparent',
+        header: 'Transparency',
+        question: 'Use a transparent background?',
+        options: [{ label: 'Yes' }, { label: 'No' }],
+        multiSelect: false,
+      },
+    ])
+
+    await adapter.answerQuestion?.('thread-1', asked.requestId, [['Editorial'], ['Yes']])
+
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual({
+      jsonrpc: '2.0',
+      id: 903,
+      result: {
+        action: 'accept',
+        content: { direction: 'Editorial', transparent: true },
+        _meta: null,
+      },
+    })
+  })
+
+  it('cancels unsupported MCP elicitations so the provider cannot wait forever', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, vi.fn())
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      id: 904,
+      method: 'mcpServer/elicitation/request',
+      params: {
+        threadId: 'codex-thread-1',
+        turnId: 'turn-1',
+        serverName: 'example',
+        mode: 'url',
+        message: 'Open an external flow.',
+        url: 'https://example.com',
+        elicitationId: 'elicit-1',
+        _meta: null,
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual({
+      jsonrpc: '2.0',
+      id: 904,
+      result: { action: 'cancel', content: null, _meta: null },
     })
   })
 
@@ -1283,6 +1404,30 @@ describe('CodexAdapter', () => {
     expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
   })
 
+  it('retries steering with Codex\'s live turn id instead of starting a concurrent turn', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, vi.fn())
+    await adapter.sendTurn('thread-1', 'hello codex')
+
+    turnSteerErrors = [
+      'expected turn id 01a00b7d-expected, found 01a00b18-live',
+    ]
+    writes.length = 0
+    await adapter.sendTurn('thread-1', 'use the updated direction')
+
+    const frames = writes.map((line) => JSON.parse(line))
+    const steers = frames.filter((frame) => frame.method === 'turn/steer')
+    expect(steers).toHaveLength(2)
+    expect(steers[1].params.expectedTurnId).toBe('01a00b18-live')
+    expect(frames.some((frame) => frame.method === 'turn/start')).toBe(false)
+  })
+
   it('starts a fresh turn (not a steer) after an interrupt clears the active turn id', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
@@ -1304,6 +1449,35 @@ describe('CodexAdapter', () => {
     // steer against a stale expectedTurnId.
     expect(frames.some((m) => m.method === 'turn/start')).toBe(true)
     expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
+  })
+
+  it('interrupts the active Codex turn by id and immediately returns the session to idle', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    writes.length = 0
+
+    await adapter.interruptTurn('thread-1')
+
+    expect(writes.map((line) => JSON.parse(line))).toContainEqual(expect.objectContaining({
+      method: 'turn/interrupt',
+      params: {
+        threadId: 'codex-thread-1',
+        turnId: 'turn-1',
+      },
+    }))
+    expect(onEvent).toHaveBeenLastCalledWith({
+      type: 'status',
+      threadId: 'thread-1',
+      status: 'idle',
+    })
   })
 
   it('ships reasoning deltas as increments, so a long stream stays linear on the wire', async () => {

@@ -87,6 +87,8 @@ export interface ProviderSession {
   reasoningEffort?: 'low' | 'medium' | 'high'
   /** ID of the provider_instances row this session resolved to. */
   instanceId?: string
+  /** Persisted Switchboard title when the registry returns a live-session summary. */
+  title?: string
 }
 
 // ─── Provider Adapter Interface ────────────────────────────────

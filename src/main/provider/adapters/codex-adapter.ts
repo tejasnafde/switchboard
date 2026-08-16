@@ -126,6 +126,12 @@ interface PendingApproval {
   jsonRpcId: number
   requestId: string
   questionIds?: string[]
+  mcpFields?: McpElicitationField[]
+}
+
+interface McpElicitationField {
+  id: string
+  type: 'string' | 'boolean' | 'number' | 'integer' | 'array'
 }
 
 interface ActiveSession {
@@ -146,9 +152,6 @@ interface ActiveSession {
   /** Active codex turn id (from turn/start response or turn/started); null
    * when idle. Required as `expectedTurnId` to steer a running turn. */
   activeTurnId: string | null
-  /** Set once turn/steer returns method-not-found so we stop attempting it on
-   * codex builds that predate the RPC (installed 0.144.1 supports it). */
-  steerUnsupported: boolean
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -168,6 +171,63 @@ function stringifyMaybe(value: unknown): string | undefined {
 function isMissingThreadError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return /thread(?:\s+\S+)?\s+(?:is\s+)?not (?:found|loaded)\b|no rollout found\b/i.test(message)
+}
+
+function parseMcpForm(params: unknown): {
+  fields: McpElicitationField[]
+  questions: Array<{
+    id: string
+    header: string
+    question: string
+    options: Array<{ label: string }>
+    multiSelect: boolean
+  }>
+} | null {
+  const request = asRecord(params)
+  const schema = asRecord(request?.requestedSchema)
+  const properties = asRecord(schema?.properties)
+  if (request?.mode !== 'form' || !properties) return null
+
+  const fields: McpElicitationField[] = []
+  const questions = Object.entries(properties).flatMap(([id, value]) => {
+    const property = asRecord(value)
+    if (!property) return []
+    const type = property.type
+    if (type !== 'string' && type !== 'boolean' && type !== 'number' && type !== 'integer' && type !== 'array') {
+      return []
+    }
+
+    fields.push({ id, type })
+    const enumValues = type === 'array'
+      ? asRecord(property.items)?.enum
+      : property.enum
+    const labels = Array.isArray(enumValues)
+      ? enumValues.map(String)
+      : type === 'boolean' ? ['Yes', 'No'] : []
+
+    return [{
+      id,
+      header: typeof property.title === 'string' ? property.title : id,
+      question: typeof property.description === 'string'
+        ? property.description
+        : typeof request.message === 'string' ? request.message : id,
+      options: labels.map((label) => ({ label })),
+      multiSelect: type === 'array',
+    }]
+  })
+
+  return fields.length > 0 ? { fields, questions } : null
+}
+
+function mcpFormContent(fields: McpElicitationField[], answers: string[][]): Record<string, unknown> {
+  return Object.fromEntries(fields.map((field, index) => {
+    const values = answers[index] ?? []
+    const first = values[0] ?? ''
+    if (field.type === 'boolean') return [field.id, first.toLowerCase() === 'yes' || first === 'true']
+    if (field.type === 'number' || field.type === 'integer') return [field.id, Number(first)]
+    if (field.type === 'array') return [field.id, values]
+    return [field.id, first]
+  }))
 }
 
 function codexFileEdits(item: Record<string, unknown>): Array<{
@@ -458,7 +518,6 @@ export class CodexAdapter implements ProviderAdapter {
       models: null,
       turnStartedAt: null,
       activeTurnId: null,
-      steerUnsupported: false,
     }
 
     this.sessions.set(opts.threadId, active)
@@ -662,14 +721,15 @@ export class CodexAdapter implements ProviderAdapter {
     // Mid-turn send with a live turn id → steer it (inject into the running
     // turn) rather than starting a concurrent one. Only a fresh turn resets
     // status/timestamp; steering leaves the in-flight turn's clock alone.
-    const steering = active.activeTurnId != null && !active.steerUnsupported
-    if (steering) {
+    const activeTurnId = active.activeTurnId
+    if (activeTurnId) {
+      const steer = (expectedTurnId: string) => this.sendRpc(active, 'turn/steer', {
+        threadId: active.threadId,
+        input: content,
+        expectedTurnId,
+      })
       try {
-        const steered = await this.sendRpc(active, 'turn/steer', {
-          threadId: active.threadId,
-          input: content,
-          expectedTurnId: active.activeTurnId,
-        })
+        const steered = await steer(activeTurnId)
         // Track the (possibly advanced) turn id so a follow-up steer targets
         // the right turn.
         const steeredTurnId = (steered as { turnId?: string } | null)?.turnId
@@ -677,13 +737,15 @@ export class CodexAdapter implements ProviderAdapter {
         return
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        // Any steer failure - method missing on old builds, or the turn ended
-        // between our state and the request (stale expectedTurnId) - must not
-        // drop the message. Clear the turn id and fall through to a fresh
-        // turn/start; only -32601 disables steering for the rest of the session.
-        if (/-32601|method not found|unknown method/i.test(msg)) active.steerUnsupported = true
-        active.activeTurnId = null
-        log.warn(`codex turn/steer failed, starting a fresh turn instead: ${msg}`)
+        const liveTurnId = msg.match(/\bfound\s+([\w-]+)/i)?.[1]
+        if (!liveTurnId) throw err
+
+        log.warn(`codex turn id changed; retrying steer against ${liveTurnId}`)
+        active.activeTurnId = liveTurnId
+        const steered = await steer(liveTurnId)
+        const steeredTurnId = (steered as { turnId?: string } | null)?.turnId
+        if (typeof steeredTurnId === 'string') active.activeTurnId = steeredTurnId
+        return
       }
     }
 
@@ -799,14 +861,22 @@ export class CodexAdapter implements ProviderAdapter {
     const active = this.sessions.get(threadId)
     if (!active?.child || !active.threadId) return
 
-    // The interrupted turn is no longer steerable; clear the id so the next
-    // send starts a fresh turn instead of steering a dead one.
-    active.activeTurnId = null
-    try {
-      await this.sendRpc(active, 'turn/interrupt', { threadId: active.threadId })
-    } catch {
-      // May fail if no turn active
+    const turnId = active.activeTurnId
+    if (!turnId) {
+      active.session.status = 'idle'
+      active.onEvent({ type: 'status', threadId, status: 'idle' })
+      return
     }
+
+    await withTimeout(
+      this.sendRpc(active, 'turn/interrupt', { threadId: active.threadId, turnId }),
+      5_000,
+      'Codex turn interrupt',
+    )
+    active.activeTurnId = null
+    active.turnStartedAt = null
+    active.session.status = 'idle'
+    active.onEvent({ type: 'status', threadId, status: 'idle' })
   }
 
   async respondToRequest(
@@ -855,7 +925,13 @@ export class CodexAdapter implements ProviderAdapter {
     if (!pending) return
     active.pendingApprovals.delete(requestId)
 
-    const result = pending.questionIds
+    const result = pending.mcpFields
+      ? {
+          action: 'accept',
+          content: mcpFormContent(pending.mcpFields, answers),
+          _meta: null,
+        }
+      : pending.questionIds
       ? {
           answers: Object.fromEntries(
             pending.questionIds.map((id, index) => [id, { answers: answers[index] ?? [] }]),
@@ -1072,6 +1148,32 @@ export class CodexAdapter implements ProviderAdapter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- raw JSON-RPC server request from codex app-server; loosely typed third-party wire format
   private handleServerRequest(threadId: string, active: ActiveSession, request: any): void {
     const method = request.method as string
+
+    if (method === 'mcpServer/elicitation/request') {
+      const form = parseMcpForm(request.params)
+      if (!form) {
+        this.writeMessage(active, {
+          jsonrpc: '2.0',
+          id: request.id,
+          result: { action: 'cancel', content: null, _meta: null },
+        })
+        return
+      }
+
+      const requestId = `mcp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+      active.pendingApprovals.set(requestId, {
+        jsonRpcId: request.id,
+        requestId,
+        mcpFields: form.fields,
+      })
+      active.onEvent({
+        type: 'question.asked',
+        threadId,
+        requestId,
+        questions: form.questions,
+      })
+      return
+    }
 
     if (method.includes('requestApproval')) {
       // Derive a tool name from the approval request shape so our policy

@@ -10,4 +10,5 @@ export interface LiveSessionSummary {
   sessionId?: string
   model?: string
   instanceId?: string
+  title?: string
 }

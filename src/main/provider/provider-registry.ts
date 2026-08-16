@@ -202,10 +202,14 @@ export class ProviderRegistry implements PeerToolHost {
 
   /** Live sessions with their CURRENT status, not the status they started at. */
   listSessions(): ProviderSession[] {
-    return [...this.sessionDescriptors.entries()].map(([threadId, session]) => ({
-      ...session,
-      status: this.sessionStatus.get(threadId) ?? session.status,
-    }))
+    return [...this.sessionDescriptors.entries()].map(([threadId, session]) => {
+      const title = getConversationTitle(threadId)
+      return {
+        ...session,
+        status: this.sessionStatus.get(threadId) ?? session.status,
+        ...(title ? { title } : {}),
+      }
+    })
   }
 
   /**

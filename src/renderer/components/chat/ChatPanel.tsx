@@ -1459,7 +1459,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           maxTokens: activeSession?.tokenUsage?.maxTokens ?? 200000,
         } : undefined}
         isRunning={status === 'running' || status === 'thinking'}
-        onInterrupt={() => {
+        onInterrupt={async () => {
           if (!sessionId) return
           // No provider session was ever started (e.g. startSession failed) -
           // there is nothing in main to interrupt and no event will ever
@@ -1468,7 +1468,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             updateStatus(sessionId, 'idle')
             return
           }
-          window.api.provider?.interrupt?.(sessionId).catch(() => {})
+          try {
+            await window.api.provider?.interrupt?.(sessionId)
+          } catch (err) {
+            log.warn('provider interrupt failed; stopping wedged session', { sessionId, err })
+            await window.api.provider?.stopSession?.(sessionId).catch((stopErr: unknown) => {
+              log.warn('provider recovery stop failed', { sessionId, err: stopErr })
+            })
+            providerStartedRef.current.delete(sessionId)
+            agentStartedRef.current.delete(sessionId)
+            updateStatus(sessionId, 'idle')
+          }
         }}
         onClearMessages={() => {
           if (sessionId) clearMessages(sessionId)
