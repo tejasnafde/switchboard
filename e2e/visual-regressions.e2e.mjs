@@ -393,7 +393,7 @@ function seedRecentConversations() {
     `INSERT INTO projects (path, name, added_at, workspace_id) VALUES (${quote(extraPath)}, 'Visual Extra', ${now - 1}, 'visual-alpha');`,
     `INSERT INTO projects (path, name, added_at, workspace_id) VALUES (${quote(betaPath)}, 'Visual Beta Project', ${now - 2}, 'visual-beta');`,
   ]
-  for (let index = 0; index < 7; index++) {
+  for (let index = 0; index < 18; index++) {
     statements.push(`INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at, sidebar_role) VALUES ('visual-recent-${index}', ${quote(projectPath)}, 'claude-code', 'Visual Recent ${index + 1}', ${now - index}, ${now - index}, 'managed');`)
   }
   execFileSync('sqlite3', [join(userDataDir, 'data', 'switchboard.db'), statements.join('\n')])
@@ -432,9 +432,13 @@ try {
     )
     const recentRows = win.locator('.sidebar-recent-row')
     if (await recentRows.count() !== 6) throw new Error(`configured Recents baseline rendered ${await recentRows.count()} rows`)
-    const showMore = win.getByRole('button', { name: 'Show 1 more' })
-    await showMore.click()
-    if (await recentRows.count() !== 7) throw new Error(`expanded Recents rendered ${await recentRows.count()} rows`)
+    const showFiveMore = win.getByRole('button', { name: 'Show 5 more' })
+    await showFiveMore.click()
+    if (await recentRows.count() !== 11) throw new Error(`first Recents page rendered ${await recentRows.count()} rows`)
+    await showFiveMore.click()
+    if (await recentRows.count() !== 16) throw new Error(`second Recents page rendered ${await recentRows.count()} rows`)
+    await win.getByRole('button', { name: 'Show 2 more' }).click()
+    if (await recentRows.count() !== 18) throw new Error(`final Recents page rendered ${await recentRows.count()} rows`)
     await win.getByRole('button', { name: 'Show less' }).click()
     if (await recentRows.count() !== 6) throw new Error(`collapsed Recents rendered ${await recentRows.count()} rows`)
     if (await win.locator('.sidebar-recents .pulse, .sidebar-recents .blink, .sidebar-recents .sidebar-thread-dot').count() !== 0) {

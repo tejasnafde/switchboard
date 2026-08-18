@@ -37,8 +37,8 @@ describe('RecentSessionsSection', () => {
     expect(markup).not.toContain('blink')
   })
 
-  it('collapses to the configured baseline and offers the remaining count', () => {
-    const items = Array.from({ length: 7 }, (_, index): RecentSessionItem => ({
+  it('collapses to the configured baseline and offers only the next five rows', () => {
+    const items = Array.from({ length: 14 }, (_, index): RecentSessionItem => ({
       ...item,
       session: { ...item.session, id: `session-${index}`, title: `Session ${index}` },
       status: undefined,
@@ -52,7 +52,8 @@ describe('RecentSessionsSection', () => {
 
     expect(markup).toContain('Session 3')
     expect(markup).not.toContain('Session 4')
-    expect(markup).toContain('Show 3 more')
+    expect(markup).toContain('Show 5 more')
+    expect(markup).not.toContain('Show 10 more')
   })
 
   it('offers every supported collapsed baseline in General settings', () => {

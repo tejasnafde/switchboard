@@ -1,8 +1,10 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { RecentSessionItem, RecentSessionStatus } from './recentSessions'
 import { formatRelativeTime } from './sidebar-helpers'
 import {
   DEFAULT_RECENT_SESSION_LIMIT,
+  RECENT_SESSION_PAGE_SIZE,
+  nextRecentSessionRevealCount,
   visibleRecentSessions,
   type RecentSessionLimit,
 } from './recentSessionLimit'
@@ -47,10 +49,12 @@ export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SES
   activeSessionId: string | null
   onSelect: (item: RecentSessionItem) => void
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const [revealedCount, setRevealedCount] = useState(0)
+  useEffect(() => setRevealedCount(0), [initialLimit])
   if (items.length === 0) return null
-  const visibleItems = visibleRecentSessions(items, initialLimit, expanded)
-  const remaining = items.length - initialLimit
+  const visibleItems = visibleRecentSessions(items, initialLimit, revealedCount)
+  const hiddenCount = items.length - visibleItems.length
+  const expanded = revealedCount > 0
   return (
     <section className="sidebar-recents" aria-label="Recent conversations">
       <div className="sidebar-section-label">Recents</div>
@@ -76,15 +80,30 @@ export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SES
           </button>
         )
       })}
-      {remaining > 0 && (
-        <button
-          type="button"
-          className="sidebar-recents-more"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? 'Show less' : `Show ${remaining} more`}
-        </button>
+      {(hiddenCount > 0 || expanded) && (
+        <div className="sidebar-recents-actions">
+          {hiddenCount > 0 && (
+            <button
+              type="button"
+              className="sidebar-recents-more"
+              aria-expanded={expanded}
+              onClick={() => setRevealedCount((count) => (
+                nextRecentSessionRevealCount(items.length, initialLimit, count)
+              ))}
+            >
+              Show {Math.min(hiddenCount, RECENT_SESSION_PAGE_SIZE)} more
+            </button>
+          )}
+          {expanded && (
+            <button
+              type="button"
+              className="sidebar-recents-more sidebar-recents-less"
+              onClick={() => setRevealedCount(0)}
+            >
+              Show less
+            </button>
+          )}
+        </div>
       )}
     </section>
   )

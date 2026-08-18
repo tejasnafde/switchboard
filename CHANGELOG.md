@@ -2,6 +2,15 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.34 - Page through Recents without flooding the sidebar
+
+### Fixed
+- **Show more could render hundreds of conversations at once.** Recents now reveals five additional rows per click, labels the final partial page accurately, and keeps Show less available after the first expansion so the configured 4/6/8/12-row baseline is always one click away.
+
+### Notes
+- Approval, Input, Working, Failed, Done, and ordinary-recency ordering is unchanged. This release adds no pinned, settled, snoozed, archived, or database behavior.
+- The Electron Playwright flow verifies 6 → 11 → 16 → 18 rows, the final **Show 2 more** label, and collapse back to six. The full local gate passed 2,475 tests across 244 files, both typechecks, all production bundles, the remote server, and packaged-main smoke test.
+
 ## 0.8.33 - Unstick Codex turns and keep conversation identity intact
 
 ### Fixed

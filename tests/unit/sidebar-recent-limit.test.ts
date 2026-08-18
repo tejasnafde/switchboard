@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_RECENT_SESSION_LIMIT,
   RECENT_SESSION_LIMITS,
+  nextRecentSessionRevealCount,
   parseRecentSessionLimit,
   resolveLoadedRecentSessionLimit,
+  type RecentSessionLimit,
   visibleRecentSessions,
 } from '../../src/renderer/components/sidebar/recentSessionLimit'
 
@@ -20,10 +22,18 @@ describe('recent session limit', () => {
     expect(RECENT_SESSION_LIMITS.map(String).map(parseRecentSessionLimit)).toEqual([4, 6, 8, 12])
   })
 
-  it('uses the configured baseline until expanded', () => {
-    const items = Array.from({ length: 9 }, (_, index) => index)
-    expect(visibleRecentSessions(items, 6, false)).toEqual([0, 1, 2, 3, 4, 5])
-    expect(visibleRecentSessions(items, 6, true)).toEqual(items)
+  it('reveals conversations in five-row increments after the configured baseline', () => {
+    const items = Array.from({ length: 18 }, (_, index) => index)
+    expect(visibleRecentSessions(items, 6, 0)).toEqual(items.slice(0, 6))
+    expect(visibleRecentSessions(items, 6, 5)).toEqual(items.slice(0, 11))
+    expect(visibleRecentSessions(items, 6, 10)).toEqual(items.slice(0, 16))
+  })
+
+  it('caps each expansion at five rows and stops at the end', () => {
+    const limit: RecentSessionLimit = 6
+    expect(nextRecentSessionRevealCount(443, limit, 0)).toBe(5)
+    expect(nextRecentSessionRevealCount(443, limit, 5)).toBe(10)
+    expect(nextRecentSessionRevealCount(13, limit, 5)).toBe(7)
   })
 
   it('does not let a late settings read overwrite a newer selection', () => {

@@ -648,8 +648,14 @@ html, body, #root {
 .sidebar-recent-status.failed { color: var(--error); }
 .sidebar-recent-status.done { color: var(--success); }
 
+.sidebar-recents-actions {
+  display: flex;
+  align-items: center;
+}
+
 .sidebar-recents-more {
-  width: 100%;
+  flex: 1;
+  width: auto;
   min-height: 28px;
   padding: 2px 7px 0;
   border: 0;
@@ -658,6 +664,11 @@ html, body, #root {
   cursor: pointer;
   font-size: 10.5px;
   text-align: left;
+}
+
+.sidebar-recents-less {
+  flex: none;
+  text-align: right;
 }
 
 .sidebar-recents-more:hover {
