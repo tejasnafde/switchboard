@@ -146,6 +146,13 @@ class RoomOutboxStore(
         require(dao.update(rows.message, rows.attachments) == 1) { "outbox ${turn.origin} does not exist" }
     }
 
+    override fun replace(turn: QueuedTurn): OutboxStorageResult = storageOperation("replace", turn.origin) {
+        val rows = OutboxEntityMapper.toRows(turn)
+        require(dao.replace(rows.message, rows.attachments) == 1) {
+            "outbox ${turn.origin} does not exist"
+        }
+    }
+
     override fun delete(origin: String): OutboxStorageResult = storageOperation("delete", origin) {
         dao.delete(origin)
     }

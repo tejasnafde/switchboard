@@ -5,6 +5,7 @@ import app.switchboard.mobile.protocol.JsonObject
 data class AttachmentDraft(
     val sourceUri: String,
     val mimeType: String?,
+    val privateSourcePath: String? = null,
 )
 
 data class StagedAttachment(

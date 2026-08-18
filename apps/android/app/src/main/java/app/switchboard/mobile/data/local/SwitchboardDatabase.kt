@@ -13,6 +13,7 @@ import androidx.room.migration.Migration
         NativeCredentialRefEntity::class,
         AppPreferenceEntity::class,
         ThreadPreferenceEntity::class,
+        ComposerDraftAttachmentEntity::class,
         CollapsedWorkspaceEntity::class,
         CachedThreadEntity::class,
         CachedFeedRowEntity::class,
@@ -23,12 +24,13 @@ import androidx.room.migration.Migration
         MigrationCheckpointEntity::class,
         QuarantinedRecordEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class SwitchboardDatabase : RoomDatabase() {
     abstract fun connectionDao(): ConnectionDao
     abstract fun preferenceDao(): PreferenceDao
+    abstract fun composerDraftDao(): ComposerDraftDao
     abstract fun cacheDao(): CacheDao
     abstract fun outboxDao(): OutboxDao
     abstract fun syncStateDao(): SyncStateDao
@@ -63,7 +65,31 @@ abstract class SwitchboardDatabase : RoomDatabase() {
                 migrateOutboxV1(db)
             }
         }
-        private val EXPLICIT_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2)
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `thread_preferences` ADD COLUMN `editingOrigin` TEXT")
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `draft_attachments` (
+                        `threadKey` TEXT NOT NULL,
+                        `position` INTEGER NOT NULL,
+                        `attachmentId` TEXT NOT NULL,
+                        `privatePath` TEXT NOT NULL,
+                        `mimeType` TEXT,
+                        `displayName` TEXT NOT NULL,
+                        PRIMARY KEY(`threadKey`, `position`),
+                        FOREIGN KEY(`threadKey`) REFERENCES `thread_preferences`(`threadKey`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_draft_attachments_threadKey` " +
+                        "ON `draft_attachments` (`threadKey`)",
+                )
+            }
+        }
+        private val EXPLICIT_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 
         fun open(context: Context): SwitchboardDatabase = Room.databaseBuilder(
             context.applicationContext,

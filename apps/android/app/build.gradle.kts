@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -9,6 +10,20 @@ plugins {
 }
 
 val productionKeystorePath = providers.environmentVariable("SWITCHBOARD_ANDROID_KEYSTORE_PATH").orNull
+val canonicalApplicationId = "app.switchboard.mobile"
+val easProjectId = "efbb89d9-210f-4584-bf62-8186cd5fb476"
+val mobileGoogleServicesFile = rootProject.file("../mobile/google-services.json")
+val mobileGoogleServices = JsonSlurper().parse(mobileGoogleServicesFile) as Map<*, *>
+val firebaseProject = mobileGoogleServices["project_info"] as Map<*, *>
+val firebaseClient = (mobileGoogleServices["client"] as List<*>)
+    .map { it as Map<*, *> }
+    .single { client ->
+        val clientInfo = client["client_info"] as Map<*, *>
+        val androidInfo = clientInfo["android_client_info"] as Map<*, *>
+        androidInfo["package_name"] == canonicalApplicationId
+    }
+val firebaseClientInfo = firebaseClient["client_info"] as Map<*, *>
+val firebaseApiKey = ((firebaseClient["api_key"] as List<*>).single() as Map<*, *>)["current_key"] as String
 
 fun requiredSigningEnvironment(name: String): String =
     providers.environmentVariable(name).orNull?.takeIf(String::isNotBlank)
@@ -19,11 +34,13 @@ android {
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "app.switchboard.mobile"
+        applicationId = canonicalApplicationId
         minSdk = 24
         targetSdk = 36
         versionCode = 2
         versionName = "0.5.0"
+        buildConfigField("String", "EXPO_PROJECT_ID", "\"$easProjectId\"")
+        buildConfigField("String", "PUSH_APPLICATION_ID", "\"$canonicalApplicationId\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -40,8 +57,15 @@ android {
         debug {
             applicationIdSuffix = ".native.dev"
             versionNameSuffix = "-native-dev"
+            buildConfigField("boolean", "REMOTE_PUSH_ENABLED", "false")
         }
         release {
+            buildConfigField("boolean", "REMOTE_PUSH_ENABLED", "true")
+            resValue("string", "google_app_id", firebaseClientInfo["mobilesdk_app_id"] as String)
+            resValue("string", "gcm_defaultSenderId", firebaseProject["project_number"] as String)
+            resValue("string", "google_api_key", firebaseApiKey)
+            resValue("string", "project_id", firebaseProject["project_id"] as String)
+            resValue("string", "google_storage_bucket", firebaseProject["storage_bucket"] as String)
             signingConfig = productionSigning
             isMinifyEnabled = false
             proguardFiles(
@@ -52,6 +76,7 @@ android {
     }
 
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 
@@ -91,6 +116,12 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
 

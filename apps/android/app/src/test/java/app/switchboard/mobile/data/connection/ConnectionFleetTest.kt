@@ -5,6 +5,7 @@ import app.switchboard.mobile.data.local.NativeCredentialRefEntity
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeEvent
 import app.switchboard.mobile.domain.connection.ConnectionStatus
+import app.switchboard.mobile.domain.connection.ForegroundAction
 import app.switchboard.mobile.data.remote.RemoteRpc
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.RequestSubmission
@@ -164,6 +165,54 @@ class ConnectionFleetTest {
         assertFalse(fixture.factory.created.any { it.connectionId == "c" })
     }
 
+    @Test
+    fun `launch offline parks initial desired connections until network returns`() {
+        val fixture = Fixture(snapshot(ws("a")))
+
+        fixture.fleet.onNetworkChanged(available = false)
+        fixture.fleet.startupReady()
+
+        val coordinator = fixture.factory.latest("a")
+        assertEquals(listOf(false), coordinator.networkStates)
+        assertEquals(listOf("network:false", "connect"), coordinator.calls)
+
+        fixture.fleet.onNetworkChanged(available = true)
+        assertEquals(listOf(false, true), coordinator.networkStates)
+    }
+
+    @Test
+    fun `network regain and foreground actions never revive explicit disconnects`() {
+        val fixture = Fixture(snapshot(ws("a"), ws("b"))).also { it.fleet.startupReady() }
+        val a = fixture.factory.latest("a")
+        val b = fixture.factory.latest("b")
+        fixture.fleet.disconnect("a")
+
+        fixture.fleet.onNetworkChanged(available = false)
+        fixture.fleet.onNetworkChanged(available = true)
+        fixture.fleet.onForeground(ForegroundAction.Probe)
+
+        assertTrue(a.networkStates.isEmpty())
+        assertEquals(0, a.probes)
+        assertEquals(listOf(false, true), b.networkStates)
+        assertEquals(1, b.probes)
+        assertEquals(2, fixture.factory.created.size)
+    }
+
+    @Test
+    fun `long foreground absence rebuilds only desired connections`() {
+        val fixture = Fixture(snapshot(ws("a"), ws("b"))).also { it.fleet.startupReady() }
+        val firstA = fixture.factory.latest("a")
+        val firstB = fixture.factory.latest("b")
+        fixture.fleet.disconnect("a")
+
+        fixture.fleet.onForeground(ForegroundAction.Reconnect)
+
+        assertTrue(firstA.destroyed)
+        assertTrue(firstB.destroyed)
+        assertEquals(1, fixture.factory.created.count { it.connectionId == "a" })
+        assertEquals(2, fixture.factory.created.count { it.connectionId == "b" })
+    }
+
     private class Fixture(
         initial: OfflineSnapshot,
         removeResult: ConnectionRemoveResult = ConnectionRemoveResult.Success,
@@ -210,11 +259,24 @@ class ConnectionFleetTest {
         private val rpc = FakeRemoteRpc(transportScope)
         override var endpoint: ConnectionFleetEndpoint? = null
         val targets = mutableListOf<WebSocketTarget>()
+        val calls = mutableListOf<String>()
+        val networkStates = mutableListOf<Boolean>()
+        var probes = 0
         var disconnected = false
         var destroyed = false
 
         override fun connect(target: WebSocketTarget) {
+            calls += "connect"
             targets += target
+        }
+
+        override fun setNetworkAvailable(available: Boolean) {
+            calls += "network:$available"
+            networkStates += available
+        }
+
+        override fun probe() {
+            probes += 1
         }
 
         override fun disconnect() {

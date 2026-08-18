@@ -6,6 +6,7 @@ import app.switchboard.mobile.domain.outbox.AttachmentDraft
 import app.switchboard.mobile.domain.outbox.StagedAttachment
 import java.io.File
 import java.io.FileOutputStream
+import java.io.FileInputStream
 import java.io.InputStream
 import java.util.UUID
 
@@ -23,8 +24,10 @@ class PrivateFilesAttachmentStager(
     private val fileNames: AttachmentFileNameSource = AttachmentFileNameSource {
         UUID.randomUUID().toString()
     },
+    ownedSourceRootDirectory: File? = null,
 ) : AttachmentStager {
     private val root = rootDirectory.absoluteFile
+    private val ownedSourceRoot = ownedSourceRootDirectory?.absoluteFile
 
     override fun stage(attachments: List<AttachmentDraft>): AttachmentStageResult {
         if (attachments.isEmpty()) return AttachmentStageResult.Success(emptyList())
@@ -33,17 +36,20 @@ class PrivateFilesAttachmentStager(
         return try {
             ensurePrivateDirectory()
             attachments.forEach { draft ->
-                require(draft.sourceUri.startsWith(CONTENT_URI_PREFIX)) {
-                    "attachment source must be a content URI"
-                }
                 val name = fileNames.nextName()
                 require(name.isSafeFileName()) { "attachment file name is unsafe" }
                 val target = File(root, name)
                 require(!target.exists()) { "attachment target already exists" }
                 val temporary = createTemporaryFile(name).also(temporaryFiles::add)
 
-                val input = contentUris.open(draft.sourceUri)
-                    ?: error("content URI could not be opened")
+                val input = draft.privateSourcePath?.let(::openOwnedSource)
+                    ?: run {
+                        require(draft.sourceUri.startsWith(CONTENT_URI_PREFIX)) {
+                            "attachment source must be a content URI"
+                        }
+                        contentUris.open(draft.sourceUri)
+                            ?: error("content URI could not be opened")
+                    }
                 input.use { source ->
                     FileOutputStream(temporary).use { sink ->
                         source.copyTo(sink)
@@ -83,6 +89,17 @@ class PrivateFilesAttachmentStager(
             if (candidate.createNewFile()) return candidate
         }
         error("attachment temporary file could not be created")
+    }
+
+    private fun openOwnedSource(path: String): InputStream {
+        val allowedRoot = requireNotNull(ownedSourceRoot) {
+            "private attachment sources are unavailable"
+        }
+        val source = File(path).absoluteFile
+        require(source.parentFile?.canonicalFile == allowedRoot.canonicalFile) {
+            "private attachment source is outside app-owned draft storage"
+        }
+        return FileInputStream(source)
     }
 
     private fun String.isSafeFileName(): Boolean =

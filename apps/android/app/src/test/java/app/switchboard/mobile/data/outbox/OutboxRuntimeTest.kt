@@ -96,6 +96,24 @@ class OutboxRuntimeTest {
         assertEquals(2, fixture.rpc.invocations)
     }
 
+    @Test
+    fun durableStateFlowAndActionsReflectCoordinatorRecords() {
+        val fixture = Fixture(FakeStore(queued("visible")))
+        fixture.availability.durable = false
+
+        fixture.runtime.onStartupReady()
+        assertEquals(listOf("visible"), fixture.runtime.state.value.map { it.origin })
+        fixture.rpc.reply(RpcOutcome.Failure(RpcFailure.Timeout))
+        assertTrue(
+            fixture.runtime.state.value.single().deliveryState is OutboxDeliveryState.Ambiguous,
+        )
+
+        assertTrue(fixture.runtime.retry("visible"))
+        assertEquals("visible", fixture.runtime.state.value.single().origin)
+        fixture.runtime.dismiss("visible")
+        assertTrue(fixture.runtime.state.value.isNotEmpty())
+    }
+
     private class Fixture(store: FakeStore) {
         val rpc = FakeRpc()
         val availability = Availability()
@@ -166,6 +184,8 @@ class OutboxRuntimeTest {
             rows[turn.origin] = turn
             return OutboxStorageResult.Success
         }
+
+        override fun replace(turn: QueuedTurn): OutboxStorageResult = update(turn)
 
         override fun delete(origin: String): OutboxStorageResult {
             if (failDelete) return OutboxStorageResult.Failure("cleanup failed")

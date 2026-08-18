@@ -2,11 +2,15 @@ package app.switchboard.mobile.data.remote
 
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.domain.remote.Conversation
+import app.switchboard.mobile.domain.remote.CommandBody
+import app.switchboard.mobile.domain.remote.CreateConversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteRequestKey
 import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.SessionSummary
+import app.switchboard.mobile.domain.remote.Workspace
+import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.ui.browse.BrowseLoadState
 import org.junit.Assert.assertEquals
@@ -107,6 +111,70 @@ class BrowseCoordinatorTest {
         assertTrue(coordinator.state.value.projects is BrowseLoadState.Loading)
     }
 
+    @Test
+    fun projectRefreshLoadsWorkspacesInParallelAndFencesTheirStaleResponses() {
+        val remote = FakeBrowseRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.refreshProjects()
+        val first = remote.workspaces.removeFirst()
+        coordinator.refreshProjects()
+        val second = remote.workspaces.removeFirst()
+
+        second(success("workspaces", listOf(workspace("current"))))
+        first(success("workspaces", listOf(workspace("stale"))))
+
+        assertEquals("current", coordinator.state.value.workspaces.items().single().id)
+    }
+
+    @Test
+    fun renameIsOptimisticEnsuresTheRowAndRollsBackOnDefiniteFailure() {
+        val remote = FakeBrowseRemote()
+        val coordinator = coordinator(remote)
+        coordinator.refreshConversations("/a")
+        remote.conversations.removeFirst().second(
+            success("conversations:/a", listOf(conversation("thread-a").copy(projectPath = "/a"))),
+        )
+
+        coordinator.renameConversation("/a", "thread-a", "  Renamed  ")
+
+        assertEquals(
+            "Renamed",
+            coordinator.state.value.conversationsByProject.getValue("/a").items().single().conversation.title,
+        )
+        assertEquals("thread-a", remote.creates.single().first.id)
+        remote.creates.removeFirst().second(success("create", CommandBody(JsonNull)))
+        assertEquals("Renamed", remote.renames.single().title)
+        remote.renames.removeFirst().callback(failure("rename", "rename denied"))
+
+        assertEquals(
+            "thread-a",
+            coordinator.state.value.conversationsByProject.getValue("/a").items().single().conversation.title,
+        )
+        assertEquals("rename denied", coordinator.state.value.renameErrors["thread-a"])
+    }
+
+    @Test
+    fun successfulRenameKeepsFollowUpRefreshFailureBestEffort() {
+        val remote = FakeBrowseRemote()
+        val coordinator = coordinator(remote)
+        coordinator.refreshConversations("/a")
+        remote.conversations.removeFirst().second(
+            success("conversations:/a", listOf(conversation("thread-a").copy(projectPath = "/a"))),
+        )
+
+        coordinator.renameConversation("/a", "thread-a", "Renamed")
+        remote.creates.removeFirst().second(success("create", CommandBody(JsonNull)))
+        remote.renames.removeFirst().callback(success("rename", CommandBody(JsonNull)))
+        remote.conversations.removeFirst().second(failure("conversations:/a", "refresh offline"))
+
+        assertTrue("thread-a" !in coordinator.state.value.renameErrors)
+        assertEquals(
+            "Renamed",
+            coordinator.state.value.conversationsByProject.getValue("/a").items().single().conversation.title,
+        )
+    }
+
     private fun coordinator(remote: FakeBrowseRemote) = BrowseCoordinator(
         connectionId = "machine",
         connectionLabel = "Desktop",
@@ -134,6 +202,15 @@ class BrowseCoordinatorTest {
         updatedAt = 2,
         worktreePath = null,
         worktreeBranch = null,
+        raw = emptyJson(),
+    )
+
+    private fun workspace(id: String) = Workspace(
+        id = id,
+        name = id,
+        color = null,
+        sortOrder = 1,
+        createdAt = 1,
         raw = emptyJson(),
     )
 
@@ -167,8 +244,17 @@ class BrowseCoordinatorTest {
 }
 
 private class FakeBrowseRemote : BrowseRemote {
+    data class Rename(
+        val id: String,
+        val title: String,
+        val callback: (RemoteResponse<CommandBody>) -> Unit,
+    )
+
     val projects = ArrayDeque<(RemoteResponse<List<Project>>) -> Unit>()
     val conversations = ArrayDeque<Pair<String, (RemoteResponse<List<Conversation>>) -> Unit>>()
+    val workspaces = ArrayDeque<(RemoteResponse<List<Workspace>>) -> Unit>()
+    val creates = ArrayDeque<Pair<CreateConversation, (RemoteResponse<CommandBody>) -> Unit>>()
+    val renames = ArrayDeque<Rename>()
 
     override fun getProjects(callback: (RemoteResponse<List<Project>>) -> Unit) {
         projects += callback
@@ -179,6 +265,25 @@ private class FakeBrowseRemote : BrowseRemote {
         callback: (RemoteResponse<List<Conversation>>) -> Unit,
     ) {
         conversations += projectPath to callback
+    }
+
+    override fun listWorkspaces(callback: (RemoteResponse<List<Workspace>>) -> Unit) {
+        workspaces += callback
+    }
+
+    override fun createConversation(
+        input: CreateConversation,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ) {
+        creates += input to callback
+    }
+
+    override fun renameConversation(
+        conversationId: String,
+        title: String,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ) {
+        renames += Rename(conversationId, title, callback)
     }
 }
 

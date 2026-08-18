@@ -182,6 +182,9 @@ private class FakeOutboxDao : OutboxDao {
         return 1
     }
 
+    override fun deleteAttachments(origin: String): Int =
+        attachments.remove(origin)?.size ?: 0
+
     override fun delete(origin: String): Int {
         check(!failDeletes) { "cleanup failed" }
         val removed = messages.remove(origin) ?: return 0

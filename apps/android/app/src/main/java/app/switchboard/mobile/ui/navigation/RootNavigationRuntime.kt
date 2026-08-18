@@ -1,25 +1,44 @@
 package app.switchboard.mobile.ui.navigation
 
 import app.switchboard.mobile.data.remote.ReadyClientLease
+import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.thread.ThreadSessionRemote
 import app.switchboard.mobile.data.thread.ThreadState
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
 import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
+import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.domain.composer.ComposerDraft
+import app.switchboard.mobile.domain.composer.ComposerDraftKey
+import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.ProtocolHubEvent
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.protocol.RuntimeEventPayload
+import app.switchboard.mobile.ui.browse.BrowseCollapsePreferences
+import app.switchboard.mobile.ui.browse.BrowseThreadActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+private val EmptyBrowseActivity = MutableStateFlow<Map<String, BrowseThreadActivity>>(emptyMap())
+private val EmptyComposerDrafts = MutableStateFlow<Map<ComposerDraftKey, ComposerDraft>>(emptyMap())
+private val EmptyComposerErrors = MutableStateFlow<Map<ComposerDraftKey, String>>(emptyMap())
+private val EmptyQueuedTurns = MutableStateFlow<List<QueuedTurn>>(emptyList())
+
 interface RootNavigationRuntime {
     val statuses: StateFlow<Map<String, ConnectionRuntimeState>>
+    val composerDrafts: StateFlow<Map<ComposerDraftKey, ComposerDraft>>
+        get() = EmptyComposerDrafts
+    val composerErrors: StateFlow<Map<ComposerDraftKey, String>>
+        get() = EmptyComposerErrors
+    val queuedTurns: StateFlow<List<QueuedTurn>>
+        get() = EmptyQueuedTurns
 
     fun lease(connectionId: String): ReadyClientLease?
 
@@ -33,7 +52,33 @@ interface RootNavigationRuntime {
 
     fun enqueue(draft: OutgoingTurnDraft): EnqueueResult
 
+    fun replaceQueued(origin: String, draft: OutgoingTurnDraft): EnqueueResult = enqueue(draft)
+
+    fun saveComposerDraft(draft: ComposerDraft) = Unit
+
+    fun addComposerImages(key: ComposerDraftKey, sources: List<ComposerImageSource>) = Unit
+
+    fun removeComposerImage(key: ComposerDraftKey, attachmentId: String) = Unit
+
+    fun clearComposerDraftBlocking(key: ComposerDraftKey): Boolean = true
+
+    fun submitSavedComposerDraft(key: ComposerDraftKey) = Unit
+
+    fun beginQueuedEdit(key: ComposerDraftKey, origin: String) = Unit
+
+    fun retryQueued(origin: String) = Unit
+
+    fun dismissQueued(origin: String) = Unit
+
     fun eventsFor(scope: TransportScope): Flow<ProtocolHubEvent>
+
+    fun browseActivity(scope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> =
+        EmptyBrowseActivity
+
+    fun collapsedWorkspaceIds(connectionId: String, snapshot: OfflineSnapshot): Set<String> =
+        BrowseCollapsePreferences.initial(snapshot, connectionId)
+
+    fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) = Unit
 
     fun cachedThread(connectionId: String, threadId: String): ThreadState? = null
 }

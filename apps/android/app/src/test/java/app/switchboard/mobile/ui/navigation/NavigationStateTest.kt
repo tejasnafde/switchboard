@@ -15,10 +15,12 @@ class NavigationStateTest {
     fun pairRoutesPushAndSystemBackReturnsToConnections() {
         val root = NavigationState.root()
         val add = root.push(AppRoute.Pair())
+        val manual = root.push(AppRoute.Pair(startManual = true))
         val edit = root.push(AppRoute.Pair(editConnectionId = "machine-1"))
 
         assertEquals(AppRoute.Pair(), add.current)
-        assertEquals(AppRoute.Pair("machine-1"), edit.current)
+        assertEquals(AppRoute.Pair(startManual = true), manual.current)
+        assertEquals(AppRoute.Pair(editConnectionId = "machine-1"), edit.current)
         assertTrue(edit.canGoBack)
         assertEquals(AppRoute.Connections, edit.pop().current)
         assertFalse(root.canGoBack)
@@ -38,6 +40,14 @@ class NavigationStateTest {
                 ),
             )
             .push(
+                AppRoute.NewSession(
+                    connectionId = "machine-1",
+                    connectionLabel = "Office Mac",
+                    projectPath = "/work/switchboard",
+                    projectName = "Switchboard",
+                ),
+            )
+            .replace(
                 AppRoute.Thread(
                     connectionId = "machine-1",
                     connectionLabel = "Office Mac",

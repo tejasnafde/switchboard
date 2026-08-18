@@ -7,6 +7,7 @@ sealed interface AppRoute : Serializable {
 
     data class Pair(
         val editConnectionId: String? = null,
+        val startManual: Boolean = false,
     ) : AppRoute
 
     data class Browse(
@@ -29,6 +30,13 @@ sealed interface AppRoute : Serializable {
         val projectPath: String,
         val title: String,
     ) : AppRoute
+
+    data class NewSession(
+        val connectionId: String,
+        val connectionLabel: String,
+        val projectPath: String,
+        val projectName: String,
+    ) : AppRoute
 }
 
 @ConsistentCopyVisibility
@@ -49,6 +57,10 @@ data class NavigationState private constructor(
         get() = backStack.size > 1
 
     fun push(route: AppRoute): NavigationState = copy(backStack = backStack + route)
+
+    fun replace(route: AppRoute): NavigationState = copy(
+        backStack = backStack.dropLast(1) + route,
+    )
 
     fun pop(): NavigationState =
         if (canGoBack) copy(backStack = backStack.dropLast(1)) else this

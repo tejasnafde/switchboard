@@ -2,14 +2,20 @@ package app.switchboard.mobile.data.local
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import app.switchboard.mobile.compat.LegacyStateDecoder
 import app.switchboard.mobile.data.MigrationCheckpoint
 import app.switchboard.mobile.data.MigrationDecision
 import app.switchboard.mobile.data.MigrationExecution
 import app.switchboard.mobile.data.MigrationExecutor
 import app.switchboard.mobile.data.MigrationPlanner
+import app.switchboard.mobile.data.composer.RoomComposerDraftStore
+import app.switchboard.mobile.domain.composer.ComposerAttachment
+import app.switchboard.mobile.domain.composer.ComposerDraft
+import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import java.io.Closeable
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -17,11 +23,18 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class SwitchboardDatabaseTest {
+    @get:Rule
+    val migrationHelper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        SwitchboardDatabase::class.java,
+    )
+
     private lateinit var database: SwitchboardDatabase
 
     @Before
@@ -203,6 +216,90 @@ class SwitchboardDatabaseTest {
 
         assertTrue(database.preferenceDao().allPreferences().isEmpty())
         assertNull(store.checkpoint())
+    }
+
+    @Test
+    fun composerWritesAndClearPreserveExistingThreadModelAndModePreference() {
+        val key = ComposerDraftKey("lan", "thread")
+        database.preferenceDao().upsertThreadPreference(
+            ThreadPreferenceEntity(
+                threadKey = key.storageKey,
+                mode = "sandbox",
+                model = "gpt-existing",
+                draft = null,
+                touchedAt = 1,
+            ),
+        )
+        val store = RoomComposerDraftStore(database.composerDraftDao())
+        store.save(
+            ComposerDraft(
+                key = key,
+                text = "durable",
+                runtimeMode = "plan",
+                attachments = listOf(
+                    ComposerAttachment("image", "/private/image", "image/png", "image.png"),
+                ),
+            ),
+        )
+
+        assertEquals("gpt-existing", database.preferenceDao().findThreadPreference(key.storageKey)?.model)
+        store.delete(key)
+
+        val preserved = database.preferenceDao().findThreadPreference(key.storageKey)
+        assertEquals("gpt-existing", preserved?.model)
+        assertEquals("plan", preserved?.mode)
+        assertNull(preserved?.draft)
+        assertTrue(database.composerDraftDao().allWithAttachments().single().attachments.isEmpty())
+    }
+
+    @Test
+    fun migrationTwoToThreePreservesDraftAndAddsAttachmentOwnership() {
+        val name = "composer-migration-test"
+        migrationHelper.createDatabase(name, 2).apply {
+            execSQL(
+                "INSERT INTO thread_preferences " +
+                    "(threadKey, mode, model, draft, touchedAt) VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan:thread", "plan", "codex", "keep me", 42L),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            name,
+            3,
+            true,
+            SwitchboardDatabase.MIGRATION_2_3,
+        ).use { migrated ->
+            migrated.query(
+                "SELECT mode, draft, editingOrigin FROM thread_preferences WHERE threadKey = ?",
+                arrayOf("lan:thread"),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("plan", cursor.getString(0))
+                assertEquals("keep me", cursor.getString(1))
+                assertNull(cursor.getString(2))
+            }
+            migrated.execSQL(
+                "INSERT INTO draft_attachments " +
+                    "(threadKey, position, attachmentId, privatePath, mimeType, displayName) " +
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    "lan:thread",
+                    0,
+                    "image-1",
+                    "/private/image-1",
+                    "image/png",
+                    "one.png",
+                ),
+            )
+            migrated.query(
+                "SELECT privatePath FROM draft_attachments WHERE threadKey = ?",
+                arrayOf("lan:thread"),
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("/private/image-1", cursor.getString(0))
+            }
+        }
     }
 
     private fun pendingOutbox(

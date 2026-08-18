@@ -392,6 +392,81 @@ class WsCoordinatorTest {
         assertEquals(0, fixture.coordinator.pendingRequestCount)
     }
 
+    @Test
+    fun `offline launch parks dial and network regain dials immediately`() {
+        val fixture = Fixture()
+        fixture.coordinator.setNetworkAvailable(false)
+
+        fixture.coordinator.connect(fixture.target())
+        assertTrue(fixture.dialer.calls.isEmpty())
+
+        fixture.coordinator.setNetworkAvailable(true)
+        assertEquals(1, fixture.dialer.calls.size)
+    }
+
+    @Test
+    fun `losing network parks retry without inflating backoff and regain redials once`() {
+        val fixture = Fixture()
+        fixture.coordinator.connect(fixture.target())
+        val first = fixture.dialer.calls.single()
+        first.listener.onFailure(IllegalStateException("offline"))
+        assertEquals(listOf(1_000L), fixture.scheduler.activeTasks().map { it.delayMs })
+
+        fixture.coordinator.setNetworkAvailable(false)
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
+        fixture.scheduler.runTaskEvenIfCancelled(delayMs = 1_000)
+        assertEquals(1, fixture.dialer.calls.size)
+        fixture.coordinator.setNetworkAvailable(true)
+
+        assertEquals(2, fixture.dialer.calls.size)
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
+        first.listener.onOpen(first.socket)
+        assertFalse(first.socket.sent.isNotEmpty())
+    }
+
+    @Test
+    fun `disconnect destroy and auth rejection cannot redial on later network regain`() {
+        val disconnected = Fixture()
+        disconnected.coordinator.setNetworkAvailable(false)
+        disconnected.coordinator.connect(disconnected.target())
+        disconnected.coordinator.disconnect()
+        disconnected.coordinator.setNetworkAvailable(true)
+        assertTrue(disconnected.dialer.calls.isEmpty())
+
+        val destroyed = Fixture()
+        destroyed.coordinator.setNetworkAvailable(false)
+        destroyed.coordinator.connect(destroyed.target())
+        destroyed.coordinator.destroy()
+        destroyed.coordinator.setNetworkAvailable(true)
+        assertTrue(destroyed.dialer.calls.isEmpty())
+
+        val rejected = Fixture()
+        val call = rejected.connectReady()
+        call.listener.onText(WsProtocol.encode(WsFrame.Authed.Failure("rejected")))
+        rejected.coordinator.setNetworkAvailable(false)
+        rejected.coordinator.setNetworkAvailable(true)
+        assertEquals(1, rejected.dialer.calls.size)
+    }
+
+    @Test
+    fun `foreground probe is generation fenced and reconnects only after unanswered timeout`() {
+        val fixture = Fixture()
+        val first = fixture.connectReady()
+
+        fixture.coordinator.probe(timeoutMs = 3_000)
+        assertTrue(WsProtocol.decode(first.socket.sent.last()) is WsFrame.Ping)
+        first.listener.onText(WsProtocol.encode(WsFrame.Pong(1)))
+        assertTrue(fixture.scheduler.activeTasks().none { it.delayMs == 3_000L })
+
+        fixture.coordinator.probe(timeoutMs = 3_000)
+        fixture.scheduler.runTaskWithDelay(3_000)
+        assertTrue(first.socket.closed)
+        assertEquals(listOf(1_000L), fixture.scheduler.activeTasks().map { it.delayMs })
+
+        first.listener.onText(WsProtocol.encode(WsFrame.Pong(2)))
+        assertEquals(listOf(1_000L), fixture.scheduler.activeTasks().map { it.delayMs })
+    }
+
     private fun runtimeEvent(type: String): JsonObject = JsonObject(
         linkedMapOf(
             "type" to JsonString(type),
@@ -503,6 +578,10 @@ class WsCoordinatorTest {
             val task = activeTasks().first { it.delayMs == delayMs }
             task.cancelled = true
             task.block()
+        }
+
+        fun runTaskEvenIfCancelled(delayMs: Long) {
+            tasks.first { it.delayMs == delayMs }.block()
         }
     }
 

@@ -7,6 +7,7 @@ import app.switchboard.mobile.data.thread.ThreadSessionPlanAction
 import app.switchboard.mobile.data.thread.ThreadSessionState
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.RuntimeMode
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 
 data class ThreadComposerPresentation(
     val draft: String,
@@ -18,11 +19,13 @@ data class ThreadComposerPresentation(
     val controlMessage: String?,
     val focusRequest: Long,
     val showInterrupt: Boolean,
+    val attachments: List<ComposerAttachment> = emptyList(),
+    val editingOrigin: String? = null,
 ) {
     val canSend: Boolean
         get() = canSendNow()
 
-    fun canSendNow(): Boolean = draft.isNotBlank() && !submitting
+    fun canSendNow(): Boolean = (draft.isNotBlank() || attachments.isNotEmpty()) && !submitting
 }
 
 fun ThreadSessionLoad.toUiLoadState(): ThreadLoadState = when (this) {
@@ -61,6 +64,8 @@ private fun ThreadComposerState.toPresentation(
     controlMessage = controlMessage,
     focusRequest = focusRequest,
     showInterrupt = showInterrupt,
+    attachments = attachments,
+    editingOrigin = editingOrigin,
 )
 
 fun ThreadUiAction.toSessionControl(): ThreadSessionControl = when (this) {

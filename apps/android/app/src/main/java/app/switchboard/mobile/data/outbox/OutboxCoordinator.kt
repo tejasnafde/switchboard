@@ -27,12 +27,14 @@ class OutboxCoordinator(
     private val records = linkedMapOf<String, QueuedTurn>()
     private val inFlightThreads = mutableSetOf<ThreadQueueKey>()
     private val inFlightOrigins = mutableSetOf<String>()
+    private val attemptTokens = mutableMapOf<String, Long>()
     private val durableDedupeByOrigin = mutableMapOf<String, Boolean>()
     private val blockedThreads = mutableSetOf<ThreadQueueKey>()
     private val editingOrigins = mutableSetOf<String>()
     private val scheduledAt = mutableMapOf<String, Long>()
     private var pumping = false
     private var pumpAgain = false
+    private var nextAttemptToken = 0L
 
     @Synchronized
     fun records(): List<QueuedTurn> = records.values.sortedWith(turnOrder)
@@ -101,12 +103,78 @@ class OutboxCoordinator(
     }
 
     @Synchronized
+    fun beginEdit(origin: String): QueuedTurn? {
+        val turn = records[origin] ?: return null
+        editingOrigins += origin
+        invalidateAttempt(turn)
+        scheduler.cancel(origin)
+        scheduledAt.remove(origin)
+        return turn
+    }
+
+    @Synchronized
+    fun replace(origin: String, draft: OutgoingTurnDraft): EnqueueResult {
+        val before = records[origin]
+            ?: return EnqueueResult.StorageFailure("Queued turn no longer exists")
+        if (draft.connectionId != before.connectionId || draft.threadId != before.threadId) {
+            return EnqueueResult.StorageFailure("Queued turn scope cannot change")
+        }
+        val staged = when (val result = attachmentStager.stage(draft.attachments)) {
+            is AttachmentStageResult.Failure -> return EnqueueResult.AttachmentFailure(result.reason)
+            is AttachmentStageResult.Success -> result.attachments
+        }
+        val replacement = before.copy(
+            text = draft.text,
+            attachments = staged,
+            runtimeMode = draft.runtimeMode,
+            attempts = 0,
+            nextAttemptAtMs = 0,
+            deliveryState = OutboxDeliveryState.Pending,
+            legacyRawJson = null,
+        )
+        return when (val persisted = store.replace(replacement)) {
+            OutboxStorageResult.Success -> {
+                records[origin] = replacement
+                editingOrigins -= origin
+                blockedThreads -= before.threadKey()
+                attachmentStager.discard(before.attachments)
+                requestPump()
+                EnqueueResult.Durable(replacement)
+            }
+            is OutboxStorageResult.Failure -> {
+                attachmentStager.discard(staged)
+                EnqueueResult.StorageFailure(persisted.reason)
+            }
+        }
+    }
+
+    @Synchronized
+    fun retry(origin: String): Boolean {
+        val before = records[origin] ?: return false
+        if (
+            before.deliveryState !is OutboxDeliveryState.Ambiguous &&
+            before.deliveryState !is OutboxDeliveryState.Terminal
+        ) return false
+        val pending = before.copy(
+            attempts = 0,
+            nextAttemptAtMs = 0,
+            deliveryState = OutboxDeliveryState.Pending,
+        )
+        if (!persistTransition(before, pending)) return false
+        editingOrigins -= origin
+        blockedThreads -= before.threadKey()
+        requestPump()
+        return true
+    }
+
+    @Synchronized
     fun dismiss(origin: String) {
         val turn = records[origin] ?: return
         if (turn.deliveryState is OutboxDeliveryState.Pending) return
         when (store.delete(origin)) {
             is OutboxStorageResult.Failure -> return
             OutboxStorageResult.Success -> {
+                invalidateAttempt(turn)
                 records.remove(origin)
                 blockedThreads -= turn.threadKey()
                 attachmentStager.discard(turn.attachments)
@@ -175,15 +243,19 @@ class OutboxCoordinator(
         val key = turn.threadKey()
         if (!inFlightThreads.add(key) || !inFlightOrigins.add(turn.origin)) return
         durableDedupeByOrigin[turn.origin] = durableDedupe
+        val token = ++nextAttemptToken
+        attemptTokens[turn.origin] = token
         try {
-            sender.send(turn) { outcome -> complete(turn.origin, outcome) }
+            sender.send(turn) { outcome -> complete(turn.origin, token, outcome) }
         } catch (error: RuntimeException) {
-            complete(turn.origin, SendOutcome.TransportAmbiguous(error.message ?: "Sender failed"))
+            complete(turn.origin, token, SendOutcome.TransportAmbiguous(error.message ?: "Sender failed"))
         }
     }
 
     @Synchronized
-    private fun complete(origin: String, outcome: SendOutcome) {
+    private fun complete(origin: String, token: Long, outcome: SendOutcome) {
+        if (attemptTokens[origin] != token) return
+        attemptTokens.remove(origin)
         if (!inFlightOrigins.remove(origin)) return
         val turn = records[origin] ?: return
         inFlightThreads -= turn.threadKey()
@@ -217,6 +289,7 @@ class OutboxCoordinator(
         when (store.delete(turn.origin)) {
             is OutboxStorageResult.Failure -> Unit
             OutboxStorageResult.Success -> {
+                attemptTokens.remove(turn.origin)
                 records.remove(turn.origin)
                 attachmentStager.discard(turn.attachments)
             }
@@ -281,6 +354,13 @@ class OutboxCoordinator(
     }
 
     private fun QueuedTurn.threadKey() = ThreadQueueKey(connectionId, threadId)
+
+    private fun invalidateAttempt(turn: QueuedTurn) {
+        attemptTokens.remove(turn.origin)
+        durableDedupeByOrigin.remove(turn.origin)
+        inFlightOrigins.remove(turn.origin)
+        inFlightThreads.remove(turn.threadKey())
+    }
 
     private companion object {
         val turnOrder = compareBy<QueuedTurn> { it.createdAtMs }.thenBy { it.origin }

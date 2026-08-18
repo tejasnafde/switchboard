@@ -1,5 +1,8 @@
 package app.switchboard.mobile.data.thread
 
+import app.switchboard.mobile.domain.composer.ComposerAttachment
+import app.switchboard.mobile.domain.composer.ComposerDraft
+import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.data.remote.SwitchboardRemoteClient
 import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
@@ -44,6 +47,8 @@ data class ThreadComposerState(
     val modeChanging: Boolean = false,
     val error: String? = null,
     val focusRequest: Long = 0,
+    val attachments: List<ComposerAttachment> = emptyList(),
+    val editingOrigin: String? = null,
 )
 
 data class ThreadSessionState(
@@ -98,6 +103,20 @@ sealed interface ThreadControlOutcome {
 
 fun interface ThreadEnqueuePort {
     fun enqueue(draft: OutgoingTurnDraft): EnqueueResult
+
+    fun replace(origin: String, draft: OutgoingTurnDraft): EnqueueResult = enqueue(draft)
+}
+
+interface ThreadComposerPersistence {
+    fun save(draft: ComposerDraft)
+
+    fun clear(key: ComposerDraftKey): Boolean
+}
+
+private object NoOpThreadComposerPersistence : ThreadComposerPersistence {
+    override fun save(draft: ComposerDraft) = Unit
+
+    override fun clear(key: ComposerDraftKey): Boolean = true
 }
 
 fun interface ThreadSessionClock {
@@ -235,8 +254,11 @@ class ThreadSessionCoordinator(
     private val remote: ThreadSessionRemote,
     private val enqueue: ThreadEnqueuePort,
     private val clock: ThreadSessionClock,
+    initialComposer: ComposerDraft? = null,
+    private val composerPersistence: ThreadComposerPersistence = NoOpThreadComposerPersistence,
 ) : AutoCloseable {
     private val key = ThreadKey(scope.connectionId, threadId)
+    private val composerKey = ComposerDraftKey(scope.connectionId, threadId)
     private var store = ThreadStoreReducer.reduce(
         ThreadStoreState(
             threads = initialCached?.let { mapOf(key to it) }.orEmpty(),
@@ -245,8 +267,15 @@ class ThreadSessionCoordinator(
     )
     private var load: ThreadSessionLoad = ThreadSessionLoad.Loading(initialCached)
     private var composer = ThreadComposerState(
-        runtimeMode = initialCached?.runtimeMode.toRuntimeModeOrNull() ?: RuntimeMode.Sandbox,
+        draft = initialComposer?.text.orEmpty(),
+        runtimeMode = initialComposer?.runtimeMode.toRuntimeModeOrNull()
+            ?: initialCached?.runtimeMode.toRuntimeModeOrNull()
+            ?: RuntimeMode.Sandbox,
+        attachments = initialComposer?.attachments.orEmpty(),
+        editingOrigin = initialComposer?.editingOrigin,
     )
+    private var composerHydrated = initialComposer != null
+    private var composerHasUnacknowledgedLocalChanges = false
     private var controlMessage: String? = null
     private val mutableState = MutableStateFlow(ThreadSessionState(load, composer))
     val state = mutableState.asStateFlow()
@@ -300,6 +329,8 @@ class ThreadSessionCoordinator(
     @Synchronized
     fun updateDraft(text: String) {
         composer = composer.copy(draft = text, error = null)
+        composerHasUnacknowledgedLocalChanges = true
+        persistComposer()
         publish()
     }
 
@@ -307,14 +338,34 @@ class ThreadSessionCoordinator(
     fun submit(): ComposerSubmitResult {
         if (composer.submitting) return ComposerSubmitResult.Busy
         val text = composer.draft.trim()
-        if (text.isEmpty()) return ComposerSubmitResult.Empty
+        if (text.isEmpty() && composer.attachments.isEmpty()) return ComposerSubmitResult.Empty
         composer = composer.copy(submitting = true, error = null)
         publish()
-        val result = enqueueDraft(text, composer.runtimeMode)
+        val result = enqueueDraft(
+            text = text,
+            mode = composer.runtimeMode,
+            attachments = composer.attachments,
+            editingOrigin = composer.editingOrigin,
+        )
         return when (result) {
             is EnqueueResult.Durable -> {
                 addOptimistic(result.turn)
-                composer = composer.copy(draft = "", submitting = false, error = null)
+                val cleared = composerPersistence.clear(composerKey)
+                composer = if (cleared) {
+                    composerHasUnacknowledgedLocalChanges = false
+                    composer.copy(
+                        draft = "",
+                        attachments = emptyList(),
+                        editingOrigin = null,
+                        submitting = false,
+                        error = null,
+                    )
+                } else {
+                    composer.copy(
+                        submitting = false,
+                        error = "Message queued, but the saved draft could not be cleared",
+                    )
+                }
                 publish()
                 ComposerSubmitResult.Durable(result.turn)
             }
@@ -344,6 +395,10 @@ class ThreadSessionCoordinator(
                         modeChanging = false,
                         error = outcome.message,
                     )
+                }
+                if (response.outcome is RemoteOutcome.Success) {
+                    composerHasUnacknowledgedLocalChanges = true
+                    persistComposer()
                 }
                 publish()
             }
@@ -509,17 +564,27 @@ class ThreadSessionCoordinator(
         }
     }
 
-    private fun enqueueDraft(text: String, mode: RuntimeMode): EnqueueResult = try {
-        enqueue.enqueue(
-            OutgoingTurnDraft(
+    private fun enqueueDraft(
+        text: String,
+        mode: RuntimeMode,
+        attachments: List<ComposerAttachment> = emptyList(),
+        editingOrigin: String? = null,
+    ): EnqueueResult = try {
+        val draft = OutgoingTurnDraft(
                 connectionId = scope.connectionId,
                 threadId = threadId,
                 text = text,
-                attachments = emptyList(),
+                attachments = attachments.map { attachment ->
+                    app.switchboard.mobile.domain.outbox.AttachmentDraft(
+                        sourceUri = "",
+                        mimeType = attachment.mimeType,
+                        privateSourcePath = attachment.privateUri,
+                    )
+                },
                 runtimeMode = mode.wire,
                 createdAtMs = clock.nowMs(),
-            ),
-        )
+            )
+        editingOrigin?.let { enqueue.replace(it, draft) } ?: enqueue.enqueue(draft)
     } catch (error: RuntimeException) {
         EnqueueResult.StorageFailure(error.message ?: "Could not save message")
     }
@@ -571,6 +636,52 @@ class ThreadSessionCoordinator(
 
     private fun publish() {
         mutableState.value = ThreadSessionState(load, composer, controlMessage)
+    }
+
+    @Synchronized
+    fun installComposerDraft(draft: ComposerDraft?) {
+        if (draft != null && draft.key != composerKey) return
+        val incomingMode = draft?.runtimeMode.toRuntimeModeOrNull()
+        val enteringQueuedEdit = draft?.editingOrigin != null &&
+            draft.editingOrigin != composer.editingOrigin
+        val installAuthoritativeText =
+            (!composerHydrated && !composerHasUnacknowledgedLocalChanges) || enteringQueuedEdit
+        val acknowledgesLocalChanges = draft != null &&
+            draft.text == composer.draft &&
+            incomingMode == composer.runtimeMode
+        val focusRequest = if (enteringQueuedEdit) {
+            composer.focusRequest + 1
+        } else {
+            composer.focusRequest
+        }
+        composer = composer.copy(
+            draft = if (installAuthoritativeText) draft?.text.orEmpty() else composer.draft,
+            runtimeMode = if (installAuthoritativeText) {
+                incomingMode ?: composer.runtimeMode
+            } else {
+                composer.runtimeMode
+            },
+            attachments = draft?.attachments.orEmpty(),
+            editingOrigin = draft?.editingOrigin,
+            focusRequest = focusRequest,
+        )
+        if (draft != null) composerHydrated = true
+        if (acknowledgesLocalChanges || enteringQueuedEdit) {
+            composerHasUnacknowledgedLocalChanges = false
+        }
+        publish()
+    }
+
+    private fun persistComposer() {
+        composerPersistence.save(
+            ComposerDraft(
+                key = composerKey,
+                text = composer.draft,
+                runtimeMode = composer.runtimeMode.wire,
+                attachments = composer.attachments,
+                editingOrigin = composer.editingOrigin,
+            ),
+        )
     }
 
     private fun <T> accepts(response: RemoteResponse<T>): Boolean =

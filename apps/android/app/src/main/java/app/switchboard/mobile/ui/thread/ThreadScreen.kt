@@ -1,6 +1,11 @@
 package app.switchboard.mobile.ui.thread
 
+import android.provider.OpenableColumns
+import android.graphics.BitmapFactory
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -44,10 +49,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -57,6 +64,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import app.switchboard.mobile.domain.composer.ComposerAttachment
+import app.switchboard.mobile.domain.composer.ComposerImageSource
+import app.switchboard.mobile.domain.composer.OutboxPresentationPolicy
+import app.switchboard.mobile.domain.composer.OutboxUiAction
+import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
+import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.ui.theme.Accent
@@ -67,6 +81,8 @@ import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun ThreadScreen(
@@ -83,6 +99,10 @@ fun ThreadScreen(
     onSend: () -> Unit = {},
     onInterrupt: () -> Unit = {},
     onRuntimeModeChange: (RuntimeMode) -> Unit = {},
+    onImagesSelected: (List<ComposerImageSource>) -> Unit = {},
+    onRemoveImage: (String) -> Unit = {},
+    queuedTurns: List<QueuedTurn> = emptyList(),
+    onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
@@ -121,6 +141,9 @@ fun ThreadScreen(
                 }
             }
         }
+        if (queuedTurns.isNotEmpty()) {
+            OutboxTray(queuedTurns, onOutboxAction)
+        }
         composer?.let {
             ThreadComposer(
                 state = it,
@@ -128,6 +151,8 @@ fun ThreadScreen(
                 onSend = onSend,
                 onInterrupt = onInterrupt,
                 onRuntimeModeChange = onRuntimeModeChange,
+                onImagesSelected = onImagesSelected,
+                onRemoveImage = onRemoveImage,
             )
         }
     }
@@ -140,7 +165,35 @@ private fun ThreadComposer(
     onSend: () -> Unit,
     onInterrupt: () -> Unit,
     onRuntimeModeChange: (RuntimeMode) -> Unit,
+    onImagesSelected: (List<ComposerImageSource>) -> Unit,
+    onRemoveImage: (String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments(),
+    ) { uris ->
+        val remaining = (4 - state.attachments.size).coerceAtLeast(0)
+        onImagesSelected(
+            uris.take(remaining).map { uri ->
+                val displayName = runCatching {
+                    context.contentResolver.query(
+                        uri,
+                        arrayOf(OpenableColumns.DISPLAY_NAME),
+                        null,
+                        null,
+                        null,
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                    }
+                }.getOrNull() ?: uri.lastPathSegment ?: "image"
+                ComposerImageSource(
+                    contentUri = uri.toString(),
+                    mimeType = context.contentResolver.getType(uri),
+                    displayName = displayName,
+                )
+            },
+        )
+    }
     val focusRequester = remember { FocusRequester() }
     LaunchedEffect(state.focusRequest) {
         if (state.focusRequest > 0) focusRequester.requestFocus()
@@ -182,6 +235,21 @@ private fun ThreadComposer(
         state.controlMessage?.let {
             Text(it, color = Amber, style = MaterialTheme.typography.labelSmall)
         }
+        if (state.attachments.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.attachments.forEach { attachment ->
+                    ComposerAttachmentPreview(
+                        attachment = attachment,
+                        onRemove = { onRemoveImage(attachment.id) },
+                    )
+                }
+            }
+        }
         OutlinedTextField(
             value = state.draft,
             onValueChange = onDraftChange,
@@ -200,10 +268,10 @@ private fun ThreadComposer(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             OutlinedButton(
-                onClick = {},
-                enabled = false,
+                onClick = { imagePicker.launch(arrayOf("image/*")) },
+                enabled = state.attachments.size < 4 && !state.submitting,
                 modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text("Attachments unavailable") }
+            ) { Text(if (state.attachments.isEmpty()) "Add images" else "Add image") }
             Spacer(Modifier.weight(1f))
             if (state.showInterrupt) {
                 OutlinedButton(
@@ -217,6 +285,100 @@ private fun ThreadComposer(
                 enabled = state.canSend,
                 modifier = Modifier.heightIn(min = 48.dp),
             ) { Text(if (state.submitting) "Saving…" else "Send") }
+        }
+    }
+}
+
+@Composable
+private fun ComposerAttachmentPreview(
+    attachment: ComposerAttachment,
+    onRemove: () -> Unit,
+) {
+    val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+        initialValue = null,
+        key1 = attachment.privateUri,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            decodeThumbnail(attachment.privateUri)?.asImageBitmap()
+        }
+    }
+    Box(
+        modifier = Modifier
+            .size(64.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(SurfaceRaised),
+    ) {
+        bitmap?.let {
+            Image(
+                bitmap = it,
+                contentDescription = attachment.displayName,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } ?: Text(
+            text = attachment.displayName,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(6.dp),
+        )
+        TextButton(
+            onClick = onRemove,
+            modifier = Modifier.align(Alignment.TopEnd),
+        ) { Text("×") }
+    }
+}
+
+private fun decodeThumbnail(path: String, maxDimension: Int = 256): android.graphics.Bitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sampleSize = 1
+    while (bounds.outWidth / sampleSize > maxDimension * 2 ||
+        bounds.outHeight / sampleSize > maxDimension * 2
+    ) {
+        sampleSize *= 2
+    }
+    return BitmapFactory.decodeFile(
+        path,
+        BitmapFactory.Options().apply { inSampleSize = sampleSize },
+    )
+}
+
+@Composable
+private fun OutboxTray(
+    turns: List<QueuedTurn>,
+    onAction: (String, OutboxUiAction) -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(SurfaceRaised)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        turns.forEach { turn ->
+            val (label, reason) = when (val state = turn.deliveryState) {
+                OutboxDeliveryState.Pending -> "Queued" to null
+                is OutboxDeliveryState.Ambiguous -> "Delivery uncertain" to state.reason
+                is OutboxDeliveryState.Terminal -> "Not delivered" to state.reason
+                is OutboxDeliveryState.Acknowledged -> "Delivered" to null
+            }
+            Card(colors = CardDefaults.cardColors(containerColor = Surface)) {
+                Column(Modifier.padding(10.dp)) {
+                    Text(label, style = MaterialTheme.typography.labelMedium)
+                    if (turn.text.isNotBlank()) {
+                        Text(turn.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    }
+                    reason?.let { Text(it, color = Red, style = MaterialTheme.typography.labelSmall) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        OutboxPresentationPolicy.actions(turn).forEach { action ->
+                            TextButton(onClick = { onAction(turn.origin, action) }) {
+                                Text(action.name)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -208,6 +208,79 @@ class OutboxCoordinatorTest {
         assertTrue(fixture.log.any { it == "terminal:terminal" })
     }
 
+    @Test
+    fun explicitRetryPreservesOriginAndBubbleIdentity() {
+        val fixture = Fixture()
+        fixture.coordinator.enqueue(draft("thread-a"))
+        fixture.sender.complete("origin-1", SendOutcome.Ambiguous("unknown"))
+
+        assertTrue(fixture.coordinator.retry("origin-1"))
+
+        val resent = fixture.sender.sent.last()
+        assertEquals("origin-1", resent.origin)
+        assertEquals("remote_origin-1", resent.bubbleId)
+        assertTrue(resent.deliveryState is OutboxDeliveryState.Pending)
+    }
+
+    @Test
+    fun staleSendCompletionCannotOverwriteAnEditedPayloadOrStatus() {
+        val fixture = Fixture()
+        fixture.coordinator.enqueue(draft("thread-a", text = "before"))
+        val oldCompletion = fixture.sender.callback("origin-1")
+        fixture.environment.gates["thread-a"] = DeliveryGate(DeliveryReadiness.Offline, false)
+
+        assertEquals("before", fixture.coordinator.beginEdit("origin-1")?.text)
+        val replaced = fixture.coordinator.replace(
+            "origin-1",
+            draft("thread-a", text = "after"),
+        )
+        oldCompletion(SendOutcome.Accepted(SendReceipt.legacy()))
+
+        assertTrue(replaced is EnqueueResult.Durable)
+        val current = fixture.coordinator.records().single()
+        assertEquals("after", current.text)
+        assertEquals("origin-1", current.origin)
+        assertEquals("remote_origin-1", current.bubbleId)
+        assertTrue(current.deliveryState is OutboxDeliveryState.Pending)
+    }
+
+    @Test
+    fun replacementDiscardsOldAttachmentsOnlyAfterItsDatabaseCommit() {
+        val fixture = Fixture()
+        fixture.environment.gates["thread-a"] = DeliveryGate(DeliveryReadiness.Offline, false)
+        fixture.coordinator.enqueue(
+            draft(
+                "thread-a",
+                attachments = listOf(AttachmentDraft("content://old", "image/png")),
+            ),
+        )
+        fixture.coordinator.beginEdit("origin-1")
+        fixture.store.failReplace = true
+
+        val failed = fixture.coordinator.replace(
+            "origin-1",
+            draft(
+                "thread-a",
+                attachments = listOf(AttachmentDraft("content://new", "image/png")),
+            ),
+        )
+
+        assertTrue(failed is EnqueueResult.StorageFailure)
+        assertEquals("private://old", fixture.coordinator.records().single().attachments.single().privateUri)
+        assertTrue(fixture.log.indexOf("replace:origin-1") < fixture.log.indexOf("discard:private://new"))
+        assertFalse(fixture.log.contains("discard:private://old"))
+
+        fixture.store.failReplace = false
+        fixture.coordinator.replace(
+            "origin-1",
+            draft(
+                "thread-a",
+                attachments = listOf(AttachmentDraft("content://newer", "image/png")),
+            ),
+        )
+        assertTrue(fixture.log.indexOf("replace:origin-1") < fixture.log.indexOf("discard:private://old"))
+    }
+
     private fun draft(
         threadId: String,
         text: String = "hello",
@@ -253,6 +326,7 @@ class OutboxCoordinatorTest {
         var failInsert = false
         var failUpdate = false
         var failDelete = false
+        var failReplace = false
 
         override fun insert(turn: QueuedTurn): OutboxStorageResult {
             log += "insert:${turn.origin}"
@@ -264,6 +338,14 @@ class OutboxCoordinatorTest {
         override fun update(turn: QueuedTurn): OutboxStorageResult {
             log += "update:${turn.origin}:${turn.deliveryState.label}:${turn.attempts}"
             if (failUpdate) return OutboxStorageResult.Failure("write failed")
+            rows[turn.origin] = turn
+            return OutboxStorageResult.Success
+        }
+
+        override fun replace(turn: QueuedTurn): OutboxStorageResult {
+            log += "replace:${turn.origin}"
+            if (failReplace) return OutboxStorageResult.Failure("replace failed")
+            if (turn.origin !in rows) return OutboxStorageResult.Failure("missing")
             rows[turn.origin] = turn
             return OutboxStorageResult.Success
         }
@@ -282,11 +364,15 @@ class OutboxCoordinatorTest {
         override fun stage(attachments: List<AttachmentDraft>): AttachmentStageResult {
             attachments.forEach { log += "stage:${it.sourceUri}" }
             return AttachmentStageResult.Success(
-                attachments.map { StagedAttachment("private://photo", it.mimeType) },
+                attachments.map {
+                    StagedAttachment("private://${it.sourceUri.removePrefix("content://")}", it.mimeType)
+                },
             )
         }
 
-        override fun discard(attachments: List<StagedAttachment>) = Unit
+        override fun discard(attachments: List<StagedAttachment>) {
+            attachments.forEach { log += "discard:${it.privateUri}" }
+        }
     }
 
     private class FakeSender(private val log: MutableList<String>) : OutboxSender {
@@ -319,6 +405,8 @@ class OutboxCoordinatorTest {
         fun complete(origin: String, outcome: SendOutcome) {
             callbacks.remove(origin)!!(outcome)
         }
+
+        fun callback(origin: String): (SendOutcome) -> Unit = callbacks.getValue(origin)
     }
 
     private class FakeEnvironment : OutboxEnvironment {

@@ -18,6 +18,26 @@ object RemoteDecoders {
     fun workspaces(value: JsonValue?): List<Workspace> =
         value.array().values.map { workspace(it.obj()) }
 
+    fun providerInstances(value: JsonValue?): List<ProviderInstance> =
+        value.array().values.map {
+            val raw = it.obj()
+            ProviderInstance(
+                id = raw.stringRequired("id"),
+                agentType = raw.stringRequired("agentType"),
+                displayName = raw.stringRequired("displayName"),
+                accentColor = raw.string("accentColor"),
+                authMode = raw.stringRequired("authMode"),
+                envKeys = raw.required("envKeys").array().values.map { key ->
+                    (key as? JsonString)?.value ?: error("Expected envKeys string")
+                },
+                oauthDir = raw.string("oauthDir"),
+                enabled = raw.booleanRequired("enabled"),
+                createdAt = raw.longRequired("createdAt"),
+                updatedAt = raw.longRequired("updatedAt"),
+                raw = raw,
+            )
+        }
+
     fun loadedSession(value: JsonValue?): LoadedSession {
         val raw = value.obj()
         return LoadedSession(

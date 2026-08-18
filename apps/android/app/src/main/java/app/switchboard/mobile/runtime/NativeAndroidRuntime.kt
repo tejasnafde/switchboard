@@ -9,6 +9,9 @@ import app.switchboard.mobile.data.connection.NativeSessionCredentialStore
 import app.switchboard.mobile.data.connection.RepositoryConnectionFleetSnapshotSource
 import app.switchboard.mobile.data.connection.RoomConnectionDatabase
 import app.switchboard.mobile.data.local.SwitchboardDatabase
+import app.switchboard.mobile.data.local.AppPreferenceEntity
+import app.switchboard.mobile.data.composer.ComposerDraftCoordinator
+import app.switchboard.mobile.data.composer.RoomComposerDraftStore
 import app.switchboard.mobile.data.outbox.OutboxCapabilityLookup
 import app.switchboard.mobile.data.outbox.OutboxClientLookup
 import app.switchboard.mobile.data.outbox.OutboxClock
@@ -19,11 +22,16 @@ import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.data.outbox.RoomOutboxStore
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
 import app.switchboard.mobile.data.remote.ReadyEndpointLookup
+import app.switchboard.mobile.domain.push.ExpoPushProjectIdentity
+import app.switchboard.mobile.domain.push.PushRegistrationCoordinator
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
+import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.outbox.DeliveryReadiness
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.platform.migration.DialGate
 import app.switchboard.mobile.platform.notification.AndroidAppVisibilityMonitor
+import app.switchboard.mobile.platform.notification.AppVisibilityTracker
+import app.switchboard.mobile.platform.notification.AppVisibilityTransition
 import app.switchboard.mobile.platform.notification.AndroidNotificationPermissionController
 import app.switchboard.mobile.platform.notification.AndroidNotificationRouteStorage
 import app.switchboard.mobile.platform.notification.AndroidTurnCompletionNotifier
@@ -31,17 +39,31 @@ import app.switchboard.mobile.platform.notification.BackgroundTurnNotificationCo
 import app.switchboard.mobile.platform.notification.BackgroundTurnNotificationRuntime
 import app.switchboard.mobile.platform.notification.NotificationRouteInbox
 import app.switchboard.mobile.platform.notification.NotificationThreadMetadata
+import app.switchboard.mobile.platform.network.AndroidConnectivityMonitor
 import app.switchboard.mobile.platform.outbox.AndroidPrivateFilesAttachmentStager
+import app.switchboard.mobile.platform.outbox.AndroidComposerAttachmentStager
 import app.switchboard.mobile.platform.outbox.PrivateFileOutboxImageMaterializer
 import app.switchboard.mobile.platform.protocol.AuthenticatedConnectionFleetCoordinatorFactory
 import app.switchboard.mobile.platform.protocol.ExecutorTransportScheduler
 import app.switchboard.mobile.platform.protocol.OkHttpWebSocketDialer
 import app.switchboard.mobile.platform.protocol.ProtocolEventHub
+import app.switchboard.mobile.platform.protocol.ProtocolHubEvent
+import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.platform.protocol.RoomResumeCursorStore
+import app.switchboard.mobile.platform.push.AndroidFirebaseTokenSource
+import app.switchboard.mobile.platform.push.AndroidPushTokenStore
+import app.switchboard.mobile.platform.push.OkHttpExpoTokenExchange
+import app.switchboard.mobile.platform.push.PushTokenRuntime
+import app.switchboard.mobile.platform.push.RemoteClientPushBackend
+import app.switchboard.mobile.platform.push.androidExpoInstallationIdentity
 import app.switchboard.mobile.platform.startup.AndroidStartupRuntime
 import app.switchboard.mobile.platform.startup.StartupRuntimeState
 import app.switchboard.mobile.platform.storage.AndroidNativeCredentialPlatform
 import app.switchboard.mobile.platform.storage.VerifiedNativeCredentialStore
+import app.switchboard.mobile.ui.browse.BrowseCollapsePreferences
+import app.switchboard.mobile.ui.browse.BrowseThreadActivity
+import app.switchboard.mobile.ui.browse.BrowseThreadActivityIndex
+import app.switchboard.mobile.BuildConfig
 import java.io.Closeable
 import java.util.UUID
 import kotlinx.coroutines.CoroutineScope
@@ -60,10 +82,16 @@ class NativeAndroidRuntime private constructor(
     val readyClients: ReadyClientRegistry,
     val protocolEvents: ProtocolEventHub,
     val outbox: OutboxRuntime,
+    val composer: DurableComposerRuntime,
     val startup: AndroidStartupRuntime,
     val deviceIdentity: StableDeviceIdentity,
     val notificationRoutes: NotificationRouteInbox,
     val notificationPermissions: AndroidNotificationPermissionController,
+    val viewingLeaseRenewals: ViewingLeaseRenewalHooks,
+    private val pushRegistration: PushRegistrationCoordinator,
+    private val pushTokenRuntime: PushTokenRuntime,
+    private val requestPushToken: () -> Unit,
+    private val pushViewingRenewal: Closeable,
     private val scope: CoroutineScope,
     private val transportScheduler: ExecutorTransportScheduler,
     private val outboxScheduler: ExecutorTransportScheduler,
@@ -71,22 +99,37 @@ class NativeAndroidRuntime private constructor(
     private val httpClient: OkHttpClient,
     private val notificationRuntime: BackgroundTurnNotificationRuntime,
     private val visibilityMonitor: AndroidAppVisibilityMonitor,
+    private val connectivityMonitor: AndroidConnectivityMonitor,
 ) : Closeable {
     val connectionStatuses: StateFlow<Map<String, ConnectionRuntimeState>> =
         connectionFleet.statuses
 
     private val coordinator = ApplicationRuntimeCoordinator(
         seedRepository = connectionRepository::seed,
+        startupComposer = composer::hydrate,
         startupOutbox = outbox::onStartupReady,
         wakeOutbox = outbox::onFleetChanged,
     )
     private val startupCompositionObservation = startup.observe(coordinator::onStartupState)
     private val fleetObservation: Job = scope.launch {
-        connectionFleet.statuses.collect { coordinator.onFleetChanged() }
+        connectionFleet.statuses.collect { statuses ->
+            coordinator.onFleetChanged()
+            pushRegistration.onReady(readyPushBackends(statuses, readyClients))
+        }
+    }
+    private val browseActivityIndex = BrowseThreadActivityIndex()
+    private val browseActivityObservation: Job = scope.launch {
+        protocolEvents.events.collect { event ->
+            if (event is ProtocolHubEvent.Runtime) {
+                browseActivityIndex.onEvent(event.scope, event.event)
+            }
+        }
     }
     private var closed = false
 
     fun start() {
+        pushTokenRuntime.start()
+        requestPushToken()
         startup.start()
     }
 
@@ -95,7 +138,32 @@ class NativeAndroidRuntime private constructor(
     /** Continues across Activity recreation; the application owns both this scope and the Room write. */
     fun removeConnection(connectionId: String) {
         if (connectionId.isBlank()) return
+        pushRegistration.beforeConnectionRemoved(connectionId)
         scope.launch { connectionFleet.remove(connectionId) }
+    }
+
+    fun onFcmToken(token: String) = pushTokenRuntime.onFcmToken(token)
+
+    fun beginViewing(connectionId: String, threadId: String): Closeable =
+        pushRegistration.beginViewing(connectionId, threadId)
+
+    @Synchronized
+    fun browseActivity(transportScope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> {
+        browseActivityIndex.discardOtherGenerations(
+            transportScope.connectionId,
+            transportScope.generation,
+        )
+        return browseActivityIndex.state(transportScope)
+    }
+
+    fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) {
+        if (connectionId.isBlank()) return
+        val encoded = BrowseCollapsePreferences.encode(workspaceIds)
+        scope.launch {
+            database.preferenceDao().upsertPreference(
+                AppPreferenceEntity(BrowseCollapsePreferences.key(connectionId), encoded),
+            )
+        }
     }
 
     @Synchronized
@@ -104,10 +172,14 @@ class NativeAndroidRuntime private constructor(
         closed = true
         startupCompositionObservation.close()
         fleetObservation.cancel()
+        pushViewingRenewal.close()
+        pushTokenRuntime.close()
+        connectivityMonitor.close()
         notificationRuntime.close()
         visibilityMonitor.close()
         connectionFleet.close()
         readyClients.clear()
+        composer.close()
         retryScheduler.close()
         protocolEvents.close()
         startup.close()
@@ -137,6 +209,19 @@ class NativeAndroidRuntime private constructor(
             val retryScheduler = TransportOutboxRetryScheduler(outboxScheduler)
             val protocolEvents = ProtocolEventHub(bufferCapacity = PROTOCOL_EVENT_BUFFER)
             val httpClient = OkHttpClient()
+            val pushRegistration = PushRegistrationCoordinator()
+            val expoInstallationIdentity = androidExpoInstallationIdentity(applicationContext)
+            val pushTokenRuntime = PushTokenRuntime(
+                enabled = BuildConfig.REMOTE_PUSH_ENABLED,
+                identity = ExpoPushProjectIdentity(
+                    projectId = BuildConfig.EXPO_PROJECT_ID,
+                    applicationId = BuildConfig.PUSH_APPLICATION_ID,
+                ),
+                installationId = expoInstallationIdentity::getOrCreate,
+                store = AndroidPushTokenStore(applicationContext),
+                exchange = OkHttpExpoTokenExchange(httpClient),
+                publish = pushRegistration::onExpoToken,
+            )
             val fleet = ConnectionFleet(
                 scope = scope,
                 snapshots = RepositoryConnectionFleetSnapshotSource(repository),
@@ -159,7 +244,9 @@ class NativeAndroidRuntime private constructor(
                 AndroidNotificationRouteStorage(applicationContext),
             )
             val notificationPermissions = AndroidNotificationPermissionController(applicationContext)
-            val visibilityMonitor = AndroidAppVisibilityMonitor.install(application)
+            var visibilityTransition: (AppVisibilityTransition) -> Unit = {}
+            val visibilityTracker = AppVisibilityTracker { transition -> visibilityTransition(transition) }
+            val visibilityMonitor = AndroidAppVisibilityMonitor.install(application, visibilityTracker)
             val turnNotifier = AndroidTurnCompletionNotifier(applicationContext).also {
                 it.ensureChannel()
             }
@@ -184,6 +271,34 @@ class NativeAndroidRuntime private constructor(
                 ids = OutboxIdSource { UUID.randomUUID().toString() },
                 observer = SilentOutboxObserver,
             )
+            val composer = DurableComposerRuntime(
+                coordinator = ComposerDraftCoordinator(
+                    store = RoomComposerDraftStore(database.composerDraftDao()),
+                    stager = AndroidComposerAttachmentStager(applicationContext),
+                ),
+                outbox = outbox,
+            )
+            val viewingLeaseRenewals = ViewingLeaseRenewalHooks()
+            val pushViewingRenewal = viewingLeaseRenewals.register(
+                pushRegistration::renewViewingLeases,
+            )
+            val lifecycleResilience = LifecycleResilienceCoordinator(
+                clock = System::currentTimeMillis,
+                onNetworkChanged = fleet::onNetworkChanged,
+                onForegroundAction = fleet::onForeground,
+                wakeOutbox = outbox::onFleetChanged,
+                renewViewingLeases = viewingLeaseRenewals::renewAll,
+            )
+            visibilityTransition = { transition ->
+                when (transition) {
+                    AppVisibilityTransition.Foreground -> lifecycleResilience.onForeground()
+                    AppVisibilityTransition.Background -> lifecycleResilience.onBackground()
+                }
+            }
+            val connectivityMonitor = AndroidConnectivityMonitor.install(
+                applicationContext,
+                lifecycleResilience::onNetworkAvailability,
+            )
             val startup = AndroidStartupRuntime.create(
                 context = applicationContext,
                 database = database,
@@ -197,10 +312,21 @@ class NativeAndroidRuntime private constructor(
                 readyClients = clients,
                 protocolEvents = protocolEvents,
                 outbox = outbox,
+                composer = composer,
                 startup = startup,
                 deviceIdentity = identity,
                 notificationRoutes = notificationRoutes,
                 notificationPermissions = notificationPermissions,
+                viewingLeaseRenewals = viewingLeaseRenewals,
+                pushRegistration = pushRegistration,
+                pushTokenRuntime = pushTokenRuntime,
+                requestPushToken = {
+                    AndroidFirebaseTokenSource.requestCurrent(
+                        applicationContext,
+                        pushTokenRuntime::onFcmToken,
+                    )
+                },
+                pushViewingRenewal = pushViewingRenewal,
                 scope = scope,
                 transportScheduler = transportScheduler,
                 outboxScheduler = outboxScheduler,
@@ -208,6 +334,7 @@ class NativeAndroidRuntime private constructor(
                 httpClient = httpClient,
                 notificationRuntime = notificationRuntime,
                 visibilityMonitor = visibilityMonitor,
+                connectivityMonitor = connectivityMonitor,
             )
         }
 
@@ -221,6 +348,14 @@ class NativeAndroidRuntime private constructor(
                 readiness = DeliveryReadiness.Ready,
                 capabilities = lease.capabilities,
             )
+        }
+
+        private fun readyPushBackends(
+            statuses: Map<String, ConnectionRuntimeState>,
+            clients: ReadyClientRegistry,
+        ): List<RemoteClientPushBackend> = statuses.mapNotNull { (connectionId, state) ->
+            if (state.status != ConnectionStatus.Connected) return@mapNotNull null
+            clients.lease(connectionId)?.let(::RemoteClientPushBackend)
         }
 
         private const val PROTOCOL_EVENT_BUFFER = 256

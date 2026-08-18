@@ -1,19 +1,25 @@
 package app.switchboard.mobile
 
 import android.app.Application
+import android.content.Intent
 import app.switchboard.mobile.data.connection.ConnectionFleet
 import app.switchboard.mobile.data.connection.NativeConnectionRepository
 import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
 import app.switchboard.mobile.platform.notification.AndroidNotificationPermissionController
 import app.switchboard.mobile.platform.notification.NotificationRouteInbox
+import app.switchboard.mobile.platform.push.AndroidRemotePushIntent
 import app.switchboard.mobile.platform.protocol.ProtocolEventHub
+import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.platform.startup.AndroidStartupRuntime
 import app.switchboard.mobile.platform.startup.StartupRuntimeState
 import app.switchboard.mobile.platform.update.AndroidUpdateRuntime
 import app.switchboard.mobile.runtime.NativeAndroidRuntime
+import app.switchboard.mobile.runtime.DurableComposerRuntime
+import app.switchboard.mobile.ui.browse.BrowseThreadActivity
 import java.io.Closeable
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 class SwitchboardApplication : Application() {
@@ -30,6 +36,8 @@ class SwitchboardApplication : Application() {
     lateinit var protocolEvents: ProtocolEventHub
         private set
     lateinit var outboxRuntime: OutboxRuntime
+        private set
+    lateinit var composerRuntime: DurableComposerRuntime
         private set
     lateinit var notificationRoutes: NotificationRouteInbox
         private set
@@ -52,6 +60,7 @@ class SwitchboardApplication : Application() {
         readyClients = nativeRuntime.readyClients
         protocolEvents = nativeRuntime.protocolEvents
         outboxRuntime = nativeRuntime.outbox
+        composerRuntime = nativeRuntime.composer
         notificationRoutes = nativeRuntime.notificationRoutes
         notificationPermissions = nativeRuntime.notificationPermissions
         startupObservation = nativeRuntime.observeStartup { mutableStartupState.value = it }
@@ -67,5 +76,25 @@ class SwitchboardApplication : Application() {
 
     fun removeConnection(connectionId: String) {
         nativeRuntime.removeConnection(connectionId)
+    }
+
+    fun registerViewingLeaseRenewal(callback: () -> Unit): Closeable =
+        nativeRuntime.viewingLeaseRenewals.register(callback)
+
+    fun beginPushViewing(connectionId: String, threadId: String): Closeable =
+        nativeRuntime.beginViewing(connectionId, threadId)
+
+    fun onFcmToken(token: String) {
+        if (::nativeRuntime.isInitialized) nativeRuntime.onFcmToken(token)
+    }
+
+    fun ingestRemoteNotificationIntent(intent: Intent?): Boolean =
+        AndroidRemotePushIntent.ingest(intent, notificationRoutes)
+
+    fun browseActivity(scope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> =
+        nativeRuntime.browseActivity(scope)
+
+    fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) {
+        nativeRuntime.saveCollapsedWorkspaceIds(connectionId, workspaceIds)
     }
 }

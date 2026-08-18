@@ -68,7 +68,10 @@ class AuthenticatedWsCoordinator(
     private var target: WebSocketTarget? = null
     private var socket: WebSocketConnection? = null
     private var retryTask: Cancelable? = null
+    private var probeTask: Cancelable? = null
     private var retryAttempts = 0
+    private var networkAvailable = true
+    private var redialPending = false
     private var nextRequestId = 1L
     private var destroyed = false
     private val pending = linkedMapOf<Long, PendingRequest>()
@@ -98,6 +101,8 @@ class AuthenticatedWsCoordinator(
     fun connect(newTarget: WebSocketTarget) {
         if (destroyed) return
         cancelRetry()
+        cancelProbe()
+        redialPending = false
         retryAttempts = 0
         drainPending(RpcFailure.ConnectionReplaced)
 
@@ -120,7 +125,51 @@ class AuthenticatedWsCoordinator(
         )
         target = newTarget
         previousSocket?.close()
+        if (networkAvailable) {
+            dialCurrentGeneration()
+        } else {
+            redialPending = true
+        }
+    }
+
+    @Synchronized
+    fun setNetworkAvailable(available: Boolean) {
+        if (destroyed || networkAvailable == available) return
+        networkAvailable = available
+        if (!available) {
+            cancelRetry()
+            return
+        }
+        if (!redialPending || target == null || state?.phase != ConnectionPhase.Disconnected) return
+        redialPending = false
+        retryAttempts = 0
         dialCurrentGeneration()
+    }
+
+    @Synchronized
+    fun probe(timeoutMs: Long = DEFAULT_PROBE_TIMEOUT_MS) {
+        if (destroyed || timeoutMs <= 0) return
+        val generation = state?.generation ?: return
+        val connection = socket ?: return
+        if (state?.phase != ConnectionPhase.Ready) return
+        cancelProbe()
+        if (!connection.send(WsProtocol.encode(WsFrame.Ping(System.currentTimeMillis())))) {
+            reconnectAfterFailedProbe(generation, connection)
+            return
+        }
+        probeTask = scheduler.schedule(timeoutMs) {
+            synchronized(this) {
+                probeTask = null
+                if (
+                    !destroyed &&
+                    state?.generation == generation &&
+                    state?.phase == ConnectionPhase.Ready &&
+                    socket === connection
+                ) {
+                    reconnectAfterFailedProbe(generation, connection)
+                }
+            }
+        }
     }
 
     @Synchronized
@@ -197,6 +246,8 @@ class AuthenticatedWsCoordinator(
     fun disconnect() {
         if (destroyed) return
         cancelRetry()
+        cancelProbe()
+        redialPending = false
         val currentState = state
         val previousSocket = socket
         socket = null
@@ -221,6 +272,8 @@ class AuthenticatedWsCoordinator(
         if (destroyed) return
         destroyed = true
         cancelRetry()
+        cancelProbe()
+        redialPending = false
         val previousSocket = socket
         socket = null
         drainPending(RpcFailure.ServiceDestroyed)
@@ -294,6 +347,7 @@ class AuthenticatedWsCoordinator(
     ) {
         val currentState = state ?: return
         if (destroyed || currentState.generation != generation) return
+        cancelProbe()
         val frame = WsProtocol.decode(wire)
         if (frame == null) {
             observer.onProtocolError(currentState.generation.connectionId, wire)
@@ -314,6 +368,7 @@ class AuthenticatedWsCoordinator(
         }
         if (!wasReady && state?.outboxEligible == true) {
             retryAttempts = 0
+            redialPending = false
             cancelRetry()
         }
     }
@@ -325,6 +380,7 @@ class AuthenticatedWsCoordinator(
     ) {
         val currentState = state ?: return
         if (destroyed || currentState.generation != generation) return
+        cancelProbe()
         socket = null
         drainPending(RpcFailure.ConnectionLost(cause))
         applyTransition(
@@ -474,15 +530,29 @@ class AuthenticatedWsCoordinator(
         disconnectCause: DisconnectCause?,
     ) {
         cancelRetry()
-        if (reducerDecision is RetryDecision.Stop || disconnectCause == null) return
+        if (reducerDecision is RetryDecision.Stop || disconnectCause == null) {
+            redialPending = false
+            return
+        }
         val decision = RetryPolicy.decide(disconnectCause, retryAttempts)
-        if (decision !is RetryDecision.After) return
+        if (decision !is RetryDecision.After) {
+            redialPending = false
+            return
+        }
+        redialPending = true
+        if (!networkAvailable) return
         retryAttempts++
         val generation = state?.generation ?: return
         retryTask = scheduler.schedule(decision.delayMs) {
             synchronized(this) {
                 retryTask = null
-                if (!destroyed && state?.generation == generation) {
+                if (
+                    !destroyed &&
+                    networkAvailable &&
+                    redialPending &&
+                    state?.generation == generation
+                ) {
+                    redialPending = false
                     dialCurrentGeneration()
                 }
             }
@@ -492,6 +562,21 @@ class AuthenticatedWsCoordinator(
     private fun cancelRetry() {
         retryTask?.cancel()
         retryTask = null
+    }
+
+    private fun cancelProbe() {
+        probeTask?.cancel()
+        probeTask = null
+    }
+
+    private fun reconnectAfterFailedProbe(
+        generation: ConnectionGeneration,
+        connection: WebSocketConnection,
+    ) {
+        if (destroyed || state?.generation != generation || socket !== connection) return
+        socket = null
+        closed(generation, DisconnectCause.Network)
+        connection.close()
     }
 
     private fun failPending(
@@ -510,5 +595,9 @@ class AuthenticatedWsCoordinator(
             it.timeout?.cancel()
             it.callback(RpcOutcome.Failure(failure))
         }
+    }
+
+    private companion object {
+        const val DEFAULT_PROBE_TIMEOUT_MS = 3_000L
     }
 }

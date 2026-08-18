@@ -19,6 +19,7 @@ sealed interface OutboxLoadResult {
 interface OutboxStore {
     fun insert(turn: QueuedTurn): OutboxStorageResult
     fun update(turn: QueuedTurn): OutboxStorageResult
+    fun replace(turn: QueuedTurn): OutboxStorageResult
     fun delete(origin: String): OutboxStorageResult
     fun load(): OutboxLoadResult
 }

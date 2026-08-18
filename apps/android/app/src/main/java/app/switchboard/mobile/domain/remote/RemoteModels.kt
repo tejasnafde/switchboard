@@ -102,6 +102,26 @@ data class ModelOption(
     val raw: JsonObject,
 )
 
+data class ProviderInstance(
+    val id: String,
+    val agentType: String,
+    val displayName: String,
+    val accentColor: String?,
+    val authMode: String,
+    val envKeys: List<String>,
+    val oauthDir: String?,
+    val enabled: Boolean,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val raw: JsonObject,
+)
+
+data class SessionDefaults(
+    val runtimeMode: String?,
+    val modelId: String?,
+    val instanceId: String?,
+)
+
 data class StartedSession(
     val threadId: String,
     val provider: String,

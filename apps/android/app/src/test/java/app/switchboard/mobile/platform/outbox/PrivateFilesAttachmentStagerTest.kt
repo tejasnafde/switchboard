@@ -112,4 +112,29 @@ class PrivateFilesAttachmentStagerTest {
             outside.delete()
         }
     }
+
+    @Test
+    fun `draft owned source is copied into outbox ownership without deleting the source`() {
+        val outboxRoot = Files.createTempDirectory("sb-outbox-root").toFile()
+        val draftRoot = Files.createTempDirectory("sb-draft-source").toFile()
+        try {
+            val source = File(draftRoot, "draft-image").apply { writeBytes(byteArrayOf(8, 9)) }
+            val stager = PrivateFilesAttachmentStager(
+                rootDirectory = outboxRoot,
+                contentUris = ContentUriSource { null },
+                fileNames = AttachmentFileNameSource { "outbox-image" },
+                ownedSourceRootDirectory = draftRoot,
+            )
+
+            val result = stager.stage(
+                listOf(AttachmentDraft("", "image/png", source.absolutePath)),
+            ) as AttachmentStageResult.Success
+
+            assertArrayEquals(byteArrayOf(8, 9), File(result.attachments.single().privateUri).readBytes())
+            assertTrue(source.exists())
+        } finally {
+            outboxRoot.deleteRecursively()
+            draftRoot.deleteRecursively()
+        }
+    }
 }

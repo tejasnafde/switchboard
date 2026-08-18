@@ -71,60 +71,91 @@ Status marks:
 
 ## Connections and pairing
 
-- [ ] Home list shows every machine with label, target, WS/IAP kind, live /
+- [~] Home list shows every machine with label, target, WS/IAP kind, live /
   connecting / offline / error state and useful failure detail.
-- [ ] Empty state explains desktop and headless server pairing and offers QR
+- [~] Empty state explains desktop and headless server pairing and offers QR
   scanning plus build identity.
-- [ ] Tap opens projects; long press offers edit, connect/disconnect and
+- [~] Tap opens projects; long press offers edit, connect/disconnect and
   confirmed removal.
-- [ ] QR scan is the default WS flow; permission denial and retry are visible;
+- [~] QR scan is the default WS flow; permission denial and retry are visible;
   unrelated QR codes do not wedge scanning.
 - [x] Pairing parser accepts `ws:`/`wss:`, strips credentials from the endpoint,
   and preserves pairing-vs-token semantics.
-- [ ] Manual WS form accepts a full pairing URL and defaults the label to host.
+- [x] Manual WS form accepts a full pairing URL and defaults the label to host.
 - [ ] Editing with new credentials clears the old device session only after the
   replacement credential is durably verified.
 - [ ] IAP target discovery merges and deduplicates targets across ready machines;
   manual project/zone/instance/port remains available with validation.
 - [~] WS auth waits for backend `ready`, keeps requests bounded, persists replay
   cursor and rejects stale/cross-connection callbacks.
-- [ ] Network loss parks retries; regain redials immediately; foreground probes
-  short absences and reconnects after long absences.
+- [~] Application-scoped network monitoring treats transport presence (not WAN
+  validation) as reachable, parks retry timers offline and redials immediately
+  on regain only for desired connections. Foreground probes absences under 10s
+  and generation-rebuilds longer absences without reviving explicit disconnects.
 - [H] Exercise LAN `ws:`, remote `wss:`, token rejection, revoke/re-pair and
   network handoff.
 
+Automated lifecycle evidence: `ConnectionDecisionsTest`, `ConnectionFleetTest`,
+`WsCoordinatorTest`, `LifecycleResilienceCoordinatorTest`,
+`NetworkReachabilityPolicyTest` and `AppVisibilityTrackerTest`.
+Pairing parser/scanner evidence: `PairingFormPolicyTest`,
+`PairingQrReducerTest` and `NavigationStateTest`; real camera permission,
+recognition speed and scan-to-connect remain hardware checks.
+
 ## Projects and conversations
 
-- [~] Decode current server/application channels with exact positional arguments
-  and preserve unknown successful-response fields.
+- [x] Decode current project, conversation, workspace, provider-instance,
+  settings and session-start channels with exact positional arguments and
+  preserve unknown successful-response fields.
 - [ ] Projects load offline snapshot first, then best-effort refresh.
-- [ ] Group projects by workspace/machine, preserve collapse preferences and
-  ordering, aggregate unread state and show counts/status.
-- [ ] Search appears at the RN threshold, filters groups without empty shells,
-  and pull-to-refresh does not disturb navigation or saved display choices.
-- [ ] Projects expose loading, empty, offline, unsupported and retryable error
-  states.
-- [ ] Conversations sort and group like the RN client, show unread/runtime
-  status, search at threshold, and pull to refresh.
-- [ ] Long press rename preserves the old title on rejection; new-session route
-  is available from the project.
-- [ ] Same project/thread IDs on different connections never share state.
-- [ ] Device switches and configuration changes cancel stale loads and preserve
-  route, scroll, query and expansion state.
+- [x] Group projects by workspace, preserve backend ordering and
+  connection-scoped collapse preferences, aggregate unread state and show
+  counts/status. Migrated global collapse rows seed the scoped preference.
+- [~] Search appears at the RN threshold and filters groups without empty
+  shells; native pull-to-refresh remains to be added.
+- [~] Projects expose loading, empty, offline and retryable error states;
+  domain-specific unsupported presentation still needs real backend fixtures.
+- [~] Conversations sort like the RN client, show unread/runtime status and
+  search at the RN threshold; native pull-to-refresh remains to be added.
+- [x] Long press rename updates optimistically, restores the old title on
+  definite rejection, and keeps a successful rename successful when its
+  follow-up refresh fails. The project exposes a real new-session route.
+- [x] Project, conversation and activity state are fenced by connection plus
+  transport generation; conversation loads are additionally scoped by project.
+- [~] Serializable routes, saveable query/dialog state, scoped collapse state
+  and stale-load cancellation survive configuration/device switches. Physical
+  process recreation and scroll restoration still need instrumentation/device
+  verification.
+
+Automated projects/conversations evidence: `BrowseParityDecisionsTest`,
+`BrowseCollapsePreferencesTest`, `BrowseThreadActivityIndexTest`,
+`BrowseCoordinatorTest`, `BrowsePresentationTest`,
+`SwitchboardRemoteClientTest` and `NavigationStateTest`.
 
 ## New session and authoritative controls
 
-- [ ] Provider, provider instance/profile, model and runtime mode options come
-  from the selected backend.
-- [ ] New-session ordering and defaults match RN behavior without overwriting
-  backend-authoritative session settings.
+- [~] Provider instances/profiles and defaults come from the selected backend.
+  Pre-session models intentionally use the exact RN static catalog because the
+  backend model-list channel requires an already-started thread.
+- [x] Provider/model/profile ordering and backend-authoritative defaults match
+  RN behavior; unknown backend model defaults remain selectable and malformed
+  runtime defaults fall back to Sandbox.
 - [ ] Absolute play/pause-style controls remain absolute commands, never
   toggles.
-- [ ] Provider/mode/model/profile mutations serialize; the newest committed
-  selection wins.
+- [x] Provider default loads are request-fenced; switching provider clears stale
+  profile/model selections, and launch locks the committed configuration before
+  the backend session is created.
 - [ ] Failed profile rotation keeps or rolls back to the prior usable session.
-- [ ] Command success and best-effort follow-up refresh failure are presented as
+- [x] New sessions run `createConversation` then `startSession`; an optional
+  first message enters only the durable outbox. Failed durable enqueue preserves
+  the text and retries the write without recreating/restarting the session.
+- [x] Command success and best-effort follow-up refresh failure are presented as
   separate outcomes.
+
+Automated new-session evidence: `NewSessionDecisionsTest`,
+`NewSessionCoordinatorTest`, `SwitchboardRemoteClientTest` and
+`NavigationStateTest`. Provider authentication, touch feel, keyboard behavior
+and first-message delivery still require physical-device/backend smoke testing.
 
 ## Thread snapshot and runtime events
 
@@ -150,23 +181,33 @@ Status marks:
 
 ## Durable composer and delivery
 
-- [ ] Persist text, selected mode, stable origin/message ID and private copies
+- [x] Persist text, selected mode, stable origin/message ID and private copies
   of attachments before clearing the visible composer.
-- [ ] Restore per-thread drafts and failed/unsent content after process death.
-- [ ] Per-thread FIFO delivery allows other threads to progress independently;
+- [~] Restore connection/thread-scoped drafts and failed/unsent content from
+  Room after runtime recreation; physical process-death restoration remains.
+- [x] Per-thread FIFO delivery allows other threads to progress independently;
   no send occurs before authenticated readiness.
-- [ ] Retries preserve origin ID and chosen mode; typed permanent failures stop;
+- [x] Retries preserve origin ID and chosen mode; typed permanent failures stop;
   ambiguous transport failures remain durable.
-- [ ] Optimistic bubbles, queued/waiting count, retry and interrupt behavior match
-  RN; image-only sends are allowed.
+- [~] Durable queued/ambiguous/terminal cards expose valid retry/edit/dismiss
+  actions and image-only sends are allowed; full optimistic/feed parity remains.
 - [ ] Slash menu includes built-ins plus provider skills; `/image` opens native
   image selection and mode commands change the actual send mode.
-- [ ] Up to four images honor size/downscale limits, previews and lightbox; owned
-  attachment files are removed only after durable terminal disposition.
+- [~] Up to four images have bounded previews and removal; size/downscale limits
+  and lightbox remain. Owned attachment files are removed only after the Room
+  ownership transition, acknowledgement, replacement or explicit safe dismiss.
 - [ ] Slider-like controls serialize/coalesce writes and guarantee final release
   wins over older drag requests.
 - [H] Kill at enqueue, send, backend accept and acknowledgement boundaries and
   verify each accepted turn is delivered exactly once.
+
+Automated composer/delivery evidence: `ComposerDraftPolicyTest`,
+`ComposerDraftCoordinatorTest`, `RoomComposerDraftStoreTest`,
+`PrivateComposerAttachmentStagerTest`, `PrivateFilesAttachmentStagerTest`,
+`OutboxCoordinatorTest`, `OutboxRuntimeTest`, `ThreadSessionCoordinatorTest`
+and compiled `SwitchboardDatabaseTest` migration/preservation coverage. The
+picker grant, preview rendering, configuration/process recreation, low-storage
+failure and real backend delivery/edit flows still require device testing.
 
 ## Approvals, questions and plans
 
@@ -203,21 +244,34 @@ Status marks:
 - [ ] Temporary display/service/process disappearance is treated as dynamic
   topology; recovery does not overwrite the user's saved display preference.
 - [~] Process visibility ignores pause-only transitions and configuration
-  replacement; notification tap routes persist across process recreation and
-  are consumed once. Draft/pending-work/update restoration remains separate.
+  replacement; real foreground transitions renew registered viewing leases,
+  wake the outbox and apply the short-probe/long-reconnect policy. Notification
+  tap routes persist across process recreation and are consumed once.
+  Draft/pending-work/update restoration remains separate.
 - [H] Exercise microphone, Bluetooth/device topology changes, service death and
   low-memory process recreation.
 
 ## Push, notifications and deep links
 
-- [ ] Use existing Firebase/Expo project identity and exchange native FCM token
-  for the existing Expo push-token backend contract.
-- [ ] Register/unregister per ready connection; token rotation re-registers all
-  active targets and removed machines stop receiving notifications.
+- [~] Canonical release resources are derived from the existing RN
+  `google-services.json`; Expo's existing no-backup installation UUID is reused
+  and native FCM tokens are exchanged through the official EAS-project Expo
+  token contract. The `.native.dev` build remains installable with remote push
+  explicitly disabled. Real token issuance still requires a Firebase-capable
+  device.
+- [~] Registration is idempotent per exact ready scope; reconnect and token
+  rotation re-register, old tokens and explicitly removed ready machines are
+  unregistered best-effort, and domain failures in 2xx bodies remain nonfatal.
+  Viewing enter/renew/leave has an exact-scope native runtime seam; Thread UI
+  registration and device verification remain pending.
 - [~] Preserve the high-importance `switchboard-agents` / `Agent activity`
   channel. Process-alive background `turn.completed` events now post canonical,
-  content-free `Done` / duration copy; RN foreground banner presentation and
-  remote killed-process delivery remain pending.
+  content-free `Done` / duration copy. `FirebaseMessagingService` does the same
+  for foreground/future data-only completion payloads, while notification+data
+  cold taps are bounded and persisted from launcher extras. Android renders the
+  existing notification+data copy itself while killed, so content-free killed
+  copy requires a future recipient-aware/data-only backend contract. Delivery
+  remains hardware-unverified.
 - [~] RN exposes no notification action buttons, and the native completion
   notice remains tap-only. Any future command actions still require absolute
   semantics and idempotent request identity before release.
@@ -230,11 +284,14 @@ Status marks:
   payloads are ignored visibly/logged, never guessed.
 - [H] Exercise delivery and taps in foreground, background and killed states.
 
-Automated evidence for the partial native notification slice:
+Automated evidence for the partial native notification/push slice:
 `NotificationRouteCodecTest`, `NotificationRouteInboxTest`,
 `AppVisibilityTrackerTest`, `NotificationPermissionPolicyTest`,
 `BackgroundTurnNotificationCoordinatorTest`, `ProtocolEventHubTest` and
-`AuthenticatedConnectionFleetCoordinatorFactoryTest`.
+`AuthenticatedConnectionFleetCoordinatorFactoryTest`, plus
+`ExpoPushTokenContractTest`, `ExpoInstallationIdentityTest`,
+`PushTokenRuntimeTest`, `PushRegistrationCoordinatorTest`,
+`RemotePushNotificationPolicyTest` and `SwitchboardRemoteClientTest`.
 
 ## Native feel, accessibility and release reporting
 

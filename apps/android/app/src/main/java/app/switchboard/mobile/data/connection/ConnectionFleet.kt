@@ -6,6 +6,7 @@ import app.switchboard.mobile.domain.connection.ConnectionRuntimeEvent
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
 import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.connection.ConnectionStatusReducer
+import app.switchboard.mobile.domain.connection.ForegroundAction
 import app.switchboard.mobile.data.remote.RemoteRpc
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.platform.protocol.WebSocketTarget
@@ -34,6 +35,8 @@ interface ConnectionFleetCoordinator {
     val endpoint: ConnectionFleetEndpoint?
 
     fun connect(target: WebSocketTarget)
+    fun setNetworkAvailable(available: Boolean) = Unit
+    fun probe() = Unit
     fun disconnect()
     fun destroy()
 }
@@ -121,6 +124,7 @@ class ConnectionFleet(
     private var latestSpecs = emptyMap<String, StoredSpec>()
     private var observation: Job? = null
     private var nextGeneration = 0L
+    private var networkAvailable: Boolean? = null
     private var started = false
     private var closed = false
 
@@ -167,6 +171,29 @@ class ConnectionFleet(
         entry.desiredConnected = true
         stop(entry)
         start(entry)
+    }
+
+    @Synchronized
+    fun onNetworkChanged(available: Boolean) {
+        if (closed || networkAvailable == available) return
+        networkAvailable = available
+        entries.values.forEach { entry ->
+            if (entry.desiredConnected) entry.coordinator?.setNetworkAvailable(available)
+        }
+    }
+
+    @Synchronized
+    fun onForeground(action: ForegroundAction) {
+        if (closed) return
+        entries.values.filter(Entry::desiredConnected).forEach { entry ->
+            when (action) {
+                ForegroundAction.Probe -> entry.coordinator?.probe()
+                ForegroundAction.Reconnect -> {
+                    stop(entry)
+                    start(entry)
+                }
+            }
+        }
     }
 
     @Synchronized
@@ -348,6 +375,7 @@ class ConnectionFleet(
                 }
                 entry.coordinator = coordinator
                 try {
+                    if (networkAvailable == false) coordinator.setNetworkAvailable(false)
                     coordinator.connect(resolution.target)
                 } catch (exception: Exception) {
                     runCatching(coordinator::destroy)

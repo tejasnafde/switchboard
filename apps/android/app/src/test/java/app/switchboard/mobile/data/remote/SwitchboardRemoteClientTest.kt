@@ -12,6 +12,7 @@ import app.switchboard.mobile.domain.remote.RemoteRequestKey
 import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.StartSession
+import app.switchboard.mobile.domain.push.PushBackendResult
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.RequestSubmission
 import app.switchboard.mobile.platform.protocol.RpcOutcome
@@ -31,6 +32,59 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SwitchboardRemoteClientTest {
+    @Test
+    fun `push commands preserve arguments and parse domain rejection inside successful response`() {
+        val rpc = FakeRemoteRpc()
+        val client = SwitchboardRemoteClient("mac-a", rpc)
+        val results = mutableListOf<PushBackendResult>()
+
+        rpc.reply(obj("ok" to JsonBoolean(true)))
+        client.registerPush("ExpoPushToken[token]", "phone", "mac-a", results::add)
+        assertCall(
+            rpc,
+            "push:register",
+            JsonString("ExpoPushToken[token]"),
+            JsonString("phone"),
+            JsonString("mac-a"),
+        )
+        assertEquals(PushBackendResult.Accepted, results.last())
+
+        rpc.reply(obj("ok" to JsonBoolean(false), "error" to JsonString("not supported")))
+        client.unregisterPush("ExpoPushToken[token]", results::add)
+        assertCall(rpc, "push:unregister", JsonString("ExpoPushToken[token]"))
+        assertEquals(PushBackendResult.Rejected("not supported"), results.last())
+
+        rpc.reply(obj("ok" to JsonBoolean(true)))
+        client.reportPushViewing("ExpoPushToken[token]", "thread-1", results::add)
+        assertCall(
+            rpc,
+            "push:viewing",
+            JsonString("ExpoPushToken[token]"),
+            JsonString("thread-1"),
+        )
+
+        rpc.reply(obj("ok" to JsonBoolean(true)))
+        client.reportPushViewing("ExpoPushToken[token]", null, results::add)
+        assertCall(
+            rpc,
+            "push:viewing",
+            JsonString("ExpoPushToken[token]"),
+            JsonNull,
+        )
+    }
+
+    @Test
+    fun `malformed push success body is a nonfatal transport failure`() {
+        val rpc = FakeRemoteRpc()
+        val client = SwitchboardRemoteClient("mac-a", rpc)
+        val results = mutableListOf<PushBackendResult>()
+        rpc.reply(obj("future" to JsonBoolean(true)))
+
+        client.registerPush("ExpoPushToken[token]", "phone", "mac-a", results::add)
+
+        assertTrue(results.single() is PushBackendResult.TransportFailure)
+    }
+
     @Test
     fun browsingAndSettingsUseTheExistingBackendChannelsAndArgumentShapes() {
         val rpc = FakeRemoteRpc()
@@ -295,6 +349,40 @@ class SwitchboardRemoteClientTest {
         )
         assertEquals(1, events.size)
         cancel.cancel()
+    }
+
+    @Test
+    fun providerInstancesUseTheExistingRedactedBackendContract() {
+        val rpc = FakeRemoteRpc()
+        val client = SwitchboardRemoteClient("mac-a", rpc)
+        val responses = mutableListOf<RemoteResponse<List<app.switchboard.mobile.domain.remote.ProviderInstance>>>()
+        rpc.reply(
+            JsonArray(
+                listOf(
+                    obj(
+                        "id" to JsonString("claude-work"),
+                        "agentType" to JsonString("claude-code"),
+                        "displayName" to JsonString("Work"),
+                        "accentColor" to JsonNull,
+                        "authMode" to JsonString("oauth_dir"),
+                        "envKeys" to JsonArray(listOf(JsonString("ANTHROPIC_API_KEY"))),
+                        "oauthDir" to JsonString("/credentials/work"),
+                        "enabled" to JsonBoolean(true),
+                        "createdAt" to JsonNumber("10"),
+                        "updatedAt" to JsonNumber("20"),
+                        "future" to JsonBoolean(true),
+                    ),
+                ),
+            ),
+        )
+
+        client.listProviderInstances(responses::add)
+
+        assertCall(rpc, "provider-instances:list")
+        val instance = (responses.single().outcome as RemoteOutcome.Success).value.single()
+        assertEquals("claude-code", instance.agentType)
+        assertEquals(listOf("ANTHROPIC_API_KEY"), instance.envKeys)
+        assertEquals(JsonBoolean(true), instance.raw.values["future"])
     }
 
     @Test

@@ -1,5 +1,8 @@
 package app.switchboard.mobile.data.thread
 
+import app.switchboard.mobile.domain.composer.ComposerAttachment
+import app.switchboard.mobile.domain.composer.ComposerDraft
+import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
@@ -195,6 +198,106 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `saved composer restores mode attachments and supports image only send`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val persistence = FakeComposerPersistence()
+        val enqueue = FakeEnqueuePort().also {
+            it.results += durable("image-origin", "")
+        }
+        val saved = ComposerDraft(
+            key = ComposerDraftKey("machine", "thread-1"),
+            runtimeMode = "plan",
+            attachments = listOf(
+                ComposerAttachment("image", "/private/drafts/image", "image/png", "image.png"),
+            ),
+        )
+        val coordinator = coordinator(
+            remote,
+            enqueue = enqueue,
+            initialComposer = saved,
+            composerPersistence = persistence,
+        )
+
+        assertEquals(RuntimeMode.Plan, coordinator.state.value.composer.runtimeMode)
+        assertEquals(listOf("image"), coordinator.state.value.composer.attachments.map { it.id })
+        assertTrue(coordinator.submit() is ComposerSubmitResult.Durable)
+        assertEquals("/private/drafts/image", enqueue.drafts.single().attachments.single().privateSourcePath)
+        assertEquals(listOf(saved.key), persistence.cleared)
+        assertTrue(coordinator.state.value.composer.attachments.isEmpty())
+    }
+
+    @Test
+    fun `delayed persistence echoes never roll newer local text or mode backward`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+
+        coordinator.updateDraft("A")
+        coordinator.updateDraft("AB")
+        coordinator.selectRuntimeMode(RuntimeMode.Plan)
+        remote.completeMode(success("mode", CommandBody(null)))
+
+        coordinator.installComposerDraft(
+            ComposerDraft(
+                key = ComposerDraftKey("machine", "thread-1"),
+                text = "A",
+                runtimeMode = "sandbox",
+                attachments = listOf(
+                    ComposerAttachment("image", "/private/image", "image/png", "image.png"),
+                ),
+            ),
+        )
+
+        assertEquals("AB", coordinator.state.value.composer.draft)
+        assertEquals(RuntimeMode.Plan, coordinator.state.value.composer.runtimeMode)
+        assertEquals(listOf("image"), coordinator.state.value.composer.attachments.map { it.id })
+
+        coordinator.installComposerDraft(
+            ComposerDraft(
+                key = ComposerDraftKey("machine", "thread-1"),
+                text = "AB",
+                runtimeMode = "plan",
+                attachments = listOf(
+                    ComposerAttachment("image", "/private/image", "image/png", "image.png"),
+                ),
+            ),
+        )
+
+        assertEquals("AB", coordinator.state.value.composer.draft)
+        assertEquals(RuntimeMode.Plan, coordinator.state.value.composer.runtimeMode)
+    }
+
+    @Test
+    fun `late initial hydration and a new queued edit still install authoritative content`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        val key = ComposerDraftKey("machine", "thread-1")
+
+        coordinator.installComposerDraft(null)
+        coordinator.installComposerDraft(
+            ComposerDraft(key, text = "restored", runtimeMode = "plan"),
+        )
+
+        assertEquals("restored", coordinator.state.value.composer.draft)
+        assertEquals(RuntimeMode.Plan, coordinator.state.value.composer.runtimeMode)
+
+        coordinator.updateDraft("newer local")
+        val focusBeforeEdit = coordinator.state.value.composer.focusRequest
+        coordinator.installComposerDraft(
+            ComposerDraft(
+                key = key,
+                text = "queued edit",
+                runtimeMode = "sandbox",
+                editingOrigin = "origin-7",
+            ),
+        )
+
+        assertEquals("queued edit", coordinator.state.value.composer.draft)
+        assertEquals(RuntimeMode.Sandbox, coordinator.state.value.composer.runtimeMode)
+        assertEquals("origin-7", coordinator.state.value.composer.editingOrigin)
+        assertEquals(focusBeforeEdit + 1, coordinator.state.value.composer.focusRequest)
+    }
+
+    @Test
     fun `refresh does not duplicate an optimistic turn already present in history`() {
         val remote = FakeThreadSessionRemote(scope)
         val enqueue = FakeEnqueuePort().also {
@@ -309,6 +412,8 @@ class ThreadSessionCoordinatorTest {
         remote: FakeThreadSessionRemote,
         cached: ThreadState? = null,
         enqueue: ThreadEnqueuePort = FakeEnqueuePort(),
+        initialComposer: ComposerDraft? = null,
+        composerPersistence: ThreadComposerPersistence = FakeComposerPersistence(),
     ) = ThreadSessionCoordinator(
         scope = scope,
         threadId = "thread-1",
@@ -316,6 +421,8 @@ class ThreadSessionCoordinatorTest {
         remote = remote,
         enqueue = enqueue,
         clock = ThreadSessionClock { 123L },
+        initialComposer = initialComposer,
+        composerPersistence = composerPersistence,
     )
 
     private fun loadedSession(vararg messages: ChatMessage) = LoadedSession(
@@ -429,6 +536,20 @@ private class FakeEnqueuePort : ThreadEnqueuePort {
     override fun enqueue(draft: OutgoingTurnDraft): EnqueueResult {
         drafts += draft
         return results.removeFirstOrNull() ?: EnqueueResult.StorageFailure("not configured")
+    }
+}
+
+private class FakeComposerPersistence : ThreadComposerPersistence {
+    val saved = mutableListOf<ComposerDraft>()
+    val cleared = mutableListOf<ComposerDraftKey>()
+
+    override fun save(draft: ComposerDraft) {
+        saved += draft
+    }
+
+    override fun clear(key: ComposerDraftKey): Boolean {
+        cleared += key
+        return true
     }
 }
 

@@ -21,6 +21,10 @@ class AndroidPrivateFilesAttachmentStager(
     private val delegate = PrivateFilesAttachmentStager(
         rootDirectory = File(context.filesDir, ATTACHMENT_DIRECTORY),
         contentUris = AndroidContentUriSource(context.contentResolver),
+        ownedSourceRootDirectory = File(
+            context.filesDir,
+            AndroidComposerAttachmentStager.DRAFT_ATTACHMENT_DIRECTORY,
+        ),
     )
 
     override fun stage(attachments: List<AttachmentDraft>): AttachmentStageResult =
@@ -30,7 +34,7 @@ class AndroidPrivateFilesAttachmentStager(
         delegate.discard(attachments)
     }
 
-    private companion object {
+    companion object {
         const val ATTACHMENT_DIRECTORY = "outbox-attachments"
     }
 }

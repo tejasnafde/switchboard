@@ -11,6 +11,7 @@ import app.switchboard.mobile.domain.remote.MarkReadResult
 import app.switchboard.mobile.domain.remote.ModelOption
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.ProviderSkill
+import app.switchboard.mobile.domain.remote.ProviderInstance
 import app.switchboard.mobile.domain.remote.RemoteDecoders
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteRequestKey
@@ -19,11 +20,13 @@ import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.StartSession
 import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.remote.Workspace
+import app.switchboard.mobile.domain.push.PushBackendResult
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.RequestSubmission
 import app.switchboard.mobile.platform.protocol.RpcOutcome
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.protocol.JsonArray
+import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
@@ -47,11 +50,15 @@ object BackendChannels {
     const val Interrupt = "provider:interrupt"
     const val ListSkills = "provider:list-skills"
     const val ListModels = "provider:list-models"
+    const val ListProviderInstances = "provider-instances:list"
     const val SetRuntimeMode = "provider:set-runtime-mode"
     const val SetModel = "provider:set-model"
     const val RespondToRequest = "provider:respond-to-request"
     const val AnswerQuestion = "provider:answer-question"
     const val ProviderEvents = "provider:event"
+    const val PushRegister = "push:register"
+    const val PushUnregister = "push:unregister"
+    const val PushViewing = "push:viewing"
 }
 
 class SwitchboardRemoteClient(
@@ -78,6 +85,13 @@ class SwitchboardRemoteClient(
 
     fun listWorkspaces(callback: (RemoteResponse<List<Workspace>>) -> Unit) =
         call(BackendChannels.ListWorkspaces, decoder = RemoteDecoders::workspaces, callback = callback)
+
+    fun listProviderInstances(callback: (RemoteResponse<List<ProviderInstance>>) -> Unit) =
+        call(
+            BackendChannels.ListProviderInstances,
+            decoder = RemoteDecoders::providerInstances,
+            callback = callback,
+        )
 
     fun loadSession(
         conversationId: String,
@@ -129,6 +143,36 @@ class SwitchboardRemoteClient(
         BackendChannels.MarkRead,
         array(JsonString(threadId)),
         RemoteDecoders::markRead,
+        callback,
+    )
+
+    fun registerPush(
+        token: String,
+        label: String,
+        clientRef: String,
+        callback: (PushBackendResult) -> Unit,
+    ) = pushCommand(
+        BackendChannels.PushRegister,
+        array(JsonString(token), JsonString(label), JsonString(clientRef)),
+        callback,
+    )
+
+    fun unregisterPush(
+        token: String,
+        callback: (PushBackendResult) -> Unit,
+    ) = pushCommand(
+        BackendChannels.PushUnregister,
+        array(JsonString(token)),
+        callback,
+    )
+
+    fun reportPushViewing(
+        token: String,
+        threadId: String?,
+        callback: (PushBackendResult) -> Unit,
+    ) = pushCommand(
+        BackendChannels.PushViewing,
+        array(JsonString(token), threadId?.let(::JsonString) ?: JsonNull),
         callback,
     )
 
@@ -279,6 +323,30 @@ class SwitchboardRemoteClient(
         args: JsonArray,
         callback: (RemoteResponse<CommandBody>) -> Unit,
     ): RequestSubmission = call(channel, args, ::CommandBody, callback)
+
+    private fun pushCommand(
+        channel: String,
+        args: JsonArray,
+        callback: (PushBackendResult) -> Unit,
+    ): RequestSubmission = call(channel, args, ::decodePushResult) { response ->
+        callback(
+            when (val outcome = response.outcome) {
+                is RemoteOutcome.Success -> outcome.value
+                is RemoteOutcome.Failure -> PushBackendResult.TransportFailure(outcome.message)
+            },
+        )
+    }
+
+    private fun decodePushResult(value: JsonValue?): PushBackendResult {
+        val body = value as? JsonObject ?: error("Expected push response object")
+        val ok = (body.values["ok"] as? JsonBoolean)?.value
+            ?: error("Expected push response ok field")
+        if (ok) return PushBackendResult.Accepted
+        val error = (body.values["error"] as? JsonString)?.value
+            ?.takeIf(String::isNotBlank)
+            ?: "Backend rejected push request"
+        return PushBackendResult.Rejected(error)
+    }
 
     private fun <T> call(
         channel: String,

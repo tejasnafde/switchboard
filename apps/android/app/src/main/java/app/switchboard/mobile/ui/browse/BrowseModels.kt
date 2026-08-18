@@ -4,6 +4,8 @@ import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.domain.remote.BrowseDecisions
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
+import app.switchboard.mobile.domain.remote.SessionSummary
+import app.switchboard.mobile.domain.remote.Workspace
 import java.io.Serializable
 
 sealed interface BrowseRoute : Serializable {
@@ -75,7 +77,12 @@ data class BrowseState(
     val connectionLabel: String,
     val offlineSnapshot: OfflineSnapshot,
     val projects: BrowseLoadState<BrowseProjectRecord>,
+    val workspaces: BrowseLoadState<Workspace> = BrowseLoadState.Loading(),
     val conversationsByProject: Map<String, BrowseLoadState<BrowseConversationRecord>> = emptyMap(),
+    val collapsedWorkspaceIds: Set<String> = emptySet(),
+    val renamingConversationIds: Set<String> = emptySet(),
+    val renameErrors: Map<String, String> = emptyMap(),
+    val threadActivity: Map<String, BrowseThreadActivity> = emptyMap(),
 )
 
 sealed interface BrowseRequest {
@@ -103,6 +110,8 @@ data class BrowseProjectRow(
     val path: String,
     val name: String,
     val sessionCount: Int,
+    val unread: Int,
+    val status: String?,
 )
 
 data class BrowseConversationRow(
@@ -112,6 +121,8 @@ data class BrowseConversationRow(
     val agentType: String,
     val updatedAt: Long,
     val availableOffline: Boolean,
+    val unread: Int,
+    val status: String?,
 )
 
 sealed interface BrowseProjectsPresentation {
@@ -157,7 +168,10 @@ class OfflineBrowseIndex private constructor(
 }
 
 object BrowsePresenter {
-    fun projects(state: BrowseLoadState<BrowseProjectRecord>): BrowseProjectsPresentation {
+    fun projects(
+        state: BrowseLoadState<BrowseProjectRecord>,
+        activity: Map<String, BrowseThreadActivity> = emptyMap(),
+    ): BrowseProjectsPresentation {
         val items = state.items()
         if (items.isEmpty()) {
             return when (state) {
@@ -170,6 +184,10 @@ object BrowsePresenter {
         }
         return BrowseProjectsPresentation.Content(
             rows = items.map { record ->
+                val visibleThreadIds = record.project.sessions
+                    .map(SessionSummary::id)
+                    .filterNot(record.archivedSessionIds::contains)
+                val projectActivity = BrowseParityDecisions.projectActivity(visibleThreadIds, activity)
                 BrowseProjectRow(
                     project = record.project,
                     path = record.project.path,
@@ -177,6 +195,8 @@ object BrowsePresenter {
                     sessionCount = record.project.sessions.count {
                         it.id !in record.archivedSessionIds
                     },
+                    unread = projectActivity.unread,
+                    status = projectActivity.status,
                 )
             },
             status = status(state, "projects", items.size),
@@ -186,6 +206,7 @@ object BrowsePresenter {
     fun conversations(
         state: BrowseLoadState<BrowseConversationRecord>,
         offlineIndex: OfflineBrowseIndex,
+        activity: Map<String, BrowseThreadActivity> = emptyMap(),
     ): BrowseConversationsPresentation {
         val visible = state.items().filterNot(BrowseConversationRecord::archived)
         if (visible.isEmpty()) {
@@ -207,11 +228,15 @@ object BrowsePresenter {
                     agentType = conversation.agentType,
                     updatedAt = conversation.updatedAt,
                     availableOffline = offlineIndex.contains(conversation.id),
+                    unread = activity[conversation.id]?.unread ?: 0,
+                    status = activity[conversation.id]?.status,
                 )
             },
             status = status(state, "conversations", visible.size),
         )
     }
+
+    fun workspaces(state: BrowseLoadState<Workspace>): List<Workspace> = state.items()
 
     private fun <T> BrowseLoadState<T>.items(): List<T> = when (this) {
         is BrowseLoadState.Loading -> cached

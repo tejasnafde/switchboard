@@ -41,11 +41,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun PairingScreen(
     editConnectionId: String?,
+    startManual: Boolean,
     initialForm: PairingForm?,
     onBack: () -> Unit,
     onSave: suspend (PairingSaveIntent) -> PairingSaveResult,
     onSaved: () -> Unit,
-    onQrUnavailable: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (editConnectionId != null && initialForm == null) {
@@ -53,11 +53,24 @@ fun PairingScreen(
         return
     }
 
+    var manual by rememberSaveable(editConnectionId) {
+        mutableStateOf(startManual || editConnectionId != null)
+    }
+    if (!manual) {
+        PairingQrScreen(
+            onBack = onBack,
+            onManual = { manual = true },
+            onSave = onSave,
+            onSaved = onSaved,
+            modifier = modifier,
+        )
+        return
+    }
+
     var label by rememberSaveable(editConnectionId) { mutableStateOf(initialForm?.label.orEmpty()) }
     var address by rememberSaveable(editConnectionId) { mutableStateOf(initialForm?.address.orEmpty()) }
     var token by rememberSaveable(editConnectionId) { mutableStateOf(initialForm?.token.orEmpty()) }
     var addressError by rememberSaveable(editConnectionId) { mutableStateOf<String?>(null) }
-    var qrUnavailable by rememberSaveable(editConnectionId) { mutableStateOf(false) }
     var saveState by remember(editConnectionId) { mutableStateOf<PairingSaveState>(PairingSaveState.Idle) }
     val scope = rememberCoroutineScope()
 
@@ -171,24 +184,13 @@ fun PairingScreen(
             }
             if (editConnectionId == null) {
                 OutlinedButton(
-                    onClick = {
-                        qrUnavailable = true
-                        onQrUnavailable()
-                    },
+                    onClick = { manual = false },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 8.dp)
                         .heightIn(min = 48.dp),
                 ) {
                     Text("Scan a QR instead")
-                }
-                if (qrUnavailable) {
-                    Text(
-                        text = "QR scanning is not available in this native milestone. Enter the address manually.",
-                        color = TextDim,
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.padding(top = 10.dp),
-                    )
                 }
             }
         }

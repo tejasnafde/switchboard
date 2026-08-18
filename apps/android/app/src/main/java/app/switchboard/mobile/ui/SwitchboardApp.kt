@@ -35,7 +35,6 @@ fun SwitchboardApp(
     onPairingIntent: suspend (PairingSaveIntent) -> PairingSaveResult = {
         PairingSaveResult.Failure("Saving connections is not available yet")
     },
-    onQrUnavailable: () -> Unit = {},
     offlineSnapshot: OfflineSnapshot? = null,
     navigationRuntime: RootNavigationRuntime? = null,
     pendingNotificationRoute: PendingNotificationRoute? = null,
@@ -52,7 +51,6 @@ fun SwitchboardApp(
                 resolveEditForm = resolveEditForm,
                 onConnectionIntent = onConnectionIntent,
                 onPairingIntent = onPairingIntent,
-                onQrUnavailable = onQrUnavailable,
                 offlineSnapshot = offlineSnapshot,
                 runtime = navigationRuntime,
                 pendingNotificationRoute = pendingNotificationRoute,

@@ -67,6 +67,29 @@ data class ThreadPreferenceEntity(
     val model: String?,
     val draft: String?,
     val touchedAt: Long,
+    val editingOrigin: String? = null,
+)
+
+@Entity(
+    tableName = "draft_attachments",
+    primaryKeys = ["threadKey", "position"],
+    foreignKeys = [
+        ForeignKey(
+            entity = ThreadPreferenceEntity::class,
+            parentColumns = ["threadKey"],
+            childColumns = ["threadKey"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("threadKey")],
+)
+data class ComposerDraftAttachmentEntity(
+    val threadKey: String,
+    val position: Int,
+    val attachmentId: String,
+    val privatePath: String,
+    val mimeType: String?,
+    val displayName: String,
 )
 
 @Entity(tableName = "collapsed_workspaces")
@@ -202,6 +225,12 @@ data class OutboxWithAttachments(
     val attachments: List<OutboxAttachmentEntity>,
 )
 
+data class ComposerDraftWithAttachments(
+    @Embedded val preference: ThreadPreferenceEntity,
+    @Relation(parentColumn = "threadKey", entityColumn = "threadKey")
+    val attachments: List<ComposerDraftAttachmentEntity>,
+)
+
 data class OfflineSnapshot(
     val connections: List<ConnectionEntity>,
     val credentialRefs: List<CredentialRefEntity>,
@@ -216,4 +245,5 @@ data class OfflineSnapshot(
     val replayStates: List<ReplayStateEntity>,
     val pendingControlActions: List<PendingControlActionEntity>,
     val quarantinedRecords: List<QuarantinedRecordEntity>,
+    val draftAttachments: List<ComposerDraftAttachmentEntity> = emptyList(),
 )

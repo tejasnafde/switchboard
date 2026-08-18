@@ -7,6 +7,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
+import app.switchboard.mobile.domain.composer.ComposerImageSource
+import app.switchboard.mobile.domain.composer.OutboxUiAction
+import app.switchboard.mobile.domain.outbox.QueuedTurn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +29,11 @@ fun ThreadSessionScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     commandDispatcher: ThreadCommandDispatcher? = null,
+    onImagesSelected: (List<ComposerImageSource>) -> Unit = {},
+    onRemoveImage: (String) -> Unit = {},
+    queuedTurns: List<QueuedTurn> = emptyList(),
+    onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
+    composerError: String? = null,
 ) {
     val session by coordinator.state.collectAsState()
     val router = remember(coordinator, commandDispatcher) {
@@ -47,10 +55,16 @@ fun ThreadSessionScreen(
         onAction = router::perform,
         onBack = onBack,
         modifier = modifier,
-        composer = session.toComposerPresentation(),
+        composer = session.toComposerPresentation().let { presentation ->
+            if (composerError == null) presentation else presentation.copy(error = composerError)
+        },
         onDraftChange = coordinator::updateDraft,
         onSend = router::send,
         onInterrupt = router::interrupt,
         onRuntimeModeChange = router::selectRuntimeMode,
+        onImagesSelected = onImagesSelected,
+        onRemoveImage = onRemoveImage,
+        queuedTurns = queuedTurns,
+        onOutboxAction = onOutboxAction,
     )
 }

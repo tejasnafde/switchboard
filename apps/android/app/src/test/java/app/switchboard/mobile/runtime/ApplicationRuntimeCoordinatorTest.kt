@@ -8,17 +8,18 @@ import org.junit.Test
 
 class ApplicationRuntimeCoordinatorTest {
     @Test
-    fun `ready seeds offline state before hydrating durable outbox`() {
+    fun `ready seeds offline state before hydrating composer and durable outbox`() {
         val calls = mutableListOf<String>()
         val coordinator = ApplicationRuntimeCoordinator(
             seedRepository = { calls += "seed" },
+            startupComposer = { calls += "composer" },
             startupOutbox = { calls += "hydrate" },
             wakeOutbox = { calls += "wake" },
         )
 
         coordinator.onStartupState(StartupRuntimeState.Ready(emptySnapshot(), emptyList()))
 
-        assertEquals(listOf("seed", "hydrate"), calls)
+        assertEquals(listOf("seed", "composer", "hydrate"), calls)
     }
 
     @Test

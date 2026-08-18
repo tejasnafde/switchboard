@@ -62,9 +62,9 @@ fun ConnectionsScreen(
     presentation: ConnectionsPresentation,
     buildStamp: String,
     onAdd: () -> Unit,
+    onManualAdd: () -> Unit,
     onEdit: (String) -> Unit,
     onConnectionIntent: (ConnectionIntent) -> Unit,
-    onQrUnavailable: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var actionRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
@@ -76,8 +76,8 @@ fun ConnectionsScreen(
             ConnectionsPresentation.Loading -> LoadingState()
             ConnectionsPresentation.Empty -> EmptyState(
                 buildStamp = buildStamp,
-                onAdd = onAdd,
-                onQrUnavailable = onQrUnavailable,
+                onScan = onAdd,
+                onManualAdd = onManualAdd,
             )
 
             is ConnectionsPresentation.Failure -> FailureState(
@@ -216,8 +216,8 @@ private fun LoadingState() {
 @Composable
 private fun EmptyState(
     buildStamp: String,
-    onAdd: () -> Unit,
-    onQrUnavailable: () -> Unit,
+    onScan: () -> Unit,
+    onManualAdd: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -240,7 +240,7 @@ private fun EmptyState(
             EmptyCode("npm run dev", "desktop app, shares its sessions")
             EmptyCode("npm run server", "headless, its own session pool")
             Button(
-                onClick = onQrUnavailable,
+                onClick = onScan,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 16.dp)
@@ -249,7 +249,7 @@ private fun EmptyState(
                 Text("Scan a pairing QR")
             }
             OutlinedButton(
-                onClick = onAdd,
+                onClick = onManualAdd,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)

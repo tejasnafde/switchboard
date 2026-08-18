@@ -94,6 +94,66 @@ abstract class PreferenceDao {
 }
 
 @Dao
+abstract class ComposerDraftDao {
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    protected abstract fun insertPreference(preference: ThreadPreferenceEntity): Long
+
+    @Query(
+        "UPDATE thread_preferences SET mode = :mode, draft = :draft, touchedAt = :touchedAt, " +
+            "editingOrigin = :editingOrigin WHERE threadKey = :threadKey",
+    )
+    protected abstract fun updateComposerPreference(
+        threadKey: String,
+        mode: String?,
+        draft: String?,
+        touchedAt: Long,
+        editingOrigin: String?,
+    ): Int
+
+    @Query("DELETE FROM draft_attachments WHERE threadKey = :threadKey")
+    protected abstract fun clearAttachments(threadKey: String)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    protected abstract fun insertAttachments(rows: List<ComposerDraftAttachmentEntity>)
+
+    @Transaction
+    open fun replace(
+        preference: ThreadPreferenceEntity,
+        rows: List<ComposerDraftAttachmentEntity>,
+    ) {
+        insertPreference(preference)
+        check(
+            updateComposerPreference(
+                threadKey = preference.threadKey,
+                mode = preference.mode,
+                draft = preference.draft,
+                touchedAt = preference.touchedAt,
+                editingOrigin = preference.editingOrigin,
+            ) == 1,
+        ) { "composer preference could not be updated" }
+        clearAttachments(preference.threadKey)
+        if (rows.isNotEmpty()) insertAttachments(rows)
+    }
+
+    @Query(
+        "UPDATE thread_preferences SET draft = NULL, editingOrigin = NULL " +
+            "WHERE threadKey = :threadKey",
+    )
+    protected abstract fun clearComposerPreference(threadKey: String): Int
+
+    @Transaction
+    open fun delete(threadKey: String): Int {
+        val changed = clearComposerPreference(threadKey)
+        clearAttachments(threadKey)
+        return changed
+    }
+
+    @Transaction
+    @Query("SELECT * FROM thread_preferences ORDER BY threadKey")
+    abstract fun allWithAttachments(): List<ComposerDraftWithAttachments>
+}
+
+@Dao
 abstract class CacheDao {
     @Upsert
     abstract fun upsertThread(thread: CachedThreadEntity)
@@ -146,6 +206,18 @@ interface OutboxDao {
             "outbox ${message.origin} attachments cannot change during a delivery-state update"
         }
         return updateMessage(message)
+    }
+
+    @Query("DELETE FROM outbox_attachments WHERE origin = :origin")
+    fun deleteAttachments(origin: String): Int
+
+    @Transaction
+    fun replace(message: OutboxEntity, rows: List<OutboxAttachmentEntity>): Int {
+        val changed = updateMessage(message)
+        if (changed != 1) return changed
+        deleteAttachments(message.origin)
+        if (rows.isNotEmpty()) insertAttachments(rows)
+        return changed
     }
 
     @Query("DELETE FROM outbox WHERE origin = :origin")
@@ -245,6 +317,9 @@ abstract class OfflineSnapshotDao {
     @Query("SELECT * FROM quarantined_records ORDER BY sourceKey, recordKey, code")
     protected abstract fun quarantinedRecords(): List<QuarantinedRecordEntity>
 
+    @Query("SELECT * FROM draft_attachments ORDER BY threadKey, position")
+    protected abstract fun draftAttachments(): List<ComposerDraftAttachmentEntity>
+
     @Transaction
     open fun read(): OfflineSnapshot = OfflineSnapshot(
         connections = connections(),
@@ -260,5 +335,6 @@ abstract class OfflineSnapshotDao {
         replayStates = replayStates(),
         pendingControlActions = pendingControlActions(),
         quarantinedRecords = quarantinedRecords(),
+        draftAttachments = draftAttachments(),
     )
 }

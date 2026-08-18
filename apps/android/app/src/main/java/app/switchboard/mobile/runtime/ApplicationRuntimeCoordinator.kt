@@ -5,12 +5,14 @@ import app.switchboard.mobile.platform.startup.StartupRuntimeState
 
 class ApplicationRuntimeCoordinator(
     private val seedRepository: (OfflineSnapshot) -> Unit,
+    private val startupComposer: () -> Unit = {},
     private val startupOutbox: () -> Unit,
     private val wakeOutbox: () -> Unit,
 ) {
     fun onStartupState(state: StartupRuntimeState) {
         if (state !is StartupRuntimeState.Ready) return
         seedRepository(state.offlineSnapshot)
+        startupComposer()
         startupOutbox()
     }
 

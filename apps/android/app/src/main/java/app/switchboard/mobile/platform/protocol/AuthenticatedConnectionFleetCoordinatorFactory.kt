@@ -128,6 +128,14 @@ private class AuthenticatedFleetCoordinator(
         coordinator.connect(target)
     }
 
+    override fun setNetworkAvailable(available: Boolean) {
+        coordinator.setNetworkAvailable(available)
+    }
+
+    override fun probe() {
+        coordinator.probe()
+    }
+
     override fun disconnect() {
         readyCapabilities = null
         coordinator.disconnect()

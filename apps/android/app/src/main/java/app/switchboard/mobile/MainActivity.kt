@@ -37,8 +37,11 @@ class MainActivity : ComponentActivity() {
             fleet = switchboardApplication.connectionFleet,
             clients = switchboardApplication.readyClients,
             outbox = switchboardApplication.outboxRuntime,
+            composer = switchboardApplication.composerRuntime,
             protocolEvents = switchboardApplication.protocolEvents,
             removeConnection = switchboardApplication::removeConnection,
+            activity = switchboardApplication::browseActivity,
+            persistCollapsedWorkspaceIds = switchboardApplication::saveCollapsedWorkspaceIds,
         )
     }
 
@@ -50,6 +53,7 @@ class MainActivity : ComponentActivity() {
         )
         ensureNotificationChannel()
         switchboardApplication.notificationPermissions.requestIfNeeded(this)
+        switchboardApplication.ingestRemoteNotificationIntent(intent)
         setContent {
             val updateState by updateRuntime.state
             val startupState by switchboardApplication.startupState.collectAsState()
@@ -101,6 +105,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        switchboardApplication.ingestRemoteNotificationIntent(intent)
         signalNotificationRoute()
     }
 
