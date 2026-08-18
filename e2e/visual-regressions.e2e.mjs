@@ -22,6 +22,7 @@ const settingsScreenshotPath = join(artifactDir, 'update-help.png')
 const nativeScreenshotPath = join(artifactDir, 'native-glass.png')
 const nativeWorkspaceScreenshotPath = join(artifactDir, 'native-workspace.png')
 const nativeDarkScreenshotPath = join(artifactDir, 'native-dark.png')
+const savedScreenshotPath = join(artifactDir, 'saved-sidebar.png')
 const organizerScreenshotPath = (theme) => join(artifactDir, `workspace-organizer-${theme.toLowerCase()}.png`)
 const snapshotPath = join(repoRoot, 'e2e', 'snapshots', `visual-regressions-translucent-${process.platform}.png`)
 let app
@@ -396,6 +397,7 @@ function seedRecentConversations() {
   for (let index = 0; index < 18; index++) {
     statements.push(`INSERT INTO conversations (id, project_path, agent_type, title, created_at, updated_at, sidebar_role) VALUES ('visual-recent-${index}', ${quote(projectPath)}, 'claude-code', 'Visual Recent ${index + 1}', ${now - index}, ${now - index}, 'managed');`)
   }
+  statements.push(`INSERT INTO bookmarks (id, session_id, project_path, session_title, agent_type, message_role, content_excerpt, message_timestamp, saved_at) VALUES ('visual-bookmark', 'visual-recent-0', ${quote(projectPath)}, 'Visual Recent 1', 'claude-code', 'assistant', 'Saved visual regression message', ${now - 5}, ${now});`)
   execFileSync('sqlite3', [join(userDataDir, 'data', 'switchboard.db'), statements.join('\n')])
   return true
 }
@@ -446,6 +448,22 @@ try {
     }
     await win.locator('.sidebar-recent-row').filter({ hasText: 'Visual Recent 1' }).click()
     await win.locator('.chat-identity-title').filter({ hasText: 'Visual Recent 1' }).waitFor({ state: 'visible' })
+
+    await win.getByRole('button', { name: 'Open saved messages' }).click()
+    await win.getByRole('button', { name: 'Back to threads' }).waitFor({ state: 'visible' })
+    if (await win.locator('.sidebar-saved-item').count() !== 1) {
+      throw new Error(`Saved view rendered ${await win.locator('.sidebar-saved-item').count()} rows`)
+    }
+    if (await win.locator('.sidebar-recent-row').count() !== 0) {
+      throw new Error('Saved view left Recents mounted in the sidebar body')
+    }
+    await win.locator('.sidebar-root').screenshot({ path: savedScreenshotPath })
+    await win.locator('.sidebar-saved-main').filter({ hasText: 'Saved visual regression message' }).click()
+    if (!await win.getByRole('button', { name: 'Back to threads' }).isVisible()) {
+      throw new Error('opening a saved message left the Saved view')
+    }
+    await win.getByRole('button', { name: 'Back to threads' }).click()
+    await win.locator('.sidebar-recent-row').first().waitFor({ state: 'visible' })
   }
 
   if (hasSeededRecents) await assertWorkspaceOrganizer(win)
@@ -548,9 +566,22 @@ try {
   if (!await win.locator('.settings-modal-content').isVisible()) {
     throw new Error('Escape closed Settings instead of only dismissing update help')
   }
+  await win.keyboard.press('Escape')
+  await win.locator('.settings-modal-content').waitFor({ state: 'hidden' })
+
+  const localMachine = win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' })
+  await localMachine.click()
+  if (await localMachine.getAttribute('aria-expanded') !== 'false') {
+    throw new Error('This Mac did not collapse before relaunch')
+  }
 
   await closeApp()
   const relaunched = await launchSwitchboard()
+  const relaunchedLocalMachine = relaunched.win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' })
+  await relaunchedLocalMachine.waitFor({ state: 'visible' })
+  if (await relaunchedLocalMachine.getAttribute('aria-expanded') !== 'false') {
+    throw new Error('machine disclosure did not persist across relaunch')
+  }
   if (hasSeededRecents) {
     await relaunched.win.waitForFunction(
       () => document.querySelectorAll('.sidebar-recent-row').length === 6,

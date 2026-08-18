@@ -40,4 +40,10 @@ describe('sidebar conversation row semantics', () => {
     expect(machineLayerSource).not.toContain('sidebar-thread-dot')
     expect(machineLayerSource).not.toContain('PIP_COLOR')
   })
+
+  it('opens Saved from the Threads header instead of an inline disclosure section', () => {
+    expect(sidebarSource).toContain('aria-label="Open saved messages"')
+    expect(sidebarSource).toContain('aria-label="Back to threads"')
+    expect(sidebarSource).not.toContain('savedOpen')
+  })
 })

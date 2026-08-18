@@ -119,7 +119,7 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
   const [createMenuOpen, setCreateMenuOpen] = useState(false)
   const [addMachineOpen, setAddMachineOpen] = useState(false)
   const [editMachine, setEditMachine] = useState<Machine | null>(null)
-  const [savedOpen, setSavedOpen] = useState(false)
+  const [sidebarView, setSidebarView] = useState<'threads' | 'saved'>('threads')
   const editRef = useRef<HTMLInputElement>(null)
   const createTriggerRef = useRef<HTMLButtonElement>(null)
   const activeSessionId = useAgentStore((s) => s.activeSessionId)
@@ -838,34 +838,107 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
     ? isNewChatPending?.(projects[0].path) ?? false
     : false
 
+  const openSavedBookmark = (bookmark: Bookmark) => {
+    const syntheticSession: SessionSummary = {
+      id: bookmark.sessionId,
+      source: (bookmark.agentType === 'codex' ? 'codex' : 'claude-code') as SessionSummary['source'],
+      title: bookmark.sessionTitle,
+      startedAt: bookmark.savedAt,
+      messageCount: 0,
+      filePath: '',
+    }
+    onSessionSelect?.(syntheticSession, bookmark.projectPath)
+    useAgentStore.getState().requestScrollToTimestamp(
+      bookmark.sessionId,
+      bookmark.messageTimestamp,
+    )
+  }
+
   return (
     <div className="sidebar-root">
       {/* Header */}
       <div className="sidebar-header">
-        <span className="sidebar-header-label">THREADS</span>
-        <button
-          className="sidebar-new-btn"
-          onClick={() => {
-            const project = projects[0]
-            if (project) onNewChat?.(project.path)
-          }}
-          disabled={projects.length === 0 || headerComposePending}
-          title="New thread"
-        >
-          {headerComposePending ? (
-            <ComposeSpinner />
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-            </svg>
-          )}
-        </button>
+        {sidebarView === 'saved' ? (
+          <div className="sidebar-saved-header">
+            <button
+              type="button"
+              className="sidebar-header-icon"
+              aria-label="Back to threads"
+              title="Back to threads"
+              onClick={() => setSidebarView('threads')}
+            >
+              <svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <span className="sidebar-header-label">Saved</span>
+            <span className="sidebar-saved-count">{bookmarks.length}</span>
+          </div>
+        ) : (
+          <>
+            <span className="sidebar-header-label">THREADS</span>
+            <div className="sidebar-header-actions">
+              <button
+                type="button"
+                className="sidebar-header-icon"
+                aria-label="Open saved messages"
+                title="Saved messages"
+                onClick={() => setSidebarView('saved')}
+              >
+                <svg aria-hidden="true" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="sidebar-new-btn"
+                onClick={() => {
+                  const project = projects[0]
+                  if (project) onNewChat?.(project.path)
+                }}
+                disabled={projects.length === 0 || headerComposePending}
+                title="New thread"
+              >
+                {headerComposePending ? (
+                  <ComposeSpinner />
+                ) : (
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
+      {sidebarView === 'saved' && (
+        <div className="sidebar-list sidebar-saved-list">
+          {bookmarks.length === 0 ? (
+            <div className="sidebar-saved-empty">
+              <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+              <strong>No saved messages</strong>
+              <span>Save a message to find it here.</span>
+            </div>
+          ) : bookmarks.map((bookmark) => (
+            <SavedItem
+              key={bookmark.id}
+              bookmark={bookmark}
+              onNavigate={() => openSavedBookmark(bookmark)}
+              onRemove={() => void removeBookmark(bookmark.id)}
+            />
+          ))}
+        </div>
+      )}
       {/* Filter input \u2014 debounced 100ms, fuzzy substring on session titles */}
-      {projects.length > 0 && <SidebarFilter onChange={setFilterQuery} />}
+      {sidebarView === 'threads' && projects.length > 0 && (
+        <SidebarFilter onChange={setFilterQuery} />
+      )}
 
       {/* Project + thread list */}
+      {sidebarView === 'threads' && (
       <div className="sidebar-list">
         {!isFiltering && (
           <RecentSessionsSection
@@ -879,64 +952,6 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
             )}
           />
         )}
-        {/* ── Saved bookmarks (top of sidebar - keeps the list discoverable
-              without burying it under projects) ────────────────────────── */}
-        {bookmarks.length > 0 && (
-          <section style={{ borderBottom: '1px solid var(--border)', marginBottom: '4px' }}>
-            <header
-              onClick={() => setSavedOpen((v) => !v)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                padding: '7px 10px 5px',
-                cursor: 'pointer',
-                userSelect: 'none',
-                color: 'var(--text-muted)',
-                fontSize: '10.5px',
-                fontWeight: 600,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-              }}
-            >
-              <span style={{ fontSize: '8px', opacity: 0.7 }}>{savedOpen ? '▼' : '▶'}</span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.7 }}>
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-              </svg>
-              Saved
-              <span style={{ marginLeft: 'auto', fontWeight: 400, opacity: 0.6 }}>{bookmarks.length}</span>
-            </header>
-            {savedOpen && (
-              <div>
-                {bookmarks.map((b: Bookmark) => (
-                  <SavedItem
-                    key={b.id}
-                    bookmark={b}
-                    onNavigate={() => {
-                      const syntheticSession: SessionSummary = {
-                        id: b.sessionId,
-                        source: (b.agentType === 'codex' ? 'codex' : 'claude-code') as SessionSummary['source'],
-                        title: b.sessionTitle,
-                        startedAt: b.savedAt,
-                        messageCount: 0,
-                        filePath: '',
-                      }
-                      onSessionSelect?.(syntheticSession, b.projectPath)
-                      // Queue scroll-to-message. MessageList resolves the
-                      // timestamp → id once the session's messages land.
-                      useAgentStore.getState().requestScrollToTimestamp(
-                        b.sessionId,
-                        b.messageTimestamp,
-                      )
-                    }}
-                    onRemove={() => void removeBookmark(b.id)}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
-        )}
-
         <MachineLayer
           onEditMachine={(machine) => setEditMachine(machine)}
           onOpenRemoteSession={(machineId, projectPath, session) => onSessionSelect?.(session, projectPath, machineId)}
@@ -1059,8 +1074,10 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
           </div>
         )}
       </div>
+      )}
 
       {/* Footer */}
+      {sidebarView === 'threads' && (
       <div className="sidebar-footer">
         <div className="sidebar-create-wrap">
           <button
@@ -1146,6 +1163,7 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
           </svg>
         </button>
       </div>
+      )}
 
       {/* Right-click context menu on sessions */}
       {contextMenu && (
@@ -1608,83 +1626,26 @@ function SavedItem({
   onNavigate: () => void
   onRemove: () => void
 }) {
-  const [hovered, setHovered] = useState(false)
   const isUser = bookmark.messageRole === 'user'
   return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      onClick={onNavigate}
-      style={{
-        padding: '6px 10px 6px 14px',
-        cursor: 'pointer',
-        background: hovered ? 'var(--bg-hover)' : 'transparent',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '2px',
-        borderLeft: `2px solid ${isUser ? 'var(--text-muted)' : 'var(--accent)'}`,
-        marginLeft: '8px',
-        marginBottom: '1px',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-        <span style={{
-          fontSize: '9.5px',
-          color: isUser ? 'var(--text-muted)' : 'var(--accent)',
-          fontWeight: 600,
-          textTransform: 'uppercase',
-          letterSpacing: '0.04em',
-          flexShrink: 0,
-        }}>
-          {isUser ? 'You' : 'Agent'}
+    <div className={`sidebar-saved-item ${isUser ? 'is-user' : 'is-agent'}`}>
+      <button type="button" className="sidebar-saved-main" onClick={onNavigate}>
+        <span className="sidebar-saved-meta">
+          <span className="sidebar-saved-role">{isUser ? 'You' : 'Agent'}</span>
+          <span className="sidebar-saved-session">{bookmark.sessionTitle}</span>
         </span>
-        <span style={{
-          fontSize: '9.5px',
-          color: 'var(--text-muted)',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-          flex: 1,
-        }}>
-          · {bookmark.sessionTitle}
-        </span>
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemove() }}
-          title="Remove"
-          style={{
-            display: hovered ? 'flex' : 'none',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '14px',
-            height: '14px',
-            border: 'none',
-            background: 'transparent',
-            color: 'var(--text-muted)',
-            cursor: 'pointer',
-            fontSize: '11px',
-            lineHeight: 1,
-            borderRadius: '2px',
-            flexShrink: 0,
-            padding: 0,
-          }}
-        >
-          ×
-        </button>
-      </div>
-      <div style={{
-        fontSize: '11px',
-        color: 'var(--text-secondary)',
-        overflow: 'hidden',
-        display: '-webkit-box',
-        WebkitLineClamp: 2,
-        WebkitBoxOrient: 'vertical' as React.CSSProperties['WebkitBoxOrient'],
-        lineHeight: 1.4,
-      }}>
-        {bookmark.contentExcerpt}
-      </div>
-      <div style={{ fontSize: '9.5px', color: 'var(--text-muted)', marginTop: '1px' }}>
-        {formatRelativeTime(bookmark.savedAt)}
-      </div>
+        <span className="sidebar-saved-excerpt">{bookmark.contentExcerpt}</span>
+        <span className="sidebar-saved-time">{formatRelativeTime(bookmark.savedAt)}</span>
+      </button>
+      <button
+        type="button"
+        className="sidebar-saved-remove"
+        onClick={onRemove}
+        aria-label={`Remove saved message from ${bookmark.sessionTitle}`}
+        title="Remove saved message"
+      >
+        ×
+      </button>
     </div>
   )
 }

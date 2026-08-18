@@ -17,6 +17,7 @@ import { projectsToSnapshot } from '../components/sidebar/machineSnapshot'
 import { createRendererLogger } from '../logger'
 
 const log = createRendererLogger('store:machines')
+const COLLAPSED_MACHINES_KEY = 'sidebar.collapsed.machines'
 
 const MACHINE_STATUSES: readonly MachineStatus[] = ['connected', 'connecting', 'offline', 'error']
 function toMachineStatus(status: string): MachineStatus {
@@ -34,6 +35,23 @@ function bindSnapshotPaths(machineId: string, snapshot: MachineSnapshot | undefi
   for (const project of snapshot.projects) {
     window.api.routing.bind(project.path, machineId)
   }
+}
+
+function parseCollapsedMachines(value: string | null): Set<string> {
+  if (!value) return new Set()
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (!Array.isArray(parsed)) return new Set()
+    return new Set(parsed.filter((id): id is string => typeof id === 'string'))
+  } catch {
+    return new Set()
+  }
+}
+
+function persistCollapsedMachines(collapsed: Set<string>): void {
+  void window.api.settings
+    .set(COLLAPSED_MACHINES_KEY, JSON.stringify([...collapsed]))
+    .catch((err) => log.warn('machine disclosure persist failed', err))
 }
 
 interface MachineStore {
@@ -106,11 +124,24 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
   hydrate: async () => {
     const api = window.api?.machines
     if (!api) return
+    let remotes: Machine[]
     try {
-      set({ remotes: await api.list() })
+      remotes = await api.list()
+      set({ remotes })
     } catch (err) {
       log.warn('hydrate failed', err)
       return
+    }
+    try {
+      const stored = parseCollapsedMachines(
+        await window.api.settings.get(COLLAPSED_MACHINES_KEY),
+      )
+      const knownIds = new Set(['local', ...remotes.map((machine) => machine.id)])
+      const collapsed = new Set([...stored].filter((id) => knownIds.has(id)))
+      set({ collapsed })
+      if (collapsed.size !== stored.size) persistCollapsedMachines(collapsed)
+    } catch (err) {
+      log.warn('machine disclosure hydrate failed', err)
     }
     // Resync from main's live connection state: after a renderer reload the
     // preload transports are gone even though main's tunnels are still up.
@@ -409,6 +440,7 @@ export const useMachineStore = create<MachineStore>((set, get) => ({
     set((s) => {
       const next = new Set(s.collapsed)
       next.has(id) ? next.delete(id) : next.add(id)
+      persistCollapsedMachines(next)
       return { collapsed: next }
     }),
 }))

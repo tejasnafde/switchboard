@@ -2,6 +2,18 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.35 - Put saved messages where they belong
+
+### Added
+- **Saved messages now have a dedicated sidebar view.** A bookmark action beside New Thread opens the full-width list, keeps the view open while jumping to a message, and returns to Recents, machines, workspaces, and projects through a clear Back action. The empty view remains reachable before the first bookmark.
+
+### Fixed
+- **Machine disclosure reset on every launch.** Expanded and collapsed top-level machines are now persisted by machine ID, restored after a full quit, and pruned when a machine no longer exists. Newly added machines still begin expanded.
+
+### Notes
+- The Saved view uses the existing surface and theme tokens, with no opaque card or translucent-theme override. The Electron Playwright flow seeds a real bookmark, verifies Saved navigation, collapses This Mac, fully relaunches the app, and confirms the disclosure state survives.
+- The full local gate passed 2,479 tests across 244 files, both TypeScript projects, all production bundles, the remote server, packaged-main smoke boot, lint, and the final Electron visual/relaunch flow.
+
 ## 0.8.34 - Page through Recents without flooding the sidebar
 
 ### Fixed

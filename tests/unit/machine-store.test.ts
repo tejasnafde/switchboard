@@ -32,6 +32,8 @@ const invokeOn = vi.fn(async () => [{ path: '/r/api', name: 'api', sessions: [{ 
 const saveSnapshot = vi.fn(async () => ({ ok: true as const }))
 let liveStatuses: Record<string, { status: string; url: string | null }> = {}
 const getStatuses = vi.fn(async () => liveStatuses)
+const getSetting = vi.fn(async () => null as string | null)
+const setSetting = vi.fn(async () => undefined)
 
 beforeEach(() => {
   stored = [mk('a', 0), mk('b', 1), mk('c', 2)]
@@ -54,6 +56,7 @@ beforeEach(() => {
         }),
       },
       routing: { connectMachine, disconnectMachine, invokeOn, bind },
+      settings: { get: getSetting, set: setSetting },
     },
   }
   liveStatuses = {}
@@ -248,6 +251,36 @@ describe('machine-store', () => {
     expect(useMachineStore.getState().collapsed.has('a')).toBe(true)
     toggleCollapsed('a')
     expect(useMachineStore.getState().collapsed.has('a')).toBe(false)
+  })
+
+  it('hydrates persisted machine disclosure and prunes machines that no longer exist', async () => {
+    getSetting.mockResolvedValueOnce(JSON.stringify(['local', 'b', 'removed-machine']))
+
+    await useMachineStore.getState().hydrate()
+
+    expect(useMachineStore.getState().collapsed).toEqual(new Set(['local', 'b']))
+    expect(setSetting).toHaveBeenCalledWith(
+      'sidebar.collapsed.machines',
+      JSON.stringify(['local', 'b']),
+    )
+  })
+
+  it('persists disclosure changes by machine id', () => {
+    useMachineStore.getState().toggleCollapsed('b')
+
+    expect(setSetting).toHaveBeenCalledWith(
+      'sidebar.collapsed.machines',
+      JSON.stringify(['b']),
+    )
+  })
+
+  it('ignores malformed persisted disclosure state', async () => {
+    getSetting.mockResolvedValueOnce('{nope')
+    useMachineStore.setState({ collapsed: new Set(['a']) })
+
+    await useMachineStore.getState().hydrate()
+
+    expect(useMachineStore.getState().collapsed).toEqual(new Set())
   })
 
   it('renameSnapshotSession patches the title of a cached session in whichever snapshot holds it', () => {

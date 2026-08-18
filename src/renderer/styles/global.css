@@ -304,6 +304,48 @@ html, body, #root {
   text-transform: uppercase;
 }
 
+.sidebar-header-actions,
+.sidebar-saved-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sidebar-saved-count {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-header-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.sidebar-header-icon:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.sidebar-header-icon:focus-visible,
+.sidebar-saved-main:focus-visible,
+.sidebar-saved-remove:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
 .sidebar-new-btn {
   display: flex;
   align-items: center;
@@ -333,6 +375,141 @@ html, body, #root {
   flex: 1;
   overflow: auto;
   padding: 2px 0 4px;
+}
+
+.sidebar-saved-list {
+  padding: 2px 6px 8px;
+}
+
+.sidebar-saved-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 34px 14px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.sidebar-saved-empty strong {
+  margin-top: 2px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.sidebar-saved-empty span {
+  max-width: 160px;
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.sidebar-saved-item {
+  position: relative;
+  margin-bottom: 2px;
+  border-left: 2px solid var(--accent);
+  border-radius: 2px var(--radius) var(--radius) 2px;
+}
+
+.sidebar-saved-item.is-user {
+  border-left-color: var(--text-muted);
+}
+
+.sidebar-saved-main {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 3px;
+  padding: 7px 28px 7px 9px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sidebar-saved-item:hover,
+.sidebar-saved-item:focus-within {
+  background: var(--bg-hover);
+}
+
+.sidebar-saved-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 5px;
+}
+
+.sidebar-saved-role {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.sidebar-saved-item.is-user .sidebar-saved-role {
+  color: var(--text-muted);
+}
+
+.sidebar-saved-session,
+.sidebar-saved-time {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 9.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-saved-session::before {
+  content: '\00b7';
+  margin-right: 5px;
+}
+
+.sidebar-saved-excerpt {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.sidebar-saved-time {
+  margin-top: 1px;
+}
+
+.sidebar-saved-remove {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: flex;
+  width: 17px;
+  height: 17px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  opacity: 0;
+}
+
+.sidebar-saved-item:hover .sidebar-saved-remove,
+.sidebar-saved-remove:focus-visible {
+  opacity: 1;
+}
+
+.sidebar-saved-remove:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
 }
 
 /* Recovery inventory is application-level UI even though Sidebar owns its
