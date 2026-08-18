@@ -38,6 +38,71 @@ class BrowseCoordinatorTest {
     }
 
     @Test
+    fun cachedSnapshotIsVisibleBeforeNetworkAndSuccessfulRefreshReplacesAndPersistsIt() {
+        val remote = FakeBrowseRemote()
+        val snapshots = FakeBrowseSnapshotStore(
+            BrowseSnapshotSeed(
+                projects = listOf(project("saved")),
+                workspaces = listOf(workspace("saved-workspace")),
+                conversationsByProject = mapOf(
+                    "/saved" to listOf(conversation("saved-thread").copy(projectPath = "/saved")),
+                ),
+            ),
+        )
+        val coordinator = BrowseCoordinator(
+            connectionId = "machine",
+            connectionLabel = "Desktop",
+            offlineSnapshot = emptySnapshot(),
+            remote = remote,
+            snapshotStore = snapshots,
+        )
+
+        val initialProjects = coordinator.state.value.projects as BrowseLoadState.Ready
+        assertTrue(initialProjects.cached)
+        assertEquals("saved", initialProjects.items.single().project.name)
+        assertEquals(
+            "saved-thread",
+            coordinator.state.value.conversationsByProject.getValue("/saved")
+                .items().single().conversation.id,
+        )
+
+        coordinator.refreshProjects()
+        remote.projects.removeFirst()(success("projects", listOf(project("fresh"))))
+        remote.workspaces.removeFirst()(success("workspaces", listOf(workspace("fresh-workspace"))))
+
+        assertEquals("fresh", coordinator.state.value.projects.items().single().project.name)
+        assertEquals(listOf("fresh"), snapshots.savedProjects.single().map(Project::name))
+        assertEquals(listOf("fresh-workspace"), snapshots.savedWorkspaces.single().map(Workspace::id))
+    }
+
+    @Test
+    fun cachedConversationRefreshFailureKeepsTheSavedRowsVisible() {
+        val remote = FakeBrowseRemote()
+        val snapshots = FakeBrowseSnapshotStore(
+            BrowseSnapshotSeed(
+                conversationsByProject = mapOf(
+                    "/a" to listOf(conversation("saved-a").copy(projectPath = "/a")),
+                ),
+            ),
+        )
+        val coordinator = BrowseCoordinator(
+            connectionId = "machine",
+            connectionLabel = "Desktop",
+            offlineSnapshot = emptySnapshot(),
+            remote = remote,
+            snapshotStore = snapshots,
+        )
+
+        coordinator.refreshConversations("/a")
+        remote.conversations.removeFirst().second(failure("conversations:/a", "offline"))
+
+        val failed = coordinator.state.value.conversationsByProject.getValue("/a")
+            as BrowseLoadState.Failed
+        assertEquals("offline", failed.message)
+        assertEquals("saved-a", failed.cached.single().conversation.id)
+    }
+
+    @Test
     fun olderProjectResponseCannotReplaceNewerRefresh() {
         val remote = FakeBrowseRemote()
         val coordinator = coordinator(remote)
@@ -284,6 +349,32 @@ private class FakeBrowseRemote : BrowseRemote {
         callback: (RemoteResponse<CommandBody>) -> Unit,
     ) {
         renames += Rename(conversationId, title, callback)
+    }
+}
+
+private class FakeBrowseSnapshotStore(
+    private val initial: BrowseSnapshotSeed = BrowseSnapshotSeed(),
+) : BrowseSnapshotStore {
+    val savedProjects = mutableListOf<List<Project>>()
+    val savedWorkspaces = mutableListOf<List<Workspace>>()
+    val savedConversations = mutableListOf<Pair<String, List<Conversation>>>()
+
+    override fun load(connectionId: String): BrowseSnapshotSeed = initial
+
+    override fun saveProjects(connectionId: String, projects: List<Project>) {
+        savedProjects += projects
+    }
+
+    override fun saveWorkspaces(connectionId: String, workspaces: List<Workspace>) {
+        savedWorkspaces += workspaces
+    }
+
+    override fun saveConversations(
+        connectionId: String,
+        projectPath: String,
+        conversations: List<Conversation>,
+    ) {
+        savedConversations += projectPath to conversations
     }
 }
 

@@ -11,6 +11,7 @@ import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MarkReadResult
+import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
@@ -55,6 +56,14 @@ data class ThreadSessionState(
     val load: ThreadSessionLoad,
     val composer: ThreadComposerState,
     val controlMessage: String? = null,
+    val skills: List<ProviderSkill> = emptyList(),
+    val pendingActions: ThreadPendingActions = ThreadPendingActions(),
+)
+
+data class ThreadPendingActions(
+    val approvalDecisions: Map<String, ApprovalDecision> = emptyMap(),
+    val questionRequestIds: Set<String> = emptySet(),
+    val planIds: Set<String> = emptySet(),
 )
 
 sealed interface ComposerSubmitResult {
@@ -132,6 +141,11 @@ interface ThreadSessionRemote {
 
     fun markRead(threadId: String, callback: (RemoteResponse<MarkReadResult>) -> Unit)
 
+    fun listSkills(
+        threadId: String,
+        callback: (RemoteResponse<List<ProviderSkill>?>) -> Unit,
+    )
+
     fun respondToRequest(
         threadId: String,
         requestId: String,
@@ -173,6 +187,13 @@ class SwitchboardThreadSessionRemote(
 
     override fun markRead(threadId: String, callback: (RemoteResponse<MarkReadResult>) -> Unit) {
         client.markRead(threadId, callback)
+    }
+
+    override fun listSkills(
+        threadId: String,
+        callback: (RemoteResponse<List<ProviderSkill>?>) -> Unit,
+    ) {
+        client.listSkills(threadId, callback)
     }
 
     override fun respondToRequest(
@@ -277,6 +298,7 @@ class ThreadSessionCoordinator(
     private var composerHydrated = initialComposer != null
     private var composerHasUnacknowledgedLocalChanges = false
     private var controlMessage: String? = null
+    private var skills: List<ProviderSkill> = emptyList()
     private val mutableState = MutableStateFlow(ThreadSessionState(load, composer))
     val state = mutableState.asStateFlow()
 
@@ -285,7 +307,10 @@ class ThreadSessionCoordinator(
     private var closed = false
     private var loadRequest = 0L
     private var modeRequest = 0L
+    private var skillsRequest = 0L
     private val pendingControls = mutableSetOf<String>()
+    private val pendingApprovalDecisions = mutableMapOf<String, ApprovalDecision>()
+    private val pendingQuestionRequestIds = mutableSetOf<String>()
     private val pendingPlanOrigins = mutableMapOf<String, String>()
     private val optimisticTurns = linkedMapOf<String, app.switchboard.mobile.domain.outbox.QueuedTurn>()
 
@@ -301,6 +326,7 @@ class ThreadSessionCoordinator(
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, true))
         subscription = remote.subscribe(::onRuntimeEvent)
         refresh()
+        loadSkills()
         remote.markRead(threadId) { /* best effort; local viewing state already cleared unread */ }
     }
 
@@ -321,6 +347,18 @@ class ThreadSessionCoordinator(
         if (closed || eventScope != scope) return
         reduce(ThreadAction.ReplayGap(eventScope))
         refresh()
+    }
+
+    @Synchronized
+    fun clearVisibleFeed() {
+        val current = currentThread() ?: return
+        store = store.copy(threads = store.threads + (key to current.copy(feed = emptyList())))
+        load = when (val currentLoad = load) {
+            is ThreadSessionLoad.Loading -> currentLoad.copy(cached = currentThread())
+            is ThreadSessionLoad.Failed -> currentLoad.copy(cached = currentThread())
+            is ThreadSessionLoad.Ready -> currentLoad.copy(thread = requireNotNull(currentThread()))
+        }
+        publish()
     }
 
     @Synchronized
@@ -424,13 +462,17 @@ class ThreadSessionCoordinator(
 
     @Synchronized
     fun perform(control: ThreadSessionControl): ThreadControlOutcome = when (control) {
-        is ThreadSessionControl.Approval -> requestControl("approval:${control.requestId}") { callback ->
-            remote.respondToRequest(threadId, control.requestId, control.decision, callback)
-        }
+        is ThreadSessionControl.Approval -> requestControl(
+            key = "approval:${control.requestId}",
+            onPending = { pendingApprovalDecisions[control.requestId] = control.decision },
+            onFinished = { pendingApprovalDecisions.remove(control.requestId) },
+        ) { callback -> remote.respondToRequest(threadId, control.requestId, control.decision, callback) }
 
-        is ThreadSessionControl.AnswerQuestion -> requestControl("question:${control.requestId}") { callback ->
-            remote.answerQuestion(threadId, control.requestId, control.answers, callback)
-        }
+        is ThreadSessionControl.AnswerQuestion -> requestControl(
+            key = "question:${control.requestId}",
+            onPending = { pendingQuestionRequestIds += control.requestId },
+            onFinished = { pendingQuestionRequestIds -= control.requestId },
+        ) { callback -> remote.answerQuestion(threadId, control.requestId, control.answers, callback) }
 
         is ThreadSessionControl.Plan -> when (control.action) {
             ThreadSessionPlanAction.Implement -> implementPlan(control.planId)
@@ -455,6 +497,7 @@ class ThreadSessionCoordinator(
         closed = true
         loadRequest += 1
         modeRequest += 1
+        skillsRequest += 1
         subscription?.cancel()
         subscription = null
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, false))
@@ -492,10 +535,14 @@ class ThreadSessionCoordinator(
             if (event.threadId != threadId) return
             val known = event as? app.switchboard.mobile.domain.thread.ThreadRuntimeEvent.Known
             when (val decoded = known?.payload) {
-                is app.switchboard.mobile.domain.thread.ThreadEventPayload.RequestClosed ->
+                is app.switchboard.mobile.domain.thread.ThreadEventPayload.RequestClosed -> {
                     pendingControls -= "approval:${decoded.requestId}"
-                is app.switchboard.mobile.domain.thread.ThreadEventPayload.QuestionAnswered ->
+                    pendingApprovalDecisions.remove(decoded.requestId)
+                }
+                is app.switchboard.mobile.domain.thread.ThreadEventPayload.QuestionAnswered -> {
                     pendingControls -= "question:${decoded.requestId}"
+                    pendingQuestionRequestIds -= decoded.requestId
+                }
                 is app.switchboard.mobile.domain.thread.ThreadEventPayload.UserMessage -> {
                     val origin = decoded.origin
                     if (origin != null) {
@@ -517,10 +564,13 @@ class ThreadSessionCoordinator(
 
     private fun requestControl(
         key: String,
+        onPending: () -> Unit,
+        onFinished: () -> Unit,
         request: (((RemoteResponse<CommandBody>) -> Unit) -> Unit),
     ): ThreadControlOutcome {
         if (closed || remote.scope != scope) return ThreadControlOutcome.Failed("Connection scope changed")
         if (!pendingControls.add(key)) return ThreadControlOutcome.Busy
+        onPending()
         controlMessage = null
         publish()
         try {
@@ -530,6 +580,7 @@ class ThreadSessionCoordinator(
                     val failure = response.outcome as? RemoteOutcome.Failure
                     if (failure != null) {
                         pendingControls -= key
+                        onFinished()
                         controlMessage = failure.message
                         publish()
                     }
@@ -537,6 +588,7 @@ class ThreadSessionCoordinator(
             }
         } catch (error: RuntimeException) {
             pendingControls -= key
+            onFinished()
             return controlFailed(error.message ?: "Request failed")
         }
         return ThreadControlOutcome.Requested
@@ -557,6 +609,7 @@ class ThreadSessionCoordinator(
                 pendingPlanOrigins[planId] = result.turn.origin
                 optimisticTurns[result.turn.origin] = result.turn
                 addOptimistic(result.turn)
+                publish()
                 ThreadControlOutcome.Durable(result.turn)
             }
             is EnqueueResult.AttachmentFailure -> controlFailed(result.reason)
@@ -635,7 +688,33 @@ class ThreadSessionCoordinator(
     }
 
     private fun publish() {
-        mutableState.value = ThreadSessionState(load, composer, controlMessage)
+        mutableState.value = ThreadSessionState(
+            load = load,
+            composer = composer,
+            controlMessage = controlMessage,
+            skills = skills,
+            pendingActions = ThreadPendingActions(
+                approvalDecisions = pendingApprovalDecisions.toMap(),
+                questionRequestIds = pendingQuestionRequestIds.toSet(),
+                planIds = pendingPlanOrigins.keys.toSet(),
+            ),
+        )
+    }
+
+    private fun loadSkills() {
+        val request = ++skillsRequest
+        try {
+            remote.listSkills(threadId) { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, skillsRequest)) return@synchronized
+                    val outcome = response.outcome as? RemoteOutcome.Success ?: return@synchronized
+                    skills = outcome.value.orEmpty()
+                    publish()
+                }
+            }
+        } catch (_: RuntimeException) {
+            // Skills are optional; built-in slash commands remain available.
+        }
     }
 
     @Synchronized

@@ -86,6 +86,16 @@ class SwitchboardDatabaseTest {
                 lastError = null,
             ),
         )
+        database.browseSnapshotDao().upsert(
+            BrowseSnapshotEntity(
+                snapshotKey = "[\"lan\",\"projects\",null]",
+                connectionId = "lan",
+                kind = "projects",
+                projectPath = null,
+                rawJson = "[]",
+                updatedAtMs = 12,
+            ),
+        )
 
         val snapshot = database.offlineSnapshotDao().read()
 
@@ -97,6 +107,7 @@ class SwitchboardDatabaseTest {
         assertEquals("attachments/m1/0.png", snapshot.outboxAttachments.single().privatePath)
         assertEquals(42, snapshot.replayStates.single().lastSequence)
         assertEquals("idem-1", snapshot.pendingControlActions.single().idempotencyKey)
+        assertEquals("projects", snapshot.browseSnapshots.single().kind)
     }
 
     @Test
@@ -110,6 +121,20 @@ class SwitchboardDatabaseTest {
 
         assertTrue(database.outboxDao().all().isEmpty())
         assertTrue(database.outboxDao().allAttachments().isEmpty())
+    }
+
+    @Test
+    fun deletingAConnectionCascadesItsBrowseCacheSoAReusedIdCannotSeeStaleRows() {
+        database.connectionDao().upsert(
+            ConnectionEntity("lan", "Mac", "ws", "ws://mac", null, null, null, null),
+        )
+        database.browseSnapshotDao().upsert(
+            BrowseSnapshotEntity("key", "lan", "projects", null, "[]", 1),
+        )
+
+        database.connectionDao().delete("lan")
+
+        assertTrue(database.browseSnapshotDao().forConnection("lan").isEmpty())
     }
 
     @Test
@@ -298,6 +323,45 @@ class SwitchboardDatabaseTest {
             ).use { cursor ->
                 assertTrue(cursor.moveToFirst())
                 assertEquals("/private/image-1", cursor.getString(0))
+            }
+        }
+    }
+
+    @Test
+    fun migrationThreeToFourPreservesExistingRowsAndAddsBrowseSnapshots() {
+        val name = "browse-snapshot-migration-test"
+        migrationHelper.createDatabase(name, 3).apply {
+            execSQL(
+                "INSERT INTO connections (id, label, kind, url, project, zone, instance, port) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan", "Mac", "ws", "ws://mac", null, null, null, null),
+            )
+            execSQL(
+                "INSERT INTO app_preferences (`key`, value) VALUES (?, ?)",
+                arrayOf<Any?>("defaultMode", "sandbox"),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            name,
+            4,
+            true,
+            SwitchboardDatabase.MIGRATION_3_4,
+        ).use { migrated ->
+            migrated.query("SELECT value FROM app_preferences WHERE `key` = 'defaultMode'").use {
+                assertTrue(it.moveToFirst())
+                assertEquals("sandbox", it.getString(0))
+            }
+            migrated.execSQL(
+                "INSERT INTO browse_snapshots " +
+                    "(snapshotKey, connectionId, kind, projectPath, rawJson, updatedAtMs) " +
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>("key", "lan", "projects", null, "[]", 1L),
+            )
+            migrated.query("SELECT kind FROM browse_snapshots WHERE snapshotKey = 'key'").use {
+                assertTrue(it.moveToFirst())
+                assertEquals("projects", it.getString(0))
             }
         }
     }

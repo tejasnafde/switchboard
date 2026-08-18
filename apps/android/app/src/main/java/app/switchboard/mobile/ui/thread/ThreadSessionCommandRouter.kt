@@ -15,6 +15,8 @@ interface ThreadSessionCommandPort {
     fun interrupt()
 
     fun selectRuntimeMode(mode: RuntimeMode)
+
+    fun clearVisibleFeed()
 }
 
 class CoordinatorThreadSessionCommandPort(
@@ -31,6 +33,8 @@ class CoordinatorThreadSessionCommandPort(
     override fun interrupt() = coordinator.interrupt()
 
     override fun selectRuntimeMode(mode: RuntimeMode) = coordinator.selectRuntimeMode(mode)
+
+    override fun clearVisibleFeed() = coordinator.clearVisibleFeed()
 }
 
 class ThreadSessionCommandRouter(
@@ -46,4 +50,6 @@ class ThreadSessionCommandRouter(
     fun selectRuntimeMode(mode: RuntimeMode) = dispatcher.dispatch {
         commands.selectRuntimeMode(mode)
     }
+
+    fun clearVisibleFeed() = dispatcher.dispatch(commands::clearVisibleFeed)
 }

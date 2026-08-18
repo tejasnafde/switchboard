@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -71,8 +72,11 @@ import app.switchboard.mobile.domain.composer.OutboxPresentationPolicy
 import app.switchboard.mobile.domain.composer.OutboxUiAction
 import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
 import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.remote.RuntimeMode
+import app.switchboard.mobile.domain.remote.ProviderSkill
+import app.switchboard.mobile.data.thread.ThreadPendingActions
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.GeistMono
@@ -99,6 +103,9 @@ fun ThreadScreen(
     onSend: () -> Unit = {},
     onInterrupt: () -> Unit = {},
     onRuntimeModeChange: (RuntimeMode) -> Unit = {},
+    onClearLocalFeed: () -> Unit = {},
+    skills: List<ProviderSkill> = emptyList(),
+    pendingActions: ThreadPendingActions = ThreadPendingActions(),
     onImagesSelected: (List<ComposerImageSource>) -> Unit = {},
     onRemoveImage: (String) -> Unit = {},
     queuedTurns: List<QueuedTurn> = emptyList(),
@@ -134,6 +141,7 @@ fun ThreadScreen(
                             backendLabel = backendLabel,
                             selections = selections,
                             onSelectionsChange = { selections = it },
+                            pendingActions = pendingActions,
                             onAction = onAction,
                         )
                     }
@@ -151,6 +159,8 @@ fun ThreadScreen(
                 onSend = onSend,
                 onInterrupt = onInterrupt,
                 onRuntimeModeChange = onRuntimeModeChange,
+                onClearLocalFeed = onClearLocalFeed,
+                skills = skills,
                 onImagesSelected = onImagesSelected,
                 onRemoveImage = onRemoveImage,
             )
@@ -165,6 +175,8 @@ private fun ThreadComposer(
     onSend: () -> Unit,
     onInterrupt: () -> Unit,
     onRuntimeModeChange: (RuntimeMode) -> Unit,
+    onClearLocalFeed: () -> Unit,
+    skills: List<ProviderSkill>,
     onImagesSelected: (List<ComposerImageSource>) -> Unit,
     onRemoveImage: (String) -> Unit,
 ) {
@@ -195,6 +207,21 @@ private fun ThreadComposer(
         )
     }
     val focusRequester = remember { FocusRequester() }
+    val slashQuery = ThreadSlashPolicy.query(state.draft)
+    val slashCommands = remember(skills, slashQuery) {
+        slashQuery?.let { ThreadSlashPolicy.filter(ThreadSlashPolicy.commands(skills), it) }.orEmpty()
+    }
+    fun runSlash(command: ThreadSlashCommand) {
+        val action = command.action
+        onDraftChange(if (action is ThreadSlashAction.Insert) action.text else "")
+        when (action) {
+            is ThreadSlashAction.SetMode -> onRuntimeModeChange(action.mode)
+            ThreadSlashAction.ClearLocalFeed -> onClearLocalFeed()
+            ThreadSlashAction.Interrupt -> onInterrupt()
+            ThreadSlashAction.AttachImage -> imagePicker.launch(arrayOf("image/*"))
+            is ThreadSlashAction.Insert -> focusRequester.requestFocus()
+        }
+    }
     LaunchedEffect(state.focusRequest) {
         if (state.focusRequest > 0) focusRequester.requestFocus()
     }
@@ -234,6 +261,9 @@ private fun ThreadComposer(
         }
         state.controlMessage?.let {
             Text(it, color = Amber, style = MaterialTheme.typography.labelSmall)
+        }
+        if (slashQuery != null && slashCommands.isNotEmpty()) {
+            ThreadSlashMenu(slashCommands, ::runSlash)
         }
         if (state.attachments.isNotEmpty()) {
             Row(
@@ -287,6 +317,64 @@ private fun ThreadComposer(
             ) { Text(if (state.submitting) "Saving…" else "Send") }
         }
     }
+}
+
+@Composable
+private fun ThreadSlashMenu(
+    commands: List<ThreadSlashCommand>,
+    onPick: (ThreadSlashCommand) -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = SurfaceRaised),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(max = 260.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = 6.dp),
+        ) {
+            var previousSource: ThreadSlashSource? = null
+            commands.forEach { command ->
+                if (command.source != previousSource) {
+                    Text(
+                        text = command.source.menuLabel(),
+                        color = TextDim,
+                        fontFamily = GeistMono,
+                        fontSize = 10.sp,
+                        modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 3.dp),
+                    )
+                    previousSource = command.source
+                }
+                PressableLine(enabled = true, onClick = { onPick(command) }) {
+                    Text(
+                        text = "/${command.name}",
+                        color = Accent,
+                        fontFamily = GeistMono,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    command.argumentHint?.takeIf(String::isNotBlank)?.let {
+                        Text(" $it", color = TextDim, fontFamily = GeistMono)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = command.description,
+                        color = TextDim,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(start = 10.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun ThreadSlashSource.menuLabel(): String = when (this) {
+    ThreadSlashSource.Switchboard -> "SWITCHBOARD"
+    is ThreadSlashSource.Agent -> value.uppercase()
 }
 
 @Composable
@@ -534,6 +622,7 @@ private fun ThreadRow(
     backendLabel: String,
     selections: QuestionSelections,
     onSelectionsChange: (QuestionSelections) -> Unit,
+    pendingActions: ThreadPendingActions,
     onAction: (ThreadUiAction) -> Unit,
 ) {
     when (row) {
@@ -546,7 +635,11 @@ private fun ThreadRow(
             tint = Red,
         )
 
-        is ThreadRowPresentation.Approval -> ApprovalRow(row.source, onAction)
+        is ThreadRowPresentation.Approval -> ApprovalRow(
+            row.source,
+            pendingActions.approvalDecisions[row.source.requestId],
+            onAction,
+        )
         is ThreadRowPresentation.Retry -> NoticeCard(
             title = if (row.source.active) "Retrying" else "Retry finished",
             body = row.source.message,
@@ -555,11 +648,16 @@ private fun ThreadRow(
         )
 
         is ThreadRowPresentation.Error -> NoticeCard("Error", row.source.message, Red)
-        is ThreadRowPresentation.Plan -> PlanRow(row.source, onAction)
+        is ThreadRowPresentation.Plan -> PlanRow(
+            row.source,
+            row.source.planId in pendingActions.planIds,
+            onAction,
+        )
         is ThreadRowPresentation.Question -> QuestionRow(
             item = row.source,
             selections = selections,
             onSelectionsChange = onSelectionsChange,
+            submitting = row.source.requestId in pendingActions.questionRequestIds,
             onAction = onAction,
         )
 
@@ -608,13 +706,17 @@ private fun TextRow(row: ThreadRowPresentation.Text) {
     val reasoning = row.kind == ThreadRowKind.REASONING
     CardContainer(tint = if (row.kind == ThreadRowKind.PLAN_STREAM) Accent else TextDim) {
         if (reasoning) Text("Reasoning", color = TextDim, style = MaterialTheme.typography.labelSmall)
-        Text(
-            text = row.source.text,
-            style = MaterialTheme.typography.bodyMedium,
-            fontStyle = if (reasoning) FontStyle.Italic else FontStyle.Normal,
-            maxLines = if (reasoning && !expanded) 4 else Int.MAX_VALUE,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (reasoning) {
+            Text(
+                text = row.source.text,
+                style = MaterialTheme.typography.bodyMedium,
+                fontStyle = FontStyle.Italic,
+                maxLines = if (!expanded) 4 else Int.MAX_VALUE,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            ThreadRichText(row.source.text)
+        }
         if (reasoning) {
             TextButton(
                 onClick = { expanded = !expanded },
@@ -657,7 +759,11 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
 }
 
 @Composable
-private fun ApprovalRow(item: FeedItem.Approval, onAction: (ThreadUiAction) -> Unit) {
+private fun ApprovalRow(
+    item: FeedItem.Approval,
+    pendingDecision: ApprovalDecision?,
+    onAction: (ThreadUiAction) -> Unit,
+) {
     val pending = item.state == "pending"
     CardContainer(tint = if (pending) Amber else TextDim) {
         Text(
@@ -667,7 +773,19 @@ private fun ApprovalRow(item: FeedItem.Approval, onAction: (ThreadUiAction) -> U
         Text(item.toolName, color = Accent, fontFamily = GeistMono)
         Text(item.detail, style = MaterialTheme.typography.bodyMedium)
         if (pending) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (pendingDecision != null) {
+                Row(
+                    modifier = Modifier.heightIn(min = 48.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(9.dp),
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Text(
+                        if (pendingDecision == ApprovalDecision.Approve) "Approving…" else "Denying…",
+                        color = TextDim,
+                    )
+                }
+            } else Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = {
                         ThreadInteractionPolicy.approval(item, ThreadApprovalDecision.APPROVE)
@@ -696,6 +814,7 @@ private fun QuestionRow(
     item: FeedItem.Question,
     selections: QuestionSelections,
     onSelectionsChange: (QuestionSelections) -> Unit,
+    submitting: Boolean,
     onAction: (ThreadUiAction) -> Unit,
 ) {
     val answered = item.answers != null
@@ -723,7 +842,7 @@ private fun QuestionRow(
                             ),
                         )
                     },
-                    enabled = !answered,
+                    enabled = !answered && !submitting,
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = if (selected) Accent else MaterialTheme.colorScheme.onSurface,
                     ),
@@ -744,29 +863,35 @@ private fun QuestionRow(
                 onClick = {
                     ThreadInteractionPolicy.answer(item, selections)?.let(onAction)
                 },
-                enabled = QuestionSelectionReducer.canSubmit(selections, item),
+                enabled = !submitting && QuestionSelectionReducer.canSubmit(selections, item),
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(min = 48.dp),
-            ) { Text("Submit answers") }
+            ) { Text(if (submitting) "Submitting…" else "Submit answers") }
         }
     }
 }
 
 @Composable
-private fun PlanRow(item: FeedItem.Plan, onAction: (ThreadUiAction) -> Unit) {
+private fun PlanRow(
+    item: FeedItem.Plan,
+    pending: Boolean,
+    onAction: (ThreadUiAction) -> Unit,
+) {
     CardContainer(tint = Accent) {
         Text("Proposed Plan", fontWeight = FontWeight.SemiBold)
-        Text(item.markdown, style = MaterialTheme.typography.bodyMedium)
+        ThreadRichText(item.markdown)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { onAction(ThreadInteractionPolicy.plan(item, ThreadPlanAction.IMPLEMENT)) },
+                enabled = !pending,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 48.dp),
-            ) { Text("Implement") }
+            ) { Text(if (pending) "Starting…" else "Implement") }
             OutlinedButton(
                 onClick = { onAction(ThreadInteractionPolicy.plan(item, ThreadPlanAction.ITERATE)) },
+                enabled = !pending,
                 modifier = Modifier
                     .weight(1f)
                     .heightIn(min = 48.dp),

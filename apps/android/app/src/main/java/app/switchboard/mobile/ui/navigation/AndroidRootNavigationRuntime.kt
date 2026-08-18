@@ -4,6 +4,9 @@ import app.switchboard.mobile.data.connection.ConnectionFleet
 import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
+import app.switchboard.mobile.data.remote.BrowseSnapshotStore
+import app.switchboard.mobile.data.remote.RoomBrowseSnapshotStore
+import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
 import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
@@ -28,6 +31,7 @@ class AndroidRootNavigationRuntime(
     private val removeConnection: (String) -> Unit,
     private val activity: (TransportScope) -> StateFlow<Map<String, BrowseThreadActivity>>,
     private val persistCollapsedWorkspaceIds: (String, Set<String>) -> Unit,
+    private val snapshots: RoomBrowseSnapshotStore,
 ) : RootNavigationRuntime {
     override val statuses: StateFlow<Map<String, ConnectionRuntimeState>> = fleet.statuses
     override val composerDrafts = composer.drafts
@@ -79,4 +83,7 @@ class AndroidRootNavigationRuntime(
     override fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) {
         persistCollapsedWorkspaceIds(connectionId, workspaceIds)
     }
+
+    override fun browseSnapshotStore(snapshot: OfflineSnapshot): BrowseSnapshotStore =
+        snapshots.apply { seed(snapshot.browseSnapshots) }
 }

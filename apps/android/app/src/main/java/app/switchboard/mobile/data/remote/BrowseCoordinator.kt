@@ -51,13 +51,20 @@ class BrowseCoordinator(
     private val expectedGeneration: Long? = null,
     initialCollapsedWorkspaceIds: Set<String> = emptySet(),
     private val collapsePreferenceStore: BrowseCollapsePreferenceStore? = null,
+    private val snapshotStore: BrowseSnapshotStore = EmptyBrowseSnapshotStore,
 ) {
+    private val saved = runCatching { snapshotStore.load(connectionId) }
+        .getOrDefault(BrowseSnapshotSeed())
     private val mutableState = MutableStateFlow(
         BrowseState(
             connectionId = connectionId,
             connectionLabel = connectionLabel,
             offlineSnapshot = offlineSnapshot,
-            projects = BrowseLoadState.Loading(),
+            projects = saved.projects.asCachedLoadState { BrowseProjectRecord(it) },
+            workspaces = saved.workspaces.asCachedLoadState { it },
+            conversationsByProject = saved.conversationsByProject.mapValues { (_, conversations) ->
+                conversations.asCachedLoadState { BrowseConversationRecord(it) }
+            },
             collapsedWorkspaceIds = initialCollapsedWorkspaceIds,
             threadActivity = BrowseCachedActivity.from(offlineSnapshot, connectionId),
         ),
@@ -183,9 +190,10 @@ class BrowseCoordinator(
         ) return
         val cached = mutableState.value.projects.items()
         val next = when (val outcome = response.outcome) {
-            is RemoteOutcome.Success -> BrowseLoadState.Ready(
-                outcome.value.map { BrowseProjectRecord(it) },
-            )
+            is RemoteOutcome.Success -> {
+                runCatching { snapshotStore.saveProjects(connectionId, outcome.value) }
+                BrowseLoadState.Ready(outcome.value.map { BrowseProjectRecord(it) })
+            }
             is RemoteOutcome.Failure -> BrowseLoadState.Failed(outcome.message, cached)
         }
         mutableState.value = mutableState.value.copy(projects = next)
@@ -199,7 +207,10 @@ class BrowseCoordinator(
         if (!accepts(response) || workspaceRequest != request) return
         val cached = mutableState.value.workspaces.items()
         val next = when (val outcome = response.outcome) {
-            is RemoteOutcome.Success -> BrowseLoadState.Ready(outcome.value)
+            is RemoteOutcome.Success -> {
+                runCatching { snapshotStore.saveWorkspaces(connectionId, outcome.value) }
+                BrowseLoadState.Ready(outcome.value)
+            }
             is RemoteOutcome.Failure -> BrowseLoadState.Failed(outcome.message, cached)
         }
         mutableState.value = mutableState.value.copy(workspaces = next)
@@ -218,14 +229,17 @@ class BrowseCoordinator(
         ) return
         val cached = mutableState.value.conversationsByProject[projectPath]?.items().orEmpty()
         val next = when (val outcome = response.outcome) {
-            is RemoteOutcome.Success -> BrowseLoadState.Ready(
-                outcome.value.map { conversation ->
+            is RemoteOutcome.Success -> {
+                runCatching {
+                    snapshotStore.saveConversations(connectionId, projectPath, outcome.value)
+                }
+                BrowseLoadState.Ready(outcome.value.map { conversation ->
                     val title = optimisticRenames[conversation.id]?.requestedTitle
                     BrowseConversationRecord(
                         if (title == null) conversation else conversation.copy(title = title),
                     )
-                },
-            )
+                })
+            }
             is RemoteOutcome.Failure -> BrowseLoadState.Failed(outcome.message, cached)
         }
         mutableState.value = mutableState.value.copy(
@@ -288,6 +302,13 @@ class BrowseCoordinator(
         val requestedTitle: String,
     )
 }
+
+private fun <T, R> List<T>.asCachedLoadState(transform: (T) -> R): BrowseLoadState<R> =
+    if (isEmpty()) {
+        BrowseLoadState.Loading()
+    } else {
+        BrowseLoadState.Ready(map(transform), cached = true)
+    }
 
 private fun <T> BrowseLoadState<T>.items(): List<T> = when (this) {
     is BrowseLoadState.Loading -> cached

@@ -12,6 +12,7 @@ import app.switchboard.mobile.domain.remote.ChatMessage
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MarkReadResult
+import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteRequestKey
 import app.switchboard.mobile.domain.remote.RemoteResponse
@@ -298,6 +299,86 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `skills load is thread scoped and rejects a stale generation response`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+
+        assertEquals(listOf("thread-1"), remote.skillThreadIds)
+        remote.completeSkills(
+            success("skills", listOf(skill("stale"))),
+            scope.copy(generation = 6),
+        )
+        assertTrue(coordinator.state.value.skills.isEmpty())
+
+        remote.completeSkills(success("skills", listOf(skill("commit"))))
+
+        assertEquals(listOf("commit"), coordinator.state.value.skills.map { it.name })
+    }
+
+    @Test
+    fun `pending interaction ids survive until matching acknowledgement or definite failure`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort().also {
+            it.results += durable("plan-origin", ThreadSessionCoordinator.IMPLEMENT_PLAN_MESSAGE)
+        }
+        val coordinator = coordinator(remote, enqueue = enqueue)
+        coordinator.start()
+
+        coordinator.perform(
+            ThreadSessionControl.Approval("approval-1", ApprovalDecision.Deny),
+        )
+        assertEquals(
+            ApprovalDecision.Deny,
+            coordinator.state.value.pendingActions.approvalDecisions["approval-1"],
+        )
+        remote.completeApproval(failure("approval", "rejected"))
+        assertFalse("approval-1" in coordinator.state.value.pendingActions.approvalDecisions)
+
+        coordinator.perform(
+            ThreadSessionControl.AnswerQuestion("question-1", listOf(listOf("A"))),
+        )
+        assertTrue("question-1" in coordinator.state.value.pendingActions.questionRequestIds)
+        remote.completeQuestion(failure("question", "expired"))
+        assertFalse("question-1" in coordinator.state.value.pendingActions.questionRequestIds)
+
+        coordinator.perform(
+            ThreadSessionControl.Plan("plan-1", ThreadSessionPlanAction.Implement),
+        )
+        assertTrue("plan-1" in coordinator.state.value.pendingActions.planIds)
+        remote.emit(
+            scope.copy(generation = 6),
+            userMessage("thread-1", "plan-origin", ThreadSessionCoordinator.IMPLEMENT_PLAN_MESSAGE),
+        )
+        assertTrue("plan-1" in coordinator.state.value.pendingActions.planIds)
+        remote.emit(
+            scope,
+            userMessage("thread-1", "plan-origin", ThreadSessionCoordinator.IMPLEMENT_PLAN_MESSAGE),
+        )
+        assertFalse("plan-1" in coordinator.state.value.pendingActions.planIds)
+    }
+
+    @Test
+    fun `clear visible feed is phone local and preserves thread metadata`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(
+                feed = listOf(FeedItem.User("saved", "hello", 1)),
+                runtimeMode = "plan",
+                provider = "codex",
+            ),
+        )
+
+        coordinator.clearVisibleFeed()
+
+        assertTrue(coordinator.currentThread()?.feed.orEmpty().isEmpty())
+        assertEquals("plan", coordinator.currentThread()?.runtimeMode)
+        assertEquals("codex", coordinator.currentThread()?.provider)
+        assertTrue(remote.loadedThreadIds.isEmpty())
+    }
+
+    @Test
     fun `refresh does not duplicate an optimistic turn already present in history`() {
         val remote = FakeThreadSessionRemote(scope)
         val enqueue = FakeEnqueuePort().also {
@@ -436,6 +517,15 @@ class ThreadSessionCoordinatorTest {
     private fun message(id: String, role: String, content: String, at: Long) =
         ChatMessage(id, role, content, at, emptyJson())
 
+    private fun skill(name: String) = ProviderSkill(
+        name = name,
+        description = null,
+        argumentHint = null,
+        path = null,
+        source = "codex",
+        raw = emptyJson(),
+    )
+
     private fun content(
         threadId: String,
         messageId: String,
@@ -568,6 +658,9 @@ private class FakeThreadSessionRemote(
     val modeCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
     val interruptedThreadIds = mutableListOf<String>()
     val interruptCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
+    val skillThreadIds = mutableListOf<String>()
+    val skillCallbacks = mutableListOf<(RemoteResponse<List<ProviderSkill>?>) -> Unit>()
+    val questionCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
 
     override fun subscribe(listener: (ThreadEventScope, RuntimeEventPayload) -> Unit): Cancelable {
         this.listener = listener
@@ -582,6 +675,14 @@ private class FakeThreadSessionRemote(
     override fun markRead(threadId: String, callback: (RemoteResponse<MarkReadResult>) -> Unit) {
         markedReadThreadIds += threadId
         markReadCallbacks += callback
+    }
+
+    override fun listSkills(
+        threadId: String,
+        callback: (RemoteResponse<List<ProviderSkill>?>) -> Unit,
+    ) {
+        skillThreadIds += threadId
+        skillCallbacks += callback
     }
 
     override fun respondToRequest(
@@ -601,6 +702,7 @@ private class FakeThreadSessionRemote(
         callback: (RemoteResponse<CommandBody>) -> Unit,
     ) {
         this.answers += requestId to answers
+        questionCallbacks += callback
     }
 
     override fun setRuntimeMode(
@@ -646,7 +748,18 @@ private class FakeThreadSessionRemote(
         approvalCallbacks.removeAt(0)(response)
     }
 
-    private fun <T> RemoteResponse<T>.withScope(scope: ThreadEventScope) = copy(
+    fun completeQuestion(response: RemoteResponse<CommandBody>) {
+        questionCallbacks.removeAt(0)(response)
+    }
+
+    fun completeSkills(
+        response: RemoteResponse<List<ProviderSkill>?>,
+        responseScope: ThreadEventScope = scope,
+    ) {
+        skillCallbacks.first()(response.withScope(responseScope))
+    }
+
+    fun <T> RemoteResponse<T>.withScope(scope: ThreadEventScope) = copy(
         key = key.copy(connectionId = scope.connectionId, generation = scope.generation),
     )
 }

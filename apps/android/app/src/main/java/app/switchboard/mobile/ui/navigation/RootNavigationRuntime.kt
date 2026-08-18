@@ -1,6 +1,8 @@
 package app.switchboard.mobile.ui.navigation
 
 import app.switchboard.mobile.data.remote.ReadyClientLease
+import app.switchboard.mobile.data.remote.BrowseSnapshotStore
+import app.switchboard.mobile.data.remote.EmptyBrowseSnapshotStore
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.thread.ThreadSessionRemote
 import app.switchboard.mobile.data.thread.ThreadState
@@ -79,6 +81,8 @@ interface RootNavigationRuntime {
         BrowseCollapsePreferences.initial(snapshot, connectionId)
 
     fun saveCollapsedWorkspaceIds(connectionId: String, workspaceIds: Set<String>) = Unit
+
+    fun browseSnapshotStore(snapshot: OfflineSnapshot): BrowseSnapshotStore = EmptyBrowseSnapshotStore
 
     fun cachedThread(connectionId: String, threadId: String): ThreadState? = null
 }

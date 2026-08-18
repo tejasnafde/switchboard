@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
             removeConnection = switchboardApplication::removeConnection,
             activity = switchboardApplication::browseActivity,
             persistCollapsedWorkspaceIds = switchboardApplication::saveCollapsedWorkspaceIds,
+            snapshots = switchboardApplication.browseSnapshotStore,
         )
     }
 

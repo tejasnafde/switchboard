@@ -19,11 +19,12 @@ class ThreadSessionCommandRouterTest {
         router.perform(action)
         router.interrupt()
         router.selectRuntimeMode(RuntimeMode.Plan)
+        router.clearVisibleFeed()
 
         assertTrueEvents(emptyList(), port.events)
         while (pending.isNotEmpty()) pending.removeFirst().invoke()
         assertTrueEvents(
-            listOf("send", "action:$action", "interrupt", "mode:Plan"),
+            listOf("send", "action:$action", "interrupt", "mode:Plan", "clear-local"),
             port.events,
         )
     }
@@ -50,5 +51,9 @@ private class FakeThreadSessionCommands : ThreadSessionCommandPort {
 
     override fun selectRuntimeMode(mode: RuntimeMode) {
         events += "mode:${mode.name}"
+    }
+
+    override fun clearVisibleFeed() {
+        events += "clear-local"
     }
 }

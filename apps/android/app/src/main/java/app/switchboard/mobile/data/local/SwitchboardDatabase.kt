@@ -17,6 +17,7 @@ import androidx.room.migration.Migration
         CollapsedWorkspaceEntity::class,
         CachedThreadEntity::class,
         CachedFeedRowEntity::class,
+        BrowseSnapshotEntity::class,
         OutboxEntity::class,
         OutboxAttachmentEntity::class,
         ReplayStateEntity::class,
@@ -24,7 +25,7 @@ import androidx.room.migration.Migration
         MigrationCheckpointEntity::class,
         QuarantinedRecordEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class SwitchboardDatabase : RoomDatabase() {
@@ -36,6 +37,7 @@ abstract class SwitchboardDatabase : RoomDatabase() {
     abstract fun syncStateDao(): SyncStateDao
     abstract fun migrationDao(): MigrationDao
     abstract fun offlineSnapshotDao(): OfflineSnapshotDao
+    abstract fun browseSnapshotDao(): BrowseSnapshotDao
 
     companion object {
         const val DATABASE_NAME = "switchboard-native.db"
@@ -89,7 +91,31 @@ abstract class SwitchboardDatabase : RoomDatabase() {
                 )
             }
         }
-        private val EXPLICIT_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `browse_snapshots` (
+                        `snapshotKey` TEXT NOT NULL,
+                        `connectionId` TEXT NOT NULL,
+                        `kind` TEXT NOT NULL,
+                        `projectPath` TEXT,
+                        `rawJson` TEXT NOT NULL,
+                        `updatedAtMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`snapshotKey`),
+                        FOREIGN KEY(`connectionId`) REFERENCES `connections`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_browse_snapshots_connectionId` " +
+                        "ON `browse_snapshots` (`connectionId`)",
+                )
+            }
+        }
+        private val EXPLICIT_MIGRATIONS: Array<Migration> =
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         fun open(context: Context): SwitchboardDatabase = Room.databaseBuilder(
             context.applicationContext,

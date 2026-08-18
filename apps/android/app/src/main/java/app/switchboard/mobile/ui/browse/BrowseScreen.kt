@@ -24,12 +24,14 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -155,6 +157,7 @@ private fun BrowseTopBar(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun ProjectsSurface(
     presentation: BrowseProjectsPresentation,
     workspaces: List<app.switchboard.mobile.domain.remote.Workspace>,
@@ -191,42 +194,49 @@ private fun ProjectsSurface(
                 )
             }
             val byPath = remember(presentation.rows) { presentation.rows.associateBy { it.path } }
-            LazyColumn(
+            PullToRefreshBox(
+                isRefreshing = presentation.status.showProgress,
+                onRefresh = onRetry,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                item { BrowseStatusRow(presentation.status, onRetry) }
-                if (BrowseParityDecisions.showProjectSearch(presentation.rows.size, query)) {
-                    item {
-                        BrowseSearchField(
-                            value = query,
-                            onValueChange = { query = it },
-                            label = "Search projects",
-                        )
-                    }
-                }
-                sections.forEach { section ->
-                    if (sections.size > 1) {
-                        item(key = "workspace:${section.key}") {
-                            WorkspaceHeader(
-                                section = section,
-                                onToggle = { onToggleWorkspace(section.key) },
-                                toggleEnabled = query.isBlank(),
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                ) {
+                    item { BrowseStatusRow(presentation.status, onRetry) }
+                    if (BrowseParityDecisions.showProjectSearch(presentation.rows.size, query)) {
+                        item {
+                            BrowseSearchField(
+                                value = query,
+                                onValueChange = { query = it },
+                                label = "Search projects",
                             )
                         }
                     }
-                    items(section.projects, key = Project::path) { project ->
-                        val row = requireNotNull(byPath[project.path])
-                        ProjectRow(row = row, onClick = { onProjectTap(row) })
+                    sections.forEach { section ->
+                        if (sections.size > 1) {
+                            item(key = "workspace:${section.key}") {
+                                WorkspaceHeader(
+                                    section = section,
+                                    onToggle = { onToggleWorkspace(section.key) },
+                                    toggleEnabled = query.isBlank(),
+                                )
+                            }
+                        }
+                        items(section.projects, key = Project::path) { project ->
+                            val row = requireNotNull(byPath[project.path])
+                            ProjectRow(row = row, onClick = { onProjectTap(row) })
+                        }
                     }
+                    item { Spacer(Modifier.navigationBarsPadding()) }
                 }
-                item { Spacer(Modifier.navigationBarsPadding()) }
             }
         }
     }
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun ConversationsSurface(
     presentation: BrowseConversationsPresentation,
     projectName: String,
@@ -255,36 +265,42 @@ private fun ConversationsSurface(
                     BrowseParityDecisions.conversationTitleMatches(it.title, query)
                 }
             }
-            LazyColumn(
+            PullToRefreshBox(
+                isRefreshing = presentation.status.showProgress,
+                onRefresh = onRetry,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp),
             ) {
-                item { BrowseStatusRow(presentation.status, onRetry) }
-                if (BrowseParityDecisions.showConversationSearch(presentation.rows.size, query)) {
-                    item {
-                        BrowseSearchField(
-                            value = query,
-                            onValueChange = { query = it },
-                            label = "Search conversations",
-                        )
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                ) {
+                    item { BrowseStatusRow(presentation.status, onRetry) }
+                    if (BrowseParityDecisions.showConversationSearch(presentation.rows.size, query)) {
+                        item {
+                            BrowseSearchField(
+                                value = query,
+                                onValueChange = { query = it },
+                                label = "Search conversations",
+                            )
+                        }
                     }
-                }
-                items(visible, key = BrowseConversationRow::id) { row ->
-                    ConversationRow(
-                        row = row,
-                        onClick = { onSessionTap(row) },
-                        onLongClick = { renaming = row },
-                    )
-                    renameErrors[row.id]?.let { message ->
-                        Text(
-                            text = message,
-                            color = Red,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                    items(visible, key = BrowseConversationRow::id) { row ->
+                        ConversationRow(
+                            row = row,
+                            onClick = { onSessionTap(row) },
+                            onLongClick = { renaming = row },
                         )
+                        renameErrors[row.id]?.let { message ->
+                            Text(
+                                text = message,
+                                color = Red,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                            )
+                        }
                     }
+                    item { Spacer(Modifier.navigationBarsPadding()) }
                 }
-                item { Spacer(Modifier.navigationBarsPadding()) }
             }
             renaming?.let { row ->
                 RenameConversationDialog(

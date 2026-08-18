@@ -105,6 +105,27 @@ data class CachedThreadEntity(
 )
 
 @Entity(
+    tableName = "browse_snapshots",
+    indices = [Index("connectionId")],
+    foreignKeys = [
+        ForeignKey(
+            entity = ConnectionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["connectionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+)
+data class BrowseSnapshotEntity(
+    @androidx.room.PrimaryKey val snapshotKey: String,
+    val connectionId: String,
+    val kind: String,
+    val projectPath: String?,
+    val rawJson: String,
+    val updatedAtMs: Long,
+)
+
+@Entity(
     tableName = "cached_feed_rows",
     primaryKeys = ["threadKey", "position"],
     foreignKeys = [
@@ -246,4 +267,5 @@ data class OfflineSnapshot(
     val pendingControlActions: List<PendingControlActionEntity>,
     val quarantinedRecords: List<QuarantinedRecordEntity>,
     val draftAttachments: List<ComposerDraftAttachmentEntity> = emptyList(),
+    val browseSnapshots: List<BrowseSnapshotEntity> = emptyList(),
 )

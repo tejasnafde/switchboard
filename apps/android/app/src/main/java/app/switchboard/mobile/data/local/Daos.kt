@@ -277,6 +277,18 @@ interface MigrationDao {
 }
 
 @Dao
+interface BrowseSnapshotDao {
+    @Upsert
+    fun upsert(snapshot: BrowseSnapshotEntity)
+
+    @Query("SELECT * FROM browse_snapshots WHERE connectionId = :connectionId ORDER BY snapshotKey")
+    fun forConnection(connectionId: String): List<BrowseSnapshotEntity>
+
+    @Query("DELETE FROM browse_snapshots WHERE connectionId = :connectionId")
+    fun deleteConnection(connectionId: String)
+}
+
+@Dao
 abstract class OfflineSnapshotDao {
     @Query("SELECT * FROM connections ORDER BY id")
     protected abstract fun connections(): List<ConnectionEntity>
@@ -320,6 +332,9 @@ abstract class OfflineSnapshotDao {
     @Query("SELECT * FROM draft_attachments ORDER BY threadKey, position")
     protected abstract fun draftAttachments(): List<ComposerDraftAttachmentEntity>
 
+    @Query("SELECT * FROM browse_snapshots ORDER BY snapshotKey")
+    protected abstract fun browseSnapshots(): List<BrowseSnapshotEntity>
+
     @Transaction
     open fun read(): OfflineSnapshot = OfflineSnapshot(
         connections = connections(),
@@ -336,5 +351,6 @@ abstract class OfflineSnapshotDao {
         pendingControlActions = pendingControlActions(),
         quarantinedRecords = quarantinedRecords(),
         draftAttachments = draftAttachments(),
+        browseSnapshots = browseSnapshots(),
     )
 }

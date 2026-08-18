@@ -21,6 +21,7 @@ import app.switchboard.mobile.data.outbox.OutboxObserver
 import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.data.outbox.RoomOutboxStore
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
+import app.switchboard.mobile.data.remote.RoomBrowseSnapshotStore
 import app.switchboard.mobile.data.remote.ReadyEndpointLookup
 import app.switchboard.mobile.domain.push.ExpoPushProjectIdentity
 import app.switchboard.mobile.domain.push.PushRegistrationCoordinator
@@ -88,6 +89,7 @@ class NativeAndroidRuntime private constructor(
     val notificationRoutes: NotificationRouteInbox,
     val notificationPermissions: AndroidNotificationPermissionController,
     val viewingLeaseRenewals: ViewingLeaseRenewalHooks,
+    val browseSnapshots: RoomBrowseSnapshotStore,
     private val pushRegistration: PushRegistrationCoordinator,
     private val pushTokenRuntime: PushTokenRuntime,
     private val requestPushToken: () -> Unit,
@@ -204,6 +206,11 @@ class NativeAndroidRuntime private constructor(
                 SharedPreferencesDeviceIdentityStorage(applicationContext),
             ).get()
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val browseSnapshots = RoomBrowseSnapshotStore(
+                initial = emptyList(),
+                dao = database.browseSnapshotDao(),
+                writes = java.util.concurrent.Executor { command -> scope.launch { command.run() } },
+            )
             val transportScheduler = ExecutorTransportScheduler()
             val outboxScheduler = ExecutorTransportScheduler()
             val retryScheduler = TransportOutboxRetryScheduler(outboxScheduler)
@@ -318,6 +325,7 @@ class NativeAndroidRuntime private constructor(
                 notificationRoutes = notificationRoutes,
                 notificationPermissions = notificationPermissions,
                 viewingLeaseRenewals = viewingLeaseRenewals,
+                browseSnapshots = browseSnapshots,
                 pushRegistration = pushRegistration,
                 pushTokenRuntime = pushTokenRuntime,
                 requestPushToken = {

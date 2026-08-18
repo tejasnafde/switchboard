@@ -284,6 +284,9 @@ private fun ConnectedBrowseRoute(
     val initialCollapsed = remember(route.connectionId, snapshot) {
         runtime.collapsedWorkspaceIds(route.connectionId, snapshot)
     }
+    val snapshotStore = remember(runtime, snapshot) {
+        runtime.browseSnapshotStore(snapshot)
+    }
     val coordinator = remember(route.connectionId, route.connectionLabel, lease.scope) {
         BrowseCoordinator(
             connectionId = route.connectionId,
@@ -295,6 +298,7 @@ private fun ConnectedBrowseRoute(
             collapsePreferenceStore = { connectionId, workspaceIds ->
                 runtime.saveCollapsedWorkspaceIds(connectionId, workspaceIds)
             },
+            snapshotStore = snapshotStore,
         )
     }
     val state by coordinator.state.collectAsState()

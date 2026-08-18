@@ -107,12 +107,14 @@ recognition speed and scan-to-connect remain hardware checks.
 - [x] Decode current project, conversation, workspace, provider-instance,
   settings and session-start channels with exact positional arguments and
   preserve unknown successful-response fields.
-- [ ] Projects load offline snapshot first, then best-effort refresh.
+- [x] Projects and conversations load connection-scoped Room snapshots first,
+  then best-effort refresh. Successful refreshes preserve exact backend objects;
+  malformed cached scopes cannot discard valid scopes.
 - [x] Group projects by workspace, preserve backend ordering and
   connection-scoped collapse preferences, aggregate unread state and show
   counts/status. Migrated global collapse rows seed the scoped preference.
-- [~] Search appears at the RN threshold and filters groups without empty
-  shells; native pull-to-refresh remains to be added.
+- [x] Search appears at the RN threshold and filters groups without empty
+  shells; projects and conversations both support native pull-to-refresh.
 - [~] Projects expose loading, empty, offline and retryable error states;
   domain-specific unsupported presentation still needs real backend fixtures.
 - [~] Conversations sort like the RN client, show unread/runtime status and
@@ -130,6 +132,7 @@ recognition speed and scan-to-connect remain hardware checks.
 Automated projects/conversations evidence: `BrowseParityDecisionsTest`,
 `BrowseCollapsePreferencesTest`, `BrowseThreadActivityIndexTest`,
 `BrowseCoordinatorTest`, `BrowsePresentationTest`,
+`RoomBrowseSnapshotStoreTest`, compiled Room v3-to-v4 migration coverage,
 `SwitchboardRemoteClientTest` and `NavigationStateTest`.
 
 ## New session and authoritative controls
@@ -168,9 +171,10 @@ and first-message delivery still require physical-device/backend smoke testing.
 - [~] Deduplicate event echoes and repeated cards using stable identities.
 - [~] On replay gap, invalidate only affected connection data; buffer live
   events per thread until snapshot replacement, then replay FIFO.
-- [ ] Render user/image messages, Markdown, assistant/reasoning/plan streams,
+- [~] Render text messages, Markdown, assistant/reasoning/plan streams,
   tools, denials, approvals, questions, proposed plans, file edits, errors,
-  notices, retry, drift, spend, peer and todo events.
+  notices, retry, drift, spend, peer and todo events. Historical inline image
+  decoding/rendering and a lightbox remain.
 - [ ] Show duration, cost/context metadata and stable connection/thread status.
 - [ ] Mark/renew viewing leases while focused and reconstruct unread state after
   process death.
@@ -191,7 +195,7 @@ and first-message delivery still require physical-device/backend smoke testing.
   ambiguous transport failures remain durable.
 - [~] Durable queued/ambiguous/terminal cards expose valid retry/edit/dismiss
   actions and image-only sends are allowed; full optimistic/feed parity remains.
-- [ ] Slash menu includes built-ins plus provider skills; `/image` opens native
+- [x] Slash menu includes built-ins plus provider skills; `/image` opens native
   image selection and mode commands change the actual send mode.
 - [~] Up to four images have bounded previews and removal; size/downscale limits
   and lightbox remain. Owned attachment files are removed only after the Room
@@ -211,23 +215,30 @@ failure and real backend delivery/edit flows still require device testing.
 
 ## Approvals, questions and plans
 
-- [ ] Approval allow/deny actions use durable request IDs and remain visibly
+- [x] Approval allow/deny actions use exact request IDs and remain visibly
   pending until backend acknowledgement.
-- [ ] Question cards support single/multi-select, submit answers together and
-  restore pending selections after process recreation.
-- [ ] Proposed plans preserve Implement and Iterate semantics.
-- [ ] Repeated taps are idempotent; offline and ambiguous results never show a
+- [~] Question cards support single/multi-select, submit answers together and
+  save pending selections through Activity/process state; killed-process
+  backend acknowledgement still needs device verification.
+- [x] Proposed plans preserve Implement and Iterate semantics.
+- [x] Repeated taps are idempotent; offline and ambiguous results never show a
   false completion.
-- [ ] Mobile file-edit cards remain informational where the backend does not
+- [x] Mobile file-edit cards remain informational where the backend does not
   support phone-side hunk application.
+
+Automated thread/control evidence: `ThreadRichTextTest`,
+`ThreadSlashCommandsTest`, `ThreadSessionCoordinatorTest`,
+`ThreadSessionCommandRouterTest` and `ThreadPresentationTest`.
 
 ## Google account and IAP
 
 - [ ] Sign-in screen supports browser OAuth and QR credential import, signed-in
   identity, refresh, revoke/sign-out, cancellation and permission errors.
-- [ ] Migrate all six `sb.google.*` credential keys without deleting Expo data.
-- [ ] Refresh before expiry, serialize refresh, and turn invalid grants into a
-  signed-out state instead of an infinite retry loop.
+- [~] A verified native encrypted store and idempotent, read-only importer cover
+  all six `sb.google.*` credential keys without deleting Expo data. Startup/UI
+  integration remains.
+- [~] Pure coordination refreshes before expiry, serializes refresh, and turns
+  invalid grants into a signed-out state instead of an infinite retry loop.
 - [ ] IAP transport handles split UTF-8 frames, bounded queues, timeouts,
   backend auth/readiness, tunnel drops and snapshot recovery.
 - [H] Exercise real Google login/refresh/revoke and IAP to discovered and manual
@@ -235,12 +246,14 @@ failure and real backend delivery/edit flows still require device testing.
 
 ## Voice, lifecycle and dynamic hardware
 
-- [ ] Mic tap/hold semantics, live partial transcript, stop/send decision,
-  slide-up lock and sideways cancel match RN.
-- [ ] Cancel restores the original draft; edits made during optional transcript
-  refinement always win over stale refinement output.
-- [ ] Permission denial shows an actionable settings path; backgrounding stops
-  capture cleanly and no recorder/listener leaks survive screen destruction.
+- [~] Pure/controller behavior covers mic tap/hold semantics, live partial
+  transcript, non-sending stop, slide-up lock and sideways cancel; Compose
+  gesture integration remains.
+- [x] Cancel restores the exact original draft; edits made during optional
+  transcript refinement always win over stale refinement output.
+- [~] Android permission/settings and `SpeechRecognizer` adapters are present;
+  controller background/disposal paths stop capture idempotently. Compose and
+  application lifecycle integration remains.
 - [ ] Temporary display/service/process disappearance is treated as dynamic
   topology; recovery does not overwrite the user's saved display preference.
 - [~] Process visibility ignores pause-only transitions and configuration
