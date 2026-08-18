@@ -5,6 +5,9 @@
  * only the channel args - never the Electron event - to stay transport-agnostic.
  */
 import { ipcMain, type BrowserWindow } from 'electron'
+import { hashClientScope, withBackendRequestContext } from './request-context'
+
+const ELECTRON_CLIENT_SCOPE = hashClientScope('electron', 'local-renderer')
 
 export interface BackendHost {
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void
@@ -18,12 +21,14 @@ export class ElectronIpcHost implements BackendHost {
 
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void {
     ipcMain.removeHandler(channel) // idempotent re-registration (StrictMode / reloads)
-    ipcMain.handle(channel, (_event, ...args) => fn(...(args as A)))
+    ipcMain.handle(channel, (_event, ...args) =>
+      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE }, () => fn(...(args as A))))
   }
 
   on<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => void): void {
     ipcMain.removeAllListeners(channel)
-    ipcMain.on(channel, (_event, ...args) => fn(...(args as A)))
+    ipcMain.on(channel, (_event, ...args) =>
+      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE }, () => fn(...(args as A))))
   }
 
   emit(channel: string, ...args: unknown[]): void {

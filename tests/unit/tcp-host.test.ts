@@ -91,6 +91,10 @@ describe('TcpHost auth gate', () => {
     const { socket: s2, r } = await dial(p2)
     s2.write(JSON.stringify({ k: 'auth', token: 's3cret' }) + '\n')
     expect(await r.next()).toMatchObject({ ok: true, result: 'authed' })
+    expect(await r.next()).toMatchObject({
+      k: 'ready',
+      capabilities: ['durable_turn_origin'],
+    })
   })
 
   it('a tokenless host needs no auth frame', async () => {

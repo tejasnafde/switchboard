@@ -6,11 +6,12 @@
  * With a token set, the first line must be {"k":"auth","token":...} or the
  * socket is destroyed, and emit() never reaches an unauthenticated client.
  */
-import { timingSafeEqual } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Server, Socket } from 'node:net'
-import { encodeFrame, decodeFrame, type WsFrame } from '@shared/ws-protocol'
+import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, type WsFrame } from '@shared/ws-protocol'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
+import { hashClientScope, withBackendRequestContext } from './request-context'
 
 const log = createLogger('backend:tcp-host')
 
@@ -32,12 +33,14 @@ interface Client {
   socket: Socket
   buf: string
   authed: boolean
+  clientScope: string
 }
 
 export class TcpHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
   private readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>()
   private readonly clients = new Set<Client>()
+  private readonly epoch = randomUUID()
 
   constructor(
     server: Server,
@@ -45,7 +48,14 @@ export class TcpHost implements BackendHost {
   ) {
     server.on('connection', (socket) => {
       socket.setNoDelay(true)
-      const client: Client = { socket, buf: '', authed: !this.token }
+      const client: Client = {
+        socket,
+        buf: '',
+        authed: !this.token,
+        clientScope: this.token
+          ? hashClientScope('legacy-tcp-token', this.token)
+          : hashClientScope('trusted-tcp', 'local-trust-boundary'),
+      }
       this.clients.add(client)
       log.info(`client connected (${this.clients.size} total)`)
 
@@ -93,6 +103,7 @@ export class TcpHost implements BackendHost {
       }
       client.authed = true
       this.write(client, { k: 'res', id: 0, ok: true, result: 'authed' })
+      this.writeReady(client)
       return
     }
 
@@ -108,7 +119,10 @@ export class TcpHost implements BackendHost {
         return
       }
       try {
-        const result = await handler(...frame.args)
+        const result = await withBackendRequestContext(
+          { clientScope: client.clientScope },
+          () => handler(...frame.args),
+        )
         this.write(client, { k: 'res', id: frame.id, ok: true, result })
       } catch (err) {
         this.write(client, {
@@ -120,8 +134,23 @@ export class TcpHost implements BackendHost {
       }
     } else if (frame.k === 'snd') {
       const fns = this.listeners.get(frame.ch)
-      if (fns) for (const fn of fns) fn(...frame.args)
+      if (fns) for (const fn of fns) {
+        withBackendRequestContext({ clientScope: client.clientScope }, () => fn(...frame.args))
+      }
+    } else if (frame.k === 'hello') {
+      this.writeReady(client)
     }
+  }
+
+  private writeReady(client: Client): void {
+    this.write(client, {
+      k: 'ready',
+      epoch: this.epoch,
+      seq: 0,
+      replayed: 0,
+      gap: false,
+      capabilities: [...BACKEND_CAPABILITIES],
+    })
   }
 
   private write(client: Client, frame: WsFrame): void {

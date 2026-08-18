@@ -15,12 +15,19 @@ import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-dr
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { TurnDeduper } from '@shared/turn-dedupe'
 import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId } from '../db/database'
+import { recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb } from '../db/database'
+import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
+import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
+import {
+  DurableTurnAcceptance,
+  TurnNotAcceptedError,
+  turnPayloadHash,
+  type TurnAcceptanceResult,
+} from './durable-turn-acceptance'
 import { sessionDefaultsFor } from './session-defaults'
 import {
   PeerAgentSendGuard,
@@ -82,8 +89,8 @@ export class ProviderRegistry implements PeerToolHost {
    * same way in chat.
    */
   private checkpoints = new CheckpointTracker()
-  /** Turn origins already accepted, so a client retry cannot run twice. */
-  private turnDedupe = new TurnDeduper()
+  /** Durable origin acceptance shared by every transport and backend restart. */
+  private readonly turnAcceptance: DurableTurnAcceptance
   /** Provider startup shared by every client that reaches a thread before its adapter exists. */
   private startingSessions = new Map<string, Promise<ProviderSession>>()
 
@@ -98,7 +105,11 @@ export class ProviderRegistry implements PeerToolHost {
 
   // `adapters` is injectable for tests (e.g. a mock echo provider exercising
   // the full path over a WsHost); production passes none and gets the real set.
-  constructor(host: BackendHost, adapters?: Map<ProviderKind, ProviderAdapter>) {
+  constructor(
+    host: BackendHost,
+    adapters?: Map<ProviderKind, ProviderAdapter>,
+    turnAcceptance?: DurableTurnAcceptance,
+  ) {
     activeRegistry = this
     this.host = host
     this.opencodeAcp = new OpencodeAcpAdapter()
@@ -107,6 +118,9 @@ export class ProviderRegistry implements PeerToolHost {
       ['codex', new CodexAdapter()],
       ['opencode', this.opencodeAcp],
     ])
+    this.turnAcceptance = turnAcceptance ?? new DurableTurnAcceptance(
+      new SqliteTurnAcceptanceStore(() => getDb()),
+    )
     this.bus = new RuntimeEventBus()
     this.rendererUnsub = this.bus.subscribe((event) => this.forwardToRenderer(event))
     // Lets an adapter expose the peer tools to its model. Only the Claude
@@ -671,7 +685,7 @@ export class ProviderRegistry implements PeerToolHost {
       }
     })
 
-    this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) => {
+    this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string): Promise<TurnAcceptanceResult | undefined> => {
       const starting = this.startingSessions.get(threadId)
       if (starting) await starting
       const adapter = this.sessionAdapters.get(threadId)
@@ -679,36 +693,46 @@ export class ProviderRegistry implements PeerToolHost {
         log.warn(`sendTurn ${threadId} - no adapter (session not started?)`)
         throw new Error(`No session: ${threadId}`)
       }
-      // A client that retried after an ambiguous failure (socket died with the
-      // request on the wire, invoke timed out) cannot know whether this ran.
-      // Retrying is the right client behaviour, so the duplicate has to be
-      // caught here or the user gets the same turn twice.
-      if (this.turnDedupe.isDuplicate(origin)) {
-        log.info(`sendTurn ${threadId} - duplicate origin ${origin}, already accepted`)
-        return
-      }
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${images?.length ?? 0}`)
-      // Snapshot the working tree BEFORE the agent edits, so the post-turn
-      // diff isolates exactly this turn's changes. No-op for non-git dirs.
-      const cwd = this.sessionCwd.get(threadId)
-      if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
-      notebookManager.beginTurn(threadId)
-      // The human is back in the loop, so this thread is zero hops from a
-      // message the user wrote and its agent may hand a finding on again.
-      this.turnDepth.set(threadId, 0)
-      // Broadcast the user's turn: adapters only emit the agent's side, so
-      // without this a message typed on one client is invisible everywhere
-      // else. The sender skips its own echo via `origin`.
-      this.activeTurns.add(threadId)
-      try {
-        await adapter.sendTurn(threadId, message, runtimeMode, images)
-      } catch (err) {
-        this.activeTurns.delete(threadId)
-        // Release the origin: the turn did NOT happen, so the client's retry
-        // must be allowed through. Holding it would answer the retry with a
-        // cheerful success and drop the message silently.
-        this.turnDedupe.release(origin)
-        throw err
+      const dispatch = async (): Promise<void> => {
+        // These operations happen before the provider boundary. A failure here
+        // is a definite rejection and may safely release the reservation.
+        try {
+          const cwd = this.sessionCwd.get(threadId)
+          if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
+          notebookManager.beginTurn(threadId)
+          this.turnDepth.set(threadId, 0)
+        } catch (error) {
+          throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
+        }
+
+        this.activeTurns.add(threadId)
+        try {
+          await adapter.sendTurn(threadId, message, runtimeMode, images)
+        } catch (error) {
+          this.activeTurns.delete(threadId)
+          // Once the provider call starts, a generic failure is ambiguous. It
+          // must remain dispatching so a retry cannot execute the turn twice.
+          throw error
+        }
+      }
+
+      let acceptance: TurnAcceptanceResult | undefined
+      if (origin) {
+        const clientScope = currentBackendRequestContext()?.clientScope
+          ?? hashClientScope('unscoped-local', 'backend-host-without-request-context')
+        acceptance = await this.turnAcceptance.accept(
+          { clientScope, threadId, origin },
+          turnPayloadHash(message, runtimeMode, images),
+          dispatch,
+        )
+        if (acceptance.duplicate) {
+          log.info(`sendTurn ${threadId} - duplicate origin ${origin} (${acceptance.state})`)
+          return acceptance
+        }
+      } else {
+        // Positional callers that predate origins retain their exact behavior.
+        await dispatch()
       }
       // Persisted here because the renderer was the only writer, so a turn sent
       // from the phone left no row: absent from search, absent from the DB
@@ -735,6 +759,7 @@ export class ProviderRegistry implements PeerToolHost {
       // already consumed the origin from every other client's skip set, so the
       // retry rendered a duplicate bubble everywhere with no retraction.
       this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
+      return acceptance
     })
 
     // A client asked, so the user typed it. `initiator` is forced rather than

@@ -12,6 +12,7 @@ import type { ChatMessage } from '@shared/types'
 import type { ProjectOrganizationItem } from '@shared/types'
 import { deriveProjectPositions } from './projectOrdering'
 import type { ConversationSidebarRole } from './conversationSidebarRole'
+import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 
 const log = createLogger('db')
 
@@ -549,6 +550,9 @@ function migrate(db: Database.Database): void {
       ON conversations(project_path, updated_at DESC)
       WHERE sidebar_role = 'managed' AND archived = 0;
   `)
+
+  ensureTurnAcceptanceSchema(db)
+  recoverUndispatchedTurns(db)
 
   log.info('database migrated')
 }

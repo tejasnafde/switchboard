@@ -54,6 +54,49 @@ import { WsTransport } from '../../src/shared/ws-transport'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
+import { DurableTurnAcceptance } from '../../src/main/provider/durable-turn-acceptance'
+import type {
+  ReserveTurnResult,
+  TurnAcceptanceKey,
+  TurnAcceptanceState,
+  TurnAcceptanceStore,
+} from '../../src/main/db/turn-acceptance'
+
+class TestTurnAcceptanceStore implements TurnAcceptanceStore {
+  private readonly rows = new Map<string, { payloadHash: string; state: TurnAcceptanceState }>()
+  private id(key: TurnAcceptanceKey): string {
+    return `${key.clientScope}\0${key.threadId}\0${key.origin}`
+  }
+  reserve(key: TurnAcceptanceKey, payloadHash: string): ReserveTurnResult {
+    const id = this.id(key)
+    const row = this.rows.get(id)
+    if (!row) {
+      this.rows.set(id, { payloadHash, state: 'reserved' })
+      return { kind: 'reserved', state: 'reserved' }
+    }
+    return row.payloadHash === payloadHash
+      ? { kind: 'duplicate', state: row.state }
+      : { kind: 'conflict', state: row.state }
+  }
+  beginDispatch(key: TurnAcceptanceKey, payloadHash: string): boolean {
+    const row = this.rows.get(this.id(key))
+    if (!row || row.payloadHash !== payloadHash || row.state !== 'reserved') return false
+    row.state = 'dispatching'
+    return true
+  }
+  complete(key: TurnAcceptanceKey, payloadHash: string): boolean {
+    const row = this.rows.get(this.id(key))
+    if (!row || row.payloadHash !== payloadHash || row.state !== 'dispatching') return false
+    row.state = 'completed'
+    return true
+  }
+  release(key: TurnAcceptanceKey, payloadHash: string): boolean {
+    const id = this.id(key)
+    const row = this.rows.get(id)
+    if (!row || row.payloadHash !== payloadHash || row.state === 'completed') return false
+    return this.rows.delete(id)
+  }
+}
 
 // Echoes each turn back as a content event tagged with the current model, so a
 // model switch is observable in the stream. One adapter instance, many threads.
@@ -151,7 +194,11 @@ async function setup(adapter: ProviderAdapter = new MockEchoAdapter()) {
   scratchDirs.push(cwd)
   wss = new WebSocketServer({ port: 0 })
   const host = new WsHost(wss)
-  registry = new ProviderRegistry(host, new Map([['claude', adapter]]))
+  registry = new ProviderRegistry(
+    host,
+    new Map([['claude', adapter]]),
+    new DurableTurnAcceptance(new TestTurnAcceptanceStore()),
+  )
   registry.registerIpcHandlers()
   await new Promise<void>((res) => wss!.on('listening', () => res()))
   const { port } = wss.address() as AddressInfo
@@ -252,7 +299,9 @@ describe('provider switching over the WebSocket boundary', () => {
     const { cwd } = await setup()
     saved.length = 0
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
-    await client!.invoke(ProviderChannels.SEND_TURN, 't1', 'from the phone', undefined, undefined, 'o-1')
+    const accepted = await client!.invoke(
+      ProviderChannels.SEND_TURN, 't1', 'from the phone', undefined, undefined, 'o-1',
+    )
     await flush()
 
     const turn = saved.find((m) => m.role === 'user')
@@ -262,6 +311,24 @@ describe('provider switching over the WebSocket boundary', () => {
     // echoMessageId(origin) - the id the optimistic bubble already uses, so the
     // renderer's own richer write targets this row instead of adding a second.
     expect(turn?.id).toBe('remote_o-1')
+    expect(accepted).toEqual({ accepted: true, duplicate: false, state: 'completed' })
+  })
+
+  it('answers a completed origin retry as domain success without dispatching again', async () => {
+    const adapter = new MockEchoAdapter()
+    const { cwd, events } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+
+    const first = await client!.invoke(
+      ProviderChannels.SEND_TURN, 't1', 'once', undefined, undefined, 'origin-once',
+    )
+    const retry = await client!.invoke(
+      ProviderChannels.SEND_TURN, 't1', 'once', undefined, undefined, 'origin-once',
+    )
+
+    expect(first).toEqual({ accepted: true, duplicate: false, state: 'completed' })
+    expect(retry).toEqual({ accepted: true, duplicate: true, state: 'completed' })
+    expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1)
   })
 
   it('persists a turn even when the client sends no origin (the phone\'s first message)', async () => {

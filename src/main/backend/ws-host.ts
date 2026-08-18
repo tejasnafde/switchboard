@@ -14,12 +14,13 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
-import { encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
+import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
 import { isChannelAllowed, isSettingWriteAllowed, FULL_SCOPES, PHONE_SCOPES, type DeviceScope } from '@shared/device-auth'
 import { EventReplayBuffer } from '@shared/event-replay-buffer'
 import { AppChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
+import { hashClientScope, withBackendRequestContext } from './request-context'
 
 const log = createLogger('backend:ws-host')
 
@@ -62,6 +63,8 @@ interface ClientState {
    *  a pre-heartbeat client never sends `pong`, and a phone updates over OTA
    *  independently of the desktop it pairs with, so that skew is routine. */
   sawPong: boolean
+  /** Stable for device sessions and credential-sharing legacy clients. */
+  clientScope: string
 }
 
 /**
@@ -138,7 +141,10 @@ export class WsHost implements BackendHost {
           return
         }
       }
-      this.clients.set(socket, { missedPings: 0, sawPong: false, scopes: legacyScopes })
+      const clientScope = token && legacyScopes
+        ? hashClientScope('legacy-ws-token', token)
+        : hashClientScope('trusted-ws', 'local-trust-boundary')
+      this.clients.set(socket, { missedPings: 0, sawPong: false, scopes: legacyScopes, clientScope })
       log.info(`client connected (${this.clients.size} total)`)
       if (legacyScopes === null) {
         // Anything still unauthenticated past this is not a slow client.
@@ -230,14 +236,19 @@ export class WsHost implements BackendHost {
         return
       }
       try {
-        const result = await handler(...frame.args)
+        const result = await withBackendRequestContext(
+          { clientScope: state!.clientScope },
+          () => handler(...frame.args),
+        )
         this.reply(socket, { k: 'res', id: frame.id, ok: true, result })
       } catch (err) {
         this.reply(socket, { k: 'res', id: frame.id, ok: false, error: err instanceof Error ? err.message : String(err) })
       }
     } else if (frame.k === 'snd') {
       const fns = this.listeners.get(frame.ch)
-      if (fns) for (const fn of fns) fn(...frame.args)
+      if (fns) for (const fn of fns) {
+        withBackendRequestContext({ clientScope: state!.clientScope }, () => fn(...frame.args))
+      }
     } else if (frame.k === 'hello') {
       this.onHello(socket, frame)
     } else if (frame.k === 'pong') {
@@ -268,6 +279,14 @@ export class WsHost implements BackendHost {
         return
       }
       state.scopes = result.scopes ?? PHONE_SCOPES
+      const authenticated = this.deviceAuth.authenticate(result.session)
+      if (!authenticated) {
+        state.scopes = null
+        this.reply(socket, { k: 'authed', ok: false, error: 'paired session could not be authenticated' })
+        return
+      }
+      state.sessionId = authenticated.id
+      state.clientScope = hashClientScope('device-session', authenticated.id)
       this.reply(socket, { k: 'authed', ok: true, session: result.session, scopes: [...state.scopes] })
       return
     }
@@ -281,6 +300,7 @@ export class WsHost implements BackendHost {
     }
     state.scopes = session.scopes
     state.sessionId = session.id
+    state.clientScope = hashClientScope('device-session', session.id)
     this.reply(socket, { k: 'authed', ok: true, scopes: [...session.scopes] })
   }
 
@@ -323,6 +343,7 @@ export class WsHost implements BackendHost {
       seq: this.seq,
       replayed: result.gap ? 0 : result.frames.length,
       gap: result.gap,
+      capabilities: [...BACKEND_CAPABILITIES],
     })
     if (result.frames.length > 0 || result.gap) {
       log.info(

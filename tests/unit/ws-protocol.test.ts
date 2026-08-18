@@ -16,7 +16,7 @@ describe('decodeFrame', () => {
       { k: 'snd' as const, ch: 'a', args: [] },
       { k: 'evt' as const, ch: 'a', args: [1], seq: 7 },
       { k: 'hello' as const, since: 4, epoch: 'e1' },
-      { k: 'ready' as const, epoch: 'e1', seq: 9, replayed: 2, gap: false },
+      { k: 'ready' as const, epoch: 'e1', seq: 9, replayed: 2, gap: false, capabilities: ['durable_turn_origin'] },
       { k: 'ping' as const, t: 123 },
       { k: 'pong' as const, t: 123 },
     ]
@@ -66,6 +66,20 @@ describe('decodeFrame', () => {
   it('rejects a ready missing any of its fields, so a partial handshake cannot look complete', () => {
     expect(decodeFrame(JSON.stringify({ k: 'ready', epoch: 'e', seq: 1, replayed: 0 }))).toBeNull()
     expect(decodeFrame(JSON.stringify({ k: 'ready', epoch: 'e', seq: 1, gap: false }))).toBeNull()
+  })
+
+  it('accepts old ready frames and preserves only string capabilities when advertised', () => {
+    expect(decodeFrame(JSON.stringify({ k: 'ready', epoch: 'e', seq: 1, replayed: 0, gap: false }))).toEqual({
+      k: 'ready', epoch: 'e', seq: 1, replayed: 0, gap: false, capabilities: undefined,
+    })
+    expect(decodeFrame(JSON.stringify({
+      k: 'ready', epoch: 'e', seq: 1, replayed: 0, gap: false,
+      capabilities: ['durable_turn_origin'],
+    }))).toMatchObject({ capabilities: ['durable_turn_origin'] })
+    expect(decodeFrame(JSON.stringify({
+      k: 'ready', epoch: 'e', seq: 1, replayed: 0, gap: false,
+      capabilities: ['durable_turn_origin', 7],
+    }))).toBeNull()
   })
 
   it('rejects a heartbeat with no timestamp', () => {

@@ -32,6 +32,8 @@ export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   'terminal:exit',
 ])
 
+export const BACKEND_CAPABILITIES = ['durable_turn_origin'] as const
+
 export function isReplayableEventChannel(channel: string): boolean {
   return !NON_REPLAYABLE_EVENT_CHANNELS.has(channel)
 }
@@ -50,7 +52,7 @@ export type WsFrame =
    * already been evicted (or the epoch changed), so the client must re-seed
    * rather than assume continuity.
    */
-  | { k: 'ready'; epoch: string; seq: number; replayed: number; gap: boolean }
+  | { k: 'ready'; epoch: string; seq: number; replayed: number; gap: boolean; capabilities?: string[] }
   | { k: 'ping'; t: number }
   | { k: 'pong'; t: number }
   /**
@@ -118,7 +120,18 @@ export function decodeFrame(data: string): WsFrame | null {
         typeof frame.gap !== 'boolean'
       )
         return null
-      return { k: 'ready', epoch: frame.epoch, seq: frame.seq, replayed: frame.replayed, gap: frame.gap }
+      if (
+        frame.capabilities !== undefined &&
+        (!Array.isArray(frame.capabilities) || frame.capabilities.some((item) => typeof item !== 'string'))
+      ) return null
+      return {
+        k: 'ready',
+        epoch: frame.epoch,
+        seq: frame.seq,
+        replayed: frame.replayed,
+        gap: frame.gap,
+        capabilities: frame.capabilities as string[] | undefined,
+      }
     case 'ping':
       if (typeof frame.t !== 'number') return null
       return { k: 'ping', t: frame.t }
