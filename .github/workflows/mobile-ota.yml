@@ -1,25 +1,20 @@
 # Mobile OTA pipeline (the JS lane).
 #
-# Publishes a new JS bundle to the EAS `production` update branch. Installed apps
-# pick it up on their next foreground and offer a restart
+# Publishes an iOS-only JS bundle to the EAS `production` update branch. The
+# remaining React Native iOS app picks it up on its next foreground and offers a restart
 # (apps/mobile/src/lib/otaUpdate.ts). No APK download, no install prompt, no
 # store review.
 #
-# THIS LANE IS JS/ASSETS ONLY. A change that touches the native binary - a new
-# native module, a new Android permission, an Expo SDK bump - cannot ship this
-# way, because the bundle would call into native code the installed APK does not
-# contain. Those changes need `mobile-release.yml`, which builds a fresh APK.
+# THIS LANE IS IOS JS/ASSETS ONLY. Native Android retired Expo OTA and receives
+# only verified APKs from `mobile-release.yml`.
 #
 # The safety net is `runtimeVersion: { policy: "fingerprint" }` in app.json: EAS
 # hashes the native project (native deps, config plugins, the native-affecting
 # parts of app.json) and only serves a bundle to a binary with a matching hash.
-# So even if someone pushes a native change down this lane, an old APK is never
-# served a bundle it cannot run. It just sees no update, until mobile-release.yml
-# ships an APK with the new fingerprint. This replaced the `appVersion` policy,
-# which only compared the version STRING and so relied on a human remembering to
-# bump it.
+# This replaced the `appVersion` policy, which only compared the version STRING
+# and relied on a human remembering to bump it.
 #
-# REQUIRED REPO SECRET: EXPO_TOKEN (same one mobile-release.yml uses).
+# REQUIRED REPO SECRET: EXPO_TOKEN.
 # This workflow is INERT until someone runs `npx eas update:configure` in
 # apps/mobile once, which writes the `updates.url` and EAS projectId that are
 # deliberately not hardcoded in app.json.
@@ -103,4 +98,4 @@ jobs:
           # Commit subject only (%s), so the message reads as one line in the
           # EAS dashboard and in `eas update:list`.
           MESSAGE=$(git log -1 --pretty=%s)
-          eas update --branch production --message "$MESSAGE" --non-interactive
+          eas update --platform ios --branch production --message "$MESSAGE" --non-interactive

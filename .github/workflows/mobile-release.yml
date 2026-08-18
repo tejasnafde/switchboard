@@ -1,158 +1,159 @@
-# Mobile APK release pipeline (the NATIVE lane).
+# Publishes the canonical native Android APK consumed by the in-app updater.
 #
-# Builds the Android APK on EAS, downloads the artifact, and attaches it to a
-# GitHub Release. The app then updates itself from that Release
-# (apps/mobile/src/lib/selfUpdate.ts). Use this lane whenever the native binary
-# changes: a new native module, a new permission, an Expo SDK bump. JS-only
-# changes should go out over `mobile-ota.yml` instead, which needs no download
-# and no install prompt.
+# The keystore must be the production EAS keystore used for the public v0.4.0
+# APK. Export it once, verify its certificate fingerprint, and store the bytes
+# and credentials as GitHub Actions secrets:
 #
-# REQUIRED REPO SECRET: EXPO_TOKEN
-#   An Expo access token for the EAS account that owns the project. Create it at
-#   https://expo.dev/settings/access-tokens and add it under
-#   Settings -> Secrets and variables -> Actions -> New repository secret.
-#   Without it, `eas build` fails at the authentication step. GITHUB_TOKEN is
-#   provided automatically and needs no setup.
+#   ANDROID_KEYSTORE_BASE64
+#   ANDROID_KEYSTORE_PASSWORD
+#   ANDROID_KEY_ALIAS
+#   ANDROID_KEY_PASSWORD
 #
-# WHY NO WEBHOOK: the reference implementation (the someday app) had EAS call a
-# webhook on an always-on API server, which then published the release.
-# Switchboard has no such server, so the whole flow happens inside this job:
-# `--wait` blocks until the build finishes, then we download and publish here.
-# No server, no webhook, nothing to keep running.
-#
-# TAG NAMESPACE: mobile releases are tagged `mobile-v<version>`, NOT `v<version>`.
-# The Electron desktop app already owns `v*` (see release.yml, which triggers on
-# `v*` tag pushes and is at v0.7.x). Sharing that namespace would collide on tag
-# names and would fire the desktop release workflow. `selfUpdate.ts` scans the
-# releases list for the newest release carrying an `.apk`, so it finds these
-# regardless of how often the desktop releases in between.
-name: Mobile Release (APK)
+# React Native iOS continues to use mobile-ota.yml. This lane never invokes EAS
+# and must never publish an APK until strict package, version, signer and digest
+# verification succeeds.
+name: Mobile Release (Native Android APK)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/mobile/**'
 
-# Needed to create the Release and upload the APK asset. The default
-# GITHUB_TOKEN is read-only on contents for new repos.
 permissions:
   contents: write
 
-# Do NOT cancel in progress: an EAS build already consuming build minutes should
-# be allowed to finish rather than be abandoned half way.
 concurrency:
   group: mobile-release
   cancel-in-progress: false
 
 defaults:
   run:
-    working-directory: apps/mobile
+    working-directory: apps/android
 
 jobs:
   release:
-    name: Build APK and publish release
+    name: Build, verify, and publish native APK
     runs-on: ubuntu-latest
-    # EAS build queue time plus the build itself; `--wait` holds the job open.
-    timeout-minutes: 90
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Node
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-          # apps/mobile has its own lockfile, separate from the desktop app's.
-          cache-dependency-path: apps/mobile/package-lock.json
 
-      # The ROOT install too. This job's default working-directory is
-      # apps/mobile, but the app imports `@shared/*` from the repo root, and
-      # those files pull root dependencies (js-yaml, for one). Without this the
-      # typecheck fails on a module that resolves fine on any machine that has
-      # installed both.
-      - name: Install root dependencies
-        run: npm ci
-        working-directory: .
-
-      - name: Install dependencies
-        run: npm ci
-
-      # Fail before spending EAS build minutes on code that does not compile.
-      - name: Typecheck
-        run: npx tsc --noEmit
-
-      # expo.version in app.json is the single source of truth: the tag, the
-      # APK filename, and the OTA runtimeVersion all derive from it.
-      - name: Read version from app.json
+      - name: Read canonical native version
         id: version
         run: |
-          VERSION=$(node -p "require('./app.json').expo.version")
+          set -euo pipefail
+          chmod +x gradlew
+          VERSION="$(./gradlew --no-daemon -q :app:printReleaseVersionName | tail -1)"
+          if [[ ! "$VERSION" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::Invalid native Android versionName: $VERSION"
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=mobile-v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Releasing mobile-v$VERSION"
 
-      # Idempotency guard. Every push to main touching apps/mobile runs this
-      # workflow, but the version only changes when someone bumps it by hand, so
-      # most runs would try to re-release a version that is already out. Checked
-      # BEFORE the build so a re-run costs no EAS build minutes.
       - name: Check whether the release already exists
         id: guard
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
           if gh release view "${{ steps.version.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::${{ steps.version.outputs.tag }} is already released. Bump expo.version in apps/mobile/app.json to cut a new one."
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::error::Release already exists; increment apps/android versionName and versionCode"
+            exit 1
+          fi
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+
+      - name: Restore production signing keystore
+        if: steps.guard.outputs.exists == 'false'
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$ANDROID_KEYSTORE_BASE64" ]]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not configured"
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/switchboard-production.jks"
+          test -s "$RUNNER_TEMP/switchboard-production.jks"
+
+      - name: Run gates and build production-signed APK
+        if: steps.guard.outputs.exists == 'false'
+        env:
+          SWITCHBOARD_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/switchboard-production.jks
+          SWITCHBOARD_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          SWITCHBOARD_ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          SWITCHBOARD_ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleRelease compileDebugAndroidTestKotlin
+          SOURCE_APK="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' ! -name '*-unsigned.apk' -print -quit)"
+          if [[ -z "$SOURCE_APK" ]]; then
+            echo "::error::Production signing did not produce a signed APK"
+            exit 1
+          fi
+          RELEASE_APK="switchboard-${{ steps.version.outputs.version }}.apk"
+          cp "$SOURCE_APK" "$RELEASE_APK"
+          sha256sum "$RELEASE_APK" > "$RELEASE_APK.sha256"
+
+      - name: Locate Android verification tools
+        if: steps.guard.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}"
+          BUILD_TOOLS="$(find "$SDK_ROOT/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          test -x "$BUILD_TOOLS/aapt2"
+          test -x "$BUILD_TOOLS/apksigner"
+          echo "AAPT2=$BUILD_TOOLS/aapt2" >> "$GITHUB_ENV"
+          echo "APKSIGNER=$BUILD_TOOLS/apksigner" >> "$GITHUB_ENV"
+
+      - name: Verify package, version, signer, and checksum
+        if: steps.guard.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          RELEASE_APK="switchboard-${{ steps.version.outputs.version }}.apk"
+          CHECKSUM_FILE="$RELEASE_APK.sha256"
+          BADGING="$("$AAPT2" dump badging "$RELEASE_APK")"
+          APK_VERSION_NAME="$(sed -n "s/^package:.* versionName='\([^']*\)'.*/\1/p" <<< "$BADGING" | head -1)"
+          NEW_VERSION_CODE="$(sed -n "s/^package:.* versionCode='\([0-9][0-9]*\)'.*/\1/p" <<< "$BADGING" | head -1)"
+          if [[ "$APK_VERSION_NAME" != "${{ steps.version.outputs.version }}" ]]; then
+            echo "::error::APK versionName $APK_VERSION_NAME does not match release tag ${{ steps.version.outputs.tag }}"
+            exit 1
           fi
 
-      - name: Setup EAS
-        if: steps.guard.outputs.exists == 'false'
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          PREVIOUS_APK_URL="$(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq \
+            '[.[] | select(.draft == false and (.tag_name | startswith("mobile-v"))) | .assets[] | select(.name | endswith(".apk"))][0].browser_download_url // empty')"
+          if [[ -n "$PREVIOUS_APK_URL" ]]; then
+            curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/switchboard-previous.apk" "$PREVIOUS_APK_URL"
+            PREVIOUS_BADGING="$("$AAPT2" dump badging "$RUNNER_TEMP/switchboard-previous.apk")"
+            PREVIOUS_VERSION_CODE="$(sed -n "s/^package:.* versionCode='\([0-9][0-9]*\)'.*/\1/p" <<< "$PREVIOUS_BADGING" | head -1)"
+            if (( NEW_VERSION_CODE <= PREVIOUS_VERSION_CODE )); then
+              echo "::error::Android versionCode $NEW_VERSION_CODE must exceed published versionCode $PREVIOUS_VERSION_CODE"
+              exit 1
+            fi
+          fi
+          node ../../scripts/verify-android-apk.mjs --apk "$RELEASE_APK" --checksum "$CHECKSUM_FILE"
 
-      # --wait blocks until the build finishes; --json puts the build record on
-      # stdout so we can read the artifact URL without a webhook.
-      - name: Build APK on EAS
-        if: steps.guard.outputs.exists == 'false'
-        id: build
-        run: |
-          set -euo pipefail
-          eas build --platform android --profile production --non-interactive --wait --json > build.json
-          URL=$(node -e "
-            const raw = require('./build.json');
-            const build = Array.isArray(raw) ? raw[0] : raw;
-            const artifacts = build && build.artifacts;
-            const url = artifacts && (artifacts.applicationArchiveUrl || artifacts.buildUrl);
-            if (!url) {
-              console.error('No artifact URL in the eas build output. Build record:');
-              console.error(JSON.stringify(build, null, 2));
-              process.exit(1);
-            }
-            console.log(url);
-          ")
-          echo "artifact-url=$URL" >> "$GITHUB_OUTPUT"
-
-      - name: Download the APK
-        if: steps.guard.outputs.exists == 'false'
-        run: |
-          set -euo pipefail
-          # -f so an HTML error page never gets saved as a .apk.
-          curl -fL --retry 3 --retry-delay 5 \
-            -o "switchboard-${{ steps.version.outputs.version }}.apk" \
-            "${{ steps.build.outputs.artifact-url }}"
-          ls -lh "switchboard-${{ steps.version.outputs.version }}.apk"
-
-      # --generate-notes builds the changelog from merged commits since the last
-      # release, so there is no changelog file to maintain by hand.
-      - name: Publish the GitHub Release
+      - name: Publish the GitHub release
         if: steps.guard.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -162,4 +163,5 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "Switchboard mobile ${{ steps.version.outputs.version }}" \
             --generate-notes \
-            "switchboard-${{ steps.version.outputs.version }}.apk"
+            "switchboard-${{ steps.version.outputs.version }}.apk" \
+            "switchboard-${{ steps.version.outputs.version }}.apk.sha256"

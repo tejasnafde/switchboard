@@ -47,12 +47,70 @@ class ConnectionStateMachineTest {
             authed.state,
             ConnectionEvent.FrameReceived(
                 generation,
-                WsFrame.Ready("epoch-a", sequence = 42, replayed = 2, gap = false),
+                WsFrame.Ready(
+                    "epoch-a",
+                    sequence = 42,
+                    replayed = 2,
+                    gap = false,
+                    capabilities = setOf("durable_turn_origin"),
+                ),
             ),
         )
         assertEquals(ConnectionPhase.Ready, ready.state.phase)
         assertTrue(ready.state.outboxEligible)
+        assertTrue(ready.state.supports("durable_turn_origin"))
         assertEquals(ResumeCursor("epoch-a", 42), ready.state.resumeCursor)
+    }
+
+    @Test
+    fun legacySharedTokenSkipsFrameAuthAndWaitsForReady() {
+        val opened = ConnectionStateMachine.reduce(
+            selected,
+            ConnectionEvent.SocketOpened(
+                generation,
+                Credential.LegacySharedToken("legacy-secret"),
+            ),
+        )
+
+        assertEquals(ConnectionPhase.AwaitingReady, opened.state.phase)
+        assertFalse(opened.state.outboxEligible)
+        assertEquals(
+            listOf(ConnectionEffect.Send(WsFrame.Hello(selected.resumeCursor))),
+            opened.effects,
+        )
+
+        val ready = ConnectionStateMachine.reduce(
+            opened.state,
+            ConnectionEvent.FrameReceived(
+                generation,
+                WsFrame.Ready("epoch-a", sequence = 42, replayed = 0, gap = false),
+            ),
+        )
+        assertEquals(ConnectionPhase.Ready, ready.state.phase)
+        assertTrue(ready.state.outboxEligible)
+    }
+
+    @Test
+    fun staleLegacyReadyCannotCompleteAReplacementGeneration() {
+        val opened = ConnectionStateMachine.reduce(
+            selected,
+            ConnectionEvent.SocketOpened(generation, Credential.LegacySharedToken("legacy-secret")),
+        ).state
+        val replacement = ConnectionStateMachine.reduce(
+            opened,
+            ConnectionEvent.SelectConnection("tablet", "work-vm", null),
+        ).state
+
+        val stale = ConnectionStateMachine.reduce(
+            replacement,
+            ConnectionEvent.FrameReceived(
+                generation,
+                WsFrame.Ready("old", sequence = 9, replayed = 0, gap = false),
+            ),
+        )
+
+        assertEquals(replacement, stale.state)
+        assertTrue(stale.effects.single() is ConnectionEffect.IgnoreStale)
     }
 
     @Test

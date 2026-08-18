@@ -22,20 +22,34 @@ class UpdatePolicyTest {
     }
 
     @Test
-    fun selectsTheFirstPublishedMobileReleaseWithAnApk() {
+    fun selectsTheHighestPublishedMobileReleaseWithAnApkRegardlessOfApiOrder() {
         val selected = UpdatePolicy.selectAvailableRelease(
             releases = listOf(
                 release("v9.0.0", apk = true),
                 release("mobile-v0.8.0", apk = true, draft = true),
                 release("mobile-v0.7.0", apk = false),
                 release("mobile-v0.6.0", apk = true),
+                release("mobile-v0.10.0", apk = true),
                 release("mobile-v0.5.1", apk = true),
             ),
             currentVersion = "0.5.0",
         )
 
-        assertEquals("0.6.0", selected?.version)
+        assertEquals("0.10.0", selected?.version)
         assertEquals("https://example.test/switchboard.apk", selected?.apkUrl)
+    }
+
+    @Test
+    fun ignoresMalformedMobileVersionTagsInsteadOfTreatingThemAsANewerRelease() {
+        val selected = UpdatePolicy.selectAvailableRelease(
+            releases = listOf(
+                release("mobile-v999.invalid", apk = true),
+                release("mobile-v0.6.0", apk = true),
+            ),
+            currentVersion = "0.5.0",
+        )
+
+        assertEquals("0.6.0", selected?.version)
     }
 
     @Test

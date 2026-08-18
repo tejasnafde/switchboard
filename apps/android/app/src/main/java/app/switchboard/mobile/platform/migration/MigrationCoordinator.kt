@@ -19,7 +19,7 @@ sealed interface CredentialWriteVerification {
 fun interface NativeCredentialStore {
     /** Writes the credential and reads it back before returning [CredentialWriteVerification.Verified]. */
     fun writeAndVerify(
-        connectionId: String,
+        logicalKey: String,
         credential: SelectedCredential.Present,
     ): CredentialWriteVerification
 }

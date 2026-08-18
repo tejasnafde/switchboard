@@ -21,24 +21,27 @@ object UpdatePolicy {
         releases: List<GitHubRelease>,
         currentVersion: String,
     ): UpdateRelease? {
-        val candidate = releases.firstNotNullOfOrNull { release ->
-            if (release.draft || release.prerelease) return@firstNotNullOfOrNull null
+        val candidates = releases.mapNotNull { release ->
+            if (release.draft || release.prerelease) return@mapNotNull null
 
             val tag = release.tagName.trim()
-            if (!tag.startsWith(MOBILE_TAG_PREFIX)) return@firstNotNullOfOrNull null
+            if (!tag.startsWith(MOBILE_TAG_PREFIX)) return@mapNotNull null
 
             val version = tag.removePrefix(MOBILE_TAG_PREFIX)
-            if (version.isBlank()) return@firstNotNullOfOrNull null
+            if (!version.matches(NUMERIC_VERSION)) return@mapNotNull null
 
             val apk = release.assets.firstOrNull { asset ->
                 asset.name.endsWith(".apk") && asset.downloadUrl.isNotBlank()
-            } ?: return@firstNotNullOfOrNull null
+            } ?: return@mapNotNull null
 
             UpdateRelease(
                 version = version,
                 apkUrl = apk.downloadUrl,
                 expectedSha256 = apk.digest?.toSha256(),
             )
+        }
+        val candidate = candidates.maxWithOrNull { left, right ->
+            compareVersions(left.version, right.version)
         } ?: return null
 
         return candidate.takeIf { isNewer(it.version, currentVersion) }
@@ -52,9 +55,17 @@ object UpdatePolicy {
             segment.takeWhile(Char::isDigit).toIntOrNull() ?: 0
         }
 
+    private fun compareVersions(left: String, right: String): Int {
+        if (isNewer(left, right)) return 1
+        if (isNewer(right, left)) return -1
+        return 0
+    }
+
     private fun String.toSha256(): String? {
         val trimmed = trim()
         if (!trimmed.startsWith(SHA_256_PREFIX, ignoreCase = true)) return null
         return trimmed.substring(SHA_256_PREFIX.length).trim().ifEmpty { null }
     }
+
+    private val NUMERIC_VERSION = Regex("^[0-9]+(?:\\.[0-9]+)*$")
 }

@@ -18,7 +18,6 @@ class MigrationPlannerTest {
 
         assertEquals(first.plan, second.plan)
         assertTrue(first.plan.writes.isNotEmpty())
-        assertTrue(first.plan.writes.all { it is NativeMigrationWrite.Upsert })
         assertTrue(first.plan.writes.any { it is NativeMigrationWrite.UpsertOutbox && it.messageId == "turn-text" })
         assertTrue(first.plan.writes.any { it is NativeMigrationWrite.UpsertConnection && it.connectionId == "work-iap" })
         assertFalse(first.plan.sourceFingerprint.isBlank())

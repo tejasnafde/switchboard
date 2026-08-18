@@ -24,9 +24,12 @@ data class ConnectionState(
     val resumeCursor: ResumeCursor?,
     val pendingRequestIds: Set<Long>,
     val heldReplayEvents: List<WsFrame.Event> = emptyList(),
+    val capabilities: Set<String> = emptySet(),
 ) {
     val outboxEligible: Boolean
         get() = phase == ConnectionPhase.Ready
+
+    fun supports(capability: String): Boolean = capability in capabilities
 
     companion object {
         fun selected(
@@ -39,17 +42,26 @@ data class ConnectionState(
             resumeCursor = resumeCursor,
             pendingRequestIds = emptySet(),
             heldReplayEvents = emptyList(),
+            capabilities = emptySet(),
         )
     }
 }
 
 sealed interface Credential {
-    data class Session(val token: String) : Credential
+    data class Session(val token: String) : Credential {
+        override fun toString(): String = "Session(token=[REDACTED])"
+    }
 
     data class Pairing(
         val code: String,
         val deviceLabel: String,
-    ) : Credential
+    ) : Credential {
+        override fun toString(): String = "Pairing(code=[REDACTED], deviceLabel=$deviceLabel)"
+    }
+
+    data class LegacySharedToken(val token: String) : Credential {
+        override fun toString(): String = "LegacySharedToken(token=[REDACTED])"
+    }
 }
 
 enum class DisconnectCause {
@@ -156,6 +168,7 @@ object ConnectionStateMachine {
                     resumeCursor = event.resumeCursor,
                     pendingRequestIds = emptySet(),
                     heldReplayEvents = emptyList(),
+                    capabilities = emptySet(),
                 ),
             )
             is ConnectionEvent.SocketOpened -> {
@@ -163,17 +176,27 @@ object ConnectionStateMachine {
                 if (state.phase != ConnectionPhase.Disconnected) {
                     return unexpected(state, "socket opened outside disconnected state")
                 }
-                val auth = when (val credential = event.credential) {
-                    is Credential.Session -> WsFrame.Auth(session = credential.token)
-                    is Credential.Pairing -> WsFrame.Auth(
-                        pairing = credential.code,
-                        label = credential.deviceLabel,
+                when (val credential = event.credential) {
+                    is Credential.LegacySharedToken -> ConnectionTransition(
+                        state.copy(phase = ConnectionPhase.AwaitingReady),
+                        listOf(ConnectionEffect.Send(WsFrame.Hello(state.resumeCursor))),
+                    )
+                    is Credential.Session -> ConnectionTransition(
+                        state.copy(phase = ConnectionPhase.Authenticating),
+                        listOf(ConnectionEffect.Send(WsFrame.Auth(session = credential.token))),
+                    )
+                    is Credential.Pairing -> ConnectionTransition(
+                        state.copy(phase = ConnectionPhase.Authenticating),
+                        listOf(
+                            ConnectionEffect.Send(
+                                WsFrame.Auth(
+                                    pairing = credential.code,
+                                    label = credential.deviceLabel,
+                                ),
+                            ),
+                        ),
                     )
                 }
-                ConnectionTransition(
-                    state.copy(phase = ConnectionPhase.Authenticating),
-                    listOf(ConnectionEffect.Send(auth)),
-                )
             }
             is ConnectionEvent.FrameReceived -> receive(state, event)
             is ConnectionEvent.SendRequest -> {
@@ -193,6 +216,7 @@ object ConnectionStateMachine {
                         phase = ConnectionPhase.Disconnected,
                         pendingRequestIds = emptySet(),
                         heldReplayEvents = emptyList(),
+                        capabilities = emptySet(),
                     ),
                     listOf(ConnectionEffect.ScheduleRetry(decision)),
                 )
@@ -203,6 +227,7 @@ object ConnectionStateMachine {
                     phase = ConnectionPhase.Disconnected,
                     pendingRequestIds = emptySet(),
                     heldReplayEvents = emptyList(),
+                    capabilities = emptySet(),
                 ),
             )
         }
@@ -232,6 +257,7 @@ object ConnectionStateMachine {
                     phase = ConnectionPhase.Disconnected,
                     pendingRequestIds = emptySet(),
                     heldReplayEvents = emptyList(),
+                    capabilities = emptySet(),
                 ),
                 listOf(ConnectionEffect.ScheduleRetry(RetryDecision.Stop)),
             )
@@ -250,6 +276,7 @@ object ConnectionStateMachine {
                         phase = ConnectionPhase.Ready,
                         resumeCursor = current,
                         heldReplayEvents = emptyList(),
+                        capabilities = frame.capabilities,
                     ),
                     effects,
                 )

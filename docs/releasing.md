@@ -3,6 +3,40 @@
 This is the operator's guide for cutting a release. The user-facing
 install instructions live in `README.md`.
 
+## Native Android mobile release
+
+Native Android uses the existing `mobile-v<version>` GitHub channel, but no
+longer builds its APK on EAS. Increment `versionName` and `versionCode` in
+`apps/android/app/build.gradle.kts`; a main-branch change under `apps/android`
+becomes eligible for a manual `mobile-release.yml` dispatch, which builds
+`switchboard-<version>.apk` and its `.sha256` file. Keep the lane manual until
+the complete production-signed physical-device upgrade matrix is certified.
+
+The release job is intentionally inert until the production EAS keystore used
+for the public v0.4.0 APK has been exported and these repository secrets exist:
+
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+Before publishing, the workflow runs the Android unit/lint gate and rejects an
+APK unless its package is `app.switchboard.mobile`, its version is monotonic,
+its sole signer has SHA-256 fingerprint
+`BC:81:1E:37:12:C2:D5:7F:2B:6E:BD:A5:43:92:E6:2E:BD:2A:77:34:53:E5:0F:B3:75:E1:10:2D:B9:01:A8:F6`,
+and its checksum file matches the APK bytes. Never generate a replacement key:
+Android would reject the update and force an uninstall, losing app-private
+data.
+
+React Native remains the iOS client. `mobile-ota.yml` now publishes EAS updates
+with `--platform ios`; native Android receives signed APK updates only.
+
+The workflow proves artifact identity, not installation behavior. Before the
+first native public release, install the untouched production-signed v0.4.0 APK
+on physical API 24 and current devices, seed its storage/outbox, and exercise an
+actual in-app upgrade without uninstalling. Record migration, installer and
+post-upgrade data checks separately from automated results.
+
 ## TL;DR
 
 ```bash

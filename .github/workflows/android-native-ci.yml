@@ -53,7 +53,7 @@ jobs:
       - name: Run Android gates
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleRelease
+          ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleRelease compileDebugAndroidTestKotlin
 
       - name: Locate Android build tools
         run: |

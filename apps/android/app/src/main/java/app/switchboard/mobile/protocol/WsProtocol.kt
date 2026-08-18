@@ -46,6 +46,7 @@ sealed interface WsFrame {
         val sequence: Long,
         val replayed: Long,
         val gap: Boolean,
+        val capabilities: Set<String> = emptySet(),
     ) : WsFrame
 
     data class Ping(val timestamp: Long) : WsFrame
@@ -120,6 +121,11 @@ fun WsFrame.toJson(): JsonObject {
             "seq" to number(sequence),
             "replayed" to number(replayed),
             "gap" to JsonBoolean(gap),
+            "capabilities" to capabilities
+                .takeIf(Set<String>::isNotEmpty)
+                ?.sorted()
+                ?.map(::JsonString)
+                ?.let(::JsonArray),
         )
         is WsFrame.Ping -> jsonObject("k" to JsonString("ping"), "t" to number(timestamp))
         is WsFrame.Pong -> jsonObject("k" to JsonString("pong"), "t" to number(timestamp))
@@ -193,6 +199,13 @@ object WsProtocol {
                 sequence = frame.longOrNull("seq") ?: return null,
                 replayed = frame.longOrNull("replayed") ?: return null,
                 gap = frame.booleanOrNull("gap") ?: return null,
+                capabilities = when (val rawCapabilities = frame.values["capabilities"]) {
+                    null -> emptySet()
+                    is JsonArray -> rawCapabilities.values.mapTo(linkedSetOf()) {
+                        (it as? JsonString)?.value ?: return null
+                    }
+                    else -> return null
+                },
             )
             "ping" -> WsFrame.Ping(frame.longOrNull("t") ?: return null)
             "pong" -> WsFrame.Pong(frame.longOrNull("t") ?: return null)

@@ -48,6 +48,17 @@ class WsProtocolCodecTest {
     }
 
     @Test
+    fun readyFramesPreserveAdditiveBackendCapabilities() {
+        val wire =
+            """{"k":"ready","epoch":"epoch-a","seq":42,"replayed":0,"gap":false,"capabilities":["durable_turn_origin"]}"""
+
+        val ready = assertNotNullWithValue("ready capabilities", WsProtocol.decode(wire)) as WsFrame.Ready
+
+        assertEquals(setOf("durable_turn_origin"), ready.capabilities)
+        assertEquals(wire, WsProtocol.encode(ready))
+    }
+
+    @Test
     fun runtimeEventsPreserveEveryKnownTypeAndUnknownExtensions() {
         val knownTypes = listOf(
             "content",
@@ -105,7 +116,7 @@ class WsProtocolCodecTest {
     }
 
     private fun fixtureFile(name: String): File {
-        var cursor = File(System.getProperty("user.dir")).canonicalFile
+        var cursor = File(requireNotNull(System.getProperty("user.dir"))).canonicalFile
         repeat(6) {
             val candidate = File(cursor, "tests/fixtures/mobile-native/protocol/$name")
             if (candidate.isFile) return candidate
