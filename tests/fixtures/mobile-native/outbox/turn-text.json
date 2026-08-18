@@ -1,0 +1,9 @@
+{
+  "connectionId": "lan-main",
+  "threadId": "thread-same",
+  "messageId": "turn-text",
+  "text": "Ship the compatibility slice",
+  "runtimeMode": "sandbox",
+  "createdAt": 1787072500000,
+  "attempts": 2
+}

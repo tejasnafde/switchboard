@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="switchboard_background">#0A0A0A</color>
+    <color name="switchboard_accent">#58A6FF</color>
+</resources>

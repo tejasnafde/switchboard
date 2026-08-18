@@ -1,0 +1,63 @@
+{
+  "state": {
+    "threads": {
+      "lan-main:thread-same": {
+        "items": [
+          {
+            "kind": "user",
+            "id": "user-1",
+            "text": "Check the release",
+            "at": 1787072401000
+          },
+          {
+            "kind": "text",
+            "id": "assistant-1",
+            "text": "Release checks passed.",
+            "stream": "assistant",
+            "done": true,
+            "durationMs": 1840
+          }
+        ],
+        "provider": "claude",
+        "instanceId": "claude-work",
+        "instanceName": "Claude Work",
+        "status": "idle",
+        "runtimeMode": "plan",
+        "sessionId": "session-lan-main",
+        "usedTokens": 321,
+        "maxTokens": 200000,
+        "costUsd": 0.0042,
+        "lastTurnDurationMs": 1840,
+        "unread": 0,
+        "updatedAt": 1787072403000
+      },
+      "work-iap:thread-same": {
+        "items": [
+          {
+            "kind": "user",
+            "id": "turn-image-only",
+            "text": "",
+            "at": 1787072461000,
+            "images": [
+              "data:image/png;base64,iVBORw0KGgo="
+            ]
+          },
+          {
+            "kind": "notice",
+            "id": "notice-offline",
+            "text": "Waiting to reconnect"
+          }
+        ],
+        "provider": "codex",
+        "instanceId": null,
+        "instanceName": null,
+        "status": "connecting",
+        "runtimeMode": "accept-edits",
+        "unread": 2,
+        "updatedAt": 1787072463000,
+        "cached": true
+      }
+    }
+  },
+  "version": 0
+}

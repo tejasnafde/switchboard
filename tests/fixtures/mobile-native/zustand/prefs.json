@@ -1,0 +1,23 @@
+{
+  "state": {
+    "threads": {
+      "lan-main:thread-same": {
+        "mode": "plan",
+        "model": "claude-sonnet-4-6",
+        "draft": "Review café 🚀",
+        "at": 1787072400000
+      },
+      "work-iap:thread-same": {
+        "mode": "accept-edits",
+        "draft": "",
+        "at": 1787072460000
+      }
+    },
+    "defaultMode": "accept-edits",
+    "collapsedWorkspaces": [
+      "workspace-ops",
+      "ungrouped"
+    ]
+  },
+  "version": 0
+}

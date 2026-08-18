@@ -1,0 +1,38 @@
+{
+  "sharedPreferences": "SecureStore",
+  "defaultKeychainService": "key_v1",
+  "connections": [
+    {
+      "connectionId": "lan-main",
+      "safeId": "lan-main",
+      "tokenKey": "sb-token-lan-main",
+      "sessionKey": "sb-session-lan-main",
+      "tokenPreferenceKey": "key_v1-sb-token-lan-main",
+      "sessionPreferenceKey": "key_v1-sb-session-lan-main"
+    },
+    {
+      "connectionId": "office/mac 01:prod",
+      "safeId": "office_mac_01_prod",
+      "tokenKey": "sb-token-office_mac_01_prod",
+      "sessionKey": "sb-session-office_mac_01_prod",
+      "tokenPreferenceKey": "key_v1-sb-token-office_mac_01_prod",
+      "sessionPreferenceKey": "key_v1-sb-session-office_mac_01_prod"
+    },
+    {
+      "connectionId": "work.iap_v2-beta",
+      "safeId": "work.iap_v2-beta",
+      "tokenKey": "sb-token-work.iap_v2-beta",
+      "sessionKey": "sb-session-work.iap_v2-beta",
+      "tokenPreferenceKey": "key_v1-sb-token-work.iap_v2-beta",
+      "sessionPreferenceKey": "key_v1-sb-session-work.iap_v2-beta"
+    }
+  ],
+  "googleKeys": [
+    "sb.google.refresh_token",
+    "sb.google.access_token",
+    "sb.google.expires_at",
+    "sb.google.email",
+    "sb.google.client_id",
+    "sb.google.client_secret"
+  ]
+}

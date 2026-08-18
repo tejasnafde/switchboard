@@ -1,0 +1,15 @@
+{
+  "connectionId": "work-iap",
+  "threadId": "thread-same",
+  "messageId": "turn-image-only",
+  "text": "",
+  "images": [
+    {
+      "url": "data:image/png;base64,iVBORw0KGgo=",
+      "mimeType": "image/png"
+    }
+  ],
+  "runtimeMode": "accept-edits",
+  "createdAt": 1787072505000,
+  "attempts": 0
+}

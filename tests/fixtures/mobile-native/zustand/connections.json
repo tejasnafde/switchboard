@@ -1,0 +1,29 @@
+{
+  "state": {
+    "configs": [
+      {
+        "id": "lan-main",
+        "label": "Studio Mac",
+        "kind": "ws",
+        "url": "ws://192.168.1.40:8765"
+      },
+      {
+        "id": "legacy-lan",
+        "label": "Legacy Mac",
+        "kind": "ws",
+        "url": "wss://legacy.example.test/switchboard",
+        "token": "fixture-legacy-shared-token"
+      },
+      {
+        "id": "work-iap",
+        "label": "Work VM",
+        "kind": "iap",
+        "project": "work-project",
+        "zone": "asia-south1-b",
+        "instance": "dev-vm",
+        "port": 8766
+      }
+    ]
+  },
+  "version": 0
+}

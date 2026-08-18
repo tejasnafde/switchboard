@@ -1,0 +1,30 @@
+{
+  "database": "AsyncStorage",
+  "table": "Storage",
+  "columns": [
+    "key",
+    "value"
+  ],
+  "rows": [
+    {
+      "key": "sb-chat-cache",
+      "value": "{\"state\":{\"threads\":{\"lan-main:thread-same\":{\"items\":[{\"kind\":\"user\",\"id\":\"user-1\",\"text\":\"Check the release\",\"at\":1787072401000},{\"kind\":\"text\",\"id\":\"assistant-1\",\"text\":\"Release checks passed.\",\"stream\":\"assistant\",\"done\":true,\"durationMs\":1840}],\"provider\":\"claude\",\"instanceId\":\"claude-work\",\"instanceName\":\"Claude Work\",\"status\":\"idle\",\"runtimeMode\":\"plan\",\"sessionId\":\"session-lan-main\",\"usedTokens\":321,\"maxTokens\":200000,\"costUsd\":0.0042,\"lastTurnDurationMs\":1840,\"unread\":0,\"updatedAt\":1787072403000},\"work-iap:thread-same\":{\"items\":[{\"kind\":\"user\",\"id\":\"turn-image-only\",\"text\":\"\",\"at\":1787072461000,\"images\":[\"data:image/png;base64,iVBORw0KGgo=\"]},{\"kind\":\"notice\",\"id\":\"notice-offline\",\"text\":\"Waiting to reconnect\"}],\"provider\":\"codex\",\"instanceId\":null,\"instanceName\":null,\"status\":\"connecting\",\"runtimeMode\":\"accept-edits\",\"unread\":2,\"updatedAt\":1787072463000,\"cached\":true}}},\"version\":0}"
+    },
+    {
+      "key": "sb-connections",
+      "value": "{\"state\":{\"configs\":[{\"id\":\"lan-main\",\"label\":\"Studio Mac\",\"kind\":\"ws\",\"url\":\"ws://192.168.1.40:8765\"},{\"id\":\"legacy-lan\",\"label\":\"Legacy Mac\",\"kind\":\"ws\",\"url\":\"wss://legacy.example.test/switchboard\",\"token\":\"fixture-legacy-shared-token\"},{\"id\":\"work-iap\",\"label\":\"Work VM\",\"kind\":\"iap\",\"project\":\"work-project\",\"zone\":\"asia-south1-b\",\"instance\":\"dev-vm\",\"port\":8766}]},\"version\":0}"
+    },
+    {
+      "key": "sb-outbox:turn-image-only",
+      "value": "{\"connectionId\":\"work-iap\",\"threadId\":\"thread-same\",\"messageId\":\"turn-image-only\",\"text\":\"\",\"images\":[{\"url\":\"data:image/png;base64,iVBORw0KGgo=\",\"mimeType\":\"image/png\"}],\"runtimeMode\":\"accept-edits\",\"createdAt\":1787072505000,\"attempts\":0}"
+    },
+    {
+      "key": "sb-outbox:turn-text",
+      "value": "{\"connectionId\":\"lan-main\",\"threadId\":\"thread-same\",\"messageId\":\"turn-text\",\"text\":\"Ship the compatibility slice\",\"runtimeMode\":\"sandbox\",\"createdAt\":1787072500000,\"attempts\":2}"
+    },
+    {
+      "key": "switchboard-prefs",
+      "value": "{\"state\":{\"threads\":{\"lan-main:thread-same\":{\"mode\":\"plan\",\"model\":\"claude-sonnet-4-6\",\"draft\":\"Review café 🚀\",\"at\":1787072400000},\"work-iap:thread-same\":{\"mode\":\"accept-edits\",\"draft\":\"\",\"at\":1787072460000}},\"defaultMode\":\"accept-edits\",\"collapsedWorkspaces\":[\"workspace-ops\",\"ungrouped\"]},\"version\":0}"
+    }
+  ]
+}

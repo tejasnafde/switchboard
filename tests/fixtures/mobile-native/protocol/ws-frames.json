@@ -1,0 +1,118 @@
+[
+  {
+    "name": "auth-pairing",
+    "wire": "{\"k\":\"auth\",\"pairing\":\"PAIR-4821\",\"label\":\"Pixel 9\"}",
+    "expected": {
+      "k": "auth",
+      "pairing": "PAIR-4821",
+      "label": "Pixel 9"
+    }
+  },
+  {
+    "name": "auth-session",
+    "wire": "{\"k\":\"auth\",\"session\":\"session-device-7\"}",
+    "expected": {
+      "k": "auth",
+      "session": "session-device-7"
+    }
+  },
+  {
+    "name": "hello-resume",
+    "wire": "{\"k\":\"hello\",\"since\":40,\"epoch\":\"epoch-a\"}",
+    "expected": {
+      "k": "hello",
+      "since": 40,
+      "epoch": "epoch-a"
+    }
+  },
+  {
+    "name": "ready-resumed",
+    "wire": "{\"k\":\"ready\",\"epoch\":\"epoch-a\",\"seq\":42,\"replayed\":2,\"gap\":false}",
+    "expected": {
+      "k": "ready",
+      "epoch": "epoch-a",
+      "seq": 42,
+      "replayed": 2,
+      "gap": false
+    }
+  },
+  {
+    "name": "request-send-turn",
+    "wire": "{\"k\":\"req\",\"id\":7,\"ch\":\"provider:send-turn\",\"args\":[\"thread-same\",\"Ship it\",\"sandbox\",null,\"turn-text\"]}",
+    "expected": {
+      "k": "req",
+      "id": 7,
+      "ch": "provider:send-turn",
+      "args": [
+        "thread-same",
+        "Ship it",
+        "sandbox",
+        null,
+        "turn-text"
+      ]
+    }
+  },
+  {
+    "name": "response-success",
+    "wire": "{\"k\":\"res\",\"id\":7,\"ok\":true,\"result\":{\"accepted\":true}}",
+    "expected": {
+      "k": "res",
+      "id": 7,
+      "ok": true,
+      "result": {
+        "accepted": true
+      }
+    }
+  },
+  {
+    "name": "response-failure",
+    "wire": "{\"k\":\"res\",\"id\":8,\"ok\":false,\"error\":\"thread not found\"}",
+    "expected": {
+      "k": "res",
+      "id": 8,
+      "ok": false,
+      "error": "thread not found"
+    }
+  },
+  {
+    "name": "send-viewing",
+    "wire": "{\"k\":\"snd\",\"ch\":\"push:viewing\",\"args\":[\"ExponentPushToken[fixture]\",\"thread-same\"]}",
+    "expected": {
+      "k": "snd",
+      "ch": "push:viewing",
+      "args": [
+        "ExponentPushToken[fixture]",
+        "thread-same"
+      ]
+    }
+  },
+  {
+    "name": "event-content",
+    "wire": "{\"k\":\"evt\",\"ch\":\"provider:event\",\"args\":[{\"type\":\"content\",\"threadId\":\"thread-same\",\"messageId\":\"assistant-1\",\"text\":\"Done\",\"streamKind\":\"assistant\"}],\"seq\":42}",
+    "expected": {
+      "k": "evt",
+      "ch": "provider:event",
+      "args": [
+        {
+          "type": "content",
+          "threadId": "thread-same",
+          "messageId": "assistant-1",
+          "text": "Done",
+          "streamKind": "assistant"
+        }
+      ],
+      "seq": 42
+    }
+  },
+  {
+    "name": "ready-replay-gap",
+    "wire": "{\"k\":\"ready\",\"epoch\":\"epoch-b\",\"seq\":0,\"replayed\":0,\"gap\":true}",
+    "expected": {
+      "k": "ready",
+      "epoch": "epoch-b",
+      "seq": 0,
+      "replayed": 0,
+      "gap": true
+    }
+  }
+]
