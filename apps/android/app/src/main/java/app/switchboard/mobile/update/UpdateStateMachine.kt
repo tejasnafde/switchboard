@@ -172,10 +172,10 @@ class UpdateStateMachine(
                 )
             } ?: unchanged(current)
 
-            UpdateStage.VERIFICATION -> current.downloadedApk?.let { downloadedApk ->
+            UpdateStage.VERIFICATION -> current.release?.let { release ->
                 transition(
-                    UpdateState.Verifying(downloadedApk),
-                    UpdateEffect.VerifyDownload(downloadedApk),
+                    UpdateState.Downloading(release, bytesDownloaded = 0, totalBytes = null),
+                    UpdateEffect.StartDownload(release),
                 )
             } ?: unchanged(current)
 

@@ -143,6 +143,20 @@ class UpdateStateMachineTest {
         assertTrue(retry.state is UpdateState.Downloading)
     }
 
+    @Test
+    fun verificationFailureRetriesWithAFreshDownloadInsteadOfTheRejectedFile() {
+        val downloaded = DownloadedApk(release, "/cache/rejected.apk.part")
+        val machine = availableMachine()
+        machine.dispatch(UpdateEvent.DownloadRequested)
+        machine.dispatch(UpdateEvent.DownloadCompleted(downloaded))
+        machine.dispatch(UpdateEvent.Failed(UpdateStage.VERIFICATION, "Signer mismatch"))
+
+        val retry = machine.dispatch(UpdateEvent.RetryRequested)
+
+        assertEquals(UpdateState.Downloading(release, 0, null), retry.state)
+        assertEquals(UpdateEffect.StartDownload(release), retry.effect)
+    }
+
     private fun availableMachine(): UpdateStateMachine = UpdateStateMachine("0.5.0").also {
         it.restore(UpdateState.Available(release))
     }
