@@ -2,6 +2,7 @@ package app.switchboard.mobile.ui.thread
 
 import android.provider.OpenableColumns
 import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -56,6 +57,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -66,6 +68,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.composer.ComposerImageSource
 import app.switchboard.mobile.domain.composer.OutboxPresentationPolicy
@@ -85,6 +89,9 @@ import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.voice.ThreadVoicePrimaryControl
+import app.switchboard.mobile.ui.voice.VoiceNoticeRow
+import app.switchboard.mobile.ui.voice.rememberVoiceComposer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -113,6 +120,7 @@ fun ThreadScreen(
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
+    var lightboxUrl by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     val presentation = ThreadPresenter.present(loadState)
 
     Column(modifier = modifier.fillMaxSize()) {
@@ -143,6 +151,7 @@ fun ThreadScreen(
                             onSelectionsChange = { selections = it },
                             pendingActions = pendingActions,
                             onAction = onAction,
+                            onImageOpen = { lightboxUrl = it },
                         )
                     }
                     item(key = "navigation-inset") { Spacer(Modifier.navigationBarsPadding()) }
@@ -166,6 +175,9 @@ fun ThreadScreen(
             )
         }
     }
+    lightboxUrl?.let { url ->
+        ThreadImageLightbox(url = url, onDismiss = { lightboxUrl = null })
+    }
 }
 
 @Composable
@@ -181,6 +193,10 @@ private fun ThreadComposer(
     onRemoveImage: (String) -> Unit,
 ) {
     val context = LocalContext.current
+    val voice = rememberVoiceComposer(
+        draft = state.draft,
+        onDraft = onDraftChange,
+    )
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
@@ -282,7 +298,10 @@ private fun ThreadComposer(
         }
         OutlinedTextField(
             value = state.draft,
-            onValueChange = onDraftChange,
+            onValueChange = { text ->
+                voice.userEdited(text)
+                onDraftChange(text)
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focusRequester),
@@ -292,6 +311,7 @@ private fun ThreadComposer(
             minLines = 1,
             maxLines = 5,
         )
+        VoiceNoticeRow(voice = voice)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -303,18 +323,14 @@ private fun ThreadComposer(
                 modifier = Modifier.heightIn(min = 48.dp),
             ) { Text(if (state.attachments.isEmpty()) "Add images" else "Add image") }
             Spacer(Modifier.weight(1f))
-            if (state.showInterrupt) {
-                OutlinedButton(
-                    onClick = onInterrupt,
-                    enabled = !state.interrupting,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) { Text(if (state.interrupting) "Stopping…" else "Stop") }
-            }
-            Button(
-                onClick = onSend,
-                enabled = state.canSend,
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text(if (state.submitting) "Saving…" else "Send") }
+            ThreadVoicePrimaryControl(
+                voice = voice,
+                canSend = state.canSend,
+                agentRunning = state.showInterrupt,
+                enabled = !state.submitting && !state.interrupting,
+                onSend = onSend,
+                onStopAgent = onInterrupt,
+            )
         }
     }
 }
@@ -624,9 +640,10 @@ private fun ThreadRow(
     onSelectionsChange: (QuestionSelections) -> Unit,
     pendingActions: ThreadPendingActions,
     onAction: (ThreadUiAction) -> Unit,
+    onImageOpen: (String) -> Unit,
 ) {
     when (row) {
-        is ThreadRowPresentation.User -> UserRow(row.source)
+        is ThreadRowPresentation.User -> UserRow(row.source, onImageOpen)
         is ThreadRowPresentation.Text -> TextRow(row)
         is ThreadRowPresentation.Tool -> ToolRow(row)
         is ThreadRowPresentation.Denial -> NoticeCard(
@@ -680,24 +697,145 @@ private fun ThreadRow(
 }
 
 @Composable
-private fun UserRow(item: FeedItem.User) {
+private fun UserRow(item: FeedItem.User, onImageOpen: (String) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.End,
     ) {
-        Text(
-            text = item.text,
-            color = MaterialTheme.colorScheme.onSurface,
-            style = MaterialTheme.typography.bodyMedium,
+        Column(
             modifier = Modifier
                 .fillMaxWidth(0.86f)
                 .clip(RoundedCornerShape(14.dp))
                 .background(SurfaceRaised)
                 .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (item.text.isNotBlank()) {
+                Text(
+                    text = item.text,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            if (item.images.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    item.images.forEach { image ->
+                        ThreadHistoryImage(
+                            url = image.url,
+                            name = image.name,
+                            onOpen = { onImageOpen(image.url) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThreadHistoryImage(
+    url: String,
+    name: String?,
+    onOpen: () -> Unit,
+) {
+    val bitmap by rememberThreadImage(url, maxDimension = 512)
+    Box(
+        modifier = Modifier
+            .size(180.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(Surface)
+            .clickable(enabled = bitmap != null, onClick = onOpen),
+        contentAlignment = Alignment.Center,
+    ) {
+        bitmap?.let {
+            Image(
+                bitmap = it,
+                contentDescription = name ?: "Attached image",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } ?: Text(
+            text = "Image unavailable",
+            color = TextDim,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(12.dp),
         )
     }
+}
+
+@Composable
+private fun ThreadImageLightbox(url: String, onDismiss: () -> Unit) {
+    val bitmap by rememberThreadImage(url, maxDimension = 2048)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(androidx.compose.ui.graphics.Color.Black)
+                .clickable(onClick = onDismiss),
+            contentAlignment = Alignment.Center,
+        ) {
+            bitmap?.let {
+                Image(
+                    bitmap = it,
+                    contentDescription = "Attached image preview",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(18.dp),
+                )
+            } ?: CircularProgressIndicator()
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(8.dp),
+            ) { Text("Close") }
+        }
+    }
+}
+
+@Composable
+private fun rememberThreadImage(
+    url: String,
+    maxDimension: Int,
+) = produceState<androidx.compose.ui.graphics.ImageBitmap?>(
+    initialValue = null,
+    key1 = url,
+    key2 = maxDimension,
+) {
+    value = withContext(Dispatchers.IO) {
+        decodeThreadImage(url, maxDimension)?.asImageBitmap()
+    }
+}
+
+private fun decodeThreadImage(url: String, maxDimension: Int): android.graphics.Bitmap? {
+    val image = ThreadImageData.parse(url) ?: return null
+    val bytes = runCatching { Base64.decode(image.base64, Base64.DEFAULT) }.getOrNull() ?: return null
+    if (bytes.size != image.decodedBytes) return null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sampleSize = 1
+    while (bounds.outWidth / sampleSize > maxDimension * 2 ||
+        bounds.outHeight / sampleSize > maxDimension * 2
+    ) {
+        sampleSize *= 2
+    }
+    return BitmapFactory.decodeByteArray(
+        bytes,
+        0,
+        bytes.size,
+        BitmapFactory.Options().apply { inSampleSize = sampleSize },
+    )
 }
 
 @Composable

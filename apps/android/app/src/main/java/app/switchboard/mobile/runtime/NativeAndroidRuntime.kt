@@ -30,6 +30,10 @@ import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.outbox.DeliveryReadiness
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.platform.migration.DialGate
+import app.switchboard.mobile.platform.google.VerifiedGoogleCredentialStore
+import app.switchboard.mobile.platform.google.OkHttpGoogleRevokeTransport
+import app.switchboard.mobile.platform.google.OkHttpGoogleTokenExchange
+import app.switchboard.mobile.platform.iap.OkHttpIapRelaySocketFactory
 import app.switchboard.mobile.platform.notification.AndroidAppVisibilityMonitor
 import app.switchboard.mobile.platform.notification.AppVisibilityTracker
 import app.switchboard.mobile.platform.notification.AppVisibilityTransition
@@ -58,6 +62,7 @@ import app.switchboard.mobile.platform.push.PushTokenRuntime
 import app.switchboard.mobile.platform.push.RemoteClientPushBackend
 import app.switchboard.mobile.platform.push.androidExpoInstallationIdentity
 import app.switchboard.mobile.platform.startup.AndroidStartupRuntime
+import app.switchboard.mobile.platform.startup.GoogleStartupState
 import app.switchboard.mobile.platform.startup.StartupRuntimeState
 import app.switchboard.mobile.platform.storage.AndroidNativeCredentialPlatform
 import app.switchboard.mobile.platform.storage.VerifiedNativeCredentialStore
@@ -85,6 +90,8 @@ class NativeAndroidRuntime private constructor(
     val outbox: OutboxRuntime,
     val composer: DurableComposerRuntime,
     val startup: AndroidStartupRuntime,
+    val googleCredentials: VerifiedGoogleCredentialStore,
+    val googleAccount: GoogleAccountRuntime,
     val deviceIdentity: StableDeviceIdentity,
     val notificationRoutes: NotificationRouteInbox,
     val notificationPermissions: AndroidNotificationPermissionController,
@@ -113,6 +120,7 @@ class NativeAndroidRuntime private constructor(
         wakeOutbox = outbox::onFleetChanged,
     )
     private val startupCompositionObservation = startup.observe(coordinator::onStartupState)
+    private val googleAccountObservation = startup.observeGoogle { googleAccount.refresh() }
     private val fleetObservation: Job = scope.launch {
         connectionFleet.statuses.collect { statuses ->
             coordinator.onFleetChanged()
@@ -137,6 +145,12 @@ class NativeAndroidRuntime private constructor(
 
     fun observeStartup(observer: (StartupRuntimeState) -> Unit): Closeable = startup.observe(observer)
 
+    fun observeGoogleStartup(observer: (GoogleStartupState) -> Unit): Closeable =
+        startup.observeGoogle(observer)
+
+    val isGoogleNetworkAllowed: Boolean
+        get() = startup.isGoogleNetworkAllowed
+
     /** Continues across Activity recreation; the application owns both this scope and the Room write. */
     fun removeConnection(connectionId: String) {
         if (connectionId.isBlank()) return
@@ -146,8 +160,8 @@ class NativeAndroidRuntime private constructor(
 
     fun onFcmToken(token: String) = pushTokenRuntime.onFcmToken(token)
 
-    fun beginViewing(connectionId: String, threadId: String): Closeable =
-        pushRegistration.beginViewing(connectionId, threadId)
+    fun beginViewing(scope: TransportScope, threadId: String): Closeable =
+        pushRegistration.beginViewing(scope, threadId)
 
     @Synchronized
     fun browseActivity(transportScope: TransportScope): StateFlow<Map<String, BrowseThreadActivity>> {
@@ -173,6 +187,7 @@ class NativeAndroidRuntime private constructor(
         if (closed) return
         closed = true
         startupCompositionObservation.close()
+        googleAccountObservation.close()
         fleetObservation.cancel()
         pushViewingRenewal.close()
         pushTokenRuntime.close()
@@ -185,6 +200,7 @@ class NativeAndroidRuntime private constructor(
         retryScheduler.close()
         protocolEvents.close()
         startup.close()
+        googleAccount.close()
         scope.cancel()
         transportScheduler.close()
         outboxScheduler.close()
@@ -197,9 +213,9 @@ class NativeAndroidRuntime private constructor(
         fun create(application: Application): NativeAndroidRuntime {
             val applicationContext = application.applicationContext
             val database = SwitchboardDatabase.open(applicationContext)
-            val credentials = VerifiedNativeCredentialStore(
-                AndroidNativeCredentialPlatform(applicationContext),
-            )
+            val credentialPlatform = AndroidNativeCredentialPlatform(applicationContext)
+            val credentials = VerifiedNativeCredentialStore(credentialPlatform)
+            val googleCredentials = VerifiedGoogleCredentialStore(credentialPlatform)
             val connectionDatabase = RoomConnectionDatabase(database)
             val repository = NativeConnectionRepository(connectionDatabase, credentials)
             val identity = StableDeviceIdentityProvider(
@@ -216,6 +232,15 @@ class NativeAndroidRuntime private constructor(
             val retryScheduler = TransportOutboxRetryScheduler(outboxScheduler)
             val protocolEvents = ProtocolEventHub(bufferCapacity = PROTOCOL_EVENT_BUFFER)
             val httpClient = OkHttpClient()
+            val googleTokenExchange = OkHttpGoogleTokenExchange(
+                httpClient,
+                System::currentTimeMillis,
+            )
+            val googleAccount = GoogleAccountRuntime(
+                store = googleCredentials,
+                exchange = googleTokenExchange,
+                revoke = OkHttpGoogleRevokeTransport(httpClient),
+            )
             val pushRegistration = PushRegistrationCoordinator()
             val expoInstallationIdentity = androidExpoInstallationIdentity(applicationContext)
             val pushTokenRuntime = PushTokenRuntime(
@@ -238,7 +263,14 @@ class NativeAndroidRuntime private constructor(
                     deviceLabel = identity.deviceLabel,
                 ),
                 coordinatorFactory = AuthenticatedConnectionFleetCoordinatorFactory(
-                    dialer = OkHttpWebSocketDialer(httpClient),
+                    dialer = composeNativeLineDialer(
+                        direct = OkHttpWebSocketDialer(httpClient),
+                        googleCredentials = googleCredentials,
+                        tokenExchange = googleTokenExchange,
+                        relaySocketFactory = OkHttpIapRelaySocketFactory(httpClient),
+                        scheduler = transportScheduler,
+                        nowEpochMs = System::currentTimeMillis,
+                    ),
                     scheduler = transportScheduler,
                     cursorStore = RoomResumeCursorStore(database),
                     credentialStore = NativeSessionCredentialStore(repository, credentials),
@@ -310,6 +342,7 @@ class NativeAndroidRuntime private constructor(
                 context = applicationContext,
                 database = database,
                 credentials = credentials,
+                googleCredentials = googleCredentials,
                 dialGate = DialGate(fleet::startupReady),
             )
             return NativeAndroidRuntime(
@@ -321,6 +354,8 @@ class NativeAndroidRuntime private constructor(
                 outbox = outbox,
                 composer = composer,
                 startup = startup,
+                googleCredentials = googleCredentials,
+                googleAccount = googleAccount,
                 deviceIdentity = identity,
                 notificationRoutes = notificationRoutes,
                 notificationPermissions = notificationPermissions,

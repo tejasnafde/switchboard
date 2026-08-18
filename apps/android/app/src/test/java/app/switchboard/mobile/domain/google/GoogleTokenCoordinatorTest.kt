@@ -1,10 +1,21 @@
 package app.switchboard.mobile.domain.google
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
 class GoogleTokenCoordinatorTest {
+    @Test
+    fun `token-bearing result diagnostics are redacted`() {
+        assertFalse(GoogleAccessTokenResult.Available("access-secret").toString().contains("access-secret"))
+        assertFalse(
+            GoogleRefreshResult.Success("refresh-secret", 123L)
+                .toString()
+                .contains("refresh-secret"),
+        )
+    }
+
     @Test
     fun `fresh access token is returned without refresh and near-expiry callers share one refresh`() {
         val store = FakeStore(

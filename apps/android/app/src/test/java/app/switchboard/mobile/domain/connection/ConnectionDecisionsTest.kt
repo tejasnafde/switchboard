@@ -92,6 +92,32 @@ class ConnectionDecisionsTest {
     }
 
     @Test
+    fun `terminal prerequisites expose fixed actionable copy without dynamic transport detail`() {
+        val current = ConnectionRuntimeState(4, ConnectionStatus.Connecting, "")
+
+        assertEquals(
+            ConnectionRuntimeState(4, ConnectionStatus.Error, "Sign in to Google to connect through Cloud IAP"),
+            ConnectionStatusReducer.reduce(
+                current,
+                ConnectionRuntimeEvent.TerminalFailure(
+                    generation = 4,
+                    reason = ConnectionTerminalReason.GoogleSignInRequired,
+                ),
+            ),
+        )
+        assertEquals(
+            ConnectionRuntimeState(4, ConnectionStatus.Error, "Google credentials could not be read safely"),
+            ConnectionStatusReducer.reduce(
+                current,
+                ConnectionRuntimeEvent.TerminalFailure(
+                    generation = 4,
+                    reason = ConnectionTerminalReason.GoogleCredentialsBlocked,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun `callbacks from an older transport generation cannot change current status`() {
         val current = ConnectionRuntimeState(8, ConnectionStatus.Connecting, "retry 1")
 

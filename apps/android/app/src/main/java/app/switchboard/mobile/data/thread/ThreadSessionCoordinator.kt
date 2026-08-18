@@ -20,6 +20,7 @@ import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.platform.protocol.Cancelable
+import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.RuntimeEventPayload
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -229,27 +230,50 @@ class SwitchboardThreadSessionRemote(
 
 object LoadedSessionSnapshotMapper {
     fun map(threadId: String, loaded: LoadedSession): ThreadSnapshot {
-        val feed = loaded.messages.map { message ->
+        val feed = loaded.messages.flatMap { message ->
             when (message.role.lowercase()) {
-                "user" -> FeedItem.User(
-                    id = "h-${message.id}",
-                    text = message.content,
-                    at = message.timestamp,
+                "user" -> listOf(
+                    FeedItem.User(
+                        id = "h-${message.id}",
+                        text = message.content,
+                        at = message.timestamp,
+                        images = message.images,
+                    ),
                 )
 
-                "assistant", "system" -> FeedItem.Text(
-                    id = "h-${message.id}",
-                    messageId = message.id,
-                    text = message.content,
-                    stream = "assistant",
-                    done = true,
-                )
+                "assistant", "system" -> buildList {
+                    if (message.content.isNotBlank()) {
+                        add(
+                            FeedItem.Text(
+                                id = "h-${message.id}",
+                                messageId = message.id,
+                                text = message.content,
+                                stream = "assistant",
+                                done = true,
+                            ),
+                        )
+                    }
+                    message.toolCalls.forEach { tool ->
+                        add(
+                            FeedItem.Tool(
+                                id = "h-${message.id}-t-${tool.id}",
+                                toolId = tool.id,
+                                toolName = tool.name,
+                                input = JsonString(tool.input),
+                                output = tool.output,
+                                state = "done",
+                            ),
+                        )
+                    }
+                }
 
-                else -> FeedItem.RawNotice(
-                    id = "h-${message.id}",
-                    eventType = "history.${message.role}",
-                    text = message.content,
-                    raw = message.raw,
+                else -> listOf(
+                    FeedItem.RawNotice(
+                        id = "h-${message.id}",
+                        eventType = "history.${message.role}",
+                        text = message.content,
+                        raw = message.raw,
+                    ),
                 )
             }
         }.toMutableList<FeedItem>()

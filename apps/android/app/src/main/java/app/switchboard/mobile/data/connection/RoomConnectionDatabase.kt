@@ -25,6 +25,41 @@ class RoomConnectionDatabase(
         )
     }
 
+    override fun compareAndSwapConnection(
+        expected: StoredConnection,
+        replacement: ConnectionEntity,
+        newCredentialRef: String,
+    ): OfflineSnapshot? {
+        require(replacement.id == expected.connection.id)
+        var snapshot: OfflineSnapshot? = null
+        database.runInTransaction {
+            val dao = database.connectionDao()
+            val currentConnection = dao.find(expected.connection.id)
+            val currentCredentialRef = dao.findNativeCredentialRef(expected.connection.id)?.logicalKey
+            if (
+                currentConnection != expected.connection ||
+                currentCredentialRef != expected.activeCredentialKey
+            ) {
+                return@runInTransaction
+            }
+            dao.upsertWithNativeCredential(
+                replacement,
+                NativeCredentialRefEntity(replacement.id, newCredentialRef),
+            )
+            val reread = database.offlineSnapshotDao().read()
+            check(reread.connections.any { it == replacement }) {
+                "connection replacement read-back failed"
+            }
+            check(
+                reread.nativeCredentialRefs.any {
+                    it.connectionId == replacement.id && it.logicalKey == newCredentialRef
+                },
+            ) { "connection credential read-back failed" }
+            snapshot = reread
+        }
+        return snapshot
+    }
+
     override fun compareAndSwapCredentialRef(
         connectionId: String,
         expectedOldRef: String,

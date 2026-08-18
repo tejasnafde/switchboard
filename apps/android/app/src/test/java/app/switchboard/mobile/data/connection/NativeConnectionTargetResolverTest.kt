@@ -2,8 +2,10 @@ package app.switchboard.mobile.data.connection
 
 import app.switchboard.mobile.data.local.ConnectionEntity
 import app.switchboard.mobile.data.local.OfflineSnapshot
+import app.switchboard.mobile.domain.iap.IapTarget
 import app.switchboard.mobile.platform.migration.CredentialWriteVerification
 import app.switchboard.mobile.platform.migration.SelectedCredential
+import app.switchboard.mobile.platform.protocol.LineEndpoint
 import app.switchboard.mobile.platform.storage.NativeCredential
 import app.switchboard.mobile.protocol.Credential
 import org.junit.Assert.assertEquals
@@ -77,6 +79,66 @@ class NativeConnectionTargetResolverTest {
         assertFalse(missing.toString().contains("ref"))
     }
 
+    @Test
+    fun `valid IAP row resolves a distinct target with its migrated backend token`() {
+        val database = FakeDatabase(
+            mapOf(
+                "iap" to StoredConnection(
+                    connection = ConnectionEntity(
+                        id = "iap",
+                        label = "work VM",
+                        kind = "iap",
+                        url = null,
+                        project = "project-1",
+                        zone = "asia-south1-b",
+                        instance = "work-vm",
+                        port = 8766,
+                    ),
+                    activeCredentialKey = "ref-iap",
+                ),
+            ),
+        )
+        val credentials = FakeCredentials(
+            mapOf(
+                "ref-iap" to NativeCredential(
+                    NativeCredential.Kind.LEGACY_INLINE_TOKEN,
+                    "backend-secret",
+                ),
+            ),
+        )
+
+        val result = NativeConnectionTargetResolver(database, credentials)
+            .resolve("iap", "phone", "Pixel") as ConnectionTargetResolution.Ready
+
+        assertEquals(
+            LineEndpoint.CloudIap(IapTarget("project-1", "asia-south1-b", "work-vm", 8766)),
+            result.target.endpoint,
+        )
+        assertEquals(Credential.LegacySharedToken("backend-secret"), result.target.credential)
+        assertEquals("ref-iap", result.target.credentialRef)
+    }
+
+    @Test
+    fun `IAP rejects incomplete topology invalid ports and non-backend credentials`() {
+        val rows = mapOf(
+            "missing" to iapStored("missing", project = ""),
+            "port" to iapStored("port", port = 70_000),
+            "session" to iapStored("session"),
+        )
+        val credentials = FakeCredentials(
+            mapOf(
+                "ref-missing" to NativeCredential(NativeCredential.Kind.LEGACY_INLINE_TOKEN, "secret"),
+                "ref-port" to NativeCredential(NativeCredential.Kind.LEGACY_INLINE_TOKEN, "secret"),
+                "ref-session" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "secret"),
+            ),
+        )
+        val resolver = NativeConnectionTargetResolver(FakeDatabase(rows), credentials)
+
+        listOf("missing", "port", "session").forEach { id ->
+            assertTrue(resolver.resolve(id, "phone", "Pixel") is ConnectionTargetResolution.Failure)
+        }
+    }
+
     private class FakeDatabase(
         private val stored: Map<String, StoredConnection>,
     ) : ConnectionDatabase {
@@ -120,5 +182,23 @@ class NativeConnectionTargetResolverTest {
             port = null,
         ),
         activeCredentialKey = ref,
+    )
+
+    private fun iapStored(
+        id: String,
+        project: String = "project",
+        port: Int = 8766,
+    ) = StoredConnection(
+        connection = ConnectionEntity(
+            id = id,
+            label = id,
+            kind = "iap",
+            url = null,
+            project = project,
+            zone = "zone",
+            instance = "instance",
+            port = port,
+        ),
+        activeCredentialKey = "ref-$id",
     )
 }

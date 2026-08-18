@@ -43,4 +43,15 @@ class Utf8NdjsonDecoderTest {
 
         assertTrue(decoder.finish() is Utf8NdjsonResult.ProtocolError)
     }
+
+    @Test
+    fun `unterminated terminal NDJSON is a protocol error`() {
+        val decoder = Utf8NdjsonDecoder()
+        decoder.push("partial".toByteArray())
+
+        assertEquals(
+            Utf8NdjsonResult.ProtocolError("unterminated NDJSON line"),
+            decoder.finish(),
+        )
+    }
 }

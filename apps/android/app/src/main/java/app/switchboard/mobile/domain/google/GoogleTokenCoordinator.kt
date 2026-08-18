@@ -13,7 +13,10 @@ sealed interface GoogleRefreshResult {
         val accessToken: String,
         val expiresAtEpochMs: Long,
         val email: String? = null,
-    ) : GoogleRefreshResult
+    ) : GoogleRefreshResult {
+        override fun toString(): String =
+            "Success(accessToken=[REDACTED], expiresAtEpochMs=$expiresAtEpochMs, email=$email)"
+    }
 
     data class Failure(val code: String, val detail: String? = null) : GoogleRefreshResult
 }
@@ -23,7 +26,9 @@ fun interface GoogleTokenExchange {
 }
 
 sealed interface GoogleAccessTokenResult {
-    data class Available(val accessToken: String) : GoogleAccessTokenResult
+    data class Available(val accessToken: String) : GoogleAccessTokenResult {
+        override fun toString(): String = "Available(accessToken=[REDACTED])"
+    }
     data class RetryableFailure(val reason: String) : GoogleAccessTokenResult
     data object SignedOut : GoogleAccessTokenResult
 }

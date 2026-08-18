@@ -38,6 +38,7 @@ class PushRegistrationCoordinator {
 
     private data class ViewingLease(
         val id: Long,
+        val scope: TransportScope,
         val threadId: String,
     )
 
@@ -62,7 +63,9 @@ class PushRegistrationCoordinator {
         }
         ready.values.forEach(::registerIfNeeded)
         viewing.forEach { (connectionId, lease) ->
-            ready[connectionId]?.let { reportViewing(it, nextToken, lease.threadId) }
+            ready[connectionId]
+                ?.takeIf { it.scope == lease.scope }
+                ?.let { reportViewing(it, nextToken, lease.threadId) }
         }
     }
 
@@ -79,7 +82,10 @@ class PushRegistrationCoordinator {
         val currentToken = token ?: return
         viewing.forEach { (connectionId, lease) ->
             val backend = ready[connectionId] ?: return@forEach
-            if (previous[connectionId]?.scope != backend.scope) {
+            if (
+                backend.scope == lease.scope &&
+                previous[connectionId]?.scope != backend.scope
+            ) {
                 reportViewing(backend, currentToken, lease.threadId)
             }
         }
@@ -89,22 +95,31 @@ class PushRegistrationCoordinator {
     fun beforeConnectionRemoved(connectionId: String) {
         val backend = ready[connectionId] ?: return
         ready = ready - connectionId
+        val lease = viewing.remove(connectionId)
+        registered.removeAll { it.scope == backend.scope }
+        registering.removeAll { it.scope == backend.scope }
         val currentToken = token ?: return
-        viewing.remove(connectionId)?.let {
+        if (lease?.scope == backend.scope) {
             reportViewing(backend, currentToken, threadId = null)
         }
         backend.unregister(currentToken) { }
-        registered.removeAll { it.scope == backend.scope }
-        registering.removeAll { it.scope == backend.scope }
     }
 
     @Synchronized
     fun beginViewing(connectionId: String, threadId: String): Closeable {
-        if (connectionId.isBlank() || threadId.isBlank()) return Closeable {}
-        val lease = ViewingLease(++nextViewingId, threadId)
+        val scope = ready[connectionId]?.scope ?: return Closeable {}
+        return beginViewing(scope, threadId)
+    }
+
+    @Synchronized
+    fun beginViewing(scope: TransportScope, threadId: String): Closeable {
+        if (scope.connectionId.isBlank() || threadId.isBlank()) return Closeable {}
+        val connectionId = scope.connectionId
+        val backend = ready[connectionId]
+        if (backend != null && backend.scope != scope) return Closeable {}
+        val lease = ViewingLease(++nextViewingId, scope, threadId)
         viewing[connectionId] = lease
         val currentToken = token
-        val backend = ready[connectionId]
         if (currentToken != null && backend != null) {
             reportViewing(backend, currentToken, threadId)
         }
@@ -115,7 +130,9 @@ class PushRegistrationCoordinator {
     fun renewViewingLeases() {
         val currentToken = token ?: return
         viewing.forEach { (connectionId, lease) ->
-            ready[connectionId]?.let { reportViewing(it, currentToken, lease.threadId) }
+            ready[connectionId]
+                ?.takeIf { it.scope == lease.scope }
+                ?.let { reportViewing(it, currentToken, lease.threadId) }
         }
     }
 
@@ -125,7 +142,9 @@ class PushRegistrationCoordinator {
         if (current.id != leaseId) return
         viewing.remove(connectionId)
         val currentToken = token ?: return
-        ready[connectionId]?.let { reportViewing(it, currentToken, threadId = null) }
+        ready[connectionId]
+            ?.takeIf { it.scope == current.scope }
+            ?.let { reportViewing(it, currentToken, threadId = null) }
     }
 
     private fun registerIfNeeded(backend: PushBackend) {

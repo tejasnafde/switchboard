@@ -14,7 +14,9 @@ class OkHttpWebSocketDialer(
         target: WebSocketTarget,
         callbacks: WebSocketCallbacks,
     ): WebSocketConnection {
-        val cleanUrl = withoutEmbeddedAuth(target.url)
+        val direct = target.endpoint as? LineEndpoint.DirectWebSocket
+            ?: throw IllegalArgumentException("OkHttpWebSocketDialer only accepts direct WebSocket targets")
+        val cleanUrl = withoutEmbeddedAuth(direct.url)
         val dialUrl = when (val credential = target.credential) {
             is app.switchboard.mobile.protocol.Credential.LegacySharedToken ->
                 legacyAuthenticatedUrl(cleanUrl, credential.token)

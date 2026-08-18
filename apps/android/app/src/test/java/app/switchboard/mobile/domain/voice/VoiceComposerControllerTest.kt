@@ -140,6 +140,33 @@ class VoiceComposerControllerTest {
         assertNull(active.controller.state.session.sessionToken)
     }
 
+    @Test
+    fun `release while permission is pending prevents late permission from starting recognition`() {
+        val pendingPermission = FakePermission(autoDecision = null)
+        val fixture = fixture(permissionGateway = pendingPermission)
+
+        fixture.controller.start()
+        fixture.controller.stop()
+        pendingPermission.complete(VoicePermissionDecision.Granted)
+
+        assertFalse(fixture.controller.state.starting)
+        assertEquals(0, fixture.recognizer.startCalls)
+        assertFalse(fixture.controller.state.session.listening)
+    }
+
+    @Test
+    fun `locking while permission is pending starts in locked mode after grant`() {
+        val pendingPermission = FakePermission(autoDecision = null)
+        val fixture = fixture(permissionGateway = pendingPermission)
+
+        fixture.controller.start()
+        fixture.controller.lock()
+        pendingPermission.complete(VoicePermissionDecision.Granted)
+
+        assertEquals(VoiceCapturePhase.ListeningLocked, fixture.controller.state.session.phase)
+        assertEquals(1, fixture.recognizer.startCalls)
+    }
+
     private data class Fixture(
         val controller: VoiceComposerController,
         val permission: FakePermission,

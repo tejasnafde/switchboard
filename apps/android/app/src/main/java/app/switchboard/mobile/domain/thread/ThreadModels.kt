@@ -1,5 +1,6 @@
 package app.switchboard.mobile.domain.thread
 
+import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonValue
 
@@ -151,7 +152,12 @@ sealed interface ThreadRuntimeEvent {
 sealed interface FeedItem {
     val id: String
 
-    data class User(override val id: String, val text: String, val at: Long) : FeedItem
+    data class User(
+        override val id: String,
+        val text: String,
+        val at: Long,
+        val images: List<MessageImage> = emptyList(),
+    ) : FeedItem
     data class Text(
         override val id: String,
         val messageId: String,

@@ -36,9 +36,25 @@ class ConnectionFleetTest {
 
         fixture.fleet.startupReady()
 
-        assertEquals(listOf("a"), fixture.factory.created.map { it.connectionId })
+        assertEquals(listOf("a", "iap"), fixture.factory.created.map { it.connectionId })
         assertEquals(ConnectionStatus.Connecting, fixture.fleet.statuses.value.getValue("a").status)
-        assertEquals(ConnectionStatus.Disconnected, fixture.fleet.statuses.value.getValue("iap").status)
+        assertEquals(ConnectionStatus.Connecting, fixture.fleet.statuses.value.getValue("iap").status)
+    }
+
+    @Test
+    fun `incomplete IAP rows or rows without a backend credential do not auto-connect`() {
+        val fixture = Fixture(
+            snapshot(
+                iap("missing-ref", credentialKey = null),
+                iap("missing-project", project = ""),
+                iap("bad-port", port = 0),
+            ),
+        )
+
+        fixture.fleet.startupReady()
+
+        assertTrue(fixture.factory.created.isEmpty())
+        assertTrue(fixture.fleet.statuses.value.values.all { it.status == ConnectionStatus.Disconnected })
     }
 
     @Test
@@ -343,8 +359,13 @@ class ConnectionFleetTest {
         credentialKey,
     )
 
-    private fun iap(id: String) = ConnectionSpecFixture(
-        ConnectionEntity(id, id, "iap", null, "project", "zone", "vm", 22),
-        null,
+    private fun iap(
+        id: String,
+        project: String = "project",
+        port: Int = 8766,
+        credentialKey: String? = "ref-$id",
+    ) = ConnectionSpecFixture(
+        ConnectionEntity(id, id, "iap", null, project, "zone", "vm", port),
+        credentialKey,
     )
 }

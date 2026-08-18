@@ -13,10 +13,12 @@ import app.switchboard.mobile.platform.push.AndroidRemotePushIntent
 import app.switchboard.mobile.platform.protocol.ProtocolEventHub
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.platform.startup.AndroidStartupRuntime
+import app.switchboard.mobile.platform.startup.GoogleStartupState
 import app.switchboard.mobile.platform.startup.StartupRuntimeState
 import app.switchboard.mobile.platform.update.AndroidUpdateRuntime
 import app.switchboard.mobile.runtime.NativeAndroidRuntime
 import app.switchboard.mobile.runtime.DurableComposerRuntime
+import app.switchboard.mobile.runtime.GoogleAccountRuntime
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
 import java.io.Closeable
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -40,6 +42,8 @@ class SwitchboardApplication : Application() {
         private set
     lateinit var composerRuntime: DurableComposerRuntime
         private set
+    lateinit var googleAccountRuntime: GoogleAccountRuntime
+        private set
     lateinit var notificationRoutes: NotificationRouteInbox
         private set
     lateinit var notificationPermissions: AndroidNotificationPermissionController
@@ -49,8 +53,11 @@ class SwitchboardApplication : Application() {
 
     private val mutableStartupState = MutableStateFlow<StartupRuntimeState>(StartupRuntimeState.Loading)
     val startupState = mutableStartupState.asStateFlow()
+    private val mutableGoogleStartupState = MutableStateFlow<GoogleStartupState>(GoogleStartupState.Pending)
+    val googleStartupState = mutableGoogleStartupState.asStateFlow()
     private lateinit var nativeRuntime: NativeAndroidRuntime
     private var startupObservation: Closeable? = null
+    private var googleStartupObservation: Closeable? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -64,16 +71,20 @@ class SwitchboardApplication : Application() {
         protocolEvents = nativeRuntime.protocolEvents
         outboxRuntime = nativeRuntime.outbox
         composerRuntime = nativeRuntime.composer
+        googleAccountRuntime = nativeRuntime.googleAccount
         notificationRoutes = nativeRuntime.notificationRoutes
         notificationPermissions = nativeRuntime.notificationPermissions
         browseSnapshotStore = nativeRuntime.browseSnapshots
         startupObservation = nativeRuntime.observeStartup { mutableStartupState.value = it }
+        googleStartupObservation = nativeRuntime.observeGoogleStartup { mutableGoogleStartupState.value = it }
         nativeRuntime.start()
     }
 
     override fun onTerminate() {
         startupObservation?.close()
         startupObservation = null
+        googleStartupObservation?.close()
+        googleStartupObservation = null
         if (::nativeRuntime.isInitialized) nativeRuntime.close()
         super.onTerminate()
     }
@@ -85,8 +96,8 @@ class SwitchboardApplication : Application() {
     fun registerViewingLeaseRenewal(callback: () -> Unit): Closeable =
         nativeRuntime.viewingLeaseRenewals.register(callback)
 
-    fun beginPushViewing(connectionId: String, threadId: String): Closeable =
-        nativeRuntime.beginViewing(connectionId, threadId)
+    fun beginPushViewing(scope: TransportScope, threadId: String): Closeable =
+        nativeRuntime.beginViewing(scope, threadId)
 
     fun onFcmToken(token: String) {
         if (::nativeRuntime.isInitialized) nativeRuntime.onFcmToken(token)

@@ -366,6 +366,272 @@ class SwitchboardDatabaseTest {
         }
     }
 
+    @Test
+    fun migrationOneToFourPreservesDurableStateAndTransformsOutboxWithoutLoss() {
+        val name = "full-chain-migration-test"
+        migrationHelper.createDatabase(name, 1).apply {
+            execSQL(
+                "INSERT INTO connections (id, label, kind, url, project, zone, instance, port) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan", "Mac", "ws", "ws://mac", "/repo", null, null, null),
+            )
+            execSQL(
+                "INSERT INTO credential_refs (connectionId, tokenLogicalKey, sessionLogicalKey) " +
+                    "VALUES (?, ?, ?)",
+                arrayOf<Any?>("lan", "token-key", "session-key"),
+            )
+            execSQL(
+                "INSERT INTO app_preferences (`key`, value) VALUES (?, ?)",
+                arrayOf<Any?>("defaultMode", "sandbox"),
+            )
+            execSQL(
+                "INSERT INTO thread_preferences " +
+                    "(threadKey, mode, model, draft, touchedAt) VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan:thread", "plan", "codex", "keep draft", 42L),
+            )
+            execSQL(
+                "INSERT INTO collapsed_workspaces (workspaceId, position) VALUES (?, ?)",
+                arrayOf<Any?>("workspace", 3),
+            )
+            execSQL(
+                "INSERT INTO cached_threads (threadKey, rawJson) VALUES (?, ?)",
+                arrayOf<Any?>("lan:thread", "{\"title\":\"Keep\"}"),
+            )
+            execSQL(
+                "INSERT INTO cached_feed_rows (threadKey, itemId, position, rawJson) " +
+                    "VALUES (?, ?, ?, ?)",
+                arrayOf<Any?>("lan:thread", "item", 0, "{\"text\":\"Keep chat\"}"),
+            )
+            execSQL(
+                "INSERT INTO outbox " +
+                    "(messageId, connectionId, threadId, text, runtimeMode, createdAt, attempts, rawJson) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    "message-1",
+                    "lan",
+                    "thread",
+                    "send later",
+                    "sandbox",
+                    99L,
+                    2,
+                    "{\"messageId\":\"message-1\"}",
+                ),
+            )
+            execSQL(
+                "INSERT INTO outbox_attachments (messageId, position, privatePath, mimeType) " +
+                    "VALUES (?, ?, ?, ?)",
+                arrayOf<Any?>("message-1", 0, "attachments/message-1/0.png", "image/png"),
+            )
+            execSQL(
+                "INSERT INTO replay_state (connectionId, epoch, lastSequence) VALUES (?, ?, ?)",
+                arrayOf<Any?>("lan", "epoch-a", 7L),
+            )
+            execSQL(
+                "INSERT INTO pending_control_actions " +
+                    "(id, connectionId, channel, argsJson, requestId, idempotencyKey, createdAt, " +
+                    "attempts, status, lastError) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>(
+                    "control-1",
+                    "lan",
+                    "provider:interrupt",
+                    "[\"thread\"]",
+                    "request-1",
+                    "idem-1",
+                    101L,
+                    1,
+                    "pending",
+                    "retry",
+                ),
+            )
+            execSQL(
+                "INSERT INTO migration_checkpoint " +
+                    "(id, sourceFingerprint, nativeFingerprint, state) VALUES (?, ?, ?, ?)",
+                arrayOf<Any?>(1, "source", "native", "complete"),
+            )
+            execSQL(
+                "INSERT INTO quarantined_records " +
+                    "(sourceKey, code, recordKey, detail, severity) VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any?>("legacy-key", "invalid", "record", "keep detail", "warning"),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            name,
+            4,
+            true,
+            SwitchboardDatabase.MIGRATION_1_2,
+            SwitchboardDatabase.MIGRATION_2_3,
+            SwitchboardDatabase.MIGRATION_3_4,
+        ).use { migrated ->
+            listOf(
+                "connections",
+                "credential_refs",
+                "native_credential_refs",
+                "app_preferences",
+                "thread_preferences",
+                "collapsed_workspaces",
+                "cached_threads",
+                "cached_feed_rows",
+                "outbox",
+                "outbox_attachments",
+                "replay_state",
+                "pending_control_actions",
+                "migration_checkpoint",
+                "quarantined_records",
+            ).forEach { table ->
+                migrated.query("SELECT COUNT(*) FROM `$table`").use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals("Unexpected row count for $table", 1, cursor.getInt(0))
+                }
+            }
+            migrated.query(
+                "SELECT label, kind, url, project FROM connections WHERE id = 'lan'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("Mac", cursor.getString(0))
+                assertEquals("ws", cursor.getString(1))
+                assertEquals("ws://mac", cursor.getString(2))
+                assertEquals("/repo", cursor.getString(3))
+            }
+            migrated.query(
+                "SELECT tokenLogicalKey, sessionLogicalKey FROM credential_refs " +
+                    "WHERE connectionId = 'lan'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("token-key", cursor.getString(0))
+                assertEquals("session-key", cursor.getString(1))
+            }
+            migrated.query(
+                "SELECT logicalKey FROM native_credential_refs WHERE connectionId = 'lan'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("lan", cursor.getString(0))
+            }
+            migrated.query(
+                "SELECT value FROM app_preferences WHERE `key` = 'defaultMode'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("sandbox", cursor.getString(0))
+            }
+            migrated.query(
+                "SELECT mode, model, draft, touchedAt, editingOrigin FROM thread_preferences " +
+                    "WHERE threadKey = 'lan:thread'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("plan", cursor.getString(0))
+                assertEquals("codex", cursor.getString(1))
+                assertEquals("keep draft", cursor.getString(2))
+                assertEquals(42L, cursor.getLong(3))
+                assertNull(cursor.getString(4))
+            }
+            migrated.query(
+                "SELECT position FROM collapsed_workspaces WHERE workspaceId = 'workspace'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(3, cursor.getInt(0))
+            }
+            migrated.query(
+                "SELECT rawJson FROM cached_threads WHERE threadKey = 'lan:thread'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("{\"title\":\"Keep\"}", cursor.getString(0))
+            }
+            migrated.query(
+                "SELECT itemId, position, rawJson FROM cached_feed_rows " +
+                    "WHERE threadKey = 'lan:thread'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("item", cursor.getString(0))
+                assertEquals(0, cursor.getInt(1))
+                assertEquals("{\"text\":\"Keep chat\"}", cursor.getString(2))
+            }
+            migrated.query(
+                "SELECT bubbleId, connectionId, threadId, text, runtimeMode, createdAtMs, " +
+                    "attempts, nextAttemptAtMs, deliveryState, stateReason, receiptRawJson, " +
+                    "legacyRawJson FROM outbox WHERE origin = 'message-1'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("remote_message-1", cursor.getString(0))
+                assertEquals("lan", cursor.getString(1))
+                assertEquals("thread", cursor.getString(2))
+                assertEquals("send later", cursor.getString(3))
+                assertEquals("sandbox", cursor.getString(4))
+                assertEquals(99L, cursor.getLong(5))
+                assertEquals(2, cursor.getInt(6))
+                assertEquals(99L, cursor.getLong(7))
+                assertEquals("pending", cursor.getString(8))
+                assertNull(cursor.getString(9))
+                assertNull(cursor.getString(10))
+                assertEquals("{\"messageId\":\"message-1\"}", cursor.getString(11))
+            }
+            migrated.query(
+                "SELECT position, privatePath, mimeType FROM outbox_attachments " +
+                    "WHERE origin = 'message-1'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+                assertEquals("attachments/message-1/0.png", cursor.getString(1))
+                assertEquals("image/png", cursor.getString(2))
+            }
+            migrated.query(
+                "SELECT epoch, lastSequence FROM replay_state WHERE connectionId = 'lan'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("epoch-a", cursor.getString(0))
+                assertEquals(7L, cursor.getLong(1))
+            }
+            migrated.query(
+                "SELECT channel, argsJson, requestId, idempotencyKey, attempts, status, lastError " +
+                    "FROM pending_control_actions WHERE id = 'control-1'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("provider:interrupt", cursor.getString(0))
+                assertEquals("[\"thread\"]", cursor.getString(1))
+                assertEquals("request-1", cursor.getString(2))
+                assertEquals("idem-1", cursor.getString(3))
+                assertEquals(1, cursor.getInt(4))
+                assertEquals("pending", cursor.getString(5))
+                assertEquals("retry", cursor.getString(6))
+            }
+            migrated.query(
+                "SELECT sourceFingerprint, nativeFingerprint, state FROM migration_checkpoint " +
+                    "WHERE id = 1",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("source", cursor.getString(0))
+                assertEquals("native", cursor.getString(1))
+                assertEquals("complete", cursor.getString(2))
+            }
+            migrated.query(
+                "SELECT code, recordKey, detail, severity FROM quarantined_records " +
+                    "WHERE sourceKey = 'legacy-key'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("invalid", cursor.getString(0))
+                assertEquals("record", cursor.getString(1))
+                assertEquals("keep detail", cursor.getString(2))
+                assertEquals("warning", cursor.getString(3))
+            }
+            migrated.query("SELECT COUNT(*) FROM draft_attachments").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            migrated.query("SELECT COUNT(*) FROM browse_snapshots").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
+            }
+            migrated.query("PRAGMA foreign_key_check").use { cursor ->
+                assertFalse("Migration left broken foreign keys", cursor.moveToFirst())
+            }
+            migrated.query("PRAGMA integrity_check").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("ok", cursor.getString(0))
+                assertFalse(cursor.moveToNext())
+            }
+        }
+    }
+
     private fun pendingOutbox(
         origin: String,
         attempts: Int = 0,

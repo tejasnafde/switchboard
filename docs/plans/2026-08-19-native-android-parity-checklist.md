@@ -50,6 +50,13 @@ Status marks:
 - [H][U] First native launch offline shows all recoverable cached state.
 - [H][U] Interrupted migration retries without duplication, loss or corruption.
 
+Migration evidence includes pure importer/checkpoint/idempotency tests and a
+compiled Android `MigrationTestHelper` v1-to-v4 fixture covering connections,
+credential refs, preferences, cached chat/feed, outbox/attachments, replay,
+pending controls, checkpoints and quarantine, followed by foreign-key and
+SQLite integrity checks. That instrumentation fixture has not been executed on
+an emulator/device, and it is not a substitute for the production APK upgrade.
+
 ## Self-update
 
 - [x] Discover the newest non-draft, non-prerelease `mobile-v*` GitHub release
@@ -82,10 +89,14 @@ Status marks:
 - [x] Pairing parser accepts `ws:`/`wss:`, strips credentials from the endpoint,
   and preserves pairing-vs-token semantics.
 - [x] Manual WS form accepts a full pairing URL and defaults the label to host.
-- [ ] Editing with new credentials clears the old device session only after the
-  replacement credential is durably verified.
-- [ ] IAP target discovery merges and deduplicates targets across ready machines;
-  manual project/zone/instance/port remains available with validation.
+- [x] Editing with new credentials stages and readback-verifies a fresh native
+  key, atomically CASes the full Room row plus credential ref, and retires the
+  old native key only after commit. Stale/failing edits preserve prior state;
+  post-commit cleanup failure leaves a harmless orphan rather than rolling back.
+- [~] Manual IAP creation/editing validates project/zone/instance/port, stores
+  the backend token only in native encrypted storage and preserves the secret
+  for unchanged offline edits. Target discovery/merge across ready machines
+  remains.
 - [~] WS auth waits for backend `ready`, keeps requests bounded, persists replay
   cursor and rejects stale/cross-connection callbacks.
 - [~] Application-scoped network monitoring treats transport presence (not WAN
@@ -173,12 +184,16 @@ and first-message delivery still require physical-device/backend smoke testing.
   events per thread until snapshot replacement, then replay FIFO.
 - [~] Render text messages, Markdown, assistant/reasoning/plan streams,
   tools, denials, approvals, questions, proposed plans, file edits, errors,
-  notices, retry, drift, spend, peer and todo events. Historical inline image
-  decoding/rendering and a lightbox remain.
+  notices, retry, drift, spend, peer and todo events. Historical image-only
+  messages, bounded raster data URLs and tool calls now survive snapshot decode;
+  images render off-main-thread inline with a full-screen lightbox. Remote URL
+  image loading remains.
 - [ ] Show duration, cost/context metadata and stable connection/thread status.
-- [ ] Mark/renew viewing leases while focused and reconstruct unread state after
-  process death.
-- [ ] Edge-swipe back starts only at the left edge, yields to vertical feed
+- [~] A visible, ready thread enters an exact transport-generation viewing
+  lease; backgrounding, disposal, device switches and stale callbacks leave or
+  reacquire without crossing scopes. Unread reconstruction after process death
+  still needs instrumentation/device coverage.
+- [x] Edge-swipe back starts only at the left edge, yields to vertical feed
   scrolling and commits only past threshold; Android system back also works.
 - [H] Compare streaming stability, Markdown typography, scrolling and touch
   latency against RN on a real device.
@@ -232,28 +247,50 @@ Automated thread/control evidence: `ThreadRichTextTest`,
 
 ## Google account and IAP
 
-- [ ] Sign-in screen supports browser OAuth and QR credential import, signed-in
-  identity, refresh, revoke/sign-out, cancellation and permission errors.
+- [~] The native Google account route exposes signed-out, signed-in/email and
+  blocked recovery states, verified masked paste import, confirmed revoke/sign-
+  out, cancellation fencing and fixed nonsecret errors. Its scan action clearly
+  falls back to paste; native camera QR and browser OAuth remain.
 - [~] A verified native encrypted store and idempotent, read-only importer cover
-  all six `sb.google.*` credential keys without deleting Expo data. Startup/UI
-  integration remains.
-- [~] Pure coordination refreshes before expiry, serializes refresh, and turns
-  invalid grants into a signed-out state instead of an infinite retry loop.
-- [ ] IAP transport handles split UTF-8 frames, bounded queues, timeouts,
-  backend auth/readiness, tunnel drops and snapshot recovery.
+  all six `sb.google.*` credential keys without deleting Expo data. Startup runs
+  the importer before fleet release and exposes independent Ready / Absent /
+  Blocked Google state without blocking ordinary WS. Imported credentials are
+  verified before activation and stale imports cannot replace newer state.
+- [~] Native Google token exchange refreshes before expiry, serializes refresh,
+  parses successful domain failures, and turns invalid grants into signed-out
+  state instead of an infinite retry loop. Revoke is best-effort and uses
+  expected-bundle compare-and-clear so a late sign-out cannot erase a newer
+  account. The application-owned observable account runtime survives Activity
+  recreation; browser/device execution remains.
+- [~] IAP relay transport handles split UTF-8/NDJSON frames, bounded queues,
+  typed overflow, connect timeouts, incremental relay parsing, backend auth and
+  readiness, ACK windows, tunnel drops and stale callbacks. Valid stored rows
+  resolve and auto-connect through the routed native fleet; signed-out/blocked
+  prerequisites terminate with actionable error and no retry while WS remains
+  independent. Real tunnel/snapshot recovery remains an integration check.
 - [H] Exercise real Google login/refresh/revoke and IAP to discovered and manual
   targets through backgrounding and network changes.
 
+Automated Google/IAP evidence: `GoogleStartupRuntimeTest`,
+`GoogleCredentialImportCoordinatorTest`, `GoogleSignOutCoordinatorTest`,
+`GoogleTokenHttpContractTest`, `GoogleAccountRuntimeTest`,
+`GoogleAccountUiReducerTest`, `IapRelayTransportTest`,
+`GoogleIapAccessTokenProviderTest`, `NativeConnectionTargetResolverTest`,
+`NativeLineTransportCompositionTest`, `PairingFormPolicyTest` and
+`NativeConnectionRepositoryTest`.
+
 ## Voice, lifecycle and dynamic hardware
 
-- [~] Pure/controller behavior covers mic tap/hold semantics, live partial
-  transcript, non-sending stop, slide-up lock and sideways cancel; Compose
-  gesture integration remains.
+- [x] Thread and New Session composers implement the RN mic semantics: 220 ms
+  hold, live partial transcript, non-sending release/stop, 56 dp slide-up lock,
+  72 dp sideways cancel, explicit locked stop, and tap-to-start/stop for the new
+  session composer.
 - [x] Cancel restores the exact original draft; edits made during optional
   transcript refinement always win over stale refinement output.
-- [~] Android permission/settings and `SpeechRecognizer` adapters are present;
-  controller background/disposal paths stop capture idempotently. Compose and
-  application lifecycle integration remains.
+- [~] Android permission/settings and `SpeechRecognizer` adapters are integrated;
+  pending-permission races are fenced and real background/disposal stops capture
+  idempotently without treating configuration replacement as background. The
+  physical permission dialog, microphone and audio routes remain unverified.
 - [ ] Temporary display/service/process disappearance is treated as dynamic
   topology; recovery does not overwrite the user's saved display preference.
 - [~] Process visibility ignores pause-only transitions and configuration
@@ -275,8 +312,8 @@ Automated thread/control evidence: `ThreadRichTextTest`,
 - [~] Registration is idempotent per exact ready scope; reconnect and token
   rotation re-register, old tokens and explicitly removed ready machines are
   unregistered best-effort, and domain failures in 2xx bodies remain nonfatal.
-  Viewing enter/renew/leave has an exact-scope native runtime seam; Thread UI
-  registration and device verification remain pending.
+  Viewing enter/renew/leave is wired to exact-scope Thread UI lifecycle with
+  generation fencing; device verification remains pending.
 - [~] Preserve the high-importance `switchboard-agents` / `Agent activity`
   channel. Process-alive background `turn.completed` events now post canonical,
   content-free `Done` / duration copy. `FirebaseMessagingService` does the same
@@ -293,8 +330,11 @@ Automated thread/control evidence: `ThreadRichTextTest`,
   launch, and deduplicate consumption across process recreation. Navigation
   waits for startup/target resolution; foreground and killed-process remote tap
   delivery still require device verification and the Expo/FCM lane.
-- [ ] Existing deep-link schemes route safely; malformed or cross-connection
-  payloads are ignored visibly/logged, never guessed.
+- [~] Both existing schemes are classified exactly. Google callbacks accept
+  only the exact OAuth path, ACTION_VIEW, expected state and current generation,
+  then consume code/denial once; `switchboard:` remains deliberately opaque so
+  native code never guesses thread/project routes. Activity/browser delivery
+  integration remains.
 - [H] Exercise delivery and taps in foreground, background and killed states.
 
 Automated evidence for the partial native notification/push slice:
@@ -305,15 +345,22 @@ Automated evidence for the partial native notification/push slice:
 `ExpoPushTokenContractTest`, `ExpoInstallationIdentityTest`,
 `PushTokenRuntimeTest`, `PushRegistrationCoordinatorTest`,
 `RemotePushNotificationPolicyTest` and `SwitchboardRemoteClientTest`.
+Deep-link parsing/fencing evidence: `SwitchboardDeepLinkContractTest` and
+`GoogleOAuthCallbackPolicyTest`.
 
 ## Native feel, accessibility and release reporting
 
-- [ ] Reuse canonical neutral-black palette, Instrument Sans and Geist Mono;
-  branding/iconography is not redesigned implicitly.
-- [ ] Every interactive control has immediate press feedback and at least a
-  44dp target; streaming and progress updates avoid layout jumps.
-- [ ] Typography, keyboard/insets, gesture navigation, reduced motion, contrast,
-  TalkBack roles/labels/state and large fonts are verified.
+- [x] Reuse the canonical neutral-black palette, bundled Instrument Sans and
+  Geist Mono files, and canonical launcher artwork; branding/iconography is not
+  redesigned implicitly.
+- [~] Connections, pairing, browse and new-session controls use Material press
+  feedback, at least 48dp targets, explicit roles/state and fixed support
+  regions that avoid progress/error layout jumps. The Google account surface
+  has the same target/semantics/stable-slot treatment; Thread/update surfaces
+  still need the same audit.
+- [~] Core audited screens expose traversal groups, labels, state descriptions
+  and live regions. Typography, keyboard/insets, reduced motion, contrast,
+  TalkBack, Switch Access and large fonts remain physical-device checks.
 - [ ] Gestures do no avoidable network work; expensive refreshes are debounced
   and stale polling is cancelled.
 - [H] Compare touch feel, input latency, scrolling, installer, notification,

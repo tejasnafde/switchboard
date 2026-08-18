@@ -5,6 +5,8 @@ import java.io.Serializable
 sealed interface AppRoute : Serializable {
     data object Connections : AppRoute
 
+    data object GoogleAccount : AppRoute
+
     data class Pair(
         val editConnectionId: String? = null,
         val startManual: Boolean = false,

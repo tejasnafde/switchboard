@@ -9,9 +9,13 @@ import app.switchboard.mobile.platform.migration.SelectedCredential
 import app.switchboard.mobile.platform.storage.NativeCredential
 import app.switchboard.mobile.ui.pairing.PairingSaveIntent
 import app.switchboard.mobile.ui.pairing.PairingSaveResult
+import app.switchboard.mobile.ui.pairing.PairingConnectionKind
 import app.switchboard.mobile.ui.pairing.PairingSubmission
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -87,6 +91,172 @@ class NativeConnectionRepositoryTest {
     }
 
     @Test
+    fun addIapStagesLegacyTokenBeforeAtomicallyPublishingExactTarget() = runBlocking {
+        val events = mutableListOf<String>()
+        val database = FakeDatabase(events)
+        val credentials = FakeCredentials(events)
+        val repository = repository(database, credentials, id = "iap-1")
+
+        val result = repository.save(
+            PairingSaveIntent.Add(
+                PairingSubmission(
+                    label = "Work VM",
+                    kind = PairingConnectionKind.IAP,
+                    project = "project",
+                    zone = "asia-south1-b",
+                    instance = "work-vm",
+                    port = 8766,
+                    token = "backend-secret",
+                ),
+            ),
+        )
+
+        assertEquals(PairingSaveResult.Success, result)
+        assertEquals(listOf("credential:write", "database:upsert", "database:snapshot"), events)
+        assertEquals(
+            ConnectionEntity(
+                id = "iap-1",
+                label = "Work VM",
+                kind = "iap",
+                url = null,
+                project = "project",
+                zone = "asia-south1-b",
+                instance = "work-vm",
+                port = 8766,
+            ),
+            database.rows.single(),
+        )
+        assertEquals(
+            NativeCredential(NativeCredential.Kind.LEGACY_INLINE_TOKEN, "backend-secret"),
+            credentials.stored.getValue("credential-new"),
+        )
+        assertFalse(database.rows.single().toString().contains("backend-secret"))
+    }
+
+    @Test
+    fun malformedIapSubmissionCannotTouchRoomOrEncryptedStorage() = runBlocking {
+        val events = mutableListOf<String>()
+        val database = FakeDatabase(events)
+        val credentials = FakeCredentials(events)
+        val repository = repository(database, credentials, id = "iap-1")
+
+        val result = repository.save(
+            PairingSaveIntent.Add(
+                iapSubmission(project = "", token = "backend-secret"),
+            ),
+        )
+
+        assertTrue(result is PairingSaveResult.Failure)
+        assertTrue(events.isEmpty())
+        assertTrue(database.rows.isEmpty())
+        assertTrue(credentials.stored.isEmpty())
+    }
+
+    @Test
+    fun iapEditFormPrefillsTopologyButNeverDecryptsSecretIntoUiState() {
+        val events = mutableListOf<String>()
+        val row = iapConnection("iap-1")
+        val database = FakeDatabase(events, mutableListOf(row))
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "iap-1" to NativeCredential(NativeCredential.Kind.LEGACY_INLINE_TOKEN, "backend-secret"),
+            ),
+        )
+        val repository = repository(database, credentials)
+
+        assertEquals(
+            app.switchboard.mobile.ui.pairing.PairingForm(
+                kind = PairingConnectionKind.IAP,
+                label = "Work VM",
+                project = "project",
+                zone = "asia-south1-b",
+                instance = "work-vm",
+                port = "8766",
+                token = "",
+            ),
+            repository.editForm("iap-1"),
+        )
+        assertTrue(events.isEmpty())
+    }
+
+    @Test
+    fun unchangedIapTopologyWithBlankTokenPreservesExactEncryptedCredential() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = iapConnection("iap-1")
+        val database = FakeDatabase(events, mutableListOf(original))
+        val credential = NativeCredential(NativeCredential.Kind.LEGACY_INLINE_TOKEN, "backend-secret")
+        val credentials = FakeCredentials(events, stored = mutableMapOf("iap-1" to credential))
+        val repository = repository(database, credentials)
+
+        val result = repository.save(
+            PairingSaveIntent.Edit(
+                connectionId = "iap-1",
+                submission = iapSubmission(label = "Renamed"),
+                resetSession = true,
+                reconnect = true,
+            ),
+        )
+
+        assertEquals(PairingSaveResult.Success, result)
+        assertEquals(credential, credentials.stored.getValue("iap-1"))
+        assertEquals("Renamed", database.rows.single().label)
+        assertEquals(listOf("database:find", "credential:read", "database:cas", "database:snapshot"), events)
+    }
+
+    @Test
+    fun changedIapTopologyRequiresReplacementTokenAndLeavesRoomAndSecretUntouched() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = iapConnection("iap-1")
+        val database = FakeDatabase(events, mutableListOf(original))
+        val credential = NativeCredential(NativeCredential.Kind.LEGACY_INLINE_TOKEN, "backend-secret")
+        val credentials = FakeCredentials(events, stored = mutableMapOf("iap-1" to credential))
+        val repository = repository(database, credentials)
+
+        val result = repository.save(
+            PairingSaveIntent.Edit(
+                connectionId = "iap-1",
+                submission = iapSubmission(port = 9000),
+                resetSession = true,
+                reconnect = true,
+            ),
+        )
+
+        assertTrue(result is PairingSaveResult.Failure)
+        assertEquals(original, database.rows.single())
+        assertEquals(credential, credentials.stored.getValue("iap-1"))
+        assertEquals(listOf("database:find", "credential:read"), events)
+    }
+
+    @Test
+    fun editCannotChangeConnectionTransportKindEvenWithAReplacementToken() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = connection("machine-1")
+        val database = FakeDatabase(events, mutableListOf(original))
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "session"),
+            ),
+        )
+        val repository = repository(database, credentials)
+
+        val result = repository.save(
+            PairingSaveIntent.Edit(
+                connectionId = "machine-1",
+                submission = iapSubmission(token = "replacement"),
+                resetSession = true,
+                reconnect = true,
+            ),
+        )
+
+        assertTrue(result is PairingSaveResult.Failure)
+        assertEquals(original, database.rows.single())
+        assertEquals(setOf("machine-1"), credentials.stored.keys)
+        assertEquals(listOf("database:find", "credential:read"), events)
+    }
+
+    @Test
     fun editWithoutNewCredentialPreservesExistingNativeCredential() = runBlocking {
         val events = mutableListOf<String>()
         val original = connection(id = "machine-1", label = "Old", url = "ws://old:8765")
@@ -113,7 +283,7 @@ class NativeConnectionRepositoryTest {
 
         assertEquals(PairingSaveResult.Success, result)
         assertEquals(
-            listOf("database:find", "credential:read", "database:upsert", "database:snapshot"),
+            listOf("database:find", "credential:read", "database:cas", "database:snapshot"),
             events,
         )
         assertEquals("existing-session", credentials.stored.getValue("machine-1").value)
@@ -178,9 +348,9 @@ class NativeConnectionRepositoryTest {
                 "database:find",
                 "credential:read",
                 "credential:write",
-                "database:upsert",
-                "credential:delete",
+                "database:cas",
                 "database:snapshot",
+                "credential:delete",
             ),
             events,
         )
@@ -241,12 +411,315 @@ class NativeConnectionRepositoryTest {
 
         assertTrue(result is PairingSaveResult.Failure)
         assertEquals(
-            listOf("database:find", "credential:read", "credential:write", "database:upsert", "credential:delete"),
+            listOf("database:find", "credential:read", "credential:write", "database:cas", "credential:delete"),
             events,
         )
         assertEquals("native-2", database.activeCredentialKeys.getValue("native-2"))
         assertEquals("prior-session", credentials.stored.getValue("native-2").value)
         assertFalse(credentials.stored.containsKey("credential-new"))
+    }
+
+    @Test
+    fun replacementRejectsAStagingKeyThatWouldOverwriteTheActiveCredential() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = connection("machine-1")
+        val database = FakeDatabase(events, mutableListOf(original))
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "old-session"),
+            ),
+        )
+        val repository = NativeConnectionRepository(
+            database = database,
+            credentials = credentials,
+            credentialKeyFactory = { "machine-1" },
+            dispatcher = Dispatchers.Unconfined,
+        ).also { it.seed(snapshot(listOf(original), listOf(NativeCredentialRefEntity("machine-1", "machine-1")))) }
+
+        val result = repository.save(
+            PairingSaveIntent.Edit(
+                "machine-1",
+                PairingSubmission("Changed", "ws://machine-1:8765", token = "replacement"),
+                resetSession = true,
+                reconnect = true,
+            ),
+        )
+
+        assertTrue(result is PairingSaveResult.Failure)
+        assertEquals(original, database.rows.single())
+        assertEquals("machine-1", database.activeCredentialKeys.getValue("machine-1"))
+        assertEquals("old-session", credentials.stored.getValue("machine-1").value)
+        assertEquals(listOf("database:find", "credential:read"), events)
+    }
+
+    @Test
+    fun replacementRejectsAStagingKeyOwnedByAnotherStoredConnection() = runBlocking {
+        val events = mutableListOf<String>()
+        val first = connection("machine-1")
+        val second = connection("machine-2")
+        val database = FakeDatabase(events, mutableListOf(first, second))
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "session-one"),
+                "machine-2" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "session-two"),
+            ),
+        )
+        val repository = NativeConnectionRepository(
+            database = database,
+            credentials = credentials,
+            credentialKeyFactory = { "machine-2" },
+            dispatcher = Dispatchers.Unconfined,
+        ).also {
+            it.seed(
+                snapshot(
+                    listOf(first, second),
+                    listOf(
+                        NativeCredentialRefEntity("machine-1", "machine-1"),
+                        NativeCredentialRefEntity("machine-2", "machine-2"),
+                    ),
+                ),
+            )
+        }
+
+        val result = repository.save(
+            PairingSaveIntent.Edit(
+                "machine-1",
+                PairingSubmission("Changed", "ws://machine-1:8765", token = "replacement"),
+                resetSession = true,
+                reconnect = true,
+            ),
+        )
+
+        assertTrue(result is PairingSaveResult.Failure)
+        assertEquals("session-one", credentials.stored.getValue("machine-1").value)
+        assertEquals("session-two", credentials.stored.getValue("machine-2").value)
+        assertEquals("machine-1", database.activeCredentialKeys.getValue("machine-1"))
+        assertEquals(listOf("database:find", "credential:read"), events)
+    }
+
+    @Test
+    fun newerEditWinsWhenAnOlderCredentialWriteCompletesLast() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = connection("machine-1", label = "Original")
+        val firstWriteStarted = CountDownLatch(1)
+        val releaseFirstWrite = CountDownLatch(1)
+        val database = FakeDatabase(events, mutableListOf(original))
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "old-session"),
+            ),
+            beforeWrite = { logicalKey ->
+                if (logicalKey == "credential-a") {
+                    firstWriteStarted.countDown()
+                    check(releaseFirstWrite.await(5, TimeUnit.SECONDS))
+                }
+            },
+        )
+        val keys = ArrayDeque(listOf("credential-a", "credential-b"))
+        val repository = NativeConnectionRepository(
+            database = database,
+            credentials = credentials,
+            credentialKeyFactory = { synchronized(keys) { keys.removeFirst() } },
+            dispatcher = Dispatchers.Default,
+        ).also { it.seed(snapshot(listOf(original), listOf(NativeCredentialRefEntity("machine-1", "machine-1")))) }
+
+        val older = async(Dispatchers.Default) {
+            repository.save(
+                PairingSaveIntent.Edit(
+                    "machine-1",
+                    PairingSubmission("Older", "ws://machine-1:8765", token = "older-secret"),
+                    resetSession = true,
+                    reconnect = true,
+                ),
+            )
+        }
+        assertTrue(firstWriteStarted.await(5, TimeUnit.SECONDS))
+        val newer = async(Dispatchers.Default) {
+            repository.save(
+                PairingSaveIntent.Edit(
+                    "machine-1",
+                    PairingSubmission("Newer", "ws://machine-1:8765", token = "newer-secret"),
+                    resetSession = true,
+                    reconnect = true,
+                ),
+            )
+        }
+        val newerResult = newer.await()
+        releaseFirstWrite.countDown()
+        val olderResult = older.await()
+
+        assertEquals(PairingSaveResult.Success, newerResult)
+        assertTrue(olderResult is PairingSaveResult.Failure)
+        assertEquals("Newer", database.rows.single().label)
+        assertEquals("credential-b", database.activeCredentialKeys.getValue("machine-1"))
+        assertEquals(setOf("credential-b"), credentials.stored.keys)
+    }
+
+    @Test
+    fun editCannotOverwriteAConnectionAndRefChangedOutsideItsReadSnapshot() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = connection("machine-1", label = "Original")
+        val external = connection("machine-1", label = "External")
+        lateinit var database: FakeDatabase
+        database = FakeDatabase(
+            events,
+            mutableListOf(original),
+            beforeCommit = {
+                database.rows.clear()
+                database.rows += external
+                database.activeCredentialKeys["machine-1"] = "external-key"
+            },
+        )
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "old-session"),
+                "external-key" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "external-session"),
+            ),
+        )
+        val repository = repository(database, credentials)
+
+        val result = repository.save(
+            PairingSaveIntent.Edit(
+                "machine-1",
+                PairingSubmission("Submitted", "ws://machine-1:8765", token = "replacement"),
+                resetSession = true,
+                reconnect = true,
+            ),
+        )
+
+        assertTrue(result is PairingSaveResult.Failure)
+        assertEquals(external, database.rows.single())
+        assertEquals("external-key", database.activeCredentialKeys.getValue("machine-1"))
+        assertEquals(setOf("machine-1", "external-key"), credentials.stored.keys)
+    }
+
+    @Test
+    fun cleanupFailureAfterDurableReplacementRemainsSuccessAndKeepsBothNativeKeys() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = connection("machine-1")
+        val database = FakeDatabase(events, mutableListOf(original))
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "old-session"),
+            ),
+            deleteSucceeds = false,
+        )
+        val repository = repository(database, credentials)
+
+        val result = repository.save(
+            PairingSaveIntent.Edit(
+                "machine-1",
+                PairingSubmission("Changed", "ws://machine-1:8765", token = "replacement"),
+                resetSession = true,
+                reconnect = true,
+            ),
+        )
+
+        assertEquals(PairingSaveResult.Success, result)
+        assertEquals("credential-new", database.activeCredentialKeys.getValue("machine-1"))
+        assertEquals(setOf("machine-1", "credential-new"), credentials.stored.keys)
+    }
+
+    @Test
+    fun credentialWriteExceptionReturnsDefiniteFailureAndCleansOnlyTheStagingKey() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = connection("machine-1")
+        val database = FakeDatabase(events, mutableListOf(original))
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "old-session"),
+            ),
+            writeFailure = IllegalStateException("keystore unavailable"),
+        )
+        val repository = repository(database, credentials)
+
+        val result = repository.save(
+            PairingSaveIntent.Edit(
+                "machine-1",
+                PairingSubmission("Changed", "ws://machine-1:8765", token = "replacement"),
+                resetSession = true,
+                reconnect = true,
+            ),
+        )
+
+        assertTrue(result is PairingSaveResult.Failure)
+        assertEquals(original, database.rows.single())
+        assertEquals("machine-1", database.activeCredentialKeys.getValue("machine-1"))
+        assertEquals(setOf("machine-1"), credentials.stored.keys)
+        assertEquals(
+            listOf("database:find", "credential:read", "credential:write", "credential:delete"),
+            events,
+        )
+    }
+
+    @Test
+    fun roomReadExceptionReturnsDefiniteFailureWithoutTouchingCredentialStorage() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = connection("machine-1")
+        val database = FakeDatabase(events, mutableListOf(original), failFind = true)
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "old-session"),
+            ),
+        )
+        val repository = repository(database, credentials)
+
+        val call = runCatching {
+            repository.save(
+                PairingSaveIntent.Edit(
+                    "machine-1",
+                    PairingSubmission("Changed", "ws://machine-1:8765", token = "replacement"),
+                    resetSession = true,
+                    reconnect = true,
+                ),
+            )
+        }
+
+        assertTrue(call.isSuccess)
+        assertTrue(call.getOrNull() is PairingSaveResult.Failure)
+        assertEquals(original, database.rows.single())
+        assertEquals(setOf("machine-1"), credentials.stored.keys)
+        assertEquals(listOf("database:find"), events)
+    }
+
+    @Test
+    fun credentialReadExceptionReturnsDefiniteFailureWithoutChangingRoomOrSecrets() = runBlocking {
+        val events = mutableListOf<String>()
+        val original = connection("machine-1")
+        val database = FakeDatabase(events, mutableListOf(original))
+        val credentials = FakeCredentials(
+            events,
+            stored = mutableMapOf(
+                "machine-1" to NativeCredential(NativeCredential.Kind.DEVICE_SESSION, "old-session"),
+            ),
+            readFailure = IllegalStateException("keystore unavailable"),
+        )
+        val repository = repository(database, credentials)
+
+        val call = runCatching {
+            repository.save(
+                PairingSaveIntent.Edit(
+                    "machine-1",
+                    PairingSubmission("Changed", "ws://machine-1:8765"),
+                    resetSession = true,
+                    reconnect = true,
+                ),
+            )
+        }
+
+        assertTrue(call.isSuccess)
+        assertTrue(call.getOrNull() is PairingSaveResult.Failure)
+        assertEquals(original, database.rows.single())
+        assertEquals("machine-1", database.activeCredentialKeys.getValue("machine-1"))
+        assertEquals(setOf("machine-1"), credentials.stored.keys)
+        assertEquals(listOf("database:find", "credential:read"), events)
     }
 
     @Test
@@ -305,21 +778,46 @@ class NativeConnectionRepositoryTest {
         private val events: MutableList<String>,
         val rows: MutableList<ConnectionEntity> = mutableListOf(),
         private val failUpsert: Boolean = false,
+        private val beforeCommit: (() -> Unit)? = null,
+        private val failFind: Boolean = false,
     ) : ConnectionDatabase {
         val activeCredentialKeys = rows.associate { it.id to it.id }.toMutableMap()
 
         override fun find(connectionId: String): StoredConnection? {
             events += "database:find"
+            if (failFind) error("database unavailable")
             val row = rows.firstOrNull { it.id == connectionId } ?: return null
             return StoredConnection(row, activeCredentialKeys[connectionId])
         }
 
         override fun upsert(connection: ConnectionEntity, activeCredentialKey: String) {
             events += "database:upsert"
+            beforeCommit?.invoke()
             if (failUpsert) error("disk full")
             rows.removeAll { it.id == connection.id }
             rows += connection
             activeCredentialKeys[connection.id] = activeCredentialKey
+        }
+
+        override fun compareAndSwapConnection(
+            expected: StoredConnection,
+            replacement: ConnectionEntity,
+            newCredentialRef: String,
+        ): OfflineSnapshot? {
+            events += "database:cas"
+            beforeCommit?.invoke()
+            if (failUpsert) error("disk full")
+            val current = rows.firstOrNull { it.id == expected.connection.id }
+            if (
+                current != expected.connection ||
+                activeCredentialKeys[expected.connection.id] != expected.activeCredentialKey
+            ) {
+                return null
+            }
+            rows.removeAll { it.id == replacement.id }
+            rows += replacement
+            activeCredentialKeys[replacement.id] = newCredentialRef
+            return snapshot()
         }
 
         override fun delete(connectionId: String): Boolean {
@@ -343,27 +841,34 @@ class NativeConnectionRepositoryTest {
         private val events: MutableList<String>,
         private val verification: CredentialWriteVerification = CredentialWriteVerification.Verified,
         val stored: MutableMap<String, NativeCredential> = mutableMapOf(),
+        private val beforeWrite: (String) -> Unit = {},
+        private val deleteSucceeds: Boolean = true,
+        private val writeFailure: RuntimeException? = null,
+        private val readFailure: RuntimeException? = null,
     ) : ConnectionCredentialStore {
         override fun writeAndVerify(
-            connectionId: String,
+            logicalKey: String,
             credential: SelectedCredential.Present,
         ): CredentialWriteVerification {
             events += "credential:write"
+            beforeWrite(logicalKey)
+            writeFailure?.let { throw it }
             if (verification == CredentialWriteVerification.Verified) {
-                stored[connectionId] = credential.toNativeCredential()
+                stored[logicalKey] = credential.toNativeCredential()
             }
             return verification
         }
 
         override fun read(logicalKey: String): NativeCredential? {
             events += "credential:read"
+            readFailure?.let { throw it }
             return stored[logicalKey]
         }
 
         override fun deleteNativeOwned(logicalKey: String): Boolean {
             events += "credential:delete"
-            stored.remove(logicalKey)
-            return true
+            if (deleteSucceeds) stored.remove(logicalKey)
+            return deleteSucceeds
         }
     }
 }
@@ -381,6 +886,41 @@ private fun connection(
     zone = null,
     instance = null,
     port = null,
+)
+
+private fun iapConnection(
+    id: String,
+    label: String = "Work VM",
+    project: String = "project",
+    zone: String = "asia-south1-b",
+    instance: String = "work-vm",
+    port: Int = 8766,
+) = ConnectionEntity(
+    id = id,
+    label = label,
+    kind = "iap",
+    url = null,
+    project = project,
+    zone = zone,
+    instance = instance,
+    port = port,
+)
+
+private fun iapSubmission(
+    label: String = "Work VM",
+    project: String = "project",
+    zone: String = "asia-south1-b",
+    instance: String = "work-vm",
+    port: Int = 8766,
+    token: String? = null,
+) = PairingSubmission(
+    label = label,
+    kind = PairingConnectionKind.IAP,
+    project = project,
+    zone = zone,
+    instance = instance,
+    port = port,
+    token = token,
 )
 
 private fun snapshot(

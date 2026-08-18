@@ -117,6 +117,7 @@ class VoiceComposerController(
 
     private var nextSessionToken = 0L
     private var pendingStartToken: Long? = null
+    private var lockPendingStart = false
     private var activeSession: VoiceRecognitionSession? = null
     private var refinementCall: VoiceCancelable? = null
     private var refinementTimeout: VoiceCancelable? = null
@@ -133,6 +134,7 @@ class VoiceComposerController(
             }
             (++nextSessionToken).also {
                 pendingStartToken = it
+                lockPendingStart = false
                 publish(state.copy(available = true, starting = true, notice = null))
             }
         }
@@ -140,17 +142,32 @@ class VoiceComposerController(
     }
 
     fun stop() {
-        val token = synchronized(this) { state.session.sessionToken } ?: return
+        val token = synchronized(this) {
+            state.session.sessionToken ?: run {
+                abandonPendingStart()
+                return
+            }
+        }
         dispatch(VoiceSessionEvent.Stop(token))
     }
 
     fun cancel() {
-        val token = synchronized(this) { state.session.sessionToken } ?: return
+        val token = synchronized(this) {
+            state.session.sessionToken ?: run {
+                abandonPendingStart()
+                return
+            }
+        }
         dispatch(VoiceSessionEvent.Cancel(token))
     }
 
     fun lock() {
-        val token = synchronized(this) { state.session.sessionToken } ?: return
+        val token = synchronized(this) {
+            state.session.sessionToken ?: run {
+                if (pendingStartToken != null) lockPendingStart = true
+                return
+            }
+        }
         dispatch(VoiceSessionEvent.Lock(token))
     }
 
@@ -159,7 +176,10 @@ class VoiceComposerController(
     }
 
     fun onBackground() {
-        synchronized(this) { pendingStartToken = null }
+        synchronized(this) {
+            pendingStartToken = null
+            lockPendingStart = false
+        }
         dispatch(VoiceSessionEvent.Dispose)
         synchronized(this) {
             if (!closed) publish(state.copy(starting = false))
@@ -180,6 +200,7 @@ class VoiceComposerController(
             if (closed) return
             closed = true
             pendingStartToken = null
+            lockPendingStart = false
         }
         dispatch(VoiceSessionEvent.Dispose)
         synchronized(this) { publish(state.copy(starting = false)) }
@@ -236,6 +257,10 @@ class VoiceComposerController(
                     VoiceSessionEvent.Started(token),
                 )
                 publish(state.copy(session = transition.state, starting = false, notice = null))
+                if (lockPendingStart) {
+                    lockPendingStart = false
+                    dispatch(VoiceSessionEvent.Lock(token))
+                }
             }
         }
     }
@@ -439,5 +464,12 @@ class VoiceComposerController(
     private fun publish(next: VoiceComposerControllerState) {
         state = next
         onState(next)
+    }
+
+    private fun abandonPendingStart() {
+        if (pendingStartToken == null) return
+        pendingStartToken = null
+        lockPendingStart = false
+        publish(state.copy(starting = false))
     }
 }

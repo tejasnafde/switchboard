@@ -8,6 +8,7 @@ import app.switchboard.mobile.platform.migration.CredentialWriteVerification
 import app.switchboard.mobile.platform.migration.SelectedCredential
 import app.switchboard.mobile.platform.storage.NativeCredential
 import app.switchboard.mobile.ui.pairing.PairingForm
+import app.switchboard.mobile.ui.pairing.PairingConnectionKind
 import app.switchboard.mobile.ui.pairing.PairingSaveIntent
 import app.switchboard.mobile.ui.pairing.PairingSaveResult
 import app.switchboard.mobile.ui.pairing.PairingSubmission
@@ -21,6 +22,11 @@ import kotlinx.coroutines.withContext
 interface ConnectionDatabase {
     fun find(connectionId: String): StoredConnection?
     fun upsert(connection: ConnectionEntity, activeCredentialKey: String)
+    fun compareAndSwapConnection(
+        expected: StoredConnection,
+        replacement: ConnectionEntity,
+        newCredentialRef: String,
+    ): OfflineSnapshot? = throw UnsupportedOperationException("connection replacement is unavailable")
     fun compareAndSwapCredentialRef(
         connectionId: String,
         expectedOldRef: String,
@@ -57,8 +63,20 @@ class NativeConnectionRepository(
     private val credentialKeyFactory: () -> String = { UUID.randomUUID().toString() },
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    private data class EditTicket(val connectionId: String, val generation: Long)
+
+    private sealed interface EditCommit {
+        data class Success(val snapshot: OfflineSnapshot) : EditCommit
+        data object Stale : EditCommit
+        data object Conflict : EditCommit
+        data object Failed : EditCommit
+    }
+
     private val mutableSnapshots = MutableStateFlow<OfflineSnapshot?>(null)
     val snapshots = mutableSnapshots.asStateFlow()
+    private val editCommitLock = Any()
+    private val latestEditGenerations = mutableMapOf<String, Long>()
+    private var nextEditGeneration = 0L
 
     fun seed(snapshot: OfflineSnapshot) {
         mutableSnapshots.value = snapshot
@@ -89,39 +107,70 @@ class NativeConnectionRepository(
 
     fun editForm(connectionId: String): PairingForm? = mutableSnapshots.value
         ?.connections
-        ?.firstOrNull { it.id == connectionId && it.kind == WEBSOCKET_KIND }
+        ?.firstOrNull { it.id == connectionId }
         ?.let { row ->
-            PairingForm(
-                label = row.label,
-                address = row.url.orEmpty(),
-                // Credentials stay in encrypted native storage. An empty field
-                // means "preserve" for edits; secrets never enter UI state.
-                token = "",
-            )
+            when (row.kind) {
+                WEBSOCKET_KIND -> PairingForm(
+                    kind = PairingConnectionKind.WEBSOCKET,
+                    label = row.label,
+                    address = row.url.orEmpty(),
+                    // Credentials stay in encrypted native storage. An empty field
+                    // means "preserve" for edits; secrets never enter UI state.
+                    token = "",
+                )
+                IAP_KIND -> PairingForm(
+                    kind = PairingConnectionKind.IAP,
+                    label = row.label,
+                    project = row.project.orEmpty(),
+                    zone = row.zone.orEmpty(),
+                    instance = row.instance.orEmpty(),
+                    port = row.port?.toString().orEmpty(),
+                    token = "",
+                )
+                else -> null
+            }
         }
 
-    suspend fun save(intent: PairingSaveIntent): PairingSaveResult = withContext(dispatcher) {
+    suspend fun save(intent: PairingSaveIntent): PairingSaveResult {
+        val editTicket = beginEdit(intent)
+        return withContext(dispatcher) {
         if (mutableSnapshots.value == null) {
             return@withContext PairingSaveResult.Failure("Machines are still loading. Try again shortly")
         }
-        val stored = when (intent) {
-            is PairingSaveIntent.Add -> null
-            is PairingSaveIntent.Edit -> database.find(intent.connectionId)
-                ?: return@withContext PairingSaveResult.Failure("That machine no longer exists")
+        val submission = intent.submission.normalizedForPersistence()
+            ?: return@withContext PairingSaveResult.Failure("Check the machine details and try again")
+        val stored = try {
+            when (intent) {
+                is PairingSaveIntent.Add -> null
+                is PairingSaveIntent.Edit -> database.find(intent.connectionId)
+                    ?: return@withContext PairingSaveResult.Failure("That machine no longer exists")
+            }
+        } catch (_: Exception) {
+            return@withContext PairingSaveResult.Failure("Could not load the machine")
         }
         val existing = stored?.connection
         val connectionId = existing?.id ?: idFactory()
-        val submittedCredential = intent.submission.selectedCredential()
+        val submittedCredential = submission.selectedCredential()
         val priorCredentialKey = stored?.activeCredentialKey
-        val priorCredential = priorCredentialKey?.let(credentials::read)
+        val priorCredential = try {
+            priorCredentialKey?.let(credentials::read)
+        } catch (_: Exception) {
+            return@withContext PairingSaveResult.Failure("Could not read the saved credential")
+        }
+
+        if (existing != null && existing.kind != submission.kind.storageValue) {
+            return@withContext PairingSaveResult.Failure(
+                "Remove this machine and add it again to change the connection type",
+            )
+        }
 
         if (
             existing != null &&
             submittedCredential == null &&
-            normalizedEndpoint(existing.url) != normalizedEndpoint(intent.submission.url)
+            !existing.hasSameTarget(submission)
         ) {
             return@withContext PairingSaveResult.Failure(
-                "Enter a new pairing code or access token when changing the address",
+                "Enter a new pairing code or access token when changing the target",
             )
         }
 
@@ -130,37 +179,105 @@ class NativeConnectionRepository(
         }
 
         if (submittedCredential != null) {
-            val newCredentialKey = credentialKeyFactory()
-            when (credentials.writeAndVerify(newCredentialKey, submittedCredential)) {
+            val newCredentialKey = runCatching(credentialKeyFactory).getOrNull()
+            if (
+                newCredentialKey.isNullOrBlank() ||
+                newCredentialKey == priorCredentialKey ||
+                mutableSnapshots.value?.nativeCredentialRefs.orEmpty().any {
+                    it.logicalKey == newCredentialKey
+                }
+            ) {
+                return@withContext PairingSaveResult.Failure("Could not stage the credential securely")
+            }
+            val verification = try {
+                credentials.writeAndVerify(newCredentialKey, submittedCredential)
+            } catch (_: Exception) {
+                deleteStagedCredential(newCredentialKey)
+                return@withContext PairingSaveResult.Failure("Could not save the credential securely")
+            }
+            when (verification) {
                 CredentialWriteVerification.Verified -> Unit
                 is CredentialWriteVerification.Failed -> {
-                    credentials.deleteNativeOwned(newCredentialKey)
+                    deleteStagedCredential(newCredentialKey)
                     return@withContext PairingSaveResult.Failure("Could not save the credential securely")
                 }
             }
-            val row = intent.submission.toEntity(connectionId, existing)
-            try {
-                database.upsert(row, newCredentialKey)
-            } catch (_: Exception) {
-                credentials.deleteNativeOwned(newCredentialKey)
-                return@withContext PairingSaveResult.Failure("Could not save the machine")
+            val row = submission.toEntity(connectionId)
+            if (stored != null && editTicket != null) {
+                when (commitEdit(editTicket, stored, row, newCredentialKey)) {
+                    is EditCommit.Success -> Unit
+                    EditCommit.Stale,
+                    EditCommit.Conflict,
+                    -> {
+                        deleteStagedCredential(newCredentialKey)
+                        return@withContext PairingSaveResult.Failure(
+                            "This machine changed while saving. Review it and try again",
+                        )
+                    }
+                    EditCommit.Failed -> {
+                        deleteStagedCredential(newCredentialKey)
+                        return@withContext PairingSaveResult.Failure("Could not save the machine")
+                    }
+                }
+            } else {
+                try {
+                    database.upsert(row, newCredentialKey)
+                } catch (_: Exception) {
+                    deleteStagedCredential(newCredentialKey)
+                    return@withContext PairingSaveResult.Failure("Could not save the machine")
+                }
+                publishSnapshot(row = row, activeCredentialKey = newCredentialKey)
             }
             if (priorCredentialKey != null && priorCredentialKey != newCredentialKey) {
-                credentials.deleteNativeOwned(priorCredentialKey)
+                runCatching { credentials.deleteNativeOwned(priorCredentialKey) }
             }
-            publishSnapshot(row = row, activeCredentialKey = newCredentialKey)
             return@withContext PairingSaveResult.Success
         }
 
         val activeCredentialKey = requireNotNull(priorCredentialKey)
-        val row = intent.submission.toEntity(connectionId, existing)
-        try {
-            database.upsert(row, activeCredentialKey)
-        } catch (_: Exception) {
-            return@withContext PairingSaveResult.Failure("Could not save the machine")
+        val row = submission.toEntity(connectionId)
+        when (commitEdit(requireNotNull(editTicket), requireNotNull(stored), row, activeCredentialKey)) {
+            is EditCommit.Success -> PairingSaveResult.Success
+            EditCommit.Stale,
+            EditCommit.Conflict,
+            -> PairingSaveResult.Failure(
+                "This machine changed while saving. Review it and try again",
+            )
+            EditCommit.Failed -> PairingSaveResult.Failure("Could not save the machine")
         }
-        publishSnapshot(row = row, activeCredentialKey = activeCredentialKey)
-        PairingSaveResult.Success
+        }
+    }
+
+    private fun beginEdit(intent: PairingSaveIntent): EditTicket? =
+        (intent as? PairingSaveIntent.Edit)?.let { edit ->
+            synchronized(editCommitLock) {
+                EditTicket(edit.connectionId, ++nextEditGeneration).also { ticket ->
+                    latestEditGenerations[edit.connectionId] = ticket.generation
+                }
+            }
+        }
+
+    private fun commitEdit(
+        ticket: EditTicket,
+        expected: StoredConnection,
+        replacement: ConnectionEntity,
+        newCredentialRef: String,
+    ): EditCommit = synchronized(editCommitLock) {
+        if (latestEditGenerations[ticket.connectionId] != ticket.generation) {
+            return@synchronized EditCommit.Stale
+        }
+        val snapshot = try {
+            database.compareAndSwapConnection(expected, replacement, newCredentialRef)
+                ?: return@synchronized EditCommit.Conflict
+        } catch (_: Exception) {
+            return@synchronized EditCommit.Failed
+        }
+        mutableSnapshots.value = snapshot
+        EditCommit.Success(snapshot)
+    }
+
+    private fun deleteStagedCredential(logicalKey: String) {
+        runCatching { credentials.deleteNativeOwned(logicalKey) }
     }
 
     suspend fun remove(connectionId: String): ConnectionRemoveResult = withContext(dispatcher) {
@@ -221,6 +338,7 @@ class NativeConnectionRepository(
 
     private companion object {
         const val WEBSOCKET_KIND = "ws"
+        const val IAP_KIND = "iap"
     }
 }
 
@@ -230,19 +348,74 @@ private fun PairingSubmission.selectedCredential(): SelectedCredential.Present? 
     else -> null
 }
 
+private fun PairingSubmission.normalizedForPersistence(): PairingSubmission? {
+    return when (kind) {
+        PairingConnectionKind.WEBSOCKET -> {
+            val parsed = PairingUrl.parse(url) ?: return null
+            if (parsed.endpoint != url || parsed.token != null || parsed.pairingCode != null) return null
+            val normalizedPairing = pairing?.trim()?.ifEmpty { null }
+            copy(
+                label = label.trim().ifEmpty { parsed.endpoint.removeWebSocketScheme() },
+                url = parsed.endpoint,
+                token = if (normalizedPairing == null) token?.trim()?.ifEmpty { null } else null,
+                pairing = normalizedPairing,
+                project = null,
+                zone = null,
+                instance = null,
+                port = null,
+            )
+        }
+        PairingConnectionKind.IAP -> {
+            val normalizedProject = project?.trim()?.ifEmpty { null } ?: return null
+            val normalizedZone = zone?.trim()?.ifEmpty { null } ?: return null
+            val normalizedInstance = instance?.trim()?.ifEmpty { null } ?: return null
+            val normalizedPort = port?.takeIf { it in 1..65_535 } ?: return null
+            if (url.isNotEmpty() || pairing != null) return null
+            copy(
+                label = label.trim().ifEmpty { normalizedInstance },
+                url = "",
+                token = token?.trim()?.ifEmpty { null },
+                pairing = null,
+                project = normalizedProject,
+                zone = normalizedZone,
+                instance = normalizedInstance,
+                port = normalizedPort,
+            )
+        }
+    }
+}
+
 private fun normalizedEndpoint(value: String?): String? =
     value?.let { PairingUrl.parse(it)?.endpoint ?: it }
 
+private val PairingConnectionKind.storageValue: String
+    get() = when (this) {
+        PairingConnectionKind.WEBSOCKET -> "ws"
+        PairingConnectionKind.IAP -> "iap"
+    }
+
+private fun String.removeWebSocketScheme(): String =
+    removePrefix("ws://").removePrefix("wss://")
+
+private fun ConnectionEntity.hasSameTarget(submission: PairingSubmission): Boolean = when (kind) {
+    "ws" -> normalizedEndpoint(url) == normalizedEndpoint(submission.url)
+    "iap" ->
+        project == submission.project &&
+            zone == submission.zone &&
+            instance == submission.instance &&
+            port == submission.port
+    else -> false
+}
+
 private fun PairingSubmission.toEntity(
     connectionId: String,
-    existing: ConnectionEntity?,
 ) = ConnectionEntity(
     id = connectionId,
     label = label,
-    kind = "ws",
-    url = url,
-    project = existing?.project,
-    zone = null,
-    instance = null,
-    port = null,
+    kind = kind.storageValue,
+    url = url.takeIf { kind == PairingConnectionKind.WEBSOCKET },
+    project = project.takeIf { kind == PairingConnectionKind.IAP },
+    zone = zone.takeIf { kind == PairingConnectionKind.IAP },
+    instance = instance.takeIf { kind == PairingConnectionKind.IAP },
+    port = port.takeIf { kind == PairingConnectionKind.IAP },
 )

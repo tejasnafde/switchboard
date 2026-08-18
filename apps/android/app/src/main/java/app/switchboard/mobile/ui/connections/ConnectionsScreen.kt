@@ -1,6 +1,7 @@
 package app.switchboard.mobile.ui.connections
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -42,6 +43,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -55,6 +64,7 @@ import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
 import app.switchboard.mobile.ui.theme.TextPrimary
+import app.switchboard.mobile.platform.google.GoogleAccountPresentation
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -65,13 +75,23 @@ fun ConnectionsScreen(
     onManualAdd: () -> Unit,
     onEdit: (String) -> Unit,
     onConnectionIntent: (ConnectionIntent) -> Unit,
+    googleAccount: GoogleAccountPresentation = GoogleAccountPresentation.SignedOut,
+    onGoogleAccount: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     var actionRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
     var removeRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
 
-    Column(modifier = modifier.fillMaxSize()) {
-        ConnectionsTopBar(onAdd = onAdd)
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .semantics { isTraversalGroup = true },
+    ) {
+        ConnectionsTopBar(
+            googleAccount = googleAccount,
+            onGoogleAccount = onGoogleAccount,
+            onAdd = onAdd,
+        )
         when (presentation) {
             ConnectionsPresentation.Loading -> LoadingState()
             ConnectionsPresentation.Empty -> EmptyState(
@@ -134,9 +154,9 @@ fun ConnectionsScreen(
                             TextPrimary
                         },
                     ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp),
                 ) {
                     Text(action.label)
                 }
@@ -169,7 +189,11 @@ fun ConnectionsScreen(
 }
 
 @Composable
-private fun ConnectionsTopBar(onAdd: () -> Unit) {
+private fun ConnectionsTopBar(
+    googleAccount: GoogleAccountPresentation,
+    onGoogleAccount: () -> Unit,
+    onAdd: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -178,14 +202,38 @@ private fun ConnectionsTopBar(onAdd: () -> Unit) {
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        TextButton(
+            onClick = onGoogleAccount,
+            modifier = Modifier
+                .size(48.dp)
+                .semantics {
+                    contentDescription = "Google account"
+                    stateDescription = when (googleAccount) {
+                        GoogleAccountPresentation.SignedOut -> "Signed out"
+                        is GoogleAccountPresentation.SignedIn -> "Signed in"
+                        GoogleAccountPresentation.Blocked -> "Blocked"
+                    }
+                },
+        ) {
+            Text(
+                text = GoogleAccountAvatarPolicy.monogram(googleAccount),
+                fontFamily = GeistMono,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
         Text(
             text = "Switchboard",
             style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .semantics { heading() },
         )
         TextButton(
             onClick = onAdd,
-            modifier = Modifier.size(48.dp),
+            modifier = Modifier
+                .size(48.dp)
+                .semantics { contentDescription = "Add machine" },
         ) {
             Text(
                 text = "+",
@@ -354,6 +402,7 @@ private fun ConnectionsList(
                         .padding(bottom = 12.dp)
                         .clip(RoundedCornerShape(10.dp))
                         .background(SurfaceRaised)
+                        .semantics { liveRegion = LiveRegionMode.Polite }
                         .padding(12.dp),
                 )
             }
@@ -377,6 +426,7 @@ private fun ConnectionRow(
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val indication = LocalIndication.current
     val tint = when (row.status) {
         ConnectionStatus.LIVE -> Green
         ConnectionStatus.CONNECTING -> Amber
@@ -390,10 +440,16 @@ private fun ConnectionRow(
             .heightIn(min = 78.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(if (pressed) SurfaceRaised else Surface)
+            .semantics(mergeDescendants = true) {
+                contentDescription = ConnectionsAccessibilityPolicy.contentDescription(row)
+                stateDescription = ConnectionsAccessibilityPolicy.stateDescription(row)
+            }
             .combinedClickable(
                 interactionSource = interactionSource,
-                indication = null,
+                indication = indication,
                 role = Role.Button,
+                onClickLabel = "Open ${row.label}",
+                onLongClickLabel = ConnectionsAccessibilityPolicy.longClickLabel(row),
                 onClick = onOpen,
                 onLongClick = onLongPress,
             ),
@@ -407,7 +463,8 @@ private fun ConnectionRow(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .clearAndSetSemantics {},
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
@@ -444,19 +501,26 @@ private fun ConnectionRow(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 6.dp),
             ) {
-                if (row.showProgress) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(10.dp),
-                        strokeWidth = 1.5.dp,
-                        color = tint,
-                    )
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(tint),
-                    )
+                Box(
+                    modifier = Modifier
+                        .size(10.dp)
+                        .clearAndSetSemantics {},
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (row.showProgress) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(10.dp),
+                            strokeWidth = 1.5.dp,
+                            color = tint,
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(7.dp)
+                                .clip(CircleShape)
+                                .background(tint),
+                        )
+                    }
                 }
                 Text(
                     text = row.statusLabel,
@@ -479,6 +543,16 @@ private fun ConnectionRow(
             }
         }
     }
+}
+
+object ConnectionsAccessibilityPolicy {
+    fun contentDescription(row: ConnectionRowPresentation): String =
+        "${row.label}, ${row.target}"
+
+    fun stateDescription(row: ConnectionRowPresentation): String =
+        listOfNotNull(row.statusLabel, row.detail?.takeIf(String::isNotBlank)).joinToString(", ")
+
+    fun longClickLabel(row: ConnectionRowPresentation): String = "Show actions for ${row.label}"
 }
 
 @Composable

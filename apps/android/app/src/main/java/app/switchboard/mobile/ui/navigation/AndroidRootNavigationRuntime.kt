@@ -19,6 +19,7 @@ import app.switchboard.mobile.platform.protocol.ProtocolEventHub
 import app.switchboard.mobile.platform.protocol.ProtocolHubEvent
 import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
+import java.io.Closeable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -32,6 +33,8 @@ class AndroidRootNavigationRuntime(
     private val activity: (TransportScope) -> StateFlow<Map<String, BrowseThreadActivity>>,
     private val persistCollapsedWorkspaceIds: (String, Set<String>) -> Unit,
     private val snapshots: RoomBrowseSnapshotStore,
+    private val beginViewingLease: (TransportScope, String) -> Closeable = { _, _ -> Closeable {} },
+    private val registerViewingRenewal: (() -> Unit) -> Closeable = { Closeable {} },
 ) : RootNavigationRuntime {
     override val statuses: StateFlow<Map<String, ConnectionRuntimeState>> = fleet.statuses
     override val composerDrafts = composer.drafts
@@ -86,4 +89,10 @@ class AndroidRootNavigationRuntime(
 
     override fun browseSnapshotStore(snapshot: OfflineSnapshot): BrowseSnapshotStore =
         snapshots.apply { seed(snapshot.browseSnapshots) }
+
+    override fun beginViewing(scope: TransportScope, threadId: String): Closeable =
+        beginViewingLease(scope, threadId)
+
+    override fun registerViewingLeaseRenewal(callback: () -> Unit): Closeable =
+        registerViewingRenewal(callback)
 }

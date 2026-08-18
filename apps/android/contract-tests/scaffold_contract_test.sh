@@ -33,7 +33,8 @@ require_file app/src/main/java/app/switchboard/mobile/MainActivity.kt
 require_file app/src/main/java/app/switchboard/mobile/ui/SwitchboardApp.kt
 
 require_text app/build.gradle.kts 'namespace = "app.switchboard.mobile"'
-require_text app/build.gradle.kts 'applicationId = "app.switchboard.mobile"'
+require_text app/build.gradle.kts 'val canonicalApplicationId = "app.switchboard.mobile"'
+require_text app/build.gradle.kts 'applicationId = canonicalApplicationId'
 require_text app/build.gradle.kts 'applicationIdSuffix = ".native.dev"'
 require_text app/build.gradle.kts 'compileSdk = 36'
 require_text app/build.gradle.kts 'minSdk = 24'

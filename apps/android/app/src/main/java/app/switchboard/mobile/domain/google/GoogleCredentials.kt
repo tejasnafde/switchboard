@@ -7,7 +7,10 @@ import app.switchboard.mobile.protocol.JsonString
 data class GoogleClientConfig(
     val clientId: String,
     val clientSecret: String? = null,
-)
+) {
+    override fun toString(): String =
+        "GoogleClientConfig(clientId=$clientId, clientSecret=[REDACTED])"
+}
 
 data class GoogleCredentialBundle(
     val clientId: String,
@@ -16,7 +19,12 @@ data class GoogleCredentialBundle(
     val accessToken: String? = null,
     val expiresAtEpochMs: Long? = null,
     val email: String? = null,
-)
+) {
+    override fun toString(): String =
+        "GoogleCredentialBundle(clientId=$clientId, clientSecret=[REDACTED], " +
+            "refreshToken=[REDACTED], accessToken=[REDACTED], " +
+            "expiresAtEpochMs=$expiresAtEpochMs, email=$email)"
+}
 
 object GoogleCredentialImport {
     fun parse(raw: String, fallbackClient: GoogleClientConfig?): GoogleCredentialBundle? {

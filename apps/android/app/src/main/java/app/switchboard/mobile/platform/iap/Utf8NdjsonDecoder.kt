@@ -39,7 +39,9 @@ class Utf8NdjsonDecoder {
         }
         output.flip()
         pendingText += output.toString()
-        return Utf8NdjsonResult.Lines(drainLines())
+        val lines = drainLines()
+        if (endOfInput && pendingText.isNotBlank()) return fail("unterminated NDJSON line")
+        return Utf8NdjsonResult.Lines(lines)
     }
 
     private fun drainLines(): List<String> = buildList {
@@ -53,9 +55,13 @@ class Utf8NdjsonDecoder {
     }
 
     private fun fail(result: CoderResult): Utf8NdjsonResult.ProtocolError {
+        return fail("invalid UTF-8 stream: $result")
+    }
+
+    private fun fail(detail: String): Utf8NdjsonResult.ProtocolError {
         failed = true
         pendingBytes = ByteArray(0)
         pendingText = ""
-        return Utf8NdjsonResult.ProtocolError("invalid UTF-8 stream: $result")
+        return Utf8NdjsonResult.ProtocolError(detail)
     }
 }

@@ -16,6 +16,9 @@ import app.switchboard.mobile.ui.connections.ConnectionIntent
 import app.switchboard.mobile.ui.connections.ConnectionsLoadState
 import app.switchboard.mobile.ui.navigation.RootNavigationRuntime
 import app.switchboard.mobile.platform.notification.PendingNotificationRoute
+import app.switchboard.mobile.platform.google.GoogleAccountPresentation
+import app.switchboard.mobile.platform.google.GoogleCredentialImportResult
+import app.switchboard.mobile.platform.google.GoogleSignOutResult
 import app.switchboard.mobile.ui.navigation.SwitchboardNavigation
 import app.switchboard.mobile.ui.pairing.PairingForm
 import app.switchboard.mobile.ui.pairing.PairingSaveIntent
@@ -35,6 +38,13 @@ fun SwitchboardApp(
     onPairingIntent: suspend (PairingSaveIntent) -> PairingSaveResult = {
         PairingSaveResult.Failure("Saving connections is not available yet")
     },
+    googleAccountPresentation: GoogleAccountPresentation = GoogleAccountPresentation.SignedOut,
+    onGoogleImportCredentials: suspend (String) -> GoogleCredentialImportResult = {
+        GoogleCredentialImportResult.PersistenceFailed
+    },
+    onGoogleSignOut: suspend () -> GoogleSignOutResult = {
+        GoogleSignOutResult.AlreadySignedOut
+    },
     offlineSnapshot: OfflineSnapshot? = null,
     navigationRuntime: RootNavigationRuntime? = null,
     pendingNotificationRoute: PendingNotificationRoute? = null,
@@ -51,6 +61,9 @@ fun SwitchboardApp(
                 resolveEditForm = resolveEditForm,
                 onConnectionIntent = onConnectionIntent,
                 onPairingIntent = onPairingIntent,
+                googleAccountPresentation = googleAccountPresentation,
+                onGoogleImportCredentials = onGoogleImportCredentials,
+                onGoogleSignOut = onGoogleSignOut,
                 offlineSnapshot = offlineSnapshot,
                 runtime = navigationRuntime,
                 pendingNotificationRoute = pendingNotificationRoute,

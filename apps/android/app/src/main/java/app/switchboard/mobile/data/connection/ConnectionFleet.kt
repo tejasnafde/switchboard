@@ -82,7 +82,15 @@ class ConnectionFleet(
         val credentialKey: String?,
     ) {
         val eligibleForAutoConnect: Boolean =
-            row.kind == WEBSOCKET_KIND && !row.url.isNullOrBlank() && !credentialKey.isNullOrBlank()
+            !credentialKey.isNullOrBlank() && when (row.kind) {
+                WEBSOCKET_KIND -> !row.url.isNullOrBlank()
+                IAP_KIND ->
+                    !row.project.isNullOrBlank() &&
+                        !row.zone.isNullOrBlank() &&
+                        !row.instance.isNullOrBlank() &&
+                        row.port?.let { it in 1..65_535 } == true
+                else -> false
+            }
 
         override fun equals(other: Any?): Boolean =
             other is StoredSpec &&
@@ -444,5 +452,6 @@ class ConnectionFleet(
 
     private companion object {
         const val WEBSOCKET_KIND = "ws"
+        const val IAP_KIND = "iap"
     }
 }

@@ -1,6 +1,8 @@
 package app.switchboard.mobile.ui.navigation
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -10,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.remote.BrowseCoordinator
 import app.switchboard.mobile.data.remote.NewSessionClock
@@ -35,6 +38,9 @@ import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.platform.protocol.ProtocolHubEvent
 import app.switchboard.mobile.platform.notification.PendingNotificationRoute
+import app.switchboard.mobile.platform.google.GoogleAccountPresentation
+import app.switchboard.mobile.platform.google.GoogleCredentialImportResult
+import app.switchboard.mobile.platform.google.GoogleSignOutResult
 import app.switchboard.mobile.ui.browse.BrowseLoadState
 import app.switchboard.mobile.ui.browse.BrowseConversationRecord
 import app.switchboard.mobile.ui.browse.BrowseProjectRecord
@@ -47,6 +53,7 @@ import app.switchboard.mobile.ui.connections.ConnectionsLoadState
 import app.switchboard.mobile.ui.connections.ConnectionsPresenter
 import app.switchboard.mobile.ui.connections.ConnectionsScreen
 import app.switchboard.mobile.ui.connections.RuntimeConnectionsMapper
+import app.switchboard.mobile.ui.google.GoogleAccountScreen
 import app.switchboard.mobile.ui.newsession.NewSessionScreen
 import app.switchboard.mobile.ui.pairing.PairingForm
 import app.switchboard.mobile.ui.pairing.PairingSaveIntent
@@ -71,6 +78,13 @@ fun SwitchboardNavigation(
     resolveEditForm: (String) -> PairingForm?,
     onConnectionIntent: (ConnectionIntent) -> Unit,
     onPairingIntent: suspend (PairingSaveIntent) -> PairingSaveResult,
+    googleAccountPresentation: GoogleAccountPresentation = GoogleAccountPresentation.SignedOut,
+    onGoogleImportCredentials: suspend (String) -> GoogleCredentialImportResult = {
+        GoogleCredentialImportResult.PersistenceFailed
+    },
+    onGoogleSignOut: suspend () -> GoogleSignOutResult = {
+        GoogleSignOutResult.AlreadySignedOut
+    },
     offlineSnapshot: OfflineSnapshot? = null,
     runtime: RootNavigationRuntime? = null,
     pendingNotificationRoute: PendingNotificationRoute? = null,
@@ -105,115 +119,163 @@ fun SwitchboardNavigation(
 
     BackHandler(enabled = navigationState.canGoBack, onBack = ::navigateBack)
 
-    when (val route = navigationState.current) {
-        AppRoute.Connections -> ConnectionsScreen(
-            presentation = ConnectionsPresenter.present(visibleConnections),
-            buildStamp = buildStamp,
-            onAdd = { navigationState = navigationState.push(AppRoute.Pair()) },
-            onManualAdd = {
-                navigationState = navigationState.push(AppRoute.Pair(startManual = true))
-            },
-            onEdit = { connectionId ->
-                navigationState = navigationState.push(AppRoute.Pair(connectionId))
-            },
-            onConnectionIntent = { intent ->
-                when (intent) {
-                    is ConnectionIntent.Open -> {
-                        navigationState = navigationState.push(
-                            AppRoute.Browse(
-                                connectionId = intent.connectionId,
-                                connectionLabel = visibleConnections.labelFor(intent.connectionId),
-                            ),
-                        )
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .edgeSwipeBack(
+                enabled = navigationState.canGoBack,
+                onBack = ::navigateBack,
+            ),
+    ) {
+        when (val route = navigationState.current) {
+            AppRoute.Connections -> ConnectionsScreen(
+                presentation = ConnectionsPresenter.present(visibleConnections),
+                buildStamp = buildStamp,
+                onAdd = { navigationState = navigationState.push(AppRoute.Pair()) },
+                onManualAdd = {
+                    navigationState = navigationState.push(AppRoute.Pair(startManual = true))
+                },
+                onEdit = { connectionId ->
+                    navigationState = navigationState.push(AppRoute.Pair(connectionId))
+                },
+                googleAccount = googleAccountPresentation,
+                onGoogleAccount = {
+                    navigationState = navigationState.push(AppRoute.GoogleAccount)
+                },
+                onConnectionIntent = { intent ->
+                    when (intent) {
+                        is ConnectionIntent.Open -> {
+                            navigationState = navigationState.push(
+                                AppRoute.Browse(
+                                    connectionId = intent.connectionId,
+                                    connectionLabel = visibleConnections.labelFor(intent.connectionId),
+                                ),
+                            )
+                        }
+
+                        is ConnectionIntent.Connect -> runtime?.connect(intent.connectionId)
+                            ?: onConnectionIntent(intent)
+
+                        is ConnectionIntent.Disconnect -> runtime?.disconnect(intent.connectionId)
+                            ?: onConnectionIntent(intent)
+
+                        is ConnectionIntent.Remove -> runtime?.remove(intent.connectionId)
+                            ?: onConnectionIntent(intent)
+
+                        ConnectionIntent.Retry -> onConnectionIntent(intent)
                     }
+                },
+            )
 
-                    is ConnectionIntent.Connect -> runtime?.connect(intent.connectionId)
-                        ?: onConnectionIntent(intent)
+            is AppRoute.Pair -> PairingScreen(
+                editConnectionId = route.editConnectionId,
+                startManual = route.startManual,
+                initialForm = route.editConnectionId?.let(resolveEditForm),
+                onBack = ::navigateBack,
+                onSave = onPairingIntent,
+                onSaved = ::navigateBack,
+                googleAccountReady = GoogleAccountNavigationPolicy.isReady(
+                    googleAccountPresentation,
+                ),
+                onGoogleAccountRequired = {
+                    navigationState = navigationState.push(AppRoute.GoogleAccount)
+                },
+            )
 
-                    is ConnectionIntent.Disconnect -> runtime?.disconnect(intent.connectionId)
-                        ?: onConnectionIntent(intent)
+            AppRoute.GoogleAccount -> GoogleAccountRouteHost(
+                accountPresentation = googleAccountPresentation,
+                onImportCredentials = onGoogleImportCredentials,
+                onSignOut = onGoogleSignOut,
+                onBack = ::navigateBack,
+            )
 
-                    is ConnectionIntent.Remove -> runtime?.remove(intent.connectionId)
-                        ?: onConnectionIntent(intent)
+            is AppRoute.Browse -> BrowseRouteHost(
+                route = route,
+                snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
+                runtime = runtime,
+                status = runtimeStatuses[route.connectionId],
+                onProjectTap = { project ->
+                    navigationState = navigationState.push(
+                        AppRoute.Browse(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            projectPath = project.path,
+                            projectName = project.name,
+                        ),
+                    )
+                },
+                onSessionTap = { conversation ->
+                    navigationState = navigationState.push(
+                        AppRoute.Thread(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            threadId = conversation.id,
+                            projectPath = conversation.projectPath,
+                            title = conversation.title,
+                        ),
+                    )
+                },
+                onNewSession = { projectPath, projectName ->
+                    navigationState = navigationState.push(
+                        AppRoute.NewSession(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            projectPath = projectPath,
+                            projectName = projectName,
+                        ),
+                    )
+                },
+                onBack = ::navigateBack,
+            )
 
-                    ConnectionIntent.Retry -> onConnectionIntent(intent)
-                }
-            },
-        )
+            is AppRoute.NewSession -> NewSessionRouteHost(
+                route = route,
+                runtime = runtime,
+                status = runtimeStatuses[route.connectionId],
+                onStarted = { started ->
+                    navigationState = navigationState.replace(
+                        AppRoute.Thread(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            threadId = started.threadId,
+                            projectPath = started.projectPath,
+                            title = started.title,
+                        ),
+                    )
+                },
+                onBack = ::navigateBack,
+            )
 
-        is AppRoute.Pair -> PairingScreen(
-            editConnectionId = route.editConnectionId,
-            startManual = route.startManual,
-            initialForm = route.editConnectionId?.let(resolveEditForm),
-            onBack = ::navigateBack,
-            onSave = onPairingIntent,
-            onSaved = ::navigateBack,
-        )
-
-        is AppRoute.Browse -> BrowseRouteHost(
-            route = route,
-            snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
-            runtime = runtime,
-            status = runtimeStatuses[route.connectionId],
-            onProjectTap = { project ->
-                navigationState = navigationState.push(
-                    AppRoute.Browse(
-                        connectionId = route.connectionId,
-                        connectionLabel = route.connectionLabel,
-                        projectPath = project.path,
-                        projectName = project.name,
-                    ),
-                )
-            },
-            onSessionTap = { conversation ->
-                navigationState = navigationState.push(
-                    AppRoute.Thread(
-                        connectionId = route.connectionId,
-                        connectionLabel = route.connectionLabel,
-                        threadId = conversation.id,
-                        projectPath = conversation.projectPath,
-                        title = conversation.title,
-                    ),
-                )
-            },
-            onNewSession = { projectPath, projectName ->
-                navigationState = navigationState.push(
-                    AppRoute.NewSession(
-                        connectionId = route.connectionId,
-                        connectionLabel = route.connectionLabel,
-                        projectPath = projectPath,
-                        projectName = projectName,
-                    ),
-                )
-            },
-            onBack = ::navigateBack,
-        )
-
-        is AppRoute.NewSession -> NewSessionRouteHost(
-            route = route,
-            runtime = runtime,
-            status = runtimeStatuses[route.connectionId],
-            onStarted = { started ->
-                navigationState = navigationState.replace(
-                    AppRoute.Thread(
-                        connectionId = route.connectionId,
-                        connectionLabel = route.connectionLabel,
-                        threadId = started.threadId,
-                        projectPath = started.projectPath,
-                        title = started.title,
-                    ),
-                )
-            },
-            onBack = ::navigateBack,
-        )
-
-        is AppRoute.Thread -> ThreadRouteHost(
-            route = route,
-            runtime = runtime,
-            status = runtimeStatuses[route.connectionId],
-            onBack = ::navigateBack,
-        )
+            is AppRoute.Thread -> ThreadRouteHost(
+                route = route,
+                runtime = runtime,
+                status = runtimeStatuses[route.connectionId],
+                onBack = ::navigateBack,
+            )
+        }
     }
+}
+
+@Composable
+private fun GoogleAccountRouteHost(
+    accountPresentation: GoogleAccountPresentation,
+    onImportCredentials: suspend (String) -> GoogleCredentialImportResult,
+    onSignOut: suspend () -> GoogleSignOutResult,
+    onBack: () -> Unit,
+) {
+    var showQrUnavailableNotice by rememberSaveable { mutableStateOf(false) }
+    GoogleAccountScreen(
+        accountPresentation = accountPresentation,
+        onBack = onBack,
+        onScanQr = { showQrUnavailableNotice = true },
+        onImportCredentials = onImportCredentials,
+        onSignOut = onSignOut,
+        informationalNotice = if (showQrUnavailableNotice) {
+            GoogleAccountNavigationPolicy.QrUnavailableNotice
+        } else {
+            null
+        },
+    )
 }
 
 @Composable
@@ -558,6 +620,18 @@ private fun ConnectedThreadRoute(
         }
     }
 
+    val viewingLeaseLifecycle = remember(runtime, lease.scope, route.threadId) {
+        ThreadViewingLeaseLifecycle(
+            expectedScope = lease.scope,
+            threadId = route.threadId,
+            currentScope = { runtime.lease(route.connectionId)?.scope },
+            begin = runtime::beginViewing,
+        )
+    }
+    val viewingRenewalRegistration = remember(runtime) {
+        { callback: () -> Unit -> runtime.registerViewingLeaseRenewal(callback) }
+    }
+
     ThreadSessionScreen(
         coordinator = coordinator,
         threadId = route.threadId,
@@ -571,6 +645,8 @@ private fun ConnectedThreadRoute(
             runtime.performOutboxAction(composerKey, origin, action)
         },
         composerError = composerError,
+        viewingLeaseLifecycle = viewingLeaseLifecycle,
+        registerViewingLeaseRenewal = viewingRenewalRegistration,
     )
 }
 

@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
             activity = switchboardApplication::browseActivity,
             persistCollapsedWorkspaceIds = switchboardApplication::saveCollapsedWorkspaceIds,
             snapshots = switchboardApplication.browseSnapshotStore,
+            beginViewingLease = switchboardApplication::beginPushViewing,
+            registerViewingRenewal = switchboardApplication::registerViewingLeaseRenewal,
         )
     }
 
@@ -59,6 +61,9 @@ class MainActivity : ComponentActivity() {
             val updateState by updateRuntime.state
             val startupState by switchboardApplication.startupState.collectAsState()
             val connectionSnapshot by connectionRepository.snapshots.collectAsState()
+            val googleAccountPresentation by switchboardApplication.googleAccountRuntime
+                .presentation
+                .collectAsState()
             val routeWake by notificationRouteWake.collectAsState()
             val visibleStartupState = when {
                 startupState is StartupRuntimeState.Ready && connectionSnapshot != null ->
@@ -72,6 +77,10 @@ class MainActivity : ComponentActivity() {
                     connectionsState = StartupConnectionsMapper.map(visibleStartupState),
                     resolveEditForm = connectionRepository::editForm,
                     onPairingIntent = connectionRepository::save,
+                    googleAccountPresentation = googleAccountPresentation,
+                    onGoogleImportCredentials =
+                        switchboardApplication.googleAccountRuntime::importCredentials,
+                    onGoogleSignOut = switchboardApplication.googleAccountRuntime::signOut,
                     onConnectionIntent = { intent ->
                         if (intent is ConnectionIntent.Remove) {
                             switchboardApplication.removeConnection(intent.connectionId)

@@ -121,6 +121,11 @@ data class ConnectionRuntimeState(
     val detail: String,
 )
 
+enum class ConnectionTerminalReason {
+    GoogleSignInRequired,
+    GoogleCredentialsBlocked,
+}
+
 sealed interface ConnectionRuntimeEvent {
     val generation: Long
 
@@ -140,6 +145,11 @@ sealed interface ConnectionRuntimeEvent {
     ) : ConnectionRuntimeEvent
 
     data class Disconnected(override val generation: Long) : ConnectionRuntimeEvent
+
+    data class TerminalFailure(
+        override val generation: Long,
+        val reason: ConnectionTerminalReason,
+    ) : ConnectionRuntimeEvent
 }
 
 object ConnectionStatusReducer {
@@ -178,6 +188,16 @@ object ConnectionStatusReducer {
                 generation = event.generation,
                 status = ConnectionStatus.Disconnected,
                 detail = "",
+            )
+            is ConnectionRuntimeEvent.TerminalFailure -> ConnectionRuntimeState(
+                generation = event.generation,
+                status = ConnectionStatus.Error,
+                detail = when (event.reason) {
+                    ConnectionTerminalReason.GoogleSignInRequired ->
+                        "Sign in to Google to connect through Cloud IAP"
+                    ConnectionTerminalReason.GoogleCredentialsBlocked ->
+                        "Google credentials could not be read safely"
+                },
             )
         }
     }

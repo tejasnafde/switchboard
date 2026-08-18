@@ -1,23 +1,57 @@
 package app.switchboard.mobile.platform.protocol
 
+import app.switchboard.mobile.domain.iap.IapTarget
 import app.switchboard.mobile.protocol.Credential
 import app.switchboard.mobile.protocol.DisconnectCause
 import app.switchboard.mobile.protocol.ResumeCursor
 import app.switchboard.mobile.protocol.RuntimeEventPayload
 import app.switchboard.mobile.protocol.WsFrame
+import app.switchboard.mobile.domain.connection.ConnectionTerminalReason
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 
-data class WebSocketTarget(
+sealed interface LineEndpoint {
+    data class DirectWebSocket(val url: String) : LineEndpoint
+
+    data class CloudIap(val target: IapTarget) : LineEndpoint
+}
+
+data class LineTarget(
     val deviceId: String,
     val connectionId: String,
-    val url: String,
+    val endpoint: LineEndpoint,
     val credential: Credential,
     val credentialRef: String? = null,
 ) {
+    constructor(
+        deviceId: String,
+        connectionId: String,
+        url: String,
+        credential: Credential,
+        credentialRef: String? = null,
+    ) : this(
+        deviceId = deviceId,
+        connectionId = connectionId,
+        endpoint = LineEndpoint.DirectWebSocket(url),
+        credential = credential,
+        credentialRef = credentialRef,
+    )
+
+    /** Compatibility accessor for direct-WebSocket callers. */
+    val url: String
+        get() = (endpoint as? LineEndpoint.DirectWebSocket)?.url
+            ?: error("Cloud IAP targets do not have a backend WebSocket URL")
+
     override fun toString(): String =
-        "WebSocketTarget(deviceId=$deviceId, connectionId=$connectionId, url=${url.withoutQueryOrFragment()}, credential=${credential::class.simpleName})"
+        "LineTarget(deviceId=$deviceId, connectionId=$connectionId, endpoint=${endpoint.redacted()}, credential=${credential::class.simpleName})"
+}
+
+typealias WebSocketTarget = LineTarget
+
+private fun LineEndpoint.redacted(): String = when (this) {
+    is LineEndpoint.DirectWebSocket -> "DirectWebSocket(url=${url.withoutQueryOrFragment()})"
+    is LineEndpoint.CloudIap -> "CloudIap(target=$target)"
 }
 
 private fun String.withoutQueryOrFragment(): String {
@@ -32,14 +66,14 @@ data class TransportScope(
     val generation: Long,
 )
 
-interface WebSocketConnection {
+interface LineConnection {
     fun send(text: String): Boolean
 
     fun close()
 }
 
-interface WebSocketCallbacks {
-    fun onOpen(connection: WebSocketConnection)
+interface LineCallbacks {
+    fun onOpen(connection: LineConnection)
 
     fun onText(text: String)
 
@@ -48,12 +82,21 @@ interface WebSocketCallbacks {
     fun onFailure(error: Throwable)
 }
 
-fun interface WebSocketDialer {
-    fun open(target: WebSocketTarget, callbacks: WebSocketCallbacks): WebSocketConnection
+fun interface LineDialer {
+    fun open(target: LineTarget, callbacks: LineCallbacks): LineConnection
 }
+
+typealias WebSocketConnection = LineConnection
+typealias WebSocketCallbacks = LineCallbacks
+typealias WebSocketDialer = LineDialer
 
 fun interface Cancelable {
     fun cancel()
+}
+
+/** A transport prerequisite that cannot recover through background redial alone. */
+interface NonRetryableTransportFailure {
+    val reason: ConnectionTerminalReason
 }
 
 fun interface TransportScheduler {

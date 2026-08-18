@@ -1,6 +1,7 @@
 package app.switchboard.mobile.platform.protocol
 
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeEvent
+import app.switchboard.mobile.domain.connection.ConnectionTerminalReason
 import app.switchboard.mobile.protocol.Credential
 import app.switchboard.mobile.protocol.DisconnectCause
 import app.switchboard.mobile.protocol.JsonArray
@@ -130,6 +131,34 @@ class AuthenticatedConnectionFleetCoordinatorFactoryTest {
         assertEquals(listOf("from-old", "from-new"), fixture.runtimeEvents.map { it.threadId })
     }
 
+    @Test
+    fun `terminal transport prerequisite is generation fenced and never schedules retry`() {
+        val fixture = Fixture()
+        val coordinator = fixture.create()
+        coordinator.connect(target())
+        val call = fixture.dialer.calls.single()
+
+        call.callbacks.onFailure(
+            FakeTerminalFailure(ConnectionTerminalReason.GoogleSignInRequired),
+        )
+
+        assertEquals(
+            listOf(
+                ConnectionRuntimeEvent.TerminalFailure(
+                    FLEET_GENERATION,
+                    ConnectionTerminalReason.GoogleSignInRequired,
+                ),
+            ),
+            fixture.events,
+        )
+        assertEquals(0, fixture.scheduler.activeTaskCount)
+        assertTrue(call.socket.closed)
+        assertEquals(null, coordinator.endpoint)
+
+        call.callbacks.onClosed(DisconnectCause.UserRequested)
+        assertEquals(1, fixture.events.size)
+    }
+
     private class Fixture {
         val dialer = FakeDialer()
         val scheduler = FakeScheduler()
@@ -213,6 +242,9 @@ class AuthenticatedConnectionFleetCoordinatorFactoryTest {
 
         private val tasks = mutableListOf<Task>()
 
+        val activeTaskCount: Int
+            get() = tasks.count { !it.cancelled }
+
         override fun schedule(delayMs: Long, block: () -> Unit): Cancelable =
             Task(block).also(tasks::add)
 
@@ -222,6 +254,10 @@ class AuthenticatedConnectionFleetCoordinatorFactoryTest {
             task.block()
         }
     }
+
+    private class FakeTerminalFailure(
+        override val reason: ConnectionTerminalReason,
+    ) : RuntimeException("secret detail must not escape"), NonRetryableTransportFailure
 
     private fun target() = WebSocketTarget(
         deviceId = "phone",

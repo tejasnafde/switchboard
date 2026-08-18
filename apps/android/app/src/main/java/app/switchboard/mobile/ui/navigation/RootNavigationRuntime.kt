@@ -21,6 +21,7 @@ import app.switchboard.mobile.platform.protocol.TransportScope
 import app.switchboard.mobile.protocol.RuntimeEventPayload
 import app.switchboard.mobile.ui.browse.BrowseCollapsePreferences
 import app.switchboard.mobile.ui.browse.BrowseThreadActivity
+import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.flow.Flow
@@ -85,6 +86,10 @@ interface RootNavigationRuntime {
     fun browseSnapshotStore(snapshot: OfflineSnapshot): BrowseSnapshotStore = EmptyBrowseSnapshotStore
 
     fun cachedThread(connectionId: String, threadId: String): ThreadState? = null
+
+    fun beginViewing(scope: TransportScope, threadId: String): Closeable = Closeable {}
+
+    fun registerViewingLeaseRenewal(callback: () -> Unit): Closeable = Closeable {}
 }
 
 sealed interface LeaseFallback {

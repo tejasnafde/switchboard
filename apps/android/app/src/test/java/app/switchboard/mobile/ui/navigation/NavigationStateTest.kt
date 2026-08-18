@@ -28,6 +28,26 @@ class NavigationStateTest {
     }
 
     @Test
+    fun googleAccountRouteSerializesAndReturnsToItsCaller() {
+        val fromConnections = NavigationState.root().push(AppRoute.GoogleAccount)
+        val fromPairing = NavigationState.root()
+            .push(AppRoute.Pair(startManual = true))
+            .push(AppRoute.GoogleAccount)
+        val bytes = ByteArrayOutputStream().also { output ->
+            ObjectOutputStream(output).use { it.writeObject(fromPairing) }
+        }.toByteArray()
+
+        val restored = ObjectInputStream(ByteArrayInputStream(bytes)).use {
+            it.readObject() as NavigationState
+        }
+
+        assertEquals(AppRoute.GoogleAccount, fromConnections.current)
+        assertEquals(AppRoute.Connections, fromConnections.pop().current)
+        assertEquals(AppRoute.GoogleAccount, restored.current)
+        assertEquals(AppRoute.Pair(startManual = true), restored.pop().current)
+    }
+
+    @Test
     fun routeStackSurvivesJavaSerializationForActivityRecreation() {
         val original = NavigationState.root()
             .push(AppRoute.Browse("machine-1", "Office Mac"))

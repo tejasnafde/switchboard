@@ -14,7 +14,7 @@ import app.switchboard.mobile.protocol.WsProtocol
 import java.util.concurrent.atomic.AtomicInteger
 
 class AuthenticatedConnectionFleetCoordinatorFactory(
-    private val dialer: WebSocketDialer,
+    private val dialer: LineDialer,
     private val scheduler: TransportScheduler,
     private val cursorStore: ResumeCursorStore,
     private val credentialStore: SessionCredentialStore,
@@ -43,7 +43,7 @@ class AuthenticatedConnectionFleetCoordinatorFactory(
 private class AuthenticatedFleetCoordinator(
     private val fleetConnectionId: String,
     private val fleetGeneration: Long,
-    dialer: WebSocketDialer,
+    dialer: LineDialer,
     scheduler: TransportScheduler,
     cursorStore: ResumeCursorStore,
     credentialStore: SessionCredentialStore,
@@ -56,13 +56,14 @@ private class AuthenticatedFleetCoordinator(
     private var readyCapabilities: Set<String>? = null
     private val dialAttempts = AtomicInteger(0)
     private val authenticationRejectedAttempt = AtomicInteger(NO_ATTEMPT)
+    private val failedAttempt = AtomicInteger(NO_ATTEMPT)
     @Volatile
     private var observerDeviceId: String? = null
     private val coordinator: AuthenticatedWsCoordinator
     private val rpc: RemoteRpc
 
     init {
-        val reportingDialer = WebSocketDialer { target, callbacks ->
+        val reportingDialer = LineDialer { target, callbacks ->
             val attempt = dialAttempts.incrementAndGet()
             try {
                 dialer.open(target, reportingCallbacks(callbacks, attempt))
@@ -119,12 +120,13 @@ private class AuthenticatedFleetCoordinator(
             return ConnectionFleetEndpoint(leaseScope, capabilities, rpc)
         }
 
-    override fun connect(target: WebSocketTarget) {
+    override fun connect(target: LineTarget) {
         require(target.connectionId == fleetConnectionId) { "Target connection does not match fleet entry" }
         observerDeviceId = target.deviceId
         readyCapabilities = null
         dialAttempts.set(0)
         authenticationRejectedAttempt.set(NO_ATTEMPT)
+        failedAttempt.set(NO_ATTEMPT)
         coordinator.connect(target)
     }
 
@@ -147,10 +149,10 @@ private class AuthenticatedFleetCoordinator(
     }
 
     private fun reportingCallbacks(
-        callbacks: WebSocketCallbacks,
+        callbacks: LineCallbacks,
         attempt: Int,
-    ): WebSocketCallbacks = object : WebSocketCallbacks {
-        override fun onOpen(connection: WebSocketConnection) {
+    ): LineCallbacks = object : LineCallbacks {
+        override fun onOpen(connection: LineConnection) {
             if (!isCurrent(attempt)) {
                 connection.close()
                 return
@@ -178,7 +180,13 @@ private class AuthenticatedFleetCoordinator(
         }
 
         override fun onClosed(cause: DisconnectCause) {
-            if (!isCurrent(attempt) || authenticationRejectedAttempt.get() == attempt) return
+            if (
+                !isCurrent(attempt) ||
+                authenticationRejectedAttempt.get() == attempt ||
+                failedAttempt.get() == attempt
+            ) {
+                return
+            }
             callbacks.onClosed(cause)
             readyCapabilities = null
             onEvent(cause.toRuntimeEvent(attempt))
@@ -186,9 +194,16 @@ private class AuthenticatedFleetCoordinator(
 
         override fun onFailure(error: Throwable) {
             if (!isCurrent(attempt) || authenticationRejectedAttempt.get() == attempt) return
+            failedAttempt.set(attempt)
             callbacks.onFailure(error)
             readyCapabilities = null
-            onEvent(ConnectionRuntimeEvent.Retrying(fleetGeneration, closeCode = null, attempt = attempt))
+            onEvent(
+                if (error is NonRetryableTransportFailure) {
+                    ConnectionRuntimeEvent.TerminalFailure(fleetGeneration, error.reason)
+                } else {
+                    ConnectionRuntimeEvent.Retrying(fleetGeneration, closeCode = null, attempt = attempt)
+                },
+            )
         }
     }
 

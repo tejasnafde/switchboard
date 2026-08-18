@@ -2,11 +2,13 @@ package app.switchboard.mobile.ui.browse
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -41,7 +43,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.isTraversalGroup
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -69,7 +79,11 @@ fun BrowseScreen(
     onToggleWorkspace: (String) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .semantics { isTraversalGroup = true },
+    ) {
         when (route) {
             BrowseRoute.Projects -> {
                 BrowseTopBar(title = state.connectionLabel, onBack = onBack)
@@ -143,7 +157,8 @@ private fun BrowseTopBar(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f)
-                .padding(start = 8.dp, end = 16.dp),
+                .padding(start = 8.dp, end = 16.dp)
+                .semantics { heading() },
         )
         actionLabel?.let { label ->
             TextButton(
@@ -290,14 +305,7 @@ private fun ConversationsSurface(
                             onClick = { onSessionTap(row) },
                             onLongClick = { renaming = row },
                         )
-                        renameErrors[row.id]?.let { message ->
-                            Text(
-                                text = message,
-                                color = Red,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                            )
-                        }
+                        RenameErrorSlot(renameErrors[row.id])
                     }
                     item { Spacer(Modifier.navigationBarsPadding()) }
                 }
@@ -327,18 +335,32 @@ private fun BrowseStatusRow(status: BrowseStatus, onRetry: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = listOfNotNull(status.label, status.detail).joinToString(", ")
+            }
             .padding(start = 20.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (status.showProgress) {
-            CircularProgressIndicator(
-                color = color,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(16.dp),
-            )
-            Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier
+                .width(26.dp)
+                .clearAndSetSemantics {},
+            contentAlignment = Alignment.CenterStart,
+        ) {
+            if (status.showProgress) {
+                CircularProgressIndicator(
+                    color = color,
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
         }
-        Column(modifier = Modifier.weight(1f)) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clearAndSetSemantics {},
+        ) {
             Text(
                 text = status.label,
                 color = color,
@@ -369,8 +391,17 @@ private fun BrowseStatusRow(status: BrowseStatus, onRetry: () -> Unit) {
 
 @Composable
 private fun ProjectRow(row: BrowseProjectRow, onClick: () -> Unit) {
-    BrowsePressableRow(onClick = onClick) {
-        Column(modifier = Modifier.weight(1f)) {
+    BrowsePressableRow(
+        contentDescription = BrowseAccessibilityPolicy.projectDescription(row.name, row.sessionCount),
+        stateDescription = BrowseAccessibilityPolicy.projectState(row.unread, row.status),
+        onClickLabel = "Open ${row.name}",
+        onClick = onClick,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clearAndSetSemantics {},
+        ) {
             Text(
                 text = row.name,
                 style = MaterialTheme.typography.titleMedium,
@@ -397,7 +428,7 @@ private fun ProjectRow(row: BrowseProjectRow, onClick: () -> Unit) {
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
-        Text("›", color = TextDim, fontSize = 22.sp)
+        Text("›", color = TextDim, fontSize = 22.sp, modifier = Modifier.clearAndSetSemantics {})
     }
 }
 
@@ -408,8 +439,23 @@ private fun ConversationRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    BrowsePressableRow(onClick = onClick, onLongClick = onLongClick) {
-        Column(modifier = Modifier.weight(1f)) {
+    BrowsePressableRow(
+        contentDescription = BrowseAccessibilityPolicy.conversationDescription(row.title, row.agentType),
+        stateDescription = BrowseAccessibilityPolicy.conversationState(
+            row.availableOffline,
+            row.unread,
+            row.status,
+        ),
+        onClickLabel = "Open ${row.title}",
+        onLongClickLabel = "Rename ${row.title}",
+        onClick = onClick,
+        onLongClick = onLongClick,
+    ) {
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .clearAndSetSemantics {},
+        ) {
             Text(
                 text = row.title,
                 style = MaterialTheme.typography.titleMedium,
@@ -453,7 +499,7 @@ private fun ConversationRow(
                 }
             }
         }
-        Text("›", color = TextDim, fontSize = 22.sp)
+        Text("›", color = TextDim, fontSize = 22.sp, modifier = Modifier.clearAndSetSemantics {})
     }
 }
 
@@ -479,30 +525,42 @@ private fun AgentTag(agentType: String) {
 
 @Composable
 private fun BrowsePressableRow(
+    contentDescription: String,
+    stateDescription: String,
+    onClickLabel: String,
+    onLongClickLabel: String? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     content: @Composable RowScope.() -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
+    val indication = LocalIndication.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
             .background(if (pressed) SurfaceRaised else Surface)
+            .semantics(mergeDescendants = true) {
+                this.contentDescription = contentDescription
+                if (stateDescription.isNotBlank()) this.stateDescription = stateDescription
+            }
             .then(
                 if (onLongClick == null) {
                     Modifier.clickable(
                         interactionSource = interactionSource,
-                        indication = null,
+                        indication = indication,
                         role = Role.Button,
+                        onClickLabel = onClickLabel,
                         onClick = onClick,
                     )
                 } else {
                     Modifier.combinedClickable(
                         interactionSource = interactionSource,
-                        indication = null,
+                        indication = indication,
                         role = Role.Button,
+                        onClickLabel = onClickLabel,
+                        onLongClickLabel = onLongClickLabel,
                         onClick = onClick,
                         onLongClick = onLongClick,
                     )
@@ -541,7 +599,16 @@ private fun WorkspaceHeader(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
-            .clickable(enabled = toggleEnabled, onClick = onToggle)
+            .semantics(mergeDescendants = true) {
+                contentDescription = section.name
+                stateDescription = BrowseAccessibilityPolicy.workspaceState(section.collapsed)
+            }
+            .clickable(
+                enabled = toggleEnabled,
+                role = Role.Button,
+                onClickLabel = if (section.collapsed) "Expand ${section.name}" else "Collapse ${section.name}",
+                onClick = onToggle,
+            )
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -553,6 +620,56 @@ private fun WorkspaceHeader(
         if (toggleEnabled) {
             Text(if (section.collapsed) "Show" else "Hide", color = TextDim)
         }
+    }
+}
+
+@Composable
+private fun RenameErrorSlot(message: String?) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 24.dp)
+            .padding(horizontal = 20.dp),
+    ) {
+        message?.let {
+            Text(
+                text = it,
+                color = Red,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            )
+        }
+    }
+}
+
+object BrowseAccessibilityPolicy {
+    fun projectDescription(name: String, sessionCount: Int): String =
+        "$name, $sessionCount ${if (sessionCount == 1) "session" else "sessions"}"
+
+    fun projectState(unread: Int, status: String?): String = listOfNotNull(
+        unread.takeIf { it > 0 }?.let { "$it unread" },
+        status?.takeIf(String::isNotBlank),
+    ).joinToString(", ")
+
+    fun conversationDescription(title: String, agentType: String): String =
+        "$title, ${agentLabel(agentType)}"
+
+    fun conversationState(availableOffline: Boolean, unread: Int, status: String?): String =
+        listOfNotNull(
+            "saved offline".takeIf { availableOffline },
+            unread.takeIf { it > 0 }?.let { "$it unread" },
+            status?.takeIf(String::isNotBlank),
+        ).joinToString(", ")
+
+    fun workspaceState(collapsed: Boolean): String = if (collapsed) "Collapsed" else "Expanded"
+
+    private fun agentLabel(agentType: String): String = when (agentType) {
+        "claude", "claude-code" -> "Claude"
+        "codex" -> "Codex"
+        "opencode" -> "OpenCode"
+        else -> agentType
     }
 }
 

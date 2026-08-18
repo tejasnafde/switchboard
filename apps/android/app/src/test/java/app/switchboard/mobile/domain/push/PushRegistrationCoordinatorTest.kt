@@ -76,12 +76,12 @@ class PushRegistrationCoordinatorTest {
     }
 
     @Test
-    fun `viewing enter renew leave stay on exact token and replacement scope`() {
+    fun `viewing lease stays on its exact scope until replacement route enters`() {
         val coordinator = PushRegistrationCoordinator()
         val first = FakeBackend(scope(10))
         coordinator.onExpoToken("ExpoPushToken[token]")
         coordinator.onReady(listOf(first))
-        val lease: Closeable = coordinator.beginViewing("mac-a", "thread-1")
+        val oldLease: Closeable = coordinator.beginViewing("mac-a", "thread-1")
 
         assertEquals("viewing:ExpoPushToken[token]:thread-1", first.calls.last())
         coordinator.renewViewingLeases()
@@ -89,10 +89,52 @@ class PushRegistrationCoordinatorTest {
 
         val replacement = FakeBackend(scope(11))
         coordinator.onReady(listOf(replacement))
+        assertTrue(replacement.calls.none { it.startsWith("viewing:") })
+
+        val replacementLease = coordinator.beginViewing("mac-a", "thread-1")
         assertEquals("viewing:ExpoPushToken[token]:thread-1", replacement.calls.last())
-        lease.close()
+        oldLease.close()
+        assertTrue(replacement.calls.none { it == "viewing:ExpoPushToken[token]:null" })
+
+        replacementLease.close()
         assertEquals("viewing:ExpoPushToken[token]:null", replacement.calls.last())
         assertTrue(first.calls.none { it == "viewing:ExpoPushToken[token]:null" })
+    }
+
+    @Test
+    fun `late stale enter cannot overwrite the replacement viewing lease`() {
+        val coordinator = PushRegistrationCoordinator()
+        val first = FakeBackend(scope(20))
+        val replacement = FakeBackend(scope(21))
+        coordinator.onExpoToken("ExpoPushToken[token]")
+        coordinator.onReady(listOf(first))
+        coordinator.onReady(listOf(replacement))
+
+        val replacementLease = coordinator.beginViewing(scope(21), "thread-new")
+        val staleLease = coordinator.beginViewing(scope(20), "thread-old")
+        staleLease.close()
+        coordinator.renewViewingLeases()
+
+        assertEquals(
+            2,
+            replacement.calls.count { it == "viewing:ExpoPushToken[token]:thread-new" },
+        )
+        replacementLease.close()
+        assertEquals("viewing:ExpoPushToken[token]:null", replacement.calls.last())
+    }
+
+    @Test
+    fun `connection removal discards a pending viewing lease even before token acquisition`() {
+        val coordinator = PushRegistrationCoordinator()
+        val backend = FakeBackend(scope(30))
+        coordinator.onReady(listOf(backend))
+        coordinator.beginViewing(scope(30), "thread-old")
+
+        coordinator.beforeConnectionRemoved("mac-a")
+        coordinator.onExpoToken("ExpoPushToken[token]")
+        coordinator.onReady(listOf(backend))
+
+        assertTrue(backend.calls.none { it == "viewing:ExpoPushToken[token]:thread-old" })
     }
 
     private class FakeBackend(

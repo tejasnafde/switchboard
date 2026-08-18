@@ -50,7 +50,7 @@ sealed interface RequestSubmission {
 }
 
 class AuthenticatedWsCoordinator(
-    private val dialer: WebSocketDialer,
+    private val dialer: LineDialer,
     private val scheduler: TransportScheduler,
     private val cursorStore: ResumeCursorStore,
     private val credentialStore: SessionCredentialStore,
@@ -65,8 +65,8 @@ class AuthenticatedWsCoordinator(
     )
 
     private var state: ConnectionState? = null
-    private var target: WebSocketTarget? = null
-    private var socket: WebSocketConnection? = null
+    private var target: LineTarget? = null
+    private var socket: LineConnection? = null
     private var retryTask: Cancelable? = null
     private var probeTask: Cancelable? = null
     private var retryAttempts = 0
@@ -98,7 +98,7 @@ class AuthenticatedWsCoordinator(
     }
 
     @Synchronized
-    fun connect(newTarget: WebSocketTarget) {
+    fun connect(newTarget: LineTarget) {
         if (destroyed) return
         cancelRetry()
         cancelProbe()
@@ -302,9 +302,9 @@ class AuthenticatedWsCoordinator(
         }
     }
 
-    private fun callbacksFor(generation: ConnectionGeneration): WebSocketCallbacks =
-        object : WebSocketCallbacks {
-            override fun onOpen(connection: WebSocketConnection) {
+    private fun callbacksFor(generation: ConnectionGeneration): LineCallbacks =
+        object : LineCallbacks {
+            override fun onOpen(connection: LineConnection) {
                 opened(generation, connection)
             }
 
@@ -324,7 +324,7 @@ class AuthenticatedWsCoordinator(
     @Synchronized
     private fun opened(
         generation: ConnectionGeneration,
-        connection: WebSocketConnection,
+        connection: LineConnection,
     ) {
         val currentState = state
         if (destroyed || currentState?.generation != generation) {
@@ -399,8 +399,15 @@ class AuthenticatedWsCoordinator(
     ) {
         val currentState = state ?: return
         if (destroyed || currentState.generation != generation) return
+        val failedSocket = socket
         observer.onTransportFailure(currentState.generation.connectionId, error)
-        closed(generation, DisconnectCause.Network)
+        val cause = if (error is NonRetryableTransportFailure) {
+            DisconnectCause.UserRequested
+        } else {
+            DisconnectCause.Network
+        }
+        closed(generation, cause)
+        failedSocket?.close()
     }
 
     @Synchronized
@@ -571,7 +578,7 @@ class AuthenticatedWsCoordinator(
 
     private fun reconnectAfterFailedProbe(
         generation: ConnectionGeneration,
-        connection: WebSocketConnection,
+        connection: LineConnection,
     ) {
         if (destroyed || state?.generation != generation || socket !== connection) return
         socket = null

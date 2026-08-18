@@ -67,6 +67,21 @@ data class ChatMessage(
     val content: String,
     val timestamp: Long,
     val raw: JsonObject,
+    val toolCalls: List<MessageToolCall> = emptyList(),
+    val images: List<MessageImage> = emptyList(),
+)
+
+data class MessageToolCall(
+    val id: String,
+    val name: String,
+    val input: String,
+    val output: String?,
+)
+
+data class MessageImage(
+    val url: String,
+    val mimeType: String?,
+    val name: String?,
 )
 
 data class SessionMeta(

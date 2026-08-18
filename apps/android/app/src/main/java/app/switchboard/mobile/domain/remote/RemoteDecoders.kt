@@ -155,6 +155,23 @@ object RemoteDecoders {
         content = raw.stringRequired("content"),
         timestamp = raw.longRequired("timestamp"),
         raw = raw,
+        toolCalls = raw.optionalArray("toolCalls").map { value ->
+            val tool = value.obj()
+            MessageToolCall(
+                id = tool.stringRequired("id"),
+                name = tool.stringRequired("name"),
+                input = tool.stringRequired("input"),
+                output = tool.string("output"),
+            )
+        },
+        images = raw.optionalArray("images").map { value ->
+            val image = value.obj()
+            MessageImage(
+                url = image.stringRequired("url"),
+                mimeType = image.string("mimeType"),
+                name = image.string("name"),
+            )
+        },
     )
 
     private fun sessionMeta(raw: JsonObject) = SessionMeta(
@@ -197,4 +214,11 @@ object RemoteDecoders {
 
     private fun JsonObject.boolean(key: String): Boolean? =
         (values[key] as? JsonBoolean)?.value
+
+    private fun JsonObject.optionalArray(key: String): List<JsonValue> =
+        when (val value = values[key]) {
+            null, JsonNull -> emptyList()
+            is JsonArray -> value.values
+            else -> error("Expected nullable array field: $key")
+        }
 }
