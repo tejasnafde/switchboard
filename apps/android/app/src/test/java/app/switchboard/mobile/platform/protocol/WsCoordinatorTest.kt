@@ -59,6 +59,60 @@ class WsCoordinatorTest {
     }
 
     @Test
+    fun `socket open without ready times out terminally instead of redialing forever`() {
+        val fixture = Fixture()
+        fixture.coordinator.connect(fixture.target())
+        val call = fixture.dialer.calls.single()
+
+        call.listener.onOpen(call.socket)
+
+        assertEquals(listOf(15_000L), fixture.scheduler.activeTasks().map { it.delayMs })
+        fixture.scheduler.runTaskWithDelay(15_000L)
+
+        assertTrue(call.socket.closed)
+        assertEquals(ConnectionPhase.Disconnected, fixture.coordinator.phase)
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
+        assertEquals(
+            listOf("BackendHandshakeTimedOut"),
+            fixture.observer.transportFailures.mapNotNull {
+                (it as? NonRetryableTransportFailure)?.reason?.name
+            },
+        )
+    }
+
+    @Test
+    fun `handshake watchdog is cancelled by ready replacement disconnect and destroy`() {
+        val ready = Fixture()
+        val readyCall = ready.connectReady()
+        assertTrue(ready.scheduler.activeTasks().isEmpty())
+        ready.scheduler.runTaskEvenIfCancelled(15_000L)
+        assertFalse(readyCall.socket.closed)
+        assertTrue(ready.observer.transportFailures.isEmpty())
+
+        val replaced = Fixture()
+        replaced.coordinator.connect(replaced.target())
+        val oldCall = replaced.dialer.calls.single()
+        oldCall.listener.onOpen(oldCall.socket)
+        replaced.coordinator.connect(replaced.target(connectionId = "replacement"))
+        replaced.scheduler.runTaskEvenIfCancelled(15_000L)
+        assertTrue(replaced.observer.transportFailures.isEmpty())
+
+        val disconnected = Fixture()
+        disconnected.coordinator.connect(disconnected.target())
+        disconnected.dialer.calls.single().listener.onOpen(disconnected.dialer.calls.single().socket)
+        disconnected.coordinator.disconnect()
+        disconnected.scheduler.runTaskEvenIfCancelled(15_000L)
+        assertTrue(disconnected.observer.transportFailures.isEmpty())
+
+        val destroyed = Fixture()
+        destroyed.coordinator.connect(destroyed.target())
+        destroyed.dialer.calls.single().listener.onOpen(destroyed.dialer.calls.single().socket)
+        destroyed.coordinator.destroy()
+        destroyed.scheduler.runTaskEvenIfCancelled(15_000L)
+        assertTrue(destroyed.observer.transportFailures.isEmpty())
+    }
+
+    @Test
     fun legacySharedTokenSendsHelloWithoutFrameAuthAndAcceptsOnlyCurrentReady() {
         val fixture = Fixture()
         fixture.coordinator.connect(
@@ -267,6 +321,20 @@ class WsCoordinatorTest {
         assertTrue(fixture.scheduler.activeTasks().isEmpty())
         assertFalse(fixture.coordinator.isApplicationSendAllowed)
         assertEquals(ConnectionPhase.Disconnected, fixture.coordinator.phase)
+    }
+
+    @Test
+    fun `authentication rejected close is terminal and never redials`() {
+        val fixture = Fixture()
+        fixture.coordinator.connect(fixture.target())
+        val call = fixture.dialer.calls.single()
+        call.listener.onOpen(call.socket)
+
+        call.listener.onClosed(DisconnectCause.AuthenticationRejected)
+
+        assertEquals(ConnectionPhase.Disconnected, fixture.coordinator.phase)
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
+        assertEquals(1, fixture.dialer.calls.size)
     }
 
     @Test
@@ -620,6 +688,7 @@ class WsCoordinatorTest {
         val runtimeEvents = mutableListOf<RuntimeEventPayload>()
         val replayGaps = mutableListOf<Pair<ResumeCursor?, ResumeCursor>>()
         val protocolErrors = mutableListOf<String>()
+        val transportFailures = mutableListOf<Throwable>()
 
         override fun onRuntimeEvent(connectionId: String, event: RuntimeEventPayload) {
             runtimeEvents += event
@@ -635,6 +704,10 @@ class WsCoordinatorTest {
 
         override fun onProtocolError(connectionId: String, wire: String) {
             protocolErrors += wire
+        }
+
+        override fun onTransportFailure(connectionId: String, error: Throwable) {
+            transportFailures += error
         }
     }
 }

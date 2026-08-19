@@ -30,6 +30,20 @@ class UpdateControllerTest {
     }
 
     @Test
+    fun restoredUpToDateStateStartsExactlyOneFreshDiscoveryCheck() {
+        val runner = RecordingEffectRunner()
+        val persistence = MemoryUpdateStatePersistence(UpdateState.UpToDate)
+        val controller = UpdateController("0.5.0", runner, persistence)
+
+        controller.start()
+        controller.start()
+
+        assertEquals(UpdateState.Checking, controller.state)
+        assertEquals(UpdateState.Checking, persistence.saved)
+        assertEquals(listOf(UpdateEffect.FetchReleases), runner.invocations.map { it.effect })
+    }
+
+    @Test
     fun repeatedTapAndStaleDownloadCallbacksCannotSupersedeCancellation() {
         val runner = RecordingEffectRunner()
         val controller = UpdateController(

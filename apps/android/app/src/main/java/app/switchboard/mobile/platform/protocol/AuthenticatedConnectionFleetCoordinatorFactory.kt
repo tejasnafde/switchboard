@@ -102,6 +102,11 @@ private class AuthenticatedFleetCoordinator(
                 }
 
                 override fun onTransportFailure(connectionId: String, error: Throwable) {
+                    if (error is HandshakeTimeoutFailure) {
+                        failedAttempt.set(dialAttempts.get())
+                        readyCapabilities = null
+                        onEvent(ConnectionRuntimeEvent.TerminalFailure(fleetGeneration, error.reason))
+                    }
                     currentObserverScope(connectionId)?.let { observer.onTransportFailure(it, error) }
                 }
             },

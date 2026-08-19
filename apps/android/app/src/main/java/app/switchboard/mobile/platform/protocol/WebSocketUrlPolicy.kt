@@ -9,7 +9,20 @@ fun legacyAuthenticatedUrl(url: String, rawToken: String): String {
         parsed.httpUrl
             .newBuilder()
             .removeAllQueryParameters(PAIR_QUERY_PARAMETER)
+            .removeAllQueryParameters(AUTH_QUERY_PARAMETER)
             .setQueryParameter(TOKEN_QUERY_PARAMETER, rawToken)
+            .build(),
+    )
+}
+
+fun frameAuthenticatedUrl(url: String): String {
+    val parsed = parseWebSocketUrl(url)
+    return parsed.restoreScheme(
+        parsed.httpUrl
+            .newBuilder()
+            .removeAllQueryParameters(TOKEN_QUERY_PARAMETER)
+            .removeAllQueryParameters(PAIR_QUERY_PARAMETER)
+            .setQueryParameter(AUTH_QUERY_PARAMETER, FRAME_AUTH_VALUE)
             .build(),
     )
 }
@@ -58,3 +71,5 @@ private enum class WebSocketScheme {
 
 private const val TOKEN_QUERY_PARAMETER = "token"
 private const val PAIR_QUERY_PARAMETER = "pair"
+private const val AUTH_QUERY_PARAMETER = "auth"
+private const val FRAME_AUTH_VALUE = "frame"

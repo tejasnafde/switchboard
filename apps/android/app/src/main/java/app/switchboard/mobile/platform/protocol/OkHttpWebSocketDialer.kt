@@ -6,6 +6,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.util.concurrent.atomic.AtomicBoolean
 
 class OkHttpWebSocketDialer(
     private val client: OkHttpClient = OkHttpClient(),
@@ -20,12 +21,16 @@ class OkHttpWebSocketDialer(
         val dialUrl = when (val credential = target.credential) {
             is app.switchboard.mobile.protocol.Credential.LegacySharedToken ->
                 legacyAuthenticatedUrl(cleanUrl, credential.token)
-            else -> cleanUrl
+            is app.switchboard.mobile.protocol.Credential.Pairing,
+            is app.switchboard.mobile.protocol.Credential.Session,
+            -> frameAuthenticatedUrl(cleanUrl)
         }
         val request = Request.Builder().url(dialUrl).build()
         val webSocket = client.newWebSocket(
             request,
             object : WebSocketListener() {
+                private val terminalCallbackDelivered = AtomicBoolean(false)
+
                 override fun onOpen(webSocket: WebSocket, response: Response) {
                     callbacks.onOpen(OkHttpConnection(webSocket))
                 }
@@ -34,8 +39,13 @@ class OkHttpWebSocketDialer(
                     callbacks.onText(text)
                 }
 
+                override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                    webSocket.close(code, reason)
+                    reportClosed(code)
+                }
+
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    callbacks.onClosed(DisconnectCause.Server)
+                    reportClosed(code)
                 }
 
                 override fun onFailure(
@@ -43,7 +53,20 @@ class OkHttpWebSocketDialer(
                     t: Throwable,
                     response: Response?,
                 ) {
-                    callbacks.onFailure(t)
+                    if (terminalCallbackDelivered.compareAndSet(false, true)) {
+                        callbacks.onFailure(t)
+                    }
+                }
+
+                private fun reportClosed(code: Int) {
+                    if (!terminalCallbackDelivered.compareAndSet(false, true)) return
+                    callbacks.onClosed(
+                        if (code == AUTHENTICATION_REJECTED_CLOSE_CODE) {
+                            DisconnectCause.AuthenticationRejected
+                        } else {
+                            DisconnectCause.Server
+                        },
+                    )
                 }
             },
         )
@@ -62,5 +85,6 @@ class OkHttpWebSocketDialer(
 
     private companion object {
         const val NORMAL_CLOSURE = 1000
+        const val AUTHENTICATION_REJECTED_CLOSE_CODE = 4001
     }
 }

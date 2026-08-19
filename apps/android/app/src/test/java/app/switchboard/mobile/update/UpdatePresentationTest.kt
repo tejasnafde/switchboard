@@ -47,4 +47,15 @@ class UpdatePresentationTest {
         assertFalse(presentation.visible)
         assertNull(presentation.primaryAction)
     }
+
+    @Test
+    fun launchTimeUpdateChecksStayOutOfTheGlobalSurfaceWhenNoUpdateIsAvailable() {
+        val checking = UpdatePresentation.from(UpdateState.Checking)
+        val upToDate = UpdatePresentation.from(UpdateState.UpToDate)
+
+        assertFalse(checking.visible)
+        assertNull(checking.primaryAction)
+        assertFalse(upToDate.visible)
+        assertNull(upToDate.primaryAction)
+    }
 }

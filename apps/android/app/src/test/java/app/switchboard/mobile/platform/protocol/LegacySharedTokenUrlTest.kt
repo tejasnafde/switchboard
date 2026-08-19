@@ -41,6 +41,31 @@ class LegacySharedTokenUrlTest {
     }
 
     @Test
+    fun frameAuthenticationReplacesEveryEmbeddedCredentialAndPreservesUnrelatedUrlPieces() {
+        val result = frameAuthenticatedUrl(
+            "wss://machine.example/sessions%2Factive?workspace=one&token=secret&pair=code&auth=stale#tail",
+        )
+
+        assertEquals(
+            "wss://machine.example/sessions%2Factive?workspace=one&auth=frame#tail",
+            result,
+        )
+    }
+
+    @Test
+    fun legacyAuthenticationReplacesEveryEmbeddedCredentialWithExactlyOneToken() {
+        val result = legacyAuthenticatedUrl(
+            "wss://machine.example/ws?workspace=one&token=old&token=older&pair=code&auth=frame#tail",
+            "fresh secret",
+        )
+
+        assertEquals(
+            "wss://machine.example/ws?workspace=one&token=fresh%20secret#tail",
+            result,
+        )
+    }
+
+    @Test
     fun targetPresentationDoesNotExposeUrlOrCredentialTokens() {
         val target = WebSocketTarget(
             deviceId = "phone",

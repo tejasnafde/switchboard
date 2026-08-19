@@ -25,18 +25,12 @@ data class UpdatePresentation(
                 detail = "",
             )
 
-            UpdateState.Checking -> UpdatePresentation(
-                visible = true,
-                title = "Checking for updates",
-                detail = "Looking for the latest Android release",
-                busy = true,
-            )
-
-            UpdateState.UpToDate -> UpdatePresentation(
-                visible = true,
-                title = "Switchboard is up to date",
-                detail = "No newer Android release is available",
-                primaryAction = UpdateAction.CHECK,
+            UpdateState.Checking,
+            UpdateState.UpToDate,
+            -> UpdatePresentation(
+                visible = false,
+                title = "",
+                detail = "",
             )
 
             is UpdateState.Available -> UpdatePresentation(

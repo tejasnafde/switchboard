@@ -38,7 +38,9 @@ class UpdateController(
             started = true
 
             when (val current = machine.state) {
-                UpdateState.Idle -> applyEventLocked(UpdateEvent.CheckRequested)
+                UpdateState.Idle,
+                UpdateState.UpToDate,
+                -> applyEventLocked(UpdateEvent.CheckRequested)
                 UpdateState.Checking -> launchEffectLocked(UpdateEffect.FetchReleases)
                 is UpdateState.Downloading -> launchEffectLocked(UpdateEffect.StartDownload(current.release))
                 is UpdateState.Cancelling -> launchEffectLocked(UpdateEffect.CancelDownload)

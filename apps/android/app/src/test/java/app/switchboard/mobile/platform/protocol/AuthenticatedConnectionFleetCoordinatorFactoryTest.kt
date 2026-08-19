@@ -159,6 +159,22 @@ class AuthenticatedConnectionFleetCoordinatorFactoryTest {
         assertEquals(1, fixture.events.size)
     }
 
+    @Test
+    fun `handshake timeout becomes an actionable terminal fleet event`() {
+        val fixture = Fixture()
+        val coordinator = fixture.create()
+        coordinator.connect(target())
+        val call = fixture.dialer.calls.single()
+        call.callbacks.onOpen(call.socket)
+
+        fixture.scheduler.runTaskWithDelay(15_000L)
+
+        val event = fixture.events.single() as ConnectionRuntimeEvent.TerminalFailure
+        assertEquals("BackendHandshakeTimedOut", event.reason.name)
+        assertTrue(call.socket.closed)
+        assertEquals(0, fixture.scheduler.activeTaskCount)
+    }
+
     private class Fixture {
         val dialer = FakeDialer()
         val scheduler = FakeScheduler()
@@ -232,6 +248,7 @@ class AuthenticatedConnectionFleetCoordinatorFactoryTest {
 
     private class FakeScheduler : TransportScheduler {
         private data class Task(
+            val delayMs: Long,
             val block: () -> Unit,
             var cancelled: Boolean = false,
         ) : Cancelable {
@@ -246,10 +263,16 @@ class AuthenticatedConnectionFleetCoordinatorFactoryTest {
             get() = tasks.count { !it.cancelled }
 
         override fun schedule(delayMs: Long, block: () -> Unit): Cancelable =
-            Task(block).also(tasks::add)
+            Task(delayMs, block).also(tasks::add)
 
         fun runNext() {
             val task = tasks.first { !it.cancelled }
+            task.cancelled = true
+            task.block()
+        }
+
+        fun runTaskWithDelay(delayMs: Long) {
+            val task = tasks.first { !it.cancelled && it.delayMs == delayMs }
             task.cancelled = true
             task.block()
         }

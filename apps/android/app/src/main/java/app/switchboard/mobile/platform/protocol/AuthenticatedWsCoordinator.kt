@@ -57,6 +57,7 @@ class AuthenticatedWsCoordinator(
     private val observer: ProtocolObserver,
     private val maxPendingRequests: Int = 128,
     private val requestTimeoutMs: Long = 30_000,
+    private val handshakeTimeoutMs: Long = DEFAULT_HANDSHAKE_TIMEOUT_MS,
 ) {
     private data class PendingRequest(
         val generation: ConnectionGeneration,
@@ -69,6 +70,7 @@ class AuthenticatedWsCoordinator(
     private var socket: LineConnection? = null
     private var retryTask: Cancelable? = null
     private var probeTask: Cancelable? = null
+    private var handshakeTask: Cancelable? = null
     private var retryAttempts = 0
     private var networkAvailable = true
     private var redialPending = false
@@ -95,6 +97,7 @@ class AuthenticatedWsCoordinator(
     init {
         require(maxPendingRequests > 0) { "maxPendingRequests must be positive" }
         require(requestTimeoutMs > 0) { "requestTimeoutMs must be positive" }
+        require(handshakeTimeoutMs > 0) { "handshakeTimeoutMs must be positive" }
     }
 
     @Synchronized
@@ -102,6 +105,7 @@ class AuthenticatedWsCoordinator(
         if (destroyed) return
         cancelRetry()
         cancelProbe()
+        cancelHandshake()
         redialPending = false
         retryAttempts = 0
         drainPending(RpcFailure.ConnectionReplaced)
@@ -247,6 +251,7 @@ class AuthenticatedWsCoordinator(
         if (destroyed) return
         cancelRetry()
         cancelProbe()
+        cancelHandshake()
         redialPending = false
         val currentState = state
         val previousSocket = socket
@@ -273,6 +278,7 @@ class AuthenticatedWsCoordinator(
         destroyed = true
         cancelRetry()
         cancelProbe()
+        cancelHandshake()
         redialPending = false
         val previousSocket = socket
         socket = null
@@ -338,6 +344,9 @@ class AuthenticatedWsCoordinator(
                 ConnectionEvent.SocketOpened(generation, target?.credential ?: return),
             ),
         )
+        if (state?.generation == generation && state?.phase != ConnectionPhase.Ready) {
+            armHandshakeTimeout(generation, connection)
+        }
     }
 
     @Synchronized
@@ -361,6 +370,9 @@ class AuthenticatedWsCoordinator(
                 ConnectionEvent.FrameReceived(generation, frame),
             ),
         )
+        if (state?.phase == ConnectionPhase.Ready || state?.phase == ConnectionPhase.Disconnected) {
+            cancelHandshake()
+        }
         if (authenticationRejected) {
             val rejectedSocket = socket
             socket = null
@@ -381,6 +393,7 @@ class AuthenticatedWsCoordinator(
         val currentState = state ?: return
         if (destroyed || currentState.generation != generation) return
         cancelProbe()
+        cancelHandshake()
         socket = null
         drainPending(RpcFailure.ConnectionLost(cause))
         applyTransition(
@@ -576,6 +589,48 @@ class AuthenticatedWsCoordinator(
         probeTask = null
     }
 
+    private fun armHandshakeTimeout(
+        generation: ConnectionGeneration,
+        connection: LineConnection,
+    ) {
+        cancelHandshake()
+        handshakeTask = scheduler.schedule(handshakeTimeoutMs) {
+            synchronized(this) {
+                handshakeTask = null
+                val currentState = state ?: return@synchronized
+                if (
+                    destroyed ||
+                    currentState.generation != generation ||
+                    currentState.phase == ConnectionPhase.Ready ||
+                    socket !== connection
+                ) {
+                    return@synchronized
+                }
+                socket = null
+                observer.onTransportFailure(
+                    currentState.generation.connectionId,
+                    HandshakeTimeoutFailure(),
+                )
+                applyTransition(
+                    ConnectionStateMachine.reduce(
+                        currentState,
+                        ConnectionEvent.SocketClosed(
+                            generation,
+                            DisconnectCause.UserRequested,
+                        ),
+                    ),
+                    DisconnectCause.UserRequested,
+                )
+                connection.close()
+            }
+        }
+    }
+
+    private fun cancelHandshake() {
+        handshakeTask?.cancel()
+        handshakeTask = null
+    }
+
     private fun reconnectAfterFailedProbe(
         generation: ConnectionGeneration,
         connection: LineConnection,
@@ -606,5 +661,11 @@ class AuthenticatedWsCoordinator(
 
     private companion object {
         const val DEFAULT_PROBE_TIMEOUT_MS = 3_000L
+        const val DEFAULT_HANDSHAKE_TIMEOUT_MS = 15_000L
     }
+}
+
+internal class HandshakeTimeoutFailure : RuntimeException("backend handshake timed out"),
+    NonRetryableTransportFailure {
+    override val reason = app.switchboard.mobile.domain.connection.ConnectionTerminalReason.BackendHandshakeTimedOut
 }

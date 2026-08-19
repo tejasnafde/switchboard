@@ -23,8 +23,8 @@ class AppContractTest {
     fun releaseIdentityMatchesTheInstalledReactNativeApp() {
         assertEquals("app.switchboard.mobile", AppContract.RELEASE_APPLICATION_ID)
         assertEquals(".native.dev", AppContract.DEBUG_APPLICATION_ID_SUFFIX)
-        assertEquals("0.5.0", AppContract.VERSION_NAME)
-        assertEquals(2, AppContract.VERSION_CODE)
+        assertEquals("0.5.1", AppContract.VERSION_NAME)
+        assertEquals(3, AppContract.VERSION_CODE)
     }
 
     @Test

@@ -124,6 +124,7 @@ data class ConnectionRuntimeState(
 enum class ConnectionTerminalReason {
     GoogleSignInRequired,
     GoogleCredentialsBlocked,
+    BackendHandshakeTimedOut,
 }
 
 sealed interface ConnectionRuntimeEvent {
@@ -197,6 +198,8 @@ object ConnectionStatusReducer {
                         "Sign in to Google to connect through Cloud IAP"
                     ConnectionTerminalReason.GoogleCredentialsBlocked ->
                         "Google credentials could not be read safely"
+                    ConnectionTerminalReason.BackendHandshakeTimedOut ->
+                        "The desktop did not finish connecting. Check Mobile access on the Mac and try again"
                 },
             )
         }

@@ -118,6 +118,24 @@ class ConnectionDecisionsTest {
     }
 
     @Test
+    fun `handshake timeout tells the user to check the desktop endpoint and retry`() {
+        val reason = enumValues<ConnectionTerminalReason>()
+            .single { it.name == "BackendHandshakeTimedOut" }
+
+        assertEquals(
+            ConnectionRuntimeState(
+                generation = 4,
+                status = ConnectionStatus.Error,
+                detail = "The desktop did not finish connecting. Check Mobile access on the Mac and try again",
+            ),
+            ConnectionStatusReducer.reduce(
+                ConnectionRuntimeState(4, ConnectionStatus.Connecting, ""),
+                ConnectionRuntimeEvent.TerminalFailure(generation = 4, reason = reason),
+            ),
+        )
+    }
+
+    @Test
     fun `callbacks from an older transport generation cannot change current status`() {
         val current = ConnectionRuntimeState(8, ConnectionStatus.Connecting, "retry 1")
 
