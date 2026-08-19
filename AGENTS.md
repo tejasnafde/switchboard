@@ -27,6 +27,21 @@ Electron workspace that multiplexes terminals, agent chats (Codex + Codex + Open
 - `npm run build:fast` - escape hatch, skips the gate
 - `npm run rebuild` - rebuild `node-pty` + `better-sqlite3` for Electron
 
+## Cross-surface feature policy (merge-blocking)
+
+Every feature or behavior change must be planned as one Switchboard product change, not as a Desktop-only implementation. Before editing, explicitly scope all of these impact areas:
+
+1. Desktop Electron (`src/main`, `src/preload`, `src/renderer`)
+2. React Native/iOS (`apps/mobile`)
+3. Native Android (`apps/android`)
+4. Shared backend/API contract
+5. Stored data, migrations, and upgrade compatibility
+6. Update channels, release packaging, and rollout
+
+For each affected slice, carry the work through storage → API → state → UI → lifecycle → tests, keeping every app installable and releasable. Preserve package identity, signing, deep links, stored data, API semantics, and update compatibility. Do not claim cross-platform parity from compilation or unit tests alone; record automated, hardware, and unexercised verification separately.
+
+Any pull request that changes behavior-bearing product paths must add or update `docs/feature-parity/<feature>.json`. The manifest must cover every impact area. Use `not_applicable` only with a concrete reason. Incomplete cross-surface work is allowed only as `staged`, with both a named feature flag and a named follow-up release; unflagged staged behavior must not merge. Run `npm run validate:feature-parity -- --base <base-ref>` locally. The schema and workflow are documented in `docs/plans/2026-08-20-cross-surface-feature-policy-design.md`.
+
 ## Build gate (2026-04-20)
 
 `npm run build` fails the entire build if typecheck or tests fail. The `prebuild` npm lifecycle hook chains `typecheck && test` before `electron-vite build`. This caught real regressions on the first run - see CHANGELOG.md.

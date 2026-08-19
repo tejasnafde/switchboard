@@ -15,6 +15,7 @@
     "typecheck:main": "tsc --noEmit -p tsconfig.main.json",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.renderer.json",
     "typecheck": "npm run typecheck:main && npm run typecheck:renderer",
+    "validate:feature-parity": "node scripts/validate-feature-parity.mjs",
     "lint": "eslint src/",
     "lint:deslop": "eslint src/",
     "prepare": "node scripts/install-hooks.mjs",

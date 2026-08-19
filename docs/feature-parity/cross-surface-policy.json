@@ -1,0 +1,40 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "cross-surface-policy",
+  "summary": "Block behavior changes that omit Switchboard client, contract, storage, or release impact decisions.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "This repository policy does not change Desktop runtime behavior."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "This repository policy does not change React Native or iOS runtime behavior."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "This repository policy does not change native Android runtime behavior."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No backend endpoint or wire contract changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No persisted data or migration changes."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/ci.yml",
+        ".github/pull_request_template.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": ["npx vitest run tests/unit/feature-parity-policy.test.ts"],
+    "hardware": [],
+    "notExercised": ["No device verification is applicable to a repository policy-only change."]
+  }
+}
