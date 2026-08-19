@@ -226,6 +226,16 @@ private fun GoogleAccountContent(
                     onRequestSignOut = onRequestSignOut,
                 )
             } else {
+                InlineStatus(
+                    message = GoogleAccountUiPresenter.recoveryTitle(state.account),
+                    detail = GoogleAccountUiPresenter.recoverySupportingText(state.account),
+                    detailMaxLines = 3,
+                    tone = if (state.account == GoogleAccountPresentation.Blocked) {
+                        StatusTone.WARNING
+                    } else {
+                        StatusTone.INFO
+                    },
+                )
                 Text(
                     text = "Connect Google only when you need to reach work VMs over IAP.",
                     color = TextDim,
@@ -263,7 +273,7 @@ private fun GoogleAccountContent(
             }
 
             ErrorSlot(
-                GoogleAccountUiPresenter.visibleError(state.account, state.errorMessage),
+                state.errorMessage,
             )
 
             OperationStatusSlot(state.operation)

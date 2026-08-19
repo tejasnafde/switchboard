@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -221,10 +222,15 @@ private fun ConnectionsTopBar(
                     }
                 },
         ) {
-            Text(
-                text = GoogleAccountAvatarPolicy.monogram(googleAccount),
-                fontFamily = GeistMono,
-                fontWeight = FontWeight.Medium,
+            GoogleAccountAvatarPolicy.monogramOrNull(googleAccount)?.let { monogram ->
+                Text(
+                    text = monogram,
+                    fontFamily = GeistMono,
+                    fontWeight = FontWeight.Medium,
+                )
+            } ?: Icon(
+                imageVector = Icons.Filled.AccountCircle,
+                contentDescription = null,
             )
         }
         Spacer(Modifier.width(8.dp))

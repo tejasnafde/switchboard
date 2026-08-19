@@ -79,6 +79,48 @@ class OutboxRemoteSenderTest {
     }
 
     @Test
+    fun backendImageContractRejectionIsPermanentAndActionable() {
+        val rpc = FakeRpc()
+        val outcomes = mutableListOf<SendOutcome>()
+        sender(rpc).send(turn(), outcomes::add)
+
+        rpc.reply(
+            RpcOutcome.Failure(
+                RpcFailure.Remote("Images exceed the 3 MiB synchronization limit"),
+            ),
+        )
+
+        val outcome = outcomes.single() as SendOutcome.Permanent
+        assertEquals("Images exceed the 3 MiB synchronization limit", outcome.reason)
+    }
+
+    @Test
+    fun submissionRejectedByBackendImageContractIsPermanentAndActionable() {
+        val rpc = FakeRpc(
+            submission = RequestSubmission.Rejected(
+                RpcFailure.Remote("Images must be PNG, JPEG, WebP, or GIF data URLs"),
+            ),
+        )
+        val outcomes = mutableListOf<SendOutcome>()
+
+        sender(rpc).send(turn(), outcomes::add)
+
+        val outcome = outcomes.single() as SendOutcome.Permanent
+        assertEquals("Images must be PNG, JPEG, WebP, or GIF data URLs", outcome.reason)
+    }
+
+    @Test
+    fun unknownRemoteFailureRemainsTransportAmbiguous() {
+        val rpc = FakeRpc()
+        val outcomes = mutableListOf<SendOutcome>()
+        sender(rpc).send(turn(), outcomes::add)
+
+        rpc.reply(RpcOutcome.Failure(RpcFailure.Remote("provider failed after dispatch")))
+
+        assertTrue(outcomes.single() is SendOutcome.TransportAmbiguous)
+    }
+
+    @Test
     fun materializationAndInvalidRuntimeFailuresArePermanentBeforeInvoke() {
         val rpc = FakeRpc()
         val failedMaterializer = OutboxImageMaterializer {

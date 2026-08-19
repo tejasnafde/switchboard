@@ -4,6 +4,7 @@ import app.switchboard.mobile.platform.google.GoogleAccountPresentation
 import app.switchboard.mobile.ui.connections.GoogleAccountAvatarPolicy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -34,20 +35,20 @@ class GoogleAccountNavigationPolicyTest {
     }
 
     @Test
-    fun `account avatar matches RN email monogram behavior`() {
+    fun `account avatar keeps initials only for a signed in identity`() {
         assertEquals(
             "TN",
-            GoogleAccountAvatarPolicy.monogram(
+            GoogleAccountAvatarPolicy.monogramOrNull(
                 GoogleAccountPresentation.SignedIn("tejas.nafde@example.com"),
             ),
         )
         assertEquals(
             "TE",
-            GoogleAccountAvatarPolicy.monogram(
+            GoogleAccountAvatarPolicy.monogramOrNull(
                 GoogleAccountPresentation.SignedIn("tejas@example.com"),
             ),
         )
-        assertEquals("-", GoogleAccountAvatarPolicy.monogram(GoogleAccountPresentation.SignedOut))
-        assertEquals("-", GoogleAccountAvatarPolicy.monogram(GoogleAccountPresentation.Blocked))
+        assertNull(GoogleAccountAvatarPolicy.monogramOrNull(GoogleAccountPresentation.SignedOut))
+        assertNull(GoogleAccountAvatarPolicy.monogramOrNull(GoogleAccountPresentation.Blocked))
     }
 }

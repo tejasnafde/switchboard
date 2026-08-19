@@ -219,13 +219,6 @@ object GoogleAccountUiPresenter {
     fun showsCredentialImport(account: GoogleAccountPresentation): Boolean =
         account !is GoogleAccountPresentation.SignedIn
 
-    fun visibleError(account: GoogleAccountPresentation, operationError: String?): String? =
-        operationError ?: if (account == GoogleAccountPresentation.Blocked) {
-            GoogleAccountPresentation.Blocked.Message
-        } else {
-            null
-        }
-
     fun monogram(account: GoogleAccountPresentation): String = when (account) {
         is GoogleAccountPresentation.SignedIn -> account.email
             ?.substringBefore('@')
@@ -259,6 +252,22 @@ object GoogleAccountUiPresenter {
             "Connect an account to reach work VMs through Google Cloud IAP."
         GoogleAccountPresentation.Blocked ->
             "Import the credentials from Switchboard on your Mac again."
+    }
+
+    fun recoveryTitle(account: GoogleAccountPresentation): String = when (account) {
+        GoogleAccountPresentation.SignedOut -> "Google account not connected"
+        GoogleAccountPresentation.Blocked -> "Credentials need attention"
+        is GoogleAccountPresentation.SignedIn -> "Ready for Google IAP"
+    }
+
+    fun recoverySupportingText(account: GoogleAccountPresentation): String = when (account) {
+        GoogleAccountPresentation.SignedOut ->
+            "No Google credentials were found. If you used Google in the previous app, " +
+                "reconnect from your Mac and scan its QR code."
+        GoogleAccountPresentation.Blocked ->
+            "Saved credentials are present but Android cannot read them. " +
+                "Re-import from Switchboard on your Mac; existing storage will not be deleted."
+        is GoogleAccountPresentation.SignedIn -> statusSupportingText(account)
     }
 }
 

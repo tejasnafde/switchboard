@@ -98,6 +98,55 @@ describe('mergeConversationMessages', () => {
     expect(merged[0].id).toBe('codex_stable')
   })
 
+  it('enriches a semantic disk match with images and display metadata from SQLite', () => {
+    const disk = [msg('codex_stable', {
+      role: 'user',
+      content: 'look at this',
+      timestamp: 10_000,
+      images: [{ url: 'data:image/png;base64,AAA' }],
+    })]
+    const database = [msg('msg_legacy_random', {
+      role: 'user',
+      content: 'look at this',
+      timestamp: 10_500,
+      images: [
+        { url: 'data:image/png;base64,AAA', mimeType: 'image/png', name: 'screen.png' },
+        { url: 'data:image/jpeg;base64,BBB', mimeType: 'image/jpeg' },
+      ],
+      displayBody: 'look at [[pill:screen]]',
+      pillsMeta: { screen: { label: 'screen.png', kind: 'file' } },
+    })]
+
+    const merged = merge(disk, database)
+
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({
+      id: 'codex_stable',
+      displayBody: 'look at [[pill:screen]]',
+      pillsMeta: { screen: { label: 'screen.png', kind: 'file' } },
+      images: [
+        { url: 'data:image/png;base64,AAA', mimeType: 'image/png', name: 'screen.png' },
+        { url: 'data:image/jpeg;base64,BBB', mimeType: 'image/jpeg' },
+      ],
+    })
+  })
+
+  it('enriches an exact-id disk match instead of discarding SQLite images', () => {
+    const disk = [msg('same', { role: 'user', content: '', images: undefined })]
+    const database = [msg('same', {
+      role: 'user',
+      content: '',
+      images: [{ url: 'data:image/webp;base64,CCC', mimeType: 'image/webp' }],
+    })]
+
+    expect(merge(disk, database)).toEqual([
+      expect.objectContaining({
+        id: 'same',
+        images: [{ url: 'data:image/webp;base64,CCC', mimeType: 'image/webp' }],
+      }),
+    ])
+  })
+
   it('keeps equal content when it occurs in distinct turns far apart', () => {
     const database = [msg('db-later', { content: 'yes', timestamp: 120_000 })]
     const disk = [msg('disk-earlier', { content: 'yes', timestamp: 1_000 })]

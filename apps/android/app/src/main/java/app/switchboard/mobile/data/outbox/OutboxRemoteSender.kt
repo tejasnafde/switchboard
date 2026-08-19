@@ -101,10 +101,23 @@ class OutboxRemoteSender(
         }
         return when (val outcome = response.outcome) {
             is RemoteOutcome.Success -> SendResponseDecoder.decode(outcome.value.body)
-            is RemoteOutcome.Failure -> SendOutcome.TransportAmbiguous(outcome.message)
+            is RemoteOutcome.Failure -> deterministicImageRejection(outcome.message)
+                ?.let(SendOutcome::Permanent)
+                ?: SendOutcome.TransportAmbiguous(outcome.message)
         }
     }
+
 }
+
+private fun deterministicImageRejection(message: String): String? =
+    IMAGE_REJECTION_MESSAGES.firstOrNull(message::contains)
+
+private val IMAGE_REJECTION_MESSAGES = listOf(
+    "A turn can include at most 4 images",
+    "Images must be PNG, JPEG, WebP, or GIF data URLs",
+    "Image MIME type does not match its data URL",
+    "Images exceed the 3 MiB synchronization limit",
+)
 
 private class SubmissionAwareCompletion(
     private val classifyResponse: (RemoteResponse<CommandBody>) -> SendOutcome,
@@ -174,7 +187,9 @@ private class SubmissionAwareCompletion(
         RpcFailure.SendFailed,
         RpcFailure.ServiceDestroyed,
         is RpcFailure.ConnectionLost,
-        is RpcFailure.Remote,
         -> SendOutcome.TransportAmbiguous(reason.toString())
+        is RpcFailure.Remote -> deterministicImageRejection(reason.error)
+            ?.let(SendOutcome::Permanent)
+            ?: SendOutcome.TransportAmbiguous(reason.error)
     }
 }

@@ -2695,6 +2695,55 @@ mark.sb-search-mark.active {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
+.google-mint-action {
+  min-height: 30px;
+  padding: 5px 11px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  background: transparent;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  transition-property: background-color, border-color, color, transform;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
+}
+
+.google-mint-action:hover:not(:disabled) {
+  border-color: var(--text-muted);
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.google-mint-action:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.google-mint-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.google-mint-action--primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-contrast, #fff);
+}
+
+.google-mint-action--primary:hover:not(:disabled) {
+  border-color: var(--accent-hover, var(--accent));
+  background: var(--accent-hover, var(--accent));
+  color: var(--accent-contrast, #fff);
+}
+
+.google-mint-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .machine-modal-host.is-selected {
   background: var(--accent-subtle);
   border-color: var(--accent);

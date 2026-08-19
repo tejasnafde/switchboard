@@ -264,8 +264,9 @@ export function normalizeCodexEvent(event: Record<string, unknown>): ChatMessage
   if (role !== 'user' && role !== 'assistant') return null
 
   const content = extractCodexText(payload.content)
-  if (!content) return null
-  if (role === 'user' && visibleUserMessageText(content) === null) return null
+  const images = role === 'user' ? extractCodexImages(payload.content) : []
+  if (role === 'assistant' && !content) return null
+  if (role === 'user' && images.length === 0 && (!content || visibleUserMessageText(content) === null)) return null
 
   // Codex timestamps are ISO strings at the event root.
   const ts = typeof event.timestamp === 'string'
@@ -276,6 +277,7 @@ export function normalizeCodexEvent(event: Record<string, unknown>): ChatMessage
     id: stableCodexId(event),
     role: role as 'user' | 'assistant',
     content,
+    images: images.length > 0 ? images : undefined,
     timestamp: Number.isFinite(ts) ? ts : Date.now(),
   }
 }
@@ -299,4 +301,25 @@ function extractCodexText(content: unknown): string {
     })
     .filter(Boolean)
     .join('\n')
+}
+
+function extractCodexImages(content: unknown): MessageImage[] {
+  if (!Array.isArray(content)) return []
+  const images: MessageImage[] = []
+  for (const block of content as Array<Record<string, unknown>>) {
+    if (block.type !== 'input_image') continue
+    const imageUrl = block.image_url
+    const url = typeof imageUrl === 'string'
+      ? imageUrl
+      : imageUrl && typeof imageUrl === 'object' && typeof (imageUrl as Record<string, unknown>).url === 'string'
+        ? (imageUrl as Record<string, unknown>).url as string
+        : typeof block.url === 'string' ? block.url : null
+    if (!url) continue
+    const mimeMatch = /^data:([^;,]+)[;,]/.exec(url)
+    images.push({
+      url,
+      ...(mimeMatch ? { mimeType: mimeMatch[1] } : {}),
+    })
+  }
+  return images
 }

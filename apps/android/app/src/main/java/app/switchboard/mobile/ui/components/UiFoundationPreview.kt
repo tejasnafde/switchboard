@@ -30,7 +30,7 @@ private fun UiFoundationPreview() {
                 },
             )
             InlineStatus(
-                message = "Downloading Switchboard 0.5.4",
+                message = "Downloading Switchboard 0.5.5",
                 detail = "Verifying the signed update",
                 tone = StatusTone.INFO,
                 progress = InlineStatusProgress.Determinate(0.62f),

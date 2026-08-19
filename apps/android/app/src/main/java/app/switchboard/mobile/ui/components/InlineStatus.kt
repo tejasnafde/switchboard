@@ -31,6 +31,7 @@ fun InlineStatus(
     message: String,
     modifier: Modifier = Modifier,
     detail: String? = null,
+    detailMaxLines: Int = 1,
     tone: StatusTone = StatusTone.NEUTRAL,
     progress: InlineStatusProgress = InlineStatusProgress.None,
     actionLabel: String? = null,
@@ -77,7 +78,7 @@ fun InlineStatus(
                     detail?.let {
                         Text(
                             text = it,
-                            maxLines = 1,
+                            maxLines = detailMaxLines,
                             overflow = TextOverflow.Ellipsis,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.labelSmall,

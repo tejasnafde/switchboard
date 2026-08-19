@@ -23,10 +23,6 @@ class GoogleAccountUiPresentationTest {
 
     @Test
     fun `blocked presentation is fixed and keeps credential recovery available`() {
-        assertEquals(
-            "Saved Google account credentials cannot be read on this device.",
-            GoogleAccountUiPresenter.visibleError(GoogleAccountPresentation.Blocked, null),
-        )
         assertTrue(GoogleAccountUiPresenter.showsCredentialImport(GoogleAccountPresentation.Blocked))
         assertTrue(
             GoogleAccountUiPresenter.showsCredentialImport(GoogleAccountPresentation.SignedOut),
@@ -84,6 +80,35 @@ class GoogleAccountUiPresentationTest {
         assertEquals(
             "Credentials are encrypted on this device and used only when connecting.",
             GoogleAccountUiPresenter.statusSupportingText(account),
+        )
+    }
+
+    @Test
+    fun `signed out recovery handles fresh installs without claiming prior credentials existed`() {
+        assertEquals(
+            "Google account not connected",
+            GoogleAccountUiPresenter.recoveryTitle(GoogleAccountPresentation.SignedOut),
+        )
+        val detail = GoogleAccountUiPresenter.recoverySupportingText(
+            GoogleAccountPresentation.SignedOut,
+        )
+
+        assertEquals(
+            "No Google credentials were found. If you used Google in the previous app, reconnect from your Mac and scan its QR code.",
+            detail,
+        )
+        assertFalse(detail.contains("saved credential", ignoreCase = true))
+    }
+
+    @Test
+    fun `blocked recovery distinguishes unreadable credentials and directs safe reimport`() {
+        assertEquals(
+            "Credentials need attention",
+            GoogleAccountUiPresenter.recoveryTitle(GoogleAccountPresentation.Blocked),
+        )
+        assertEquals(
+            "Saved credentials are present but Android cannot read them. Re-import from Switchboard on your Mac; existing storage will not be deleted.",
+            GoogleAccountUiPresenter.recoverySupportingText(GoogleAccountPresentation.Blocked),
         )
     }
 }

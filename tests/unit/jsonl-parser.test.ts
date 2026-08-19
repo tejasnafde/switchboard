@@ -516,6 +516,69 @@ describe('JsonlParser - Codex source', () => {
     expect(messages[0].content).toBe('Help me refactor this.')
   })
 
+  it('reconstructs an image-only Codex user response_item', () => {
+    const messages: any[] = []
+    const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
+
+    parser.feed(JSON.stringify({
+      timestamp: '2026-08-13T12:00:00.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'user',
+        content: [{
+          type: 'input_image',
+          image_url: 'data:image/png;base64,iVBORw0KGgo=',
+          detail: 'auto',
+        }],
+      },
+    }) + '\n')
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      role: 'user',
+      content: '',
+      images: [{
+        url: 'data:image/png;base64,iVBORw0KGgo=',
+        mimeType: 'image/png',
+      }],
+    })
+  })
+
+  it('keeps a Codex image attached to synthetic context while hiding pure synthetic context', () => {
+    const messages: any[] = []
+    const parser = new JsonlParser((msg) => messages.push(msg), 'codex')
+    const synthetic = '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>'
+
+    parser.feed([
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [
+            { type: 'input_text', text: synthetic },
+            { type: 'input_image', image_url: 'https://example.com/screenshot.png' },
+          ],
+        },
+      }),
+      JSON.stringify({
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: synthetic }],
+        },
+      }),
+    ].join('\n') + '\n')
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatchObject({
+      content: synthetic,
+      images: [{ url: 'https://example.com/screenshot.png' }],
+    })
+  })
+
   it('skips developer-role messages (system prompt / AGENTS.md context)', () => {
     const messages: any[] = []
     const parser = new JsonlParser((msg) => messages.push(msg), 'codex')

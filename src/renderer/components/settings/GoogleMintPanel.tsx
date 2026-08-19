@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { createRendererLogger } from '../../logger'
 import type { GoogleClientStatus } from '../../../main/google/client-config'
+import { googleClientUpdate, googleMintActionClass } from './googleMintPresentation'
 
 const log = createRendererLogger('settings:google-mint')
 
@@ -77,10 +78,7 @@ export function GoogleMintPanel(): React.JSX.Element {
       // The secret is omitted when left blank rather than sent as '': absent
       // means "keep what is stored", and the field always renders empty.
       setStatus(
-        await window.api.app.googleSetClient({
-          clientId,
-          ...(clientSecret ? { clientSecret } : {}),
-        }),
+        await window.api.app.googleSetClient(googleClientUpdate(clientId, clientSecret)),
       )
       setEditing(false)
       setClientSecret('')
@@ -121,8 +119,9 @@ export function GoogleMintPanel(): React.JSX.Element {
         <div style={{ ...HINT, marginTop: '8px', color: 'var(--text-secondary)' }}>
           No OAuth client configured yet.{' '}
           <button
+            type="button"
             onClick={openEditor}
-            style={{ ...HINT, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            className={googleMintActionClass('secondary')}
           >
             Add one
           </button>
@@ -138,8 +137,9 @@ export function GoogleMintPanel(): React.JSX.Element {
           {status?.source === 'env' ? '(from the environment)' : ''}
           {status?.source === 'settings' && (
             <button
+              type="button"
               onClick={openEditor}
-              style={{ ...HINT, color: 'var(--accent)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              className={googleMintActionClass('secondary')}
             >
               change
             </button>
@@ -167,14 +167,32 @@ export function GoogleMintPanel(): React.JSX.Element {
             onChange={(e) => setClientSecret(e.target.value)}
           />
           <div style={{ display: 'flex', gap: '6px' }}>
-            <button onClick={() => void save()}>Save</button>
-            <button onClick={() => setEditing(false)}>Cancel</button>
+            <button
+              type="button"
+              className={googleMintActionClass('primary')}
+              onClick={() => void save()}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className={googleMintActionClass('secondary')}
+              onClick={() => setEditing(false)}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}
 
       {configured && !editing && (
-        <button onClick={() => void mint()} disabled={minting} style={{ marginTop: '10px' }}>
+        <button
+          type="button"
+          className={googleMintActionClass('primary')}
+          onClick={() => void mint()}
+          disabled={minting}
+          style={{ marginTop: '10px' }}
+        >
           {minting ? 'Waiting for Google sign-in...' : 'Connect Google account'}
         </button>
       )}
@@ -198,7 +216,12 @@ export function GoogleMintPanel(): React.JSX.Element {
               Account &gt; Scan QR from desktop. This grants cloud-platform access as you, so do not
               share it or leave it on screen.
             </div>
-            <button onClick={() => void navigator.clipboard.writeText(blob ?? '')} style={{ marginTop: '6px' }}>
+            <button
+              type="button"
+              className={googleMintActionClass('secondary')}
+              onClick={() => void navigator.clipboard.writeText(blob ?? '')}
+              style={{ marginTop: '6px' }}
+            >
               Copy instead
             </button>
           </div>
