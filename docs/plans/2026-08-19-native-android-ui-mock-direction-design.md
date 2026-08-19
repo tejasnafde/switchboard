@@ -33,3 +33,9 @@ We adopt T3 Code's calm hierarchy, contextual status, compact composer, full-pag
 ## Review gate
 
 No production UI implementation begins until the rendered mock board is shown to and approved by the user. Behavioral fixes may be planned alongside the mocks, but implementation remains gated by that approval.
+
+## Approved Material 3 refinement
+
+The mock must represent real product screens, not a gallery of mutually exclusive states. Machine details shows only the current connection state. Reconnecting uses an indeterminate circular progress indicator; downloads use a determinate linear progress indicator; transient connection and update feedback uses the `Scaffold` snackbar host. Empty content belongs to the screen that owns the empty collection, and update management belongs under Settings and Version.
+
+Standard Material 3 structure is the baseline: `Scaffold`, `TopAppBar`, `ListItem`, `HorizontalDivider`, `IconButton`, standard buttons, progress indicators, dialogs, and snackbars. Custom surfaces remain limited to domain-specific content such as the chat composer, approval cards, voice capture, and image attachments. Alternative states may appear outside phone artboards as implementation reference strips, never as a fake end-user screen.
