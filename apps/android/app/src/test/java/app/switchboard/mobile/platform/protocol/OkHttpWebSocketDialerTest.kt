@@ -23,17 +23,16 @@ class OkHttpWebSocketDialerTest {
             Credential.LegacySharedToken("legacy secret") to "/socket?workspace=one&token=legacy%20secret",
         )
 
-        credentials.forEach { (credential, expectedPath) ->
-            MockWebServer().use { server ->
-                server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
-                val dialer = OkHttpWebSocketDialer(OkHttpClient())
-                val connection = dialer.open(
+        MockWebServer().use { server ->
+            val dialer = OkHttpWebSocketDialer(OkHttpClient())
+            credentials.forEach { (credential, expectedPath) ->
+                server.enqueue(MockResponse().setResponseCode(400))
+                dialer.open(
                     target(server, credential),
                     NoOpCallbacks,
                 )
 
                 assertEquals(expectedPath, server.takeRequest(3, TimeUnit.SECONDS)?.path)
-                connection.close()
             }
         }
     }
