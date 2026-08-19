@@ -66,6 +66,7 @@ const SWITCHBOARD_CLIENT_INFO = {
 
 const log = createLogger('provider:codex')
 const LOG_PAYLOAD_LIMIT = 4000
+const MAX_TOOL_OUTPUT_CHARS = 256 * 1024
 
 /**
  * Hard ceiling for the `initialize` JSON-RPC. If `codex app-server` is the
@@ -129,6 +130,59 @@ interface PendingApproval {
   mcpFields?: McpElicitationField[]
 }
 
+interface ToolOutputAccumulator {
+  head: string
+  tail: string
+  totalChars: number
+}
+
+function appendToolOutput(
+  current: ToolOutputAccumulator | undefined,
+  delta: string,
+): ToolOutputAccumulator {
+  const half = MAX_TOOL_OUTPUT_CHARS / 2
+  if (!current) {
+    if (delta.length <= MAX_TOOL_OUTPUT_CHARS) {
+      return { head: delta, tail: '', totalChars: delta.length }
+    }
+    return {
+      head: delta.slice(0, half),
+      tail: delta.slice(-half),
+      totalChars: delta.length,
+    }
+  }
+
+  const totalChars = current.totalChars + delta.length
+  if (totalChars <= MAX_TOOL_OUTPUT_CHARS) {
+    return { head: current.head + current.tail + delta, tail: '', totalChars }
+  }
+  const crossing = current.totalChars <= MAX_TOOL_OUTPUT_CHARS
+  const combined = crossing ? current.head + current.tail + delta : current.tail + delta
+  const head = crossing ? combined.slice(0, half) : current.head
+  const tail = combined.slice(-half)
+  return { head, tail, totalChars }
+}
+
+function boundedToolOutput(output: string): string {
+  if (output.length <= MAX_TOOL_OUTPUT_CHARS) return output
+  const omitted = output.length - MAX_TOOL_OUTPUT_CHARS
+  const marker = `\n…<truncated ${omitted.toLocaleString('en-US')} chars>…\n`
+  const remaining = MAX_TOOL_OUTPUT_CHARS - marker.length
+  const headChars = Math.ceil(remaining / 2)
+  return `${output.slice(0, headChars)}${marker}${output.slice(-(remaining - headChars))}`
+}
+
+function accumulatedToolOutput(accumulator: ToolOutputAccumulator | undefined): string | undefined {
+  if (!accumulator) return undefined
+  if (accumulator.totalChars <= MAX_TOOL_OUTPUT_CHARS) {
+    return accumulator.head + accumulator.tail
+  }
+  const marker = `\n…<truncated ${(accumulator.totalChars - MAX_TOOL_OUTPUT_CHARS).toLocaleString('en-US')} chars>…\n`
+  const remaining = MAX_TOOL_OUTPUT_CHARS - marker.length
+  const headChars = Math.ceil(remaining / 2)
+  return `${accumulator.head.slice(0, headChars)}${marker}${accumulator.tail.slice(-(remaining - headChars))}`
+}
+
 interface McpElicitationField {
   id: string
   type: 'string' | 'boolean' | 'number' | 'integer' | 'array'
@@ -142,7 +196,7 @@ interface ActiveSession {
   pendingRpcs: Map<number, PendingRpc>
   pendingApprovals: Map<string, PendingApproval>
   assistantMessageText: Map<string, string>
-  toolOutputText: Map<string, string>
+  toolOutputText: Map<string, ToolOutputAccumulator>
   threadId: string | null
   /** Cached `skills/list` response. Populated on first listSkills() call. */
   skills: ProviderSkill[] | null
@@ -152,6 +206,10 @@ interface ActiveSession {
   /** Active codex turn id (from turn/start response or turn/started); null
    * when idle. Required as `expectedTurnId` to steer a running turn. */
   activeTurnId: string | null
+  /** A turn/start RPC that has been sent but has not returned its turn id yet.
+   * Follow-up sends wait for it so they steer instead of starting a second
+   * provider turn in the response gap. */
+  turnStartPromise: Promise<void> | null
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -518,6 +576,7 @@ export class CodexAdapter implements ProviderAdapter {
       models: null,
       turnStartedAt: null,
       activeTurnId: null,
+      turnStartPromise: null,
     }
 
     this.sessions.set(opts.threadId, active)
@@ -718,6 +777,11 @@ export class CodexAdapter implements ProviderAdapter {
       }
     }
 
+    // A follow-up can arrive after turn/start was sent but before its response
+    // provides activeTurnId. Wait through that narrow gap, then take the steer
+    // path below instead of accidentally opening a concurrent Codex turn.
+    if (active.turnStartPromise) await active.turnStartPromise
+
     // Mid-turn send with a live turn id → steer it (inject into the running
     // turn) rather than starting a concurrent one. Only a fresh turn resets
     // status/timestamp; steering leaves the in-flight turn's clock alone.
@@ -790,24 +854,32 @@ export class CodexAdapter implements ProviderAdapter {
       if (typeof startedTurnId === 'string') active.activeTurnId = startedTurnId
     }
 
-    try {
-      await ensureThread()
+    const startPromise = (async () => {
       try {
-        await startTurn()
-      } catch (err) {
-        if (!isMissingThreadError(err)) throw err
-        log.warn(`codex thread disappeared, retrying turn on a fresh thread: ${err instanceof Error ? err.message : String(err)}`)
-        active.threadId = null
-        active.session.sessionId = undefined
         await ensureThread()
-        await startTurn()
+        try {
+          await startTurn()
+        } catch (err) {
+          if (!isMissingThreadError(err)) throw err
+          log.warn(`codex thread disappeared, retrying turn on a fresh thread: ${err instanceof Error ? err.message : String(err)}`)
+          active.threadId = null
+          active.session.sessionId = undefined
+          await ensureThread()
+          await startTurn()
+        }
+      } catch (err) {
+        active.session.status = 'idle'
+        active.activeTurnId = null
+        active.turnStartedAt = null
+        active.onEvent({ type: 'status', threadId, status: 'idle' })
+        throw err
       }
-    } catch (err) {
-      active.session.status = 'idle'
-      active.activeTurnId = null
-      active.turnStartedAt = null
-      active.onEvent({ type: 'status', threadId, status: 'idle' })
-      throw err
+    })()
+    active.turnStartPromise = startPromise
+    try {
+      await startPromise
+    } finally {
+      if (active.turnStartPromise === startPromise) active.turnStartPromise = null
     }
   }
 
@@ -1097,8 +1169,10 @@ export class CodexAdapter implements ProviderAdapter {
     }
 
     if (notification.method === 'item/completed') {
-      const output = codexToolOutput(item)
-      if (output !== undefined) active.toolOutputText.set(itemId, output)
+      const completeOutput = codexToolOutput(item)
+      const output = completeOutput !== undefined
+        ? boundedToolOutput(completeOutput)
+        : accumulatedToolOutput(active.toolOutputText.get(itemId))
       active.onEvent({
         type: 'tool.completed',
         threadId,
@@ -1431,17 +1505,10 @@ export class CodexAdapter implements ProviderAdapter {
     } else if (method === 'item/started' || method === 'item/completed') {
       this.handleItemLifecycle(threadId, active, notification)
     } else if (method === 'item/commandExecution/outputDelta') {
-      const output = notification.params?.delta ?? ''
+      const output = notification.params?.delta
       const toolId = notification.params?.itemId
-      if (typeof toolId === 'string' && output) {
-        const fullOutput = `${active.toolOutputText.get(toolId) ?? ''}${output}`
-        active.toolOutputText.set(toolId, fullOutput)
-        active.onEvent({
-          type: 'tool.completed',
-          threadId,
-          toolId,
-          output: fullOutput,
-        })
+      if (typeof toolId === 'string' && typeof output === 'string' && output) {
+        active.toolOutputText.set(toolId, appendToolOutput(active.toolOutputText.get(toolId), output))
       }
     } else if (method === 'item/fileChange/patchUpdated') {
       const params = asRecord(notification.params)

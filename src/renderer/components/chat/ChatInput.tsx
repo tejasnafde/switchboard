@@ -38,6 +38,10 @@ import { serializeBodyWithPills } from '../../services/chatInputBody'
 
 type RuntimeMode = 'plan' | 'sandbox' | 'full-access' | 'accept-edits'
 
+export type ChatSendResult =
+  | { accepted: true }
+  | { accepted: false; error: string }
+
 export function shouldFetchProviderSkills(agentType: AgentType): boolean {
   return agentType !== 'terminal'
 }
@@ -60,7 +64,7 @@ interface ChatInputProps {
       displayBody?: string
       pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
     },
-  ) => void
+  ) => Promise<ChatSendResult>
   disabled?: boolean
   placeholder?: string
   agentType: AgentType
@@ -229,6 +233,12 @@ export function ChatInput({
   // is the plain-text-with-pill-tokens representation that flows through
   // draft persistence, slash detection, and Send.
   const [value, setValue] = useState(draft)
+  const [sendError, setSendError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const submittingRef = useRef(false)
+  const submissionRef = useRef(0)
+  const sessionIdRef = useRef(sessionId)
+  sessionIdRef.current = sessionId
   // Live caret offset into `value`. Updated on every editor change so we
   // can re-detect slash triggers without dipping into the editor.
   const [caret, setCaret] = useState<number | null>(null)
@@ -253,6 +263,10 @@ export function ChatInput({
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
   const [slashActiveIdx, setSlashActiveIdx] = useState(0)
   const [agentSkills, setAgentSkills] = useState<ProviderSkill[]>([])
+  const skillsScope = `${sessionId ?? ''}\u0000${agentType}\u0000${instanceId ?? ''}`
+  const skillsScopeRef = useRef(skillsScope)
+  skillsScopeRef.current = skillsScope
+  const skillsRequestRef = useRef(0)
   // @-mention popover state. Parallel to the slash-popover; at most one
   // is open at a time (different trigger chars on the same token).
   const [atQuery, setAtQuery] = useState<string | null>(null)
@@ -299,23 +313,30 @@ export function ChatInput({
   const fetchSkills = useCallback(() => {
     if (!sessionId) { setAgentSkills([]); return }
     if (!shouldFetchProviderSkills(agentType)) { setAgentSkills([]); return }
+    const request = ++skillsRequestRef.current
+    const requestScope = skillsScope
+    setAgentSkills([])
     ;window.api.provider.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
+      if (request !== skillsRequestRef.current || requestScope !== skillsScopeRef.current) return
       if (Array.isArray(skills) && skills.length > 0) {
         setAgentSkills(skills)
       }
     }).catch(() => { /* keep current - built-ins still work */ })
-  }, [sessionId, agentType])
+  }, [sessionId, agentType, instanceId, skillsScope])
 
   useEffect(() => {
     if (!sessionId) { setAgentSkills([]); return }
     if (!shouldFetchProviderSkills(agentType)) { setAgentSkills([]); return }
+    const request = ++skillsRequestRef.current
+    const requestScope = skillsScope
+    setAgentSkills([])
     let cancelled = false
     // The agent may not have initialized yet; retry a couple of times so
     // the menu populates as soon as `system/init` lands.
     let attempts = 0
     const tryFetch = () => {
       ;window.api.provider.listSkills?.(sessionId).then((skills: ProviderSkill[]) => {
-        if (cancelled) return
+        if (cancelled || request !== skillsRequestRef.current || requestScope !== skillsScopeRef.current) return
         if (skills && skills.length > 0) {
           setAgentSkills(skills)
         } else if (attempts++ < 4) {
@@ -325,7 +346,7 @@ export function ChatInput({
     }
     tryFetch()
     return () => { cancelled = true }
-  }, [sessionId, agentType])
+  }, [sessionId, agentType, instanceId, skillsScope])
 
   const mergedCommands = useMemo(
     () => mergeWithAgentSkills(SLASH_COMMANDS, agentSkills),
@@ -371,6 +392,13 @@ export function ChatInput({
     if (draft !== value) setValue(draft)
   // `value` intentionally excluded - see textarea-era comment.
   }, [sessionId, draft])
+
+  useEffect(() => {
+    submissionRef.current += 1
+    submittingRef.current = false
+    setIsSubmitting(false)
+    setSendError(null)
+  }, [sessionId])
 
   // Map of pill id → metadata, used by the editor to render chips and by
   // Send to expand `[[pill:id]]` tokens into wire content.
@@ -420,6 +448,7 @@ export function ChatInput({
   const addImages = useCallback(
     (files: File[]) => {
       if (!sessionId) return
+      setSendError(null)
       const imageFiles = files.filter((f) => f.type.startsWith('image/'))
       const valid = imageFiles.filter((f) => f.size <= MAX_IMAGE_SIZE)
 
@@ -437,15 +466,18 @@ export function ChatInput({
 
   const removeImage = useCallback(
     (id: string) => {
+      setSendError(null)
       if (sessionId) removeImageFromSession(sessionId, id)
     },
     [sessionId, removeImageFromSession],
   )
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = value.trim()
     const hasPills = pills.length > 0
-    if ((!trimmed && images.length === 0 && !hasPills) || disabled) return
+    if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current) return
+    const submittedSessionId = sessionId
+    const submission = ++submissionRef.current
     // Pills are inline `[[pill:id]]` tokens in `value`. Expand each into
     // its full content (path marker + fenced block, terminal block, or
     // chat-message quote) before handing off. Tokens whose pills were
@@ -457,19 +489,39 @@ export function ChatInput({
         pillsMeta[p.id] = { label: p.label, kind: p.kind }
       }
     }
-    onSend(
-      body,
-      undefined,
-      images.length > 0 ? images : undefined,
-      hasPills ? { displayBody: trimmed, pillsMeta } : undefined,
-    )
-    setValue('')
-    if (sessionId) {
-      clearDraft(sessionId)
-      if (hasPills) clearPills(sessionId)
+    submittingRef.current = true
+    setIsSubmitting(true)
+    setSendError(null)
+    let result: ChatSendResult
+    try {
+      result = await onSend(
+        body,
+        undefined,
+        images.length > 0 ? images : undefined,
+        hasPills ? { displayBody: trimmed, pillsMeta } : undefined,
+      )
+    } catch (error) {
+      result = { accepted: false, error: error instanceof Error ? error.message : String(error) }
+    } finally {
+      if (submission === submissionRef.current) {
+        submittingRef.current = false
+        setIsSubmitting(false)
+      }
     }
+    if (!result.accepted) {
+      if (sessionIdRef.current === submittedSessionId && submission === submissionRef.current) {
+        setSendError(result.error)
+      }
+      return
+    }
+    if (submittedSessionId) {
+      clearDraft(submittedSessionId)
+      if (hasPills) clearPills(submittedSessionId)
+      clearImages(submittedSessionId)
+    }
+    if (sessionIdRef.current !== submittedSessionId || submission !== submissionRef.current) return
+    setValue('')
     insertedPillsRef.current.clear()
-    if (sessionId) clearImages(sessionId)
   }, [value, pills, pillsById, images, disabled, onSend, sessionId, clearDraft, clearPills, clearImages])
 
   // ─── Slash command handling ─────────────────────────────────
@@ -608,6 +660,7 @@ export function ChatInput({
   // and unstable props would make the editor's plugins re-register every
   // render - that's exactly what caused the original infinite-update loop.
   const handleEditorChange = useCallback((next: string) => {
+    setSendError(null)
     setValue(next)
     if (sessionId) setDraft(sessionId, next)
     // Caret may not have been reported yet for this change - fall back to
@@ -881,6 +934,25 @@ export function ChatInput({
         </div>
       )}
 
+      {sendError && (
+        <div
+          data-composer-send-error
+          role="alert"
+          style={{
+            marginBottom: '6px',
+            padding: '7px 9px',
+            border: '1px solid color-mix(in srgb, var(--error) 45%, transparent)',
+            borderRadius: '6px',
+            background: 'color-mix(in srgb, var(--error) 10%, transparent)',
+            color: 'var(--error)',
+            fontSize: '12px',
+            lineHeight: 1.4,
+          }}
+        >
+          {sendError}
+        </div>
+      )}
+
       {/* Drop overlay */}
       {isDragOver && (
         <div style={{
@@ -1034,14 +1106,14 @@ export function ChatInput({
         )}
         <button
           onClick={handleSend}
-          disabled={disabled || (!value.trim() && images.length === 0)}
+          disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
           style={{
             padding: '10px 16px',
             borderRadius: 'var(--radius)',
             border: 'none',
-            background: !disabled && (value.trim() || images.length > 0) ? 'var(--accent)' : 'var(--bg-tertiary)',
-            color: !disabled && (value.trim() || images.length > 0) ? '#fff' : 'var(--text-muted)',
-            cursor: !disabled && (value.trim() || images.length > 0) ? 'pointer' : 'default',
+            background: !disabled && !isSubmitting && (value.trim() || images.length > 0 || pills.length > 0) ? 'var(--accent)' : 'var(--bg-tertiary)',
+            color: !disabled && !isSubmitting && (value.trim() || images.length > 0 || pills.length > 0) ? '#fff' : 'var(--text-muted)',
+            cursor: !disabled && !isSubmitting && (value.trim() || images.length > 0 || pills.length > 0) ? 'pointer' : 'default',
             fontSize: '13px',
             fontWeight: 600,
             flexShrink: 0,
@@ -1049,7 +1121,7 @@ export function ChatInput({
           }}
           title={isRunning ? 'Queue a follow-up message (sends after current turn finishes)' : undefined}
         >
-          {isRunning ? 'Queue' : 'Send'}
+          {isSubmitting ? 'Sending…' : isRunning ? 'Queue' : 'Send'}
         </button>
       </div>
 

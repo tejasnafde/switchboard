@@ -9,7 +9,7 @@ import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
 import { parseSendTo, resolveSendToTarget, peerMessageToChatMessage } from './sendToCommand'
 import { clearProviderRetry, upsertProviderRetry } from './providerRetry'
 import { MessageList } from './MessageList'
-import { ChatInput } from './ChatInput'
+import { ChatInput, type ChatSendResult } from './ChatInput'
 import { chatIdentity } from './chatIdentity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ContextWindowMeter } from './ContextWindowMeter'
@@ -28,7 +28,7 @@ import {
 } from '../../services/streamingBuffer'
 import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
-import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
+import { echoMessageId, validateUserMessageImages, visibleUserMessageText } from '@shared/provider-events'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
@@ -278,23 +278,54 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     await window.api.provider?.stopSession?.(sessionId).catch(() => {})
   }, [sessionId, storeSetAgentType, agentType, activeSession?.messages?.length, appendMessage])
 
-  // New instance → tear down the current session so the next send
-  // respawns with the new env / OAuth dir. When the conversation already
-  // has messages, append a persisted system marker so the user can see
-  // (and audit on reload) which credential set produced each turn.
+  // Existing sessions rotate atomically on the backend: it owns stop/start,
+  // native-context migration, persistence, and rollback. A conversation that
+  // has never started can still save its initial profile locally.
   const handleInstanceChange = useCallback(async (nextInstanceId: string | undefined) => {
-    if (!sessionId) return
+    if (!sessionId || !nextInstanceId) return
     const prevInstanceId = instanceId
     if (prevInstanceId === nextInstanceId) return
-    storeSetInstanceId(sessionId, nextInstanceId)
-    if (nextInstanceId) {
-      window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId).catch(() => {})
-      // Machine default too, so a phone-started session picks the profile the
-      // user actually works with rather than `<agent-type>-default`.
-      window.api.settings
-        ?.set?.(SETTING_DEFAULT_INSTANCE_ID, nextInstanceId)
-        .catch((err: unknown) => log.warn('could not save the default profile', err))
+    let result
+    try {
+      result = await window.api.provider.switchInstance(sessionId, {
+        targetInstanceId: nextInstanceId,
+        expectedCurrentInstanceId: prevInstanceId ?? null,
+      })
+    } catch (err) {
+      appendMessage(sessionId, {
+        id: `profile_error_${Date.now()}`,
+        role: 'system',
+        content: `Could not switch profile: ${err instanceof Error ? err.message : String(err)}`,
+        timestamp: Date.now(),
+      })
+      return
     }
+    if (!result.ok) {
+      if (result.code !== 'context-unavailable') {
+        appendMessage(sessionId, {
+          id: `profile_error_${Date.now()}`,
+          role: 'system',
+          content: `Could not switch profile: ${result.message}`,
+          timestamp: Date.now(),
+        })
+        return
+      }
+      // No live backend session exists yet. This is the only safe DB-only
+      // path; a per-component ref cannot prove liveness in another panel,
+      // renderer process, or phone client.
+      try {
+        await window.api.app.setConversationProviderInstanceId(sessionId, nextInstanceId)
+      } catch (err) {
+        log.warn('could not save the initial profile', err)
+        return
+      }
+    }
+    storeSetInstanceId(sessionId, nextInstanceId)
+    // Machine default too, so a phone-started session picks the profile the
+    // user actually works with rather than `<agent-type>-default`.
+    window.api.settings
+      ?.set?.(SETTING_DEFAULT_INSTANCE_ID, nextInstanceId)
+      .catch((err: unknown) => log.warn('could not save the default profile', err))
     // Record a rotation marker in the chat stream - only when there's
     // actually a prior conversation to attribute (skip on freshly-opened
     // sessions where the picker is just being set up).
@@ -325,9 +356,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // machine's cached auth verdicts so the banner re-probes under it.
     const machineForSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId
     if (machineForSession && machineForSession !== 'local') invalidateRemoteAuthCache(machineForSession)
-    providerStartedRef.current.delete(sessionId)
-    agentStartedRef.current.delete(sessionId)
-    await window.api.provider?.stopSession?.(sessionId).catch(() => {})
   }, [sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage])
 
   // ── Provider event listener (new SDK bridge) ──────────────────
@@ -389,6 +417,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             role: 'user',
             content: event.text,
             displayBody: visibleText === event.text ? undefined : visibleText,
+            pillsMeta: event.pillsMeta,
             images: event.images,
             timestamp: event.at,
           })
@@ -560,6 +589,10 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           if (event.model) {
             useAgentStore.getState().setResolvedModel(tid, event.model)
           }
+          break
+        }
+        case 'session.provider': {
+          useAgentStore.getState().setInstanceId(tid, event.instanceId ?? undefined)
           break
         }
         case 'spend.blocked': {
@@ -903,26 +936,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         displayBody?: string
         pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
       },
-    ) => {
-      if (!sessionId) return
+    ): Promise<ChatSendResult> => {
+      if (!sessionId) return { accepted: false, error: 'This chat is no longer available.' }
 
       // `/send-to <session>: <text>` hands the text to another live session
       // instead of this one's agent, so it is intercepted before every other
-      // send concern. Failures stay in this transcript as a system bubble -
-      // silently swallowing a mistyped target would look like a delivery.
+      // send concern. Rejections stay in the composer so the source text and
+      // attachments remain editable.
       const sendTo = parseSendTo(message)
       if (sendTo) {
-        const fail = (error: string): void => {
-          appendMessage(sessionId, {
-            id: `peererr_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-            role: 'system',
-            content: error,
-            timestamp: Date.now(),
-          })
-        }
+        const fail = (error: string): ChatSendResult => ({ accepted: false, error })
         if (!sendTo.ok) return fail(sendTo.error)
-        // ChatInput has already cleared the tray by now, so an ignored image
-        // would vanish with no trace. Say so instead.
         if (images && images.length > 0) {
           return fail('Images cannot be sent with /send-to. Send the text on its own.')
         }
@@ -941,21 +965,53 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             text: sendTo.text,
           })
         } catch (err) {
-          fail(err instanceof Error ? err.message : String(err))
+          return fail(err instanceof Error ? err.message : String(err))
         }
-        return
+        return { accepted: true }
       }
 
-      // Mid-turn send routing. Claude pushes into its native CLI prompt queue
-      // and Codex uses turn/steer - both handled in their adapters, so let them
-      // fall through to the normal send. OpenCode ACP is strictly one-prompt-
-      // per-turn with no steer primitive, so hold the message and flush it as a
-      // fresh turn once this one ends. Status is read live (closure can be stale).
+      // Prepare sequentially so removing the count cap cannot fan out an
+      // unbounded number of canvas/base64 allocations. Validate the growing
+      // aggregate after every image and stop as soon as the 3 MiB wire budget
+      // is crossed. Nothing below this point may mutate transcript, handoff,
+      // provider, or persistence state until this succeeds.
+      let messageImages: import('@shared/types').MessageImage[] | undefined
+      if (images && images.length > 0) {
+        const prepared: import('@shared/types').MessageImage[] = []
+        try {
+          for (const img of images) {
+            let dataUrl: string
+            try {
+              dataUrl = (await downscaleImage(img.file)).dataUrl
+            } catch (err) {
+              log.warn('image downscale failed, sending original bytes', err)
+              dataUrl = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader()
+                reader.onload = () => resolve(reader.result as string)
+                reader.onerror = () => reject(reader.error)
+                reader.readAsDataURL(img.file)
+              })
+            }
+            const mimeType = dataUrl.slice(5, dataUrl.indexOf(';')) || img.file.type
+            prepared.push({ url: dataUrl, mimeType, name: img.file.name })
+            validateUserMessageImages(prepared)
+          }
+          messageImages = validateUserMessageImages(prepared)
+        } catch (error) {
+          const imageError = error instanceof Error ? error.message : String(error)
+          return { accepted: false, error: imageError }
+        }
+      }
+
+      // Mid-turn send routing happens only after image admission succeeds, so
+      // an invalid queued OpenCode turn cannot clear the composer and fail
+      // later without its source attachments. Claude and Codex can steer live;
+      // OpenCode ACP holds the accepted draft until the current turn ends.
       const liveStatus = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.status
       const busy = liveStatus === 'running' || liveStatus === 'thinking'
       if (busy && agentType === 'opencode') {
         messageQueueRef.current.push({ sessionId, message, images, extras })
-        return
+        return { accepted: true }
       }
 
       // Cross-provider context handoff. A pending flag - set by an agent
@@ -997,36 +1053,38 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }
       const handoffInjected = wireMessage !== message
 
-      // Convert attached images to data URLs so they survive session reloads.
-      // Downscaled first (longest edge 1920px, JPEG for opaque sources): the
-      // base64 body is copied across every hop (store → IPC → DB → adapter
-      // → SDK), so a raw multi-MB screenshot multiplied through the whole
-      // pipeline. Falls back to the original bytes if decode fails.
-      let messageImages: import('@shared/types').MessageImage[] | undefined
-      if (images && images.length > 0) {
-        const urls = await Promise.all(images.map(async (img) => {
-          let dataUrl: string
-          try {
-            dataUrl = (await downscaleImage(img.file)).dataUrl
-          } catch (err) {
-            log.warn('image downscale failed, sending original bytes', err)
-            dataUrl = await new Promise<string>((resolve, reject) => {
-              const reader = new FileReader()
-              reader.onload = () => resolve(reader.result as string)
-              reader.onerror = () => reject(reader.error)
-              reader.readAsDataURL(img.file)
-            })
-          }
-          // Recompression can change the container (PNG → JPEG); trust the
-          // data URL's own prefix over the source file's type.
-          const mimeType = dataUrl.slice(5, dataUrl.indexOf(';')) || img.file.type
+      // Start only after image preparation and validation. A definite startup
+      // rejection leaves the composer intact and does not create a false user
+      // turn or a persisted system bubble.
+      const providerApi = window.api.provider
+      const providerKind = agentType === 'codex' ? 'codex' : agentType === 'opencode' ? 'opencode' : 'claude'
+      const effectiveMode = runtimeMode
+
+      if (!providerStartedRef.current.has(sessionId)) {
+        providerStartedRef.current.add(sessionId)
+        try {
+          const sessionForCwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+          const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
+          const cwd = sessionForCwd?.worktreePath ?? linkedCard?.worktreePath ?? projectPath ?? '.'
+          window.api.routing.bind(sessionId, sessionForCwd?.machineId ?? 'local')
+          await providerApi.startSession({
+            threadId: sessionId,
+            provider: providerKind,
+            cwd,
+            runtimeMode: effectiveMode,
+            resumeSessionId,
+            model: model || undefined,
+            reasoningEffort,
+            instanceId,
+          })
+        } catch (error) {
+          providerStartedRef.current.delete(sessionId)
+          updateStatus(sessionId, 'idle')
           return {
-            url: dataUrl,
-            mimeType,
-            name: img.file.name,
+            accepted: false,
+            error: `Failed to start session: ${error instanceof Error ? error.message : String(error)}`,
           }
-        }))
-        messageImages = urls
+        }
       }
 
       // The id the backend's echo will carry, so the echo lands on THIS message
@@ -1073,60 +1131,16 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         emitSessionRename(sessionId, title)
       }
 
-      // Provider path (SDK). Legacy `--print` agent path removed - all
-      // traffic now goes through the Claude Agent SDK / Codex app-server
-      // via the provider bridge.
-      const providerApi = window.api.provider
-      const providerKind = agentType === 'codex' ? 'codex' : agentType === 'opencode' ? 'opencode' : 'claude'
-      const effectiveMode = runtimeMode
-
-      if (!providerStartedRef.current.has(sessionId)) {
-        providerStartedRef.current.add(sessionId)
-        try {
-          // cwd priority: session's own worktreePath > linked kanban
-          // card's worktreePath > projectPath. `projectPath` is always
-          // the parent repo so the sidebar groups correctly; the
-          // worktree pointer is what routes the agent's actual cwd.
-          const sessionForCwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
-          const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
-          const cwd = sessionForCwd?.worktreePath ?? linkedCard?.worktreePath ?? projectPath ?? '.'
-          // Route this session's provider calls to its machine before the first
-          // call. Local sessions stay on IPC (bind to 'local' is a no-op clear).
-          window.api.routing.bind(sessionId, sessionForCwd?.machineId ?? 'local')
-          await providerApi.startSession({
-            threadId: sessionId,
-            provider: providerKind,
-            cwd,
-            runtimeMode: effectiveMode,
-            resumeSessionId,
-            model: model || undefined,
-            reasoningEffort,
-            instanceId,
-          })
-        } catch (err) {
-          appendMessage(sessionId, {
-            id: `error_${Date.now()}`,
-            role: 'system',
-            content: `Failed to start session: ${err instanceof Error ? err.message : String(err)}`,
-            timestamp: Date.now(),
-          })
-          providerStartedRef.current.delete(sessionId)
-          // Clear the optimistic 'running' set above - no session exists, so
-          // no provider event will ever end the turn.
-          updateStatus(sessionId, 'idle')
-          return
+      try {
+        await providerApi.sendTurn(sessionId, wireMessage, runtimeMode, messageImages, origin)
+        return { accepted: true }
+      } catch (error) {
+        updateStatus(sessionId, 'idle')
+        return {
+          accepted: false,
+          error: `Failed to send: ${error instanceof Error ? error.message : String(error)}`,
         }
       }
-
-      providerApi.sendTurn(sessionId, wireMessage, runtimeMode, messageImages, origin).catch((err: Error) => {
-        appendMessage(sessionId, {
-          id: `error_${Date.now()}`,
-          role: 'system',
-          content: `Failed to send: ${err.message}`,
-          timestamp: Date.now(),
-        })
-        updateStatus(sessionId, 'idle')
-      })
     },
     // `instanceId`, `model`, `reasoningEffort` matter on the FIRST send
     // after a session restart (e.g. instance chip switch resets

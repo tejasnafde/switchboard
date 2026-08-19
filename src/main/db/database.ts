@@ -13,6 +13,7 @@ import type { ProjectOrganizationItem } from '@shared/types'
 import { deriveProjectPositions } from './projectOrdering'
 import type { ConversationSidebarRole } from './conversationSidebarRole'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
+import { searchMessagesInDatabase, type SearchResult } from './message-search'
 
 const log = createLogger('db')
 
@@ -1801,57 +1802,8 @@ export function removeSessionLayout(sessionId: string): void {
 
 // ─── Search ────────────────────────────────────────────────────
 
-export interface SearchResult {
-  messageId: string
-  conversationId: string
-  role: string
-  content: string
-  snippet: string
-}
-
 export function searchMessages(query: string, limit = 50): SearchResult[] {
-  // Sanitize query for FTS5
-  const sanitized = query.replace(/['"]/g, ' ').trim()
-  if (!sanitized) return []
-
-  try {
-    return getDb().prepare(`
-      SELECT
-        m.id as messageId,
-        COALESCE(root.id, m.conversation_id) as conversationId,
-        m.role,
-        m.content,
-        snippet(messages_fts, 0, '**', '**', '...', 40) as snippet
-      FROM messages_fts
-      JOIN messages m ON messages_fts.rowid = m.rowid
-      JOIN conversations c ON c.id = m.conversation_id
-      LEFT JOIN thread_sessions ts ON ts.claude_session_id = m.conversation_id
-      LEFT JOIN conversations root ON root.id = ts.thread_id
-      WHERE messages_fts MATCH ?
-        AND COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'
-        AND COALESCE(root.archived, c.archived) = 0
-      ORDER BY rank
-      LIMIT ?
-    `).all(sanitized, limit) as SearchResult[]
-  } catch {
-    // FTS query syntax error - fall back to LIKE
-    return getDb().prepare(`
-      SELECT
-        m.id as messageId,
-        COALESCE(root.id, m.conversation_id) as conversationId,
-        m.role,
-        m.content,
-        substr(m.content, max(1, instr(lower(m.content), lower(?)) - 20), 80) as snippet
-      FROM messages m
-      JOIN conversations c ON c.id = m.conversation_id
-      LEFT JOIN thread_sessions ts ON ts.claude_session_id = m.conversation_id
-      LEFT JOIN conversations root ON root.id = ts.thread_id
-      WHERE m.content LIKE ?
-        AND COALESCE(root.sidebar_role, c.sidebar_role) = 'managed'
-        AND COALESCE(root.archived, c.archived) = 0
-      LIMIT ?
-    `).all(sanitized, `%${sanitized}%`, limit) as SearchResult[]
-  }
+  return searchMessagesInDatabase(getDb(), query, limit)
 }
 
 // ─── Kanban CRUD ─────────────────────────────────────────────────
