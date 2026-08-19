@@ -177,6 +177,63 @@ describe('Android APK release verifier', () => {
     }
   })
 
+  test('identity-only CLI verifies the canonical signer without requiring checksum metadata', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
+    try {
+      const apk = join(dir, 'switchboard-previous.apk')
+      const aapt = join(dir, 'fake-aapt2')
+      const apksigner = join(dir, 'fake-apksigner')
+      writeFileSync(apk, 'previous signed apk fixture')
+      writeFileSync(
+        aapt,
+        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+      )
+      writeFileSync(
+        apksigner,
+        `#!/bin/sh\nprintf "Signer #1 certificate SHA-256 digest: ${CANONICAL_SIGNER_SHA256}\\n"\n`,
+      )
+      chmodSync(aapt, 0o755)
+      chmodSync(apksigner, 0o755)
+
+      const result = runVerifier(['--identity-only', '--apk', apk], {
+        AAPT2: aapt,
+        APKSIGNER: apksigner,
+      })
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('Verified Android APK identity')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  test('identity-only CLI rejects a previous APK signed by another certificate', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
+    try {
+      const apk = join(dir, 'switchboard-previous.apk')
+      const aapt = join(dir, 'fake-aapt2')
+      const apksigner = join(dir, 'fake-apksigner')
+      writeFileSync(apk, 'previous signed apk fixture')
+      writeFileSync(
+        aapt,
+        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+      )
+      writeFileSync(apksigner, `#!/bin/sh\nprintf "Signer #1 certificate SHA-256 digest: ${'F'.repeat(64)}\\n"\n`)
+      chmodSync(aapt, 0o755)
+      chmodSync(apksigner, 0o755)
+
+      const result = runVerifier(['--identity-only', '--apk', apk], {
+        AAPT2: aapt,
+        APKSIGNER: apksigner,
+      })
+
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('signer must be')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   test('strict CLI requires checksum metadata even when the APK is signed', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
     try {

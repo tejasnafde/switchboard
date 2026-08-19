@@ -10,7 +10,7 @@ class ArchivePreflightPolicyTest {
         packageName = ArchivePreflightPolicy.PRODUCTION_PACKAGE,
         versionCode = 2,
         versionName = "0.5.0",
-        signerSha256 = setOf("production-signer"),
+        signerSha256 = setOf(CANONICAL_SIGNER),
     )
 
     @Test
@@ -41,6 +41,17 @@ class ArchivePreflightPolicyTest {
     }
 
     @Test
+    fun rejectsMatchingButNoncanonicalInstalledAndArchiveSigners() {
+        val noncanonicalInstalled = installed.copy(signerSha256 = setOf("noncanonical"))
+        val archive = noncanonicalInstalled.copy(versionCode = 3, versionName = "0.6.0")
+
+        assertEquals(
+            ArchivePreflightDecision.Reject(ArchiveRejection.SIGNER),
+            ArchivePreflightPolicy.evaluate(release, noncanonicalInstalled, archive),
+        )
+    }
+
+    @Test
     fun rejectionMessagesIdentifyTheActualFailedIdentityField() {
         assertEquals("Downloaded APK has the wrong package ID", ArchiveRejection.PACKAGE_NAME.installerMessage())
         assertEquals("Downloaded APK signer does not match the installed app", ArchiveRejection.SIGNER.installerMessage())
@@ -56,5 +67,10 @@ class ArchivePreflightPolicyTest {
             ArchivePreflightDecision.Reject(reason),
             ArchivePreflightPolicy.evaluate(release, installed, archive),
         )
+    }
+
+    private companion object {
+        const val CANONICAL_SIGNER =
+            "bc811e3712c2d57f2b6ebda54392e62ebd2a773453e50fb375e1102db901a8f6"
     }
 }

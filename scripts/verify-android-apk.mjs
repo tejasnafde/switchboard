@@ -77,14 +77,8 @@ function compareVersionNames(left, right) {
 }
 
 export function verifyApkEvidence(evidence) {
+  const identity = verifyApkIdentity(evidence)
   const errors = []
-  verifyMetadata(evidence, errors)
-
-  if (evidence.signerSha256.length !== 1) {
-    errors.push(`APK must have exactly one signer, got ${evidence.signerSha256.length}`)
-  } else if (fingerprint(evidence.signerSha256[0]) !== CANONICAL_SIGNER_SHA256) {
-    errors.push(`signer must be ${CANONICAL_SIGNER_SHA256}, got ${evidence.signerSha256[0]}`)
-  }
 
   const actualSha256 = normalizeSha256(evidence.actualSha256)
   if (normalizeSha256(evidence.checksum.sha256) !== actualSha256) {
@@ -97,11 +91,27 @@ export function verifyApkEvidence(evidence) {
   throwVerificationErrors(errors)
 
   return {
+    ...identity,
+    sha256: actualSha256,
+  }
+}
+
+export function verifyApkIdentity(evidence) {
+  const errors = []
+  verifyMetadata(evidence, errors)
+
+  if (evidence.signerSha256.length !== 1) {
+    errors.push(`APK must have exactly one signer, got ${evidence.signerSha256.length}`)
+  } else if (fingerprint(evidence.signerSha256[0]) !== CANONICAL_SIGNER_SHA256) {
+    errors.push(`signer must be ${CANONICAL_SIGNER_SHA256}, got ${evidence.signerSha256[0]}`)
+  }
+
+  throwVerificationErrors(errors)
+  return {
     packageName: evidence.packageName,
     versionCode: evidence.versionCode,
     versionName: evidence.versionName,
     signerSha256: CANONICAL_SIGNER_SHA256,
-    sha256: actualSha256,
   }
 }
 
@@ -142,11 +152,13 @@ function runTool(command, args) {
 }
 
 function parseArguments(argv) {
-  const options = { metadataOnly: false, apk: null, checksum: null }
+  const options = { metadataOnly: false, identityOnly: false, apk: null, checksum: null }
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i]
     if (arg === '--metadata-only') {
       options.metadataOnly = true
+    } else if (arg === '--identity-only') {
+      options.identityOnly = true
     } else if (arg === '--apk') {
       options.apk = argv[++i] ?? null
     } else if (arg === '--checksum') {
@@ -156,7 +168,10 @@ function parseArguments(argv) {
     }
   }
   if (!options.apk) throw new Error('--apk is required')
-  if (!options.metadataOnly && !options.checksum) {
+  if (options.metadataOnly && options.identityOnly) {
+    throw new Error('--metadata-only and --identity-only are mutually exclusive')
+  }
+  if (!options.metadataOnly && !options.identityOnly && !options.checksum) {
     throw new Error('--checksum is required in strict mode')
   }
   return options
@@ -179,14 +194,24 @@ function runCli(argv) {
     return
   }
 
+  const apksigner = process.env.APKSIGNER || 'apksigner'
+  const signerSha256 = parseApkSignerOutput(
+    runTool(apksigner, ['verify', '--verbose', '--print-certs', apkPath]),
+  )
+
+  if (options.identityOnly) {
+    const identity = verifyApkIdentity({ ...metadata, signerSha256 })
+    process.stdout.write(
+      `Verified Android APK identity: ${identity.packageName} ${identity.versionName} (${identity.versionCode}) ${identity.signerSha256}\n`,
+    )
+    return
+  }
+
   const checksumPath = resolve(options.checksum)
   if (!existsSync(checksumPath)) throw new Error(`checksum metadata does not exist: ${checksumPath}`)
-  const apksigner = process.env.APKSIGNER || 'apksigner'
   const evidence = verifyApkEvidence({
     ...metadata,
-    signerSha256: parseApkSignerOutput(
-      runTool(apksigner, ['verify', '--verbose', '--print-certs', apkPath]),
-    ),
+    signerSha256,
     actualSha256,
     checksum: parseChecksumMetadata(readFileSync(checksumPath, 'utf8')),
     apkFilename: basename(apkPath),

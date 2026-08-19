@@ -4,6 +4,8 @@ import { describe, expect, test } from 'vitest'
 const workflowPath = '.github/workflows/android-native-ci.yml'
 const releaseWorkflowPath = '.github/workflows/mobile-release.yml'
 const androidBuildPath = 'apps/android/app/build.gradle.kts'
+const appContractPath = 'apps/android/app/src/main/java/app/switchboard/mobile/AppContract.kt'
+const switchboardAppPath = 'apps/android/app/src/main/java/app/switchboard/mobile/ui/SwitchboardApp.kt'
 const otaWorkflowPath = '.github/workflows/mobile-ota.yml'
 
 describe('native Android non-publishing CI', () => {
@@ -33,6 +35,15 @@ describe('native Android non-publishing CI', () => {
 })
 
 describe('native Android publishing lane', () => {
+  test('uses Gradle package metadata as the only Android version source', () => {
+    const contract = readFileSync(appContractPath, 'utf8')
+    const app = readFileSync(switchboardAppPath, 'utf8')
+
+    expect(contract).not.toMatch(/const val VERSION_(?:NAME|CODE)/)
+    expect(app).toContain('BuildConfig.VERSION_NAME')
+    expect(app).not.toContain('AppContract.VERSION_NAME')
+  })
+
   test('builds the Kotlin app with the exported production keystore instead of EAS', () => {
     const workflow = readFileSync(releaseWorkflowPath, 'utf8')
 
@@ -68,6 +79,7 @@ describe('native Android publishing lane', () => {
     expect(workflow).toContain('APK_VERSION_NAME')
     expect(workflow).toContain('PREVIOUS_VERSION_CODE')
     expect(workflow).toContain('NEW_VERSION_CODE <= PREVIOUS_VERSION_CODE')
+    expect(workflow).toContain('verify-android-apk.mjs --identity-only --apk "$RUNNER_TEMP/switchboard-previous.apk"')
     expect(workflow).toContain('Release already exists; increment apps/android versionName and versionCode')
     expect(workflow).not.toContain("echo \"exists=true\" >> \"$GITHUB_OUTPUT\"")
   })
