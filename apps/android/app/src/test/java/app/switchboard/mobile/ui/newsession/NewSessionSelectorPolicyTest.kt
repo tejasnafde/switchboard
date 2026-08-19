@@ -30,6 +30,14 @@ class NewSessionSelectorPolicyTest {
         assertEquals("Sonnet", NewSessionSelectorPolicy.modelLabel(models, "sonnet"))
     }
 
+    @Test
+    fun selectorRowsExposeConciseSupportingCopy() {
+        assertEquals("Agent", NewSessionSelectorPolicy.supportingLabel(NewSessionField.PROVIDER))
+        assertEquals("Profile", NewSessionSelectorPolicy.supportingLabel(NewSessionField.PROFILE))
+        assertEquals("Model", NewSessionSelectorPolicy.supportingLabel(NewSessionField.MODEL))
+        assertEquals("Access", NewSessionSelectorPolicy.supportingLabel(NewSessionField.RUNTIME))
+    }
+
     private fun profile(id: String, displayName: String) = ProviderInstance(
         id = id,
         agentType = "claude",

@@ -2,36 +2,38 @@ package app.switchboard.mobile.ui.browse
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,15 +55,27 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Search
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.ui.theme.Accent
-import app.switchboard.mobile.ui.theme.GeistMono
+import app.switchboard.mobile.ui.theme.Amber
+import app.switchboard.mobile.ui.theme.Green
 import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.components.InlineStatus
+import app.switchboard.mobile.ui.components.InlineStatusProgress
+import app.switchboard.mobile.ui.components.SectionLabel
+import app.switchboard.mobile.ui.components.StatusTone
+import app.switchboard.mobile.ui.components.SwitchboardEmptyState
 import java.text.DateFormat
 import java.util.Date
 
@@ -129,45 +143,41 @@ fun BrowseScreen(
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun BrowseTopBar(
     title: String,
     onBack: () -> Unit,
     actionLabel: String? = null,
     onAction: () -> Unit = {},
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .statusBarsPadding()
-            .heightIn(min = 56.dp)
-            .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        TextButton(
-            onClick = onBack,
-            modifier = Modifier.heightIn(min = 48.dp),
-        ) {
-            Text("Back")
-        }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 8.dp, end = 16.dp)
-                .semantics { heading() },
-        )
-        actionLabel?.let { label ->
-            TextButton(
-                onClick = onAction,
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) {
-                Text(label)
+    TopAppBar(
+        title = {
+            Text(
+                text = title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.semantics { heading() },
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
-        }
-    }
+        },
+        actions = {
+            actionLabel?.let { label ->
+                IconButton(
+                    onClick = onAction,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .semantics { contentDescription = label },
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = null)
+                }
+            }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface),
+    )
 }
 
 @Composable
@@ -240,6 +250,7 @@ private fun ProjectsSurface(
                         items(section.projects, key = Project::path) { project ->
                             val row = requireNotNull(byPath[project.path])
                             ProjectRow(row = row, onClick = { onProjectTap(row) })
+                            HorizontalDivider(modifier = Modifier.padding(start = 76.dp))
                         }
                     }
                 }
@@ -304,6 +315,7 @@ private fun ConversationsSurface(
                             onLongClick = { renaming = row },
                         )
                         RenameErrorSlot(renameErrors[row.id])
+                        HorizontalDivider(modifier = Modifier.padding(start = 52.dp))
                     }
                 }
             }
@@ -323,106 +335,48 @@ private fun ConversationsSurface(
 
 @Composable
 private fun BrowseStatusRow(status: BrowseStatus, onRetry: () -> Unit) {
-    val color = when (status.kind) {
-        BrowseStatusKind.NORMAL -> TextDim
-        BrowseStatusKind.CACHED -> Accent
-        BrowseStatusKind.ERROR -> Red
+    if (status.kind == BrowseStatusKind.NORMAL && !status.showProgress && status.detail == null) {
+        SectionLabel(
+            text = status.label,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+        )
+        return
     }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .semantics {
-                liveRegion = LiveRegionMode.Polite
-                stateDescription = listOfNotNull(status.label, status.detail).joinToString(", ")
-            }
-            .padding(start = 20.dp, end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            modifier = Modifier
-                .width(26.dp)
-                .clearAndSetSemantics {},
-            contentAlignment = Alignment.CenterStart,
-        ) {
-            if (status.showProgress) {
-                CircularProgressIndicator(
-                    color = color,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(16.dp),
-                )
-            }
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clearAndSetSemantics {},
-        ) {
-            Text(
-                text = status.label,
-                color = color,
-                fontFamily = GeistMono,
-                fontSize = 11.sp,
-                maxLines = 1,
-            )
-            status.detail?.let { detail ->
-                Text(
-                    text = detail,
-                    color = TextDim,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (status.canRetry) {
-            TextButton(
-                onClick = onRetry,
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) {
-                Text("Retry")
-            }
-        }
-    }
+    InlineStatus(
+        message = status.label,
+        detail = status.detail,
+        tone = when (status.kind) {
+            BrowseStatusKind.NORMAL -> StatusTone.NEUTRAL
+            BrowseStatusKind.CACHED -> StatusTone.INFO
+            BrowseStatusKind.ERROR -> StatusTone.ERROR
+        },
+        progress = if (status.showProgress) InlineStatusProgress.Indeterminate else InlineStatusProgress.None,
+        actionLabel = "Retry".takeIf { status.canRetry },
+        onAction = onRetry.takeIf { status.canRetry },
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
 }
 
 @Composable
 private fun ProjectRow(row: BrowseProjectRow, onClick: () -> Unit) {
-    BrowsePressableRow(
-        contentDescription = BrowseAccessibilityPolicy.projectDescription(row.name, row.sessionCount),
-        stateDescription = BrowseAccessibilityPolicy.projectState(row.unread, row.status),
-        onClickLabel = "Open ${row.name}",
-        onClick = onClick,
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clearAndSetSemantics {},
-        ) {
-            Text(
-                text = row.name,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = row.path,
-                color = TextDim,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 3.dp),
-            )
-        }
-        Text(
-            text = BrowseRowPolicy.projectTrailingLabel(row),
-            color = if (row.unread > 0) Accent else TextDim,
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier
-                .padding(start = 12.dp)
-                .clearAndSetSemantics {},
-        )
-    }
+    ListItem(
+        headlineContent = {
+            Text(row.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        supportingContent = {
+            Text(row.path, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        },
+        leadingContent = { ProjectMonogram(row.name) },
+        trailingContent = { ActivityTrailing(row.status, row.unread, BrowseRowPolicy.projectTrailingLabel(row)) },
+        colors = ListItemDefaults.colors(containerColor = Surface),
+        modifier = Modifier
+            .heightIn(min = 68.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = BrowseAccessibilityPolicy.projectDescription(row.name, row.sessionCount)
+                stateDescription = BrowseAccessibilityPolicy.projectState(row.unread, row.status)
+            }
+            .clickable(role = Role.Button, onClickLabel = "Open ${row.name}", onClick = onClick),
+    )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -432,98 +386,104 @@ private fun ConversationRow(
     onClick: () -> Unit,
     onLongClick: () -> Unit,
 ) {
-    BrowsePressableRow(
-        contentDescription = BrowseAccessibilityPolicy.conversationDescription(row.title, row.agentType),
-        stateDescription = BrowseAccessibilityPolicy.conversationState(
-            row.availableOffline,
-            row.unread,
-            row.status,
-        ),
-        onClickLabel = "Open ${row.title}",
-        onLongClickLabel = "Rename ${row.title}",
-        onClick = onClick,
-        onLongClick = onLongClick,
-    ) {
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .clearAndSetSemantics {},
-        ) {
+    ListItem(
+        headlineContent = { Text(row.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+        supportingContent = {
             Text(
-                text = row.title,
-                style = MaterialTheme.typography.titleMedium,
+                BrowseRowPolicy.conversationSupportingLabel(row),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 4.dp),
-            ) {
+        },
+        leadingContent = { ActivityDot(BrowseVisualPolicy.activityTone(row.status, row.unread)) },
+        trailingContent = {
+            Column(horizontalAlignment = Alignment.End) {
                 Text(
-                    text = BrowseRowPolicy.conversationSupportingLabel(row),
+                    remember(row.updatedAt) { formatTimestamp(row.updatedAt) },
                     color = TextDim,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.labelSmall,
+                )
+                if (row.unread > 0) UnreadBadge(row.unread, Modifier.padding(top = 5.dp))
+                else Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = TextDim)
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Surface),
+        modifier = Modifier
+            .heightIn(min = 68.dp)
+            .semantics(mergeDescendants = true) {
+                contentDescription = BrowseAccessibilityPolicy.conversationDescription(row.title, row.agentType)
+                stateDescription = BrowseAccessibilityPolicy.conversationState(
+                    row.availableOffline,
+                    row.unread,
+                    row.status,
                 )
             }
-        }
-        Text(
-            text = remember(row.updatedAt) { formatTimestamp(row.updatedAt) },
-            color = TextDim,
-            modifier = Modifier
-                .padding(start = 12.dp)
-                .clearAndSetSemantics {},
-            style = MaterialTheme.typography.labelSmall,
-        )
+            .combinedClickable(
+                role = Role.Button,
+                onClickLabel = "Open ${row.title}",
+                onLongClickLabel = "Rename ${row.title}",
+                onClick = onClick,
+                onLongClick = onLongClick,
+            ),
+    )
+}
+
+@Composable
+private fun ProjectMonogram(name: String) {
+    Box(
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(SurfaceRaised)
+            .clearAndSetSemantics {},
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(BrowseVisualPolicy.projectMonogram(name), color = TextDim, style = MaterialTheme.typography.labelMedium)
     }
 }
 
 @Composable
-private fun BrowsePressableRow(
-    contentDescription: String,
-    stateDescription: String,
-    onClickLabel: String,
-    onLongClickLabel: String? = null,
-    onClick: () -> Unit,
-    onLongClick: (() -> Unit)? = null,
-    content: @Composable RowScope.() -> Unit,
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val pressed by interactionSource.collectIsPressedAsState()
-    val indication = LocalIndication.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 68.dp)
-            .background(if (pressed) SurfaceRaised else Surface)
-            .semantics(mergeDescendants = true) {
-                this.contentDescription = contentDescription
-                if (stateDescription.isNotBlank()) this.stateDescription = stateDescription
-            }
-            .then(
-                if (onLongClick == null) {
-                    Modifier.clickable(
-                        interactionSource = interactionSource,
-                        indication = indication,
-                        role = Role.Button,
-                        onClickLabel = onClickLabel,
-                        onClick = onClick,
-                    )
-                } else {
-                    Modifier.combinedClickable(
-                        interactionSource = interactionSource,
-                        indication = indication,
-                        role = Role.Button,
-                        onClickLabel = onClickLabel,
-                        onLongClickLabel = onLongClickLabel,
-                        onClick = onClick,
-                        onLongClick = onLongClick,
-                    )
-                },
-            )
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        content = content,
+private fun ActivityTrailing(status: String?, unread: Int, fallback: String) {
+    if (unread > 0) {
+        UnreadBadge(unread)
+    } else {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            ActivityDot(BrowseVisualPolicy.activityTone(status, unread))
+            Text(fallback, color = TextDim, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(start = 8.dp))
+        }
+    }
+}
+
+@Composable
+private fun ActivityDot(tone: BrowseActivityTone) {
+    val color = when (tone) {
+        BrowseActivityTone.ACTIVE -> Green
+        BrowseActivityTone.ATTENTION -> Amber
+        BrowseActivityTone.ERROR -> Red
+        BrowseActivityTone.UNREAD -> Accent
+        BrowseActivityTone.MUTED -> TextDim
+    }
+    Box(
+        Modifier
+            .size(8.dp)
+            .clip(CircleShape)
+            .background(color)
+            .clearAndSetSemantics {},
     )
+}
+
+@Composable
+private fun UnreadBadge(unread: Int, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(24.dp)
+            .clip(CircleShape)
+            .background(Accent)
+            .clearAndSetSemantics {},
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(unread.coerceAtMost(99).toString(), color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall)
+    }
 }
 
 @Composable
@@ -532,14 +492,23 @@ private fun BrowseSearchField(
     onValueChange: (String) -> Unit,
     label: String,
 ) {
-    OutlinedTextField(
+    TextField(
         value = value,
         onValueChange = onValueChange,
-        label = { Text(label) },
+        placeholder = { Text(label) },
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = TextDim) },
         singleLine = true,
+        shape = RoundedCornerShape(14.dp),
+        colors = TextFieldDefaults.colors(
+            focusedContainerColor = SurfaceRaised,
+            unfocusedContainerColor = SurfaceRaised,
+            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+        ),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .semantics { contentDescription = label },
     )
 }
 
@@ -566,35 +535,36 @@ private fun WorkspaceHeader(
             .padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = section.name,
-            style = MaterialTheme.typography.labelLarge,
-            modifier = Modifier.weight(1f),
-        )
+        SectionLabel(text = section.name, modifier = Modifier.weight(1f))
         if (toggleEnabled) {
-            Text(if (section.collapsed) "Show" else "Hide", color = TextDim)
+            Text(section.projectCount.toString(), color = TextDim, style = MaterialTheme.typography.labelSmall)
+            Icon(
+                imageVector = if (section.collapsed) Icons.Default.KeyboardArrowDown else Icons.Default.KeyboardArrowUp,
+                contentDescription = null,
+                tint = TextDim,
+                modifier = Modifier.padding(start = 8.dp),
+            )
         }
     }
 }
 
 @Composable
 private fun RenameErrorSlot(message: String?) {
+    if (message == null) return
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 24.dp)
             .padding(horizontal = 20.dp),
     ) {
-        message?.let {
-            Text(
-                text = it,
-                color = Red,
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
-            )
-        }
+        Text(
+            text = message,
+            color = Red,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+        )
     }
 }
 
@@ -674,45 +644,20 @@ private fun FullPageLoading(label: String) {
 
 @Composable
 private fun FullPageEmpty(title: String, detail: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = detail,
-            color = TextDim,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(top = 8.dp),
-        )
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        SwitchboardEmptyState(title = title, body = detail)
     }
 }
 
 @Composable
 private fun FullPageFailure(message: String, onRetry: () -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("Could not load", style = MaterialTheme.typography.titleMedium)
-        Text(
-            text = message,
-            color = TextDim,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        SwitchboardEmptyState(
+            title = "Could not load",
+            body = message,
+            actionLabel = "Retry",
+            onAction = onRetry,
         )
-        OutlinedButton(
-            onClick = onRetry,
-            modifier = Modifier.heightIn(min = 48.dp),
-        ) {
-            Text("Retry")
-        }
     }
 }
 

@@ -7,6 +7,7 @@ import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.SessionSummary
 import app.switchboard.mobile.domain.remote.Workspace
 import java.io.Serializable
+import java.util.Locale
 
 sealed interface BrowseRoute : Serializable {
     data object Projects : BrowseRoute
@@ -314,4 +315,33 @@ object BrowseRowPolicy {
     }
 
     private fun String?.isFailureStatus(): Boolean = this == "error" || this == "failed"
+}
+
+enum class BrowseActivityTone {
+    ACTIVE,
+    ATTENTION,
+    ERROR,
+    UNREAD,
+    MUTED,
+}
+
+object BrowseVisualPolicy {
+    fun projectMonogram(name: String): String {
+        val words = name.trim()
+            .split(Regex("[^A-Za-z0-9]+"))
+            .filter(String::isNotBlank)
+        if (words.isEmpty()) return "•"
+        return if (words.size > 1) {
+            words.take(2).joinToString("") { it.first().toString().uppercase(Locale.ROOT) }
+        } else {
+            words.single().take(2).uppercase(Locale.ROOT)
+        }
+    }
+
+    fun activityTone(status: String?, unread: Int): BrowseActivityTone = when (status) {
+        "error", "failed" -> BrowseActivityTone.ERROR
+        "running", "streaming", "working" -> BrowseActivityTone.ACTIVE
+        "starting", "connecting", "waiting", "queued" -> BrowseActivityTone.ATTENTION
+        else -> if (unread > 0) BrowseActivityTone.UNREAD else BrowseActivityTone.MUTED
+    }
 }

@@ -7,11 +7,13 @@ import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.domain.outbox.StagedAttachment
 import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.ChatMessage
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MarkReadResult
+import app.switchboard.mobile.domain.remote.ModelOption
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteRequestKey
@@ -462,6 +464,42 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `optimistic image turn remains visible before history refresh`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val enqueue = FakeEnqueuePort().also {
+            it.results += durable(
+                origin = "image-origin",
+                text = "",
+                attachments = listOf(StagedAttachment("/private/screenshot.png", "image/png")),
+            )
+        }
+        val coordinator = coordinator(
+            remote,
+            enqueue = enqueue,
+            initialComposer = ComposerDraft(
+                key = ComposerDraftKey("machine", "thread-1"),
+                attachments = listOf(
+                    ComposerAttachment(
+                        id = "screenshot",
+                        privateUri = "/private/draft/screenshot.png",
+                        mimeType = "image/png",
+                        displayName = "screenshot.png",
+                    ),
+                ),
+            ),
+        )
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+
+        coordinator.submit()
+
+        val optimistic = coordinator.currentThread()?.feed?.single() as FeedItem.User
+        assertEquals("", optimistic.text)
+        assertEquals("file:/private/screenshot.png", optimistic.images.single().url)
+        assertEquals("image/png", optimistic.images.single().mimeType)
+    }
+
+    @Test
     fun `runtime mode and interrupt use distinct absolute remote actions`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(remote)
@@ -476,6 +514,116 @@ class ThreadSessionCoordinatorTest {
         assertEquals(1, remote.interruptedThreadIds.size)
         remote.completeInterrupt(failure("interrupt", "too late"))
         assertEquals("too late", coordinator.state.value.composer.error)
+    }
+
+    @Test
+    fun `model discovery ignores superseded and stale generation callbacks`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(resolvedModel = "cached-model"))
+        coordinator.start()
+
+        assertEquals(listOf("thread-1"), remote.modelThreadIds)
+        assertTrue(coordinator.state.value.models.loading)
+
+        coordinator.refreshModels()
+        assertEquals(listOf("thread-1", "thread-1"), remote.modelThreadIds)
+
+        remote.completeModelsAt(0, success("models-old", listOf(model("old"))))
+        assertTrue(coordinator.state.value.models.loading)
+        assertTrue(coordinator.state.value.models.options.isEmpty())
+
+        remote.completeModelsAt(
+            1,
+            success("models-stale-scope", listOf(model("stale"))),
+            ThreadEventScope("machine", 8),
+        )
+        assertTrue(coordinator.state.value.models.loading)
+        assertTrue(coordinator.state.value.models.options.isEmpty())
+        assertEquals("cached-model", coordinator.state.value.models.selectedModelId)
+    }
+
+    @Test
+    fun `empty model discovery completes without discarding the active model`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(resolvedModel = "cached-model"))
+        coordinator.start()
+
+        remote.completeModelsAt(0, success("models", null))
+
+        assertFalse(coordinator.state.value.models.loading)
+        assertTrue(coordinator.state.value.models.options.isEmpty())
+        assertEquals("cached-model", coordinator.state.value.models.selectedModelId)
+        assertNull(coordinator.state.value.models.error)
+    }
+
+    @Test
+    fun `model change is not sent when discovery returned no matching option`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(resolvedModel = "cached-model"))
+        coordinator.start()
+        remote.completeModelsAt(0, success("models", emptyList()))
+
+        coordinator.selectModel("missing-model")
+
+        assertTrue(remote.selectedModels.isEmpty())
+        assertFalse(coordinator.state.value.models.changing)
+        assertEquals("Model is not available for this session", coordinator.state.value.models.error)
+    }
+
+    @Test
+    fun `successful model change publishes only after the absolute command succeeds`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(resolvedModel = "old-model"))
+        coordinator.start()
+        remote.completeModelsAt(0, success("models", listOf(model("old-model"), model("new-model"))))
+
+        coordinator.selectModel("new-model")
+
+        assertEquals(listOf("thread-1" to "new-model"), remote.selectedModels)
+        assertTrue(coordinator.state.value.models.changing)
+        assertEquals("old-model", coordinator.state.value.models.selectedModelId)
+
+        remote.completeModelChange(success("set-model", CommandBody(emptyJson())))
+
+        assertFalse(coordinator.state.value.models.changing)
+        assertEquals("new-model", coordinator.state.value.models.selectedModelId)
+        assertNull(coordinator.state.value.models.error)
+    }
+
+    @Test
+    fun `runtime model metadata synchronizes the selected model`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        remote.completeModelsAt(0, success("models", listOf(model("reported-model"))))
+
+        remote.emit(
+            scope,
+            event(
+                "context_window",
+                "thread-1",
+                "usedTokens" to JsonNumber("10"),
+                "model" to JsonString("reported-model"),
+            ),
+        )
+
+        assertEquals("reported-model", coordinator.state.value.models.selectedModelId)
+    }
+
+    @Test
+    fun `rejected model change keeps the previous model and exposes the domain error`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(resolvedModel = "old-model"))
+        coordinator.start()
+        remote.completeModelsAt(0, success("models", listOf(model("old-model"), model("new-model"))))
+
+        coordinator.selectModel("new-model")
+        remote.completeModelChange(failure("set-model", "model unavailable"))
+
+        assertFalse(coordinator.state.value.models.changing)
+        assertEquals("old-model", coordinator.state.value.models.selectedModelId)
+        assertEquals("model unavailable", coordinator.state.value.models.error)
     }
 
     @Test
@@ -592,6 +740,13 @@ class ThreadSessionCoordinatorTest {
         raw = emptyJson(),
     )
 
+    private fun model(id: String) = ModelOption(
+        id = id,
+        label = id,
+        tier = "standard",
+        raw = emptyJson(),
+    )
+
     private fun content(
         threadId: String,
         messageId: String,
@@ -652,14 +807,18 @@ class ThreadSessionCoordinatorTest {
         ),
     )!!
 
-    private fun durable(origin: String, text: String): EnqueueResult.Durable = EnqueueResult.Durable(
+    private fun durable(
+        origin: String,
+        text: String,
+        attachments: List<StagedAttachment> = emptyList(),
+    ): EnqueueResult.Durable = EnqueueResult.Durable(
         QueuedTurn(
             connectionId = "machine",
             threadId = "thread-1",
             origin = origin,
             bubbleId = "remote_$origin",
             text = text,
-            attachments = emptyList(),
+            attachments = attachments,
             runtimeMode = "sandbox",
             createdAtMs = 123,
             attempts = 0,
@@ -726,6 +885,10 @@ private class FakeThreadSessionRemote(
     val interruptCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
     val skillThreadIds = mutableListOf<String>()
     val skillCallbacks = mutableListOf<(RemoteResponse<List<ProviderSkill>?>) -> Unit>()
+    val modelThreadIds = mutableListOf<String>()
+    val modelCallbacks = mutableListOf<(RemoteResponse<List<ModelOption>?>) -> Unit>()
+    val selectedModels = mutableListOf<Pair<String, String>>()
+    val modelChangeCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
     val questionCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
 
     override fun subscribe(listener: (ThreadEventScope, RuntimeEventPayload) -> Unit): Cancelable {
@@ -762,6 +925,14 @@ private class FakeThreadSessionRemote(
         skillCallbacks += callback
     }
 
+    override fun listModels(
+        threadId: String,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
+    ) {
+        modelThreadIds += threadId
+        modelCallbacks += callback
+    }
+
     override fun respondToRequest(
         threadId: String,
         requestId: String,
@@ -789,6 +960,15 @@ private class FakeThreadSessionRemote(
     ) {
         runtimeModes += mode
         modeCallbacks += callback
+    }
+
+    override fun setModel(
+        threadId: String,
+        model: String,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ) {
+        selectedModels += threadId to model
+        modelChangeCallbacks += callback
     }
 
     override fun interrupt(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
@@ -838,6 +1018,18 @@ private class FakeThreadSessionRemote(
         responseScope: ThreadEventScope = scope,
     ) {
         skillCallbacks.first()(response.withScope(responseScope))
+    }
+
+    fun completeModelsAt(
+        index: Int,
+        response: RemoteResponse<List<ModelOption>?>,
+        responseScope: ThreadEventScope = scope,
+    ) {
+        modelCallbacks[index](response.withScope(responseScope))
+    }
+
+    fun completeModelChange(response: RemoteResponse<CommandBody>) {
+        modelChangeCallbacks.removeAt(0)(response)
     }
 
     fun <T> RemoteResponse<T>.withScope(scope: ThreadEventScope) = copy(

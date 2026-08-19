@@ -42,6 +42,7 @@ class BrowseParityDecisionsTest {
 
         assertEquals(listOf("two", "one"), groups.map { it.key })
         assertTrue(groups.first().collapsed)
+        assertEquals(1, groups.first().projectCount)
         assertEquals(emptyList<Project>(), groups.first().projects)
 
         val searching = BrowseParityDecisions.sections(

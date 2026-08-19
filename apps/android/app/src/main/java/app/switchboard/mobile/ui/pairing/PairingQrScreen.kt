@@ -30,12 +30,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -194,8 +197,23 @@ private fun ScannerChrome(
             .statusBarsPadding()
             .padding(16.dp),
     ) {
-        TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("Back", color = Color.White)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back",
+                    tint = Color.White,
+                )
+            }
+            Text(
+                text = PairingPresentationPolicy.qrTitle(),
+                color = Color.White,
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 8.dp),
+            )
         }
         Column(
             modifier = Modifier
@@ -222,8 +240,7 @@ private fun ScannerChrome(
                 }
             }
             Text(
-                text = message
-                    ?: "Point at the QR printed by Switchboard or shown in Desktop Settings → Mobile.",
+                text = message ?: "Point your camera at the QR code shown by Switchboard on your Mac.",
                 color = Color.White,
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier
@@ -245,7 +262,7 @@ private fun ScannerChrome(
                     .padding(top = 12.dp)
                     .heightIn(min = 48.dp),
             ) {
-                Text("Type it instead", color = Color.White)
+                Text("Enter connection details instead", color = Color.White)
             }
         }
     }
@@ -265,8 +282,18 @@ private fun CameraPermissionState(
             .statusBarsPadding()
             .padding(20.dp),
     ) {
-        TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("Back")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(
+                onClick = onBack,
+                modifier = Modifier.size(48.dp),
+            ) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                text = PairingPresentationPolicy.qrTitle(),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(start = 8.dp),
+            )
         }
         Column(
             modifier = Modifier

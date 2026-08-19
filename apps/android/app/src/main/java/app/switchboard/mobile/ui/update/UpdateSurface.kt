@@ -1,22 +1,10 @@
 package app.switchboard.mobile.ui.update
 
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
+import app.switchboard.mobile.ui.components.InlineStatus
+import app.switchboard.mobile.ui.components.InlineStatusProgress
+import app.switchboard.mobile.ui.components.StatusTone
 import app.switchboard.mobile.update.UpdateAction
 import app.switchboard.mobile.update.UpdateState
 
@@ -28,65 +16,26 @@ fun UpdateSurface(
 ) {
     val presentation = UpdateSurfacePresentation.from(state) ?: return
 
-    Card(
-        modifier = modifier
-            .fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ),
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 40.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                ) {
-                    Text(
-                        text = presentation.message,
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                    if (presentation.placement == UpdateSurfacePlacement.ReservedBanner) {
-                        Text(
-                            text = presentation.detail,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
-                }
-
-                if (presentation.busy && presentation.progressFraction == null) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                    )
-                }
-
-                presentation.action?.let { action ->
-                    TextButton(onClick = { onAction(action) }) {
-                        Text(presentation.actionLabel.orEmpty())
-                    }
-                }
+    InlineStatus(
+        message = presentation.message,
+        detail = presentation.detail.takeIf {
+            presentation.placement == UpdateSurfacePlacement.ReservedBanner
+        },
+        tone = when (state) {
+            is UpdateState.Error -> StatusTone.ERROR
+            is UpdateState.PermissionRequired -> StatusTone.WARNING
+            is UpdateState.InstallerReady -> StatusTone.SUCCESS
+            else -> StatusTone.INFO
+        },
+        progress = when {
+            !presentation.busy -> InlineStatusProgress.None
+            presentation.progressFraction != null -> {
+                InlineStatusProgress.Determinate(presentation.progressFraction)
             }
-
-            if (presentation.placement == UpdateSurfacePlacement.ReservedBanner &&
-                state is UpdateState.Downloading
-            ) {
-                val fraction = presentation.progressFraction
-                if (fraction == null) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                } else {
-                    LinearProgressIndicator(
-                        progress = { fraction },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
-    }
+            else -> InlineStatusProgress.Indeterminate
+        },
+        actionLabel = presentation.actionLabel,
+        onAction = presentation.action?.let { action -> { onAction(action) } },
+        modifier = modifier,
+    )
 }

@@ -28,4 +28,18 @@ class ThreadImageDataTest {
         assertTrue(ThreadImageData.MaxDecodedBytes > 2)
         assertNull(ThreadImageData.parse("data:image/jpeg;base64,AAAA", maxDecodedBytes = 2))
     }
+
+    @Test
+    fun `accepts only absolute local file urls for staged images`() {
+        assertEquals(
+            "/data/user/0/app.switchboard.mobile/files/thread images/shot.png",
+            ThreadImageFile.parse(
+                "file:///data/user/0/app.switchboard.mobile/files/thread%20images/shot.png",
+            )?.path,
+        )
+        assertNull(ThreadImageFile.parse("https://example.com/shot.png"))
+        assertNull(ThreadImageFile.parse("file://remote-host/shot.png"))
+        assertNull(ThreadImageFile.parse("file:relative.png"))
+        assertNull(ThreadImageFile.parse("file:///tmp/shot.png?changed=1"))
+    }
 }

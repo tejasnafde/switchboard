@@ -17,7 +17,8 @@ Status marks:
 
 - [x] Release application ID remains `app.switchboard.mobile`; debug uses
   `.native.dev`.
-- [x] Native version starts at `0.5.0` / version code `2`, above public v0.4.0.
+- [x] Current native release is `0.5.4` / version code `6`, monotonically above
+  the installed `0.5.3` / version code `5` build.
 - [x] Both existing URI schemes, cleartext LAN policy, portrait mode, package
   label, notification channel ID, permissions, icon bitmaps and font files are
   preserved.
@@ -154,6 +155,9 @@ Automated projects/conversations evidence: `BrowseParityDecisionsTest`,
 - [x] Provider/model/profile ordering and backend-authoritative defaults match
   RN behavior; unknown backend model defaults remain selectable and malformed
   runtime defaults fall back to Sandbox.
+- [x] Existing threads request live model options with request/generation
+  fencing and issue an absolute model selection only after validating the
+  option; rejection preserves the prior reported model.
 - [ ] Absolute play/pause-style controls remain absolute commands, never
   toggles.
 - [x] Provider default loads are request-fenced; switching provider clears stale
@@ -188,7 +192,8 @@ and first-message delivery still require physical-device/backend smoke testing.
   messages, bounded raster data URLs and tool calls now survive snapshot decode;
   images render off-main-thread inline with a full-screen lightbox. Remote URL
   image loading remains.
-- [ ] Show duration, cost/context metadata and stable connection/thread status.
+- [x] Show duration, cost/context metadata and stable connection/thread status;
+  the metric strip exposes one combined accessibility summary.
 - [~] A visible, ready thread enters an exact transport-generation viewing
   lease; backgrounding, disposal, device switches and stale callbacks leave or
   reacquire without crossing scopes. Unread reconstruction after process death
@@ -208,8 +213,9 @@ and first-message delivery still require physical-device/backend smoke testing.
   no send occurs before authenticated readiness.
 - [x] Retries preserve origin ID and chosen mode; typed permanent failures stop;
   ambiguous transport failures remain durable.
-- [~] Durable queued/ambiguous/terminal cards expose valid retry/edit/dismiss
-  actions and image-only sends are allowed; full optimistic/feed parity remains.
+- [x] Durable queued/ambiguous/terminal cards expose valid retry/edit/dismiss
+  actions; image-only and captioned sends keep staged images in the optimistic
+  feed and reconcile the eventual history echo without duplication.
 - [x] Slash menu includes built-ins plus provider skills; `/image` opens native
   image selection and mode commands change the actual send mode.
 - [~] Up to four images have bounded previews and removal; size/downscale limits

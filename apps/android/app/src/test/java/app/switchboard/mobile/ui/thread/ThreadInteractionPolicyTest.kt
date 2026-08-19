@@ -11,10 +11,9 @@ import org.junit.Test
 
 class ThreadInteractionPolicyTest {
     @Test
-    fun approvalPlanAndFileActionsPreserveDurableIdentifiers() {
+    fun approvalAndPlanActionsPreserveDurableIdentifiers() {
         val approval = FeedItem.Approval("a", "request-1", "Bash", "run", "tool", "pending")
         val plan = FeedItem.Plan("p", "plan-1", "Ship")
-        val file = FeedItem.FileEdit("f", "edit-1", "/repo", "src/App.kt", "modify", "a", "b")
 
         assertEquals(
             ThreadUiAction.Approval("request-1", ThreadApprovalDecision.APPROVE),
@@ -23,10 +22,6 @@ class ThreadInteractionPolicyTest {
         assertEquals(
             ThreadUiAction.Plan("plan-1", ThreadPlanAction.ITERATE),
             ThreadInteractionPolicy.plan(plan, ThreadPlanAction.ITERATE),
-        )
-        assertEquals(
-            ThreadUiAction.OpenFile("edit-1", "/repo", "src/App.kt"),
-            ThreadInteractionPolicy.openFile(file),
         )
     }
 

@@ -1,5 +1,7 @@
 package app.switchboard.mobile.ui.thread
 
+import java.net.URI
+
 data class ThreadImageData(
     val mimeType: String,
     val base64: String,
@@ -33,6 +35,19 @@ data class ThreadImageData(
                 base64 = body,
                 decodedBytes = decodedBytes.toInt(),
             )
+        }
+    }
+}
+
+data class ThreadImageFile(val path: String) {
+    companion object {
+        fun parse(url: String): ThreadImageFile? {
+            val uri = runCatching { URI(url) }.getOrNull() ?: return null
+            if (!uri.scheme.equals("file", ignoreCase = true)) return null
+            if (!uri.authority.isNullOrEmpty() || uri.query != null || uri.fragment != null) return null
+            val path = runCatching { uri.path }.getOrNull()?.takeIf { it.startsWith('/') }
+                ?: return null
+            return ThreadImageFile(path)
         }
     }
 }

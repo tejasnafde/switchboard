@@ -18,6 +18,12 @@ data class UpdateSurfacePresentation(
     val busy: Boolean,
     val placement: UpdateSurfacePlacement,
 ) {
+    val snackbarMessage: String
+        get() = listOf(message, detail)
+            .filter(String::isNotBlank)
+            .distinct()
+            .joinToString("\n")
+
     companion object {
         fun from(state: UpdateState): UpdateSurfacePresentation? {
             val presentation = UpdatePresentation.from(state)
@@ -30,6 +36,8 @@ data class UpdateSurfacePresentation(
                 progressFraction = presentation.progressFraction,
                 busy = presentation.busy,
                 placement = when (state) {
+                    is UpdateState.InstallerReady,
+                    is UpdateState.PermissionRequired,
                     is UpdateState.Downloading,
                     is UpdateState.Cancelling,
                     is UpdateState.Verifying,

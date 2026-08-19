@@ -24,6 +24,25 @@ class ConnectionRowPolicyTest {
         )
     }
 
+    @Test
+    fun rowsArePartitionedIntoAvailableAndUnavailableSectionsWithoutReordering() {
+        val rows = listOf(
+            row(ConnectionStatus.OFFLINE).copy(id = "offline", label = "Offline"),
+            row(ConnectionStatus.LIVE).copy(id = "live", label = "Live"),
+            row(ConnectionStatus.CONNECTING).copy(id = "connecting", label = "Connecting"),
+            row(ConnectionStatus.ERROR).copy(id = "error", label = "Error"),
+        )
+
+        assertEquals(
+            listOf("live"),
+            ConnectionsListPolicy.sections(rows).available.map { it.id },
+        )
+        assertEquals(
+            listOf("offline", "connecting", "error"),
+            ConnectionsListPolicy.sections(rows).unavailable.map { it.id },
+        )
+    }
+
     private fun row(status: ConnectionStatus, detail: String? = null) = ConnectionRowPresentation(
         id = "studio",
         label = "Studio",

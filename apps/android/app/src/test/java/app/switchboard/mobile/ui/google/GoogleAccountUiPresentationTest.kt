@@ -73,4 +73,17 @@ class GoogleAccountUiPresentationTest {
         assertEquals("Blocked", description)
         assertFalse(description.contains("token", ignoreCase = true))
     }
+
+    @Test
+    fun `account summary keeps identity and readiness copy concise`() {
+        val account = GoogleAccountPresentation.SignedIn("tejas@example.com")
+
+        assertEquals("TE", GoogleAccountUiPresenter.monogram(account))
+        assertEquals("tejas@example.com", GoogleAccountUiPresenter.identity(account))
+        assertEquals("Ready for Google IAP", GoogleAccountUiPresenter.statusTitle(account))
+        assertEquals(
+            "Credentials are encrypted on this device and used only when connecting.",
+            GoogleAccountUiPresenter.statusSupportingText(account),
+        )
+    }
 }

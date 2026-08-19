@@ -4,6 +4,7 @@ import app.switchboard.mobile.data.thread.ThreadState
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.protocol.JsonCodec
 import java.io.Serializable
+import java.text.NumberFormat
 import java.util.Locale
 
 private const val RAW_NOTICE_DIAGNOSTIC_MAX_CHARS = 8_000
@@ -226,10 +227,10 @@ object ThreadPresenter {
         }
         val contextLabel = when {
             thread.usedTokens != null && validMaximum != null -> {
-                "${thread.usedTokens} / $validMaximum tokens"
+                "${formatInteger(thread.usedTokens)} / ${formatInteger(validMaximum)} tokens"
             }
 
-            thread.usedTokens != null -> "${thread.usedTokens} tokens"
+            thread.usedTokens != null -> "${formatInteger(thread.usedTokens)} tokens"
             else -> null
         }
         return ThreadMetadataPresentation(
@@ -354,6 +355,9 @@ object ThreadPresenter {
         } else {
             String.format(Locale.US, "%.1fs", durationMs / 1_000.0)
         }
+
+    private fun formatInteger(value: Long): String =
+        NumberFormat.getIntegerInstance(Locale.US).format(value)
 
     private fun lineChanges(oldContent: String, newContent: String, changeKind: String): Pair<Int, Int> {
         val oldLines = oldContent.lineList()

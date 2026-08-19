@@ -14,13 +14,17 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -173,28 +177,30 @@ fun PairingScreen(
                         .fillMaxWidth()
                         .padding(bottom = 20.dp),
                 ) {
-                    OutlinedButton(
+                    FilterChip(
+                        selected = kind == PairingConnectionKind.WEBSOCKET,
                         onClick = {
                             kind = PairingConnectionKind.WEBSOCKET
                             validationError = null
                             saveState = PairingSaveState.Idle
                         },
-                        enabled = kind != PairingConnectionKind.WEBSOCKET,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    ) {
-                        Text("WebSocket")
-                    }
-                    OutlinedButton(
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp),
+                        label = { Text("WebSocket") },
+                    )
+                    FilterChip(
+                        selected = kind == PairingConnectionKind.IAP,
                         onClick = {
                             kind = PairingConnectionKind.IAP
                             validationError = null
                             saveState = PairingSaveState.Idle
                         },
-                        enabled = kind != PairingConnectionKind.IAP,
-                        modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                    ) {
-                        Text("Google IAP")
-                    }
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp),
+                        label = { Text("Google IAP") },
+                    )
                 }
             }
             PairingField(
@@ -340,13 +346,7 @@ fun PairingScreen(
                     )
                     Text(if (editConnectionId == null) "Connecting…" else "Saving…")
                 } else {
-                    Text(
-                        when {
-                            editConnectionId != null -> "Save"
-                            kind == PairingConnectionKind.IAP -> "Add VM"
-                            else -> "Connect"
-                        },
-                    )
+                    Text(PairingPresentationPolicy.primaryAction(editConnectionId != null, kind))
                 }
             }
             Box(
@@ -395,14 +395,16 @@ private fun PairingTopBar(isEditing: Boolean, onBack: () -> Unit) {
             .padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(
+        IconButton(
             onClick = onBack,
-            modifier = Modifier.heightIn(min = 48.dp),
+            modifier = Modifier
+                .size(48.dp)
+                .semantics { contentDescription = "Back" },
         ) {
-            Text("Back")
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
         }
         Text(
-            text = if (isEditing) "Edit machine" else "Pair backend",
+            text = PairingPresentationPolicy.title(isEditing),
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier
                 .padding(start = 8.dp)
@@ -482,6 +484,18 @@ object PairingAccessibilityPolicy {
         saving -> "Connecting machine"
         editing -> "Save machine"
         else -> "Connect machine"
+    }
+}
+
+object PairingPresentationPolicy {
+    fun title(editing: Boolean): String = if (editing) "Edit machine" else "Add machine"
+
+    fun qrTitle(): String = "Scan connection code"
+
+    fun primaryAction(editing: Boolean, kind: PairingConnectionKind): String = when {
+        editing -> "Save changes"
+        kind == PairingConnectionKind.IAP -> "Add work VM"
+        else -> "Connect securely"
     }
 }
 

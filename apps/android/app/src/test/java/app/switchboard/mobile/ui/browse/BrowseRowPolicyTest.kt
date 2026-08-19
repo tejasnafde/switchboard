@@ -8,6 +8,23 @@ import org.junit.Test
 
 class BrowseRowPolicyTest {
     @Test
+    fun projectMonogramsStayCompactAndReadable() {
+        assertEquals("SW", BrowseVisualPolicy.projectMonogram("switchboard"))
+        assertEquals("TS", BrowseVisualPolicy.projectMonogram("tejas-skills"))
+        assertEquals("HF", BrowseVisualPolicy.projectMonogram("Hyper Frames"))
+        assertEquals("•", BrowseVisualPolicy.projectMonogram("  "))
+    }
+
+    @Test
+    fun activityToneUsesOneStableVisualPriority() {
+        assertEquals(BrowseActivityTone.ERROR, BrowseVisualPolicy.activityTone("failed", unread = 2))
+        assertEquals(BrowseActivityTone.ACTIVE, BrowseVisualPolicy.activityTone("working", unread = 0))
+        assertEquals(BrowseActivityTone.ATTENTION, BrowseVisualPolicy.activityTone("queued", unread = 0))
+        assertEquals(BrowseActivityTone.UNREAD, BrowseVisualPolicy.activityTone(null, unread = 3))
+        assertEquals(BrowseActivityTone.MUTED, BrowseVisualPolicy.activityTone("idle", unread = 0))
+    }
+
+    @Test
     fun projectTrailingLabelPrioritizesErrorsThenUnreadThenActivityThenCount() {
         assertEquals("error", BrowseRowPolicy.projectTrailingLabel(project(unread = 3, status = "error")))
         assertEquals("3 unread", BrowseRowPolicy.projectTrailingLabel(project(unread = 3, status = "running")))

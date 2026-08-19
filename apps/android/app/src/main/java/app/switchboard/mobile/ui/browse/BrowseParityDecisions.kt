@@ -19,6 +19,7 @@ data class BrowseProjectSection(
     val name: String,
     val workspace: Workspace?,
     val projects: List<Project>,
+    val projectCount: Int,
     val collapsed: Boolean,
 )
 
@@ -62,6 +63,7 @@ object BrowseParityDecisions {
                 name = group.workspace?.name ?: "Other projects",
                 workspace = group.workspace,
                 projects = if (collapsed) emptyList() else group.projects,
+                projectCount = group.projects.size,
                 collapsed = collapsed,
             )
         }

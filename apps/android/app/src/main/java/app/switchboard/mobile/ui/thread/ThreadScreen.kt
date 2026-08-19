@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -31,18 +32,27 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,12 +65,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,6 +94,7 @@ import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.data.thread.ThreadPendingActions
+import app.switchboard.mobile.data.thread.ThreadModelState
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.GeistMono
@@ -89,11 +103,20 @@ import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.components.InlineStatus
+import app.switchboard.mobile.ui.components.InlineStatusProgress
+import app.switchboard.mobile.ui.components.SectionLabel
+import app.switchboard.mobile.ui.components.StatusTone
+import app.switchboard.mobile.ui.components.SwitchboardListRow
+import app.switchboard.mobile.ui.components.SwitchboardScaffold
+import app.switchboard.mobile.ui.components.SwitchboardTopBarAction
+import app.switchboard.mobile.ui.theme.SwitchboardDimensions
 import app.switchboard.mobile.ui.voice.ThreadVoicePrimaryControl
 import app.switchboard.mobile.ui.voice.VoiceNoticeRow
 import app.switchboard.mobile.ui.voice.rememberVoiceComposer
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 
 @Composable
 fun ThreadScreen(
@@ -110,6 +133,9 @@ fun ThreadScreen(
     onSend: () -> Unit = {},
     onInterrupt: () -> Unit = {},
     onRuntimeModeChange: (RuntimeMode) -> Unit = {},
+    models: ThreadModelState = ThreadModelState(),
+    onModelChange: (String) -> Unit = {},
+    onRefreshModels: () -> Unit = {},
     onClearLocalFeed: () -> Unit = {},
     skills: List<ProviderSkill> = emptyList(),
     pendingActions: ThreadPendingActions = ThreadPendingActions(),
@@ -121,17 +147,84 @@ fun ThreadScreen(
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
     var lightboxUrl by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
+    var settingsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
     val presentation = ThreadPresenter.present(loadState)
+    val metadata = presentation.metadataOrNull()
+    val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
+    val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
 
-    Column(modifier = modifier.fillMaxSize()) {
-        ThreadTopBar(title = title, onBack = onBack)
-        Box(modifier = Modifier.weight(1f)) {
+    if (settingsOpen && composer != null) {
+        ThreadAgentSettingsScreen(
+            settings = ThreadComposerPresentationPolicy.settingsAffordance(
+                modelLabel = composer.modelLabel,
+                runtimeMode = composer.runtimeMode,
+            ),
+            selectedMode = composer.runtimeMode,
+            modeEnabled = !composer.modeChanging,
+            models = models,
+            onModeSelected = onRuntimeModeChange,
+            onModelSelected = onModelChange,
+            onRefreshModels = onRefreshModels,
+            onBack = { settingsOpen = false },
+            modifier = modifier,
+        )
+        return
+    }
+
+    SwitchboardScaffold(
+        title = title,
+        subtitle = metadata?.let(ThreadChromePolicy::subtitle) ?: backendLabel,
+        modifier = modifier.fillMaxSize(),
+        navigationIcon = {
+            SwitchboardTopBarAction(contentDescription = "Back", onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+            }
+        },
+        actions = {
+            if (composer != null) {
+                SwitchboardTopBarAction(
+                    contentDescription = "Agent settings",
+                    onClick = { settingsOpen = true },
+                ) {
+                    Icon(Icons.Filled.MoreVert, contentDescription = null)
+                }
+            }
+        },
+        bottomBar = {
+            ThreadBottomArea(
+                contentStatus = presentation.contentStatusOrNull(),
+                pendingApproval = pendingApproval,
+                pendingDecision = pendingApproval?.let {
+                    pendingActions.approvalDecisions[it.source.requestId]
+                },
+                composer = composer,
+                queuedTurns = queuedTurns,
+                onRetry = onRetry,
+                onAction = onAction,
+                onOutboxAction = onOutboxAction,
+                onDraftChange = onDraftChange,
+                onSend = onSend,
+                onInterrupt = onInterrupt,
+                onOpenSettings = { settingsOpen = true },
+                onRuntimeModeChange = onRuntimeModeChange,
+                onClearLocalFeed = onClearLocalFeed,
+                skills = skills,
+                onImagesSelected = onImagesSelected,
+                onRemoveImage = onRemoveImage,
+            )
+        },
+    ) { scaffoldPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(scaffoldPadding),
+        ) {
+            metadata?.let { ThreadMetricStrip(it) }
+            Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
                 ThreadPresentation.Loading -> FullPageLoading()
                 is ThreadPresentation.Failure -> FullPageFailure(presentation.message, onRetry)
                 is ThreadPresentation.Empty -> Column(Modifier.fillMaxSize()) {
-                    ThreadMetadata(presentation.metadata)
-                    ContentStatus(presentation.contentStatus, onRetry)
                     EmptyThread()
                 }
 
@@ -144,7 +237,9 @@ fun ThreadScreen(
                         contentPadding = PaddingValues(top = 24.dp),
                     ) {
                         items(
-                            ThreadFeedLayoutPolicy.declarationOrder(presentation.rows),
+                            ThreadFeedLayoutPolicy.declarationOrder(
+                                ThreadChromePolicy.feedRows(presentation.rows),
+                            ),
                             key = { "feed:${it.key}" },
                         ) { row ->
                             ThreadRow(
@@ -157,23 +252,75 @@ fun ThreadScreen(
                                 onImageOpen = { lightboxUrl = it },
                             )
                         }
-                        item(key = "thread-content-status") {
-                            ContentStatus(presentation.contentStatus, onRetry)
-                        }
-                        item(key = "thread-metadata") { ThreadMetadata(presentation.metadata) }
                     }
                 }
             }
         }
+        }
+    }
+    lightboxUrl?.let { url ->
+        ThreadImageLightbox(url = url, onDismiss = { lightboxUrl = null })
+    }
+}
+
+private fun ThreadPresentation.metadataOrNull(): ThreadMetadataPresentation? = when (this) {
+    is ThreadPresentation.Content -> metadata
+    is ThreadPresentation.Empty -> metadata
+    ThreadPresentation.Loading,
+    is ThreadPresentation.Failure -> null
+}
+
+private fun ThreadPresentation.contentStatusOrNull(): ThreadContentStatus? = when (this) {
+    is ThreadPresentation.Content -> contentStatus
+    is ThreadPresentation.Empty -> contentStatus
+    ThreadPresentation.Loading,
+    is ThreadPresentation.Failure -> null
+}
+
+@Composable
+private fun ThreadBottomArea(
+    contentStatus: ThreadContentStatus?,
+    pendingApproval: ThreadRowPresentation.Approval?,
+    pendingDecision: ApprovalDecision?,
+    composer: ThreadComposerPresentation?,
+    queuedTurns: List<QueuedTurn>,
+    onRetry: () -> Unit,
+    onAction: (ThreadUiAction) -> Unit,
+    onOutboxAction: (String, OutboxUiAction) -> Unit,
+    onDraftChange: (String) -> Unit,
+    onSend: () -> Unit,
+    onInterrupt: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onRuntimeModeChange: (RuntimeMode) -> Unit,
+    onClearLocalFeed: () -> Unit,
+    skills: List<ProviderSkill>,
+    onImagesSelected: (List<ComposerImageSource>) -> Unit,
+    onRemoveImage: (String) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        contentStatus?.takeIf { it.shouldRenderInline() }?.let {
+            ContentStatus(it, onRetry)
+        }
         if (queuedTurns.isNotEmpty()) {
             OutboxTray(queuedTurns, onOutboxAction)
         }
-        composer?.let {
+        if (pendingApproval != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .testTag(ThreadTestTags.APPROVAL_SLOT),
+            ) {
+                ApprovalRow(pendingApproval.source, pendingDecision, onAction)
+            }
+        }
+        if (composer != null) {
             ThreadComposer(
-                state = it,
+                state = composer,
                 onDraftChange = onDraftChange,
                 onSend = onSend,
                 onInterrupt = onInterrupt,
+                onOpenSettings = onOpenSettings,
                 onRuntimeModeChange = onRuntimeModeChange,
                 onClearLocalFeed = onClearLocalFeed,
                 skills = skills,
@@ -182,10 +329,10 @@ fun ThreadScreen(
             )
         }
     }
-    lightboxUrl?.let { url ->
-        ThreadImageLightbox(url = url, onDismiss = { lightboxUrl = null })
-    }
 }
+
+private fun ThreadContentStatus.shouldRenderInline(): Boolean =
+    kind != ThreadContentStatusKind.NORMAL || showProgress || canRetry || detail != null
 
 @Composable
 private fun ThreadComposer(
@@ -193,6 +340,7 @@ private fun ThreadComposer(
     onDraftChange: (String) -> Unit,
     onSend: () -> Unit,
     onInterrupt: () -> Unit,
+    onOpenSettings: () -> Unit,
     onRuntimeModeChange: (RuntimeMode) -> Unit,
     onClearLocalFeed: () -> Unit,
     skills: List<ProviderSkill>,
@@ -231,7 +379,6 @@ private fun ThreadComposer(
     }
     val focusRequester = remember { FocusRequester() }
     var focused by remember { mutableStateOf(false) }
-    var settingsOpen by remember { mutableStateOf(false) }
     val slashQuery = ThreadSlashPolicy.query(state.draft)
     val slashCommands = remember(skills, slashQuery) {
         slashQuery?.let { ThreadSlashPolicy.filter(ThreadSlashPolicy.commands(skills), it) }.orEmpty()
@@ -299,30 +446,51 @@ private fun ThreadComposer(
                 }
             }
         }
-        Row(
+        Surface(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surface,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            tonalElevation = 0.dp,
         ) {
-            OutlinedTextField(
-                value = state.draft,
-                onValueChange = { text ->
-                    voice.userEdited(text)
-                    onDraftChange(text)
-                },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag(ThreadTestTags.COMPOSER_INPUT)
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { focused = it.isFocused },
-                placeholder = {
-                    Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
-                },
-                singleLine = inputLayout.singleLine,
-                minLines = 1,
-                maxLines = inputLayout.maxLines,
-            )
-            if (!showsSecondaryActions) {
+            Row(
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 3.dp),
+                verticalAlignment = Alignment.Bottom,
+            ) {
+                IconButton(
+                    onClick = { imagePicker.launch(arrayOf("image/*")) },
+                    enabled = state.attachments.size < 4 && !state.submitting,
+                    modifier = Modifier.size(SwitchboardDimensions.minimumTouchTarget),
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Attach image")
+                }
+                TextField(
+                    value = state.draft,
+                    onValueChange = { text ->
+                        voice.userEdited(text)
+                        onDraftChange(text)
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag(ThreadTestTags.COMPOSER_INPUT)
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { focused = it.isFocused }
+                        .heightIn(min = SwitchboardDimensions.minimumTouchTarget),
+                    placeholder = {
+                        Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
+                    },
+                    singleLine = inputLayout.singleLine,
+                    minLines = 1,
+                    maxLines = inputLayout.maxLines,
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        disabledContainerColor = Color.Transparent,
+                        focusedIndicatorColor = Color.Transparent,
+                        unfocusedIndicatorColor = Color.Transparent,
+                        disabledIndicatorColor = Color.Transparent,
+                    ),
+                )
                 ThreadVoicePrimaryControl(
                     voice = voice,
                     canSend = state.canSend,
@@ -330,6 +498,7 @@ private fun ThreadComposer(
                     enabled = !state.submitting && !state.interrupting,
                     onSend = onSend,
                     onStopAgent = onInterrupt,
+                    modifier = Modifier.padding(bottom = 1.dp),
                 )
             }
         }
@@ -337,93 +506,153 @@ private fun ThreadComposer(
             VoiceNoticeRow(voice = voice)
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 TextButton(
-                    onClick = { imagePicker.launch(arrayOf("image/*")) },
-                    enabled = state.attachments.size < 4 && !state.submitting,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) { Text("Image") }
-                TextButton(
-                    onClick = { settingsOpen = true },
+                    onClick = onOpenSettings,
                     enabled = !state.modeChanging,
                     modifier = Modifier
-                        .weight(1f)
-                        .heightIn(min = 48.dp),
+                        .heightIn(min = SwitchboardDimensions.minimumTouchTarget)
+                        .testTag(ThreadTestTags.AGENT_SETTINGS_ACTION),
                 ) {
-                    Column(horizontalAlignment = Alignment.Start) {
-                        Text(settings.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        Text(
-                            settings.supportingLabel,
-                            color = TextDim,
-                            style = MaterialTheme.typography.labelSmall,
-                        )
-                    }
+                    Text(
+                        "${settings.label} · ${settings.supportingLabel}",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                ThreadVoicePrimaryControl(
-                    voice = voice,
-                    canSend = state.canSend,
-                    agentRunning = state.showInterrupt,
-                    enabled = !state.submitting && !state.interrupting,
-                    onSend = onSend,
-                    onStopAgent = onInterrupt,
-                )
             }
         }
-    }
-    if (settingsOpen) {
-        ThreadComposerSettingsDialog(
-            settings = settings,
-            selectedMode = state.runtimeMode,
-            enabled = !state.modeChanging,
-            onModeSelected = {
-                onRuntimeModeChange(it)
-                settingsOpen = false
-            },
-            onDismiss = { settingsOpen = false },
-        )
     }
 }
 
 @Composable
-private fun ThreadComposerSettingsDialog(
+private fun ThreadAgentSettingsScreen(
     settings: ThreadSettingsAffordance,
     selectedMode: RuntimeMode,
-    enabled: Boolean,
+    modeEnabled: Boolean,
+    models: ThreadModelState,
     onModeSelected: (RuntimeMode) -> Unit,
-    onDismiss: () -> Unit,
+    onModelSelected: (String) -> Unit,
+    onRefreshModels: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Dialog(onDismissRequest = onDismiss) {
-        Card(colors = CardDefaults.cardColors(containerColor = SurfaceRaised)) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+    BackHandler(onBack = onBack)
+    SwitchboardScaffold(
+        title = "Agent settings",
+        subtitle = "Applied to this thread",
+        modifier = modifier
+            .fillMaxSize()
+            .testTag(ThreadTestTags.AGENT_SETTINGS_SCREEN),
+        navigationIcon = {
+            SwitchboardTopBarAction(
+                contentDescription = "Back to thread",
+                onClick = onBack,
+                modifier = Modifier.testTag(ThreadTestTags.AGENT_SETTINGS_BACK),
             ) {
-                Text("Model & runtime", style = MaterialTheme.typography.titleMedium)
-                Text(settings.label, color = TextDim, style = MaterialTheme.typography.bodySmall)
-                RuntimeMode.entries.forEach { mode ->
-                    val selected = mode == selectedMode
-                    if (selected) {
-                        Button(
-                            onClick = { onModeSelected(mode) },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(mode.presentationLabel()) }
-                    } else {
-                        OutlinedButton(
-                            onClick = { onModeSelected(mode) },
-                            enabled = enabled,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) { Text(mode.presentationLabel()) }
-                    }
-                }
-                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
-                    Text("Close")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+            }
+        },
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState()),
+        ) {
+            if (models.loading) {
+                InlineStatus(
+                    message = "Loading models",
+                    tone = StatusTone.INFO,
+                    progress = InlineStatusProgress.Indeterminate,
+                    modifier = Modifier.padding(
+                        horizontal = SwitchboardDimensions.screenHorizontalPadding,
+                        vertical = 12.dp,
+                    ),
+                )
+            } else if (models.options.isNotEmpty()) {
+                SectionLabel(
+                    text = "Model",
+                    modifier = Modifier.padding(
+                        start = SwitchboardDimensions.screenHorizontalPadding,
+                        end = SwitchboardDimensions.screenHorizontalPadding,
+                        top = 20.dp,
+                        bottom = 8.dp,
+                    ),
+                )
+                models.options.forEachIndexed { index, model ->
+                    SwitchboardListRow(
+                        title = model.label.ifBlank { model.id },
+                        supportingText = model.tier.takeIf(String::isNotBlank),
+                        onClick = if (!models.changing) ({ onModelSelected(model.id) }) else null,
+                        showDivider = index != models.options.lastIndex,
+                        trailingContent = {
+                            RadioButton(
+                                selected = model.id == models.selectedModelId,
+                                onClick = null,
+                                enabled = !models.changing,
+                            )
+                        },
+                    )
                 }
             }
+            models.error?.let { error ->
+                InlineStatus(
+                    message = "Could not update model",
+                    detail = error,
+                    tone = StatusTone.ERROR,
+                    actionLabel = "Retry",
+                    onAction = onRefreshModels,
+                    modifier = Modifier.padding(
+                        horizontal = SwitchboardDimensions.screenHorizontalPadding,
+                        vertical = 12.dp,
+                    ),
+                )
+            }
+            SectionLabel(
+                text = "Permission mode",
+                modifier = Modifier.padding(
+                    start = SwitchboardDimensions.screenHorizontalPadding,
+                    end = SwitchboardDimensions.screenHorizontalPadding,
+                    top = 24.dp,
+                    bottom = 8.dp,
+                ),
+            )
+            RuntimeMode.entries.forEachIndexed { index, mode ->
+                SwitchboardListRow(
+                    title = mode.presentationLabel(),
+                    supportingText = mode.supportingDescription(),
+                    onClick = if (modeEnabled) ({ onModeSelected(mode) }) else null,
+                    showDivider = index != RuntimeMode.entries.lastIndex,
+                    trailingContent = {
+                        RadioButton(
+                            selected = mode == selectedMode,
+                            onClick = null,
+                            enabled = modeEnabled,
+                        )
+                    },
+                )
+            }
+            Text(
+                text = "Permission changes affect future tool calls. They do not rewrite earlier messages.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(
+                    horizontal = SwitchboardDimensions.screenHorizontalPadding,
+                    vertical = 20.dp,
+                ),
+            )
         }
     }
+}
+
+private fun RuntimeMode.supportingDescription(): String = when (this) {
+    RuntimeMode.Plan -> "Read-only planning and questions"
+    RuntimeMode.Sandbox -> "Run commands in the workspace sandbox"
+    RuntimeMode.AcceptEdits -> "Allow file edits while protecting broader access"
+    RuntimeMode.FullAccess -> "Allow commands and file access without prompts"
 }
 
 @Composable
@@ -516,10 +745,17 @@ private fun ComposerAttachmentPreview(
             style = MaterialTheme.typography.labelSmall,
             modifier = Modifier.padding(6.dp),
         )
-        TextButton(
+        IconButton(
             onClick = onRemove,
-            modifier = Modifier.align(Alignment.TopEnd),
-        ) { Text("×") }
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(SwitchboardDimensions.minimumTouchTarget),
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Remove ${attachment.displayName}",
+            )
+        }
     }
 }
 
@@ -579,116 +815,52 @@ private fun OutboxTray(
 }
 
 @Composable
-private fun ThreadTopBar(title: String, onBack: () -> Unit) {
+private fun ThreadMetricStrip(metadata: ThreadMetadataPresentation) {
+    val values = ThreadChromePolicy.metadataSummary(metadata)
+    if (values.isEmpty()) return
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .statusBarsPadding()
-            .heightIn(min = 56.dp)
-            .padding(horizontal = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .semantics(mergeDescendants = true) {
+                contentDescription = values.joinToString(", ")
+            }
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) {
-            Text("Back")
-        }
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 8.dp),
-        )
-    }
-}
-
-@Composable
-private fun ThreadMetadata(metadata: ThreadMetadataPresentation) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(min = 40.dp)
-            .padding(horizontal = 20.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StatusDot(metadata.status)
-        Text(
-            text = metadata.status.replaceFirstChar { it.uppercase() },
-            color = TextDim,
-            style = MaterialTheme.typography.labelSmall,
-        )
-        Spacer(Modifier.weight(1f))
-        metadata.provider?.let { provider ->
+        values.forEach { value ->
             Text(
-                text = provider,
-                color = TextDim,
-                fontFamily = GeistMono,
-                fontSize = 10.sp,
+                text = value,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.labelSmall,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
-}
-
-@Composable
-private fun StatusDot(status: String) {
-    val tint = when (status) {
-        "running", "idle", "ready" -> Green
-        "connecting", "retrying" -> Amber
-        "error", "failed" -> Red
-        else -> TextDim
-    }
-    Box(
-        modifier = Modifier
-            .padding(end = 7.dp)
-            .size(8.dp)
-            .clip(CircleShape)
-            .background(tint),
-    )
 }
 
 @Composable
 private fun ContentStatus(status: ThreadContentStatus, onRetry: () -> Unit) {
-    val tint = when (status.kind) {
-        ThreadContentStatusKind.NORMAL -> TextDim
-        ThreadContentStatusKind.CACHED -> Accent
-        ThreadContentStatusKind.ERROR -> Red
-    }
-    Row(
+    InlineStatus(
+        message = status.label,
+        detail = status.detail,
+        tone = when (status.kind) {
+            ThreadContentStatusKind.NORMAL -> StatusTone.NEUTRAL
+            ThreadContentStatusKind.CACHED -> StatusTone.INFO
+            ThreadContentStatusKind.ERROR -> StatusTone.ERROR
+        },
+        progress = if (status.showProgress) {
+            InlineStatusProgress.Indeterminate
+        } else {
+            InlineStatusProgress.None
+        },
+        actionLabel = if (status.canRetry) "Retry" else null,
+        onAction = if (status.canRetry) onRetry else null,
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .padding(start = 20.dp, end = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (status.showProgress) {
-            CircularProgressIndicator(
-                color = tint,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(16.dp),
-            )
-            Spacer(Modifier.width(10.dp))
-        }
-        Column(modifier = Modifier.weight(1f)) {
-            Text(status.label, color = tint, style = MaterialTheme.typography.labelSmall)
-            status.detail?.let {
-                Text(
-                    text = it,
-                    color = TextDim,
-                    style = MaterialTheme.typography.labelSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        if (status.canRetry) {
-            TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Retry")
-            }
-        }
-    }
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
 }
 
 @Composable
@@ -737,7 +909,7 @@ private fun ThreadRow(
             onAction = onAction,
         )
 
-        is ThreadRowPresentation.FileEdit -> FileEditRow(row, backendLabel, onAction)
+        is ThreadRowPresentation.FileEdit -> FileEditRow(row, backendLabel)
         is ThreadRowPresentation.Drift -> NoticeCard(
             "Worktree changed",
             "${row.source.branch}\n${row.source.worktreePath}",
@@ -771,15 +943,15 @@ private fun UserRow(item: FeedItem.User, onImageOpen: (String) -> Unit) {
         Column(
             modifier = Modifier
                 .fillMaxWidth(0.86f)
-                .clip(RoundedCornerShape(14.dp))
-                .background(SurfaceRaised)
-                .padding(14.dp),
+                .clip(MaterialTheme.shapes.medium)
+                .background(MaterialTheme.colorScheme.primary)
+                .padding(horizontal = 14.dp, vertical = 11.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             if (item.text.isNotBlank()) {
                 Text(
                     text = item.text,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = MaterialTheme.colorScheme.onPrimary,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -882,32 +1054,63 @@ private fun rememberThreadImage(
 }
 
 private fun decodeThreadImage(url: String, maxDimension: Int): android.graphics.Bitmap? {
+    ThreadImageFile.parse(url)?.let { source ->
+        val file = File(source.path)
+        val size = runCatching { file.length() }.getOrNull() ?: return null
+        if (!file.isFile || size !in 1..ThreadImageData.MaxDecodedBytes.toLong()) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        return BitmapFactory.decodeFile(
+            file.path,
+            BitmapFactory.Options().apply {
+                inSampleSize = imageSampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+            },
+        )
+    }
     val image = ThreadImageData.parse(url) ?: return null
     val bytes = runCatching { Base64.decode(image.base64, Base64.DEFAULT) }.getOrNull() ?: return null
     if (bytes.size != image.decodedBytes) return null
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
-    var sampleSize = 1
-    while (bounds.outWidth / sampleSize > maxDimension * 2 ||
-        bounds.outHeight / sampleSize > maxDimension * 2
-    ) {
-        sampleSize *= 2
-    }
     return BitmapFactory.decodeByteArray(
         bytes,
         0,
         bytes.size,
-        BitmapFactory.Options().apply { inSampleSize = sampleSize },
+        BitmapFactory.Options().apply {
+            inSampleSize = imageSampleSize(bounds.outWidth, bounds.outHeight, maxDimension)
+        },
     )
+}
+
+private fun imageSampleSize(width: Int, height: Int, maxDimension: Int): Int {
+    var sampleSize = 1
+    while (width / sampleSize > maxDimension * 2 || height / sampleSize > maxDimension * 2) {
+        sampleSize *= 2
+    }
+    return sampleSize
 }
 
 @Composable
 private fun TextRow(row: ThreadRowPresentation.Text) {
     var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
     val reasoning = row.kind == ThreadRowKind.REASONING
-    CardContainer(tint = if (row.kind == ThreadRowKind.PLAN_STREAM) Accent else TextDim) {
-        if (reasoning) Text("Reasoning", color = TextDim, style = MaterialTheme.typography.labelSmall)
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Text(
+            text = when (row.kind) {
+                ThreadRowKind.REASONING -> "REASONING"
+                ThreadRowKind.PLAN_STREAM -> "PLAN"
+                else -> "AGENT"
+            },
+            color = if (row.kind == ThreadRowKind.PLAN_STREAM) Accent else TextDim,
+            style = MaterialTheme.typography.labelSmall,
+        )
         if (reasoning) {
             Text(
                 text = row.source.text,
@@ -1106,19 +1309,14 @@ private fun PlanRow(
 private fun FileEditRow(
     row: ThreadRowPresentation.FileEdit,
     backendLabel: String,
-    onAction: (ThreadUiAction) -> Unit,
 ) {
     CardContainer(tint = Green) {
         Text("${row.source.changeKind} ${row.relPath}", fontWeight = FontWeight.SemiBold)
         Row {
             Text("+${row.addedLines}", color = Green, fontFamily = GeistMono)
             Text("-${row.removedLines}", color = Red, fontFamily = GeistMono, modifier = Modifier.padding(start = 10.dp))
-            Text("applied on $backendLabel", color = TextDim, modifier = Modifier.padding(start = 10.dp))
+            Text("Changed on $backendLabel", color = TextDim, modifier = Modifier.padding(start = 10.dp))
         }
-        OutlinedButton(
-            onClick = { onAction(ThreadInteractionPolicy.openFile(row.source)) },
-            modifier = Modifier.heightIn(min = 48.dp),
-        ) { Text("Open file") }
     }
 }
 
@@ -1192,6 +1390,7 @@ private fun CardContainer(
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = Surface),
+        border = BorderStroke(1.dp, tint.copy(alpha = 0.22f)),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 7.dp),
@@ -1201,15 +1400,7 @@ private fun CardContainer(
                 .fillMaxWidth()
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp),
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .size(width = 28.dp, height = 2.dp)
-                    .background(tint),
-            )
-            content()
-        }
+        ) { content() }
     }
 }
 

@@ -1,27 +1,34 @@
 package app.switchboard.mobile.ui.newsession
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.TextField
+import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +48,10 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.KeyboardArrowRight
 import app.switchboard.mobile.data.remote.NewSessionState
 import app.switchboard.mobile.domain.remote.NewSessionDecisions
 import app.switchboard.mobile.domain.remote.NewSessionModelOption
@@ -50,11 +61,13 @@ import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.components.SectionLabel
 import app.switchboard.mobile.ui.voice.NewSessionVoiceControl
 import app.switchboard.mobile.ui.voice.VoiceNoticeRow
 import app.switchboard.mobile.ui.voice.rememberVoiceComposer
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun NewSessionScreen(
     state: NewSessionState,
     onBack: () -> Unit,
@@ -77,44 +90,40 @@ fun NewSessionScreen(
             .background(Surface)
             .semantics { isTraversalGroup = true },
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .heightIn(min = 56.dp)
-                .padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            TextButton(onClick = onBack, modifier = Modifier.heightIn(min = 48.dp)) {
-                Text("Back")
-            }
-            Text(
-                text = "New session",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier
-                    .padding(start = 8.dp)
-                    .semantics { heading() },
-            )
-        }
+        TopAppBar(
+            title = {
+                Column {
+                    Text(
+                        text = "New session",
+                        maxLines = 1,
+                        modifier = Modifier.semantics { heading() },
+                    )
+                    Text(
+                        text = state.projectName,
+                        color = TextDim,
+                        style = MaterialTheme.typography.labelSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            },
+            navigationIcon = {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+            },
+            colors = TopAppBarDefaults.topAppBarColors(containerColor = Surface),
+        )
+        HorizontalDivider()
         Column(
             modifier = Modifier
                 .weight(1f)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 20.dp),
+                .padding(horizontal = 16.dp),
         ) {
-            Text(state.projectName, style = MaterialTheme.typography.headlineSmall)
-            Text(
-                text = state.projectPath,
-                color = TextDim,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp, bottom = 24.dp),
-            )
-
             val selectorsEnabled = !state.submitting && !state.launchLocked
             CompactSelector(
-                label = "Agent",
+                field = NewSessionField.PROVIDER,
                 value = NewSessionSelectorPolicy.providerLabel(state.provider),
                 options = NewSessionDecisions.providers.map {
                     SelectorOption(
@@ -129,7 +138,7 @@ fun NewSessionScreen(
 
             if (state.loadingInstances || state.profiles.isNotEmpty()) {
                 CompactSelector(
-                    label = "Profile",
+                    field = NewSessionField.PROFILE,
                     value = NewSessionSelectorPolicy.profileLabel(
                         state.loadingInstances,
                         state.profiles,
@@ -146,7 +155,7 @@ fun NewSessionScreen(
             }
 
             CompactSelector(
-                label = "Model",
+                field = NewSessionField.MODEL,
                 value = NewSessionSelectorPolicy.modelLabel(state.modelOptions, state.selectedModelId),
                 options = listOf(
                     SelectorOption("Backend default", state.selectedModelId == null) { onModel(null) },
@@ -160,7 +169,7 @@ fun NewSessionScreen(
             )
 
             CompactSelector(
-                label = "Permissions",
+                field = NewSessionField.RUNTIME,
                 value = NewSessionSelectorPolicy.runtimeLabel(state.runtimeMode),
                 options = RuntimeMode.entries.map { mode ->
                     SelectorOption(
@@ -173,16 +182,26 @@ fun NewSessionScreen(
                 enabled = selectorsEnabled,
             )
 
-            SectionLabel("First message (optional)")
-            OutlinedTextField(
+            SectionLabel(
+                text = "First message",
+                modifier = Modifier.padding(top = 24.dp, bottom = 10.dp, start = 4.dp),
+            )
+            TextField(
                 value = state.firstMessage,
                 onValueChange = { text ->
                     voice.userEdited(text)
                     onFirstMessage(text)
                 },
-                minLines = 4,
+                minLines = 5,
                 enabled = !state.submitting && !state.launchLocked,
-                placeholder = { Text("What should the agent work on?") },
+                placeholder = { Text("What should the agent work on?", color = TextDim) },
+                shape = RoundedCornerShape(16.dp),
+                colors = TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics { contentDescription = "First message" },
@@ -214,43 +233,45 @@ fun NewSessionScreen(
                     )
                 }
             }
-            Button(
-                onClick = onStart,
-                enabled = !state.submitting && !state.loadingDefaults,
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .heightIn(min = 52.dp)
-                    .padding(top = 20.dp)
-                    .semantics {
-                        contentDescription = NewSessionAccessibilityPolicy.launchState(state.submitting)
-                        stateDescription = if (state.submitting) "In progress" else "Ready"
-                    },
+                    .padding(top = 12.dp, bottom = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (state.submitting) {
-                    CircularProgressIndicator(
-                        strokeWidth = 2.dp,
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clearAndSetSemantics {},
-                    )
-                } else {
-                    Text("Start session")
+                Text(
+                    text = state.projectPath,
+                    color = TextDim,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    onClick = onStart,
+                    enabled = !state.submitting && !state.loadingDefaults,
+                    modifier = Modifier
+                        .widthIn(min = 96.dp)
+                        .heightIn(min = 48.dp)
+                        .semantics {
+                            contentDescription = NewSessionAccessibilityPolicy.launchState(state.submitting)
+                            stateDescription = if (state.submitting) "In progress" else "Ready"
+                        },
+                ) {
+                    if (state.submitting) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.dp,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clearAndSetSemantics {},
+                        )
+                    } else {
+                        Text("Start")
+                    }
                 }
             }
         }
     }
-}
-
-@Composable
-private fun SectionLabel(label: String) {
-    Text(
-        text = label,
-        color = TextDim,
-        style = MaterialTheme.typography.labelLarge,
-        modifier = Modifier
-            .padding(top = 22.dp, bottom = 10.dp)
-            .semantics { heading() },
-    )
 }
 
 private data class SelectorOption(
@@ -261,33 +282,36 @@ private data class SelectorOption(
 
 @Composable
 private fun CompactSelector(
-    label: String,
+    field: NewSessionField,
     value: String,
     options: List<SelectorOption>,
     enabled: Boolean,
 ) {
     var expanded by remember { mutableStateOf(false) }
-    SectionLabel(label)
+    val label = NewSessionSelectorPolicy.supportingLabel(field)
     Box(modifier = Modifier.fillMaxWidth()) {
-        OutlinedButton(
-            onClick = { expanded = true },
-            enabled = enabled && options.isNotEmpty(),
+        ListItem(
+            overlineContent = { Text(label.uppercase()) },
+            headlineContent = {
+                Text(value, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            },
+            trailingContent = {
+                Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = TextDim)
+            },
+            colors = ListItemDefaults.colors(containerColor = Surface),
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 52.dp)
+                .heightIn(min = 64.dp)
                 .semantics {
                     contentDescription = label
                     stateDescription = value
-                },
-        ) {
-            Text(
-                text = value,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            Text("⌄", color = TextDim, modifier = Modifier.padding(start = 12.dp))
-        }
+                }
+                .clickable(
+                    enabled = enabled && options.isNotEmpty(),
+                    onClick = { expanded = true },
+                ),
+        )
+        HorizontalDivider(modifier = Modifier.align(Alignment.BottomCenter))
         DropdownMenu(
             expanded = expanded,
             onDismissRequest = { expanded = false },
@@ -317,7 +341,21 @@ object NewSessionAccessibilityPolicy {
     fun launchState(submitting: Boolean): String = if (submitting) "Starting session" else "Start session"
 }
 
+enum class NewSessionField {
+    PROVIDER,
+    PROFILE,
+    MODEL,
+    RUNTIME,
+}
+
 object NewSessionSelectorPolicy {
+    fun supportingLabel(field: NewSessionField): String = when (field) {
+        NewSessionField.PROVIDER -> "Agent"
+        NewSessionField.PROFILE -> "Profile"
+        NewSessionField.MODEL -> "Model"
+        NewSessionField.RUNTIME -> "Access"
+    }
+
     fun providerLabel(provider: ProviderKind): String = when (provider) {
         ProviderKind.Claude -> "Claude"
         ProviderKind.Codex -> "Codex"

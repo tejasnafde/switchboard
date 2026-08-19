@@ -14,14 +14,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,8 +56,10 @@ import androidx.compose.ui.unit.dp
 import app.switchboard.mobile.platform.google.GoogleAccountPresentation
 import app.switchboard.mobile.platform.google.GoogleCredentialImportResult
 import app.switchboard.mobile.platform.google.GoogleSignOutResult
-import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.ui.components.InlineStatus
+import app.switchboard.mobile.ui.components.SectionLabel
+import app.switchboard.mobile.ui.components.StatusTone
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -190,11 +195,11 @@ private fun GoogleAccountContent(
                 .heightIn(min = 56.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(
+            IconButton(
                 onClick = onBack,
-                modifier = Modifier.heightIn(min = 48.dp),
+                modifier = Modifier.size(48.dp),
             ) {
-                Text("Back")
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Text(
                 text = "Google account",
@@ -212,45 +217,41 @@ private fun GoogleAccountContent(
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text(
-                text = "Needed to reach work VMs with your laptop closed.",
-                color = TextDim,
-                style = MaterialTheme.typography.bodyMedium,
-            )
-            TextButton(
-                onClick = onToggleDetails,
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .semantics {
-                        contentDescription = "Why this is needed"
-                        stateDescription = GoogleAccountAccessibilityPolicy.detailsState(
-                            state.detailsExpanded,
-                        )
-                    },
-            ) {
-                Text(if (state.detailsExpanded) "Hide details" else "Why this is needed")
-            }
-            if (state.detailsExpanded) {
-                Text(
-                    text = "Work VMs are reached through Google Cloud IAP, a relay needing no VPN " +
-                        "and no inbound port. IAP only forwards for a signed-in Google identity, " +
-                        "so the app asks Google directly for an access token with cloud-platform " +
-                        "scope. The token lives in the device keychain, never in app storage, and " +
-                        "refreshes silently. Signing out revokes it at Google.",
-                    color = TextDim,
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-
             if (state.account is GoogleAccountPresentation.SignedIn) {
                 AccountCard(state.account)
-            }
-
-            ErrorSlot(
-                GoogleAccountUiPresenter.visibleError(state.account, state.errorMessage),
-            )
-
-            if (GoogleAccountUiPresenter.showsCredentialImport(state.account)) {
+                AccountStatusCard(state.account)
+                SectionLabel("Account actions", Modifier.padding(top = 12.dp))
+                SignOutAction(
+                    operation = state.operation,
+                    onRequestSignOut = onRequestSignOut,
+                )
+            } else {
+                Text(
+                    text = "Connect Google only when you need to reach work VMs over IAP.",
+                    color = TextDim,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                TextButton(
+                    onClick = onToggleDetails,
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .semantics {
+                            contentDescription = "Why this is needed"
+                            stateDescription = GoogleAccountAccessibilityPolicy.detailsState(
+                                state.detailsExpanded,
+                            )
+                        },
+                ) {
+                    Text(if (state.detailsExpanded) "Hide details" else "Why this is needed")
+                }
+                if (state.detailsExpanded) {
+                    Text(
+                        text = "Google Cloud IAP provides the secure relay to a work VM. " +
+                            "Credentials stay encrypted on this device and are used only while connecting.",
+                        color = TextDim,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
                 InformationalNoticeSlot(informationalNotice)
                 CredentialImportPanel(
                     credentialDraft = credentialDraft,
@@ -259,12 +260,11 @@ private fun GoogleAccountContent(
                     onScanQr = onScanQr,
                     onImport = onImport,
                 )
-            } else {
-                SignOutAction(
-                    operation = state.operation,
-                    onRequestSignOut = onRequestSignOut,
-                )
             }
+
+            ErrorSlot(
+                GoogleAccountUiPresenter.visibleError(state.account, state.errorMessage),
+            )
 
             OperationStatusSlot(state.operation)
         }
@@ -273,28 +273,17 @@ private fun GoogleAccountContent(
 
 @Composable
 private fun InformationalNoticeSlot(message: String?) {
-    val noticeDecoration = if (message == null) {
-        Modifier
-    } else {
-        Modifier
-            .background(SurfaceRaised, RoundedCornerShape(10.dp))
-            .padding(horizontal = 12.dp)
-    }
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .then(noticeDecoration),
+            .heightIn(min = if (message == null) 0.dp else 64.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         if (message != null) {
-            Text(
-                text = message,
-                color = TextDim,
-                style = MaterialTheme.typography.bodySmall,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            InlineStatus(
+                message = "Account setup",
+                detail = message,
+                tone = StatusTone.INFO,
             )
         }
     }
@@ -327,11 +316,10 @@ private fun OperationStatusSlot(operation: GoogleAccountUiOperation) {
 @Composable
 private fun AccountCard(account: GoogleAccountPresentation.SignedIn) {
     val value = GoogleAccountUiPresenter.accountValue(account)
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(SurfaceRaised, RoundedCornerShape(12.dp))
-            .padding(16.dp)
+            .padding(vertical = 12.dp)
             .semantics(mergeDescendants = true) {
                 contentDescription = if (account.email.isNullOrBlank()) {
                     value
@@ -340,19 +328,39 @@ private fun AccountCard(account: GoogleAccountPresentation.SignedIn) {
                 }
                 stateDescription = GoogleAccountAccessibilityPolicy.accountState(account)
             },
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = "SIGNED IN AS",
-            color = TextDim,
-            style = MaterialTheme.typography.labelSmall,
-        )
-        Text(
-            text = value,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            style = MaterialTheme.typography.titleMedium,
-        )
+        Box(
+            modifier = Modifier
+                .size(64.dp)
+                .background(MaterialTheme.colorScheme.secondaryContainer, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = GoogleAccountUiPresenter.monogram(account),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
+        Column(modifier = Modifier.padding(start = 16.dp)) {
+            Text("Google account", color = TextDim, style = MaterialTheme.typography.labelMedium)
+            Text(
+                text = value,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleLarge,
+            )
+        }
     }
+}
+
+@Composable
+private fun AccountStatusCard(account: GoogleAccountPresentation) {
+    InlineStatus(
+        message = GoogleAccountUiPresenter.statusTitle(account),
+        detail = GoogleAccountUiPresenter.statusSupportingText(account),
+        tone = StatusTone.SUCCESS,
+    )
 }
 
 @Composable
@@ -493,14 +501,12 @@ private fun SignOutAction(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp),
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.CenterStart,
     ) {
-        OutlinedButton(
+        TextButton(
             onClick = onRequestSignOut,
             enabled = operation == GoogleAccountUiOperation.Idle,
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 48.dp)
+            modifier = Modifier.heightIn(min = 48.dp)
                 .semantics {
                     contentDescription = "Sign out of Google"
                     stateDescription = GoogleAccountAccessibilityPolicy.signOutState(operation)

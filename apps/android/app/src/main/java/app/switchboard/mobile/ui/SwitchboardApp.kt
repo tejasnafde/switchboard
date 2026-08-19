@@ -72,7 +72,7 @@ fun SwitchboardApp(
             return@LaunchedEffect
         }
         val result = snackbarHostState.showSnackbar(
-            message = presentation.message,
+            message = presentation.snackbarMessage,
             actionLabel = presentation.actionLabel,
             withDismissAction = false,
             duration = SnackbarDuration.Indefinite,

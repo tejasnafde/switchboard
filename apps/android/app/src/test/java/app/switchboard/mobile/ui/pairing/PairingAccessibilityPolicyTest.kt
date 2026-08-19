@@ -11,4 +11,18 @@ class PairingAccessibilityPolicyTest {
         assertEquals("Saving machine", PairingAccessibilityPolicy.saveState(editing = true, saving = true))
         assertEquals("Connect machine", PairingAccessibilityPolicy.saveState(editing = false, saving = false))
     }
+
+    @Test
+    fun screenCopyUsesTaskLanguageForAddEditAndQrFlows() {
+        assertEquals("Add machine", PairingPresentationPolicy.title(editing = false))
+        assertEquals("Edit machine", PairingPresentationPolicy.title(editing = true))
+        assertEquals("Scan connection code", PairingPresentationPolicy.qrTitle())
+        assertEquals(
+            "Connect securely",
+            PairingPresentationPolicy.primaryAction(
+                editing = false,
+                kind = PairingConnectionKind.WEBSOCKET,
+            ),
+        )
+    }
 }

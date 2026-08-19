@@ -188,3 +188,15 @@ object ConnectionRowPolicy {
         row.detail?.trim()?.takeIf(String::isNotEmpty),
     ).joinToString(" · ")
 }
+
+data class ConnectionSections(
+    val available: List<ConnectionRowPresentation>,
+    val unavailable: List<ConnectionRowPresentation>,
+)
+
+object ConnectionsListPolicy {
+    fun sections(rows: List<ConnectionRowPresentation>): ConnectionSections = ConnectionSections(
+        available = rows.filter { it.status == ConnectionStatus.LIVE },
+        unavailable = rows.filter { it.status != ConnectionStatus.LIVE },
+    )
+}

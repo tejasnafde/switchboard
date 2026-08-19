@@ -23,11 +23,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -43,12 +49,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.isTraversalGroup
-import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
@@ -65,6 +69,9 @@ import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
 import app.switchboard.mobile.ui.theme.TextPrimary
 import app.switchboard.mobile.platform.google.GoogleAccountPresentation
+import app.switchboard.mobile.ui.components.InlineStatus
+import app.switchboard.mobile.ui.components.SectionLabel
+import app.switchboard.mobile.ui.components.StatusTone
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -223,22 +230,18 @@ private fun ConnectionsTopBar(
         Spacer(Modifier.width(8.dp))
         Text(
             text = "Switchboard",
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleLarge,
             modifier = Modifier
                 .weight(1f)
                 .semantics { heading() },
         )
-        TextButton(
+        IconButton(
             onClick = onAdd,
             modifier = Modifier
                 .size(48.dp)
                 .semantics { contentDescription = "Add machine" },
         ) {
-            Text(
-                text = "+",
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Normal,
-            )
+            Icon(Icons.Default.Add, contentDescription = null)
         }
     }
 }
@@ -360,6 +363,7 @@ private fun ConnectionsList(
     onOpen: (String) -> Unit,
     onLongPress: (ConnectionRowPresentation) -> Unit,
 ) {
+    val sections = ConnectionsListPolicy.sections(presentation.rows)
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -368,52 +372,55 @@ private fun ConnectionsList(
             bottom = 132.dp,
         ),
     ) {
-        item {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 16.dp, bottom = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = "MACHINES",
-                    color = TextDim,
-                    fontFamily = GeistMono,
-                    fontSize = 11.sp,
-                )
-                Text(
-                    text = presentation.summary,
-                    color = TextDim,
-                    fontFamily = GeistMono,
-                    fontSize = 11.sp,
-                )
-            }
-        }
+        item { MachineSectionHeader("AVAILABLE NOW", presentation.summary) }
         presentation.recoveryMessage?.let { message ->
             item {
-                Text(
-                    text = message,
-                    color = Amber,
-                    style = MaterialTheme.typography.bodyMedium,
+                InlineStatus(
+                    message = "Some machines need attention",
+                    detail = message,
+                    tone = StatusTone.WARNING,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(SurfaceRaised)
-                        .semantics { liveRegion = LiveRegionMode.Polite }
-                        .padding(12.dp),
+                        .padding(bottom = 12.dp),
                 )
             }
         }
-        items(presentation.rows, key = { it.id }) { row ->
+        items(sections.available, key = { it.id }) { row ->
             ConnectionRow(
                 row = row,
                 onOpen = { onOpen(row.id) },
                 onLongPress = { onLongPress(row) },
             )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
+        }
+        if (sections.unavailable.isNotEmpty()) {
+            item { MachineSectionHeader("UNAVAILABLE") }
+        }
+        items(sections.unavailable, key = { it.id }) { row ->
+            ConnectionRow(
+                row = row,
+                onOpen = { onOpen(row.id) },
+                onLongPress = { onLongPress(row) },
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
         }
         item { BuildStamp(buildStamp, Modifier.padding(top = 16.dp)) }
+    }
+}
+
+@Composable
+private fun MachineSectionHeader(label: String, summary: String? = null) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 24.dp, bottom = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SectionLabel(label)
+        summary?.let {
+            Text(it, color = TextDim, fontFamily = GeistMono, fontSize = 11.sp)
+        }
     }
 }
 
@@ -435,9 +442,8 @@ private fun ConnectionRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 4.dp)
             .heightIn(min = 72.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(8.dp))
             .background(if (pressed) SurfaceRaised else Color.Transparent)
             .semantics(mergeDescendants = true) {
                 contentDescription = ConnectionsAccessibilityPolicy.contentDescription(row)
@@ -452,7 +458,7 @@ private fun ConnectionRow(
                 onClick = onOpen,
                 onLongClick = onLongPress,
             )
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -497,10 +503,10 @@ private fun ConnectionRow(
                 modifier = Modifier.padding(top = 3.dp),
             )
         }
-        Text(
-            text = ConnectionRowPolicy.statusLabel(row.status),
-            color = tint,
-            style = MaterialTheme.typography.labelMedium,
+        Icon(
+            Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = TextDim,
             modifier = Modifier.clearAndSetSemantics {},
         )
     }

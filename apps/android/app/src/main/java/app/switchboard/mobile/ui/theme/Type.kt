@@ -25,15 +25,59 @@ val SwitchboardTypography = Typography(
         fontSize = 26.sp,
         lineHeight = 31.sp,
     ),
+    headlineMedium = TextStyle(
+        fontFamily = InstrumentSans,
+        fontWeight = FontWeight.Bold,
+        fontSize = 22.sp,
+        lineHeight = 27.sp,
+    ),
+    headlineSmall = TextStyle(
+        fontFamily = InstrumentSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 20.sp,
+        lineHeight = 25.sp,
+    ),
+    titleLarge = TextStyle(
+        fontFamily = InstrumentSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 18.sp,
+        lineHeight = 23.sp,
+    ),
     titleMedium = TextStyle(
         fontFamily = InstrumentSans,
         fontWeight = FontWeight.SemiBold,
         fontSize = 16.sp,
         lineHeight = 21.sp,
     ),
+    titleSmall = TextStyle(
+        fontFamily = InstrumentSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 19.sp,
+    ),
+    bodyLarge = TextStyle(
+        fontSize = 16.sp,
+        lineHeight = 24.sp,
+    ),
     bodyMedium = TextStyle(
         fontSize = 15.sp,
         lineHeight = 23.sp,
+    ),
+    bodySmall = TextStyle(
+        fontSize = 13.sp,
+        lineHeight = 19.sp,
+    ),
+    labelLarge = TextStyle(
+        fontFamily = InstrumentSans,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 14.sp,
+        lineHeight = 18.sp,
+    ),
+    labelMedium = TextStyle(
+        fontFamily = GeistMono,
+        fontWeight = FontWeight.Medium,
+        fontSize = 12.sp,
+        lineHeight = 17.sp,
     ),
     labelSmall = TextStyle(
         fontFamily = GeistMono,

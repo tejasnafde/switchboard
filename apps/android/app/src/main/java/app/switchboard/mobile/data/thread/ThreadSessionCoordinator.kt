@@ -11,6 +11,7 @@ import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MarkReadResult
+import app.switchboard.mobile.domain.remote.ModelOption
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteResponse
@@ -30,6 +31,7 @@ import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.RuntimeEventPayload
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
 
 sealed interface ThreadSessionLoad {
     data class Loading(val cached: ThreadState?) : ThreadSessionLoad
@@ -64,7 +66,16 @@ data class ThreadSessionState(
     val composer: ThreadComposerState,
     val controlMessage: String? = null,
     val skills: List<ProviderSkill> = emptyList(),
+    val models: ThreadModelState = ThreadModelState(),
     val pendingActions: ThreadPendingActions = ThreadPendingActions(),
+)
+
+data class ThreadModelState(
+    val options: List<ModelOption> = emptyList(),
+    val selectedModelId: String? = null,
+    val loading: Boolean = false,
+    val changing: Boolean = false,
+    val error: String? = null,
 )
 
 data class ThreadPendingActions(
@@ -155,6 +166,11 @@ interface ThreadSessionRemote {
         callback: (RemoteResponse<List<ProviderSkill>?>) -> Unit,
     )
 
+    fun listModels(
+        threadId: String,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
+    )
+
     fun respondToRequest(
         threadId: String,
         requestId: String,
@@ -172,6 +188,12 @@ interface ThreadSessionRemote {
     fun setRuntimeMode(
         threadId: String,
         mode: RuntimeMode,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    )
+
+    fun setModel(
+        threadId: String,
+        model: String,
         callback: (RemoteResponse<CommandBody>) -> Unit,
     )
 
@@ -209,6 +231,13 @@ class SwitchboardThreadSessionRemote(
         client.listSkills(threadId, callback)
     }
 
+    override fun listModels(
+        threadId: String,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
+    ) {
+        client.listModels(threadId, callback)
+    }
+
     override fun respondToRequest(
         threadId: String,
         requestId: String,
@@ -233,6 +262,14 @@ class SwitchboardThreadSessionRemote(
         callback: (RemoteResponse<CommandBody>) -> Unit,
     ) {
         client.setRuntimeMode(threadId, mode, callback)
+    }
+
+    override fun setModel(
+        threadId: String,
+        model: String,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ) {
+        client.setModel(threadId, model, callback)
     }
 
     override fun interrupt(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
@@ -343,7 +380,8 @@ class ThreadSessionCoordinator(
     private var composerHasUnacknowledgedLocalChanges = false
     private var controlMessage: String? = null
     private var skills: List<ProviderSkill> = emptyList()
-    private val mutableState = MutableStateFlow(ThreadSessionState(load, composer))
+    private var models = ThreadModelState(selectedModelId = initialCached?.resolvedModel)
+    private val mutableState = MutableStateFlow(ThreadSessionState(load, composer, models = models))
     val state = mutableState.asStateFlow()
 
     private var subscription: Cancelable? = null
@@ -352,6 +390,8 @@ class ThreadSessionCoordinator(
     private var loadRequest = 0L
     private var modeRequest = 0L
     private var skillsRequest = 0L
+    private var modelsRequest = 0L
+    private var modelChangeRequest = 0L
     private var reattachRequest = 0L
     private var reattachInFlight: ProviderKind? = null
     private var attachedProvider: ProviderKind? = null
@@ -375,6 +415,7 @@ class ThreadSessionCoordinator(
         reattach(providerHint)
         refresh()
         loadSkills()
+        refreshModels()
         remote.markRead(threadId) { /* best effort; local viewing state already cleared unread */ }
     }
 
@@ -492,6 +533,79 @@ class ThreadSessionCoordinator(
     }
 
     @Synchronized
+    fun refreshModels() {
+        if (closed || remote.scope != scope) return
+        val request = ++modelsRequest
+        models = models.copy(loading = true, error = null)
+        publish()
+        try {
+            remote.listModels(threadId) { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, modelsRequest)) return@synchronized
+                    models = when (val outcome = response.outcome) {
+                        is RemoteOutcome.Success -> models.copy(
+                            options = outcome.value.orEmpty(),
+                            loading = false,
+                            error = null,
+                        )
+                        is RemoteOutcome.Failure -> models.copy(
+                            loading = false,
+                            error = outcome.message,
+                        )
+                    }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            if (request != modelsRequest) return
+            models = models.copy(
+                loading = false,
+                error = error.message ?: "Could not load models",
+            )
+            publish()
+        }
+    }
+
+    @Synchronized
+    fun selectModel(modelId: String) {
+        if (closed || models.changing || remote.scope != scope) return
+        if (models.options.none { it.id == modelId }) {
+            models = models.copy(error = "Model is not available for this session")
+            publish()
+            return
+        }
+        val request = ++modelChangeRequest
+        models = models.copy(changing = true, error = null)
+        publish()
+        try {
+            remote.setModel(threadId, modelId) { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, modelChangeRequest)) return@synchronized
+                    models = when (val outcome = response.outcome) {
+                        is RemoteOutcome.Success -> models.copy(
+                            selectedModelId = modelId,
+                            changing = false,
+                            error = null,
+                        )
+                        is RemoteOutcome.Failure -> models.copy(
+                            changing = false,
+                            error = outcome.message,
+                        )
+                    }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            if (request != modelChangeRequest) return
+            models = models.copy(
+                changing = false,
+                error = error.message ?: "Could not change model",
+            )
+            publish()
+        }
+    }
+
+    @Synchronized
     fun interrupt() {
         if (closed || composer.interrupting || remote.scope != scope) return
         composer = composer.copy(interrupting = true, error = null)
@@ -546,6 +660,8 @@ class ThreadSessionCoordinator(
         loadRequest += 1
         modeRequest += 1
         skillsRequest += 1
+        modelsRequest += 1
+        modelChangeRequest += 1
         reattachRequest += 1
         subscription?.cancel()
         subscription = null
@@ -647,6 +763,9 @@ class ThreadSessionCoordinator(
                 else -> Unit
             }
             reduce(ThreadAction.Runtime(ScopedThreadEvent(eventScope, null, event)))
+            currentThread()?.resolvedModel?.let { resolvedModel ->
+                models = models.copy(selectedModelId = resolvedModel)
+            }
             load = when (val current = load) {
                 is ThreadSessionLoad.Loading -> ThreadSessionLoad.Loading(currentThread())
                 is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
@@ -755,7 +874,19 @@ class ThreadSessionCoordinator(
     private fun addOptimistic(turn: app.switchboard.mobile.domain.outbox.QueuedTurn) {
         optimisticTurns[turn.origin] = turn
         val current = currentThread() ?: ThreadState()
-        val item = FeedItem.User(turn.bubbleId, turn.text, turn.createdAtMs)
+        val item = FeedItem.User(
+            id = turn.bubbleId,
+            text = turn.text,
+            at = turn.createdAtMs,
+            images = turn.attachments.map { attachment ->
+                val file = File(attachment.privateUri)
+                app.switchboard.mobile.domain.remote.MessageImage(
+                    url = file.toURI().toString(),
+                    mimeType = attachment.mimeType,
+                    name = file.name,
+                )
+            },
+        )
         if (current.feed.any { it.id == "h-${item.id}" }) return
         val index = current.feed.indexOfFirst { it.id == item.id }
         val feed = if (index < 0) {
@@ -787,6 +918,7 @@ class ThreadSessionCoordinator(
             composer = composer,
             controlMessage = controlMessage,
             skills = skills,
+            models = models,
             pendingActions = ThreadPendingActions(
                 approvalDecisions = pendingApprovalDecisions.toMap(),
                 questionRequestIds = pendingQuestionRequestIds.toSet(),

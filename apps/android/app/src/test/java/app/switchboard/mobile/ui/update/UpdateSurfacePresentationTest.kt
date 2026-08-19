@@ -29,6 +29,7 @@ class UpdateSurfacePresentationTest {
         assertEquals("Switchboard 1.2.3 is available", available?.message)
         assertEquals(UpdateSurfacePlacement.Snackbar, failed?.placement)
         assertEquals(UpdateAction.RETRY, failed?.action)
+        assertEquals("Could not download the update\nNetwork unavailable", failed?.snackbarMessage)
     }
 
     @Test
@@ -43,5 +44,24 @@ class UpdateSurfacePresentationTest {
         assertEquals(UpdateSurfacePlacement.ReservedBanner, downloading?.placement)
         assertEquals(0.5f, downloading?.progressFraction)
         assertEquals(UpdateSurfacePlacement.ReservedBanner, verifying?.placement)
+    }
+
+    @Test
+    fun `persistent install actions reserve layout instead of covering the composer`() {
+        val artifact = app.switchboard.mobile.update.VerifiedApk(
+            release = release,
+            filePath = "/tmp/update.apk",
+            contentUri = "content://updates/update.apk",
+        )
+
+        val ready = UpdateSurfacePresentation.from(UpdateState.InstallerReady(artifact))
+        val permission = UpdateSurfacePresentation.from(
+            UpdateState.PermissionRequired(release, artifact),
+        )
+
+        assertEquals(UpdateSurfacePlacement.ReservedBanner, ready?.placement)
+        assertEquals(UpdateAction.INSTALL, ready?.action)
+        assertEquals(UpdateSurfacePlacement.ReservedBanner, permission?.placement)
+        assertEquals(UpdateAction.OPEN_SETTINGS, permission?.action)
     }
 }

@@ -111,7 +111,7 @@ class ThreadPresentationTest {
         assertEquals("codex", metadata.provider)
         assertEquals("Work", metadata.instanceName)
         assertEquals("gpt-5.6-luna", metadata.model)
-        assertEquals("1500 / 2000 tokens", metadata.contextLabel)
+        assertEquals("1,500 / 2,000 tokens", metadata.contextLabel)
         assertEquals(0.75f, metadata.contextFraction)
         assertEquals("$0.42", metadata.costLabel)
         assertEquals("1.3s", metadata.durationLabel)

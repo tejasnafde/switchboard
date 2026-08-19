@@ -225,6 +225,41 @@ object GoogleAccountUiPresenter {
         } else {
             null
         }
+
+    fun monogram(account: GoogleAccountPresentation): String = when (account) {
+        is GoogleAccountPresentation.SignedIn -> account.email
+            ?.substringBefore('@')
+            ?.split('.', '_', '-', ' ')
+            ?.filter(String::isNotBlank)
+            ?.let { parts ->
+                when {
+                    parts.size > 1 -> "${parts.first().first()}${parts.last().first()}"
+                    parts.isNotEmpty() -> parts.first().take(2)
+                    else -> null
+                }
+            }
+            ?.uppercase()
+            ?: "G"
+        GoogleAccountPresentation.SignedOut -> "G"
+        GoogleAccountPresentation.Blocked -> "!"
+    }
+
+    fun identity(account: GoogleAccountPresentation): String = accountValue(account)
+
+    fun statusTitle(account: GoogleAccountPresentation): String = when (account) {
+        is GoogleAccountPresentation.SignedIn -> "Ready for Google IAP"
+        GoogleAccountPresentation.SignedOut -> "Google account required"
+        GoogleAccountPresentation.Blocked -> "Credentials need attention"
+    }
+
+    fun statusSupportingText(account: GoogleAccountPresentation): String = when (account) {
+        is GoogleAccountPresentation.SignedIn ->
+            "Credentials are encrypted on this device and used only when connecting."
+        GoogleAccountPresentation.SignedOut ->
+            "Connect an account to reach work VMs through Google Cloud IAP."
+        GoogleAccountPresentation.Blocked ->
+            "Import the credentials from Switchboard on your Mac again."
+    }
 }
 
 object GoogleAccountAccessibilityPolicy {
