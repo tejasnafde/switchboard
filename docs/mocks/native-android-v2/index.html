@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Switchboard Native Android — calm mobile direction</title>
+  <style>
+    @font-face { font-family: Instrument; src: url('../../../apps/android/app/src/main/res/font/instrument_sans_semibold.ttf'); font-weight: 600; }
+    @font-face { font-family: Instrument; src: url('../../../apps/android/app/src/main/res/font/instrument_sans_bold.ttf'); font-weight: 700; }
+    @font-face { font-family: Geist Mono; src: url('../../../apps/android/app/src/main/res/font/geist_mono_regular.ttf'); font-weight: 400; }
+    @font-face { font-family: Geist Mono; src: url('../../../apps/android/app/src/main/res/font/geist_mono_medium.ttf'); font-weight: 500; }
+    :root {
+      --canvas: #0a0a0a; --surface: #141414; --raised: #1c1c1c; --soft: #222327;
+      --text: #e2e8f0; --dim: #8b949e; --faint: #484f58; --line: rgba(255,255,255,.075);
+      --accent: #58a6ff; --green: #3fb950; --amber: #d29922; --red: #f85149; --purple: #bc8cff;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #070809; color: var(--text); font-family: Instrument, sans-serif; }
+    .page { width: 1728px; margin: 0 auto; padding: 72px 56px 96px; background:
+      radial-gradient(circle at 92% 2%, rgba(88,166,255,.10), transparent 420px),
+      linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px), #08090b;
+      background-size: auto, 32px 32px, 32px 32px, auto; }
+    .mast { display: grid; grid-template-columns: 1fr 560px; border-top: 1px solid var(--line); padding-top: 28px; margin-bottom: 72px; }
+    .eyebrow, .section-kicker, .meta, .badge, .status, .label { font-family: Geist Mono, monospace; }
+    .eyebrow { color: var(--accent); font-size: 11px; letter-spacing: .13em; text-transform: uppercase; }
+    h1 { font-size: 58px; line-height: .98; letter-spacing: -.045em; margin: 20px 0 0; max-width: 850px; }
+    .mast-copy { color: var(--dim); font: 13px/1.7 Geist Mono, monospace; margin: 28px 0 0; max-width: 520px; }
+    .principles { border-left: 1px solid var(--line); padding-left: 32px; display: grid; gap: 0; }
+    .principle { display: grid; grid-template-columns: 38px 1fr; padding: 13px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+    .principle b { color: var(--accent); font: 11px Geist Mono, monospace; }
+    .board-section { margin: 0 0 84px; }
+    .section-head { display: flex; align-items: end; justify-content: space-between; margin: 0 4px 24px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+    .section-head h2 { margin: 6px 0 0; font-size: 25px; letter-spacing: -.025em; }
+    .section-kicker { font-size: 10px; color: var(--dim); letter-spacing: .12em; text-transform: uppercase; }
+    .section-note { color: var(--dim); font: 11px/1.5 Geist Mono, monospace; max-width: 480px; text-align: right; }
+    .phones { display: grid; grid-template-columns: repeat(4, 360px); gap: 34px; }
+    .mock { width: 360px; }
+    .mock-label { display: flex; justify-content: space-between; align-items: baseline; padding: 0 4px 10px; }
+    .mock-label strong { font-size: 14px; }
+    .mock-label span { color: var(--dim); font: 9px Geist Mono, monospace; letter-spacing: .08em; text-transform: uppercase; }
+    .phone { width: 360px; height: 780px; overflow: hidden; border: 1px solid rgba(255,255,255,.13); border-radius: 32px; background: var(--canvas); box-shadow: 0 24px 70px rgba(0,0,0,.34); display: flex; flex-direction: column; position: relative; }
+    .system { height: 32px; padding: 10px 18px 0; display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #c5cbd4; flex: none; }
+    .system-icons { display: flex; gap: 6px; align-items: center; font: 9px Geist Mono, monospace; }
+    .topbar { height: 58px; padding: 0 16px; display: flex; align-items: center; gap: 12px; flex: none; border-bottom: 1px solid transparent; }
+    .topbar.border { border-color: var(--line); }
+    .topbar .title { font-size: 17px; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
+    .topbar .sub { display: block; color: var(--dim); font: 10px/14px Geist Mono, monospace; }
+    .brand { width: 28px; height: 28px; border-radius: 7px; }
+    .icon-btn { width: 42px; height: 42px; display: grid; place-items: center; border: 0; border-radius: 50%; color: var(--text); background: transparent; padding: 0; }
+    .icon-btn.raised { background: var(--raised); border: 1px solid var(--line); }
+    .icon-btn.accent { background: var(--accent); color: #07111b; }
+    svg.icon { width: 19px; height: 19px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .content { flex: 1; min-height: 0; padding: 14px 16px 18px; overflow: hidden; }
+    .scroll { overflow: hidden; }
+    .section-label { color: var(--dim); font: 10px/16px Geist Mono, monospace; letter-spacing: .10em; text-transform: uppercase; margin: 12px 0 8px; }
+    .row { min-height: 64px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+    .row:last-child { border-bottom: 0; }
+    .row-main { min-width: 0; flex: 1; }
+    .row-title { font-size: 15px; line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .row-sub { color: var(--dim); font: 10px/16px Geist Mono, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+    .dot.live { background: var(--green); box-shadow: 0 0 0 4px rgba(63,185,80,.10); }
+    .dot.wait { background: var(--amber); }
+    .dot.bad { background: var(--red); }
+    .chev { color: var(--faint); font-size: 20px; }
+    .avatar { width: 40px; height: 40px; border-radius: 12px; background: var(--raised); display: grid; place-items: center; color: var(--accent); font-size: 14px; border: 1px solid var(--line); }
+    .avatar.folder { color: #a8b1bd; }
+    .avatar.user { border-radius: 50%; background: #253142; color: #d9eaff; }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+    .card + .card { margin-top: 10px; }
+    .card-head { display: flex; gap: 10px; align-items: center; }
+    .card-title { font-size: 15px; line-height: 20px; }
+    .card-copy { color: var(--dim); font: 12px/18px sans-serif; margin-top: 4px; }
+    .search { height: 42px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); display: flex; align-items: center; gap: 9px; padding: 0 12px; color: var(--dim); font-size: 13px; margin-bottom: 10px; }
+    .input { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; margin-bottom: 10px; }
+    .input.focus { border-color: rgba(88,166,255,.72); box-shadow: 0 0 0 3px rgba(88,166,255,.10); }
+    .input .label { color: var(--dim); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+    .input .value { font-size: 14px; margin-top: 5px; }
+    .input .value.mono { font: 11px Geist Mono, monospace; }
+    .primary, .secondary { min-height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 14px; border: 1px solid var(--line); }
+    .primary { background: var(--accent); color: #07111b; border-color: transparent; }
+    .secondary { background: var(--surface); color: var(--text); }
+    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+    .muted-link { color: var(--accent); text-align: center; font-size: 13px; padding: 14px 0; }
+    .status-pill { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); color: var(--dim); font: 10px Geist Mono, monospace; }
+    .status-pill.blue { color: #a8d2ff; background: rgba(88,166,255,.09); border-color: rgba(88,166,255,.18); }
+    .status-pill.warn { color: #e3bd67; background: rgba(210,153,34,.08); }
+    .status-pill.bad { color: #ff9e98; background: rgba(248,81,73,.08); }
+    .camera { height: 380px; border-radius: 20px; background:
+      linear-gradient(135deg, rgba(88,166,255,.08), transparent 60%),
+      repeating-linear-gradient(45deg, #111417 0 2px, #0e1012 2px 8px); position: relative; overflow: hidden; border: 1px solid var(--line); }
+    .camera::after { content: ''; position: absolute; width: 190px; height: 190px; top: 92px; left: 68px; border: 2px solid var(--accent); border-radius: 24px; box-shadow: 0 0 0 999px rgba(0,0,0,.38); }
+    .camera-grid { position: absolute; inset: 0; background: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px); background-size: 24px 24px; }
+    .qr-corners { position: absolute; z-index: 2; top: 112px; left: 92px; width: 144px; height: 144px; border: 12px solid rgba(226,232,240,.85); border-top-width: 22px; border-bottom-width: 22px; opacity: .16; }
+    .workspace { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; padding-bottom: 6px; }
+    .workspace-name { font: 10px Geist Mono, monospace; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+    .activity { font: 9px Geist Mono, monospace; color: var(--dim); }
+    .unread { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: grid; place-items: center; color: #07111b; background: var(--accent); font: 10px Geist Mono, monospace; }
+    .summary-row { height: 58px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+    .summary-row .meta { color: var(--dim); font-size: 9px; width: 74px; text-transform: uppercase; letter-spacing: .08em; }
+    .summary-row .chosen { font-size: 14px; flex: 1; }
+    .new-message { margin-top: 16px; min-height: 144px; padding: 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); color: var(--dim); font-size: 14px; line-height: 21px; }
+    .new-actions { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .new-actions .primary { margin-left: auto; min-width: 92px; }
+    .chat { flex: 1; min-height: 0; padding: 8px 14px 10px; display: flex; flex-direction: column; gap: 13px; overflow: hidden; }
+    .day { text-align: center; color: var(--faint); font: 9px Geist Mono, monospace; text-transform: uppercase; letter-spacing: .08em; margin: 4px 0 2px; }
+    .bubble { max-width: 86%; border-radius: 17px; padding: 10px 12px; font: 13px/19px sans-serif; }
+    .bubble.user { align-self: flex-end; background: var(--accent); color: #07111b; border-bottom-right-radius: 5px; }
+    .assistant { font: 13px/20px sans-serif; padding: 0 2px; color: #d8dee7; }
+    .assistant .agent { display: block; font: 9px Geist Mono, monospace; color: var(--dim); margin-bottom: 5px; text-transform: uppercase; letter-spacing: .08em; }
+    .worklog { display: flex; align-items: center; gap: 8px; color: var(--dim); font: 10px Geist Mono, monospace; padding: 3px 2px; }
+    .pulse { display: flex; gap: 3px; }
+    .pulse i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent); opacity: .45; }
+    .pulse i:nth-child(2) { opacity: .75; }.pulse i:nth-child(3) { opacity: 1; }
+    .composer-wrap { flex: none; padding: 0 12px 12px; }
+    .sync { display: flex; justify-content: center; margin-bottom: 7px; }
+    .composer { min-height: 58px; border-radius: 18px; border: 1px solid rgba(255,255,255,.11); background: var(--surface); display: flex; align-items: center; gap: 5px; padding: 7px; box-shadow: 0 14px 35px rgba(0,0,0,.32); }
+    .composer.expanded { min-height: 130px; display: block; padding: 11px; }
+    .composer-input { flex: 1; color: var(--dim); font: 13px/18px sans-serif; padding: 0 5px; }
+    .composer.expanded .composer-input { min-height: 65px; color: var(--text); padding: 1px 3px; }
+    .toolbar { display: flex; gap: 3px; align-items: center; margin-top: 8px; }
+    .tool-btn { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--dim); }
+    .tool-btn.send { margin-left: auto; background: var(--accent); color: #07111b; }
+    .model-pill { height: 34px; border-radius: 10px; display: flex; align-items: center; gap: 7px; padding: 0 10px; background: var(--raised); color: #cad1db; font: 10px Geist Mono, monospace; }
+    .approval { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px; }
+    .approval .command { font: 11px/17px Geist Mono, monospace; background: #0e1012; border-radius: 9px; padding: 10px; margin: 10px 0 12px; color: #cbd5e1; }
+    .approval .button-row { grid-template-columns: 1fr 1fr 1fr; }
+    .mini-action { height: 38px; display: grid; place-items: center; border-radius: 10px; font-size: 11px; background: var(--raised); border: 1px solid var(--line); }
+    .mini-action.go { background: var(--accent); color: #07111b; border: 0; }
+    .thumbs { display: flex; gap: 8px; margin-bottom: 10px; }
+    .thumb { width: 72px; height: 60px; border-radius: 10px; position: relative; background: linear-gradient(135deg,#314760,#101a26); border: 1px solid rgba(255,255,255,.12); overflow: hidden; }
+    .thumb.alt { background: linear-gradient(155deg,#553c48,#18202d); }
+    .thumb::before { content: ''; position: absolute; width: 40px; height: 24px; border: 2px solid rgba(255,255,255,.42); border-radius: 5px; top: 18px; left: 15px; transform: rotate(-7deg); }
+    .thumb .x { position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,.65); display: grid; place-items: center; font-size: 11px; }
+    .image-message { align-self: flex-end; display: flex; gap: 6px; max-width: 90%; }
+    .image-message .thumb { width: 104px; height: 112px; }
+    .voice-sheet { height: 132px; border-radius: 18px; border: 1px solid rgba(88,166,255,.22); background: var(--surface); padding: 12px; }
+    .voice-top { display: flex; align-items: center; gap: 9px; }
+    .voice-orb { width: 38px; height: 38px; border-radius: 50%; background: rgba(88,166,255,.14); color: var(--accent); display: grid; place-items: center; }
+    .wave { display: flex; gap: 3px; align-items: center; flex: 1; height: 36px; }
+    .wave i { width: 3px; border-radius: 2px; background: var(--accent); opacity: .85; }
+    .wave i:nth-child(1){height:8px}.wave i:nth-child(2){height:19px}.wave i:nth-child(3){height:28px}.wave i:nth-child(4){height:13px}.wave i:nth-child(5){height:24px}.wave i:nth-child(6){height:34px}.wave i:nth-child(7){height:17px}.wave i:nth-child(8){height:9px}.wave i:nth-child(9){height:25px}.wave i:nth-child(10){height:14px}
+    .voice-hint { margin-top: 11px; display: flex; justify-content: space-between; color: var(--dim); font: 9px Geist Mono, monospace; }
+    .queue { border-radius: 12px; background: rgba(210,153,34,.07); border: 1px solid rgba(210,153,34,.18); padding: 10px 12px; display: flex; align-items: center; gap: 9px; color: #e0bf78; font-size: 12px; }
+    .settings-list .row { min-height: 58px; }
+    .settings-list .row .meta { width: 96px; color: var(--dim); font-size: 9px; text-transform: uppercase; }
+    .check { color: var(--accent); font-size: 17px; }
+    .update-slot { flex: none; padding: 0 12px 10px; }
+    .update-banner { min-height: 68px; display: flex; align-items: center; gap: 10px; border-radius: 16px; background: var(--raised); border: 1px solid rgba(88,166,255,.18); padding: 10px 10px 10px 13px; box-shadow: 0 12px 30px rgba(0,0,0,.32); }
+    .update-banner .copy { flex: 1; min-width: 0; }
+    .update-banner .title { font-size: 13px; }
+    .update-banner .detail { color: var(--dim); font: 9px/14px Geist Mono, monospace; margin-top: 2px; }
+    .update-banner .primary { min-height: 40px; padding: 0 14px; border-radius: 11px; }
+    .progress { height: 3px; background: rgba(255,255,255,.09); border-radius: 3px; overflow: hidden; margin-top: 7px; }
+    .progress i { display: block; width: 63%; height: 100%; background: var(--accent); }
+    .empty { height: 100%; display: grid; place-content: center; text-align: center; padding: 34px; }
+    .empty-mark { width: 52px; height: 52px; border-radius: 16px; background: var(--surface); display: grid; place-items: center; margin: 0 auto 16px; border: 1px solid var(--line); color: var(--dim); }
+    .empty h3 { font-size: 22px; margin: 0; letter-spacing: -.025em; }
+    .empty p { font: 12px/19px sans-serif; color: var(--dim); margin: 8px 0 18px; }
+    .state-stack { display: grid; gap: 10px; }
+    .state-card { border-radius: 13px; padding: 12px; background: var(--surface); border: 1px solid var(--line); display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center; }
+    .state-card .name { font-size: 13px; }.state-card .desc { color: var(--dim); font: 9px/14px Geist Mono, monospace; margin-top: 2px; }
+    .state-card .action { color: var(--accent); font-size: 11px; }
+    .navline { height: 20px; flex: none; display: grid; place-items: center; }
+    .navline::after { content: ''; width: 104px; height: 4px; background: #d5dae1; border-radius: 4px; opacity: .7; }
+    .note-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 26px; }
+    .note-strip div { background: #0b0c0e; padding: 18px; min-height: 86px; }
+    .note-strip b { display: block; color: var(--accent); font: 10px Geist Mono, monospace; margin-bottom: 7px; }
+    .note-strip span { color: var(--dim); font: 11px/17px sans-serif; }
+  </style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute"><defs>
+  <symbol id="back" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol><symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol><symbol id="camera" viewBox="0 0 24 24"><path d="M4 7h4l2-2h4l2 2h4v12H4z"/><circle cx="12" cy="13" r="4"/></symbol>
+  <symbol id="attach" viewBox="0 0 24 24"><path d="m20 11-8 8a5 5 0 0 1-7-7l9-9a3 3 0 0 1 4 4l-9 9a1 1 0 0 1-2-2l8-8"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="send" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 5v14"/></symbol><symbol id="stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/></symbol>
+  <symbol id="image" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 15-5-5L5 20"/></symbol>
+  <symbol id="sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h2M10 17h10M14 4v6M7 14v6"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M7 8a7 7 0 0 1 11-1l2 5M17 16a7 7 0 0 1-11 1l-2-5"/></symbol>
+</defs></svg>
+
+<main class="page">
+  <header class="mast">
+    <div><div class="eyebrow">Switchboard / Native Android / Direction 02</div><h1>Quiet when idle.<br>Powerful on demand.</h1><p class="mast-copy">A T3 Code–informed mobile hierarchy using Switchboard’s canonical mark, palette, typography, voice workflow, offline outbox, and verified APK update path.</p></div>
+    <div class="principles"><div class="principle"><b>01</b><span>Conversation owns the thread screen.</span></div><div class="principle"><b>02</b><span>Complex choices move to focused routes.</span></div><div class="principle"><b>03</b><span>Cached content survives refresh and reconnect.</span></div><div class="principle"><b>04</b><span>Updates and voice never disturb layout.</span></div></div>
+  </header>
+
+  <section class="board-section" id="connect">
+    <div class="section-head"><div><div class="section-kicker">01 / Find and connect</div><h2>Machines, pairing, and identity</h2></div><div class="section-note">Sparse rows, a single status cue, and progressive disclosure replace instructional cards and badge piles.</div></div>
+    <div class="phones">
+      <article class="mock"><div class="mock-label"><strong>Machines</strong><span>Home · connected</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar"><img class="brand" src="../../../resources/icons/switchboard-logo.svg"><span class="title">Switchboard<span class="sub">3 machines</span></span><button class="icon-btn"><svg class="icon"><use href="#search"/></svg></button><button class="icon-btn raised"><svg class="icon"><use href="#plus"/></svg></button></div><div class="content"><div class="section-label">Available now</div><div class="row"><i class="dot live"></i><div class="row-main"><div class="row-title">Tejas’s MacBook</div><div class="row-sub">100.99.40.43 · DIRECT</div></div><span class="chev">›</span></div><div class="row"><i class="dot live"></i><div class="row-main"><div class="row-title">Studio Mac</div><div class="row-sub">TAILSCALE · 12 THREADS</div></div><span class="chev">›</span></div><div class="section-label">Unavailable</div><div class="row"><i class="dot wait"></i><div class="row-main"><div class="row-title">Build VM</div><div class="row-sub">RECONNECTING · 2/5</div></div><span class="chev">›</span></div><div style="height:22px"></div><div class="card"><div class="card-head"><span class="avatar user">TN</span><div><div class="card-title">Google account connected</div><div class="row-sub">tejas@example.com</div></div><span class="chev" style="margin-left:auto">›</span></div></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Pair by QR</strong><span>Camera · fallback</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Scan connection code</span></div><div class="content"><div class="camera"><div class="camera-grid"></div><div class="qr-corners"></div></div><div style="text-align:center;margin:18px 26px 4px;font-size:15px">Point your camera at the QR code on your Mac.</div><div style="text-align:center;color:var(--dim);font:10px/16px Geist Mono,monospace">SETTINGS → MOBILE CONNECTION</div><div class="muted-link">Enter connection details instead</div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Add machine</strong><span>Manual · WebSocket</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Add machine</span></div><div class="content"><div class="section-label">Connection</div><div class="input"><div class="label">Name</div><div class="value">Tejas’s MacBook</div></div><div class="input focus"><div class="label">Address</div><div class="value mono">ws://100.99.40.43:8765</div></div><div class="input"><div class="label">Pairing token</div><div class="value mono">••••••••••••••</div></div><div class="card" style="margin:16px 0 12px"><div class="card-head"><i class="dot live"></i><div><div class="card-title">Mac reachable</div><div class="row-sub">42 MS · FRAME AUTH</div></div></div></div><div class="primary">Connect securely</div><div class="muted-link">Scan QR instead</div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Google account</strong><span>Identity · IAP</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Google account</span></div><div class="content"><div style="height:32px"></div><div class="avatar user" style="width:64px;height:64px;font-size:20px;margin-bottom:18px">TN</div><h3 style="font-size:24px;margin:0 0 6px">Tejas Nafde</h3><div style="color:var(--dim);font-size:13px">tejas@example.com</div><div class="card" style="margin-top:24px"><div class="card-head"><i class="dot live"></i><div><div class="card-title">Ready for Google IAP</div><div class="card-copy">Credentials are encrypted on this device and used only when connecting.</div></div></div></div><div class="section-label" style="margin-top:26px">Account actions</div><div class="row"><div class="row-main"><div class="row-title">Refresh credentials</div><div class="row-sub">LAST VERIFIED · JUST NOW</div></div><span class="chev">›</span></div><div class="row"><div class="row-main"><div class="row-title" style="color:#ff9e98">Sign out</div></div><span class="chev">›</span></div></div><div class="navline"></div></div></article>
+    </div>
+  </section>
+
+  <section class="board-section" id="browse">
+    <div class="section-head"><div><div class="section-kicker">02 / Choose the work</div><h2>Projects, threads, and a quieter start</h2></div><div class="section-note">Lists stay flat. Agent, model, and permission complexity is summarized once and edited on a dedicated route.</div></div>
+    <div class="phones">
+      <article class="mock"><div class="mock-label"><strong>Projects</strong><span>Machine · cached</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Tejas’s MacBook<span class="sub">Projects · synced now</span></span><button class="icon-btn"><svg class="icon"><use href="#search"/></svg></button></div><div class="content"><div class="workspace"><span class="workspace-name">Current workspace</span><span class="activity">4 PROJECTS</span></div><div class="row"><span class="avatar folder">SB</span><div class="row-main"><div class="row-title">switchboard</div><div class="row-sub">~/Desktop/projects/switchboard</div></div><span class="unread">3</span></div><div class="row"><span class="avatar folder">TS</span><div class="row-main"><div class="row-title">tejas-skills</div><div class="row-sub">~/Desktop/projects/tejas-skills</div></div><i class="dot live"></i></div><div class="workspace"><span class="workspace-name">Recent</span><span class="activity">COLLAPSE −</span></div><div class="row"><span class="avatar folder">HF</span><div class="row-main"><div class="row-title">hyperframes</div><div class="row-sub">UPDATED 2H AGO</div></div><span class="chev">›</span></div><div class="row"><span class="avatar folder">LN</span><div class="row-main"><div class="row-title">luna</div><div class="row-sub">UPDATED YESTERDAY</div></div><span class="chev">›</span></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Threads</strong><span>Project · activity</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">switchboard<span class="sub">18 threads</span></span><button class="icon-btn raised"><svg class="icon"><use href="#plus"/></svg></button></div><div class="content"><div class="search"><svg class="icon" style="width:16px"><use href="#search"/></svg><span>Search threads</span></div><div class="row"><i class="dot live"></i><div class="row-main"><div class="row-title">Native Android polish</div><div class="row-sub">CODEX · WORKING 18S</div></div><span class="unread">2</span></div><div class="row"><i class="dot"></i><div class="row-main"><div class="row-title">Incentives</div><div class="row-sub">CLAUDE · 12 MIN AGO</div></div><span class="chev">›</span></div><div class="row"><i class="dot"></i><div class="row-main"><div class="row-title">Update signing continuity</div><div class="row-sub">CODEX · 1H AGO</div></div><span class="chev">›</span></div><div class="row"><i class="dot wait"></i><div class="row-main"><div class="row-title">Provider handoff</div><div class="row-sub">QUEUED OFFLINE · 1 MESSAGE</div></div><span class="chev">›</span></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>New session</strong><span>Summary · focused</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">New session<span class="sub">switchboard</span></span></div><div class="content"><div class="summary-row"><span class="meta">Agent</span><span class="chosen">Codex · Personal</span><span class="chev">›</span></div><div class="summary-row"><span class="meta">Model</span><span class="chosen">GPT-5.2 Codex</span><span class="chev">›</span></div><div class="summary-row"><span class="meta">Access</span><span class="chosen">Sandbox</span><span class="chev">›</span></div><div class="summary-row"><span class="meta">Branch</span><span class="chosen">main</span><span class="chev">›</span></div><div class="section-label" style="margin-top:20px">First message</div><div class="new-message">Audit the Android composer against the approved mobile mocks…</div><div class="new-actions"><div class="tool-btn"><svg class="icon"><use href="#attach"/></svg></div><div class="tool-btn"><svg class="icon"><use href="#mic"/></svg></div><div class="primary">Start</div></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Agent settings</strong><span>Dedicated route</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Agent settings</span><span style="color:var(--accent);font-size:13px">Done</span></div><div class="content"><div class="section-label">Current</div><div class="card"><div class="card-head"><span class="avatar" style="border-radius:50%">C</span><div><div class="card-title">Codex · GPT-5.2 Codex</div><div class="row-sub">PERSONAL PROFILE</div></div><span class="check" style="margin-left:auto">✓</span></div></div><div class="section-label" style="margin-top:22px">Permissions</div><div class="settings-list"><div class="row"><span class="meta">Plan</span><div class="row-main"><div class="row-title">Read-only exploration</div></div><span class="chev">›</span></div><div class="row"><span class="meta">Sandbox</span><div class="row-main"><div class="row-title">Workspace edits</div></div><span class="check">✓</span></div><div class="row"><span class="meta">Edits</span><div class="row-main"><div class="row-title">Auto-accept file edits</div></div><span class="chev">›</span></div><div class="row"><span class="meta">Full</span><div class="row-main"><div class="row-title">Commands and edits</div></div><span class="chev">›</span></div></div><div class="section-label" style="margin-top:22px">Model</div><div class="search"><svg class="icon" style="width:16px"><use href="#search"/></svg><span>Search available models</span></div></div><div class="navline"></div></div></article>
+    </div>
+  </section>
+
+  <section class="board-section" id="thread">
+    <div class="section-head"><div><div class="section-kicker">03 / Stay in the conversation</div><h2>Chat states without chrome competition</h2></div><div class="section-note">The feed remains stable. Sync status hugs the composer, interactions temporarily own its slot, and internal prompt metadata never renders.</div></div>
+    <div class="phones">
+      <article class="mock"><div class="mock-label"><strong>Thread · idle</strong><span>Cached · syncing</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Native Android polish<span class="sub">switchboard · Codex</span></span><button class="icon-btn"><svg class="icon"><use href="#more"/></svg></button></div><div class="chat"><div class="day">Today</div><div class="bubble user">The update banner still covers the composer.</div><div class="assistant"><span class="agent">Codex</span>I found the overlap. The updater is bottom-aligned over navigation instead of reserving a slot.</div><div class="worklog"><span>›</span><span>3 tool calls · 2 files</span></div><div class="bubble user">Make the phone UI calmer too.</div><div class="assistant"><span class="agent">Codex</span>I’ll keep the chat primary and move model and permission controls into one settings route.</div></div><div class="composer-wrap"><div class="sync"><span class="status-pill blue"><svg class="icon" style="width:12px"><use href="#refresh"/></svg> Syncing latest messages</span></div><div class="composer"><div class="tool-btn"><svg class="icon"><use href="#attach"/></svg></div><div class="composer-input">Message the agent…</div><div class="tool-btn"><svg class="icon"><use href="#mic"/></svg></div><div class="tool-btn send"><svg class="icon"><use href="#send"/></svg></div></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Thread · running</strong><span>Focused composer</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Native Android polish<span class="sub">switchboard · working</span></span><button class="icon-btn"><svg class="icon"><use href="#more"/></svg></button></div><div class="chat"><div class="bubble user">Fix the keyboard layout and show me the result.</div><div class="assistant"><span class="agent">Codex</span>I’m checking the composer’s IME ownership and update placement.</div><div class="worklog"><div class="pulse"><i></i><i></i><i></i></div><span>Working for 18s</span></div><div class="card" style="padding:11px"><div class="row-sub">READING</div><div style="font-size:12px;margin-top:5px">ThreadScreen.kt</div></div></div><div class="composer-wrap"><div class="composer expanded"><div class="composer-input">Also make image-only messages sync to the Mac.</div><div class="toolbar"><div class="tool-btn"><svg class="icon"><use href="#attach"/></svg></div><div class="model-pill">Codex · Sandbox <span>›</span></div><div class="tool-btn" style="margin-left:auto;color:#ff9e98"><svg class="icon"><use href="#stop"/></svg></div><div class="tool-btn send"><svg class="icon"><use href="#send"/></svg></div></div></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Approval</strong><span>Composer slot owner</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Release hotfix<span class="sub">switchboard · approval needed</span></span></div><div class="chat"><div class="assistant"><span class="agent">Codex</span>The release is ready. I need permission to publish the signed APK.</div><div class="worklog"><span>›</span><span>Build passed · 598 tests</span></div><div style="flex:1"></div></div><div class="composer-wrap"><div class="approval"><div class="row-sub">COMMAND APPROVAL</div><div class="card-title" style="margin-top:5px">Publish mobile-v0.5.2?</div><div class="command">gh workflow run mobile-release.yml</div><div class="button-row"><div class="mini-action">Decline</div><div class="mini-action">Session</div><div class="mini-action go">Allow once</div></div></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Offline thread</strong><span>Cached · queued</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Incentives<span class="sub">cached locally</span></span></div><div class="chat"><div class="assistant"><span class="agent">Codex</span>Previously loaded messages stay visible while the Mac reconnects.</div><div class="bubble user">Continue when it comes back.</div><div style="flex:1"></div><div class="queue"><i class="dot wait"></i><span>1 message queued · sends automatically</span></div></div><div class="composer-wrap"><div class="sync"><span class="status-pill warn">Mac offline · retrying</span></div><div class="composer"><div class="tool-btn"><svg class="icon"><use href="#attach"/></svg></div><div class="composer-input">Queue a follow-up…</div><div class="tool-btn"><svg class="icon"><use href="#mic"/></svg></div><div class="tool-btn send"><svg class="icon"><use href="#send"/></svg></div></div></div><div class="navline"></div></div></article>
+    </div>
+  </section>
+
+  <section class="board-section" id="media-update">
+    <div class="section-head"><div><div class="section-kicker">04 / Rich input and lifecycle</div><h2>Images, voice, updates, and recovery</h2></div><div class="section-note">Transient controls appear only when needed. Update space is reserved above the composer; voice guidance floats inside a stable recording surface.</div></div>
+    <div class="phones">
+      <article class="mock"><div class="mock-label"><strong>Image attachment</strong><span>Optimistic · synced</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">UI regressions<span class="sub">switchboard · Codex</span></span></div><div class="chat"><div class="assistant"><span class="agent">Codex</span>Send the screenshots and I’ll compare the geometry.</div><div class="image-message"><div class="thumb"></div><div class="thumb alt"></div></div><div class="worklog" style="justify-content:flex-end"><span style="color:var(--green)">✓ Synced to Mac</span></div><div style="flex:1"></div></div><div class="composer-wrap"><div class="composer expanded"><div class="thumbs"><div class="thumb"><span class="x">×</span></div><div class="thumb alt"><span class="x">×</span></div></div><div class="composer-input">These are the broken states.</div><div class="toolbar"><div class="tool-btn"><svg class="icon"><use href="#attach"/></svg></div><div class="model-pill">2 images</div><div class="tool-btn send"><svg class="icon"><use href="#send"/></svg></div></div></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Voice capture</strong><span>Hold · lock · cancel</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Native Android polish<span class="sub">voice input</span></span></div><div class="chat"><div class="assistant"><span class="agent">Codex</span>What should change about the composer?</div><div style="flex:1"></div></div><div class="composer-wrap"><div class="voice-sheet"><div class="voice-top"><div class="voice-orb"><svg class="icon"><use href="#mic"/></svg></div><div><div class="card-title">Listening</div><div class="row-sub">00:08</div></div><div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div></div><div class="voice-hint"><span>← SLIDE TO CANCEL</span><span>SLIDE UP TO LOCK ↑</span></div></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Update ready</strong><span>Reserved slot · no overlap</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Incentives<span class="sub">thread loaded</span></span></div><div class="chat"><div class="bubble user">Ship the hotfix.</div><div class="assistant"><span class="agent">Codex</span>The signed APK is verified and ready.</div><div style="flex:1"></div></div><div class="update-slot"><div class="update-banner"><div class="copy"><div class="title">Switchboard 0.5.2 ready</div><div class="detail">SIGNED · DATA PRESERVED</div></div><div class="primary">Install</div></div></div><div class="composer-wrap"><div class="composer"><div class="tool-btn"><svg class="icon"><use href="#attach"/></svg></div><div class="composer-input">Message the agent…</div><div class="tool-btn"><svg class="icon"><use href="#mic"/></svg></div><div class="tool-btn send"><svg class="icon"><use href="#send"/></svg></div></div></div><div class="navline"></div></div></article>
+
+      <article class="mock"><div class="mock-label"><strong>Recovery states</strong><span>Contextual · actionable</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Status and recovery</span></div><div class="content"><div class="section-label">Connection</div><div class="state-stack"><div class="state-card"><i class="dot live"></i><div><div class="name">Connected</div><div class="desc">DIRECT · 42 MS</div></div><div class="action">Details</div></div><div class="state-card"><i class="dot wait"></i><div><div class="name">Reconnecting</div><div class="desc">CACHED CONTENT AVAILABLE</div></div><div class="action">Retry</div></div><div class="state-card"><i class="dot bad"></i><div><div class="name">Authentication rejected</div><div class="desc">CHECK THE SAVED TOKEN</div></div><div class="action">Edit</div></div></div><div class="section-label" style="margin-top:24px">Updates</div><div class="state-stack"><div class="state-card"><i class="dot" style="background:var(--accent)"></i><div><div class="name">Downloading 0.5.2</div><div class="progress"><i></i></div></div><div class="action">Cancel</div></div><div class="state-card"><i class="dot bad"></i><div><div class="name">Verification failed</div><div class="desc">CURRENT APP WAS NOT CHANGED</div></div><div class="action">Retry</div></div></div><div class="section-label" style="margin-top:24px">Empty state</div><div class="card" style="text-align:center;padding:20px"><div class="card-title">Nothing paired yet</div><div class="card-copy">Scan the code shown by Switchboard on your Mac.</div><div class="primary" style="margin-top:13px">Pair a machine</div></div></div><div class="navline"></div></div></article>
+    </div>
+    <div class="note-strip"><div><b>IME</b><span>The root resizes; the composer never owns keyboard-height padding.</span></div><div><b>SYNC</b><span>Cached messages remain visible while history refreshes in place.</span></div><div><b>VOICE</b><span>Gesture guidance exists only during an active recording.</span></div><div><b>UPDATE</b><span>The banner reserves space and disappears when the app is current.</span></div></div>
+  </section>
+</main>
+</body>
+</html>
