@@ -49,6 +49,6 @@ object ArchivePreflightPolicy {
 fun ArchiveRejection.installerMessage(): String = when (this) {
     ArchiveRejection.PACKAGE_NAME -> "Downloaded APK has the wrong package ID"
     ArchiveRejection.SIGNER -> "Downloaded APK signer does not match the installed app"
-    ArchiveRejection.VERSION_CODE -> "This update version is already installed"
+    ArchiveRejection.VERSION_CODE -> "This update is not newer than the installed version"
     ArchiveRejection.VERSION_NAME -> "Downloaded APK version does not match the release"
 }
