@@ -1,0 +1,62 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "atomic-image-turns",
+  "summary": "Make image attachment admission byte-budget-driven across all clients and preserve the Desktop composer until the backend accepts one atomic turn.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "tests/unit/desktop-image-send-contract.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/images.ts",
+        "apps/mobile/src/components/ImageAttachments.tsx",
+        "tests/unit/mobile-images.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/outbox/OutboxImageMaterializer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/outbox/OutboxImageMaterializerTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "tests/unit/user-message-visibility.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Image arrays and outbox attachments keep their existing stored shapes; the change removes a count admission rule without changing schemas or migrations."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing configuration, updater contract, versioning rule, or release channel changes."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/user-message-visibility.test.ts tests/unit/mobile-images.test.ts tests/unit/desktop-image-send-contract.test.ts tests/unit/cross-surface-image-count-contract.test.ts",
+      "npm run typecheck:renderer",
+      "cd apps/android && ./gradlew testDebugUnitTest --tests app.switchboard.mobile.platform.outbox.OutboxImageMaterializerTest --tests app.switchboard.mobile.domain.composer.ComposerDraftPolicyTest"
+    ],
+    "hardware": [
+      "Side-by-side Android debug APK installed on CPH2487; instrumentation rendered six dummy image attachments, kept the draft and aggregate-budget error visible, and kept the attachment control enabled."
+    ],
+    "notExercised": [
+      "Desktop drag/paste with more than four real screenshots was not smoke-tested in the running Electron app.",
+      "React Native/iOS picker behavior was not exercised on an iOS device.",
+      "Native Android's external document picker and a live backend image turn were not exercised; the on-device test used six deterministic dummy attachments."
+    ]
+  }
+}

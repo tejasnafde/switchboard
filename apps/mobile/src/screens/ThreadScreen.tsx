@@ -758,7 +758,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
             multiline
           />
           {/* Attach lives inside the bubble, left of the primary button. */}
-          <AttachButton count={attachments.length} existing={attachments} onAdd={addAttachments} />
+          <AttachButton existing={attachments} onAdd={addAttachments} />
           <SendMicButton
             canSend={canSend}
             isRunning={isRunning}

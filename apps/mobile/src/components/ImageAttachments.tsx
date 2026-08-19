@@ -15,24 +15,15 @@ export interface Attachment extends ImagePayload {
   previewUri: string
 }
 
-/** Cap per turn. Each image is a full base64 payload over the socket. */
-const MAX_PER_TURN = 4
-
 export const AttachButton = memo(function AttachButton({
-  count,
   existing,
   onAdd,
 }: {
-  count: number
   /** Already-attached images, needed to measure the remaining turn budget. */
   existing: Attachment[]
   onAdd: (added: Attachment[]) => void
 }) {
   const pick = useCallback(async () => {
-    if (count >= MAX_PER_TURN) {
-      Alert.alert('Attachment limit', `Up to ${MAX_PER_TURN} images per message.`)
-      return
-    }
     try {
       // The OS picker needs no permission grant on either platform.
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -40,7 +31,7 @@ export const AttachButton = memo(function AttachButton({
         // The bytes must travel: a file:// uri means nothing to a remote backend.
         base64: true,
         allowsMultipleSelection: true,
-        selectionLimit: MAX_PER_TURN - count,
+        selectionLimit: 0,
         // Camera-roll originals are far larger than a model needs.
         quality: 0.7,
       })
@@ -51,11 +42,12 @@ export const AttachButton = memo(function AttachButton({
       for (const [i, asset] of result.assets.entries()) {
         const converted = assetToPayload(asset)
         if (!converted.ok) {
-          rejected.push(
-            converted.reason === 'too-large'
-              ? `${asset.fileName ?? 'image'} is over ${formatBytes(MAX_IMAGE_BYTES)}`
-              : `${asset.fileName ?? 'image'} could not be read`,
-          )
+          const name = asset.fileName ?? 'image'
+          rejected.push(converted.reason === 'too-large'
+            ? `${name} is over ${formatBytes(MAX_IMAGE_BYTES)}`
+            : converted.reason === 'unsupported-type'
+              ? `${name} must be PNG, JPEG, WebP, or GIF`
+              : `${name} could not be read`)
           continue
         }
         added.push({
@@ -65,7 +57,7 @@ export const AttachButton = memo(function AttachButton({
         })
       }
 
-      // Total matters too: an oversized turn drops the connection outright.
+      // The aggregate encoded payload is the cross-client admission boundary.
       const { accepted, rejected: overBudget } = fitTurnBudget(existing, added)
       if (overBudget.length > 0) {
         rejected.push(
@@ -84,7 +76,7 @@ export const AttachButton = memo(function AttachButton({
       log.warn('image pick failed', err)
       Alert.alert('Could not open your photos', err instanceof Error ? err.message : String(err))
     }
-  }, [count, existing, onAdd])
+  }, [existing, onAdd])
 
   return (
     <Pressable

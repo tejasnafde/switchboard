@@ -11,8 +11,15 @@
  */
 import { create } from 'zustand'
 import { createLogger } from '@shared/logger'
-import { echoMessageId, type RuntimeMode } from '@shared/provider-events'
-import { deliveryAction, retryDelayMs, shouldRetry, type QueuedMessage } from '../lib/outboxModel'
+import type { RuntimeMode } from '@shared/provider-events'
+import {
+  deliveryAction,
+  markRejected,
+  nextDeliverablePerThread,
+  retryDelayMs,
+  shouldRetry,
+  type QueuedMessage,
+} from '../lib/outboxModel'
 import { loadQueued, removeQueued, saveQueued } from '../lib/outboxStorage'
 import { getClient } from './connections'
 import { useChatStore, threadKey } from './chat'
@@ -122,12 +129,7 @@ function scheduleRetry(): void {
 
 /** The head of each thread's queue, since only that one is eligible. */
 function nextPerThread(): QueuedMessage[] {
-  const heads = new Map<string, QueuedMessage>()
-  for (const m of useOutboxStore.getState().messages) {
-    const key = threadKey(m.connectionId, m.threadId)
-    if (!heads.has(key)) heads.set(key, m)
-  }
-  return [...heads.values()]
+  return nextDeliverablePerThread(useOutboxStore.getState().messages)
 }
 
 async function deliver(message: QueuedMessage): Promise<void> {
@@ -165,16 +167,24 @@ async function deliver(message: QueuedMessage): Promise<void> {
     await forget(message.messageId)
   } catch (err) {
     if (!shouldRetry(err)) {
-      // Understood and refused: repeating cannot help, and the user needs why.
-      log.warn('backend refused a queued message, dropping it', err)
+      // Understood and refused: repeating cannot help. Keep the committed
+      // payload as a blocked record so text and attachments remain recoverable.
+      const blocked = markRejected(message, err)
+      retryNotBefore.delete(message.messageId)
+      useOutboxStore.setState((state) => ({
+        messages: state.messages.map((candidate) =>
+          candidate.messageId === message.messageId ? blocked : candidate,
+        ),
+      }))
+      await saveQueued(blocked).catch((storageError: unknown) =>
+        log.warn('could not persist a rejected queued message', storageError),
+      )
+      log.warn('backend refused a queued message; preserving it for editing', err)
       chat.ingest(message.connectionId, {
         type: 'error',
         threadId: message.threadId,
         message: `Message not sent: ${err instanceof Error ? err.message : String(err)}`,
       })
-      // Leaving the bubble up reads as sent, which it definitely is not.
-      chat.removeUserMessage(threadKey(message.connectionId, message.threadId), echoMessageId(message.messageId))
-      await forget(message.messageId)
       return
     }
     const attempts = message.attempts + 1

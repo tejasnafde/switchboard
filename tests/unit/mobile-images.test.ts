@@ -14,13 +14,13 @@ import {
 } from '../../apps/mobile/src/lib/images'
 
 describe('inferMimeType', () => {
-  it('trusts the picker when it reports an image type', () => {
+  it('accepts a supported picker type', () => {
     expect(inferMimeType({ uri: 'file:///x.bin', mimeType: 'image/png' })).toBe('image/png')
   })
 
-  it('ignores a non-image reported type', () => {
-    // Some pickers report application/octet-stream for HEIC.
-    expect(inferMimeType({ uri: 'file:///a/b.heic', mimeType: 'application/octet-stream' })).toBe('image/heic')
+  it('canonicalizes the jpeg alias', () => {
+    expect(inferMimeType({ uri: 'file:///x.bin', mimeType: 'image/jpg' })).toBe('image/jpeg')
+    expect(inferMimeType({ uri: 'file:///a/b.jpg' })).toBe('image/jpeg')
   })
 
   it('falls back to the extension, case-insensitively', () => {
@@ -36,8 +36,10 @@ describe('inferMimeType', () => {
     expect(inferMimeType({ uri: 'https://h/x.png?width=10' })).toBe('image/png')
   })
 
-  it('guesses jpeg for an unknown extension, which suits a camera roll', () => {
-    expect(inferMimeType({ uri: 'content://media/external/images/1' })).toBe('image/jpeg')
+  it('rejects unsupported and unknown formats instead of relabeling their bytes', () => {
+    expect(inferMimeType({ uri: 'file:///a/b.heic', mimeType: 'application/octet-stream' })).toBeNull()
+    expect(inferMimeType({ uri: 'file:///a/b.bmp', mimeType: 'image/bmp' })).toBeNull()
+    expect(inferMimeType({ uri: 'content://media/external/images/1' })).toBeNull()
   })
 })
 
@@ -63,17 +65,28 @@ describe('assetToPayload', () => {
     expect(assetToPayload({ uri: 'file:///a.png', base64: null })).toEqual({ ok: false, reason: 'no-data' })
   })
 
-  it('refuses an image over the cap', () => {
-    const oversize = 'A'.repeat(Math.ceil((MAX_IMAGE_BYTES + 1024) * 4 / 3))
+  it('refuses a format the backend cannot synchronize', () => {
+    expect(assetToPayload({ uri: 'file:///a.heic', base64: 'AAAA', mimeType: 'image/heic' })).toEqual({
+      ok: false,
+      reason: 'unsupported-type',
+    })
+  })
+
+  it('refuses one image whose encoded data URL exceeds the turn cap', () => {
+    const oversize = 'A'.repeat(MAX_TURN_WIRE_BYTES)
     expect(assetToPayload({ uri: 'file:///big.jpg', base64: oversize })).toEqual({
       ok: false,
       reason: 'too-large',
     })
   })
 
-  it('accepts an image just under the cap', () => {
-    const justUnder = 'A'.repeat(Math.floor((MAX_IMAGE_BYTES - 1024) * 4 / 3))
+  it('accepts one image whose complete encoded data URL fits the turn cap', () => {
+    const justUnder = 'A'.repeat(MAX_TURN_WIRE_BYTES - 'data:image/jpeg;base64,'.length)
     expect(assetToPayload({ uri: 'file:///ok.jpg', base64: justUnder }).ok).toBe(true)
+  })
+
+  it('exposes a decoded-byte ceiling consistent with the encoded wire budget', () => {
+    expect(MAX_IMAGE_BYTES).toBe(Math.floor(MAX_TURN_WIRE_BYTES * 3 / 4))
   })
 })
 
@@ -114,6 +127,13 @@ describe('fitTurnBudget', () => {
     const { accepted } = fitTurnBudget([], [img(MAX_TURN_WIRE_BYTES + 1), img(10)])
     expect(accepted).toHaveLength(1)
     expect(accepted[0].url).toHaveLength(10)
+  })
+
+  it('accepts more than four images when their combined wire payload fits', () => {
+    const existing = [img(1), img(1), img(1)]
+    const { accepted, rejected } = fitTurnBudget(existing, [img(1), img(1), img(1)])
+    expect(accepted).toHaveLength(3)
+    expect(rejected).toHaveLength(0)
   })
 
   it('measures wire cost as the data URL length', () => {
