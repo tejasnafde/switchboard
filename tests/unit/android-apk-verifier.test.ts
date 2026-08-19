@@ -55,6 +55,17 @@ describe('Android APK release verifier', () => {
     expect(signers).toEqual([CANONICAL_SIGNER_SHA256])
   })
 
+  test('parses and deduplicates build-tools 37 verbose signer output', () => {
+    const compact = CANONICAL_SIGNER_SHA256.replaceAll(':', '').toLowerCase()
+    const signers = parseApkSignerOutput(
+      'Number of signers: 1\n' +
+        `V2 Signer: certificate SHA-256 digest: ${compact}\n` +
+        `V3 Signer: certificate SHA-256 digest: ${compact}\n`,
+    )
+
+    expect(signers).toEqual([CANONICAL_SIGNER_SHA256])
+  })
+
   test('reads standard sha256sum metadata and keeps its artifact name', () => {
     expect(parseChecksumMetadata(`${digest}  switchboard-0.5.0.apk\n`)).toEqual({
       sha256: digest.toUpperCase(),
