@@ -1,8 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" style="color-scheme: dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0a0a0a" />
   <title>Switchboard Native Android — calm mobile direction</title>
   <style>
     @font-face { font-family: Instrument; src: url('../../../apps/android/app/src/main/res/font/instrument_sans_semibold.ttf'); font-weight: 600; }
@@ -15,7 +16,12 @@
       --accent: #58a6ff; --green: #3fb950; --amber: #d29922; --red: #f85149; --purple: #bc8cff;
     }
     * { box-sizing: border-box; }
+    html { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
     body { margin: 0; background: #070809; color: var(--text); font-family: Instrument, sans-serif; }
+    h1, h2, h3 { text-wrap: balance; }
+    p { text-wrap: pretty; }
+    button { touch-action: manipulation; -webkit-tap-highlight-color: rgba(88,166,255,.14); }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .page { width: 1728px; margin: 0 auto; padding: 72px 56px 96px; background:
       radial-gradient(circle at 92% 2%, rgba(88,166,255,.10), transparent 420px),
       linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
@@ -40,7 +46,7 @@
     .mock-label strong { font-size: 14px; }
     .mock-label span { color: var(--dim); font: 9px Geist Mono, monospace; letter-spacing: .08em; text-transform: uppercase; }
     .phone { width: 360px; height: 780px; overflow: hidden; border: 1px solid rgba(255,255,255,.13); border-radius: 32px; background: var(--canvas); box-shadow: 0 24px 70px rgba(0,0,0,.34); display: flex; flex-direction: column; position: relative; }
-    .system { height: 32px; padding: 10px 18px 0; display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #c5cbd4; flex: none; }
+    .system { height: 32px; padding: 10px 18px 0; display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #c5cbd4; flex: none; font-variant-numeric: tabular-nums; }
     .system-icons { display: flex; gap: 6px; align-items: center; font: 9px Geist Mono, monospace; }
     .topbar { height: 58px; padding: 0 16px; display: flex; align-items: center; gap: 12px; flex: none; border-bottom: 1px solid transparent; }
     .topbar.border { border-color: var(--line); }
@@ -147,25 +153,43 @@
     .settings-list .row .meta { width: 96px; color: var(--dim); font-size: 9px; text-transform: uppercase; }
     .check { color: var(--accent); font-size: 17px; }
     .update-slot { flex: none; padding: 0 12px 10px; }
-    .update-banner { min-height: 68px; display: flex; align-items: center; gap: 10px; border-radius: 16px; background: var(--raised); border: 1px solid rgba(88,166,255,.18); padding: 10px 10px 10px 13px; box-shadow: 0 12px 30px rgba(0,0,0,.32); }
+    .update-banner { min-height: 64px; display: flex; align-items: center; gap: 10px; border-radius: 8px; background: #2a2a2a; padding: 10px 8px 10px 14px; box-shadow: 0 8px 24px rgba(0,0,0,.36); }
     .update-banner .copy { flex: 1; min-width: 0; }
     .update-banner .title { font-size: 13px; }
     .update-banner .detail { color: var(--dim); font: 9px/14px Geist Mono, monospace; margin-top: 2px; }
-    .update-banner .primary { min-height: 40px; padding: 0 14px; border-radius: 11px; }
+    .update-banner .primary { min-height: 44px; padding: 0 12px; border-radius: 8px; background: transparent; color: var(--accent); font-weight: 700; }
     .progress { height: 3px; background: rgba(255,255,255,.09); border-radius: 3px; overflow: hidden; margin-top: 7px; }
     .progress i { display: block; width: 63%; height: 100%; background: var(--accent); }
     .empty { height: 100%; display: grid; place-content: center; text-align: center; padding: 34px; }
     .empty-mark { width: 52px; height: 52px; border-radius: 16px; background: var(--surface); display: grid; place-items: center; margin: 0 auto 16px; border: 1px solid var(--line); color: var(--dim); }
     .empty h3 { font-size: 22px; margin: 0; letter-spacing: -.025em; }
     .empty p { font: 12px/19px sans-serif; color: var(--dim); margin: 8px 0 18px; }
-    .state-stack { display: grid; gap: 10px; }
-    .state-card { border-radius: 13px; padding: 12px; background: var(--surface); border: 1px solid var(--line); display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center; }
-    .state-card .name { font-size: 13px; }.state-card .desc { color: var(--dim); font: 9px/14px Geist Mono, monospace; margin-top: 2px; }
-    .state-card .action { color: var(--accent); font-size: 11px; }
+    .connection-summary { display: flex; align-items: center; gap: 14px; padding: 26px 0 24px; }
+    .status-mark { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; background: rgba(63,185,80,.10); }
+    .status-mark::after { content: ''; width: 11px; height: 11px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 5px rgba(63,185,80,.09); }
+    .connection-summary h3 { margin: 0; font-size: 22px; line-height: 27px; }
+    .connection-summary p { margin: 2px 0 0; color: var(--dim); font: 10px/16px Geist Mono, monospace; }
+    .detail-list { border-top: 1px solid var(--line); }
+    .detail-row { min-height: 58px; display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); }
+    .detail-row .key { color: var(--dim); font: 10px Geist Mono, monospace; }
+    .detail-row .value { min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .detail-row .action { color: var(--accent); font-size: 12px; min-width: 44px; text-align: right; }
+    .details-actions { display: grid; gap: 8px; margin-top: 22px; }
+    .text-action { min-height: 48px; display: flex; align-items: center; justify-content: center; color: var(--accent); font-size: 14px; }
+    .text-action.danger { color: #ff918b; margin-top: 6px; }
+    .action-item { min-height: 64px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--line); }
+    .action-item:last-child { border-bottom: 0; }
+    .action-item .copy { flex: 1; min-width: 0; }
+    .action-item .name { font-size: 14px; line-height: 19px; }
+    .action-item .support { margin-top: 2px; color: var(--dim); font: 10px/15px Geist Mono, monospace; }
+    .component-sample { display: flex; align-items: center; gap: 10px; }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(88,166,255,.20); border-top-color: var(--accent); border-radius: 50%; flex: none; }
+    .component-line { flex: 1; height: 3px; border-radius: 2px; background: rgba(255,255,255,.10); overflow: hidden; }
+    .component-line::after { content: ''; display: block; width: 63%; height: 100%; background: var(--accent); }
     .navline { height: 20px; flex: none; display: grid; place-items: center; }
     .navline::after { content: ''; width: 104px; height: 4px; background: #d5dae1; border-radius: 4px; opacity: .7; }
     .note-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); margin-top: 26px; }
-    .note-strip div { background: #0b0c0e; padding: 18px; min-height: 86px; }
+    .note-strip div { background: #0b0c0e; padding: 18px; min-height: 94px; }
     .note-strip b { display: block; color: var(--accent); font: 10px Geist Mono, monospace; margin-bottom: 7px; }
     .note-strip span { color: var(--dim); font: 11px/17px sans-serif; }
   </style>
@@ -192,7 +216,7 @@
   <section class="board-section" id="connect">
     <div class="section-head"><div><div class="section-kicker">01 / Find and connect</div><h2>Machines, pairing, and identity</h2></div><div class="section-note">Sparse rows, a single status cue, and progressive disclosure replace instructional cards and badge piles.</div></div>
     <div class="phones">
-      <article class="mock"><div class="mock-label"><strong>Machines</strong><span>Home · connected</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar"><img class="brand" src="../../../resources/icons/switchboard-logo.svg"><span class="title">Switchboard<span class="sub">3 machines</span></span><button class="icon-btn"><svg class="icon"><use href="#search"/></svg></button><button class="icon-btn raised"><svg class="icon"><use href="#plus"/></svg></button></div><div class="content"><div class="section-label">Available now</div><div class="row"><i class="dot live"></i><div class="row-main"><div class="row-title">Tejas’s MacBook</div><div class="row-sub">100.99.40.43 · DIRECT</div></div><span class="chev">›</span></div><div class="row"><i class="dot live"></i><div class="row-main"><div class="row-title">Studio Mac</div><div class="row-sub">TAILSCALE · 12 THREADS</div></div><span class="chev">›</span></div><div class="section-label">Unavailable</div><div class="row"><i class="dot wait"></i><div class="row-main"><div class="row-title">Build VM</div><div class="row-sub">RECONNECTING · 2/5</div></div><span class="chev">›</span></div><div style="height:22px"></div><div class="card"><div class="card-head"><span class="avatar user">TN</span><div><div class="card-title">Google account connected</div><div class="row-sub">tejas@example.com</div></div><span class="chev" style="margin-left:auto">›</span></div></div></div><div class="navline"></div></div></article>
+      <article class="mock"><div class="mock-label"><strong>Machines</strong><span>Home · connected</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar"><img class="brand" src="../../../resources/icons/switchboard-logo.svg" width="28" height="28" alt="Switchboard"><span class="title">Switchboard<span class="sub">3 machines</span></span><button class="icon-btn"><svg class="icon"><use href="#search"/></svg></button><button class="icon-btn raised"><svg class="icon"><use href="#plus"/></svg></button></div><div class="content"><div class="section-label">Available now</div><div class="row"><i class="dot live"></i><div class="row-main"><div class="row-title">Tejas’s MacBook</div><div class="row-sub">100.99.40.43 · DIRECT</div></div><span class="chev">›</span></div><div class="row"><i class="dot live"></i><div class="row-main"><div class="row-title">Studio Mac</div><div class="row-sub">TAILSCALE · 12 THREADS</div></div><span class="chev">›</span></div><div class="section-label">Unavailable</div><div class="row"><i class="dot wait"></i><div class="row-main"><div class="row-title">Build VM</div><div class="row-sub">RECONNECTING · 2/5</div></div><span class="chev">›</span></div><div style="height:22px"></div><div class="card"><div class="card-head"><span class="avatar user">TN</span><div><div class="card-title">Google account connected</div><div class="row-sub">tejas@example.com</div></div><span class="chev" style="margin-left:auto">›</span></div></div></div><div class="navline"></div></div></article>
 
       <article class="mock"><div class="mock-label"><strong>Pair by QR</strong><span>Camera · fallback</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Scan connection code</span></div><div class="content"><div class="camera"><div class="camera-grid"></div><div class="qr-corners"></div></div><div style="text-align:center;margin:18px 26px 4px;font-size:15px">Point your camera at the QR code on your Mac.</div><div style="text-align:center;color:var(--dim);font:10px/16px Geist Mono,monospace">SETTINGS → MOBILE CONNECTION</div><div class="muted-link">Enter connection details instead</div></div><div class="navline"></div></div></article>
 
@@ -229,7 +253,7 @@
   </section>
 
   <section class="board-section" id="media-update">
-    <div class="section-head"><div><div class="section-kicker">04 / Rich input and lifecycle</div><h2>Images, voice, updates, and recovery</h2></div><div class="section-note">Transient controls appear only when needed. Update space is reserved above the composer; voice guidance floats inside a stable recording surface.</div></div>
+    <div class="section-head"><div><div class="section-kicker">04 / Rich input and lifecycle</div><h2>Images, voice, updates, and machine details</h2></div><div class="section-note">Material 3 owns navigation, lists, progress, and transient feedback. Custom surfaces remain only where the product domain requires them.</div></div>
     <div class="phones">
       <article class="mock"><div class="mock-label"><strong>Image attachment</strong><span>Optimistic · synced</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">UI regressions<span class="sub">switchboard · Codex</span></span></div><div class="chat"><div class="assistant"><span class="agent">Codex</span>Send the screenshots and I’ll compare the geometry.</div><div class="image-message"><div class="thumb"></div><div class="thumb alt"></div></div><div class="worklog" style="justify-content:flex-end"><span style="color:var(--green)">✓ Synced to Mac</span></div><div style="flex:1"></div></div><div class="composer-wrap"><div class="composer expanded"><div class="thumbs"><div class="thumb"><span class="x">×</span></div><div class="thumb alt"><span class="x">×</span></div></div><div class="composer-input">These are the broken states.</div><div class="toolbar"><div class="tool-btn"><svg class="icon"><use href="#attach"/></svg></div><div class="model-pill">2 images</div><div class="tool-btn send"><svg class="icon"><use href="#send"/></svg></div></div></div></div><div class="navline"></div></div></article>
 
@@ -237,10 +261,18 @@
 
       <article class="mock"><div class="mock-label"><strong>Update ready</strong><span>Reserved slot · no overlap</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Incentives<span class="sub">thread loaded</span></span></div><div class="chat"><div class="bubble user">Ship the hotfix.</div><div class="assistant"><span class="agent">Codex</span>The signed APK is verified and ready.</div><div style="flex:1"></div></div><div class="update-slot"><div class="update-banner"><div class="copy"><div class="title">Switchboard 0.5.2 ready</div><div class="detail">SIGNED · DATA PRESERVED</div></div><div class="primary">Install</div></div></div><div class="composer-wrap"><div class="composer"><div class="tool-btn"><svg class="icon"><use href="#attach"/></svg></div><div class="composer-input">Message the agent…</div><div class="tool-btn"><svg class="icon"><use href="#mic"/></svg></div><div class="tool-btn send"><svg class="icon"><use href="#send"/></svg></div></div></div><div class="navline"></div></div></article>
 
-      <article class="mock"><div class="mock-label"><strong>Recovery states</strong><span>Contextual · actionable</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn"><svg class="icon"><use href="#back"/></svg></button><span class="title">Status and recovery</span></div><div class="content"><div class="section-label">Connection</div><div class="state-stack"><div class="state-card"><i class="dot live"></i><div><div class="name">Connected</div><div class="desc">DIRECT · 42 MS</div></div><div class="action">Details</div></div><div class="state-card"><i class="dot wait"></i><div><div class="name">Reconnecting</div><div class="desc">CACHED CONTENT AVAILABLE</div></div><div class="action">Retry</div></div><div class="state-card"><i class="dot bad"></i><div><div class="name">Authentication rejected</div><div class="desc">CHECK THE SAVED TOKEN</div></div><div class="action">Edit</div></div></div><div class="section-label" style="margin-top:24px">Updates</div><div class="state-stack"><div class="state-card"><i class="dot" style="background:var(--accent)"></i><div><div class="name">Downloading 0.5.2</div><div class="progress"><i></i></div></div><div class="action">Cancel</div></div><div class="state-card"><i class="dot bad"></i><div><div class="name">Verification failed</div><div class="desc">CURRENT APP WAS NOT CHANGED</div></div><div class="action">Retry</div></div></div><div class="section-label" style="margin-top:24px">Empty state</div><div class="card" style="text-align:center;padding:20px"><div class="card-title">Nothing paired yet</div><div class="card-copy">Scan the code shown by Switchboard on your Mac.</div><div class="primary" style="margin-top:13px">Pair a machine</div></div></div><div class="navline"></div></div></article>
+      <article class="mock"><div class="mock-label"><strong>Machine details</strong><span>Material 3 · current state</span></div><div class="phone"><div class="system"><b>12:53</b><span class="system-icons">5G · 68%</span></div><div class="topbar border"><button class="icon-btn" aria-label="Back"><svg class="icon"><use href="#back"/></svg></button><span class="title">Tejas’s MacBook</span><button class="icon-btn" aria-label="More actions"><svg class="icon"><use href="#more"/></svg></button></div><div class="content"><div class="connection-summary"><div class="status-mark"></div><div><h3>Connected</h3><p>DIRECT · 42 MS</p></div></div><div class="section-label">Connection</div><div class="detail-list"><div class="detail-row"><span class="key">Address</span><span class="value">100.99.40.43:8765</span><span></span></div><div class="detail-row"><span class="key">Transport</span><span class="value">WebSocket · frame auth</span><span></span></div><div class="detail-row"><span class="key">Last sync</span><span class="value">Just now</span><span></span></div></div><div class="section-label" style="margin-top:24px">Manage</div><div class="detail-list"><div class="action-item"><div class="copy"><div class="name">Reconnect</div><div class="support">CLOSE AND REOPEN THE CONNECTION</div></div><span class="chev">›</span></div><div class="action-item"><div class="copy"><div class="name">Edit Connection</div><div class="support">ADDRESS, AUTHENTICATION, AND NAME</div></div><span class="chev">›</span></div></div><div class="details-actions"><div class="text-action danger">Remove Machine</div></div></div><div class="navline"></div></div></article>
     </div>
-    <div class="note-strip"><div><b>IME</b><span>The root resizes; the composer never owns keyboard-height padding.</span></div><div><b>SYNC</b><span>Cached messages remain visible while history refreshes in place.</span></div><div><b>VOICE</b><span>Gesture guidance exists only during an active recording.</span></div><div><b>UPDATE</b><span>The banner reserves space and disappears when the app is current.</span></div></div>
+    <div class="note-strip"><div><b>RECONNECTING</b><span class="component-sample"><i class="spinner"></i><span>Indeterminate `CircularProgressIndicator`; cached content remains visible.</span></span></div><div><b>DOWNLOADING</b><span class="component-sample"><i class="component-line"></i><span>Determinate progress with Cancel as the only adjacent action.</span></span></div><div><b>TRANSIENT ERROR</b><span>`SnackbarHost` owns authentication and network feedback with one corrective action.</span></div><div><b>EMPTY MACHINES</b><span>Icon, title, supporting copy, and one `FilledButton` directly on the canvas—no containing card.</span></div></div>
   </section>
 </main>
+<script>
+  const iconLabels = { back: 'Back', search: 'Search', plus: 'Add', more: 'More actions' };
+  document.querySelectorAll('button.icon-btn').forEach((button) => {
+    const iconId = button.querySelector('use')?.getAttribute('href')?.slice(1);
+    if (!button.getAttribute('aria-label')) button.setAttribute('aria-label', iconLabels[iconId] || 'Action');
+  });
+  document.querySelectorAll('svg.icon').forEach((icon) => icon.setAttribute('aria-hidden', 'true'));
+</script>
 </body>
 </html>
