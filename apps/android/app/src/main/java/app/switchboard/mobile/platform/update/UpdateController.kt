@@ -2,6 +2,8 @@ package app.switchboard.mobile.platform.update
 
 import app.switchboard.mobile.update.UpdateEffect
 import app.switchboard.mobile.update.UpdateEvent
+import app.switchboard.mobile.update.UpdatePolicy
+import app.switchboard.mobile.update.UpdateRelease
 import app.switchboard.mobile.update.UpdateStage
 import app.switchboard.mobile.update.UpdateState
 import app.switchboard.mobile.update.UpdateStateMachine
@@ -14,10 +16,12 @@ interface UpdateStatePersistence {
     fun load(): UpdateState?
 
     fun save(state: UpdateState)
+
+    fun clear()
 }
 
 class UpdateController(
-    currentVersion: String,
+    private val currentVersion: String,
     private val effectRunner: UpdateEffectRunner,
     private val persistence: UpdateStatePersistence,
     private val onStateChanged: (UpdateState) -> Unit = {},
@@ -120,11 +124,22 @@ class UpdateController(
         deliver(outcome)
     }
 
-    private fun loadState(): UpdateState = try {
-        persistence.load() ?: UpdateState.Idle
-    } catch (failure: Throwable) {
-        onPersistenceFailure(failure)
-        UpdateState.Idle
+    private fun loadState(): UpdateState {
+        val restored = try {
+            persistence.load() ?: return UpdateState.Idle
+        } catch (failure: Throwable) {
+            onPersistenceFailure(failure)
+            return UpdateState.Idle
+        }
+        val release = restored.releaseCandidate() ?: return restored
+        if (UpdatePolicy.isNewer(release.version, currentVersion)) return restored
+
+        try {
+            persistence.clear()
+        } catch (failure: Throwable) {
+            onPersistenceFailure(failure)
+        }
+        return UpdateState.Idle
     }
 
     private fun persist(state: UpdateState) {
@@ -144,6 +159,22 @@ class UpdateController(
         val stateToNotify: UpdateState? = null,
         val work: EffectWork? = null,
     )
+}
+
+private fun UpdateState.releaseCandidate(): UpdateRelease? = when (this) {
+    is UpdateState.Available -> release
+    is UpdateState.Downloading -> release
+    is UpdateState.Cancelling -> release
+    is UpdateState.Verifying -> downloadedApk.release
+    is UpdateState.InstallerReady -> artifact.release
+    is UpdateState.CheckingInstallPermission -> artifact.release
+    is UpdateState.PermissionRequired -> release
+    is UpdateState.LaunchRequested -> artifact.release
+    is UpdateState.Error -> verifiedApk?.release ?: downloadedApk?.release ?: release
+    UpdateState.Idle,
+    UpdateState.Checking,
+    UpdateState.UpToDate,
+    -> null
 }
 
 private val UpdateEffect.stage: UpdateStage

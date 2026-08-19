@@ -4,6 +4,7 @@ import app.switchboard.mobile.update.DownloadedApk
 import app.switchboard.mobile.update.UpdateEffect
 import app.switchboard.mobile.update.UpdateEvent
 import app.switchboard.mobile.update.UpdateRelease
+import app.switchboard.mobile.update.UpdateStage
 import app.switchboard.mobile.update.UpdateState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertSame
@@ -113,6 +114,35 @@ class UpdateControllerTest {
         assertEquals(UpdateState.InstallerReady(artifact), controller.state)
         assertEquals(UpdateState.InstallerReady(artifact), persistence.saved)
         assertEquals(emptyList<UpdateEffect>(), runner.invocations.map { it.effect })
+    }
+
+    @Test
+    fun completedUpdateStateIsClearedBeforeFreshDiscoveryStarts() {
+        val installedRelease = release.copy(version = "0.5.1")
+        val artifact = verifiedApk(installedRelease)
+        val staleStates = listOf(
+            UpdateState.Available(installedRelease),
+            UpdateState.Downloading(installedRelease, 1, 2),
+            UpdateState.Cancelling(installedRelease, 1, 2),
+            UpdateState.Verifying(DownloadedApk(installedRelease, "/cache/update.part")),
+            UpdateState.InstallerReady(artifact),
+            UpdateState.CheckingInstallPermission(artifact),
+            UpdateState.PermissionRequired(installedRelease, artifact),
+            UpdateState.LaunchRequested(artifact),
+            UpdateState.Error(UpdateStage.INSTALLER, "stale", installedRelease, verifiedApk = artifact),
+        )
+
+        staleStates.forEach { stale ->
+            val runner = RecordingEffectRunner()
+            val persistence = MemoryUpdateStatePersistence(stale)
+            val controller = UpdateController("0.5.1", runner, persistence)
+
+            controller.start()
+
+            assertEquals(UpdateState.Checking, controller.state)
+            assertEquals(1, persistence.clearCalls)
+            assertEquals(listOf(UpdateEffect.FetchReleases), runner.invocations.map { it.effect })
+        }
     }
 
     private class RecordingEffectRunner : UpdateEffectRunner {

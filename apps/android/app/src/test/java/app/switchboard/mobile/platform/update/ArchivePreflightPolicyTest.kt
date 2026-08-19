@@ -40,6 +40,14 @@ class ArchivePreflightPolicyTest {
         )
     }
 
+    @Test
+    fun rejectionMessagesIdentifyTheActualFailedIdentityField() {
+        assertEquals("Downloaded APK has the wrong package ID", ArchiveRejection.PACKAGE_NAME.installerMessage())
+        assertEquals("Downloaded APK signer does not match the installed app", ArchiveRejection.SIGNER.installerMessage())
+        assertEquals("This update version is already installed", ArchiveRejection.VERSION_CODE.installerMessage())
+        assertEquals("Downloaded APK version does not match the release", ArchiveRejection.VERSION_NAME.installerMessage())
+    }
+
     private fun assertRejected(reason: ArchiveRejection, archive: PackageIdentity) {
         assertEquals(
             ArchivePreflightDecision.Reject(reason),

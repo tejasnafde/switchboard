@@ -14,12 +14,20 @@ internal class MemoryUpdateStatePersistence(
     private var loaded = initialState
     var saved: UpdateState? = initialState
         private set
+    var clearCalls: Int = 0
+        private set
 
     override fun load(): UpdateState? = loaded
 
     override fun save(state: UpdateState) {
         loaded = state
         saved = state
+    }
+
+    override fun clear() {
+        loaded = null
+        saved = null
+        clearCalls += 1
     }
 }
 

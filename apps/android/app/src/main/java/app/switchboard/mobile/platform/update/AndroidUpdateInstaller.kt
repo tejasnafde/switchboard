@@ -36,8 +36,9 @@ class AndroidUpdateInstaller(
         check(canRequestPackageInstalls()) { "Switchboard is not allowed to request package installation" }
         val installed = packageIdentityReader.installed()
         val archive = packageIdentityReader.archive(File(artifact.filePath))
-        check(ArchivePreflightPolicy.evaluate(artifact.release, installed, archive) == ArchivePreflightDecision.Accept) {
-            "APK identity changed after verification"
+        when (val decision = ArchivePreflightPolicy.evaluate(artifact.release, installed, archive)) {
+            ArchivePreflightDecision.Accept -> Unit
+            is ArchivePreflightDecision.Reject -> error(decision.reason.installerMessage())
         }
 
         val pending = PendingInstallation(

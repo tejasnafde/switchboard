@@ -25,6 +25,10 @@ class SharedPreferencesUpdateStatePersistence(
         check(editor.commit()) { "Could not persist updater state" }
     }
 
+    override fun clear() {
+        check(preferences.edit().clear().commit()) { "Could not clear updater state" }
+    }
+
     private companion object {
         const val UPDATE_STATE_PREFERENCES = "switchboard_update_state_v1"
     }
