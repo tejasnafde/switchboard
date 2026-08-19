@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AccountCircle
@@ -85,6 +86,7 @@ fun ConnectionsScreen(
     onConnectionIntent: (ConnectionIntent) -> Unit,
     googleAccount: GoogleAccountPresentation = GoogleAccountPresentation.SignedOut,
     onGoogleAccount: () -> Unit = {},
+    onBack: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var actionRow by remember { mutableStateOf<ConnectionRowPresentation?>(null) }
@@ -99,6 +101,7 @@ fun ConnectionsScreen(
             googleAccount = googleAccount,
             onGoogleAccount = onGoogleAccount,
             onAdd = onAdd,
+            onBack = onBack,
         )
         when (presentation) {
             ConnectionsPresentation.Loading -> LoadingState()
@@ -200,6 +203,7 @@ private fun ConnectionsTopBar(
     googleAccount: GoogleAccountPresentation,
     onGoogleAccount: () -> Unit,
     onAdd: () -> Unit,
+    onBack: (() -> Unit)?,
 ) {
     Row(
         modifier = Modifier
@@ -209,29 +213,35 @@ private fun ConnectionsTopBar(
             .padding(horizontal = 16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TextButton(
-            onClick = onGoogleAccount,
-            modifier = Modifier
-                .size(48.dp)
-                .semantics {
-                    contentDescription = "Google account"
-                    stateDescription = when (googleAccount) {
-                        GoogleAccountPresentation.SignedOut -> "Signed out"
-                        is GoogleAccountPresentation.SignedIn -> "Signed in"
-                        GoogleAccountPresentation.Blocked -> "Blocked"
-                    }
-                },
-        ) {
-            GoogleAccountAvatarPolicy.monogramOrNull(googleAccount)?.let { monogram ->
-                Text(
-                    text = monogram,
-                    fontFamily = GeistMono,
-                    fontWeight = FontWeight.Medium,
+        if (onBack != null) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+        } else {
+            TextButton(
+                onClick = onGoogleAccount,
+                modifier = Modifier
+                    .size(48.dp)
+                    .semantics {
+                        contentDescription = "Google account"
+                        stateDescription = when (googleAccount) {
+                            GoogleAccountPresentation.SignedOut -> "Signed out"
+                            is GoogleAccountPresentation.SignedIn -> "Signed in"
+                            GoogleAccountPresentation.Blocked -> "Blocked"
+                        }
+                    },
+            ) {
+                GoogleAccountAvatarPolicy.monogramOrNull(googleAccount)?.let { monogram ->
+                    Text(
+                        text = monogram,
+                        fontFamily = GeistMono,
+                        fontWeight = FontWeight.Medium,
+                    )
+                } ?: Icon(
+                    imageVector = Icons.Filled.AccountCircle,
+                    contentDescription = null,
                 )
-            } ?: Icon(
-                imageVector = Icons.Filled.AccountCircle,
-                contentDescription = null,
-            )
+            }
         }
         Spacer(Modifier.width(8.dp))
         Text(

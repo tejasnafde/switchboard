@@ -5,6 +5,7 @@ import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.domain.remote.MessageToolCall
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.MessagePill
 import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
@@ -73,7 +74,13 @@ class LoadedSessionSnapshotMapperTest {
     fun `history prefers display body and filters recognized synthetic context`() {
         val loaded = LoadedSession(
             messages = listOf(
-                message("visible", "user", "context wrapper\n\nshow this", displayBody = "show this"),
+                message(
+                    "visible",
+                    "user",
+                    "context wrapper\n\nshow this",
+                    displayBody = "[[pill:selection-1]] show this",
+                    pillsMeta = mapOf("selection-1" to MessagePill("Admin panel", "chat-message")),
+                ),
                 message("synthetic", "user", "<environment_context>\n<cwd>/repo</cwd>\n</environment_context>"),
             ),
             meta = null,
@@ -83,7 +90,11 @@ class LoadedSessionSnapshotMapperTest {
         )
 
         val users = LoadedSessionSnapshotMapper.map("thread", loaded).feed.filterIsInstance<FeedItem.User>()
-        assertEquals(listOf("show this"), users.map(FeedItem.User::text))
+        assertEquals(listOf("[[pill:selection-1]] show this"), users.map(FeedItem.User::text))
+        assertEquals(
+            mapOf("selection-1" to MessagePill("Admin panel", "chat-message")),
+            users.single().pillsMeta,
+        )
     }
     @Test
     fun `image-only history stays visible and assistant tool calls become rows`() {
@@ -126,6 +137,7 @@ class LoadedSessionSnapshotMapperTest {
         images: List<MessageImage> = emptyList(),
         toolCalls: List<MessageToolCall> = emptyList(),
         displayBody: String? = null,
+        pillsMeta: Map<String, MessagePill> = emptyMap(),
     ) = ChatMessage(
         id = id,
         role = role,
@@ -135,5 +147,6 @@ class LoadedSessionSnapshotMapperTest {
         images = images,
         toolCalls = toolCalls,
         displayBody = displayBody,
+        pillsMeta = pillsMeta,
     )
 }

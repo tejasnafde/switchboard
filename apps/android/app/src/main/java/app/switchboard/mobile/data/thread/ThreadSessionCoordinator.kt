@@ -8,10 +8,15 @@ import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.remote.AnswerQuestion
 import app.switchboard.mobile.domain.remote.ApprovalDecision
+import app.switchboard.mobile.domain.remote.ArchiveConversationResult
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MarkReadResult
 import app.switchboard.mobile.domain.remote.ModelOption
+import app.switchboard.mobile.domain.remote.NewSessionDecisions
+import app.switchboard.mobile.domain.remote.ProviderInstance
+import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchRequest
+import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchResult
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteResponse
@@ -67,7 +72,22 @@ data class ThreadSessionState(
     val controlMessage: String? = null,
     val skills: List<ProviderSkill> = emptyList(),
     val models: ThreadModelState = ThreadModelState(),
+    val profiles: ThreadProfileState = ThreadProfileState(),
+    val archive: ThreadArchiveState = ThreadArchiveState(),
     val pendingActions: ThreadPendingActions = ThreadPendingActions(),
+)
+
+data class ThreadArchiveState(
+    val archiving: Boolean = false,
+    val error: String? = null,
+)
+
+data class ThreadProfileState(
+    val options: List<ProviderInstance> = emptyList(),
+    val selectedInstanceId: String? = null,
+    val loading: Boolean = false,
+    val changing: Boolean = false,
+    val error: String? = null,
 )
 
 data class ThreadModelState(
@@ -171,6 +191,19 @@ interface ThreadSessionRemote {
         callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
     )
 
+    fun listProviderInstances(callback: (RemoteResponse<List<ProviderInstance>>) -> Unit)
+
+    fun switchInstance(
+        threadId: String,
+        request: ProviderInstanceSwitchRequest,
+        callback: (RemoteResponse<ProviderInstanceSwitchResult>) -> Unit,
+    )
+
+    fun archiveConversation(
+        threadId: String,
+        callback: (RemoteResponse<ArchiveConversationResult>) -> Unit,
+    )
+
     fun respondToRequest(
         threadId: String,
         requestId: String,
@@ -238,6 +271,25 @@ class SwitchboardThreadSessionRemote(
         client.listModels(threadId, callback)
     }
 
+    override fun listProviderInstances(callback: (RemoteResponse<List<ProviderInstance>>) -> Unit) {
+        client.listProviderInstances(callback)
+    }
+
+    override fun switchInstance(
+        threadId: String,
+        request: ProviderInstanceSwitchRequest,
+        callback: (RemoteResponse<ProviderInstanceSwitchResult>) -> Unit,
+    ) {
+        client.switchInstance(threadId, request, callback)
+    }
+
+    override fun archiveConversation(
+        threadId: String,
+        callback: (RemoteResponse<ArchiveConversationResult>) -> Unit,
+    ) {
+        client.archiveConversation(threadId, callback)
+    }
+
     override fun respondToRequest(
         threadId: String,
         requestId: String,
@@ -287,6 +339,7 @@ object LoadedSessionSnapshotMapper {
                         text = text,
                         at = message.timestamp,
                         images = message.images,
+                        pillsMeta = message.pillsMeta,
                     ))
                 }.orEmpty()
 
@@ -355,6 +408,7 @@ class ThreadSessionCoordinator(
     private val clock: ThreadSessionClock,
     initialComposer: ComposerDraft? = null,
     private val composerPersistence: ThreadComposerPersistence = NoOpThreadComposerPersistence,
+    private val snapshotStore: ThreadSnapshotStore = NoOpThreadSnapshotStore,
     private val projectPath: String? = null,
     private val worktreePath: String? = null,
     private val providerHint: String? = initialCached?.provider,
@@ -381,7 +435,12 @@ class ThreadSessionCoordinator(
     private var controlMessage: String? = null
     private var skills: List<ProviderSkill> = emptyList()
     private var models = ThreadModelState(selectedModelId = initialCached?.resolvedModel)
-    private val mutableState = MutableStateFlow(ThreadSessionState(load, composer, models = models))
+    private var profiles = ThreadProfileState(selectedInstanceId = initialCached?.instanceId)
+    private var archive = ThreadArchiveState()
+    private var allProfiles: List<ProviderInstance> = emptyList()
+    private val mutableState = MutableStateFlow(
+        ThreadSessionState(load, composer, models = models, profiles = profiles),
+    )
     val state = mutableState.asStateFlow()
 
     private var subscription: Cancelable? = null
@@ -392,9 +451,13 @@ class ThreadSessionCoordinator(
     private var skillsRequest = 0L
     private var modelsRequest = 0L
     private var modelChangeRequest = 0L
+    private var profilesRequest = 0L
+    private var profileChangeRequest = 0L
+    private var archiveRequest = 0L
     private var reattachRequest = 0L
     private var reattachInFlight: ProviderKind? = null
     private var attachedProvider: ProviderKind? = null
+    private var attachedInstanceId: String? = initialCached?.instanceId
     private val pendingControls = mutableSetOf<String>()
     private val pendingApprovalDecisions = mutableMapOf<String, ApprovalDecision>()
     private val pendingQuestionRequestIds = mutableSetOf<String>()
@@ -416,6 +479,7 @@ class ThreadSessionCoordinator(
         refresh()
         loadSkills()
         refreshModels()
+        refreshProfiles()
         remote.markRead(threadId) { /* best effort; local viewing state already cleared unread */ }
     }
 
@@ -543,11 +607,20 @@ class ThreadSessionCoordinator(
                 synchronized(this) {
                     if (!accepts(response, request, modelsRequest)) return@synchronized
                     models = when (val outcome = response.outcome) {
-                        is RemoteOutcome.Success -> models.copy(
-                            options = outcome.value.orEmpty(),
-                            loading = false,
-                            error = null,
-                        )
+                        is RemoteOutcome.Success -> outcome.value.orEmpty().let { options ->
+                            models.copy(
+                                options = options,
+                                selectedModelId = if (options.isEmpty()) {
+                                    models.selectedModelId
+                                } else {
+                                    models.selectedModelId?.takeIf { selected ->
+                                        options.any { it.id == selected }
+                                    }
+                                },
+                                loading = false,
+                                error = null,
+                            )
+                        }
                         is RemoteOutcome.Failure -> models.copy(
                             loading = false,
                             error = outcome.message,
@@ -601,6 +674,137 @@ class ThreadSessionCoordinator(
                 changing = false,
                 error = error.message ?: "Could not change model",
             )
+            publish()
+        }
+    }
+
+    @Synchronized
+    fun refreshProfiles() {
+        if (closed || remote.scope != scope) return
+        val request = ++profilesRequest
+        profiles = profiles.copy(loading = true, error = null)
+        publish()
+        try {
+            remote.listProviderInstances { response ->
+                synchronized(this) {
+                    if (!accepts(response, request, profilesRequest)) return@synchronized
+                    when (val outcome = response.outcome) {
+                        is RemoteOutcome.Success -> {
+                            allProfiles = outcome.value
+                            profiles = profiles.copy(loading = false, error = null)
+                            syncProfiles()
+                        }
+                        is RemoteOutcome.Failure -> profiles = profiles.copy(
+                            loading = false,
+                            error = outcome.message,
+                        )
+                    }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            if (request != profilesRequest) return
+            profiles = profiles.copy(
+                loading = false,
+                error = error.message ?: "Could not load profiles",
+            )
+            publish()
+        }
+    }
+
+    @Synchronized
+    fun selectProfile(instanceId: String) {
+        if (closed || remote.scope != scope || profiles.changing) return
+        if (currentThread()?.status == "running") {
+            profiles = profiles.copy(error = "Stop the current turn before switching profile")
+            publish()
+            return
+        }
+        val target = profiles.options.firstOrNull { it.id == instanceId }
+        if (target == null) {
+            profiles = profiles.copy(error = "Profile is not available for this provider")
+            publish()
+            return
+        }
+        if (profiles.selectedInstanceId == instanceId) return
+
+        val request = ++profileChangeRequest
+        profiles = profiles.copy(changing = true, error = null)
+        publish()
+        remote.switchInstance(
+            threadId,
+            ProviderInstanceSwitchRequest(
+                targetInstanceId = target.id,
+                expectedCurrentInstanceId = profiles.selectedInstanceId,
+            ),
+        ) { response ->
+            synchronized(this) {
+                if (!accepts(response, request, profileChangeRequest)) return@synchronized
+                var switched = false
+                profiles = when (val outcome = response.outcome) {
+                    is RemoteOutcome.Failure -> profiles.copy(
+                        changing = false,
+                        error = outcome.message,
+                    )
+                    is RemoteOutcome.Success -> when (val result = outcome.value) {
+                        is ProviderInstanceSwitchResult.Success -> profiles.copy(
+                            selectedInstanceId = result.instanceId,
+                            changing = false,
+                            error = null,
+                        ).also { switched = true }
+                        is ProviderInstanceSwitchResult.Failure -> profiles.copy(
+                            selectedInstanceId = if (result.rolledBack == false) {
+                                result.currentInstanceId
+                            } else {
+                                result.currentInstanceId ?: profiles.selectedInstanceId
+                            },
+                            changing = false,
+                            error = result.message,
+                        )
+                    }
+                }
+                publish()
+                if (switched) {
+                    loadSkills()
+                    refreshModels()
+                }
+            }
+        }
+    }
+
+    @Synchronized
+    fun archive(onArchived: () -> Unit) {
+        if (closed || remote.scope != scope || archive.archiving) return
+        if (currentThread()?.status in ACTIVE_PROVIDER_STATUSES) {
+            archive = archive.copy(error = "Stop the current turn before archiving")
+            publish()
+            return
+        }
+        val request = ++archiveRequest
+        archive = ThreadArchiveState(archiving = true)
+        publish()
+        try {
+            remote.archiveConversation(threadId) { response ->
+                val confirmed = synchronized(this) {
+                    if (!accepts(response, request, archiveRequest)) return@synchronized false
+                    when (val outcome = response.outcome) {
+                        is RemoteOutcome.Success -> {
+                            archive = ThreadArchiveState()
+                            publish()
+                            outcome.value == ArchiveConversationResult.Archived
+                        }
+                        is RemoteOutcome.Failure -> {
+                            archive = ThreadArchiveState(error = outcome.message)
+                            publish()
+                            false
+                        }
+                    }
+                }
+                if (confirmed) onArchived()
+            }
+        } catch (error: RuntimeException) {
+            if (request != archiveRequest) return
+            archive = ThreadArchiveState(error = error.message ?: "Could not archive conversation")
             publish()
         }
     }
@@ -662,6 +866,9 @@ class ThreadSessionCoordinator(
         skillsRequest += 1
         modelsRequest += 1
         modelChangeRequest += 1
+        profilesRequest += 1
+        profileChangeRequest += 1
+        archiveRequest += 1
         reattachRequest += 1
         subscription?.cancel()
         subscription = null
@@ -683,6 +890,7 @@ class ThreadSessionCoordinator(
                     optimisticTurns.values.forEach(::addOptimistic)
                     reduce(ThreadAction.CompleteReseed(scope))
                     load = ThreadSessionLoad.Ready(requireNotNull(currentThread()))
+                    persistSnapshot()
                     reattach(outcome.value)
                 }
 
@@ -699,15 +907,15 @@ class ThreadSessionCoordinator(
     private fun reattach(agentType: String?) {
         if (agentType == null) return
         val cwd = worktreePath ?: projectPath ?: return
-        val provider = when (agentType) {
-            "claude-code", "claude" -> ProviderKind.Claude
-            else -> ProviderKind.entries.firstOrNull { it.wire == agentType }
-        }
+        val provider = providerKind(agentType)
         if (provider == null) {
             controlMessage = "Cannot reattach unknown provider $agentType"
             return
         }
-        if (attachedProvider == provider || reattachInFlight == provider) return
+        if (
+            attachedProvider == provider ||
+            reattachInFlight == provider
+        ) return
         val request = ++reattachRequest
         reattachInFlight = provider
         try {
@@ -725,6 +933,7 @@ class ThreadSessionCoordinator(
                     when (val outcome = response.outcome) {
                         is RemoteOutcome.Success -> {
                             attachedProvider = provider
+                            attachedInstanceId = currentThread()?.instanceId
                             controlMessage = null
                         }
                         is RemoteOutcome.Failure -> controlMessage = outcome.message
@@ -734,7 +943,9 @@ class ThreadSessionCoordinator(
             }
         } catch (error: RuntimeException) {
             reattachInFlight = null
-            controlMessage = error.message ?: "Could not reattach session"
+            val message = error.message ?: "Could not reattach session"
+            controlMessage = message
+            publish()
         }
     }
 
@@ -762,7 +973,24 @@ class ThreadSessionCoordinator(
                 }
                 else -> Unit
             }
+            val previousInstanceId = attachedInstanceId
             reduce(ThreadAction.Runtime(ScopedThreadEvent(eventScope, null, event)))
+            val providerEvent = known?.payload as?
+                app.switchboard.mobile.domain.thread.ThreadEventPayload.SessionProvider
+            if (providerEvent != null) {
+                attachedInstanceId = providerEvent.instanceId
+                val provider = providerKind(providerEvent.provider)
+                profiles = profiles.copy(
+                    options = provider?.let {
+                        NewSessionDecisions.profiles(allProfiles, it)
+                    }.orEmpty(),
+                    selectedInstanceId = providerEvent.instanceId,
+                )
+                if (attachedInstanceId != previousInstanceId) {
+                    loadSkills()
+                    refreshModels()
+                }
+            }
             currentThread()?.resolvedModel?.let { resolvedModel ->
                 models = models.copy(selectedModelId = resolvedModel)
             }
@@ -771,6 +999,7 @@ class ThreadSessionCoordinator(
                 is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
                 is ThreadSessionLoad.Ready -> current.copy(thread = requireNotNull(currentThread()))
             }
+            persistSnapshot()
             publish()
         }
     }
@@ -919,6 +1148,8 @@ class ThreadSessionCoordinator(
             controlMessage = controlMessage,
             skills = skills,
             models = models,
+            profiles = profiles,
+            archive = archive,
             pendingActions = ThreadPendingActions(
                 approvalDecisions = pendingApprovalDecisions.toMap(),
                 questionRequestIds = pendingQuestionRequestIds.toSet(),
@@ -989,6 +1220,25 @@ class ThreadSessionCoordinator(
         )
     }
 
+    private fun persistSnapshot() {
+        val current = currentThread() ?: return
+        runCatching { snapshotStore.save(scope.connectionId, threadId, current) }
+    }
+
+    private fun syncProfiles() {
+        val provider = providerKind(currentThread()?.provider ?: providerHint)
+        val options = provider?.let { NewSessionDecisions.profiles(allProfiles, it) }.orEmpty()
+        profiles = profiles.copy(
+            options = options,
+            selectedInstanceId = currentThread()?.instanceId ?: profiles.selectedInstanceId,
+        )
+    }
+
+    private fun providerKind(agentType: String?): ProviderKind? = when (agentType) {
+        "claude-code", "claude" -> ProviderKind.Claude
+        else -> ProviderKind.entries.firstOrNull { it.wire == agentType }
+    }
+
     private fun <T> accepts(response: RemoteResponse<T>): Boolean =
         !closed &&
             response.key.connectionId == scope.connectionId &&
@@ -1004,5 +1254,12 @@ class ThreadSessionCoordinator(
         const val HISTORY_LIMIT = 250L
         const val IMPLEMENT_PLAN_MESSAGE = "Implement the plan you proposed."
         const val OPEN_FILE_UNSUPPORTED = "Opening changed files is not available on mobile yet."
+        private val ACTIVE_PROVIDER_STATUSES = setOf(
+            "running",
+            "working",
+            "thinking",
+            "connecting",
+            "retrying",
+        )
     }
 }

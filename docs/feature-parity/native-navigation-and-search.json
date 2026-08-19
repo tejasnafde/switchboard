@@ -1,0 +1,59 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "native-navigation-and-search",
+  "summary": "Make native Android home, recents, global message search and deep-link navigation cache-first and lifecycle-safe.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/message-search.ts",
+        "tests/unit/message-search-contract.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "This slice restores native Android navigation parity without changing the existing React Native navigation behavior."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/home",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/search",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/host.ts",
+        "src/main/db/message-search.ts",
+        "src/preload/index.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/local/Daos.kt"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Navigation and search add no schema migration and do not alter Android package or signing identity."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Native Android home, search, navigation, cache and deep-link unit tests",
+      "Native Android debug instrumentation compilation",
+      "Desktop message-search contract tests"
+    ],
+    "hardware": [
+      "Side-by-side native Android debug APK launched on CPH2487."
+    ],
+    "notExercised": [
+      "Every production notification deep link was not exercised against the final release-signed APK."
+    ]
+  }
+}

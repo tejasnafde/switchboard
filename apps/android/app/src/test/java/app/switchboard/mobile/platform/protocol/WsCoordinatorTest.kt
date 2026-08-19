@@ -493,6 +493,32 @@ class WsCoordinatorTest {
     }
 
     @Test
+    fun `network loss invalidates a silently stale ready socket before regain redials`() {
+        val fixture = Fixture()
+        val first = fixture.connectReady()
+        val firstScope = requireNotNull(fixture.coordinator.currentScope)
+        val outcomes = mutableListOf<RpcOutcome>()
+        fixture.coordinator.invoke("provider:send-turn", JsonArray(emptyList()), outcomes::add)
+
+        fixture.coordinator.setNetworkAvailable(false)
+
+        assertTrue(first.socket.closed)
+        assertEquals(
+            listOf(RpcOutcome.Failure(RpcFailure.ConnectionLost(DisconnectCause.Network))),
+            outcomes,
+        )
+        assertEquals(ConnectionPhase.Disconnected, fixture.coordinator.phase)
+        assertTrue(fixture.scheduler.activeTasks().isEmpty())
+
+        fixture.coordinator.setNetworkAvailable(true)
+
+        assertEquals(2, fixture.dialer.calls.size)
+        assertTrue(fixture.coordinator.currentScope != firstScope)
+        first.listener.onText(WsProtocol.encode(WsFrame.Pong(1)))
+        assertEquals(ConnectionPhase.Disconnected, fixture.coordinator.phase)
+    }
+
+    @Test
     fun `disconnect destroy and auth rejection cannot redial on later network regain`() {
         val disconnected = Fixture()
         disconnected.coordinator.setNetworkAvailable(false)

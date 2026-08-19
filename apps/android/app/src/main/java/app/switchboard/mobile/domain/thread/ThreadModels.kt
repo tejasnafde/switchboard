@@ -2,6 +2,7 @@ package app.switchboard.mobile.domain.thread
 
 import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.JsonValue
 
 enum class ThreadEventKind {
@@ -56,6 +57,37 @@ data class TodoEntry(
     val status: String,
 )
 
+data class MessagePill(
+    val label: String,
+    val kind: String,
+)
+
+private const val MAX_MESSAGE_PILLS = 32
+private const val MAX_MESSAGE_PILL_ID_LENGTH = 128
+private const val MAX_MESSAGE_PILL_LABEL_LENGTH = 120
+private val MESSAGE_PILL_ID = Regex("[A-Za-z0-9_-]+")
+private val MESSAGE_PILL_KINDS = setOf("file", "terminal", "chat-message")
+
+internal fun decodeMessagePills(value: JsonValue?): Map<String, MessagePill> {
+    val entries = (value as? JsonObject)?.values ?: return emptyMap()
+    return entries.entries
+        .asSequence()
+        .mapNotNull { (id, rawPill) ->
+            if (id.length > MAX_MESSAGE_PILL_ID_LENGTH || !MESSAGE_PILL_ID.matches(id)) return@mapNotNull null
+            val pill = rawPill as? JsonObject ?: return@mapNotNull null
+            val label = (pill.values["label"] as? JsonString)?.value
+                ?: return@mapNotNull null
+            val kind = (pill.values["kind"] as? JsonString)?.value
+                ?: return@mapNotNull null
+            if (label.isBlank() || label.length > MAX_MESSAGE_PILL_LABEL_LENGTH || kind !in MESSAGE_PILL_KINDS) {
+                return@mapNotNull null
+            }
+            id to MessagePill(label, kind)
+        }
+        .take(MAX_MESSAGE_PILLS)
+        .toMap(linkedMapOf())
+}
+
 sealed interface ThreadEventPayload {
     data class Content(val messageId: String, val text: String, val append: Boolean, val streamKind: String) : ThreadEventPayload
     data class UserMessage(
@@ -64,6 +96,7 @@ sealed interface ThreadEventPayload {
         val images: List<MessageImage>,
         val origin: String?,
         val at: Long,
+        val pillsMeta: Map<String, MessagePill> = emptyMap(),
     ) : ThreadEventPayload
     data class ToolStarted(val toolId: String, val toolName: String, val input: JsonValue) : ThreadEventPayload
     data class ToolCompleted(val toolId: String, val output: String?) : ThreadEventPayload
@@ -186,6 +219,7 @@ sealed interface FeedItem {
         val text: String,
         val at: Long,
         val images: List<MessageImage> = emptyList(),
+        val pillsMeta: Map<String, MessagePill> = emptyMap(),
     ) : FeedItem
     data class Text(
         override val id: String,

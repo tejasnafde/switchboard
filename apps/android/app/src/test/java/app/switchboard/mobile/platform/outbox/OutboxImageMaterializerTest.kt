@@ -81,7 +81,33 @@ class OutboxImageMaterializerTest {
     }
 
     @Test
-    fun rejectsMoreThanFourImagesBeforeReadingPrivateFiles() {
+    fun canonicalizesJpgAndInfersMissingMimeFromImageBytes() {
+        val jpeg = byteArrayOf(
+            0xFF.toByte(),
+            0xD8.toByte(),
+            0xFF.toByte(),
+            0xE0.toByte(),
+            0x00,
+        )
+        val materializer = PrivateFileOutboxImageMaterializer(
+            OutboxPrivateFileReader { jpeg },
+        )
+
+        val reportedJpg = materializer.materialize(
+            turn(StagedAttachment("/private/reported-jpg", "image/jpg")),
+        ) as OutboxImageMaterialization.Success
+        val inferred = materializer.materialize(
+            turn(StagedAttachment("/private/missing-type", null)),
+        ) as OutboxImageMaterialization.Success
+
+        assertEquals("image/jpeg", reportedJpg.images.single().mimeType)
+        assertTrue(reportedJpg.images.single().url.startsWith("data:image/jpeg;base64,"))
+        assertEquals("image/jpeg", inferred.images.single().mimeType)
+        assertTrue(inferred.images.single().url.startsWith("data:image/jpeg;base64,"))
+    }
+
+    @Test
+    fun acceptsMoreThanFourImagesWhenTheirCombinedWirePayloadFits() {
         var reads = 0
         val materializer = PrivateFileOutboxImageMaterializer(
             OutboxPrivateFileReader {
@@ -98,11 +124,9 @@ class OutboxImageMaterializerTest {
             ),
         )
 
-        assertEquals(
-            "A turn can include at most 4 images",
-            (result as OutboxImageMaterialization.Failure).reason,
-        )
-        assertEquals(0, reads)
+        assertTrue(result is OutboxImageMaterialization.Success)
+        assertEquals(5, (result as OutboxImageMaterialization.Success).images.size)
+        assertEquals(5, reads)
     }
 
     @Test

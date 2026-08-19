@@ -45,15 +45,40 @@ class ThreadPresentationTest {
         )
 
         val tool = content.rows.filterIsInstance<ThreadRowPresentation.Tool>().single()
-        assertEquals("{\"path\":\"README.md\"}", tool.input)
+        assertEquals("README.md", tool.input)
         assertEquals("done", tool.output)
         val file = content.rows.filterIsInstance<ThreadRowPresentation.FileEdit>().single()
         assertEquals(1, file.addedLines)
         assertEquals(1, file.removedLines)
         assertEquals("src/Main.kt", file.relPath)
+        assertEquals(
+            listOf(DiffLineKind.Removed, DiffLineKind.Added),
+            file.diff.lines.map(CompactDiffLine::kind),
+        )
         val raw = content.rows.filterIsInstance<ThreadRowPresentation.RawNotice>().single()
         assertEquals("provider.future", raw.eventType)
         assertEquals("{\"future\":\"kept\"}", raw.raw)
+    }
+
+    @Test
+    fun toolRowsPresentOneUsefulBoundedLineInsteadOfRawJson() {
+        val row = ThreadPresenter.row(
+            FeedItem.Tool(
+                id = "tool",
+                toolId = "tool-1",
+                toolName = "Bash",
+                input = JsonObject(
+                    linkedMapOf(
+                        "command" to JsonString("npm test\n-- --runInBand"),
+                        "description" to JsonString("ignored metadata"),
+                    ),
+                ),
+                state = "done",
+            ),
+        ) as ThreadRowPresentation.Tool
+
+        assertEquals("npm test -- --runInBand", row.input)
+        assertTrue(row.input.length <= 140)
     }
 
     @Test

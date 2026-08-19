@@ -113,7 +113,6 @@ private fun deterministicImageRejection(message: String): String? =
     IMAGE_REJECTION_MESSAGES.firstOrNull(message::contains)
 
 private val IMAGE_REJECTION_MESSAGES = listOf(
-    "A turn can include at most 4 images",
     "Images must be PNG, JPEG, WebP, or GIF data URLs",
     "Image MIME type does not match its data URL",
     "Images exceed the 3 MiB synchronization limit",

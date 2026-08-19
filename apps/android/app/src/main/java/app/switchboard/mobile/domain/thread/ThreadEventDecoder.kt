@@ -47,6 +47,7 @@ object ThreadEventDecoder {
                     )
                 },
                 raw.string("origin"), raw.requiredLong("at"),
+                decodeMessagePills(raw.values["pillsMeta"]),
             )
             "tool.started" -> ThreadEventKind.ToolStarted to ThreadEventPayload.ToolStarted(
                 raw.requiredString("toolId"), raw.requiredString("toolName"), raw.required("input"),

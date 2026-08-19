@@ -9,15 +9,15 @@ import org.junit.Test
 
 class ComposerDraftPolicyTest {
     @Test
-    fun `selection caps restored plus new images at four without dropping accepted order`() {
+    fun `selection keeps restored plus new images regardless of count`() {
         val restored = listOf(attachment("a"), attachment("b"), attachment("c"))
         val result = ComposerAttachmentPolicy.select(
             existing = restored,
             candidates = listOf(attachment("d"), attachment("e")),
         )
 
-        assertEquals(listOf("a", "b", "c", "d"), result.attachments.map { it.id })
-        assertEquals(listOf("e"), result.rejected.map { it.id })
+        assertEquals(listOf("a", "b", "c", "d", "e"), result.attachments.map { it.id })
+        assertTrue(result.rejected.isEmpty())
     }
 
     @Test

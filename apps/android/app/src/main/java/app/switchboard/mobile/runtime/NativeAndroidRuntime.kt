@@ -23,6 +23,7 @@ import app.switchboard.mobile.data.outbox.RoomOutboxStore
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
 import app.switchboard.mobile.data.remote.RoomBrowseSnapshotStore
 import app.switchboard.mobile.data.remote.ReadyEndpointLookup
+import app.switchboard.mobile.data.thread.RoomThreadSnapshotStore
 import app.switchboard.mobile.domain.push.ExpoPushProjectIdentity
 import app.switchboard.mobile.domain.push.PushRegistrationCoordinator
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
@@ -97,6 +98,7 @@ class NativeAndroidRuntime private constructor(
     val notificationPermissions: AndroidNotificationPermissionController,
     val viewingLeaseRenewals: ViewingLeaseRenewalHooks,
     val browseSnapshots: RoomBrowseSnapshotStore,
+    val threadSnapshots: RoomThreadSnapshotStore,
     private val pushRegistration: PushRegistrationCoordinator,
     private val pushTokenRuntime: PushTokenRuntime,
     private val requestPushToken: () -> Unit,
@@ -119,7 +121,10 @@ class NativeAndroidRuntime private constructor(
         startupOutbox = outbox::onStartupReady,
         wakeOutbox = outbox::onFleetChanged,
     )
-    private val startupCompositionObservation = startup.observe(coordinator::onStartupState)
+    private val startupCompositionObservation = startup.observe { state ->
+        if (state is StartupRuntimeState.Ready) threadSnapshots.seed(state.offlineSnapshot)
+        coordinator.onStartupState(state)
+    }
     private val googleAccountObservation = startup.observeGoogle { googleAccount.refresh() }
     private val fleetObservation: Job = scope.launch {
         connectionFleet.statuses.collect { statuses ->
@@ -225,6 +230,10 @@ class NativeAndroidRuntime private constructor(
             val browseSnapshots = RoomBrowseSnapshotStore(
                 initial = emptyList(),
                 dao = database.browseSnapshotDao(),
+                writes = java.util.concurrent.Executor { command -> scope.launch { command.run() } },
+            )
+            val threadSnapshots = RoomThreadSnapshotStore(
+                dao = database.cacheDao(),
                 writes = java.util.concurrent.Executor { command -> scope.launch { command.run() } },
             )
             val transportScheduler = ExecutorTransportScheduler()
@@ -361,6 +370,7 @@ class NativeAndroidRuntime private constructor(
                 notificationPermissions = notificationPermissions,
                 viewingLeaseRenewals = viewingLeaseRenewals,
                 browseSnapshots = browseSnapshots,
+                threadSnapshots = threadSnapshots,
                 pushRegistration = pushRegistration,
                 pushTokenRuntime = pushTokenRuntime,
                 requestPushToken = {

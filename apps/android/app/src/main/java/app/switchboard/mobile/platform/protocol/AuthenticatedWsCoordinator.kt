@@ -142,6 +142,28 @@ class AuthenticatedWsCoordinator(
         networkAvailable = available
         if (!available) {
             cancelRetry()
+            val currentState = state
+            val previousSocket = socket
+            if (
+                currentState != null &&
+                (previousSocket != null || currentState.phase != ConnectionPhase.Disconnected)
+            ) {
+                cancelProbe()
+                cancelHandshake()
+                socket = null
+                drainPending(RpcFailure.ConnectionLost(DisconnectCause.Network))
+                applyTransition(
+                    ConnectionStateMachine.reduce(
+                        currentState,
+                        ConnectionEvent.SocketClosed(
+                            currentState.generation,
+                            DisconnectCause.Network,
+                        ),
+                    ),
+                    DisconnectCause.Network,
+                )
+                previousSocket?.close()
+            }
             return
         }
         if (!redialPending || target == null || state?.phase != ConnectionPhase.Disconnected) return

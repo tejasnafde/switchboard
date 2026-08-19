@@ -2,13 +2,18 @@ package app.switchboard.mobile.ui.thread
 
 import app.switchboard.mobile.data.thread.ThreadState
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonCodec
+import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonString
+import app.switchboard.mobile.protocol.JsonValue
 import java.io.Serializable
 import java.text.NumberFormat
 import java.util.Locale
 
 private const val RAW_NOTICE_DIAGNOSTIC_MAX_CHARS = 8_000
 private const val RAW_NOTICE_TRUNCATION_MARKER = "… <diagnostic truncated>"
+private const val TOOL_DETAIL_MAX_CHARS = 140
 
 sealed interface ThreadLoadState {
     data class Loading(val cached: ThreadState? = null) : ThreadLoadState
@@ -134,6 +139,7 @@ sealed interface ThreadRowPresentation {
         val relPath: String,
         val addedLines: Int,
         val removedLines: Int,
+        val diff: CompactFileDiff,
     ) : ThreadRowPresentation {
         override val key = source.id
         override val kind = ThreadRowKind.FILE_EDIT
@@ -261,7 +267,7 @@ object ThreadPresenter {
 
         is FeedItem.Tool -> ThreadRowPresentation.Tool(
             source = item,
-            input = item.input?.let(JsonCodec::encode).orEmpty(),
+            input = toolDetail(item.toolName, item.input),
             output = item.output,
         )
 
@@ -272,12 +278,13 @@ object ThreadPresenter {
         is FeedItem.Plan -> ThreadRowPresentation.Plan(item)
         is FeedItem.Question -> ThreadRowPresentation.Question(item)
         is FeedItem.FileEdit -> {
-            val changes = lineChanges(item.oldContent, item.newContent, item.changeKind)
+            val diff = FileDiffPresenter.present(item.oldContent, item.newContent)
             ThreadRowPresentation.FileEdit(
                 source = item,
                 relPath = item.relPath,
-                addedLines = changes.first,
-                removedLines = changes.second,
+                addedLines = diff.addedLines,
+                removedLines = diff.removedLines,
+                diff = diff,
             )
         }
 
@@ -305,6 +312,35 @@ object ThreadPresenter {
         if (encoded.length <= RAW_NOTICE_DIAGNOSTIC_MAX_CHARS) return encoded
         return encoded.take(RAW_NOTICE_DIAGNOSTIC_MAX_CHARS - RAW_NOTICE_TRUNCATION_MARKER.length) +
             RAW_NOTICE_TRUNCATION_MARKER
+    }
+
+    private fun toolDetail(toolName: String, input: JsonValue?): String {
+        val values = (input as? JsonObject)?.values ?: return ""
+        fun string(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
+            (values[key] as? JsonString)?.value?.takeIf(String::isNotBlank)
+        }
+        val detail = when (toolName.lowercase(Locale.US)) {
+            "bash", "shell" -> when (val command = values["command"]) {
+                is JsonString -> command.value
+                is JsonArray -> command.values.mapNotNull { (it as? JsonString)?.value }.joinToString(" ")
+                else -> ""
+            }
+
+            "read", "read_file", "write", "write_file", "edit", "multiedit", "notebookedit" ->
+                string("file_path", "path", "filePath", "notebook_path").orEmpty()
+
+            "grep", "search_files", "glob" -> string("pattern", "query", "regex").orEmpty()
+            "list_files", "ls" -> string("path", "dir", "directory").orEmpty()
+            "webfetch", "fetch" -> string("url", "uri").orEmpty()
+            "websearch" -> string("query", "q").orEmpty()
+            "task" -> string("description", "prompt").orEmpty()
+            else -> string("command", "file_path", "path", "pattern", "query", "url", "description")
+                ?: values.keys.joinToString(", ")
+        }
+        return detail.replace(Regex("\\s+"), " ").trim().let { condensed ->
+            if (condensed.length <= TOOL_DETAIL_MAX_CHARS) condensed
+            else condensed.take(TOOL_DETAIL_MAX_CHARS - 1) + "…"
+        }
     }
 
     private fun contentStatus(state: ThreadLoadState): ThreadContentStatus = when (state) {
@@ -359,23 +395,6 @@ object ThreadPresenter {
     private fun formatInteger(value: Long): String =
         NumberFormat.getIntegerInstance(Locale.US).format(value)
 
-    private fun lineChanges(oldContent: String, newContent: String, changeKind: String): Pair<Int, Int> {
-        val oldLines = oldContent.lineList()
-        val newLines = newContent.lineList()
-        return when (changeKind) {
-            "add" -> newLines.size to 0
-            "delete" -> 0 to oldLines.size
-            else -> {
-                val shared = minOf(oldLines.size, newLines.size)
-                val replacements = (0 until shared).count { oldLines[it] != newLines[it] }
-                val added = replacements + (newLines.size - shared)
-                val removed = replacements + (oldLines.size - shared)
-                added to removed
-            }
-        }
-    }
-
-    private fun String.lineList(): List<String> = if (isEmpty()) emptyList() else split('\n')
 }
 
 enum class ThreadApprovalDecision {

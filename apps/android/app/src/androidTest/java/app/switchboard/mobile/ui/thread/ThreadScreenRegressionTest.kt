@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.assertHasClickAction
@@ -14,15 +15,85 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
 import app.switchboard.mobile.data.thread.ThreadState
+import app.switchboard.mobile.data.thread.ThreadArchiveState
+import app.switchboard.mobile.data.thread.ThreadProfileState
+import app.switchboard.mobile.domain.remote.ProviderInstance
 import app.switchboard.mobile.domain.remote.RuntimeMode
+import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.domain.thread.MessagePill
 import app.switchboard.mobile.ui.theme.SwitchboardTheme
 import org.junit.Rule
 import org.junit.Test
+import org.junit.Assert.assertEquals
 
 class ThreadScreenRegressionTest {
+    @Test
+    fun userContextPillsRenderAsCompactChipsWithoutLeakingWireSyntax() {
+        compose.setContent {
+            SwitchboardTheme {
+                ThreadScreen(
+                    threadId = "thread",
+                    title = "Thread",
+                    backendLabel = "Mac",
+                    loadState = ThreadLoadState.Ready(
+                        ThreadState(
+                            feed = listOf(
+                                FeedItem.User(
+                                    id = "user",
+                                    text = "[[pill:selection-1]] Continue with staging",
+                                    at = 1,
+                                    pillsMeta = mapOf(
+                                        "selection-1" to MessagePill("Admin panel", "chat-message"),
+                                    ),
+                                ),
+                            ),
+                        ),
+                    ),
+                    onRetry = {},
+                    onAction = {},
+                    onBack = {},
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Context: Admin panel").assertIsDisplayed()
+        compose.onNodeWithText("[[pill:selection-1]]", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Continue with staging", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun archiveRequiresConfirmationBeforeInvokingTheBackendAction() {
+        var archiveRequests = 0
+        compose.setContent {
+            SwitchboardTheme {
+                ThreadScreen(
+                    threadId = "thread",
+                    title = "Thread",
+                    backendLabel = "Mac",
+                    loadState = thread("thread"),
+                    onRetry = {},
+                    onAction = {},
+                    onBack = {},
+                    composer = composer(),
+                    archive = ThreadArchiveState(),
+                    onArchive = { archiveRequests += 1 },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Agent settings").performClick()
+        compose.onNodeWithTag(ThreadTestTags.ARCHIVE_ACTION).performClick()
+        compose.onNodeWithText("Archive this conversation?").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, archiveRequests) }
+
+        compose.onNodeWithTag(ThreadTestTags.ARCHIVE_CONFIRM).performClick()
+        compose.runOnIdle { assertEquals(1, archiveRequests) }
+    }
+
     @get:Rule
     val compose = createComposeRule()
 
@@ -54,6 +125,44 @@ class ThreadScreenRegressionTest {
             .assertIsFocused()
             .assertTextContains("hello")
         compose.onNodeWithContentDescription("Attach image").assertIsDisplayed()
+    }
+
+    @Test
+    fun composerWithMoreThanFourDummyImagesStillAllowsAnotherAttachment() {
+        val attachments = (1..6).map { index ->
+            ComposerAttachment(
+                id = "dummy-$index",
+                privateUri = "/dev/null",
+                mimeType = "image/png",
+                displayName = "dummy-$index.png",
+            )
+        }
+        compose.setContent {
+            SwitchboardTheme {
+                ThreadScreen(
+                    threadId = "thread",
+                    title = "Thread",
+                    backendLabel = "Mac",
+                    loadState = thread("thread"),
+                    onRetry = {},
+                    onAction = {},
+                    onBack = {},
+                    composer = composer().copy(
+                        draft = "keep this draft",
+                        attachments = attachments,
+                        error = "Images exceed the 3 MiB synchronization limit",
+                    ),
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Attach image")
+            .assertIsDisplayed()
+            .assertIsEnabled()
+        compose.onNodeWithTag(ThreadTestTags.COMPOSER_INPUT)
+            .assertTextContains("keep this draft")
+        compose.onNodeWithText("Images exceed the 3 MiB synchronization limit")
+            .assertIsDisplayed()
     }
 
     @Test
@@ -106,7 +215,7 @@ class ThreadScreenRegressionTest {
         compose.onNodeWithTag(ThreadTestTags.COMPOSER_INPUT)
             .performClick()
             .performTextInput("keep me")
-        compose.onNodeWithTag(ThreadTestTags.AGENT_SETTINGS_ACTION)
+        compose.onNodeWithContentDescription("Agent settings")
             .assertHasClickAction()
             .performClick()
 
@@ -114,6 +223,38 @@ class ThreadScreenRegressionTest {
         compose.onNodeWithText("Agent settings").assertIsDisplayed()
         compose.onAllNodesWithTag(ThreadTestTags.COMPOSER_INPUT).assertCountEquals(0)
 
+        compose.onNodeWithTag(ThreadTestTags.AGENT_SETTINGS_BACK).performClick()
+        compose.onNodeWithTag(ThreadTestTags.COMPOSER_INPUT).assertTextContains("keep me")
+    }
+
+    @Test
+    fun agentSettingsShowTheActiveProfileAndSwitchWithoutClosingTheDraft() {
+        var selected: String? = null
+        compose.setContent {
+            SwitchboardTheme {
+                ThreadScreen(
+                    threadId = "thread",
+                    title = "Thread",
+                    backendLabel = "Mac",
+                    loadState = thread("thread"),
+                    onRetry = {},
+                    onAction = {},
+                    onBack = {},
+                    composer = composer().copy(draft = "keep me"),
+                    profiles = ThreadProfileState(
+                        options = listOf(profile("codex-work", "Work"), profile("codex-tejas", "Tejas")),
+                        selectedInstanceId = "codex-work",
+                    ),
+                    onProfileChange = { selected = it },
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Agent settings").performClick()
+        compose.onNodeWithText("PROFILE").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Work").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Tejas").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals("codex-tejas", selected) }
         compose.onNodeWithTag(ThreadTestTags.AGENT_SETTINGS_BACK).performClick()
         compose.onNodeWithTag(ThreadTestTags.COMPOSER_INPUT).assertTextContains("keep me")
     }
@@ -154,7 +295,7 @@ class ThreadScreenRegressionTest {
     }
 
     @Test
-    fun fileEditIsInformationalWhenRemoteOpenIsUnsupported() {
+    fun fileEditOffersBoundedReadOnlyReviewWhenRemoteMutationIsUnsafe() {
         val edit = FeedItem.FileEdit(
             id = "edit",
             fileEditId = "file-edit",
@@ -179,6 +320,10 @@ class ThreadScreenRegressionTest {
         }
 
         compose.onNodeWithText("Changed on Mac", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Review").performClick()
+        compose.onNodeWithText("old").assertIsDisplayed()
+        compose.onNodeWithText("new").assertIsDisplayed()
+        compose.onNodeWithText("Read-only preview").assertIsDisplayed()
         compose.onNodeWithText("Open file").assertDoesNotExist()
     }
 
@@ -230,6 +375,20 @@ class ThreadScreenRegressionTest {
         } + FeedItem.User("$prefix-newest", "$prefix newest", 80)
         return ThreadLoadState.Ready(ThreadState(feed = feed, status = "idle"))
     }
+
+    private fun profile(id: String, name: String) = ProviderInstance(
+        id = id,
+        agentType = "codex",
+        displayName = name,
+        accentColor = null,
+        authMode = "oauth_dir",
+        envKeys = emptyList(),
+        oauthDir = null,
+        enabled = true,
+        createdAt = 1,
+        updatedAt = 1,
+        raw = app.switchboard.mobile.protocol.JsonObject(linkedMapOf()),
+    )
 
     private data class Fixture(
         val id: String,

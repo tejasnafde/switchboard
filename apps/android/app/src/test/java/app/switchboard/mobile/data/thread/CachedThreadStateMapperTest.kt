@@ -22,7 +22,7 @@ class CachedThreadStateMapperTest {
                     "mac:thread-1",
                     "u1",
                     0,
-                    """{"kind":"user","id":"u1","text":"hello","at":7,"images":["data:image/png;base64,AAAA"]}""",
+                    """{"kind":"user","id":"u1","text":"[[pill:selection-1]] hello","at":7,"images":["data:image/png;base64,AAAA"],"pillsMeta":{"selection-1":{"label":"Admin panel","kind":"chat-message"},"bad":{"label":"Bad","kind":"other"}}}""",
                 ),
                 CachedFeedRowEntity(
                     "mac:thread-1",
@@ -43,6 +43,8 @@ class CachedThreadStateMapperTest {
         val user = restored.feed.first() as FeedItem.User
         assertEquals(7, user.at)
         assertEquals("data:image/png;base64,AAAA", user.images.single().url)
+        assertEquals("Admin panel", user.pillsMeta["selection-1"]?.label)
+        assertEquals(setOf("selection-1"), user.pillsMeta.keys)
         val assistant = restored.feed.last() as FeedItem.Text
         assertTrue(assistant.done)
         assertEquals(40L, assistant.durationMs)
@@ -59,6 +61,34 @@ class CachedThreadStateMapperTest {
 
         assertTrue(CachedThreadStateMapper.from(snapshot, "mac", "thread-1")!!.feed.isEmpty())
         assertNull(CachedThreadStateMapper.from(snapshot, "other", "thread-1"))
+    }
+
+    @Test
+    fun `restores every retained React Native feed kind without dropping rows`() {
+        val rows = listOf(
+            """{"kind":"tool","id":"tool","toolName":"Bash","input":{"command":"npm test"},"output":"ok","state":"done"}""",
+            """{"kind":"denial","id":"denial","toolName":"Write","reason":"Plan mode"}""",
+            """{"kind":"approval","id":"approval","requestId":"request-1","toolName":"Bash","detail":"npm test","requestType":"tool","state":"pending"}""",
+            """{"kind":"question","id":"question","requestId":"request-2","questions":[{"id":"choice","header":"Choose","question":"Which?","options":[{"label":"A","description":"First"}],"multiSelect":false}],"answers":[["A"]]}""",
+            """{"kind":"plan","id":"plan","planId":"plan-1","markdown":"# Plan"}""",
+            """{"kind":"fileEdit","id":"file","relPath":"src/Main.kt","changeKind":"modify","oldContent":"old","newContent":"new"}""",
+        ).mapIndexed { index, raw ->
+            CachedFeedRowEntity("mac:thread-1", "row-$index", index, raw)
+        }
+        val restored = CachedThreadStateMapper.from(
+            snapshot(CachedThreadEntity("mac:thread-1", "{}"), rows),
+            "mac",
+            "thread-1",
+        )!!
+
+        assertEquals(6, restored.feed.size)
+        assertEquals("npm test", ((restored.feed[0] as FeedItem.Tool).input as app.switchboard.mobile.protocol.JsonObject)
+            .values["command"]?.let { (it as app.switchboard.mobile.protocol.JsonString).value })
+        assertEquals("Plan mode", (restored.feed[1] as FeedItem.Denial).reason)
+        assertEquals("request-1", (restored.feed[2] as FeedItem.Approval).requestId)
+        assertEquals(listOf(listOf("A")), (restored.feed[3] as FeedItem.Question).answers)
+        assertEquals("# Plan", (restored.feed[4] as FeedItem.Plan).markdown)
+        assertEquals("src/Main.kt", (restored.feed[5] as FeedItem.FileEdit).relPath)
     }
 
     private fun snapshot(

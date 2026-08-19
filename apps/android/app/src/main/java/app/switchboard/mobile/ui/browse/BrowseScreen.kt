@@ -87,6 +87,7 @@ fun BrowseScreen(
     onSessionTap: (Conversation) -> Unit,
     onRetry: (BrowseRequest) -> Unit,
     onBack: () -> Unit,
+    onMessageSearch: () -> Unit = {},
     onNewSession: (String, String) -> Unit = { _, _ -> },
     onRenameConversation: (String, String, String) -> Unit = { _, _, _ -> },
     onToggleWorkspace: (String) -> Unit = {},
@@ -99,7 +100,11 @@ fun BrowseScreen(
     ) {
         when (route) {
             BrowseRoute.Projects -> {
-                BrowseTopBar(title = state.connectionLabel, onBack = onBack)
+                BrowseTopBar(
+                    title = state.connectionLabel,
+                    onBack = onBack,
+                    onMessageSearch = onMessageSearch,
+                )
                 ProjectsSurface(
                     presentation = BrowsePresenter.projects(state.projects, state.threadActivity),
                     workspaces = BrowsePresenter.workspaces(state.workspaces),
@@ -116,6 +121,7 @@ fun BrowseScreen(
                 BrowseTopBar(
                     title = route.projectName,
                     onBack = onBack,
+                    onMessageSearch = onMessageSearch,
                     actionLabel = "New",
                     onAction = { onNewSession(route.projectPath, route.projectName) },
                 )
@@ -147,6 +153,7 @@ fun BrowseScreen(
 private fun BrowseTopBar(
     title: String,
     onBack: () -> Unit,
+    onMessageSearch: () -> Unit,
     actionLabel: String? = null,
     onAction: () -> Unit = {},
 ) {
@@ -165,6 +172,14 @@ private fun BrowseTopBar(
             }
         },
         actions = {
+            IconButton(
+                onClick = onMessageSearch,
+                modifier = Modifier
+                    .size(48.dp)
+                    .semantics { contentDescription = "Search messages" },
+            ) {
+                Icon(Icons.Default.Search, contentDescription = null)
+            }
             actionLabel?.let { label ->
                 IconButton(
                     onClick = onAction,

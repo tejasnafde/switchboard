@@ -41,6 +41,55 @@ class BrowseThreadActivityIndexTest {
         assertEquals(emptyMap<String, BrowseThreadActivity>(), index.state(stale).value)
     }
 
+    @Test
+    fun approvalAndQuestionEventsProjectActionableAttentionWithoutThreadState() {
+        val index = BrowseThreadActivityIndex()
+
+        index.onEvent(scope, event("question.asked", "requestId" to JsonString("question-1")))
+        assertEquals(
+            BrowseThreadAttention.Input,
+            index.state(scope).value.getValue("thread").attention,
+        )
+
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("approval-1")))
+        assertEquals(
+            BrowseThreadAttention.Approval,
+            index.state(scope).value.getValue("thread").attention,
+        )
+
+        index.onEvent(scope, event("request.closed", "requestId" to JsonString("approval-1")))
+        assertEquals(
+            BrowseThreadAttention.Input,
+            index.state(scope).value.getValue("thread").attention,
+        )
+
+        index.onEvent(scope, event("question.answered", "requestId" to JsonString("question-1")))
+        assertEquals(
+            BrowseThreadAttention.None,
+            index.state(scope).value.getValue("thread").attention,
+        )
+    }
+
+    @Test
+    fun closingOneRequestDoesNotClearAnotherPendingRequest() {
+        val index = BrowseThreadActivityIndex()
+
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("approval-1")))
+        index.onEvent(scope, event("request.opened", "requestId" to JsonString("approval-2")))
+        index.onEvent(scope, event("request.closed", "requestId" to JsonString("approval-1")))
+
+        assertEquals(
+            BrowseThreadAttention.Approval,
+            index.state(scope).value.getValue("thread").attention,
+        )
+
+        index.onEvent(scope, event("request.closed", "requestId" to JsonString("approval-2")))
+        assertEquals(
+            BrowseThreadAttention.None,
+            index.state(scope).value.getValue("thread").attention,
+        )
+    }
+
     private fun event(
         type: String,
         vararg fields: Pair<String, app.switchboard.mobile.protocol.JsonValue>,

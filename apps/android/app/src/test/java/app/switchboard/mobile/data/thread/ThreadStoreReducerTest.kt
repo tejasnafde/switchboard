@@ -5,6 +5,7 @@ import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
+import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonNull
@@ -26,6 +27,12 @@ class ThreadStoreReducerTest {
             "user.message",
             "text" to s("context wrapper\n\nvisible"),
             "displayBody" to s("visible"),
+            "pillsMeta" to obj(
+                "selection-1" to obj(
+                    "label" to s("Admin panel"),
+                    "kind" to s("chat-message"),
+                ),
+            ),
             "images" to arr(obj("url" to s("data:image/png;base64,AAA"), "mimeType" to s("image/png"))),
             "origin" to s("phone-image"),
             "at" to n(1),
@@ -37,6 +44,7 @@ class ThreadStoreReducerTest {
         assertEquals(1, users.size)
         assertEquals("visible", users.single().text)
         assertEquals("data:image/png;base64,AAA", users.single().images.single().url)
+        assertEquals("Admin panel", users.single().pillsMeta["selection-1"]?.label)
     }
 
     @Test
@@ -119,6 +127,23 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun toolCompletionWithoutItsStartDoesNotCreateAnUnknownToolCard() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+
+        state = ingest(
+            state,
+            "mac-a",
+            1,
+            1,
+            event("tool.completed", "toolId" to s("missing-start"), "output" to s("large diagnostic")),
+        )
+
+        val thread = state.thread("mac-a", "thread-1")!!
+        assertTrue(thread.feed.filterIsInstance<FeedItem.Tool>().isEmpty())
+        assertEquals(1, thread.eventJournal.size)
+    }
+
+    @Test
     fun everyKnownEventProjectsToFeedOrThreadMetadataWithoutDataLoss() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         val events = allKnownEvents()
@@ -192,6 +217,46 @@ class ThreadStoreReducerTest {
         assertEquals(listOf("history-new", "m-live-assistant", "t-live-tool"), reseeded.feed.map { it.id })
         assertEquals("AB", (reseeded.feed[1] as FeedItem.Text).text)
         assertTrue(reseeded.bufferedEvents.isEmpty())
+    }
+
+    @Test
+    fun replayGapCollapsesSnapshotAndBufferedEchoForTheSamePhoneOrigin() {
+        val image = MessageImage(
+            "data:image/png;base64,AAA",
+            "image/png",
+            null,
+        )
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 7))
+        state = reduce(state, ThreadAction.ReplayGap(ThreadEventScope("mac-a", 7)))
+        state = ingest(
+            state,
+            "mac-a",
+            7,
+            11,
+            event(
+                "user.message",
+                "text" to s("photo"),
+                "origin" to s("origin-1"),
+                "images" to arr(obj("url" to s(image.url), "mimeType" to s("image/png"))),
+                "at" to n(2),
+            ),
+        )
+
+        state = reduce(
+            state,
+            ThreadAction.InstallSnapshot(
+                ThreadEventScope("mac-a", 7),
+                ThreadSnapshot(
+                    "thread-1",
+                    listOf(FeedItem.User("h-remote_origin-1", "photo", 2, listOf(image))),
+                ),
+            ),
+        )
+
+        val users = state.thread("mac-a", "thread-1")!!.feed.filterIsInstance<FeedItem.User>()
+        assertEquals(1, users.size)
+        assertEquals("remote_origin-1", users.single().id)
+        assertEquals(image.url, users.single().images.single().url)
     }
 
     @Test

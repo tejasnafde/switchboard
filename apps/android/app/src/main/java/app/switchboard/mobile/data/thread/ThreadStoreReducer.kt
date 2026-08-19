@@ -8,7 +8,6 @@ import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.domain.thread.UserMessageVisibility
-import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonObject
 
 data class ThreadKey(
@@ -247,6 +246,7 @@ object ThreadStoreReducer {
                             text,
                             event.at,
                             event.images,
+                            event.pillsMeta,
                         ),
                     ),
                 )
@@ -260,13 +260,16 @@ object ThreadStoreReducer {
             is ThreadEventPayload.ToolCompleted -> {
                 val id = "t-${event.toolId}"
                 val existing = withJournal.feed.firstOrNull { it.id == id } as? FeedItem.Tool
-                withJournal.copy(
-                    feed = upsert(
-                        withJournal.feed,
-                        (existing ?: FeedItem.Tool(id, event.toolId, "Unknown tool", JsonNull, state = "done"))
-                            .copy(output = event.output, state = "done"),
-                    ),
-                )
+                if (existing == null) {
+                    withJournal
+                } else {
+                    withJournal.copy(
+                        feed = upsert(
+                            withJournal.feed,
+                            existing.copy(output = event.output, state = "done"),
+                        ),
+                    )
+                }
             }
             is ThreadEventPayload.ToolDenied -> withJournal.copy(
                 feed = withJournal.feed + FeedItem.Denial(
@@ -455,10 +458,18 @@ object ThreadStoreReducer {
     }
 
     private fun upsert(feed: List<FeedItem>, item: FeedItem): List<FeedItem> {
-        val index = feed.indexOfFirst { it.id == item.id }
+        val identity = feedIdentity(item)
+        val index = feed.indexOfFirst { feedIdentity(it) == identity }
         if (index < 0) return feed + item
         return feed.toMutableList().also { it[index] = item }
     }
+
+    private fun feedIdentity(item: FeedItem): String =
+        if (item is FeedItem.User && item.id.startsWith("h-remote_")) {
+            item.id.removePrefix("h-")
+        } else {
+            item.id
+        }
 
     private fun appendReplacing(feed: List<FeedItem>, item: FeedItem): List<FeedItem> =
         feed.filterNot { it.id == item.id } + item

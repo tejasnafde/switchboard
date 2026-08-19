@@ -11,4 +11,7 @@ object AndroidDeepLinkIntentAdapter {
 
     fun classify(intent: Intent?): RegisteredDeepLink =
         dataString(intent)?.let(SwitchboardDeepLinkContract::classify) ?: RegisteredDeepLink.Ignore
+
+    fun appRoute(intent: Intent?): AppDeepLinkRoute? =
+        dataString(intent)?.let(SwitchboardDeepLinkContract::appRoute)
 }

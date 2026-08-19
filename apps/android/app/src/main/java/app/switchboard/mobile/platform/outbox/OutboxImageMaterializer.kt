@@ -9,6 +9,7 @@ import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
+import java.io.ByteArrayOutputStream
 import java.io.File
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -20,7 +21,7 @@ fun interface OutboxPrivateFileReader {
 @OptIn(ExperimentalEncodingApi::class)
 class PrivateFileOutboxImageMaterializer(
     private val files: OutboxPrivateFileReader = OutboxPrivateFileReader { path ->
-        File(path).readBytes()
+        readBoundedPrivateFile(path)
     },
 ) : OutboxImageMaterializer {
     override fun materialize(turn: QueuedTurn): OutboxImageMaterialization {
@@ -28,9 +29,6 @@ class PrivateFileOutboxImageMaterializer(
         val images = ArrayList<ImageInput>(turn.attachments.size)
         return try {
             val legacy = legacyImages(turn.legacyRawJson)
-            if (turn.attachments.size + legacy.size > MAX_IMAGES) {
-                return OutboxImageMaterialization.Failure(TOO_MANY_IMAGES)
-            }
 
             fun addDataUrl(url: String, mimeType: String?): String? {
                 val match = DATA_URL.matchEntire(url) ?: return UNSUPPORTED_IMAGE_TYPE
@@ -44,11 +42,9 @@ class PrivateFileOutboxImageMaterializer(
             }
 
             turn.attachments.forEach { attachment ->
-                val mimeType = attachment.mimeType
-                if (mimeType !in SUPPORTED_MIME_TYPES) {
-                    return OutboxImageMaterialization.Failure(UNSUPPORTED_IMAGE_TYPE)
-                }
                 val bytes = files.read(attachment.privateUri)
+                val mimeType = canonicalMimeType(attachment.mimeType, bytes)
+                    ?: return OutboxImageMaterialization.Failure(UNSUPPORTED_IMAGE_TYPE)
                 val dataUrl = "data:$mimeType;base64,${Base64.encode(bytes)}"
                 addDataUrl(dataUrl, mimeType)?.let { reason ->
                     return OutboxImageMaterialization.Failure(reason)
@@ -61,10 +57,40 @@ class PrivateFileOutboxImageMaterializer(
                 }
             }
             OutboxImageMaterialization.Success(images)
+        } catch (_: PrivateImageTooLarge) {
+            OutboxImageMaterialization.Failure(IMAGES_TOO_LARGE)
         } catch (_: Exception) {
             OutboxImageMaterialization.Failure("A staged attachment could not be read")
         }
     }
+
+    private fun canonicalMimeType(reported: String?, bytes: ByteArray): String? =
+        when (reported?.trim()?.lowercase()) {
+            "image/jpg" -> "image/jpeg"
+            null, "" -> sniffMimeType(bytes)
+            in SUPPORTED_MIME_TYPES -> reported.trim().lowercase()
+            else -> null
+        }
+
+    private fun sniffMimeType(bytes: ByteArray): String? = when {
+        bytes.startsWith(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) -> "image/png"
+        bytes.startsWith(0xFF, 0xD8, 0xFF) -> "image/jpeg"
+        bytes.startsWithAscii("GIF87a") || bytes.startsWithAscii("GIF89a") -> "image/gif"
+        bytes.startsWithAscii("RIFF") && bytes.hasAsciiAt(8, "WEBP") -> "image/webp"
+        else -> null
+    }
+
+    private fun ByteArray.startsWith(vararg expected: Int): Boolean =
+        size >= expected.size && expected.indices.all { index ->
+            this[index].toInt() and 0xFF == expected[index]
+        }
+
+    private fun ByteArray.startsWithAscii(value: String): Boolean = hasAsciiAt(0, value)
+
+    private fun ByteArray.hasAsciiAt(offset: Int, value: String): Boolean =
+        size >= offset + value.length && value.indices.all { index ->
+            this[offset + index].toInt() == value[index].code
+        }
 
     private fun legacyImages(rawJson: String?): List<ImageInput> {
         if (rawJson == null) return emptyList()
@@ -92,14 +118,34 @@ class PrivateFileOutboxImageMaterializer(
     }
 
     private companion object {
-        const val MAX_IMAGES = 4
         const val MAX_AGGREGATE_WIRE_BYTES = 3 * 1024 * 1024
         const val BASE64_MARKER = ";base64,"
-        const val TOO_MANY_IMAGES = "A turn can include at most 4 images"
         const val UNSUPPORTED_IMAGE_TYPE = "Images must be PNG, JPEG, WebP, or GIF data URLs"
         const val MIME_TYPE_MISMATCH = "Image MIME type does not match its data URL"
         const val IMAGES_TOO_LARGE = "Images exceed the 3 MiB synchronization limit"
         val SUPPORTED_MIME_TYPES = setOf("image/png", "image/jpeg", "image/webp", "image/gif")
         val DATA_URL = Regex("^data:(image/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$")
+
+        private fun readBoundedPrivateFile(path: String): ByteArray {
+            val file = File(path)
+            if (file.length() > MAX_RAW_IMAGE_BYTES) throw PrivateImageTooLarge()
+            return file.inputStream().use { input ->
+                val output = ByteArrayOutputStream(file.length().coerceAtLeast(0).toInt())
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var total = 0
+                while (true) {
+                    val read = input.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    if (total > MAX_RAW_IMAGE_BYTES) throw PrivateImageTooLarge()
+                    output.write(buffer, 0, read)
+                }
+                output.toByteArray()
+            }
+        }
+
+        private const val MAX_RAW_IMAGE_BYTES = MAX_AGGREGATE_WIRE_BYTES * 3 / 4
     }
 }
+
+private class PrivateImageTooLarge : Exception()

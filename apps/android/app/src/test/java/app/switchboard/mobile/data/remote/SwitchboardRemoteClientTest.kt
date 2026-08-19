@@ -2,11 +2,14 @@ package app.switchboard.mobile.data.remote
 
 import app.switchboard.mobile.domain.remote.AnswerQuestion
 import app.switchboard.mobile.domain.remote.ApprovalDecision
+import app.switchboard.mobile.domain.remote.ArchiveConversationResult
 import app.switchboard.mobile.domain.remote.BrowseDecisions
 import app.switchboard.mobile.domain.remote.CommandFollowUp
 import app.switchboard.mobile.domain.remote.CreateConversation
 import app.switchboard.mobile.domain.remote.ImageInput
 import app.switchboard.mobile.domain.remote.ProviderKind
+import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchRequest
+import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchResult
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteRequestKey
 import app.switchboard.mobile.domain.remote.RemoteResponse
@@ -122,6 +125,42 @@ class SwitchboardRemoteClientTest {
         rpc.reply(obj("ok" to JsonBoolean(true)))
         client.setSetting("theme", "dark") {}
         assertCall(rpc, "settings:set", JsonString("theme"), JsonString("dark"))
+
+        rpc.reply(obj("ok" to JsonBoolean(true), "branch" to JsonString("main")))
+        client.currentBranch("/repo") {}
+        assertCall(rpc, "git:current-branch", JsonString("/repo"))
+    }
+
+    @Test
+    fun `global message search uses the desktop FTS channel and decodes route metadata`() {
+        val rpc = FakeRemoteRpc()
+        val client = SwitchboardRemoteClient("mac-a", rpc)
+        val responses = mutableListOf<RemoteResponse<List<app.switchboard.mobile.domain.remote.MessageSearchResult>>>()
+        rpc.reply(
+            JsonArray(
+                listOf(
+                    obj(
+                        "messageId" to JsonString("message-1"),
+                        "conversationId" to JsonString("thread-1"),
+                        "role" to JsonString("user"),
+                        "content" to JsonString("full body"),
+                        "snippet" to JsonString("...**native** body..."),
+                        "conversationTitle" to JsonString("Native app"),
+                        "projectPath" to JsonString("/repo"),
+                        "agentType" to JsonString("codex"),
+                        "worktreePath" to JsonNull,
+                        "worktreeBranch" to JsonNull,
+                    ),
+                ),
+            ),
+        )
+
+        client.searchMessages("native body", responses::add)
+
+        assertCall(rpc, "app:search-messages", JsonString("native body"))
+        val result = (responses.single().outcome as RemoteOutcome.Success).value.single()
+        assertEquals("thread-1", result.conversationId)
+        assertEquals("/repo", result.projectPath)
     }
 
     @Test
@@ -157,6 +196,15 @@ class SwitchboardRemoteClientTest {
         rpc.reply(commandBody)
         client.renameConversation("thread-1", "Renamed") {}
         assertCall(rpc, "app:rename-conversation", JsonString("thread-1"), JsonString("Renamed"))
+
+        val archives = mutableListOf<RemoteResponse<ArchiveConversationResult>>()
+        rpc.reply(obj("ok" to JsonBoolean(true), "archived" to JsonBoolean(true)))
+        client.archiveConversation("thread-1", archives::add)
+        assertCall(rpc, "app:archive-conversation", JsonString("thread-1"))
+        assertEquals(
+            ArchiveConversationResult.Archived,
+            (archives.single().outcome as RemoteOutcome.Success).value,
+        )
 
         rpc.reply(commandBody)
         client.markRead("thread-1") {}
@@ -213,6 +261,37 @@ class SwitchboardRemoteClientTest {
             JsonString("turn-origin"),
         )
 
+        val switchResults = mutableListOf<RemoteResponse<ProviderInstanceSwitchResult>>()
+        rpc.reply(
+            obj(
+                "ok" to JsonBoolean(true),
+                "threadId" to JsonString("thread-1"),
+                "provider" to JsonString("codex"),
+                "previousInstanceId" to JsonString("codex-work"),
+                "instanceId" to JsonString("codex-tejas"),
+                "instanceName" to JsonString("Tejas"),
+                "continuity" to JsonString("preserved"),
+            ),
+        )
+        client.switchInstance(
+            "thread-1",
+            ProviderInstanceSwitchRequest("codex-tejas", "codex-work"),
+            switchResults::add,
+        )
+        assertCall(
+            rpc,
+            "provider:switch-instance",
+            JsonString("thread-1"),
+            obj(
+                "targetInstanceId" to JsonString("codex-tejas"),
+                "expectedCurrentInstanceId" to JsonString("codex-work"),
+            ),
+        )
+        assertTrue(
+            (switchResults.single().outcome as RemoteOutcome.Success).value is
+                ProviderInstanceSwitchResult.Success,
+        )
+
         val commands = listOf(
             Triple("provider:interrupt", listOf(JsonString("thread-1")), { client.interrupt("thread-1") {} }),
             Triple(
@@ -249,6 +328,18 @@ class SwitchboardRemoteClientTest {
             invoke()
             assertCall(rpc, channel, *args.toTypedArray())
         }
+    }
+
+    @Test
+    fun archiveRequiresTheBackendToConfirmTheGlobalArchiveWrite() {
+        val rpc = FakeRemoteRpc()
+        val client = SwitchboardRemoteClient("mac-a", rpc)
+        val responses = mutableListOf<RemoteResponse<ArchiveConversationResult>>()
+
+        rpc.reply(obj("ok" to JsonBoolean(true), "archived" to JsonBoolean(false)))
+        client.archiveConversation("thread-1", responses::add)
+
+        assertTrue(responses.single().outcome is RemoteOutcome.Failure)
     }
 
     @Test
