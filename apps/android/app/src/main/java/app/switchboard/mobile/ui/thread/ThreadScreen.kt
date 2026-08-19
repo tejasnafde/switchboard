@@ -46,6 +46,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
@@ -66,6 +67,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.switchboard.mobile.domain.composer.ComposerAttachment
@@ -133,24 +135,32 @@ fun ThreadScreen(
                     EmptyThread()
                 }
 
-                is ThreadPresentation.Content -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 24.dp),
-                ) {
-                    item(key = "thread-metadata") { ThreadMetadata(presentation.metadata) }
-                    item(key = "thread-content-status") {
-                        ContentStatus(presentation.contentStatus, onRetry)
-                    }
-                    items(presentation.rows, key = { "feed:${it.key}" }) { row ->
-                        ThreadRow(
-                            row = row,
-                            backendLabel = backendLabel,
-                            selections = selections,
-                            onSelectionsChange = { selections = it },
-                            pendingActions = pendingActions,
-                            onAction = onAction,
-                            onImageOpen = { lightboxUrl = it },
-                        )
+                is ThreadPresentation.Content -> key(threadId) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .testTag(ThreadTestTags.FEED),
+                        reverseLayout = true,
+                        contentPadding = PaddingValues(top = 24.dp),
+                    ) {
+                        items(
+                            ThreadFeedLayoutPolicy.declarationOrder(presentation.rows),
+                            key = { "feed:${it.key}" },
+                        ) { row ->
+                            ThreadRow(
+                                row = row,
+                                backendLabel = backendLabel,
+                                selections = selections,
+                                onSelectionsChange = { selections = it },
+                                pendingActions = pendingActions,
+                                onAction = onAction,
+                                onImageOpen = { lightboxUrl = it },
+                            )
+                        }
+                        item(key = "thread-content-status") {
+                            ContentStatus(presentation.contentStatus, onRetry)
+                        }
+                        item(key = "thread-metadata") { ThreadMetadata(presentation.metadata) }
                     }
                 }
             }
@@ -251,6 +261,8 @@ private fun ThreadComposer(
         modelLabel = state.modelLabel,
         runtimeMode = state.runtimeMode,
     )
+    val showsSecondaryActions = ThreadComposerPresentationPolicy.showsSecondaryActions(density)
+    val inputLayout = ThreadComposerPresentationPolicy.inputLayout(density)
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -287,27 +299,30 @@ private fun ThreadComposer(
                 }
             }
         }
-        if (!ThreadComposerPresentationPolicy.showsSecondaryActions(density)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedTextField(
-                    value = state.draft,
-                    onValueChange = { text ->
-                        voice.userEdited(text)
-                        onDraftChange(text)
-                    },
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(focusRequester)
-                        .onFocusChanged { focused = it.isFocused },
-                    placeholder = {
-                        Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
-                    },
-                    singleLine = true,
-                )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = state.draft,
+                onValueChange = { text ->
+                    voice.userEdited(text)
+                    onDraftChange(text)
+                },
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(ThreadTestTags.COMPOSER_INPUT)
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { focused = it.isFocused },
+                placeholder = {
+                    Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
+                },
+                singleLine = inputLayout.singleLine,
+                minLines = 1,
+                maxLines = inputLayout.maxLines,
+            )
+            if (!showsSecondaryActions) {
                 ThreadVoicePrimaryControl(
                     voice = voice,
                     canSend = state.canSend,
@@ -317,23 +332,8 @@ private fun ThreadComposer(
                     onStopAgent = onInterrupt,
                 )
             }
-        } else {
-            OutlinedTextField(
-                value = state.draft,
-                onValueChange = { text ->
-                    voice.userEdited(text)
-                    onDraftChange(text)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { focused = it.isFocused },
-                placeholder = {
-                    Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
-                },
-                minLines = 1,
-                maxLines = 5,
-            )
+        }
+        if (showsSecondaryActions) {
             VoiceNoticeRow(voice = voice)
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -747,6 +747,11 @@ private fun ThreadRow(
         is ThreadRowPresentation.SpendBlocked -> SpendRow(row.source)
         is ThreadRowPresentation.Peer -> PeerRow(row.source)
         is ThreadRowPresentation.Todo -> TodoRow(row.source)
+        is ThreadRowPresentation.Notice -> NoticeCard(
+            title = row.title,
+            body = row.body,
+            tint = TextDim,
+        )
         is ThreadRowPresentation.RawNotice -> NoticeCard(
             title = "Unsupported event · ${row.eventType}",
             body = "${row.source.text}\n${row.raw}",

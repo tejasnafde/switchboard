@@ -37,8 +37,8 @@ android {
         applicationId = canonicalApplicationId
         minSdk = 24
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.5.2"
+        versionCode = 5
+        versionName = "0.5.3"
         buildConfigField("String", "EXPO_PROJECT_ID", "\"$easProjectId\"")
         buildConfigField("String", "PUSH_APPLICATION_ID", "\"$canonicalApplicationId\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -124,6 +124,7 @@ dependencies {
     implementation(libs.firebase.messaging)
     ksp(libs.androidx.room.compiler)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
@@ -131,5 +132,7 @@ dependencies {
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(composeBom)
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.room.testing)
 }

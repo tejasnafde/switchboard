@@ -53,7 +53,38 @@ class ThreadPresentationTest {
         assertEquals("src/Main.kt", file.relPath)
         val raw = content.rows.filterIsInstance<ThreadRowPresentation.RawNotice>().single()
         assertEquals("provider.future", raw.eventType)
-        assertTrue(raw.raw.contains("kept"))
+        assertEquals("{\"future\":\"kept\"}", raw.raw)
+    }
+
+    @Test
+    fun rawNoticeDiagnosticsAreBoundedBeforePresentation() {
+        val row = ThreadPresenter.row(
+            FeedItem.RawNotice(
+                id = "large-raw",
+                eventType = "provider.future",
+                text = "Unsupported provider event",
+                raw = JsonObject(linkedMapOf("payload" to JsonString("x".repeat(20_000)))),
+            ),
+        ) as ThreadRowPresentation.RawNotice
+
+        assertTrue(row.raw.length <= 8_000)
+        assertTrue(row.raw.endsWith("… <diagnostic truncated>"))
+    }
+
+    @Test
+    fun `history window is presented as a product notice without diagnostics`() {
+        val row = ThreadPresenter.row(
+            FeedItem.RawNotice(
+                id = "history-window",
+                eventType = "history.window",
+                text = "Showing the last 250 of 1,366 messages",
+                raw = JsonObject(linkedMapOf("shown" to JsonString("250"))),
+            ),
+        ) as ThreadRowPresentation.Notice
+
+        assertEquals("history-window", row.key)
+        assertEquals("Earlier messages are not shown", row.title)
+        assertEquals("Showing the last 250 of 1,366 messages", row.body)
     }
 
     @Test

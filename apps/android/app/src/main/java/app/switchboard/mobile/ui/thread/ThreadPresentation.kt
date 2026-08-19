@@ -6,6 +6,9 @@ import app.switchboard.mobile.protocol.JsonCodec
 import java.io.Serializable
 import java.util.Locale
 
+private const val RAW_NOTICE_DIAGNOSTIC_MAX_CHARS = 8_000
+private const val RAW_NOTICE_TRUNCATION_MARKER = "… <diagnostic truncated>"
+
 sealed interface ThreadLoadState {
     data class Loading(val cached: ThreadState? = null) : ThreadLoadState
 
@@ -163,6 +166,14 @@ sealed interface ThreadRowPresentation {
         override val key = source.id
         override val kind = ThreadRowKind.RAW_NOTICE
     }
+
+    data class Notice(
+        override val key: String,
+        val title: String,
+        val body: String,
+    ) : ThreadRowPresentation {
+        override val kind = ThreadRowKind.RAW_NOTICE
+    }
 }
 
 sealed interface ThreadPresentation {
@@ -273,11 +284,26 @@ object ThreadPresenter {
         is FeedItem.SpendBlocked -> ThreadRowPresentation.SpendBlocked(item)
         is FeedItem.Peer -> ThreadRowPresentation.Peer(item)
         is FeedItem.Todo -> ThreadRowPresentation.Todo(item)
-        is FeedItem.RawNotice -> ThreadRowPresentation.RawNotice(
-            source = item,
-            eventType = item.eventType,
-            raw = JsonCodec.encode(item.raw),
-        )
+        is FeedItem.RawNotice -> if (item.eventType == "history.window") {
+            ThreadRowPresentation.Notice(
+                key = item.id,
+                title = "Earlier messages are not shown",
+                body = item.text,
+            )
+        } else {
+            ThreadRowPresentation.RawNotice(
+                source = item,
+                eventType = item.eventType,
+                raw = rawNoticeDiagnostic(item),
+            )
+        }
+    }
+
+    private fun rawNoticeDiagnostic(item: FeedItem.RawNotice): String {
+        val encoded = JsonCodec.encode(item.raw)
+        if (encoded.length <= RAW_NOTICE_DIAGNOSTIC_MAX_CHARS) return encoded
+        return encoded.take(RAW_NOTICE_DIAGNOSTIC_MAX_CHARS - RAW_NOTICE_TRUNCATION_MARKER.length) +
+            RAW_NOTICE_TRUNCATION_MARKER
     }
 
     private fun contentStatus(state: ThreadLoadState): ThreadContentStatus = when (state) {

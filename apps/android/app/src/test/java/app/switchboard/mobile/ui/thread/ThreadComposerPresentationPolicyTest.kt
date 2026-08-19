@@ -65,4 +65,15 @@ class ThreadComposerPresentationPolicyTest {
             ThreadComposerPresentationPolicy.showsSecondaryActions(ThreadComposerDensity.Expanded),
         )
     }
+
+    @Test
+    fun `composer input stays multiline at both densities`() {
+        val compact = ThreadComposerPresentationPolicy.inputLayout(ThreadComposerDensity.Compact)
+        val expanded = ThreadComposerPresentationPolicy.inputLayout(ThreadComposerDensity.Expanded)
+
+        assertEquals(false, compact.singleLine)
+        assertEquals(false, expanded.singleLine)
+        assertEquals(5, compact.maxLines)
+        assertEquals(5, expanded.maxLines)
+    }
 }

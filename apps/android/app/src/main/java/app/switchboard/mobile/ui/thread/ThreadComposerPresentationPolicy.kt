@@ -7,6 +7,11 @@ enum class ThreadComposerDensity {
     Expanded,
 }
 
+data class ThreadComposerInputLayout(
+    val singleLine: Boolean,
+    val maxLines: Int,
+)
+
 data class ThreadSettingsAffordance(
     val label: String,
     val supportingLabel: String,
@@ -33,6 +38,12 @@ object ThreadComposerPresentationPolicy {
 
     fun showsSecondaryActions(density: ThreadComposerDensity): Boolean =
         density == ThreadComposerDensity.Expanded
+
+    fun inputLayout(density: ThreadComposerDensity): ThreadComposerInputLayout =
+        when (density) {
+            ThreadComposerDensity.Compact,
+            ThreadComposerDensity.Expanded -> ThreadComposerInputLayout(singleLine = false, maxLines = 5)
+        }
 }
 
 internal fun RuntimeMode.presentationLabel(): String = when (this) {

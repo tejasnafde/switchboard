@@ -5,13 +5,70 @@ import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.domain.remote.MessageToolCall
 import app.switchboard.mobile.domain.thread.FeedItem
+import app.switchboard.mobile.protocol.JsonCodec
+import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LoadedSessionSnapshotMapperTest {
+    @Test
+    fun `truncated history notice does not retain or present the raw response`() {
+        val sentinel = "data:image/png;base64," + "A".repeat(2_000_000)
+        val image = MessageImage(sentinel, "image/png", "large.png")
+        val loaded = LoadedSession(
+            messages = listOf(message("latest", "user", "", images = listOf(image))),
+            meta = null,
+            total = 501,
+            truncated = true,
+            raw = JsonObject(linkedMapOf("messages" to JsonString(sentinel))),
+        )
+
+        val feed = LoadedSessionSnapshotMapper.map("thread", loaded).feed
+        val notice = feed
+            .filterIsInstance<FeedItem.RawNotice>()
+            .single()
+        val expectedRaw = JsonObject(
+            linkedMapOf(
+                "shown" to JsonNumber("1"),
+                "total" to JsonNumber("501"),
+            ),
+        )
+
+        assertEquals("Showing the last 1 of 501 messages", notice.text)
+        assertEquals(expectedRaw, notice.raw)
+        assertFalse(JsonCodec.encode(notice.raw).contains(sentinel.take(64)))
+        assertEquals(
+            listOf(image),
+            feed
+                .filterIsInstance<FeedItem.User>()
+                .single()
+                .images,
+        )
+    }
+
+    @Test
+    fun `history window notice requires positive truncation and a known total`() {
+        fun noticeCount(truncated: Boolean?, total: Long?) = LoadedSessionSnapshotMapper.map(
+            "thread",
+            LoadedSession(
+                messages = listOf(message("latest", "assistant", "done")),
+                meta = null,
+                total = total,
+                truncated = truncated,
+                raw = JsonObject(linkedMapOf()),
+            ),
+        ).feed.count { it.id == "history-window" }
+
+        assertEquals(1, noticeCount(true, 501))
+        assertEquals(0, noticeCount(false, 501))
+        assertEquals(0, noticeCount(null, 501))
+        assertEquals(0, noticeCount(true, null))
+    }
+
     @Test
     fun `history prefers display body and filters recognized synthetic context`() {
         val loaded = LoadedSession(

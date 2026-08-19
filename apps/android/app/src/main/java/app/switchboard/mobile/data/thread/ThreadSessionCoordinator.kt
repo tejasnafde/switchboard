@@ -24,6 +24,8 @@ import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.domain.thread.UserMessageVisibility
 import app.switchboard.mobile.platform.protocol.Cancelable
+import app.switchboard.mobile.protocol.JsonNumber
+import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.RuntimeEventPayload
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -294,7 +296,12 @@ object LoadedSessionSnapshotMapper {
                     id = "history-window",
                     eventType = "history.window",
                     text = "Showing the last ${loaded.messages.size} of ${loaded.total} messages",
-                    raw = loaded.raw,
+                    raw = JsonObject(
+                        linkedMapOf(
+                            "shown" to JsonNumber(loaded.messages.size.toString()),
+                            "total" to JsonNumber(loaded.total.toString()),
+                        ),
+                    ),
                 ),
             )
         }
