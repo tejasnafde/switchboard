@@ -7,6 +7,7 @@ import app.switchboard.mobile.domain.thread.ThreadEventPayload
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadRuntimeEvent
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
+import app.switchboard.mobile.domain.thread.UserMessageVisibility
 import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonObject
 
@@ -235,16 +236,21 @@ object ThreadStoreReducer {
             ?: return appendRawNotice(withJournal, scoped)
         return when (val event = known.payload) {
             is ThreadEventPayload.Content -> content(withJournal, event, isViewing)
-            is ThreadEventPayload.UserMessage -> withJournal.copy(
-                feed = upsert(
-                    withJournal.feed,
-                    FeedItem.User(
-                        "remote_${event.origin ?: event.at}",
-                        event.text,
-                        event.at,
+            is ThreadEventPayload.UserMessage -> {
+                val text = UserMessageVisibility.visibleText(event.text, event.displayBody)
+                    ?: return withJournal
+                withJournal.copy(
+                    feed = upsert(
+                        withJournal.feed,
+                        FeedItem.User(
+                            "remote_${event.origin ?: event.at}",
+                            text,
+                            event.at,
+                            event.images,
+                        ),
                     ),
-                ),
-            )
+                )
+            }
             is ThreadEventPayload.ToolStarted -> withJournal.copy(
                 feed = upsert(
                     withJournal.feed,

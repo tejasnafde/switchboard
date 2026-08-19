@@ -5,7 +5,7 @@ import android.os.Looper
 import android.view.MotionEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -30,7 +30,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Popup
 import app.switchboard.mobile.domain.voice.VoiceGestureOutcome
 import app.switchboard.mobile.domain.voice.VoiceGesturePolicy
 import app.switchboard.mobile.domain.voice.VoiceNoticeAction
@@ -38,6 +40,7 @@ import app.switchboard.mobile.domain.voice.VoiceCapturePhase
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.TextDim
+import kotlin.math.roundToInt
 
 private data class ThreadVoiceInputs(
     val mode: VoicePrimaryMode,
@@ -110,28 +113,32 @@ fun ThreadVoicePrimaryControl(
         VoicePrimaryMode.StopAgent -> "Stop"
         VoicePrimaryMode.StopDictation -> "Stop mic"
     }
-    val hint = when {
-        gesture == VoiceGestureOutcome.Cancelled -> "Release to cancel"
-        gesture == VoiceGestureOutcome.Locked -> "Release to lock"
-        voice.state.session.phase == VoiceCapturePhase.ListeningLocked -> "Listening · tap Stop mic"
-        pressed && memory.holdStarted -> "Listening · release to stop"
-        pressed -> "Keep holding…"
-        mode == VoicePrimaryMode.Microphone -> "Hold to talk · slide up to lock · sideways to cancel"
-        else -> null
-    }
+    val hint = VoiceGuidancePolicy.message(
+        pressed = pressed,
+        holdStarted = memory.holdStarted,
+        locked = voice.state.session.phase == VoiceCapturePhase.ListeningLocked,
+        gesture = gesture,
+    )
 
-    Column(modifier = modifier, horizontalAlignment = Alignment.End) {
+    Box(modifier = modifier) {
         hint?.let {
-            Text(
-                text = it,
-                color = when (gesture) {
-                    VoiceGestureOutcome.Cancelled -> Red
-                    VoiceGestureOutcome.Locked -> Amber
-                    VoiceGestureOutcome.None -> TextDim
-                },
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(bottom = 4.dp),
-            )
+            Popup(
+                alignment = Alignment.TopEnd,
+                offset = IntOffset(0, (-48 * density).roundToInt()),
+            ) {
+                Text(
+                    text = it,
+                    color = when (gesture) {
+                        VoiceGestureOutcome.Cancelled -> Red
+                        VoiceGestureOutcome.Locked -> Amber
+                        VoiceGestureOutcome.None -> TextDim
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier
+                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                )
+            }
         }
         Text(
             text = label,

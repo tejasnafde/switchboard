@@ -26,7 +26,6 @@ import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
 import type { ProviderInstance, ProviderSkill } from '@shared/types'
-import type { ChatMessage } from '@shared/types'
 import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
 import { echoMessageId } from '@shared/provider-events'
@@ -49,6 +48,7 @@ import { allCommands, detectSlash, filterCommands, type SlashCommand } from '../
 import { profilesFor } from '../lib/profiles'
 import { buildTurn } from '../lib/turnSubmit'
 import { keyboardAvoidance } from '../lib/keyboardAvoidance'
+import { historyToItems } from '../lib/threadHistory'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { VoiceNoteBar } from '../components/MicButton'
@@ -73,42 +73,6 @@ function providerFromAgentType(agentType: string | undefined): ProviderKind {
   if (agentType === 'codex') return 'codex'
   if (agentType === 'opencode') return 'opencode'
   return 'claude'
-}
-
-/** Map loaded ChatMessages into FeedItems (user text, assistant text, tools). */
-function historyToItems(messages: ChatMessage[]): FeedItem[] {
-  const items: FeedItem[] = []
-  for (const m of messages) {
-    if (m.role === 'user') {
-      const urls = (m.images ?? []).map((img) => img.url).filter(Boolean)
-      // A message can be images with no caption, so an empty body still counts.
-      if (m.content.trim() || urls.length > 0) {
-        items.push({
-          kind: 'user',
-          id: `h-${m.id}`,
-          text: m.content,
-          at: m.timestamp,
-          images: urls.length > 0 ? urls : undefined,
-        })
-      }
-      continue
-    }
-    // Assistant and system messages render as done assistant text.
-    if (m.content.trim()) {
-      items.push({ kind: 'text', id: `h-${m.id}`, text: m.content, stream: 'assistant', done: true })
-    }
-    for (const tc of m.toolCalls ?? []) {
-      items.push({
-        kind: 'tool',
-        id: `h-${m.id}-t-${tc.id}`,
-        toolName: tc.name,
-        input: tc.input,
-        output: tc.output,
-        state: 'done',
-      })
-    }
-  }
-  return items
 }
 
 export default function ThreadScreen({ route, navigation }: Props) {

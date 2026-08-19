@@ -1,5 +1,6 @@
 import type { ChatMessage, ToolCall, MessageImage } from '@shared/types'
 import { createHash } from 'crypto'
+import { visibleUserMessageText } from '@shared/provider-events'
 
 export type JsonlSource = 'claude-code' | 'codex'
 
@@ -104,6 +105,7 @@ export class JsonlParser {
       case 'user': {
         const content = extractContent(event.message)
         const images = extractImages(event.message)
+        if (images.length === 0 && visibleUserMessageText(content) === null) return null
         // Skip user messages that only contain tool_result blocks (internal protocol)
         // - but keep messages that have images even without text content, so
         // historical image-only user messages reappear after reload.
@@ -263,6 +265,7 @@ export function normalizeCodexEvent(event: Record<string, unknown>): ChatMessage
 
   const content = extractCodexText(payload.content)
   if (!content) return null
+  if (role === 'user' && visibleUserMessageText(content) === null) return null
 
   // Codex timestamps are ISO strings at the event root.
   const ts = typeof event.timestamp === 'string'

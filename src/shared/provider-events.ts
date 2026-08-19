@@ -172,6 +172,65 @@ export function echoMessageId(origin: string): string {
   return `remote_${origin}`
 }
 
+const USER_MESSAGE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+const USER_MESSAGE_IMAGE_DATA_LIMIT = 3 * 1024 * 1024
+
+/** Validate attachments before they cross the provider, persistence, or replay boundaries. */
+export function validateUserMessageImages<T extends { url: string; mimeType?: string; name?: string }>(
+  images?: T[],
+): T[] | undefined {
+  if (!images?.length) return undefined
+  if (images.length > 4) throw new Error('A turn can include at most 4 images')
+  let encodedBytes = 0
+  for (const image of images) {
+    const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(image.url)
+    if (!match || !USER_MESSAGE_IMAGE_TYPES.has(match[1])) {
+      throw new Error('Images must be PNG, JPEG, WebP, or GIF data URLs')
+    }
+    if (image.mimeType && image.mimeType !== match[1]) {
+      throw new Error('Image MIME type does not match its data URL')
+    }
+    encodedBytes += image.url.length
+    if (encodedBytes > USER_MESSAGE_IMAGE_DATA_LIMIT) {
+      throw new Error('Images exceed the 3 MiB synchronization limit')
+    }
+  }
+  return images
+}
+
+const SYNTHETIC_USER_BLOCKS: ReadonlyArray<{
+  start: string
+  end: string
+}> = [
+  { start: '<recommended_plugins>', end: '</recommended_plugins>' },
+  { start: '# AGENTS.md instructions for ', end: '</INSTRUCTIONS>' },
+  { start: '<environment_context>', end: '</environment_context>' },
+]
+
+/**
+ * Resolve the body a human should see for a submitted user turn.
+ *
+ * Some clients send a provider-only wrapper while persisting a separate
+ * display body. Provider bootstraps can also surface as user-role transcript
+ * entries; only an entire sequence of known generated blocks is filtered, so
+ * ordinary prompts that mention one of the markers stay visible.
+ */
+export function visibleUserMessageText(text: string, displayBody?: string): string | null {
+  if (displayBody !== undefined) return displayBody
+  let remaining = text.trim()
+  if (!remaining) return text
+  let matched = false
+  while (remaining) {
+    const block = SYNTHETIC_USER_BLOCKS.find(({ start }) => remaining.startsWith(start))
+    if (!block) return text
+    const end = remaining.indexOf(block.end)
+    if (end < 0) return text
+    matched = true
+    remaining = remaining.slice(end + block.end.length).trimStart()
+  }
+  return matched ? null : text
+}
+
 export interface RuntimeContentEvent {
   type: 'content'
   threadId: string
@@ -206,6 +265,8 @@ export interface RuntimeUserMessageEvent {
   type: 'user.message'
   threadId: string
   text: string
+  displayBody?: string
+  images?: Array<{ url: string; mimeType?: string; name?: string }>
   origin?: string
   at: number
 }

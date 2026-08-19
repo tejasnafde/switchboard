@@ -19,7 +19,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb } from '../db/database'
+import { recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb, getMessageForConversationById } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -50,7 +50,7 @@ import type {
   ApprovalDecision,
   RuntimeMode,
 } from './types'
-import { echoMessageId } from '@shared/provider-events'
+import { echoMessageId, validateUserMessageImages } from '@shared/provider-events'
 
 const log = createLogger('provider:registry')
 
@@ -693,7 +693,8 @@ export class ProviderRegistry implements PeerToolHost {
         log.warn(`sendTurn ${threadId} - no adapter (session not started?)`)
         throw new Error(`No session: ${threadId}`)
       }
-      log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${images?.length ?? 0}`)
+      const acceptedImages = validateUserMessageImages(images)
+      log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${acceptedImages?.length ?? 0}`)
       const dispatch = async (): Promise<void> => {
         // These operations happen before the provider boundary. A failure here
         // is a definite rejection and may safely release the reservation.
@@ -708,7 +709,7 @@ export class ProviderRegistry implements PeerToolHost {
 
         this.activeTurns.add(threadId)
         try {
-          await adapter.sendTurn(threadId, message, runtimeMode, images)
+          await adapter.sendTurn(threadId, message, runtimeMode, acceptedImages)
         } catch (error) {
           this.activeTurns.delete(threadId)
           // Once the provider call starts, a generic failure is ambiguous. It
@@ -723,7 +724,7 @@ export class ProviderRegistry implements PeerToolHost {
           ?? hashClientScope('unscoped-local', 'backend-host-without-request-context')
         acceptance = await this.turnAcceptance.accept(
           { clientScope, threadId, origin },
-          turnPayloadHash(message, runtimeMode, images),
+          turnPayloadHash(message, runtimeMode, acceptedImages),
           dispatch,
         )
         if (acceptance.duplicate) {
@@ -744,21 +745,37 @@ export class ProviderRegistry implements PeerToolHost {
       // `display_body`/`pills_meta` on every desktop send. Absent origin - the
       // phone's opening turn does not send one - still gets a row, under a
       // minted id, since nothing else will write it.
+      let displayBody: string | undefined
       try {
         saveMessageIfAbsent(
           origin ? echoMessageId(origin) : `turn_${Date.now()}_${++this.savedMessageSeq}`,
           threadId,
           'user',
           message,
-          images && images.length > 0 ? JSON.stringify(images) : undefined,
+          acceptedImages ? JSON.stringify(acceptedImages) : undefined,
         )
       } catch (err) {
         log.warn(`failed to persist user turn for ${threadId}: ${err}`)
       }
+      try {
+        displayBody = origin
+          ? getMessageForConversationById(threadId, echoMessageId(origin))?.display_body ?? undefined
+          : undefined
+      } catch {
+        // A missing enrichment is normal for phone sends and older databases.
+      }
       // AFTER the adapter accepts. Broadcasting first meant a failed send had
       // already consumed the origin from every other client's skip set, so the
       // retry rendered a duplicate bubble everywhere with no retraction.
-      this.publish({ type: 'user.message', threadId, text: message, origin, at: Date.now() })
+      this.publish({
+        type: 'user.message',
+        threadId,
+        text: message,
+        displayBody,
+        images: acceptedImages,
+        origin,
+        at: Date.now(),
+      })
       return acceptance
     })
 

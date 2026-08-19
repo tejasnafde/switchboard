@@ -13,6 +13,22 @@ import org.junit.Test
 
 class LoadedSessionSnapshotMapperTest {
     @Test
+    fun `history prefers display body and filters recognized synthetic context`() {
+        val loaded = LoadedSession(
+            messages = listOf(
+                message("visible", "user", "context wrapper\n\nshow this", displayBody = "show this"),
+                message("synthetic", "user", "<environment_context>\n<cwd>/repo</cwd>\n</environment_context>"),
+            ),
+            meta = null,
+            total = 2,
+            truncated = false,
+            raw = JsonObject(linkedMapOf()),
+        )
+
+        val users = LoadedSessionSnapshotMapper.map("thread", loaded).feed.filterIsInstance<FeedItem.User>()
+        assertEquals(listOf("show this"), users.map(FeedItem.User::text))
+    }
+    @Test
     fun `image-only history stays visible and assistant tool calls become rows`() {
         val image = MessageImage(
             url = "data:image/png;base64,iVBORw0KGgo=",
@@ -52,6 +68,7 @@ class LoadedSessionSnapshotMapperTest {
         content: String,
         images: List<MessageImage> = emptyList(),
         toolCalls: List<MessageToolCall> = emptyList(),
+        displayBody: String? = null,
     ) = ChatMessage(
         id = id,
         role = role,
@@ -60,5 +77,6 @@ class LoadedSessionSnapshotMapperTest {
         raw = JsonObject(linkedMapOf()),
         images = images,
         toolCalls = toolCalls,
+        displayBody = displayBody,
     )
 }

@@ -12,6 +12,20 @@ import org.junit.Test
 
 class NavigationStateTest {
     @Test
+    fun `thread route retains the worktree cwd used for provider reattachment`() {
+        val route = AppRoute.Thread(
+            connectionId = "mac",
+            connectionLabel = "Studio Mac",
+            threadId = "thread-1",
+            projectPath = "/repo",
+            worktreePath = "/repo/.switchboard/worktrees/task",
+            title = "Task",
+        )
+
+        assertEquals("/repo/.switchboard/worktrees/task", route.worktreePath)
+    }
+
+    @Test
     fun pairRoutesPushAndSystemBackReturnsToConnections() {
         val root = NavigationState.root()
         val add = root.push(AppRoute.Pair())

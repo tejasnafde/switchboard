@@ -24,6 +24,7 @@ import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.SwitchboardBrowseRemote
 import app.switchboard.mobile.data.remote.SwitchboardNewSessionRemote
 import app.switchboard.mobile.data.thread.SwitchboardThreadSessionRemote
+import app.switchboard.mobile.data.thread.CachedThreadStateMapper
 import app.switchboard.mobile.data.thread.ThreadEnqueuePort
 import app.switchboard.mobile.data.thread.ThreadComposerPersistence
 import app.switchboard.mobile.data.thread.ThreadSessionClock
@@ -211,7 +212,9 @@ fun SwitchboardNavigation(
                             connectionLabel = route.connectionLabel,
                             threadId = conversation.id,
                             projectPath = conversation.projectPath,
+                            worktreePath = conversation.worktreePath,
                             title = conversation.title,
+                            provider = conversation.agentType,
                         ),
                     )
                 },
@@ -250,6 +253,7 @@ fun SwitchboardNavigation(
                 route = route,
                 runtime = runtime,
                 status = runtimeStatuses[route.connectionId],
+                offlineSnapshot = offlineSnapshot,
                 onBack = ::navigateBack,
             )
         }
@@ -469,6 +473,7 @@ private fun ThreadRouteHost(
     route: AppRoute.Thread,
     runtime: RootNavigationRuntime?,
     status: ConnectionRuntimeState?,
+    offlineSnapshot: OfflineSnapshot?,
     onBack: () -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
@@ -488,6 +493,9 @@ private fun ThreadRouteHost(
     }
     if (lease == null || runtime == null) {
         val cached = runtime?.cachedThread(route.connectionId, route.threadId)
+            ?: offlineSnapshot?.let {
+                CachedThreadStateMapper.from(it, route.connectionId, route.threadId)
+            }
         val load = when (val fallback = RootNavigationPolicy.fallback(status)) {
             LeaseFallback.Loading -> ThreadLoadState.Loading(cached)
             is LeaseFallback.Retryable -> ThreadLoadState.Failed(fallback.message, cached)
@@ -546,6 +554,7 @@ private fun ThreadRouteHost(
         route = route,
         runtime = runtime,
         lease = lease,
+        offlineSnapshot = offlineSnapshot,
         savedDraft = savedDraft,
         composerError = composerErrors[composerKey],
         queuedTurns = queuedTurns,
@@ -558,6 +567,7 @@ private fun ConnectedThreadRoute(
     route: AppRoute.Thread,
     runtime: RootNavigationRuntime,
     lease: ReadyClientLease,
+    offlineSnapshot: OfflineSnapshot?,
     savedDraft: ComposerDraft?,
     composerError: String?,
     queuedTurns: List<QueuedTurn>,
@@ -568,7 +578,15 @@ private fun ConnectedThreadRoute(
     }
     val coroutineScope = rememberCoroutineScope()
     val events = remember(runtime, lease.scope) { runtime.eventsFor(lease.scope) }
-    val coordinator = remember(runtime, route.connectionId, route.threadId, lease.scope) {
+    val coordinator = remember(
+        runtime,
+        route.connectionId,
+        route.threadId,
+        route.projectPath,
+        route.worktreePath,
+        route.provider,
+        lease.scope,
+    ) {
         val bridge = ProtocolRuntimeEventBridge(
             scope = coroutineScope,
             expectedScope = lease.scope,
@@ -582,7 +600,10 @@ private fun ConnectedThreadRoute(
         ThreadSessionCoordinator(
             scope = lease.scope.toThreadEventScope(),
             threadId = route.threadId,
-            initialCached = runtime.cachedThread(route.connectionId, route.threadId),
+            initialCached = runtime.cachedThread(route.connectionId, route.threadId)
+                ?: offlineSnapshot?.let {
+                    CachedThreadStateMapper.from(it, route.connectionId, route.threadId)
+                },
             remote = ProtocolHubThreadSessionRemote(commands, bridge),
             enqueue = object : ThreadEnqueuePort {
                 override fun enqueue(draft: app.switchboard.mobile.domain.outbox.OutgoingTurnDraft) =
@@ -595,6 +616,9 @@ private fun ConnectedThreadRoute(
             },
             clock = ThreadSessionClock(System::currentTimeMillis),
             initialComposer = savedDraft,
+            projectPath = route.projectPath,
+            worktreePath = route.worktreePath,
+            providerHint = route.provider,
             composerPersistence = object : ThreadComposerPersistence {
                 override fun save(draft: ComposerDraft) = runtime.saveComposerDraft(draft)
 

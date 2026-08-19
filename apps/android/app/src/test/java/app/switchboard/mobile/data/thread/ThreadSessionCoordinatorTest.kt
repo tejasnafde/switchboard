@@ -47,7 +47,7 @@ class ThreadSessionCoordinatorTest {
 
         coordinator.start()
 
-        assertEquals(listOf("thread-1"), remote.loadedThreadIds)
+        assertEquals(listOf("thread-1" to 250L), remote.loadedThreads)
         assertEquals(listOf("thread-1"), remote.markedReadThreadIds)
         assertEquals(0, coordinator.currentThread()?.unread)
 
@@ -70,6 +70,68 @@ class ThreadSessionCoordinatorTest {
         assertEquals("hello", (ready.thread.feed[0] as FeedItem.User).text)
         assertEquals(true, (ready.thread.feed[1] as FeedItem.Text).done)
         assertTrue(ready.thread.feed[2] is FeedItem.Text)
+    }
+
+    @Test
+    fun `successful history load reattaches session from loaded metadata without replacing history on failure`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, projectPath = "/repo", worktreePath = "/repo/.switchboard/wt")
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession(message("u-1", "user", "hello", 10))))
+
+        val start = remote.startedSessions.single()
+        assertEquals("thread-1", start.threadId)
+        assertEquals(app.switchboard.mobile.domain.remote.ProviderKind.Codex, start.provider)
+        assertEquals("/repo/.switchboard/wt", start.cwd)
+        assertEquals("thread-1", start.resumeSessionId)
+
+        remote.completeStart(failure("start", "provider unavailable"))
+        val ready = coordinator.state.value.load as ThreadSessionLoad.Ready
+        assertEquals("hello", (ready.thread.feed.single() as FeedItem.User).text)
+        assertEquals("provider unavailable", coordinator.state.value.controlMessage)
+    }
+
+    @Test
+    fun `cached provider reattaches even when history refresh fails`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(provider = "codex"),
+            projectPath = "/repo",
+        )
+
+        coordinator.start()
+        assertEquals(app.switchboard.mobile.domain.remote.ProviderKind.Codex, remote.startedSessions.single().provider)
+        remote.completeLoad(failure("load", "history unavailable"))
+
+        assertEquals(1, remote.startedSessions.size)
+        assertTrue(coordinator.state.value.load is ThreadSessionLoad.Failed)
+    }
+
+    @Test
+    fun `successful retry clears an earlier reattach warning`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, projectPath = "/repo")
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        remote.completeStart(failure("start", "provider unavailable"))
+        assertEquals("provider unavailable", coordinator.state.value.controlMessage)
+
+        coordinator.refresh()
+        remote.completeLoadAt(1, success("load", loadedSession()))
+        remote.completeStart(success(
+            "start",
+            app.switchboard.mobile.domain.remote.StartedSession(
+                threadId = "thread-1",
+                provider = "codex",
+                status = "ready",
+                cwd = "/repo",
+                sessionId = "thread-1",
+                raw = emptyJson(),
+            ),
+        ))
+
+        assertNull(coordinator.state.value.controlMessage)
     }
 
     @Test
@@ -375,7 +437,7 @@ class ThreadSessionCoordinatorTest {
         assertTrue(coordinator.currentThread()?.feed.orEmpty().isEmpty())
         assertEquals("plan", coordinator.currentThread()?.runtimeMode)
         assertEquals("codex", coordinator.currentThread()?.provider)
-        assertTrue(remote.loadedThreadIds.isEmpty())
+        assertTrue(remote.loadedThreads.isEmpty())
     }
 
     @Test
@@ -495,6 +557,8 @@ class ThreadSessionCoordinatorTest {
         enqueue: ThreadEnqueuePort = FakeEnqueuePort(),
         initialComposer: ComposerDraft? = null,
         composerPersistence: ThreadComposerPersistence = FakeComposerPersistence(),
+        projectPath: String? = null,
+        worktreePath: String? = null,
     ) = ThreadSessionCoordinator(
         scope = scope,
         threadId = "thread-1",
@@ -504,6 +568,8 @@ class ThreadSessionCoordinatorTest {
         clock = ThreadSessionClock { 123L },
         initialComposer = initialComposer,
         composerPersistence = composerPersistence,
+        projectPath = projectPath,
+        worktreePath = worktreePath,
     )
 
     private fun loadedSession(vararg messages: ChatMessage) = LoadedSession(
@@ -647,7 +713,7 @@ private class FakeThreadSessionRemote(
     override val scope: ThreadEventScope,
 ) : ThreadSessionRemote {
     var listener: ((ThreadEventScope, RuntimeEventPayload) -> Unit)? = null
-    val loadedThreadIds = mutableListOf<String>()
+    val loadedThreads = mutableListOf<Pair<String, Long>>()
     val loadCallbacks = mutableListOf<(RemoteResponse<LoadedSession>) -> Unit>()
     val markedReadThreadIds = mutableListOf<String>()
     val markReadCallbacks = mutableListOf<(RemoteResponse<MarkReadResult>) -> Unit>()
@@ -667,9 +733,20 @@ private class FakeThreadSessionRemote(
         return Cancelable { if (this.listener === listener) this.listener = null }
     }
 
-    override fun loadSession(threadId: String, callback: (RemoteResponse<LoadedSession>) -> Unit) {
-        loadedThreadIds += threadId
+    override fun loadSession(threadId: String, limit: Long, callback: (RemoteResponse<LoadedSession>) -> Unit) {
+        loadedThreads += threadId to limit
         loadCallbacks += callback
+    }
+
+    val startedSessions = mutableListOf<app.switchboard.mobile.domain.remote.StartSession>()
+    val startCallbacks = mutableListOf<(RemoteResponse<app.switchboard.mobile.domain.remote.StartedSession>) -> Unit>()
+
+    override fun startSession(
+        input: app.switchboard.mobile.domain.remote.StartSession,
+        callback: (RemoteResponse<app.switchboard.mobile.domain.remote.StartedSession>) -> Unit,
+    ) {
+        startedSessions += input
+        startCallbacks += callback
     }
 
     override fun markRead(threadId: String, callback: (RemoteResponse<MarkReadResult>) -> Unit) {
@@ -726,6 +803,10 @@ private class FakeThreadSessionRemote(
     fun completeLoad(response: RemoteResponse<LoadedSession>, responseScope: ThreadEventScope = scope) {
         val callback = loadCallbacks.first()
         callback(response.withScope(responseScope))
+    }
+
+    fun completeStart(response: RemoteResponse<app.switchboard.mobile.domain.remote.StartedSession>) {
+        startCallbacks.removeAt(0)(response)
     }
 
     fun completeLoadAt(index: Int, response: RemoteResponse<LoadedSession>) {

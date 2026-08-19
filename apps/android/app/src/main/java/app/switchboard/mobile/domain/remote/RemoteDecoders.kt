@@ -172,6 +172,7 @@ object RemoteDecoders {
                 name = image.string("name"),
             )
         },
+        displayBody = raw.string("displayBody"),
     )
 
     private fun sessionMeta(raw: JsonObject) = SessionMeta(

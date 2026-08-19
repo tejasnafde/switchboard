@@ -30,7 +30,9 @@ sealed interface AppRoute : Serializable {
         val connectionLabel: String,
         val threadId: String,
         val projectPath: String,
+        val worktreePath: String? = null,
         val title: String,
+        val provider: String? = null,
     ) : AppRoute
 
     data class NewSession(

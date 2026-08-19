@@ -2,6 +2,20 @@ import { describe, it, expect, vi } from 'vitest'
 import { JsonlParser } from '../../src/main/agent/jsonl-parser'
 
 describe('JsonlParser', () => {
+  it('filters a recognized synthetic user context bundle without hiding genuine mentions', () => {
+    const synthetic = JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>' },
+    })
+    const genuine = JSON.stringify({
+      type: 'user',
+      message: { role: 'user', content: 'Explain <environment_context> to me' },
+    })
+    const messages: Array<{ content: string }> = []
+    const parser = new JsonlParser((message) => messages.push(message))
+    parser.feed(`${synthetic}\n${genuine}\n`)
+    expect(messages.map((message) => message.content)).toEqual(['Explain <environment_context> to me'])
+  })
   it('parses a complete assistant message', () => {
     const messages: unknown[] = []
     const parser = new JsonlParser((msg) => messages.push(msg))

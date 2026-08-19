@@ -69,6 +69,7 @@ data class ChatMessage(
     val raw: JsonObject,
     val toolCalls: List<MessageToolCall> = emptyList(),
     val images: List<MessageImage> = emptyList(),
+    val displayBody: String? = null,
 )
 
 data class MessageToolCall(

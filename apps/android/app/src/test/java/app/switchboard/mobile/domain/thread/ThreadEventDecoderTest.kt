@@ -13,6 +13,28 @@ import org.junit.Test
 
 class ThreadEventDecoderTest {
     @Test
+    fun `user message decodes display body and images`() {
+        val event = ThreadEventDecoder.decode(
+            event(
+                "user.message",
+                "text" to s("context wrapper\n\nvisible"),
+                "displayBody" to s("visible"),
+                "images" to arr(
+                    obj(
+                        "url" to s("data:image/png;base64,AAA"),
+                        "mimeType" to s("image/png"),
+                    ),
+                ),
+                "origin" to s("phone-image"),
+                "at" to n(1),
+            ),
+        ) as ThreadRuntimeEvent.Known
+
+        val message = event.payload as ThreadEventPayload.UserMessage
+        assertEquals("visible", message.displayBody)
+        assertEquals("data:image/png;base64,AAA", message.images.single().url)
+    }
+    @Test
     fun decodesEveryKnownRuntimeEventWithoutDroppingExtensionFields() {
         val fixtures = listOf(
             event("content", "messageId" to s("m1"), "text" to s("hello"), "append" to b(true), "streamKind" to s("assistant")) to ThreadEventKind.Content,

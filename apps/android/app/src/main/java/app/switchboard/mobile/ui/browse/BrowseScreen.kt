@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -243,7 +242,6 @@ private fun ProjectsSurface(
                             ProjectRow(row = row, onClick = { onProjectTap(row) })
                         }
                     }
-                    item { Spacer(Modifier.navigationBarsPadding()) }
                 }
             }
         }
@@ -307,7 +305,6 @@ private fun ConversationsSurface(
                         )
                         RenameErrorSlot(renameErrors[row.id])
                     }
-                    item { Spacer(Modifier.navigationBarsPadding()) }
                 }
             }
             renaming?.let { row ->
@@ -409,26 +406,22 @@ private fun ProjectRow(row: BrowseProjectRow, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = buildString {
-                    append("${row.sessionCount} ${if (row.sessionCount == 1) "session" else "sessions"}")
-                    if (row.unread > 0) append(" · ${row.unread} unread")
-                    row.status?.let { append(" · $it") }
-                },
-                color = TextDim,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(top = 2.dp),
-            )
-            Text(
                 text = row.path,
                 color = TextDim,
-                fontFamily = GeistMono,
-                fontSize = 11.sp,
+                style = MaterialTheme.typography.bodySmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 2.dp),
+                modifier = Modifier.padding(top = 3.dp),
             )
         }
-        Text("›", color = TextDim, fontSize = 22.sp, modifier = Modifier.clearAndSetSemantics {})
+        Text(
+            text = BrowseRowPolicy.projectTrailingLabel(row),
+            color = if (row.unread > 0) Accent else TextDim,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier
+                .padding(start = 12.dp)
+                .clearAndSetSemantics {},
+        )
     }
 }
 
@@ -464,63 +457,24 @@ private fun ConversationRow(
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 7.dp),
+                modifier = Modifier.padding(top = 4.dp),
             ) {
-                AgentTag(row.agentType)
                 Text(
-                    text = remember(row.updatedAt) { formatTimestamp(row.updatedAt) },
+                    text = BrowseRowPolicy.conversationSupportingLabel(row),
                     color = TextDim,
-                    style = MaterialTheme.typography.labelSmall,
-                    modifier = Modifier.padding(start = 10.dp),
+                    style = MaterialTheme.typography.bodySmall,
                 )
-                if (row.availableOffline) {
-                    Text(
-                        text = "saved",
-                        color = Accent,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(start = 10.dp),
-                    )
-                }
-                if (row.unread > 0) {
-                    Text(
-                        text = "${row.unread} unread",
-                        color = Accent,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(start = 10.dp),
-                    )
-                }
-                row.status?.let { status ->
-                    Text(
-                        text = status,
-                        color = if (status == "error" || status == "failed") Red else TextDim,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(start = 10.dp),
-                    )
-                }
             }
         }
-        Text("›", color = TextDim, fontSize = 22.sp, modifier = Modifier.clearAndSetSemantics {})
+        Text(
+            text = remember(row.updatedAt) { formatTimestamp(row.updatedAt) },
+            color = TextDim,
+            modifier = Modifier
+                .padding(start = 12.dp)
+                .clearAndSetSemantics {},
+            style = MaterialTheme.typography.labelSmall,
+        )
     }
-}
-
-@Composable
-private fun AgentTag(agentType: String) {
-    val label = when (agentType) {
-        "claude", "claude-code" -> "CLAUDE"
-        "codex" -> "CODEX"
-        "opencode" -> "OPENCODE"
-        else -> agentType.uppercase()
-    }
-    Text(
-        text = label,
-        color = TextDim,
-        fontFamily = GeistMono,
-        fontSize = 10.sp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(5.dp))
-            .background(SurfaceRaised)
-            .padding(horizontal = 6.dp, vertical = 2.dp),
-    )
 }
 
 @Composable
@@ -539,7 +493,7 @@ private fun BrowsePressableRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 72.dp)
+            .heightIn(min = 68.dp)
             .background(if (pressed) SurfaceRaised else Surface)
             .semantics(mergeDescendants = true) {
                 this.contentDescription = contentDescription

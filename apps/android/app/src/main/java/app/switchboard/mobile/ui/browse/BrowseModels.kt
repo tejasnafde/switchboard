@@ -285,3 +285,33 @@ object BrowsePresenter {
         }
     }
 }
+
+object BrowseRowPolicy {
+    fun projectTrailingLabel(row: BrowseProjectRow): String = when {
+        row.status.isFailureStatus() -> requireNotNull(row.status)
+        row.unread > 0 -> "${row.unread} unread"
+        !row.status.isNullOrBlank() -> row.status
+        row.sessionCount == 1 -> "1 chat"
+        else -> "${row.sessionCount} chats"
+    }
+
+    fun conversationSupportingLabel(row: BrowseConversationRow): String = listOfNotNull(
+        agentLabel(row.agentType),
+        when {
+            row.status.isFailureStatus() -> row.status
+            row.unread > 0 -> "${row.unread} unread"
+            !row.status.isNullOrBlank() -> row.status
+            row.availableOffline -> "saved"
+            else -> null
+        },
+    ).joinToString(" · ")
+
+    private fun agentLabel(agentType: String): String = when (agentType) {
+        "claude", "claude-code" -> "Claude"
+        "codex" -> "Codex"
+        "opencode" -> "OpenCode"
+        else -> agentType
+    }
+
+    private fun String?.isFailureStatus(): Boolean = this == "error" || this == "failed"
+}

@@ -1632,6 +1632,15 @@ export function getMessagesForConversation(conversationId: string): MessageRow[]
   ).all(conversationId) as MessageRow[]
 }
 
+export function getMessageForConversationById(
+  conversationId: string,
+  id: string,
+): MessageRow | undefined {
+  return getDb().prepare(
+    'SELECT * FROM messages WHERE conversation_id = ? AND id = ?'
+  ).get(conversationId, id) as MessageRow | undefined
+}
+
 function tryParseJson<T>(s: string): T | undefined {
   try { return JSON.parse(s) as T } catch { return undefined }
 }

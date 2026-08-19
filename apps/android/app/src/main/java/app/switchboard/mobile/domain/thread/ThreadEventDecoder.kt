@@ -1,5 +1,6 @@
 package app.switchboard.mobile.domain.thread
 
+import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonNull
@@ -36,7 +37,16 @@ object ThreadEventDecoder {
                 raw.boolean("append") ?: false, raw.requiredString("streamKind"),
             )
             "user.message" -> ThreadEventKind.UserMessage to ThreadEventPayload.UserMessage(
-                raw.requiredString("text"), raw.string("origin"), raw.requiredLong("at"),
+                raw.requiredString("text"), raw.string("displayBody"),
+                raw.optionalArray("images").values.map { image ->
+                    val value = image as? JsonObject ?: error("Expected image object")
+                    MessageImage(
+                        value.requiredString("url"),
+                        value.string("mimeType"),
+                        value.string("name"),
+                    )
+                },
+                raw.string("origin"), raw.requiredLong("at"),
             )
             "tool.started" -> ThreadEventKind.ToolStarted to ThreadEventPayload.ToolStarted(
                 raw.requiredString("toolId"), raw.requiredString("toolName"), raw.required("input"),
@@ -157,6 +167,11 @@ object ThreadEventDecoder {
     }
     private fun JsonObject.requiredBoolean(key: String) = (required(key) as? JsonBoolean)?.value ?: error("Expected boolean: $key")
     private fun JsonObject.requiredArray(key: String) = required(key) as? JsonArray ?: error("Expected array: $key")
+    private fun JsonObject.optionalArray(key: String) = when (val value = values[key]) {
+        null, JsonNull -> JsonArray(emptyList())
+        is JsonArray -> value
+        else -> error("Expected nullable array: $key")
+    }
     private fun JsonObject.requiredStringList(key: String) = requiredArray(key).values.map {
         (it as? JsonString)?.value ?: error("Expected string in: $key")
     }

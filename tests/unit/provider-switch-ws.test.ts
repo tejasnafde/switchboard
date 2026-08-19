@@ -23,7 +23,8 @@ vi.mock('../../src/main/db/providerInstances', () => ({
   listOauthDirsForAgent: () => [],
 }))
 /** Records what the registry persists, so a missing method cannot pass as a log line. */
-const saved: Array<{ id: string; conversationId: string; role: string; content: string; images?: string }> = []
+const saved: Array<{ id: string; conversationId: string; role: string; content: string; images?: string; displayBody?: string }> = []
+const persistedRows = new Map<string, { display_body: string | null }>()
 const recordedSegments: Array<{
   conversationId: string
   provider: string
@@ -34,10 +35,11 @@ vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   recordConversationSegment: (segment: typeof recordedSegments[number]) => recordedSegments.push(segment),
   updateConversationSessionId: () => {},
-  saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string, images?: string) => {
-    saved.push({ id, conversationId, role, content, images })
+  saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string, images?: string, displayBody?: string) => {
+    saved.push({ id, conversationId, role, content, images, displayBody })
     return true
   },
+  getMessageForConversationById: (_conversationId: string, id: string) => persistedRows.get(id),
   // Read by the session-defaults chain on every start. Null throughout, so
   // these tests keep asserting that the REQUEST wins, which is the tier they
   // exercise.
@@ -312,6 +314,27 @@ describe('provider switching over the WebSocket boundary', () => {
     // renderer's own richer write targets this row instead of adding a second.
     expect(turn?.id).toBe('remote_o-1')
     expect(accepted).toEqual({ accepted: true, duplicate: false, state: 'completed' })
+  })
+
+  it('broadcasts images and an available persisted display body with the user echo', async () => {
+    const { cwd, events } = await setup()
+    saved.length = 0
+    persistedRows.clear()
+    persistedRows.set('remote_o-image', { display_body: 'show this' })
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    const images = [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }]
+    await client!.invoke(
+      ProviderChannels.SEND_TURN, 't1', 'context wrapper\n\nshow this', undefined, images, 'o-image',
+    )
+    await flush()
+
+    expect(events.find((event) => event.type === 'user.message')).toMatchObject({
+      type: 'user.message',
+      text: 'context wrapper\n\nshow this',
+      displayBody: 'show this',
+      images,
+      origin: 'o-image',
+    })
   })
 
   it('answers a completed origin retry as domain success without dispatching again', async () => {

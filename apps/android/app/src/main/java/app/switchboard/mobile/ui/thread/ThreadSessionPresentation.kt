@@ -21,6 +21,7 @@ data class ThreadComposerPresentation(
     val showInterrupt: Boolean,
     val attachments: List<ComposerAttachment> = emptyList(),
     val editingOrigin: String? = null,
+    val modelLabel: String? = null,
 ) {
     val canSend: Boolean
         get() = canSendNow()
@@ -48,15 +49,18 @@ fun ThreadSessionState.toComposerPresentation(): ThreadComposerPresentation {
     return composer.toPresentation(
         controlMessage = controlMessage,
         showInterrupt = thread?.status == "running",
+        modelLabel = thread?.resolvedModel,
     )
 }
 
 private fun ThreadComposerState.toPresentation(
     controlMessage: String?,
     showInterrupt: Boolean,
+    modelLabel: String?,
 ) = ThreadComposerPresentation(
     draft = draft,
     runtimeMode = runtimeMode,
+    modelLabel = modelLabel,
     submitting = submitting,
     interrupting = interrupting,
     modeChanging = modeChanging,

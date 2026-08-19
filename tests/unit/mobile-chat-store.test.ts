@@ -202,4 +202,47 @@ describe('user.message echo', () => {
     expect(users).toHaveLength(1)
     expect((users[0] as { text: string }).text).toBe('from the phone')
   })
+
+  it('uses displayBody and images from another device while preserving origin dedupe', () => {
+    const origin = 'phone-image'
+    useChatStore.getState().addUserMessage(KEY, 'visible', ['data:image/png;base64,AAA'], echoMessageId(origin))
+    useChatStore.getState().ingestNow('c1', {
+      type: 'user.message',
+      threadId: 't1',
+      text: 'injected context\n\nvisible',
+      displayBody: 'visible',
+      images: [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
+      origin,
+      at: 1,
+    })
+
+    const users = useChatStore.getState().threads[KEY].items.filter((i) => i.kind === 'user')
+    expect(users).toHaveLength(1)
+    expect(users[0]).toMatchObject({ text: 'visible', images: ['data:image/png;base64,AAA'] })
+  })
+
+  it('renders another device image event without an optimistic bubble', () => {
+    useChatStore.getState().ingestNow('c1', {
+      type: 'user.message',
+      threadId: 't1',
+      text: 'wire body',
+      displayBody: 'visible body',
+      images: [{ url: 'data:image/jpeg;base64,BBB', mimeType: 'image/jpeg' }],
+      origin: 'desktop-image',
+      at: 1,
+    })
+    expect(useChatStore.getState().threads[KEY].items[0]).toMatchObject({
+      kind: 'user', text: 'visible body', images: ['data:image/jpeg;base64,BBB'],
+    })
+  })
+
+  it('does not render a recognized synthetic context event', () => {
+    useChatStore.getState().ingestNow('c1', {
+      type: 'user.message',
+      threadId: 't1',
+      text: '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>',
+      at: 1,
+    })
+    expect(useChatStore.getState().threads[KEY]?.items ?? []).toHaveLength(0)
+  })
 })

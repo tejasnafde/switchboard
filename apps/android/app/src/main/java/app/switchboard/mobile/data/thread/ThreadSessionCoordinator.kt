@@ -15,10 +15,14 @@ import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteResponse
 import app.switchboard.mobile.domain.remote.RuntimeMode
+import app.switchboard.mobile.domain.remote.ProviderKind
+import app.switchboard.mobile.domain.remote.StartSession
+import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.ThreadEventDecoder
 import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
+import app.switchboard.mobile.domain.thread.UserMessageVisibility
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.RuntimeEventPayload
@@ -138,7 +142,9 @@ interface ThreadSessionRemote {
 
     fun subscribe(listener: (ThreadEventScope, RuntimeEventPayload) -> Unit): Cancelable
 
-    fun loadSession(threadId: String, callback: (RemoteResponse<LoadedSession>) -> Unit)
+    fun loadSession(threadId: String, limit: Long, callback: (RemoteResponse<LoadedSession>) -> Unit)
+
+    fun startSession(input: StartSession, callback: (RemoteResponse<StartedSession>) -> Unit)
 
     fun markRead(threadId: String, callback: (RemoteResponse<MarkReadResult>) -> Unit)
 
@@ -182,8 +188,12 @@ class SwitchboardThreadSessionRemote(
             )
         }
 
-    override fun loadSession(threadId: String, callback: (RemoteResponse<LoadedSession>) -> Unit) {
-        client.loadSession(threadId, callback = callback)
+    override fun loadSession(threadId: String, limit: Long, callback: (RemoteResponse<LoadedSession>) -> Unit) {
+        client.loadSession(threadId, limit, callback)
+    }
+
+    override fun startSession(input: StartSession, callback: (RemoteResponse<StartedSession>) -> Unit) {
+        client.startSession(input, callback).let { Unit }
     }
 
     override fun markRead(threadId: String, callback: (RemoteResponse<MarkReadResult>) -> Unit) {
@@ -232,14 +242,14 @@ object LoadedSessionSnapshotMapper {
     fun map(threadId: String, loaded: LoadedSession): ThreadSnapshot {
         val feed = loaded.messages.flatMap { message ->
             when (message.role.lowercase()) {
-                "user" -> listOf(
-                    FeedItem.User(
+                "user" -> UserMessageVisibility.visibleText(message.content, message.displayBody)?.let { text ->
+                    listOf(FeedItem.User(
                         id = "h-${message.id}",
-                        text = message.content,
+                        text = text,
                         at = message.timestamp,
                         images = message.images,
-                    ),
-                )
+                    ))
+                }.orEmpty()
 
                 "assistant", "system" -> buildList {
                     if (message.content.isNotBlank()) {
@@ -301,6 +311,9 @@ class ThreadSessionCoordinator(
     private val clock: ThreadSessionClock,
     initialComposer: ComposerDraft? = null,
     private val composerPersistence: ThreadComposerPersistence = NoOpThreadComposerPersistence,
+    private val projectPath: String? = null,
+    private val worktreePath: String? = null,
+    private val providerHint: String? = initialCached?.provider,
 ) : AutoCloseable {
     private val key = ThreadKey(scope.connectionId, threadId)
     private val composerKey = ComposerDraftKey(scope.connectionId, threadId)
@@ -332,6 +345,9 @@ class ThreadSessionCoordinator(
     private var loadRequest = 0L
     private var modeRequest = 0L
     private var skillsRequest = 0L
+    private var reattachRequest = 0L
+    private var reattachInFlight: ProviderKind? = null
+    private var attachedProvider: ProviderKind? = null
     private val pendingControls = mutableSetOf<String>()
     private val pendingApprovalDecisions = mutableMapOf<String, ApprovalDecision>()
     private val pendingQuestionRequestIds = mutableSetOf<String>()
@@ -349,6 +365,7 @@ class ThreadSessionCoordinator(
         }
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, true))
         subscription = remote.subscribe(::onRuntimeEvent)
+        reattach(providerHint)
         refresh()
         loadSkills()
         remote.markRead(threadId) { /* best effort; local viewing state already cleared unread */ }
@@ -363,7 +380,7 @@ class ThreadSessionCoordinator(
         val request = ++loadRequest
         load = ThreadSessionLoad.Loading(currentThread())
         publish()
-        remote.loadSession(threadId) { response -> acceptLoad(request, response) }
+        remote.loadSession(threadId, HISTORY_LIMIT) { response -> acceptLoad(request, response) }
     }
 
     @Synchronized
@@ -522,6 +539,7 @@ class ThreadSessionCoordinator(
         loadRequest += 1
         modeRequest += 1
         skillsRequest += 1
+        reattachRequest += 1
         subscription?.cancel()
         subscription = null
         reduce(ThreadAction.SetViewing(scope.connectionId, threadId, false))
@@ -542,6 +560,7 @@ class ThreadSessionCoordinator(
                     optimisticTurns.values.forEach(::addOptimistic)
                     reduce(ThreadAction.CompleteReseed(scope))
                     load = ThreadSessionLoad.Ready(requireNotNull(currentThread()))
+                    reattach(outcome.value)
                 }
 
                 is RemoteOutcome.Failure -> {
@@ -549,6 +568,50 @@ class ThreadSessionCoordinator(
                 }
             }
             publish()
+        }
+    }
+
+    private fun reattach(loaded: LoadedSession) = reattach(loaded.meta?.agentType)
+
+    private fun reattach(agentType: String?) {
+        if (agentType == null) return
+        val cwd = worktreePath ?: projectPath ?: return
+        val provider = when (agentType) {
+            "claude-code", "claude" -> ProviderKind.Claude
+            else -> ProviderKind.entries.firstOrNull { it.wire == agentType }
+        }
+        if (provider == null) {
+            controlMessage = "Cannot reattach unknown provider $agentType"
+            return
+        }
+        if (attachedProvider == provider || reattachInFlight == provider) return
+        val request = ++reattachRequest
+        reattachInFlight = provider
+        try {
+            remote.startSession(
+                StartSession(
+                    threadId = threadId,
+                    provider = provider,
+                    cwd = cwd,
+                    resumeSessionId = threadId,
+                ),
+            ) { response ->
+                synchronized(this) {
+                    if (!accepts(response) || request != reattachRequest) return@synchronized
+                    reattachInFlight = null
+                    when (val outcome = response.outcome) {
+                        is RemoteOutcome.Success -> {
+                            attachedProvider = provider
+                            controlMessage = null
+                        }
+                        is RemoteOutcome.Failure -> controlMessage = outcome.message
+                    }
+                    publish()
+                }
+            }
+        } catch (error: RuntimeException) {
+            reattachInFlight = null
+            controlMessage = error.message ?: "Could not reattach session"
         }
     }
 
@@ -799,6 +862,7 @@ class ThreadSessionCoordinator(
         RuntimeMode.entries.firstOrNull { it.wire == this }
 
     companion object {
+        const val HISTORY_LIMIT = 250L
         const val IMPLEMENT_PLAN_MESSAGE = "Implement the plan you proposed."
         const val OPEN_FILE_UNSUPPORTED = "Opening changed files is not available on mobile yet."
     }

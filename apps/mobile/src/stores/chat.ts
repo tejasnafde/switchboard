@@ -19,7 +19,7 @@ import type {
   Question,
 } from '@shared/provider-events'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
-import { echoMessageId } from '@shared/provider-events'
+import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -278,7 +278,15 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           // so this collapses onto it instead of rendering a second bubble.
           const id = echoMessageId(event.origin ?? String(event.at))
           if (t.items.some((i) => i.id === id)) return {}
-          return { items: [...t.items, { kind: 'user', id, text: event.text, at: event.at }] }
+          const text = visibleUserMessageText(event.text, event.displayBody)
+          if (text === null) return {}
+          const images = event.images?.map((image) => image.url)
+          return {
+            items: [
+              ...t.items,
+              { kind: 'user', id, text, at: event.at, images: images?.length ? images : undefined },
+            ],
+          }
         }
         case 'tool.started':
           return {

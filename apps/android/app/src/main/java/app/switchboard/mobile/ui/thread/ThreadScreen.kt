@@ -23,8 +23,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -40,7 +38,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -61,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -154,7 +152,6 @@ fun ThreadScreen(
                             onImageOpen = { lightboxUrl = it },
                         )
                     }
-                    item(key = "navigation-inset") { Spacer(Modifier.navigationBarsPadding()) }
                 }
             }
         }
@@ -223,6 +220,8 @@ private fun ThreadComposer(
         )
     }
     val focusRequester = remember { FocusRequester() }
+    var focused by remember { mutableStateOf(false) }
+    var settingsOpen by remember { mutableStateOf(false) }
     val slashQuery = ThreadSlashPolicy.query(state.draft)
     val slashCommands = remember(skills, slashQuery) {
         slashQuery?.let { ThreadSlashPolicy.filter(ThreadSlashPolicy.commands(skills), it) }.orEmpty()
@@ -241,37 +240,29 @@ private fun ThreadComposer(
     LaunchedEffect(state.focusRequest) {
         if (state.focusRequest > 0) focusRequester.requestFocus()
     }
+    val density = ThreadComposerPresentationPolicy.density(
+        focused = focused,
+        hasAttachments = state.attachments.isNotEmpty(),
+        hasTransientContent = state.error != null ||
+            state.controlMessage != null ||
+            (slashQuery != null && slashCommands.isNotEmpty()),
+    )
+    val settings = ThreadComposerPresentationPolicy.settingsAffordance(
+        modelLabel = state.modelLabel,
+        runtimeMode = state.runtimeMode,
+    )
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(Surface)
-            .imePadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(
+                horizontal = 12.dp,
+                vertical = if (density == ThreadComposerDensity.Compact) 6.dp else 10.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(
+            if (density == ThreadComposerDensity.Compact) 4.dp else 8.dp,
+        ),
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            RuntimeMode.entries.forEach { mode ->
-                if (mode == state.runtimeMode) {
-                    Button(
-                        onClick = { onRuntimeModeChange(mode) },
-                        enabled = !state.modeChanging,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text(mode.label()) }
-                } else {
-                    OutlinedButton(
-                        onClick = { onRuntimeModeChange(mode) },
-                        enabled = !state.modeChanging,
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) { Text(mode.label()) }
-                }
-            }
-        }
         state.error?.let {
             Text(it, color = Red, style = MaterialTheme.typography.labelSmall)
         }
@@ -296,41 +287,141 @@ private fun ThreadComposer(
                 }
             }
         }
-        OutlinedTextField(
-            value = state.draft,
-            onValueChange = { text ->
-                voice.userEdited(text)
-                onDraftChange(text)
-            },
-            modifier = Modifier
-                .fillMaxWidth()
-                .focusRequester(focusRequester),
-            placeholder = {
-                Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
-            },
-            minLines = 1,
-            maxLines = 5,
-        )
-        VoiceNoticeRow(voice = voice)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            OutlinedButton(
-                onClick = { imagePicker.launch(arrayOf("image/*")) },
-                enabled = state.attachments.size < 4 && !state.submitting,
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text(if (state.attachments.isEmpty()) "Add images" else "Add image") }
-            Spacer(Modifier.weight(1f))
-            ThreadVoicePrimaryControl(
-                voice = voice,
-                canSend = state.canSend,
-                agentRunning = state.showInterrupt,
-                enabled = !state.submitting && !state.interrupting,
-                onSend = onSend,
-                onStopAgent = onInterrupt,
+        if (!ThreadComposerPresentationPolicy.showsSecondaryActions(density)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    value = state.draft,
+                    onValueChange = { text ->
+                        voice.userEdited(text)
+                        onDraftChange(text)
+                    },
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusRequester(focusRequester)
+                        .onFocusChanged { focused = it.isFocused },
+                    placeholder = {
+                        Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
+                    },
+                    singleLine = true,
+                )
+                ThreadVoicePrimaryControl(
+                    voice = voice,
+                    canSend = state.canSend,
+                    agentRunning = state.showInterrupt,
+                    enabled = !state.submitting && !state.interrupting,
+                    onSend = onSend,
+                    onStopAgent = onInterrupt,
+                )
+            }
+        } else {
+            OutlinedTextField(
+                value = state.draft,
+                onValueChange = { text ->
+                    voice.userEdited(text)
+                    onDraftChange(text)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester)
+                    .onFocusChanged { focused = it.isFocused },
+                placeholder = {
+                    Text(if (state.showInterrupt) "Queue a follow-up…" else "Message the agent…")
+                },
+                minLines = 1,
+                maxLines = 5,
             )
+            VoiceNoticeRow(voice = voice)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(
+                    onClick = { imagePicker.launch(arrayOf("image/*")) },
+                    enabled = state.attachments.size < 4 && !state.submitting,
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) { Text("Image") }
+                TextButton(
+                    onClick = { settingsOpen = true },
+                    enabled = !state.modeChanging,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 48.dp),
+                ) {
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text(settings.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            settings.supportingLabel,
+                            color = TextDim,
+                            style = MaterialTheme.typography.labelSmall,
+                        )
+                    }
+                }
+                ThreadVoicePrimaryControl(
+                    voice = voice,
+                    canSend = state.canSend,
+                    agentRunning = state.showInterrupt,
+                    enabled = !state.submitting && !state.interrupting,
+                    onSend = onSend,
+                    onStopAgent = onInterrupt,
+                )
+            }
+        }
+    }
+    if (settingsOpen) {
+        ThreadComposerSettingsDialog(
+            settings = settings,
+            selectedMode = state.runtimeMode,
+            enabled = !state.modeChanging,
+            onModeSelected = {
+                onRuntimeModeChange(it)
+                settingsOpen = false
+            },
+            onDismiss = { settingsOpen = false },
+        )
+    }
+}
+
+@Composable
+private fun ThreadComposerSettingsDialog(
+    settings: ThreadSettingsAffordance,
+    selectedMode: RuntimeMode,
+    enabled: Boolean,
+    onModeSelected: (RuntimeMode) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(colors = CardDefaults.cardColors(containerColor = SurfaceRaised)) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Model & runtime", style = MaterialTheme.typography.titleMedium)
+                Text(settings.label, color = TextDim, style = MaterialTheme.typography.bodySmall)
+                RuntimeMode.entries.forEach { mode ->
+                    val selected = mode == selectedMode
+                    if (selected) {
+                        Button(
+                            onClick = { onModeSelected(mode) },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(mode.presentationLabel()) }
+                    } else {
+                        OutlinedButton(
+                            onClick = { onModeSelected(mode) },
+                            enabled = enabled,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) { Text(mode.presentationLabel()) }
+                    }
+                }
+                TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) {
+                    Text("Close")
+                }
+            }
         }
     }
 }
@@ -487,13 +578,6 @@ private fun OutboxTray(
     }
 }
 
-private fun RuntimeMode.label(): String = when (this) {
-    RuntimeMode.Plan -> "Plan"
-    RuntimeMode.Sandbox -> "Sandbox"
-    RuntimeMode.AcceptEdits -> "Accept edits"
-    RuntimeMode.FullAccess -> "Full access"
-}
-
 @Composable
 private fun ThreadTopBar(title: String, onBack: () -> Unit) {
     Row(
@@ -521,41 +605,29 @@ private fun ThreadTopBar(title: String, onBack: () -> Unit) {
 
 @Composable
 private fun ThreadMetadata(metadata: ThreadMetadataPresentation) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 80.dp)
-            .padding(horizontal = 20.dp, vertical = 10.dp),
-        verticalArrangement = Arrangement.spacedBy(7.dp),
+            .heightIn(min = 40.dp)
+            .padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusDot(metadata.status)
-            MetadataText(metadata.status)
-            MetadataText(metadata.provider ?: "provider pending")
-            metadata.instanceName?.let { MetadataText(it) }
-            Spacer(Modifier.weight(1f))
-            MetadataText(metadata.runtimeMode)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = metadata.contextLabel ?: "Context pending",
-                    color = TextDim,
-                    style = MaterialTheme.typography.labelSmall,
-                )
-                metadata.contextFraction?.let { fraction ->
-                    LinearProgressIndicator(
-                        progress = { fraction },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                    )
-                }
-            }
-            metadata.model?.let { MetadataText(it) }
-            metadata.costLabel?.let { MetadataText(it) }
-            metadata.durationLabel?.let { MetadataText(it) }
-            if (metadata.unread > 0) MetadataText("${metadata.unread} unread")
+        StatusDot(metadata.status)
+        Text(
+            text = metadata.status.replaceFirstChar { it.uppercase() },
+            color = TextDim,
+            style = MaterialTheme.typography.labelSmall,
+        )
+        Spacer(Modifier.weight(1f))
+        metadata.provider?.let { provider ->
+            Text(
+                text = provider,
+                color = TextDim,
+                fontFamily = GeistMono,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -574,19 +646,6 @@ private fun StatusDot(status: String) {
             .size(8.dp)
             .clip(CircleShape)
             .background(tint),
-    )
-}
-
-@Composable
-private fun MetadataText(text: String) {
-    Text(
-        text = text,
-        color = TextDim,
-        fontFamily = GeistMono,
-        fontSize = 10.sp,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier = Modifier.padding(end = 10.dp),
     )
 }
 

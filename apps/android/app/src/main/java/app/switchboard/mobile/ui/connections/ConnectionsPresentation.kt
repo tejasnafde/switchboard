@@ -174,3 +174,17 @@ object ConnectionsPresenter {
     private fun String.removeWebSocketScheme(): String =
         removePrefix("ws://").removePrefix("wss://")
 }
+
+object ConnectionRowPolicy {
+    fun statusLabel(status: ConnectionStatus): String = when (status) {
+        ConnectionStatus.LIVE -> "Live"
+        ConnectionStatus.CONNECTING -> "Connecting"
+        ConnectionStatus.OFFLINE -> "Offline"
+        ConnectionStatus.ERROR -> "Error"
+    }
+
+    fun supportingText(row: ConnectionRowPresentation): String = listOfNotNull(
+        row.target,
+        row.detail?.trim()?.takeIf(String::isNotEmpty),
+    ).joinToString(" · ")
+}

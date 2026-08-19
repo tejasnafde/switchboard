@@ -1,55 +1,54 @@
 package app.switchboard.mobile.ui.newsession
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.liveRegion
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.switchboard.mobile.data.remote.NewSessionState
 import app.switchboard.mobile.domain.remote.NewSessionDecisions
+import app.switchboard.mobile.domain.remote.NewSessionModelOption
+import app.switchboard.mobile.domain.remote.ProviderInstance
 import app.switchboard.mobile.domain.remote.ProviderKind
 import app.switchboard.mobile.domain.remote.RuntimeMode
-import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Red
 import app.switchboard.mobile.ui.theme.Surface
-import app.switchboard.mobile.ui.theme.SurfaceRaised
 import app.switchboard.mobile.ui.theme.TextDim
 import app.switchboard.mobile.ui.voice.NewSessionVoiceControl
 import app.switchboard.mobile.ui.voice.VoiceNoticeRow
@@ -113,114 +112,66 @@ fun NewSessionScreen(
                 modifier = Modifier.padding(top = 4.dp, bottom = 24.dp),
             )
 
-            SectionLabel("Agent")
-            NewSessionDecisions.providers.forEach { provider ->
-                val selected = state.provider == provider.kind
-                val providerDescription = when (provider.kind) {
-                    ProviderKind.Claude -> "Anthropic agent SDK"
-                    ProviderKind.Codex -> "OpenAI app-server"
-                    ProviderKind.OpenCode -> "Agent Client Protocol"
-                }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                        .background(
-                            if (selected) Accent.copy(alpha = 0.14f) else SurfaceRaised,
-                            RoundedCornerShape(12.dp),
-                        )
-                        .semantics(mergeDescendants = true) {
-                            contentDescription = "${provider.label}, $providerDescription"
-                            stateDescription = NewSessionAccessibilityPolicy.choiceState(selected)
-                        }
-                        .selectable(
-                            selected = selected,
-                            enabled = !state.submitting && !state.launchLocked,
-                            role = Role.RadioButton,
-                            onClick = { onProvider(provider.kind) },
-                        )
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clearAndSetSemantics {},
+            val selectorsEnabled = !state.submitting && !state.launchLocked
+            CompactSelector(
+                label = "Agent",
+                value = NewSessionSelectorPolicy.providerLabel(state.provider),
+                options = NewSessionDecisions.providers.map {
+                    SelectorOption(
+                        label = NewSessionSelectorPolicy.providerLabel(it.kind),
+                        selected = state.provider == it.kind,
                     ) {
-                        Text(provider.label, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            text = providerDescription,
-                            color = TextDim,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
+                        onProvider(it.kind)
                     }
-                    Text(
-                        if (selected) "●" else "○",
-                        color = if (selected) Accent else TextDim,
-                        modifier = Modifier.clearAndSetSemantics {},
-                    )
-                }
-            }
+                },
+                enabled = selectorsEnabled,
+            )
 
-            if (state.loadingInstances) {
-                LoadingRow("Loading profiles")
-            } else if (state.profiles.isNotEmpty()) {
-                SectionLabel("Profile")
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    state.profiles.forEach { profile ->
-                        ChoiceButton(
+            if (state.loadingInstances || state.profiles.isNotEmpty()) {
+                CompactSelector(
+                    label = "Profile",
+                    value = NewSessionSelectorPolicy.profileLabel(
+                        state.loadingInstances,
+                        state.profiles,
+                        state.selectedInstanceId,
+                    ),
+                    options = state.profiles.map { profile ->
+                        SelectorOption(
                             label = profile.displayName,
                             selected = profile.id == state.selectedInstanceId,
-                            enabled = !state.submitting && !state.launchLocked,
-                            onClick = { onInstance(profile.id) },
-                        )
-                    }
-                }
-            }
-
-            SectionLabel("Model")
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                ChoiceButton(
-                    label = "Backend default",
-                    selected = state.selectedModelId == null,
-                    enabled = !state.submitting && !state.launchLocked,
-                    onClick = { onModel(null) },
+                        ) { onInstance(profile.id) }
+                    },
+                    enabled = selectorsEnabled && !state.loadingInstances,
                 )
-                state.modelOptions.forEach { model ->
-                    ChoiceButton(
-                        label = model.label,
-                        selected = model.id == state.selectedModelId,
-                        enabled = !state.submitting && !state.launchLocked,
-                        onClick = { onModel(model.id) },
-                    )
-                }
             }
 
-            SectionLabel("Permissions")
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                RuntimeMode.entries.forEach { mode ->
-                    ChoiceButton(
-                        label = when (mode) {
-                            RuntimeMode.Plan -> "Plan"
-                            RuntimeMode.Sandbox -> "Sandbox"
-                            RuntimeMode.AcceptEdits -> "Accept edits"
-                            RuntimeMode.FullAccess -> "Full access"
-                        },
-                        selected = state.runtimeMode == mode,
-                        enabled = !state.submitting && !state.launchLocked,
-                        onClick = { onRuntimeMode(mode) },
-                    )
-                }
-            }
+            CompactSelector(
+                label = "Model",
+                value = NewSessionSelectorPolicy.modelLabel(state.modelOptions, state.selectedModelId),
+                options = listOf(
+                    SelectorOption("Backend default", state.selectedModelId == null) { onModel(null) },
+                ) +
+                    state.modelOptions.map { model ->
+                        SelectorOption(model.label, model.id == state.selectedModelId) {
+                            onModel(model.id)
+                        }
+                    },
+                enabled = selectorsEnabled,
+            )
+
+            CompactSelector(
+                label = "Permissions",
+                value = NewSessionSelectorPolicy.runtimeLabel(state.runtimeMode),
+                options = RuntimeMode.entries.map { mode ->
+                    SelectorOption(
+                        NewSessionSelectorPolicy.runtimeLabel(mode),
+                        mode == state.runtimeMode,
+                    ) {
+                        onRuntimeMode(mode)
+                    }
+                },
+                enabled = selectorsEnabled,
+            )
 
             SectionLabel("First message (optional)")
             OutlinedTextField(
@@ -286,7 +237,6 @@ fun NewSessionScreen(
                     Text("Start session")
                 }
             }
-            Spacer(Modifier.navigationBarsPadding())
         }
     }
 }
@@ -303,39 +253,61 @@ private fun SectionLabel(label: String) {
     )
 }
 
-@Composable
-private fun ChoiceButton(
-    label: String,
-    selected: Boolean,
-    enabled: Boolean,
-    onClick: () -> Unit,
-) {
-    val semantics = Modifier
-        .heightIn(min = 48.dp)
-        .semantics {
-            role = Role.RadioButton
-            this.selected = selected
-            stateDescription = NewSessionAccessibilityPolicy.choiceState(selected)
-        }
-    if (selected) {
-        Button(onClick = onClick, enabled = enabled, modifier = semantics) { Text(label, maxLines = 1) }
-    } else {
-        OutlinedButton(onClick = onClick, enabled = enabled, modifier = semantics) {
-            Text(label, maxLines = 1)
-        }
-    }
-}
+private data class SelectorOption(
+    val label: String,
+    val selected: Boolean,
+    val select: () -> Unit,
+)
 
 @Composable
-private fun LoadingRow(label: String) {
-    Row(
-        modifier = Modifier
-            .padding(top = 18.dp)
-            .heightIn(min = 48.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
-        Text(label, color = TextDim, modifier = Modifier.padding(start = 12.dp))
+private fun CompactSelector(
+    label: String,
+    value: String,
+    options: List<SelectorOption>,
+    enabled: Boolean,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    SectionLabel(label)
+    Box(modifier = Modifier.fillMaxWidth()) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            enabled = enabled && options.isNotEmpty(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = 52.dp)
+                .semantics {
+                    contentDescription = label
+                    stateDescription = value
+                },
+        ) {
+            Text(
+                text = value,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text("⌄", color = TextDim, modifier = Modifier.padding(start = 12.dp))
+        }
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(option.label) },
+                    onClick = {
+                        expanded = false
+                        option.select()
+                    },
+                    trailingIcon = {
+                        if (option.selected) Text("✓")
+                    },
+                    modifier = Modifier
+                        .heightIn(min = 48.dp)
+                        .semantics { selected = option.selected },
+                )
+            }
+        }
     }
 }
 
@@ -343,4 +315,32 @@ object NewSessionAccessibilityPolicy {
     fun choiceState(selected: Boolean): String = if (selected) "Selected" else "Not selected"
 
     fun launchState(submitting: Boolean): String = if (submitting) "Starting session" else "Start session"
+}
+
+object NewSessionSelectorPolicy {
+    fun providerLabel(provider: ProviderKind): String = when (provider) {
+        ProviderKind.Claude -> "Claude"
+        ProviderKind.Codex -> "Codex"
+        ProviderKind.OpenCode -> "OpenCode"
+    }
+
+    fun runtimeLabel(mode: RuntimeMode): String = when (mode) {
+        RuntimeMode.Plan -> "Plan"
+        RuntimeMode.Sandbox -> "Sandbox"
+        RuntimeMode.AcceptEdits -> "Accept edits"
+        RuntimeMode.FullAccess -> "Full access"
+    }
+
+    fun profileLabel(
+        loading: Boolean,
+        profiles: List<ProviderInstance>,
+        selectedId: String?,
+    ): String = when {
+        loading -> "Loading profiles…"
+        selectedId == null -> "Default profile"
+        else -> profiles.firstOrNull { it.id == selectedId }?.displayName ?: "Default profile"
+    }
+
+    fun modelLabel(options: List<NewSessionModelOption>, selectedId: String?): String =
+        selectedId?.let { id -> options.firstOrNull { it.id == id }?.label } ?: "Backend default"
 }

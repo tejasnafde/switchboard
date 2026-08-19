@@ -2,11 +2,19 @@ package app.switchboard.mobile.ui
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -25,6 +33,8 @@ import app.switchboard.mobile.ui.pairing.PairingSaveIntent
 import app.switchboard.mobile.ui.pairing.PairingSaveResult
 import app.switchboard.mobile.ui.theme.SwitchboardTheme
 import app.switchboard.mobile.ui.update.UpdateSurface
+import app.switchboard.mobile.ui.update.UpdateSurfacePlacement
+import app.switchboard.mobile.ui.update.UpdateSurfacePresentation
 import app.switchboard.mobile.update.UpdateAction
 import app.switchboard.mobile.update.UpdateState
 
@@ -53,8 +63,56 @@ fun SwitchboardApp(
     updateState: UpdateState = UpdateState.Idle,
     onUpdateAction: (UpdateAction) -> Unit = {},
 ) {
-    Surface(modifier = modifier.fillMaxSize()) {
-        Box(modifier = Modifier.fillMaxSize()) {
+    val updatePresentation = UpdateSurfacePresentation.from(updateState)
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(updatePresentation) {
+        val presentation = updatePresentation
+        if (presentation?.placement != UpdateSurfacePlacement.Snackbar) {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            return@LaunchedEffect
+        }
+        val result = snackbarHostState.showSnackbar(
+            message = presentation.message,
+            actionLabel = presentation.actionLabel,
+            withDismissAction = false,
+            duration = SnackbarDuration.Indefinite,
+        )
+        if (result == SnackbarResult.ActionPerformed) {
+            presentation.action?.let(onUpdateAction)
+        }
+    }
+    Scaffold(
+        modifier = modifier
+            .fillMaxSize()
+            .imePadding(),
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        snackbarHost = {
+            SnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.navigationBarsPadding(),
+            )
+        },
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding(),
+            ) {
+                if (updatePresentation?.placement == UpdateSurfacePlacement.ReservedBanner) {
+                    UpdateSurface(
+                        state = updateState,
+                        onAction = onUpdateAction,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        },
+    ) { contentPadding ->
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(contentPadding),
+        ) {
             SwitchboardNavigation(
                 connectionsState = connectionsState,
                 buildStamp = buildStamp,
@@ -71,14 +129,6 @@ fun SwitchboardApp(
                 onNotificationRouteAccepted = onNotificationRouteAccepted,
             )
 
-            UpdateSurface(
-                state = updateState,
-                onAction = onUpdateAction,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            )
         }
     }
 }

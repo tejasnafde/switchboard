@@ -28,7 +28,7 @@ import {
 } from '../../services/streamingBuffer'
 import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
-import { echoMessageId } from '@shared/provider-events'
+import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
@@ -382,10 +382,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         // already carries `remote_<origin>` as its id, so the store's
         // id-idempotency collapses the echo onto it.
         case 'user.message': {
+          const visibleText = visibleUserMessageText(event.text, event.displayBody)
+          if (visibleText === null) break
           appendMessage(tid, {
             id: echoMessageId(event.origin ?? String(event.at)),
             role: 'user',
             content: event.text,
+            displayBody: visibleText === event.text ? undefined : visibleText,
+            images: event.images,
             timestamp: event.at,
           })
           break

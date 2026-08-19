@@ -20,6 +20,42 @@ import org.junit.Test
 
 class ThreadStoreReducerTest {
     @Test
+    fun userMessageUsesDisplayBodyAndImagesAndKeepsOriginDedupe() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val raw = event(
+            "user.message",
+            "text" to s("context wrapper\n\nvisible"),
+            "displayBody" to s("visible"),
+            "images" to arr(obj("url" to s("data:image/png;base64,AAA"), "mimeType" to s("image/png"))),
+            "origin" to s("phone-image"),
+            "at" to n(1),
+        )
+        state = ingest(state, "mac-a", 1, 1, raw)
+        state = ingest(state, "mac-a", 1, 2, raw)
+
+        val users = state.thread("mac-a", "thread-1")!!.feed.filterIsInstance<FeedItem.User>()
+        assertEquals(1, users.size)
+        assertEquals("visible", users.single().text)
+        assertEquals("data:image/png;base64,AAA", users.single().images.single().url)
+    }
+
+    @Test
+    fun syntheticContextUserMessageIsNotRendered() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = ingest(
+            state,
+            "mac-a",
+            1,
+            1,
+            event(
+                "user.message",
+                "text" to s("<environment_context>\n<cwd>/repo</cwd>\n</environment_context>"),
+                "at" to n(1),
+            ),
+        )
+        assertTrue(state.thread("mac-a", "thread-1")!!.feed.isEmpty())
+    }
+    @Test
     fun identicalThreadIdsAreIsolatedByConnectionAndStaleGenerationsAreIgnored() {
         var state = ThreadStoreState()
         state = reduce(state, ThreadAction.Activate("mac-a", 4))

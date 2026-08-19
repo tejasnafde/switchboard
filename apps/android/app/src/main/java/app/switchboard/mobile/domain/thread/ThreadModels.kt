@@ -58,7 +58,13 @@ data class TodoEntry(
 
 sealed interface ThreadEventPayload {
     data class Content(val messageId: String, val text: String, val append: Boolean, val streamKind: String) : ThreadEventPayload
-    data class UserMessage(val text: String, val origin: String?, val at: Long) : ThreadEventPayload
+    data class UserMessage(
+        val text: String,
+        val displayBody: String?,
+        val images: List<MessageImage>,
+        val origin: String?,
+        val at: Long,
+    ) : ThreadEventPayload
     data class ToolStarted(val toolId: String, val toolName: String, val input: JsonValue) : ThreadEventPayload
     data class ToolCompleted(val toolId: String, val output: String?) : ThreadEventPayload
     data class ToolDenied(val toolName: String, val reason: String, val mode: String) : ThreadEventPayload
@@ -115,6 +121,29 @@ sealed interface ThreadEventPayload {
         val at: Long,
     ) : ThreadEventPayload
     data class TodoUpdated(val todoId: String, val items: List<TodoEntry>) : ThreadEventPayload
+}
+
+object UserMessageVisibility {
+    private val blocks = listOf(
+        "<recommended_plugins>" to "</recommended_plugins>",
+        "# AGENTS.md instructions for " to "</INSTRUCTIONS>",
+        "<environment_context>" to "</environment_context>",
+    )
+
+    fun visibleText(text: String, displayBody: String?): String? {
+        if (displayBody != null) return displayBody
+        var remaining = text.trim()
+        if (remaining.isEmpty()) return text
+        var matched = false
+        while (remaining.isNotEmpty()) {
+            val block = blocks.firstOrNull { remaining.startsWith(it.first) } ?: return text
+            val end = remaining.indexOf(block.second)
+            if (end < 0) return text
+            matched = true
+            remaining = remaining.substring(end + block.second.length).trimStart()
+        }
+        return if (matched) null else text
+    }
 }
 
 sealed interface ThreadRuntimeEvent {
