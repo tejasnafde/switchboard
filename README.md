@@ -2,6 +2,8 @@
 
 **An open-source command center for coding agents, terminals, files, and git worktrees.**
 
+[Product site](https://switchboard.tn07.dev/) | [Latest release](https://github.com/tejasnafde/switchboard/releases/latest)
+
 Switchboard keeps coding agents, real terminals, files, git worktrees, and
 remote machines in one desktop workspace. Send terminal output, file ranges,
 and chat messages to an agent without leaving the project.
