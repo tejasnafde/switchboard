@@ -18,6 +18,7 @@ import {
 
 const digest = '0'.repeat(64)
 const verifierPath = resolve('scripts/verify-android-apk.mjs')
+const testWithPosixToolShims = process.platform === 'win32' ? test.skip : test
 
 function runVerifier(args: string[], env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [verifierPath, ...args], {
@@ -156,7 +157,7 @@ describe('Android APK release verifier', () => {
     expect(result.stderr).toContain('--apk is required')
   })
 
-  test('metadata-only CLI verifies an unsigned canonical release APK', () => {
+  testWithPosixToolShims('metadata-only CLI verifies an unsigned canonical release APK', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
     try {
       const apk = join(dir, 'app-release-unsigned.apk')
@@ -177,7 +178,7 @@ describe('Android APK release verifier', () => {
     }
   })
 
-  test('identity-only CLI verifies the canonical signer without requiring checksum metadata', () => {
+  testWithPosixToolShims('identity-only CLI verifies the canonical signer without requiring checksum metadata', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
     try {
       const apk = join(dir, 'switchboard-previous.apk')
@@ -207,7 +208,7 @@ describe('Android APK release verifier', () => {
     }
   })
 
-  test('identity-only CLI rejects a previous APK signed by another certificate', () => {
+  testWithPosixToolShims('identity-only CLI rejects a previous APK signed by another certificate', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
     try {
       const apk = join(dir, 'switchboard-previous.apk')
@@ -261,7 +262,7 @@ describe('Android APK release verifier', () => {
     }
   })
 
-  test('strict CLI verifies package, version, signer, and checksum together', () => {
+  testWithPosixToolShims('strict CLI verifies package, version, signer, and checksum together', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
     try {
       const apk = join(dir, 'switchboard-0.5.0.apk')

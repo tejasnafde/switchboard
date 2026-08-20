@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { dirname, join, relative, sep } from 'node:path'
 import { ensureCodexSessionResumable } from '../../src/main/provider/codex-session-migrate'
 
 const SESSION_ID = '019c7a41-a8b2-73f0-a7d6-b3f56d8db92f'
@@ -73,7 +73,10 @@ describe('ensureCodexSessionResumable', () => {
 
     expect(result).toMatchObject({ ok: true, copied: true, sourcePath })
     if (!result.ok) throw new Error('expected migration success')
-    expect(result.targetPath.startsWith(`${targetHome}/sessions/`)).toBe(true)
+    const targetRelativePath = relative(targetHome, result.targetPath)
+    expect(
+      targetRelativePath === 'sessions' || targetRelativePath.startsWith(`sessions${sep}`),
+    ).toBe(true)
     expect(readFileSync(result.targetPath, 'utf8')).toBe(readFileSync(sourcePath, 'utf8'))
     expect(existsSync(sourcePath)).toBe(true)
   })
