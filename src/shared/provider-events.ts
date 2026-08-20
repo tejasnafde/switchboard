@@ -12,6 +12,7 @@
 
 import type { OverageScope } from './claude-rate-limit'
 import type { PeerMessageInitiator } from './peer-messaging'
+import { stripHandoffPreamble } from './handoff'
 
 export type ProviderSessionStatus =
   | 'connecting'
@@ -216,6 +217,8 @@ const SYNTHETIC_USER_BLOCKS: ReadonlyArray<{
  */
 export function visibleUserMessageText(text: string, displayBody?: string): string | null {
   if (displayBody !== undefined) return displayBody
+  const handoffBody = stripHandoffPreamble(text)
+  if (handoffBody !== text) return handoffBody
   let remaining = text.trim()
   if (!remaining) return text
   let matched = false
@@ -380,6 +383,9 @@ export interface ProviderInstanceSwitchRequest {
   /** Presentation-only fallback when the remote has no copy of the desktop's
    * provider_instances row. */
   targetInstanceName?: string
+  /** Recovery is opt-in: the first attempt always refuses divergent native
+   * transcripts, then the client may retry with an explicit fresh start. */
+  onContextConflict?: 'fail' | 'start-fresh'
 }
 
 export type ProviderInstanceSwitchResult =
@@ -390,7 +396,7 @@ export type ProviderInstanceSwitchResult =
       previousInstanceId: string | null
       instanceId: string
       instanceName: string
-      continuity: 'preserved' | 'not-needed'
+      continuity: 'preserved' | 'not-needed' | 'degraded'
     }
   | {
       ok: false
@@ -399,6 +405,8 @@ export type ProviderInstanceSwitchResult =
         | 'stale-selection'
         | 'invalid-instance'
         | 'context-unavailable'
+        | 'context-conflict'
+        | 'context-preparation-failed'
         | 'unsupported-provider'
         | 'target-start-failed'
         | 'rollback-failed'

@@ -14,6 +14,7 @@ import { deriveProjectPositions } from './projectOrdering'
 import type { ConversationSidebarRole } from './conversationSidebarRole'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 import { searchMessagesInDatabase, type SearchResult } from './message-search'
+import { commitConversationProfileSwitch } from './conversation-profile-commit'
 
 const log = createLogger('db')
 
@@ -1357,6 +1358,19 @@ export function setConversationProviderInstanceId(id: string, instanceId: string
   getDb().prepare(
     'UPDATE conversations SET provider_instance_id = ?, updated_at = ? WHERE id = ?'
   ).run(instanceId, Date.now(), resolveRootThreadId(id))
+}
+
+export function commitConversationProviderSwitch(input: {
+  conversationId: string
+  provider: ConversationSegmentProvider
+  providerInstanceId: string
+  providerSessionId: string | null
+  pendingHandoffFrom?: string
+}): void {
+  commitConversationProfileSwitch(getDb(), {
+    ...input,
+    conversationId: resolveRootThreadId(input.conversationId),
+  })
 }
 
 /**

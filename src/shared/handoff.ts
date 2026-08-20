@@ -102,7 +102,7 @@ export function stripHandoffPreamble(text: string): string {
   if (!text.startsWith(HANDOFF_PREAMBLE_HEADER) && !text.startsWith(TRUNCATION_NOTICE_START)) {
     return text
   }
-  const footerAt = text.indexOf(HANDOFF_PREAMBLE_FOOTER)
+  const footerAt = text.lastIndexOf(HANDOFF_PREAMBLE_FOOTER)
   if (footerAt === -1) return text
   return text.slice(footerAt + HANDOFF_PREAMBLE_FOOTER.length).replace(/^\n+/, '')
 }

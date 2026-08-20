@@ -48,10 +48,28 @@ const recordedSegments: Array<{
   providerInstanceId?: string | null
 }> = []
 const persistedInstanceSelections: Array<{ threadId: string; instanceId: string }> = []
+const profileSwitchCommits: Array<{
+  conversationId: string
+  provider: string
+  providerInstanceId: string
+  providerSessionId: string | null
+  pendingHandoffFrom?: string
+}> = []
+const claudePreparations: Array<{ sessionId: string; cwd: string; fromDir: string; toDir: string }> = []
+let claudePreparationResult: { ok: true; copied: boolean } | { ok: false; reason: string; detail: string } = {
+  ok: true,
+  copied: false,
+}
 let allowInstancePersistence = true
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
-  recordConversationSegment: (segment: typeof recordedSegments[number]) => recordedSegments.push(segment),
+  recordConversationSegment: (segment: typeof recordedSegments[number]) => {
+    if (!recordedSegments.some((existing) =>
+      existing.conversationId === segment.conversationId &&
+      existing.provider === segment.provider &&
+      existing.providerSessionId === segment.providerSessionId
+    )) recordedSegments.push(segment)
+  },
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string, images?: string, displayBody?: string) => {
     if (role === 'user' && !allowUserTurnPersistence) return false
@@ -73,12 +91,41 @@ vi.mock('../../src/main/db/database', () => ({
     if (!allowInstancePersistence) throw new Error('database is read-only')
     persistedInstanceSelections.push({ threadId, instanceId })
   },
+  commitConversationProviderSwitch: (input: typeof profileSwitchCommits[number]) => {
+    if (!allowInstancePersistence) throw new Error('database is read-only')
+    profileSwitchCommits.push(input)
+    persistedInstanceSelections.push({ threadId: input.conversationId, instanceId: input.providerInstanceId })
+    if (input.providerSessionId) {
+      const segment = {
+        conversationId: input.conversationId,
+        provider: input.provider,
+        providerSessionId: input.providerSessionId,
+        providerInstanceId: input.providerInstanceId,
+      }
+      if (!recordedSegments.some((existing) =>
+        existing.conversationId === segment.conversationId &&
+        existing.provider === segment.provider &&
+        existing.providerSessionId === segment.providerSessionId
+      )) recordedSegments.push(segment)
+    }
+  },
 }))
 vi.mock('../../src/main/provider/claude-session-migrate', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/main/provider/claude-session-migrate')>()
   return {
     ...actual,
     ensureClaudeSessionResumable: () => ({ ok: true as const, sourcePath: '/tmp/source.jsonl', targetPath: '/tmp/target.jsonl' }),
+    prepareClaudeProfileSwitch: (input: typeof claudePreparations[number]) => {
+      claudePreparations.push(input)
+      return claudePreparationResult
+    },
+  }
+})
+vi.mock('../../src/main/provider/codex-session-migrate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/main/provider/codex-session-migrate')>()
+  return {
+    ...actual,
+    prepareCodexProfileSwitch: () => ({ ok: true as const, copied: false }),
   }
 })
 
@@ -243,6 +290,40 @@ class DeferredStopAdapter extends MockEchoAdapter {
   }
 }
 
+class StopRotatingSessionAdapter extends MockEchoAdapter {
+  override async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
+    const session = await super.startSession(opts, onEvent)
+    onEvent({ type: 'session', threadId: opts.threadId, sessionId: 'provider-session-1' })
+    return session
+  }
+
+  override async stopSession(threadId: string): Promise<void> {
+    this.emit.get(threadId)?.({ type: 'session', threadId, sessionId: 'provider-session-during-stop' })
+    await super.stopSession(threadId)
+  }
+}
+
+class RetainedCallbackAdapter extends MockEchoAdapter {
+  private firstCallback: ((event: RuntimeEvent) => void) | null = null
+
+  override async startSession(opts: SessionStartOpts, onEvent: (event: RuntimeEvent) => void): Promise<ProviderSession> {
+    if (!this.firstCallback) this.firstCallback = onEvent
+    const session = await super.startSession(opts, onEvent)
+    onEvent({ type: 'session', threadId: opts.threadId, sessionId: 'provider-session-1' })
+    return session
+  }
+
+  publishFromRetiredExecution(threadId: string): void {
+    this.firstCallback?.({
+      type: 'content',
+      threadId,
+      messageId: 'retired-content',
+      text: 'stale source output',
+      streamKind: 'assistant',
+    })
+  }
+}
+
 class SessionPublishingAdapter extends MockEchoAdapter {
   override async startSession(opts: SessionStartOpts, onEvent: (e: RuntimeEvent) => void): Promise<ProviderSession> {
     const session = await super.startSession(opts, onEvent)
@@ -386,6 +467,9 @@ afterEach(async () => {
   allowUserTurnPersistence = true
   allowInstancePersistence = true
   persistedInstanceSelections.length = 0
+  profileSwitchCommits.length = 0
+  claudePreparations.length = 0
+  claudePreparationResult = { ok: true, copied: false }
   client?.close()
   client = null
   await registry?.stopAll()
@@ -705,6 +789,117 @@ describe('provider switching over the WebSocket boundary', () => {
     })).resolves.toMatchObject({ ok: true, continuity: 'preserved' })
 
     expect(adapter.starts[1]?.resumeSessionId).toBe('provider-session-after-compaction')
+  })
+
+  it('stops and drains before preparing the final source transcript', async () => {
+    const adapter = new StopRotatingSessionAdapter()
+    const { cwd } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+    })
+
+    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+    })).resolves.toMatchObject({ ok: true, continuity: 'preserved' })
+
+    expect(claudePreparations).toHaveLength(1)
+    expect(claudePreparations[0]).toMatchObject({
+      sessionId: 'provider-session-during-stop',
+      cwd,
+    })
+    expect(adapter.starts[1]?.resumeSessionId).toBe('provider-session-during-stop')
+  })
+
+  it('rolls back to the source without starting the target when transcripts diverge', async () => {
+    claudePreparationResult = {
+      ok: false,
+      reason: 'context-conflict',
+      detail: 'Both profiles contain different records',
+    }
+    const adapter = new SessionPublishingAdapter()
+    const { cwd } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+    })
+
+    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'context-conflict',
+      rolledBack: true,
+      currentInstanceId: 'claude-work',
+    })
+    expect(adapter.starts.map((start) => start.instanceId)).toEqual(['claude-work', 'claude-work'])
+    expect(persistedInstanceSelections).toEqual([])
+  })
+
+  it('does not expose a rolled-back preparation failure as a DB-only initial selection', async () => {
+    claudePreparationResult = {
+      ok: false,
+      reason: 'source-missing',
+      detail: 'The active profile transcript disappeared',
+    }
+    const adapter = new SessionPublishingAdapter()
+    const { cwd } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+    })
+
+    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+    })).resolves.toMatchObject({
+      ok: false,
+      code: 'context-preparation-failed',
+      rolledBack: true,
+      currentInstanceId: 'claude-work',
+    })
+    expect(adapter.starts.map((start) => start.instanceId)).toEqual(['claude-work', 'claude-work'])
+    expect(persistedInstanceSelections).toEqual([])
+  })
+
+  it('starts a fresh target only after explicit conflict recovery', async () => {
+    claudePreparationResult = {
+      ok: false,
+      reason: 'context-conflict',
+      detail: 'Both profiles contain different records',
+    }
+    const adapter = new SessionPublishingAdapter()
+    const { cwd } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+    })
+
+    await expect(client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+      targetInstanceId: 'claude-personal',
+      expectedCurrentInstanceId: 'claude-work',
+      onContextConflict: 'start-fresh',
+    })).resolves.toMatchObject({ ok: true, continuity: 'degraded' })
+
+    expect(claudePreparations).toEqual([])
+    expect(adapter.starts[1]).toMatchObject({ instanceId: 'claude-personal' })
+    expect(adapter.starts[1]?.resumeSessionId).toBeUndefined()
+    expect(profileSwitchCommits.at(-1)).toMatchObject({
+      providerInstanceId: 'claude-personal',
+      pendingHandoffFrom: 'claude-code',
+    })
+  })
+
+  it('drops events from the retired source execution after the target commits', async () => {
+    const adapter = new RetainedCallbackAdapter()
+    const { cwd, events } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, {
+      threadId: 't1', provider: 'claude', cwd, instanceId: 'claude-work',
+    })
+    events.length = 0
+
+    await client!.invoke(ProviderChannels.SWITCH_INSTANCE, 't1', {
+      targetInstanceId: 'claude-personal', expectedCurrentInstanceId: 'claude-work',
+    })
+    adapter.publishFromRetiredExecution('t1')
+    await flush()
+
+    expect(events).not.toContainEqual(expect.objectContaining({ messageId: 'retired-content' }))
   })
 
   it('rejects a busy or stale profile switch without stopping the live session', async () => {

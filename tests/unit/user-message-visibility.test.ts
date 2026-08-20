@@ -16,6 +16,11 @@ describe('visibleUserMessageText', () => {
       'Please explain <environment_context> in the transcript.',
     )
   })
+
+  it('shows only the user turn after an injected context handoff', () => {
+    const wire = `Conversation so far:\nuser: earlier\nassistant: reply\n\nRespond to the latest user message, using the conversation above as context.\n\ncontinue here`
+    expect(visibleUserMessageText(wire)).toBe('continue here')
+  })
 })
 
 describe('validateUserMessageImages', () => {

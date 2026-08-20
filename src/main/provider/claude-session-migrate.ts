@@ -13,6 +13,10 @@ import { encodeClaudeProjectPath } from '../projects/session-scanner'
 import { listOauthDirsForAgent } from '../db/providerInstances'
 import { listRemoteClaudeConfigDirs } from './remote-gate'
 import { createMainLogger as createLogger } from '../logger'
+import {
+  synchronizeCompatibleTranscript,
+  type TranscriptSyncResult,
+} from './transcript-compatibility'
 
 const log = createLogger('provider:claude:migrate')
 
@@ -40,6 +44,9 @@ export function claudeCandidateDirs(): string[] {
 export type MigrateResult =
   | { ok: true; copied: boolean; from?: string }
   | { ok: false; reason: 'source-missing' | 'io-error'; detail?: string }
+
+export type ProfileSwitchPreparationResult = TranscriptSyncResult
+  | { ok: false; reason: 'source-missing'; detail: string; sourcePath: string; targetPath: string }
 
 export interface SessionCopy {
   path: string
@@ -138,6 +145,26 @@ export function ensureClaudeSessionResumable(opts: {
   if (dst && compareSessionCopies(dst, newest) <= 0) return { ok: true, copied: false }
 
   return copyToResumePath(newest.path, dstPath)
+}
+
+export async function prepareClaudeProfileSwitch(opts: {
+  sessionId: string
+  cwd: string
+  fromDir: string
+  toDir: string
+}): Promise<ProfileSwitchPreparationResult> {
+  const targetPath = claudeSessionResumePath(opts.toDir, opts.sessionId, opts.cwd)
+  const sourcePath = findClaudeSessionFile(opts.fromDir, opts.sessionId, opts.cwd)
+  if (!sourcePath) {
+    return {
+      ok: false,
+      reason: 'source-missing',
+      detail: 'The active profile has no transcript for this native session',
+      sourcePath: claudeSessionResumePath(opts.fromDir, opts.sessionId, opts.cwd),
+      targetPath,
+    }
+  }
+  return synchronizeCompatibleTranscript(sourcePath, targetPath)
 }
 
 function copyToResumePath(srcPath: string, dstPath: string): MigrateResult {

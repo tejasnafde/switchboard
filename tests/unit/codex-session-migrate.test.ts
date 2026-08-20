@@ -11,7 +11,10 @@ import {
 } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, relative, sep } from 'node:path'
-import { ensureCodexSessionResumable } from '../../src/main/provider/codex-session-migrate'
+import {
+  ensureCodexSessionResumable,
+  prepareCodexProfileSwitch,
+} from '../../src/main/provider/codex-session-migrate'
 
 const SESSION_ID = '019c7a41-a8b2-73f0-a7d6-b3f56d8db92f'
 const scratch: string[] = []
@@ -162,5 +165,75 @@ describe('ensureCodexSessionResumable', () => {
     if (result.ok || result.reason !== 'io-error') throw new Error('expected typed io failure')
     expect(result.detail).toMatch(/directory|ENOTDIR|EEXIST/i)
     expect(statSync(targetHome).isFile()).toBe(true)
+  })
+})
+
+describe('prepareCodexProfileSwitch', () => {
+  it('classifies multiple source rollouts as a context conflict', async () => {
+    const root = tempRoot()
+    const sourceHome = join(root, 'source')
+    seedRollout(sourceHome, `${JSON.stringify({ type: 'response_item', payload: { role: 'user' } })}\n`, { day: '20' })
+    seedRollout(sourceHome, `${JSON.stringify({ type: 'response_item', payload: { role: 'assistant' } })}\n`, { day: '21' })
+
+    const result = await prepareCodexProfileSwitch({
+      sessionId: SESSION_ID,
+      fromDir: sourceHome,
+      toDir: join(root, 'target'),
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'context-conflict',
+      detail: expect.stringContaining('multiple rollouts'),
+    })
+  })
+
+  const first = `${JSON.stringify({ type: 'response_item', payload: { type: 'message', text: 'one' } })}\n`
+  const second = `${JSON.stringify({ type: 'response_item', payload: { type: 'message', text: 'two' } })}\n`
+
+  it('advances the selected target rollout from the stopped source home', async () => {
+    const root = tempRoot()
+    const sourceHome = join(root, 'source')
+    const targetHome = join(root, 'target')
+    const sourcePath = seedRollout(sourceHome, first + second)
+    const targetPath = seedRollout(targetHome, first)
+
+    const result = await prepareCodexProfileSwitch({
+      sessionId: SESSION_ID,
+      fromDir: sourceHome,
+      toDir: targetHome,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      copied: true,
+      compatibility: 'target-prefix',
+      sourcePath,
+      targetPath,
+    })
+    expect(readFileSync(targetPath, 'utf8')).toBe(readFileSync(sourcePath, 'utf8'))
+  })
+
+  it('refuses divergent rollouts without overwriting either profile', async () => {
+    const root = tempRoot()
+    const sourceHome = join(root, 'source')
+    const targetHome = join(root, 'target')
+    const sourcePath = seedRollout(sourceHome, first + `${JSON.stringify({ source: true })}\n`)
+    const targetPath = seedRollout(targetHome, first + `${JSON.stringify({ target: true })}\n`)
+
+    const result = await prepareCodexProfileSwitch({
+      sessionId: SESSION_ID,
+      fromDir: sourceHome,
+      toDir: targetHome,
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'context-conflict',
+      sourcePath,
+      targetPath,
+    })
+    expect(readFileSync(sourcePath, 'utf8')).toContain('source')
+    expect(readFileSync(targetPath, 'utf8')).toContain('target')
   })
 })

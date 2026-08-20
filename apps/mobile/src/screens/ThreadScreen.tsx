@@ -7,6 +7,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Image,
   FlatList,
@@ -279,13 +280,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
   }, [connectionId])
 
-  /**
-   * Rotate the agent or the OAuth profile on this live thread.
-   *
-   * startSession is idempotent server-side, so re-invoking it on a running
-   * thread returns the existing session and changes nothing. The session has to
-   * be stopped first for the registry to resolve the new credentials.
-   */
+  /** Rotate providers, or transactionally rotate credentials within one provider. */
   const rotateProfile = useCallback(
     (nextProvider: ProviderKind, nextInstanceId?: string) => {
       const client = getClient(connectionId)
@@ -297,17 +292,42 @@ export default function ThreadScreen({ route, navigation }: Props) {
       setRotating(true)
       void (async () => {
         try {
-          await client.stopSession(threadId)
-          await client.startSession({
-            threadId,
-            provider: nextProvider,
-            // Same cwd rule as the initial start. stopSession first means the
-            // registry's idempotent re-attach cannot cover for a wrong value,
-            // so a rotation used to move a worktree chat into the main checkout.
-            cwd: worktreePath ?? projectPath,
-            resumeSessionId: threadId,
-            instanceId: nextInstanceId,
-          })
+          if (nextProvider === provider && nextInstanceId) {
+            let result = await client.switchInstance(threadId, {
+              targetInstanceId: nextInstanceId,
+              expectedCurrentInstanceId: instanceId ?? null,
+            })
+            if (!result.ok && result.code === 'context-conflict') {
+              const conflictMessage = result.message
+              const startFresh = await new Promise<boolean>((resolve) => {
+                Alert.alert(
+                  'Profile histories differ',
+                  `${conflictMessage}\n\nThe current profile is still active. You can stay there or start the selected profile fresh with the visible conversation carried into your next turn.`,
+                  [
+                    { text: 'Stay here', style: 'cancel', onPress: () => resolve(false) },
+                    { text: 'Start fresh', onPress: () => resolve(true) },
+                  ],
+                  { cancelable: false },
+                )
+              })
+              if (!startFresh) return
+              result = await client.switchInstance(threadId, {
+                targetInstanceId: nextInstanceId,
+                expectedCurrentInstanceId: instanceId ?? null,
+                onContextConflict: 'start-fresh',
+              })
+            }
+            if (!result.ok) throw new Error(result.message)
+          } else {
+            await client.stopSession(threadId)
+            await client.startSession({
+              threadId,
+              provider: nextProvider,
+              cwd: worktreePath ?? projectPath,
+              resumeSessionId: threadId,
+              instanceId: nextInstanceId,
+            })
+          }
           setProvider(nextProvider)
           setInstanceId(nextInstanceId)
         } catch (err) {
@@ -317,7 +337,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
         }
       })()
     },
-    [connectionId, threadId, projectPath, reportError],
+    [connectionId, threadId, projectPath, worktreePath, provider, instanceId, reportError],
   )
 
   useEffect(() => {

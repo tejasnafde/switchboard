@@ -291,6 +291,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         targetInstanceId: nextInstanceId,
         expectedCurrentInstanceId: prevInstanceId ?? null,
       })
+      if (!result.ok && result.code === 'context-conflict') {
+        const startFresh = window.confirm(
+          `${result.message}\n\nThe current profile is still active. Start the selected profile as a fresh native session and carry the visible conversation into the next turn?`,
+        )
+        if (!startFresh) return
+        result = await window.api.provider.switchInstance(sessionId, {
+          targetInstanceId: nextInstanceId,
+          expectedCurrentInstanceId: prevInstanceId ?? null,
+          onContextConflict: 'start-fresh',
+        })
+      }
     } catch (err) {
       appendMessage(sessionId, {
         id: `profile_error_${Date.now()}`,
@@ -301,6 +312,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       return
     }
     if (!result.ok) {
+      if (result.currentInstanceId !== prevInstanceId) {
+        storeSetInstanceId(sessionId, result.currentInstanceId ?? undefined)
+      }
       if (result.code !== 'context-unavailable') {
         appendMessage(sessionId, {
           id: `profile_error_${Date.now()}`,
@@ -356,7 +370,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // machine's cached auth verdicts so the banner re-probes under it.
     const machineForSession = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.machineId
     if (machineForSession && machineForSession !== 'local') invalidateRemoteAuthCache(machineForSession)
-  }, [sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage])
+  }, [sessionId, storeSetInstanceId, instanceId, activeSession?.messages?.length, appendMessage, agentType])
 
   // ── Provider event listener (new SDK bridge) ──────────────────
 
@@ -1031,15 +1045,15 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         // Live read - the closure's `messages` lags in-place streamed edits.
         const history = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.messages ?? []
         const preamble = buildHandoffPreamble(history)
-        window.api.app.setConversationPendingHandoff(sessionId, null).catch((err) => {
-          log.warn('failed to clear pending handoff flag', err)
-        })
         if (preamble) {
           wireMessage = `${preamble}\n\n${message}`
+          const handoffFrom = pendingHandoffFrom as AgentType
           const marker: ChatMessage = {
             id: `handoff_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             role: 'system',
-            content: `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(pendingHandoffFrom as AgentType)} → ${agentLabel(agentType)}`,
+            content: handoffFrom === agentType
+              ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(agentType)} profile restarted with visible history`
+              : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(handoffFrom)} → ${agentLabel(agentType)}`,
             timestamp: Date.now(),
           }
           appendMessage(sessionId, marker)
@@ -1133,6 +1147,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
 
       try {
         await providerApi.sendTurn(sessionId, wireMessage, runtimeMode, messageImages, origin)
+        if (handoffInjected) {
+          window.api.app.setConversationPendingHandoff(sessionId, null).catch((err) => {
+            log.warn('failed to clear pending handoff flag after accepted turn', err)
+          })
+        }
         return { accepted: true }
       } catch (error) {
         updateStatus(sessionId, 'idle')
