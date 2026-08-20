@@ -2,6 +2,20 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.36 - Switch accounts without losing the thread
+
+### Added
+- **Claude and Codex conversations can now continue across OAuth profiles of the same provider.** Switchboard drains the active adapter, verifies the exact source and target JSONL histories, copies only compatible transcripts through a temporary file and atomic rename, then resumes with the selected credentials.
+- **Transcript conflicts have an explicit recovery path.** Equal and prefix-related copies reconcile automatically; divergent, ambiguous, changing, or unreadable histories leave the source profile active and offer a deliberate start-fresh continuation instead of guessing which file wins.
+
+### Fixed
+- **A partial profile switch could leave the database, visible picker, and live provider process disagreeing.** Target events remain fenced until provider startup and the database transition commit together; failed preparation, startup, or persistence rolls back to the source profile.
+- **Mobile retries could redispatch an already accepted turn or lose a degraded context handoff.** Provider acceptance and cleanup are now classified separately, handoff metadata commits with the profile transition, and the outbox injects the bounded history preamble at delivery time.
+
+### Notes
+- The migration keeps the source transcript intact, validates every JSONL record while hashing it, detects concurrent file changes, and records provider-session lineage in the same SQLite transaction as the selected profile.
+- The implementation passed adversarial Claude review after extending repository-review calls to a ten-minute window. The final local gate passed 2,628 standard-runtime tests and 16 Electron-native tests; mobile typecheck and 17 mobile tests also passed.
+
 ## 0.8.35 - Put saved messages where they belong
 
 ### Added
