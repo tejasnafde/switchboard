@@ -24,6 +24,10 @@ sealed interface ArchivePreflightDecision {
 
 object ArchivePreflightPolicy {
     const val PRODUCTION_PACKAGE = "app.switchboard.mobile"
+    const val PRODUCTION_SIGNER_SHA256 =
+        "bc811e3712c2d57f2b6ebda54392e62ebd2a773453e50fb375e1102db901a8f6"
+
+    private val productionSigner = setOf(PRODUCTION_SIGNER_SHA256)
 
     fun evaluate(
         release: UpdateRelease,
@@ -33,7 +37,7 @@ object ArchivePreflightPolicy {
         installed.packageName != PRODUCTION_PACKAGE || archive.packageName != PRODUCTION_PACKAGE ->
             ArchivePreflightDecision.Reject(ArchiveRejection.PACKAGE_NAME)
 
-        installed.signerSha256.isEmpty() || archive.signerSha256 != installed.signerSha256 ->
+        installed.signerSha256 != productionSigner || archive.signerSha256 != productionSigner ->
             ArchivePreflightDecision.Reject(ArchiveRejection.SIGNER)
 
         archive.versionCode <= installed.versionCode ->

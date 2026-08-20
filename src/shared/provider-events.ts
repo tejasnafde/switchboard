@@ -180,7 +180,6 @@ export function validateUserMessageImages<T extends { url: string; mimeType?: st
   images?: T[],
 ): T[] | undefined {
   if (!images?.length) return undefined
-  if (images.length > 4) throw new Error('A turn can include at most 4 images')
   let encodedBytes = 0
   for (const image of images) {
     const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(image.url)
@@ -266,10 +265,14 @@ export interface RuntimeUserMessageEvent {
   threadId: string
   text: string
   displayBody?: string
+  pillsMeta?: UserMessagePillsMeta
   images?: Array<{ url: string; mimeType?: string; name?: string }>
   origin?: string
   at: number
 }
+
+export type UserMessagePillKind = 'file' | 'terminal' | 'chat-message'
+export type UserMessagePillsMeta = Record<string, { label: string; kind: UserMessagePillKind }>
 
 export interface RuntimeToolStartedEvent {
   type: 'tool.started'
@@ -367,6 +370,42 @@ export interface RuntimeSessionProviderEvent {
   /** Display name, so a client can label the chip without its own lookup. */
   instanceName: string | null
 }
+
+export interface ProviderInstanceSwitchRequest {
+  targetInstanceId: string
+  expectedCurrentInstanceId: string | null
+  /** Desktop-router enrichment for a session hosted on another machine. This
+   * is a sanitized config-directory basename, never a token or secret. */
+  targetRemoteConfigDir?: string
+  /** Presentation-only fallback when the remote has no copy of the desktop's
+   * provider_instances row. */
+  targetInstanceName?: string
+}
+
+export type ProviderInstanceSwitchResult =
+  | {
+      ok: true
+      threadId: string
+      provider: ProviderKind
+      previousInstanceId: string | null
+      instanceId: string
+      instanceName: string
+      continuity: 'preserved' | 'not-needed'
+    }
+  | {
+      ok: false
+      code:
+        | 'busy'
+        | 'stale-selection'
+        | 'invalid-instance'
+        | 'context-unavailable'
+        | 'unsupported-provider'
+        | 'target-start-failed'
+        | 'rollback-failed'
+      message: string
+      currentInstanceId: string | null
+      rolledBack?: boolean
+    }
 
 export interface RuntimeSessionEvent {
   type: 'session'

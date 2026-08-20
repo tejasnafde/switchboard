@@ -76,19 +76,28 @@ class BrowseCoordinator(
     private val conversationRequests = mutableMapOf<String, Long>()
     private val renameRequests = mutableMapOf<String, Long>()
     private val optimisticRenames = mutableMapOf<String, OptimisticRename>()
+    private var closed = false
 
     @Synchronized
     fun refreshProjects() {
+        if (closed) return
+        refreshProjectIndex()
+        refreshWorkspaces()
+    }
+
+    @Synchronized
+    fun refreshProjectIndex() {
+        if (closed) return
         val request = ++projectRequest
         mutableState.value = mutableState.value.copy(
             projects = BrowseLoadState.Loading(mutableState.value.projects.items()),
         )
         remote.getProjects { response -> acceptProjects(request, response) }
-        refreshWorkspaces()
     }
 
     @Synchronized
     private fun refreshWorkspaces() {
+        if (closed) return
         val request = ++workspaceRequest
         mutableState.value = mutableState.value.copy(
             workspaces = BrowseLoadState.Loading(mutableState.value.workspaces.items()),
@@ -98,6 +107,7 @@ class BrowseCoordinator(
 
     @Synchronized
     fun refreshConversations(projectPath: String) {
+        if (closed) return
         val request = conversationRequests.getOrDefault(projectPath, 0) + 1
         conversationRequests[projectPath] = request
         val prior = mutableState.value.conversationsByProject[projectPath]
@@ -125,6 +135,7 @@ class BrowseCoordinator(
 
     @Synchronized
     fun toggleWorkspace(workspaceId: String) {
+        if (closed) return
         val next = mutableState.value.collapsedWorkspaceIds.toMutableSet().apply {
             if (!add(workspaceId)) remove(workspaceId)
         }
@@ -134,6 +145,7 @@ class BrowseCoordinator(
 
     @Synchronized
     fun renameConversation(projectPath: String, conversationId: String, requestedTitle: String) {
+        if (closed) return
         val title = requestedTitle.trim()
         val current = mutableState.value.conversationsByProject[projectPath]
             ?.items()
@@ -184,6 +196,7 @@ class BrowseCoordinator(
         response: RemoteResponse<List<Project>>,
     ) {
         if (
+            closed ||
             response.key.connectionId != connectionId ||
             expectedGeneration?.let { response.key.generation != it } == true ||
             projectRequest != request
@@ -204,7 +217,7 @@ class BrowseCoordinator(
         request: Long,
         response: RemoteResponse<List<Workspace>>,
     ) {
-        if (!accepts(response) || workspaceRequest != request) return
+        if (closed || !accepts(response) || workspaceRequest != request) return
         val cached = mutableState.value.workspaces.items()
         val next = when (val outcome = response.outcome) {
             is RemoteOutcome.Success -> {
@@ -223,6 +236,7 @@ class BrowseCoordinator(
         response: RemoteResponse<List<Conversation>>,
     ) {
         if (
+            closed ||
             response.key.connectionId != connectionId ||
             expectedGeneration?.let { response.key.generation != it } == true ||
             conversationRequests[projectPath] != request
@@ -256,7 +270,17 @@ class BrowseCoordinator(
         conversationId: String,
         request: Long,
         response: RemoteResponse<*>,
-    ): Boolean = accepts(response) && renameRequests[conversationId] == request
+    ): Boolean = !closed && accepts(response) && renameRequests[conversationId] == request
+
+    @Synchronized
+    fun close() {
+        if (closed) return
+        closed = true
+        projectRequest += 1
+        workspaceRequest += 1
+        conversationRequests.replaceAll { _, request -> request + 1 }
+        renameRequests.replaceAll { _, request -> request + 1 }
+    }
 
     @Synchronized
     private fun failRename(projectPath: String, conversationId: String, message: String) {

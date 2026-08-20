@@ -1,5 +1,7 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.platform.deeplink.AppDeepLinkRoute
+import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.ObjectInputStream
@@ -39,6 +41,42 @@ class NavigationStateTest {
         assertEquals(AppRoute.Connections, edit.pop().current)
         assertFalse(root.canGoBack)
         assertSame(root, root.pop())
+    }
+
+    @Test
+    fun manageMachinesIsASecondaryRouteAboveTheCompatibleRoot() {
+        val state = NavigationState.root().push(AppRoute.ManageConnections)
+
+        assertEquals(AppRoute.ManageConnections, state.current)
+        assertEquals(AppRoute.Connections, state.pop().current)
+    }
+
+    @Test
+    fun settingsIsASecondarySerializableRouteAboveTheCompatibleRoot() {
+        val state = NavigationState.root().push(AppRoute.Settings)
+        val bytes = ByteArrayOutputStream().also { output ->
+            ObjectOutputStream(output).use { it.writeObject(state) }
+        }.toByteArray()
+        val restored = ObjectInputStream(ByteArrayInputStream(bytes)).use {
+            it.readObject() as NavigationState
+        }
+
+        assertEquals(AppRoute.Settings, restored.current)
+        assertEquals(AppRoute.Connections, restored.pop().current)
+    }
+
+    @Test
+    fun settingsDeepLinkReplacesAnyExistingStackWithOnePredictableBackTarget() {
+        val routed = AppDeepLinkNavigationResolver.resolve(
+            PendingAppDeepLink(
+                requestId = 7,
+                route = AppDeepLinkRoute.Settings,
+            ),
+        )
+
+        assertEquals(AppRoute.Settings, routed.current)
+        assertEquals(AppRoute.Connections, routed.pop().current)
+        assertFalse(routed.pop().canGoBack)
     }
 
     @Test

@@ -5,7 +5,9 @@ import app.switchboard.mobile.data.remote.BrowseSnapshotStore
 import app.switchboard.mobile.data.remote.EmptyBrowseSnapshotStore
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.thread.ThreadSessionRemote
+import app.switchboard.mobile.data.thread.ThreadSnapshotStore
 import app.switchboard.mobile.data.thread.ThreadState
+import app.switchboard.mobile.data.thread.NoOpThreadSnapshotStore
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
 import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.outbox.EnqueueResult
@@ -42,6 +44,8 @@ interface RootNavigationRuntime {
         get() = EmptyComposerErrors
     val queuedTurns: StateFlow<List<QueuedTurn>>
         get() = EmptyQueuedTurns
+    val threadSnapshots: ThreadSnapshotStore
+        get() = NoOpThreadSnapshotStore
 
     fun lease(connectionId: String): ReadyClientLease?
 
@@ -85,7 +89,8 @@ interface RootNavigationRuntime {
 
     fun browseSnapshotStore(snapshot: OfflineSnapshot): BrowseSnapshotStore = EmptyBrowseSnapshotStore
 
-    fun cachedThread(connectionId: String, threadId: String): ThreadState? = null
+    fun cachedThread(connectionId: String, threadId: String): ThreadState? =
+        threadSnapshots.get(connectionId, threadId)
 
     fun beginViewing(scope: TransportScope, threadId: String): Closeable = Closeable {}
 

@@ -6,6 +6,22 @@ import org.junit.Test
 
 class SwitchboardDeepLinkContractTest {
     @Test
+    fun `audit fields never retain OAuth query credentials or fragments`() {
+        val scheme = SwitchboardDeepLinkContract.GoogleOAuthScheme
+
+        assertEquals(
+            DeepLinkAuditFields(
+                scheme = scheme,
+                authority = null,
+                path = "/oauth2redirect",
+            ),
+            SwitchboardDeepLinkContract.auditFields(
+                "$scheme:/oauth2redirect?code=secret-code&state=secret-state#secret-fragment",
+            ),
+        )
+    }
+
+    @Test
     fun `only the two registered schemes are recognized without inventing app routes`() {
         assertEquals(
             RegisteredDeepLink.AppScheme,
@@ -18,6 +34,34 @@ class SwitchboardDeepLinkContractTest {
         assertEquals(
             RegisteredDeepLink.Ignore,
             SwitchboardDeepLinkContract.classify("https://example.com/thread/1"),
+        )
+    }
+
+    @Test
+    fun `settings is the only exact app route and carries no untrusted parameters`() {
+        assertEquals(
+            AppDeepLinkRoute.Settings,
+            SwitchboardDeepLinkContract.appRoute("switchboard://settings"),
+        )
+        assertEquals(
+            AppDeepLinkRoute.Settings,
+            SwitchboardDeepLinkContract.appRoute("switchboard:/settings"),
+        )
+        assertEquals(
+            null,
+            SwitchboardDeepLinkContract.appRoute("switchboard://settings/extra"),
+        )
+        assertEquals(
+            null,
+            SwitchboardDeepLinkContract.appRoute("switchboard://settings?tab=providers"),
+        )
+        assertEquals(
+            null,
+            SwitchboardDeepLinkContract.appRoute("switchboard://thread/thread-1"),
+        )
+        assertEquals(
+            null,
+            SwitchboardDeepLinkContract.appRoute("https://settings"),
         )
     }
 

@@ -123,6 +123,19 @@ export function flushLogsSync(): void {
   } catch { /* ignore write failures */ }
 }
 
+/**
+ * Persist metadata immediately before a native boundary that can abort without
+ * running Node's exit handlers. Callers must pass identifiers and byte counts,
+ * never message/tool contents or credentials.
+ */
+export function writeCrashBreadcrumb(scope: string, metadata: Record<string, unknown>): void {
+  init()
+  if (!logFilePath) return
+  try {
+    appendFileSync(logFilePath, formatLine('BRD', scope, [metadata]))
+  } catch { /* diagnostics must never take down the app */ }
+}
+
 function formatLine(level: string, scope: string, args: unknown[]): string {
   const ts = new Date().toISOString()
   const parts = args.map((a) => {

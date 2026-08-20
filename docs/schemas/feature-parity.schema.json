@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://switchboard.local/schemas/feature-parity.schema.json",
+  "title": "Switchboard cross-surface feature parity manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "feature", "summary", "surfaces", "verification"],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1 },
+    "schemaVersion": { "const": 1 },
+    "feature": { "type": "string", "minLength": 1, "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+    "summary": { "type": "string", "minLength": 1 },
+    "surfaces": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "desktop",
+        "reactNativeIos",
+        "nativeAndroid",
+        "sharedBackendApi",
+        "storageDataMigration",
+        "updateRelease"
+      ],
+      "properties": {
+        "desktop": { "$ref": "#/$defs/surface" },
+        "reactNativeIos": { "$ref": "#/$defs/surface" },
+        "nativeAndroid": { "$ref": "#/$defs/surface" },
+        "sharedBackendApi": { "$ref": "#/$defs/surface" },
+        "storageDataMigration": { "$ref": "#/$defs/surface" },
+        "updateRelease": { "$ref": "#/$defs/surface" }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["automated", "hardware", "notExercised"],
+      "properties": {
+        "automated": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "hardware": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "notExercised": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "surface": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "evidence"],
+          "properties": {
+            "status": { "const": "implemented" },
+            "evidence": { "$ref": "#/$defs/nonEmptyStringArray" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "reason"],
+          "properties": {
+            "status": { "const": "not_applicable" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "flag", "followUpRelease"],
+          "properties": {
+            "status": { "const": "staged" },
+            "flag": { "type": "string", "minLength": 1 },
+            "followUpRelease": { "type": "string", "minLength": 1 },
+            "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          }
+        }
+      ]
+    }
+  }
+}

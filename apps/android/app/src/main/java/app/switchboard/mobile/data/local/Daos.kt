@@ -170,6 +170,12 @@ abstract class CacheDao {
         insertFeedRows(rows)
     }
 
+    @Transaction
+    open fun replaceThread(thread: CachedThreadEntity, rows: List<CachedFeedRowEntity>) {
+        upsertThread(thread)
+        replaceFeedRows(thread.threadKey, rows)
+    }
+
     @Query("SELECT * FROM cached_threads WHERE threadKey = :threadKey")
     abstract fun findThread(threadKey: String): CachedThreadEntity?
 

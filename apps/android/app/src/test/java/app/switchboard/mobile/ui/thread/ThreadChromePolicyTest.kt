@@ -2,10 +2,22 @@ package app.switchboard.mobile.ui.thread
 
 import app.switchboard.mobile.domain.thread.FeedItem
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ThreadChromePolicyTest {
+    @Test
+    fun `archive is available only when the provider is safely inactive`() {
+        assertTrue(ThreadArchivePolicy.canArchive("idle", archiving = false))
+        assertTrue(ThreadArchivePolicy.canArchive("ready", archiving = false))
+        assertFalse(ThreadArchivePolicy.canArchive("running", archiving = false))
+        assertFalse(ThreadArchivePolicy.canArchive("connecting", archiving = false))
+        assertFalse(ThreadArchivePolicy.canArchive("retrying", archiving = false))
+        assertFalse(ThreadArchivePolicy.canArchive("idle", archiving = true))
+    }
+
     @Test
     fun `subtitle describes only known provider model and state`() {
         assertEquals(

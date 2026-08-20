@@ -131,6 +131,27 @@ class StartupRuntimeTest {
     }
 
     @Test
+    fun blockedStartupCanBeRetriedWithoutRecreatingTheProcess() {
+        val runs = AtomicInteger()
+        val runtime = StartupRuntime.direct(
+            migration = StartupMigrationRunner {
+                if (runs.incrementAndGet() == 1) error("database temporarily unavailable")
+                StartupMigrationState.AlreadyComplete()
+            },
+            snapshot = OfflineSnapshotReader(::emptySnapshot),
+            dialGate = StartupDialGate {},
+        )
+
+        runtime.start()
+        assertTrue(runtime.state is StartupRuntimeState.Blocked)
+
+        runtime.start()
+
+        assertEquals(2, runs.get())
+        assertTrue(runtime.state is StartupRuntimeState.Ready)
+    }
+
+    @Test
     fun processRecreationRerunsTheIdempotentCoordinatorButNeverDuplicatesWithinAProcess() {
         val runs = AtomicInteger()
         val migration = StartupMigrationRunner {

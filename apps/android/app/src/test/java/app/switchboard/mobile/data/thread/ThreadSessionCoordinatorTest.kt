@@ -9,12 +9,16 @@ import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.outbox.StagedAttachment
 import app.switchboard.mobile.domain.remote.ApprovalDecision
+import app.switchboard.mobile.domain.remote.ArchiveConversationResult
 import app.switchboard.mobile.domain.remote.ChatMessage
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MarkReadResult
 import app.switchboard.mobile.domain.remote.ModelOption
 import app.switchboard.mobile.domain.remote.ProviderSkill
+import app.switchboard.mobile.domain.remote.ProviderInstance
+import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchRequest
+import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchResult
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteRequestKey
 import app.switchboard.mobile.domain.remote.RemoteResponse
@@ -35,6 +39,188 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ThreadSessionCoordinatorTest {
+    @Test
+    fun `archive navigates only after backend confirmation and leaves cached state intact`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val cached = ThreadState(
+            feed = listOf(FeedItem.User("cached", "keep me", 1)),
+            status = "idle",
+        )
+        val coordinator = coordinator(remote, cached = cached)
+        var navigations = 0
+
+        coordinator.archive { navigations += 1 }
+        coordinator.archive { navigations += 1 }
+
+        assertEquals(listOf("thread-1"), remote.archivedThreadIds)
+        assertTrue(coordinator.state.value.archive.archiving)
+        assertEquals("keep me", (coordinator.currentThread()!!.feed.single() as FeedItem.User).text)
+
+        remote.completeArchive(success("archive", ArchiveConversationResult.Archived))
+
+        assertEquals(1, navigations)
+        assertFalse(coordinator.state.value.archive.archiving)
+        assertEquals("keep me", (coordinator.currentThread()!!.feed.single() as FeedItem.User).text)
+    }
+
+    @Test
+    fun `archive failure stays on the thread with draft cache and retryable error`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val cached = ThreadState(
+            feed = listOf(FeedItem.User("cached", "keep history", 1)),
+            status = "idle",
+        )
+        val coordinator = coordinator(
+            remote,
+            cached = cached,
+            initialComposer = ComposerDraft(
+                key = ComposerDraftKey("machine", "thread-1"),
+                text = "keep draft",
+                attachments = emptyList(),
+                runtimeMode = "sandbox",
+                editingOrigin = null,
+            ),
+        )
+        var navigations = 0
+
+        coordinator.archive { navigations += 1 }
+        remote.completeArchive(failure("archive", "archive unavailable"))
+
+        assertEquals(0, navigations)
+        assertEquals("archive unavailable", coordinator.state.value.archive.error)
+        assertEquals("keep draft", coordinator.state.value.composer.draft)
+        assertEquals("keep history", (coordinator.currentThread()!!.feed.single() as FeedItem.User).text)
+    }
+
+    @Test
+    fun `archive is blocked while the provider is active`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, cached = ThreadState(status = "running"))
+
+        coordinator.archive {}
+
+        assertTrue(remote.archivedThreadIds.isEmpty())
+        assertEquals("Stop the current turn before archiving", coordinator.state.value.archive.error)
+    }
+
+    @Test
+    fun `successful history load persists the installed thread snapshot`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val snapshots = RecordingThreadSnapshotStore()
+        val coordinator = coordinator(remote, snapshotStore = snapshots)
+        coordinator.start()
+
+        remote.completeLoad(success("load", loadedSession(message("u-1", "user", "saved", 10))))
+
+        assertEquals("saved", (snapshots.saved.single().third.feed.single() as FeedItem.User).text)
+        assertEquals("machine", snapshots.saved.single().first)
+        assertEquals("thread-1", snapshots.saved.single().second)
+    }
+
+    @Test
+    fun `accepted runtime reduction persists the latest live thread snapshot`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val snapshots = RecordingThreadSnapshotStore()
+        val coordinator = coordinator(remote, snapshotStore = snapshots)
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        snapshots.saved.clear()
+
+        remote.emit(scope, content("thread-1", "live", "streamed"))
+
+        assertEquals("streamed", (snapshots.saved.single().third.feed.single() as FeedItem.Text).text)
+    }
+
+    @Test
+    fun `existing thread profile switch uses one atomic request and keeps local thread state intact`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(status = "idle", provider = "codex", instanceId = "codex-work"),
+            projectPath = "/repo",
+        )
+
+        coordinator.start()
+        remote.completeProfiles(
+            success(
+                "profiles",
+                listOf(
+                    providerInstance("codex-work", "Work"),
+                    providerInstance("codex-tejas", "Tejas"),
+                ),
+            ),
+        )
+        remote.completeStart(success("start", startedSession()))
+
+        coordinator.selectProfile("codex-tejas")
+
+        assertEquals(
+            listOf("thread-1" to ProviderInstanceSwitchRequest("codex-tejas", "codex-work")),
+            remote.profileSwitches,
+        )
+        assertTrue(coordinator.state.value.profiles.changing)
+
+        remote.completeProfileSwitch(
+            success(
+                "switch-profile",
+                ProviderInstanceSwitchResult.Success(
+                    threadId = "thread-1",
+                    provider = "codex",
+                    previousInstanceId = "codex-work",
+                    instanceId = "codex-tejas",
+                    instanceName = "Tejas",
+                    continuity = "preserved",
+                ),
+            ),
+        )
+        assertEquals("codex-tejas", coordinator.state.value.profiles.selectedInstanceId)
+        assertFalse(coordinator.state.value.profiles.changing)
+        assertEquals(1, remote.startedSessions.size)
+    }
+
+    @Test
+    fun `profile switch is blocked while the current provider is running`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(status = "running", provider = "codex", instanceId = "codex-work"),
+            projectPath = "/repo",
+        )
+
+        coordinator.selectProfile("codex-tejas")
+
+        assertTrue(remote.profileSwitches.isEmpty())
+        assertEquals("Stop the current turn before switching profile", coordinator.state.value.profiles.error)
+    }
+
+    @Test
+    fun `profile event from another client refreshes account scoped models and skills`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(
+            remote,
+            cached = ThreadState(status = "idle", provider = "codex", instanceId = "codex-work"),
+            projectPath = "/repo",
+        )
+        coordinator.start()
+        val skillRequests = remote.skillThreadIds.size
+        val modelRequests = remote.modelThreadIds.size
+
+        remote.emit(
+            scope,
+            event(
+                "session.provider",
+                "thread-1",
+                "provider" to JsonString("codex"),
+                "instanceId" to JsonString("codex-tejas"),
+                "instanceName" to JsonString("Tejas"),
+            ),
+        )
+
+        assertEquals("codex-tejas", coordinator.state.value.profiles.selectedInstanceId)
+        assertEquals(skillRequests + 1, remote.skillThreadIds.size)
+        assertEquals(modelRequests + 1, remote.modelThreadIds.size)
+    }
+
     @Test
     fun `cached state is immediate and successful load installs stable complete history`() {
         val remote = FakeThreadSessionRemote(scope)
@@ -705,6 +891,7 @@ class ThreadSessionCoordinatorTest {
         enqueue: ThreadEnqueuePort = FakeEnqueuePort(),
         initialComposer: ComposerDraft? = null,
         composerPersistence: ThreadComposerPersistence = FakeComposerPersistence(),
+        snapshotStore: ThreadSnapshotStore = NoOpThreadSnapshotStore,
         projectPath: String? = null,
         worktreePath: String? = null,
     ) = ThreadSessionCoordinator(
@@ -716,6 +903,7 @@ class ThreadSessionCoordinatorTest {
         clock = ThreadSessionClock { 123L },
         initialComposer = initialComposer,
         composerPersistence = composerPersistence,
+        snapshotStore = snapshotStore,
         projectPath = projectPath,
         worktreePath = worktreePath,
     )
@@ -744,6 +932,29 @@ class ThreadSessionCoordinatorTest {
         id = id,
         label = id,
         tier = "standard",
+        raw = emptyJson(),
+    )
+
+    private fun providerInstance(id: String, displayName: String) = ProviderInstance(
+        id = id,
+        agentType = "codex",
+        displayName = displayName,
+        accentColor = null,
+        authMode = "oauth_dir",
+        envKeys = emptyList(),
+        oauthDir = null,
+        enabled = true,
+        createdAt = 1,
+        updatedAt = 1,
+        raw = emptyJson(),
+    )
+
+    private fun startedSession() = app.switchboard.mobile.domain.remote.StartedSession(
+        threadId = "thread-1",
+        provider = "codex",
+        status = "idle",
+        cwd = "/repo",
+        sessionId = "provider-session",
         raw = emptyJson(),
     )
 
@@ -868,6 +1079,16 @@ private class FakeComposerPersistence : ThreadComposerPersistence {
     }
 }
 
+private class RecordingThreadSnapshotStore : ThreadSnapshotStore {
+    val saved = mutableListOf<Triple<String, String, ThreadState>>()
+
+    override fun get(connectionId: String, threadId: String): ThreadState? = null
+
+    override fun save(connectionId: String, threadId: String, state: ThreadState) {
+        saved += Triple(connectionId, threadId, state)
+    }
+}
+
 private class FakeThreadSessionRemote(
     override val scope: ThreadEventScope,
 ) : ThreadSessionRemote {
@@ -890,6 +1111,11 @@ private class FakeThreadSessionRemote(
     val selectedModels = mutableListOf<Pair<String, String>>()
     val modelChangeCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
     val questionCallbacks = mutableListOf<(RemoteResponse<CommandBody>) -> Unit>()
+    val profileCallbacks = mutableListOf<(RemoteResponse<List<ProviderInstance>>) -> Unit>()
+    val profileSwitches = mutableListOf<Pair<String, ProviderInstanceSwitchRequest>>()
+    val profileSwitchCallbacks = mutableListOf<(RemoteResponse<ProviderInstanceSwitchResult>) -> Unit>()
+    val archivedThreadIds = mutableListOf<String>()
+    val archiveCallbacks = mutableListOf<(RemoteResponse<ArchiveConversationResult>) -> Unit>()
 
     override fun subscribe(listener: (ThreadEventScope, RuntimeEventPayload) -> Unit): Cancelable {
         this.listener = listener
@@ -931,6 +1157,27 @@ private class FakeThreadSessionRemote(
     ) {
         modelThreadIds += threadId
         modelCallbacks += callback
+    }
+
+    override fun listProviderInstances(callback: (RemoteResponse<List<ProviderInstance>>) -> Unit) {
+        profileCallbacks += callback
+    }
+
+    override fun switchInstance(
+        threadId: String,
+        request: ProviderInstanceSwitchRequest,
+        callback: (RemoteResponse<ProviderInstanceSwitchResult>) -> Unit,
+    ) {
+        profileSwitches += threadId to request
+        profileSwitchCallbacks += callback
+    }
+
+    override fun archiveConversation(
+        threadId: String,
+        callback: (RemoteResponse<ArchiveConversationResult>) -> Unit,
+    ) {
+        archivedThreadIds += threadId
+        archiveCallbacks += callback
     }
 
     override fun respondToRequest(
@@ -1030,6 +1277,18 @@ private class FakeThreadSessionRemote(
 
     fun completeModelChange(response: RemoteResponse<CommandBody>) {
         modelChangeCallbacks.removeAt(0)(response)
+    }
+
+    fun completeProfiles(response: RemoteResponse<List<ProviderInstance>>) {
+        profileCallbacks.removeAt(0)(response)
+    }
+
+    fun completeProfileSwitch(response: RemoteResponse<ProviderInstanceSwitchResult>) {
+        profileSwitchCallbacks.removeAt(0)(response)
+    }
+
+    fun completeArchive(response: RemoteResponse<ArchiveConversationResult>) {
+        archiveCallbacks.removeAt(0)(response)
     }
 
     fun <T> RemoteResponse<T>.withScope(scope: ThreadEventScope) = copy(

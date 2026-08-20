@@ -18,6 +18,16 @@ echo "==> deslop-lint staged files..."
 npx --no-install lint-staged
 
 echo "==> running tests..."
-npm test
+if node -e "const Database = require('better-sqlite3'); new Database(':memory:').close()" >/dev/null 2>&1; then
+  npm test
+else
+  echo "better-sqlite3 is rebuilt for Electron; splitting tests by native runtime..."
+  npx --no-install vitest run \
+    --exclude tests/unit/durable-turn-acceptance.test.ts \
+    --exclude tests/unit/turn-acceptance-store.test.ts
+  ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/vitest/vitest.mjs run \
+    tests/unit/durable-turn-acceptance.test.ts \
+    tests/unit/turn-acceptance-store.test.ts
+fi
 
 echo "All pre-commit checks passed."

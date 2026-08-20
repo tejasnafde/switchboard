@@ -6,8 +6,13 @@
  */
 import { ipcMain, type BrowserWindow } from 'electron'
 import { hashClientScope, withBackendRequestContext } from './request-context'
+import { prepareIpcEmit } from './ipc-wire'
+import { createMainLogger as createLogger, writeCrashBreadcrumb } from '../logger'
 
 const ELECTRON_CLIENT_SCOPE = hashClientScope('electron', 'local-renderer')
+const log = createLogger('backend:electron-ipc')
+const BREADCRUMB_TYPES = new Set(['tool.completed', 'user.message', 'turn.completed', 'error'])
+const LARGE_EMIT_BYTES = 64 * 1024
 
 export interface BackendHost {
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void
@@ -33,7 +38,34 @@ export class ElectronIpcHost implements BackendHost {
 
   emit(channel: string, ...args: unknown[]): void {
     if (this.window && !this.window.isDestroyed()) {
-      this.window.webContents.send(channel, ...args)
+      const prepared = prepareIpcEmit(channel, args)
+      if (!prepared.ok) {
+        writeCrashBreadcrumb('backend:electron-ipc', {
+          action: 'dropped',
+          channel: prepared.channel,
+          eventType: prepared.eventType,
+          threadId: prepared.threadId,
+          eventId: prepared.eventId,
+          bytes: prepared.bytes,
+          reason: prepared.reason,
+        })
+        log.error('dropped unsafe IPC emit', prepared)
+        return
+      }
+      if (
+        prepared.bytes >= LARGE_EMIT_BYTES ||
+        (prepared.eventType !== undefined && BREADCRUMB_TYPES.has(prepared.eventType))
+      ) {
+        writeCrashBreadcrumb('backend:electron-ipc', {
+          action: 'send',
+          channel: prepared.channel,
+          eventType: prepared.eventType,
+          threadId: prepared.threadId,
+          eventId: prepared.eventId,
+          bytes: prepared.bytes,
+        })
+      }
+      this.window.webContents.send(channel, ...prepared.args)
     }
   }
 }

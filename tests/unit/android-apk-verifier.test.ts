@@ -18,6 +18,7 @@ import {
 
 const digest = '0'.repeat(64)
 const verifierPath = resolve('scripts/verify-android-apk.mjs')
+const testWithPosixToolShims = process.platform === 'win32' ? test.skip : test
 
 function runVerifier(args: string[], env: Record<string, string> = {}) {
   return spawnSync(process.execPath, [verifierPath, ...args], {
@@ -156,7 +157,7 @@ describe('Android APK release verifier', () => {
     expect(result.stderr).toContain('--apk is required')
   })
 
-  test('metadata-only CLI verifies an unsigned canonical release APK', () => {
+  testWithPosixToolShims('metadata-only CLI verifies an unsigned canonical release APK', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
     try {
       const apk = join(dir, 'app-release-unsigned.apk')
@@ -172,6 +173,63 @@ describe('Android APK release verifier', () => {
 
       expect(result.status).toBe(0)
       expect(result.stdout).toContain('Verified Android APK metadata')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  testWithPosixToolShims('identity-only CLI verifies the canonical signer without requiring checksum metadata', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
+    try {
+      const apk = join(dir, 'switchboard-previous.apk')
+      const aapt = join(dir, 'fake-aapt2')
+      const apksigner = join(dir, 'fake-apksigner')
+      writeFileSync(apk, 'previous signed apk fixture')
+      writeFileSync(
+        aapt,
+        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+      )
+      writeFileSync(
+        apksigner,
+        `#!/bin/sh\nprintf "Signer #1 certificate SHA-256 digest: ${CANONICAL_SIGNER_SHA256}\\n"\n`,
+      )
+      chmodSync(aapt, 0o755)
+      chmodSync(apksigner, 0o755)
+
+      const result = runVerifier(['--identity-only', '--apk', apk], {
+        AAPT2: aapt,
+        APKSIGNER: apksigner,
+      })
+
+      expect(result.status).toBe(0)
+      expect(result.stdout).toContain('Verified Android APK identity')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  testWithPosixToolShims('identity-only CLI rejects a previous APK signed by another certificate', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
+    try {
+      const apk = join(dir, 'switchboard-previous.apk')
+      const aapt = join(dir, 'fake-aapt2')
+      const apksigner = join(dir, 'fake-apksigner')
+      writeFileSync(apk, 'previous signed apk fixture')
+      writeFileSync(
+        aapt,
+        "#!/bin/sh\nprintf \"package: name='app.switchboard.mobile' versionCode='2' versionName='0.5.0'\\n\"\n",
+      )
+      writeFileSync(apksigner, `#!/bin/sh\nprintf "Signer #1 certificate SHA-256 digest: ${'F'.repeat(64)}\\n"\n`)
+      chmodSync(aapt, 0o755)
+      chmodSync(apksigner, 0o755)
+
+      const result = runVerifier(['--identity-only', '--apk', apk], {
+        AAPT2: aapt,
+        APKSIGNER: apksigner,
+      })
+
+      expect(result.status).not.toBe(0)
+      expect(result.stderr).toContain('signer must be')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -204,7 +262,7 @@ describe('Android APK release verifier', () => {
     }
   })
 
-  test('strict CLI verifies package, version, signer, and checksum together', () => {
+  testWithPosixToolShims('strict CLI verifies package, version, signer, and checksum together', () => {
     const dir = mkdtempSync(join(tmpdir(), 'sb-apk-verifier-'))
     try {
       const apk = join(dir, 'switchboard-0.5.0.apk')

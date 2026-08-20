@@ -55,8 +55,11 @@ class StartupRuntime(
 
     @Synchronized
     fun start() {
-        if (started) return
+        if (started && state !is StartupRuntimeState.Blocked) return
         started = true
+        if (state is StartupRuntimeState.Blocked) {
+            publish(StartupRuntimeState.Loading)
+        }
         try {
             executor.execute { runStartup() }
         } catch (error: Exception) {

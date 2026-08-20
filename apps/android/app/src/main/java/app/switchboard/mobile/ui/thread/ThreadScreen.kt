@@ -13,6 +13,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +30,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
@@ -35,6 +38,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -74,6 +78,9 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.Placeholder
+import androidx.compose.ui.text.PlaceholderVerticalAlign
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -94,7 +101,9 @@ import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.data.thread.ThreadPendingActions
+import app.switchboard.mobile.data.thread.ThreadArchiveState
 import app.switchboard.mobile.data.thread.ThreadModelState
+import app.switchboard.mobile.data.thread.ThreadProfileState
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.GeistMono
@@ -134,8 +143,15 @@ fun ThreadScreen(
     onInterrupt: () -> Unit = {},
     onRuntimeModeChange: (RuntimeMode) -> Unit = {},
     models: ThreadModelState = ThreadModelState(),
+    profiles: ThreadProfileState = ThreadProfileState(),
+    archive: ThreadArchiveState = ThreadArchiveState(),
+    gitContext: GitContextPresentation? = null,
     onModelChange: (String) -> Unit = {},
     onRefreshModels: () -> Unit = {},
+    onProfileChange: (String) -> Unit = {},
+    onRefreshProfiles: () -> Unit = {},
+    onArchive: () -> Unit = {},
+    onRefreshGitContext: () -> Unit = {},
     onClearLocalFeed: () -> Unit = {},
     skills: List<ProviderSkill> = emptyList(),
     pendingActions: ThreadPendingActions = ThreadPendingActions(),
@@ -162,9 +178,18 @@ fun ThreadScreen(
             selectedMode = composer.runtimeMode,
             modeEnabled = !composer.modeChanging,
             models = models,
+            profiles = profiles,
+            profileEnabled = metadata?.status?.let { it != "running" && it != "connecting" } == true,
+            archive = archive,
+            gitContext = gitContext,
+            archiveEnabled = ThreadArchivePolicy.canArchive(metadata?.status, archive.archiving),
             onModeSelected = onRuntimeModeChange,
             onModelSelected = onModelChange,
             onRefreshModels = onRefreshModels,
+            onProfileSelected = onProfileChange,
+            onRefreshProfiles = onRefreshProfiles,
+            onArchive = onArchive,
+            onRefreshGitContext = onRefreshGitContext,
             onBack = { settingsOpen = false },
             modifier = modifier,
         )
@@ -355,9 +380,8 @@ private fun ThreadComposer(
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments(),
     ) { uris ->
-        val remaining = (4 - state.attachments.size).coerceAtLeast(0)
         onImagesSelected(
-            uris.take(remaining).map { uri ->
+            uris.map { uri ->
                 val displayName = runCatching {
                     context.contentResolver.query(
                         uri,
@@ -459,7 +483,7 @@ private fun ThreadComposer(
             ) {
                 IconButton(
                     onClick = { imagePicker.launch(arrayOf("image/*")) },
-                    enabled = state.attachments.size < 4 && !state.submitting,
+                    enabled = !state.submitting,
                     modifier = Modifier.size(SwitchboardDimensions.minimumTouchTarget),
                 ) {
                     Icon(Icons.Filled.Add, contentDescription = "Attach image")
@@ -533,13 +557,23 @@ private fun ThreadAgentSettingsScreen(
     selectedMode: RuntimeMode,
     modeEnabled: Boolean,
     models: ThreadModelState,
+    profiles: ThreadProfileState,
+    profileEnabled: Boolean,
+    archive: ThreadArchiveState,
+    archiveEnabled: Boolean,
+    gitContext: GitContextPresentation?,
     onModeSelected: (RuntimeMode) -> Unit,
     onModelSelected: (String) -> Unit,
     onRefreshModels: () -> Unit,
+    onProfileSelected: (String) -> Unit,
+    onRefreshProfiles: () -> Unit,
+    onArchive: () -> Unit,
+    onRefreshGitContext: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     BackHandler(onBack = onBack)
+    var confirmArchive by rememberSaveable { mutableStateOf(false) }
     SwitchboardScaffold(
         title = "Agent settings",
         subtitle = "Applied to this thread",
@@ -562,6 +596,106 @@ private fun ThreadAgentSettingsScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState()),
         ) {
+            gitContext?.let { context ->
+                SectionLabel(
+                    text = "Workspace",
+                    modifier = Modifier.padding(
+                        start = SwitchboardDimensions.screenHorizontalPadding,
+                        end = SwitchboardDimensions.screenHorizontalPadding,
+                        top = 20.dp,
+                        bottom = 8.dp,
+                    ),
+                )
+                SwitchboardListRow(
+                    title = context.branchLabel,
+                    supportingText = buildString {
+                        append(context.checkoutLabel)
+                        append(" · ")
+                        append(context.checkoutPath)
+                        context.parentProjectPath?.let { parent ->
+                            append("\nParent · ")
+                            append(parent)
+                        }
+                    },
+                    showDivider = false,
+                    trailingContent = if (context.loading) {
+                        {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                    } else {
+                        null
+                    },
+                )
+                context.error?.let { error ->
+                    InlineStatus(
+                        message = "Could not refresh branch",
+                        detail = error,
+                        tone = StatusTone.WARNING,
+                        actionLabel = "Retry",
+                        onAction = onRefreshGitContext,
+                        modifier = Modifier.padding(
+                            horizontal = SwitchboardDimensions.screenHorizontalPadding,
+                            vertical = 8.dp,
+                        ),
+                    )
+                }
+            }
+            if (profiles.loading) {
+                InlineStatus(
+                    message = "Loading profiles",
+                    tone = StatusTone.INFO,
+                    progress = InlineStatusProgress.Indeterminate,
+                    modifier = Modifier.padding(
+                        horizontal = SwitchboardDimensions.screenHorizontalPadding,
+                        vertical = 12.dp,
+                    ),
+                )
+            } else if (profiles.options.isNotEmpty()) {
+                SectionLabel(
+                    text = "Profile",
+                    modifier = Modifier.padding(
+                        start = SwitchboardDimensions.screenHorizontalPadding,
+                        end = SwitchboardDimensions.screenHorizontalPadding,
+                        top = 20.dp,
+                        bottom = 8.dp,
+                    ),
+                )
+                profiles.options.forEachIndexed { index, profile ->
+                    SwitchboardListRow(
+                        title = profile.displayName.ifBlank { profile.id },
+                        supportingText = profile.authMode.replace('_', ' '),
+                        onClick = if (profileEnabled && !profiles.changing) {
+                            ({ onProfileSelected(profile.id) })
+                        } else {
+                            null
+                        },
+                        showDivider = index != profiles.options.lastIndex,
+                        trailingContent = {
+                            RadioButton(
+                                selected = profile.id == profiles.selectedInstanceId,
+                                onClick = null,
+                                enabled = profileEnabled && !profiles.changing,
+                            )
+                        },
+                    )
+                }
+            }
+            profiles.error?.let { error ->
+                InlineStatus(
+                    message = "Could not switch profile",
+                    detail = error,
+                    tone = StatusTone.ERROR,
+                    actionLabel = "Refresh",
+                    onAction = onRefreshProfiles,
+                    modifier = Modifier.padding(
+                        horizontal = SwitchboardDimensions.screenHorizontalPadding,
+                        vertical = 12.dp,
+                    ),
+                )
+            }
             if (models.loading) {
                 InlineStatus(
                     message = "Loading models",
@@ -644,7 +778,70 @@ private fun ThreadAgentSettingsScreen(
                     vertical = 20.dp,
                 ),
             )
+            SectionLabel(
+                text = "Conversation",
+                modifier = Modifier.padding(
+                    start = SwitchboardDimensions.screenHorizontalPadding,
+                    end = SwitchboardDimensions.screenHorizontalPadding,
+                    top = 12.dp,
+                    bottom = 8.dp,
+                ),
+            )
+            SwitchboardListRow(
+                title = if (archive.archiving) "Archiving conversation" else "Archive conversation",
+                supportingText = "Remove it from active lists without deleting its history.",
+                onClick = if (archiveEnabled) ({ confirmArchive = true }) else null,
+                showDivider = false,
+                modifier = Modifier.testTag(ThreadTestTags.ARCHIVE_ACTION),
+                trailingContent = if (archive.archiving) {
+                    {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    }
+                } else {
+                    null
+                },
+            )
+            archive.error?.let { error ->
+                InlineStatus(
+                    message = "Could not archive conversation",
+                    detail = error,
+                    tone = StatusTone.ERROR,
+                    modifier = Modifier.padding(
+                        horizontal = SwitchboardDimensions.screenHorizontalPadding,
+                        vertical = 12.dp,
+                    ),
+                )
+            }
         }
+    }
+    if (confirmArchive) {
+        AlertDialog(
+            onDismissRequest = { confirmArchive = false },
+            title = { Text("Archive this conversation?") },
+            text = { Text("It will leave active lists, but its history and local cached copy will be kept.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        confirmArchive = false
+                        onArchive()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                    modifier = Modifier.testTag(ThreadTestTags.ARCHIVE_CONFIRM),
+                ) {
+                    Text("Archive")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmArchive = false }) {
+                    Text("Cancel")
+                }
+            },
+        )
     }
 }
 
@@ -940,37 +1137,96 @@ private fun UserRow(item: FeedItem.User, onImageOpen: (String) -> Unit) {
             .padding(horizontal = 16.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.End,
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth(0.86f)
-                .clip(MaterialTheme.shapes.medium)
-                .background(MaterialTheme.colorScheme.primary)
-                .padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+        Box(
+            modifier = Modifier.fillMaxWidth(0.86f),
+            contentAlignment = Alignment.CenterEnd,
         ) {
-            if (item.text.isNotBlank()) {
-                Text(
-                    text = item.text,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            }
-            if (item.images.isNotEmpty()) {
-                Row(
-                    modifier = Modifier.horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    item.images.forEach { image ->
-                        ThreadHistoryImage(
-                            url = image.url,
-                            name = image.name,
-                            onOpen = { onImageOpen(image.url) },
-                        )
+            Column(
+                modifier = Modifier
+                    .wrapContentWidth()
+                    .clip(MaterialTheme.shapes.medium)
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (item.text.isNotBlank()) {
+                    UserMessageBody(item)
+                }
+                if (item.images.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        item.images.forEach { image ->
+                            ThreadHistoryImage(
+                                url = image.url,
+                                name = image.name,
+                                onOpen = { onImageOpen(image.url) },
+                            )
+                        }
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun UserMessageBody(item: FeedItem.User) {
+    val segments = remember(item.text, item.pillsMeta) {
+        PillBodyPresenter.parse(item.text, item.pillsMeta)
+    }
+    val inlineKeys = segments.mapIndexedNotNull { index, segment ->
+        (segment as? PillBodySegment.Pill)?.let { index to it }
+    }
+    val body = remember(segments) {
+        buildAnnotatedString {
+            segments.forEachIndexed { index, segment ->
+                when (segment) {
+                    is PillBodySegment.Text -> append(segment.value)
+                    is PillBodySegment.Pill -> appendInlineContent(
+                        id = "message-pill-$index",
+                        alternateText = segment.label,
+                    )
+                }
+            }
+        }
+    }
+    val inlineContent = inlineKeys.associate { (index, pill) ->
+        val width = (pill.label.length * 7 + 24).coerceIn(48, 180).sp
+        "message-pill-$index" to InlineTextContent(
+            placeholder = Placeholder(
+                width = width,
+                height = 22.sp,
+                placeholderVerticalAlign = PlaceholderVerticalAlign.Center,
+            ),
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f))
+                    .semantics { contentDescription = "Context: ${pill.label}" },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = pill.label,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    style = MaterialTheme.typography.labelSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(horizontal = 7.dp),
+                )
+            }
+        }
+    }
+
+    Text(
+        text = body,
+        inlineContent = inlineContent,
+        color = MaterialTheme.colorScheme.onPrimary,
+        style = MaterialTheme.typography.bodyMedium,
+    )
 }
 
 @Composable
@@ -1310,13 +1566,119 @@ private fun FileEditRow(
     row: ThreadRowPresentation.FileEdit,
     backendLabel: String,
 ) {
+    var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
     CardContainer(tint = Green) {
-        Text("${row.source.changeKind} ${row.relPath}", fontWeight = FontWeight.SemiBold)
-        Row {
-            Text("+${row.addedLines}", color = Green, fontFamily = GeistMono)
-            Text("-${row.removedLines}", color = Red, fontFamily = GeistMono, modifier = Modifier.padding(start = 10.dp))
-            Text("Changed on $backendLabel", color = TextDim, modifier = Modifier.padding(start = 10.dp))
+        PressableLine(
+            enabled = row.diff.lines.isNotEmpty(),
+            onClick = { expanded = !expanded },
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    row.relPath,
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = GeistMono,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    val approximation = if (row.diff.countsExact) "" else "~"
+                    Text("$approximation+${row.addedLines}", color = Green, fontFamily = GeistMono)
+                    Text("$approximation-${row.removedLines}", color = Red, fontFamily = GeistMono)
+                    Text(
+                        "Changed on $backendLabel · ${row.source.changeKind}",
+                        color = TextDim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (row.diff.lines.isNotEmpty()) {
+                Text(
+                    if (expanded) "Hide" else "Review",
+                    color = Accent,
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(start = 12.dp),
+                )
+            }
         }
+        if (expanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(SurfaceRaised),
+            ) {
+                row.diff.lines.forEach { line -> CompactDiffRow(line) }
+            }
+            Text(
+                if (row.diff.truncated) {
+                    "Read-only preview · large diff truncated"
+                } else {
+                    "Read-only preview"
+                },
+                color = TextDim,
+                style = MaterialTheme.typography.labelSmall,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactDiffRow(line: CompactDiffLine) {
+    val marker = when (line.kind) {
+        DiffLineKind.Added -> "+"
+        DiffLineKind.Removed -> "-"
+        DiffLineKind.Context -> " "
+        DiffLineKind.Omitted -> "…"
+    }
+    val tint = when (line.kind) {
+        DiffLineKind.Added -> Green.copy(alpha = 0.09f)
+        DiffLineKind.Removed -> Red.copy(alpha = 0.09f)
+        else -> Color.Transparent
+    }
+    val textColor = when (line.kind) {
+        DiffLineKind.Added -> Green
+        DiffLineKind.Removed -> Red
+        DiffLineKind.Omitted -> TextDim
+        DiffLineKind.Context -> MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(tint)
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            line.oldLine?.toString().orEmpty(),
+            color = TextDim,
+            fontFamily = GeistMono,
+            fontSize = 10.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            modifier = Modifier.width(28.dp),
+        )
+        Text(
+            line.newLine?.toString().orEmpty(),
+            color = TextDim,
+            fontFamily = GeistMono,
+            fontSize = 10.sp,
+            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+            modifier = Modifier.width(28.dp),
+        )
+        Text(
+            marker,
+            color = textColor,
+            fontFamily = GeistMono,
+            modifier = Modifier.padding(horizontal = 7.dp),
+        )
+        Text(
+            line.text,
+            color = textColor,
+            fontFamily = GeistMono,
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 

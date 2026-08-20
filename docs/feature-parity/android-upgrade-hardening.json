@@ -1,0 +1,53 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-upgrade-hardening",
+  "summary": "Verify Android release identity, archive contents and pending installer state before replacing an installed production APK.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "The desktop updater is a separate signed artifact and update channel."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "iOS remains on its existing EAS update channel and does not install Android APKs."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/AppContract.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/update/ArchivePreflightPolicy.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/update/PendingInstallationTracker.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "APK signer and package verification run in release tooling and on-device installer policy, not the chat API."
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/update/PendingInstallationTracker.kt"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/mobile-release.yml",
+        "scripts/verify-android-apk.mjs",
+        "tests/unit/android-apk-verifier.test.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Android APK verifier tests",
+      "Native Android app contract and updater policy tests",
+      "Release APK assembly"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A production-signed previous-version-to-current-version replacement was not performed for this unreleased branch."
+    ]
+  }
+}

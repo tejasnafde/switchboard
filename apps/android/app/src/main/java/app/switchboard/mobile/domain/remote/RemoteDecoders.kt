@@ -1,5 +1,6 @@
 package app.switchboard.mobile.domain.remote
 
+import app.switchboard.mobile.domain.thread.decodeMessagePills
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
 import app.switchboard.mobile.protocol.JsonNull
@@ -14,6 +15,24 @@ object RemoteDecoders {
 
     fun conversations(value: JsonValue?): List<Conversation> =
         value.array().values.map { conversation(it.obj()) }
+
+    fun messageSearch(value: JsonValue?): List<MessageSearchResult> =
+        value.array().values.map {
+            val raw = it.obj()
+            MessageSearchResult(
+                messageId = raw.stringRequired("messageId"),
+                conversationId = raw.stringRequired("conversationId"),
+                role = raw.stringRequired("role"),
+                content = raw.stringRequired("content"),
+                snippet = raw.stringRequired("snippet"),
+                conversationTitle = raw.stringRequired("conversationTitle"),
+                projectPath = raw.stringRequired("projectPath"),
+                agentType = raw.stringRequired("agentType"),
+                worktreePath = raw.string("worktreePath"),
+                worktreeBranch = raw.string("worktreeBranch"),
+                raw = raw,
+            )
+        }
 
     fun workspaces(value: JsonValue?): List<Workspace> =
         value.array().values.map { workspace(it.obj()) }
@@ -73,6 +92,18 @@ object RemoteDecoders {
         )
     }
 
+    fun currentBranch(value: JsonValue?): CurrentBranchResult {
+        val raw = value.obj()
+        return if (raw.booleanRequired("ok")) {
+            CurrentBranchResult.Available(raw.string("branch"))
+        } else {
+            CurrentBranchResult.Unavailable(
+                message = raw.stringRequired("error"),
+                missing = raw.boolean("missing") ?: false,
+            )
+        }
+    }
+
     fun skills(value: JsonValue?): List<ProviderSkill>? {
         if (value == null || value === JsonNull) return null
         return value.array().values.map {
@@ -121,6 +152,9 @@ object RemoteDecoders {
                 messageCount = session.longRequired("messageCount"),
                 filePath = session.stringRequired("filePath"),
                 raw = session,
+                agentType = session.string("agentType"),
+                worktreePath = session.string("worktreePath"),
+                worktreeBranch = session.string("worktreeBranch"),
             )
         },
         workspaceId = raw.string("workspaceId"),
@@ -173,6 +207,7 @@ object RemoteDecoders {
             )
         },
         displayBody = raw.string("displayBody"),
+        pillsMeta = decodeMessagePills(raw.values["pillsMeta"]),
     )
 
     private fun sessionMeta(raw: JsonObject) = SessionMeta(

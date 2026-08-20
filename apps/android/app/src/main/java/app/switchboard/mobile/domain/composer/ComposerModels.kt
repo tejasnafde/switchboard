@@ -56,18 +56,13 @@ data class ComposerAttachmentSelection(
 )
 
 object ComposerAttachmentPolicy {
-    const val MaxAttachments = 4
-
     fun select(
         existing: List<ComposerAttachment>,
         candidates: List<ComposerAttachment>,
-    ): ComposerAttachmentSelection {
-        val remaining = (MaxAttachments - existing.size).coerceAtLeast(0)
-        return ComposerAttachmentSelection(
-            attachments = existing + candidates.take(remaining),
-            rejected = candidates.drop(remaining),
-        )
-    }
+    ): ComposerAttachmentSelection = ComposerAttachmentSelection(
+        attachments = existing + candidates,
+        rejected = emptyList(),
+    )
 }
 
 object ComposerDraftPolicy {

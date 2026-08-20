@@ -32,10 +32,24 @@ class PendingInstallationTracker(
 ) {
     fun inspect(installed: PackageIdentity): PendingInstallationStatus {
         val pending = persistence.load() ?: return PendingInstallationStatus.None
-        if (installed.versionCode < pending.targetVersionCode) {
+        val expectedSigner = setOf(ArchivePreflightPolicy.PRODUCTION_SIGNER_SHA256)
+        if (
+            pending.packageName != ArchivePreflightPolicy.PRODUCTION_PACKAGE ||
+            pending.signerSha256 != expectedSigner ||
+            installed.packageName != pending.packageName ||
+            installed.signerSha256 != pending.signerSha256
+        ) {
+            return PendingInstallationStatus.IdentityMismatch(pending)
+        }
+
+        if (installed.versionCode == pending.baselineVersionCode) {
             return PendingInstallationStatus.Awaiting(pending)
         }
-        if (installed.packageName != pending.packageName || installed.signerSha256 != pending.signerSha256) {
+
+        if (
+            installed.versionCode != pending.targetVersionCode ||
+            installed.versionName != pending.targetVersionName
+        ) {
             return PendingInstallationStatus.IdentityMismatch(pending)
         }
 

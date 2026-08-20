@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -18,10 +19,15 @@ import app.switchboard.mobile.ui.connections.StartupConnectionsMapper
 import app.switchboard.mobile.ui.navigation.AndroidRootNavigationRuntime
 import app.switchboard.mobile.ui.theme.SwitchboardTheme
 import app.switchboard.mobile.platform.startup.StartupRuntimeState
+import app.switchboard.mobile.platform.deeplink.AndroidDeepLinkIntentAdapter
+import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
+import app.switchboard.mobile.platform.deeplink.SwitchboardDeepLinkContract
 import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
     private val notificationRouteWake = MutableStateFlow(0L)
+    private val appDeepLinkRequest = MutableStateFlow<PendingAppDeepLink?>(null)
+    private var nextAppDeepLinkRequestId = 0L
 
     private val switchboardApplication
         get() = application as SwitchboardApplication
@@ -43,6 +49,7 @@ class MainActivity : ComponentActivity() {
             activity = switchboardApplication::browseActivity,
             persistCollapsedWorkspaceIds = switchboardApplication::saveCollapsedWorkspaceIds,
             snapshots = switchboardApplication.browseSnapshotStore,
+            threadSnapshots = switchboardApplication.threadSnapshotStore,
             beginViewingLease = switchboardApplication::beginPushViewing,
             registerViewingRenewal = switchboardApplication::registerViewingLeaseRenewal,
         )
@@ -57,6 +64,7 @@ class MainActivity : ComponentActivity() {
         ensureNotificationChannel()
         switchboardApplication.notificationPermissions.requestIfNeeded(this)
         switchboardApplication.ingestRemoteNotificationIntent(intent)
+        if (savedInstanceState == null) ingestAppDeepLinkIntent(intent, coldStart = true)
         setContent {
             val updateState by updateRuntime.state
             val startupState by switchboardApplication.startupState.collectAsState()
@@ -65,6 +73,7 @@ class MainActivity : ComponentActivity() {
                 .presentation
                 .collectAsState()
             val routeWake by notificationRouteWake.collectAsState()
+            val pendingAppDeepLink by appDeepLinkRequest.collectAsState()
             val visibleStartupState = when {
                 startupState is StartupRuntimeState.Ready && connectionSnapshot != null ->
                     (startupState as StartupRuntimeState.Ready).copy(
@@ -82,8 +91,13 @@ class MainActivity : ComponentActivity() {
                         switchboardApplication.googleAccountRuntime::importCredentials,
                     onGoogleSignOut = switchboardApplication.googleAccountRuntime::signOut,
                     onConnectionIntent = { intent ->
-                        if (intent is ConnectionIntent.Remove) {
-                            switchboardApplication.removeConnection(intent.connectionId)
+                        when (intent) {
+                            is ConnectionIntent.Remove -> {
+                                switchboardApplication.removeConnection(intent.connectionId)
+                            }
+
+                            ConnectionIntent.Retry -> switchboardApplication.retryStartup()
+                            else -> Unit
                         }
                     },
                     offlineSnapshot = (visibleStartupState as? StartupRuntimeState.Ready)
@@ -99,7 +113,14 @@ class MainActivity : ComponentActivity() {
                             if (consumed?.tapId == accepted.tapId) signalNotificationRoute()
                         }
                     },
+                    pendingAppDeepLink = pendingAppDeepLink,
+                    onAppDeepLinkAccepted = { accepted ->
+                        if (appDeepLinkRequest.value?.requestId == accepted.requestId) {
+                            appDeepLinkRequest.value = null
+                        }
+                    },
                     updateState = updateState,
+                    updatesEnabled = updateRuntime.enabled,
                     onUpdateAction = updateRuntime::onAction,
                 )
             }
@@ -116,6 +137,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         switchboardApplication.ingestRemoteNotificationIntent(intent)
+        ingestAppDeepLinkIntent(intent, coldStart = false)
         signalNotificationRoute()
     }
 
@@ -138,5 +160,27 @@ class MainActivity : ComponentActivity() {
 
     private fun signalNotificationRoute() {
         notificationRouteWake.value += 1
+    }
+
+    private fun ingestAppDeepLinkIntent(intent: Intent, coldStart: Boolean): Boolean {
+        val data = AndroidDeepLinkIntentAdapter.dataString(intent) ?: return false
+        val route = SwitchboardDeepLinkContract.appRoute(data)
+        val audit = SwitchboardDeepLinkContract.auditFields(data)
+        Log.i(
+            DEEP_LINK_LOG_TAG,
+            "received cold=$coldStart scheme=${audit.scheme} authority=${audit.authority} " +
+                "path=${audit.path} classification=${SwitchboardDeepLinkContract.classify(data)} " +
+                "route=${route?.name ?: "none"}",
+        )
+        if (route == null) return false
+        appDeepLinkRequest.value = PendingAppDeepLink(
+            requestId = ++nextAppDeepLinkRequestId,
+            route = route,
+        )
+        return true
+    }
+
+    private companion object {
+        const val DEEP_LINK_LOG_TAG = "SwitchboardDeepLink"
     }
 }

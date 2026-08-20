@@ -14,12 +14,14 @@ import { RuntimeEventBus } from './event-bus'
 import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-drift'
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
-import { resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb, getMessageForConversationById } from '../db/database'
+import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
+import { recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb, getMessageForConversationById, setConversationProviderInstanceId } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -38,7 +40,8 @@ import {
   type PeerMessageInput,
 } from '@shared/peer-messaging'
 import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
-import { defaultClaudeDir } from './claude-session-migrate'
+import { defaultClaudeDir, ensureClaudeSessionResumable } from './claude-session-migrate'
+import { ensureCodexSessionResumable } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
 import type {
@@ -50,13 +53,31 @@ import type {
   ApprovalDecision,
   RuntimeMode,
 } from './types'
-import { echoMessageId, validateUserMessageImages } from '@shared/provider-events'
+import {
+  echoMessageId,
+  validateUserMessageImages,
+  type ProviderInstanceSwitchRequest,
+} from '@shared/provider-events'
+import { parsePersistedPillsMeta } from './pill-metadata'
 
 const log = createLogger('provider:registry')
 
 /** `claude` is spelled `claude-code` everywhere the DB is involved. */
 function agentTypeForProvider(provider: ProviderKind): Exclude<AgentType, 'terminal'> {
   return provider === 'claude' ? 'claude-code' : provider
+}
+
+type ProviderEventGate = {
+  state: 'staging' | 'flushing' | 'committed' | 'discarded'
+  events: RuntimeEvent[]
+}
+
+type ProviderCredentialSnapshot = {
+  instanceId?: string
+  instanceName?: string
+  resolvedEnv: Record<string, string>
+  resolvedOauthDir: string | null
+  remoteConfigDir?: string
 }
 
 export class ProviderRegistry implements PeerToolHost {
@@ -74,6 +95,9 @@ export class ProviderRegistry implements PeerToolHost {
   private sessionStatus = new Map<string, ProviderSession['status']>()
   /** Descriptor per live thread, so a late-connecting client can adopt it. */
   private sessionDescriptors = new Map<string, ProviderSession>()
+  /** Exact credentials/config location used by the live adapter. Kept private
+   * so a failed rotation can restore the same identity even if DB rows change. */
+  private sessionCredentials = new Map<string, ProviderCredentialSnapshot>()
   /** Worktree list cache per repo folder (10s TTL, failures negatively
    *  cached, refs realpath-normalized once at fill). Drift state lives in
    *  the watcher, turn-scoped. */
@@ -93,6 +117,21 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly turnAcceptance: DurableTurnAcceptance
   /** Provider startup shared by every client that reaches a thread before its adapter exists. */
   private startingSessions = new Map<string, Promise<ProviderSession>>()
+  private switchingSessions = new Set<string>()
+  /** Turns that have claimed a thread but have not crossed the provider
+   * boundary yet. Counted because Claude/Codex may accept more than one queued
+   * turn; a Set would release the switch guard when only the first prepared. */
+  private preparingTurns = new Map<string, number>()
+
+  private beginPreparingTurn(threadId: string): void {
+    this.preparingTurns.set(threadId, (this.preparingTurns.get(threadId) ?? 0) + 1)
+  }
+
+  private finishPreparingTurn(threadId: string): void {
+    const remaining = (this.preparingTurns.get(threadId) ?? 0) - 1
+    if (remaining > 0) this.preparingTurns.set(threadId, remaining)
+    else this.preparingTurns.delete(threadId)
+  }
 
   /**
    * Event bus that decouples adapter event emission from the consumer.
@@ -170,12 +209,24 @@ export class ProviderRegistry implements PeerToolHost {
    */
   private turnDepth = new Map<string, number>()
 
-  /**
-   * Threads with a turn in flight. Only OpenCode needs this: its ACP adapter
-   * drops a mid-turn send instead of queueing it, so a peer message aimed at
-   * a busy OpenCode session has to be refused rather than silently lost.
-   */
-  private activeTurns = new Set<string>()
+  /** Accepted turns not yet matched by a turn.completed event. This is a
+   * count, not a boolean: Claude accepts a second prompt into its queue before
+   * the first completes, and a profile switch must wait for both. */
+  private outstandingTurns = new Map<string, number>()
+
+  private hasOutstandingTurn(threadId: string): boolean {
+    return (this.outstandingTurns.get(threadId) ?? 0) > 0
+  }
+
+  private beginOutstandingTurn(threadId: string): void {
+    this.outstandingTurns.set(threadId, (this.outstandingTurns.get(threadId) ?? 0) + 1)
+  }
+
+  private finishOutstandingTurn(threadId: string): void {
+    const remaining = (this.outstandingTurns.get(threadId) ?? 0) - 1
+    if (remaining > 0) this.outstandingTurns.set(threadId, remaining)
+    else this.outstandingTurns.delete(threadId)
+  }
 
   /**
    * In-flight assistant text per thread, mirrored to SQLite on turn end.
@@ -244,7 +295,7 @@ export class ProviderRegistry implements PeerToolHost {
         title: getConversationTitle(threadId) ?? threadId,
         folder: this.sessionCwd.get(threadId) ?? session.cwd,
         provider: session.provider,
-        midTurn: this.activeTurns.has(threadId),
+        midTurn: this.hasOutstandingTurn(threadId),
       })
     }
     return out
@@ -269,6 +320,17 @@ export class ProviderRegistry implements PeerToolHost {
     const targetThreadId = this.sessionAdapters.has(input.targetThreadId)
       ? input.targetThreadId
       : resolveRootThreadId(input.targetThreadId)
+    if (this.switchingSessions.has(targetThreadId)) {
+      throw new Error('That session is changing profiles. Try again when it reconnects.')
+    }
+    this.beginPreparingTurn(targetThreadId)
+    let preparationPending = true
+    const releasePreparation = (): void => {
+      if (!preparationPending) return
+      preparationPending = false
+      this.finishPreparingTurn(targetThreadId)
+    }
+    try {
     // The adapter cannot know its own conversation's title, so the agent path
     // omits it. Without the fallback the peer is told the message came from
     // `agent_1712`.
@@ -295,7 +357,7 @@ export class ProviderRegistry implements PeerToolHost {
     // OpenCode ACP is one prompt per turn and DROPS a mid-turn send, so
     // delivering into a running turn would record a message the agent never
     // saw. The other adapters queue or steer, so they are fine.
-    if (adapter.provider === 'opencode' && this.activeTurns.has(targetThreadId)) {
+    if (adapter.provider === 'opencode' && this.hasOutstandingTurn(targetThreadId)) {
       throw new Error(`"${targetLabel}" is mid-turn and cannot take a message yet. Try again when it finishes.`)
     }
 
@@ -327,7 +389,9 @@ export class ProviderRegistry implements PeerToolHost {
     const targetCwd = this.sessionCwd.get(targetThreadId)
     if (targetCwd) await this.checkpoints.beginTurn(targetThreadId, targetCwd)
     notebookManager.beginTurn(targetThreadId)
-    this.activeTurns.add(targetThreadId)
+    const startsNewProviderTurn = adapter.provider !== 'codex' || !this.hasOutstandingTurn(targetThreadId)
+    if (startsNewProviderTurn) this.beginOutstandingTurn(targetThreadId)
+    releasePreparation()
     // Set before the send, not after: the receiving model may call the peer
     // tool the moment its turn starts, and the depth has to already be there.
     const previousDepth = this.turnDepth.get(targetThreadId)
@@ -335,7 +399,7 @@ export class ProviderRegistry implements PeerToolHost {
     try {
       await adapter.sendTurn(targetThreadId, body)
     } catch (err) {
-      this.activeTurns.delete(targetThreadId)
+      if (startsNewProviderTurn) this.finishOutstandingTurn(targetThreadId)
       // The turn did NOT happen, so release the guard slot: otherwise an
       // identical retry is refused as a duplicate for the next 10 minutes.
       this.peerGuard.release(verdict.id, key)
@@ -378,6 +442,9 @@ export class ProviderRegistry implements PeerToolHost {
       text: input.text, at,
     })
     return { id: verdict.id }
+    } finally {
+      releasePreparation()
+    }
   }
 
   private publish(event: RuntimeEvent): void {
@@ -411,7 +478,7 @@ export class ProviderRegistry implements PeerToolHost {
     // running. `listSessions` and the re-attach descriptor both read this.
     if (event.type === 'status') this.sessionStatus.set(event.threadId, event.status)
     this.bufferAssistantText(event)
-    if (event.type === 'turn.completed') this.activeTurns.delete(event.threadId)
+    if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
     this.bus.publish(event)
 
     // A turn just ended - diff the start-of-turn checkpoint against the
@@ -434,6 +501,30 @@ export class ProviderRegistry implements PeerToolHost {
     if (event.type === 'turn.completed') {
       void this.driftHook((watcher, cwd) => watcher.onTurnCompleted(event.threadId, cwd), event.threadId)
     }
+  }
+
+  private publishAdapterEvent(
+    event: RuntimeEvent,
+    agentType: Exclude<AgentType, 'terminal'>,
+    providerInstanceId: string | null,
+  ): void {
+    if (event.type === 'session') {
+      try {
+        recordConversationSegment({
+          conversationId: event.threadId,
+          provider: agentType,
+          providerSessionId: event.sessionId,
+          providerInstanceId,
+        })
+      } catch (err) {
+        log.warn(`failed to persist typed provider segment ${event.threadId} -> ${event.sessionId}: ${err}`)
+      }
+      const descriptor = this.sessionDescriptors.get(event.threadId)
+      if (descriptor) {
+        this.sessionDescriptors.set(event.threadId, { ...descriptor, sessionId: event.sessionId })
+      }
+    }
+    this.publish(event)
   }
 
   private async driftHook(
@@ -553,7 +644,30 @@ export class ProviderRegistry implements PeerToolHost {
       return checkRemoteProviderAuth(agentType, remoteProviderConfigDir(agentType, remoteConfigDir))
     })
 
-    this.host.handle(ProviderChannels.START_SESSION, async (opts: SessionStartOpts) => {
+    const stopSession = async (threadId: string): Promise<void> => {
+      const adapter = this.sessionAdapters.get(threadId)
+      if (!adapter) return
+      await adapter.stopSession(threadId)
+      this.flushAssistantText(threadId)
+      this.sessionAdapters.delete(threadId)
+      this.sessionCwd.delete(threadId)
+      this.sessionStatus.delete(threadId)
+      this.sessionDescriptors.delete(threadId)
+      this.sessionCredentials.delete(threadId)
+      this.outstandingTurns.delete(threadId)
+      this.turnDepth.delete(threadId)
+      this.checkpoints.clear(threadId)
+      this.driftWatcher.onSessionStopped(threadId)
+      notebookManager.detach(threadId)
+    }
+
+    const startSession = async (
+      initialOpts: SessionStartOpts,
+      publishProviderIdentity = true,
+      eventGate?: ProviderEventGate,
+      credentialSnapshot?: ProviderCredentialSnapshot,
+    ): Promise<ProviderSession> => {
+      let opts = { ...initialOpts }
       const adapter = this.getAdapter(opts.provider)
       if (!adapter) throw new Error(`Unknown provider: ${opts.provider}`)
 
@@ -561,17 +675,27 @@ export class ProviderRegistry implements PeerToolHost {
       // in-flight provider start instead of spawning another adapter process.
       if (this.sessionAdapters.has(opts.threadId)) {
         log.info(`startSession ${opts.threadId} already live - re-attaching`)
-        return {
+        const live = this.sessionDescriptors.get(opts.threadId)
+        const liveInstance = live?.instanceId ? getProviderInstanceFull(live.instanceId) : null
+        this.publish({
+          type: 'session.provider',
           threadId: opts.threadId,
-          provider: opts.provider,
+          provider: live?.provider ?? opts.provider,
+          instanceId: live?.instanceId ?? null,
+          instanceName: liveInstance?.displayName ?? null,
+        })
+        return {
+          ...live,
+          threadId: opts.threadId,
+          provider: live?.provider ?? opts.provider,
           // A descriptor captures startup state; the registry tracks the live
           // status so a client attaching mid-turn does not render the chat idle.
           status: this.sessionStatus.get(opts.threadId) ?? 'idle',
           runtimeMode: sessionDefaultsFor(opts.threadId, agentTypeForProvider(opts.provider), {
             runtimeMode: opts.runtimeMode,
           }).runtimeMode,
-          cwd: this.sessionCwd.get(opts.threadId) ?? opts.cwd,
-          createdAt: Date.now(),
+          cwd: this.sessionCwd.get(opts.threadId) ?? live?.cwd ?? opts.cwd,
+          createdAt: live?.createdAt ?? Date.now(),
         } satisfies ProviderSession
       }
       const existingStart = this.startingSessions.get(opts.threadId)
@@ -623,8 +747,19 @@ export class ProviderRegistry implements PeerToolHost {
       // SDK fails deep in the stack with cryptic EPERMs.
       await assertCwdReadable(opts.cwd)
 
-      const agentType: AgentType = agentTypeForProvider(opts.provider)
-      const instance = resolveProviderInstance(agentType, opts.instanceId)
+      const agentType = agentTypeForProvider(opts.provider)
+      // A desktop-routed remote session carries the local profile id plus a
+      // sanitized remote config-dir basename. Do not replace that identity
+      // with the remote DB's default row merely because the ids differ.
+      const instance = credentialSnapshot || remoteProviderConfig
+        ? null
+        : resolveProviderInstance(agentType, opts.instanceId)
+      const resolvedInstanceId = credentialSnapshot?.instanceId ?? instance?.id ?? opts.instanceId
+      const resolvedInstanceName = credentialSnapshot?.instanceName
+        ?? instance?.displayName
+        ?? resolvedInstanceId
+      const resolvedEnv = credentialSnapshot?.resolvedEnv ?? instance?.env ?? {}
+      const resolvedOauthDir = credentialSnapshot?.resolvedOauthDir ?? instance?.oauthDir ?? null
       // Every known oauth_dir for this agent kind, so the adapter can find a
       // resumeable JSONL across profiles. Includes the default dir so env-mode
       // sessions (no oauth_dir) are discoverable too.
@@ -634,46 +769,52 @@ export class ProviderRegistry implements PeerToolHost {
       ]))
       const enrichedOpts: SessionStartOpts = {
         ...opts,
-        instanceId: instance?.id ?? opts.instanceId,
-        resolvedEnv: instance?.env ?? {},
-        resolvedOauthDir: instance?.oauthDir ?? null,
+        instanceId: resolvedInstanceId,
+        resolvedEnv,
+        resolvedOauthDir,
         candidateOauthDirs,
       }
       // Remote: point the provider config env at its durable per-instance dir under this VM's $HOME.
       if (remoteProviderConfig) enrichedOpts.resolvedOauthDir = remoteProviderConfig
       log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${enrichedOpts.resolvedOauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
 
+      let latestSessionId = opts.resumeSessionId
+      const providerInstanceId = resolvedInstanceId ?? null
       const session = await adapter.startSession(enrichedOpts, (event) => {
-        if (event.type === 'session') {
-          try {
-            recordConversationSegment({
-              conversationId: event.threadId,
-              provider: agentType,
-              providerSessionId: event.sessionId,
-              providerInstanceId: instance?.id ?? opts.instanceId ?? null,
-            })
-          } catch (err) {
-            log.warn(`failed to persist typed provider segment ${event.threadId} -> ${event.sessionId}: ${err}`)
-          }
+        if (event.type === 'session') latestSessionId = event.sessionId
+        if (eventGate?.state === 'staging' || eventGate?.state === 'flushing') {
+          eventGate.events.push(event)
+          return
         }
-        this.publish(event)
+        if (eventGate?.state === 'discarded') return
+        this.publishAdapterEvent(event, agentType, providerInstanceId)
       })
-      if (instance) session.instanceId = instance.id
+      if (resolvedInstanceId) session.instanceId = resolvedInstanceId
+      if (latestSessionId) session.sessionId = latestSessionId
       // Tell every client which profile this thread now runs on. A rotation
       // done on one client would otherwise leave the others showing the old
       // one, since only this resolution knows what was actually picked.
-      this.publish({
-        type: 'session.provider',
-        threadId: opts.threadId,
-        provider: opts.provider,
-        instanceId: instance?.id ?? null,
-        instanceName: instance?.displayName ?? null,
-      })
+      if (publishProviderIdentity) {
+        this.publish({
+          type: 'session.provider',
+          threadId: opts.threadId,
+          provider: opts.provider,
+          instanceId: resolvedInstanceId ?? null,
+          instanceName: resolvedInstanceName ?? null,
+        })
+      }
       this.sessionAdapters.set(opts.threadId, adapter)
       this.sessionCwd.set(opts.threadId, session.cwd)
       // Kept so `listSessions` can describe this session to a client that
       // connects later, rather than only to the one that started it.
       this.sessionDescriptors.set(opts.threadId, session)
+      this.sessionCredentials.set(opts.threadId, {
+        instanceId: resolvedInstanceId,
+        instanceName: resolvedInstanceName,
+        resolvedEnv: { ...enrichedOpts.resolvedEnv },
+        resolvedOauthDir: enrichedOpts.resolvedOauthDir ?? null,
+        remoteConfigDir: credentialSnapshot?.remoteConfigDir ?? opts.remoteConfigDir,
+      })
       await this.attachNotebooks(opts.threadId, session.cwd)
       resolveStart(session)
       return session
@@ -683,11 +824,205 @@ export class ProviderRegistry implements PeerToolHost {
       } finally {
         this.startingSessions.delete(opts.threadId)
       }
+    }
+
+    this.host.handle(ProviderChannels.START_SESSION, startSession)
+
+    this.host.handle(ProviderChannels.SWITCH_INSTANCE, async (
+      threadId: string,
+      input: ProviderInstanceSwitchRequest,
+    ) => {
+      const descriptor = this.sessionDescriptors.get(threadId)
+      const currentInstanceId = descriptor?.instanceId ?? null
+      const failure = (
+        code: string,
+        message: string,
+        rolledBack?: boolean,
+        reportedInstanceId: string | null = currentInstanceId,
+      ) => ({ ok: false as const, code, message, currentInstanceId: reportedInstanceId, ...(rolledBack === undefined ? {} : { rolledBack }) })
+
+      if (!descriptor || !this.sessionAdapters.has(threadId)) {
+        return failure('context-unavailable', 'This thread is not attached to a live provider session')
+      }
+      if (this.switchingSessions.has(threadId) || this.startingSessions.has(threadId) || this.preparingTurns.has(threadId) || this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running') {
+        return failure('busy', 'Stop the current turn before switching profile')
+      }
+      if (input.expectedCurrentInstanceId !== currentInstanceId) {
+        return failure('stale-selection', 'The active profile changed on another client')
+      }
+      if (input.targetInstanceId === currentInstanceId) {
+        const current = getProviderInstanceFull(input.targetInstanceId)
+        return {
+          ok: true as const,
+          threadId,
+          provider: descriptor.provider,
+          previousInstanceId: currentInstanceId,
+          instanceId: currentInstanceId,
+          instanceName: current?.displayName ?? input.targetInstanceId,
+          continuity: 'not-needed' as const,
+        }
+      }
+
+      const agentType = agentTypeForProvider(descriptor.provider)
+      const target = getProviderInstanceFull(input.targetInstanceId)
+      const remoteTargetConfig = agentType !== 'opencode' && process.env.SWITCHBOARD_REMOTE && input.targetRemoteConfigDir
+        ? remoteProviderConfigDir(agentType, input.targetRemoteConfigDir)
+        : null
+      if (!remoteTargetConfig && (!target || !target.enabled || target.agentType !== agentType)) {
+        return failure('invalid-instance', 'That profile is unavailable for this provider')
+      }
+      if (descriptor.provider === 'opencode') {
+        return failure('unsupported-provider', 'OpenCode cannot preserve an existing thread across profile changes yet')
+      }
+
+      // Claim the thread before any transcript migration can await. Otherwise
+      // a second switch or a new turn can race the preflight and attach to the
+      // provider session that is about to be stopped.
+      this.switchingSessions.add(threadId)
+      try {
+      const oldCredentials = this.sessionCredentials.get(threadId)
+      if (!oldCredentials) {
+        return failure('context-unavailable', 'The live profile credentials are unavailable for a safe rollback')
+      }
+      const oldOpts: SessionStartOpts = {
+        threadId,
+        provider: descriptor.provider,
+        cwd: descriptor.cwd,
+        model: descriptor.model,
+        runtimeMode: descriptor.runtimeMode,
+        resumeSessionId: descriptor.sessionId,
+        instanceId: currentInstanceId ?? undefined,
+        remoteConfigDir: oldCredentials.remoteConfigDir,
+      }
+      const targetInstanceId = input.targetInstanceId
+      const targetInstanceName = target?.displayName ?? input.targetInstanceName ?? targetInstanceId
+      const targetOpts: SessionStartOpts = {
+        ...oldOpts,
+        instanceId: targetInstanceId,
+        ...(input.targetRemoteConfigDir ? { remoteConfigDir: input.targetRemoteConfigDir } : {}),
+      }
+      const continuity = descriptor.sessionId ? 'preserved' as const : 'not-needed' as const
+      const targetEventGate: ProviderEventGate = { state: 'staging', events: [] }
+      const oldRemoteConfig = oldCredentials.remoteConfigDir && agentType !== 'opencode'
+        ? remoteProviderConfigDir(agentType, oldCredentials.remoteConfigDir)
+        : null
+      const migrationCandidates = Array.from(new Set([
+        ...(oldRemoteConfig ? [oldRemoteConfig] : []),
+        ...(oldCredentials.resolvedOauthDir ? [oldCredentials.resolvedOauthDir] : []),
+      ]))
+
+      if (descriptor.provider === 'claude' && descriptor.sessionId) {
+        const migration = ensureClaudeSessionResumable({
+          sessionId: descriptor.sessionId,
+          cwd: descriptor.cwd,
+          toDir: remoteTargetConfig ?? target?.oauthDir ?? defaultClaudeDir(),
+          candidates: [...migrationCandidates, defaultClaudeDir(), ...listOauthDirsForAgent('claude-code')],
+        })
+        if (!migration.ok) {
+          return failure('context-unavailable', 'The existing Claude transcript could not be prepared for the selected profile')
+        }
+      }
+      if (descriptor.provider === 'codex' && descriptor.sessionId) {
+        const migration = await ensureCodexSessionResumable({
+          sessionId: descriptor.sessionId,
+          toDir: remoteTargetConfig ?? target?.oauthDir ?? join(homedir(), '.codex'),
+          candidates: [...migrationCandidates, join(homedir(), '.codex'), ...listOauthDirsForAgent('codex')],
+        })
+        if (!migration.ok) {
+          return failure('context-unavailable', 'The existing Codex rollout could not be prepared for the selected profile')
+        }
+      }
+
+        try {
+          await stopSession(threadId)
+        } catch (stopError) {
+          this.publish({ type: 'status', threadId, status: 'error' })
+          return failure(
+            'target-start-failed',
+            stopError instanceof Error ? stopError.message : String(stopError),
+            false,
+          )
+        }
+        try {
+          await startSession(targetOpts, false, targetEventGate)
+          setConversationProviderInstanceId(threadId, targetInstanceId)
+        } catch (targetError) {
+          targetEventGate.state = 'discarded'
+          targetEventGate.events.length = 0
+          await stopSession(threadId).catch(() => {})
+          try {
+            await startSession(oldOpts, true, undefined, oldCredentials)
+            return failure(
+              'target-start-failed',
+              targetError instanceof Error ? targetError.message : String(targetError),
+              true,
+            )
+          } catch (rollbackError) {
+            this.publish({ type: 'status', threadId, status: 'error' })
+            this.publish({
+              type: 'session.provider',
+              threadId,
+              provider: descriptor.provider,
+              instanceId: null,
+              instanceName: null,
+            })
+            return failure(
+              'rollback-failed',
+              `Target failed: ${targetError instanceof Error ? targetError.message : String(targetError)}. Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+              false,
+              null,
+            )
+          }
+        }
+
+        targetEventGate.state = 'flushing'
+        while (targetEventGate.events.length > 0) {
+          const event = targetEventGate.events.shift()
+          if (event) this.publishAdapterEvent(event, agentType, targetInstanceId)
+        }
+        targetEventGate.state = 'committed'
+
+        this.publish({
+          type: 'session.provider',
+          threadId,
+          provider: descriptor.provider,
+          instanceId: targetInstanceId,
+          instanceName: targetInstanceName,
+        })
+        return {
+          ok: true as const,
+          threadId,
+          provider: descriptor.provider,
+          previousInstanceId: currentInstanceId,
+          instanceId: targetInstanceId,
+          instanceName: targetInstanceName,
+          continuity,
+        }
+      } finally {
+        this.switchingSessions.delete(threadId)
+      }
     })
 
     this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string): Promise<TurnAcceptanceResult | undefined> => {
+      if (this.switchingSessions.has(threadId)) {
+        // "queue full" intentionally classifies this as retryable in the
+        // durable mobile outbox. The reservation has not crossed the provider
+        // boundary and may safely be attempted after the switch commits.
+        throw new TurnNotAcceptedError('Session queue full while a profile switch is in progress')
+      }
       const starting = this.startingSessions.get(threadId)
       if (starting) await starting
+      if (this.switchingSessions.has(threadId)) {
+        throw new TurnNotAcceptedError('Session queue full while a profile switch is in progress')
+      }
+      this.beginPreparingTurn(threadId)
+      let preparationPending = true
+      const releasePreparation = (): void => {
+        if (!preparationPending) return
+        preparationPending = false
+        this.finishPreparingTurn(threadId)
+      }
+      try {
       const adapter = this.sessionAdapters.get(threadId)
       if (!adapter) {
         log.warn(`sendTurn ${threadId} - no adapter (session not started?)`)
@@ -695,6 +1030,9 @@ export class ProviderRegistry implements PeerToolHost {
       }
       const acceptedImages = validateUserMessageImages(images)
       log.info(`sendTurn ${threadId} chars=${message.length} mode=${runtimeMode ?? 'sandbox'} images=${acceptedImages?.length ?? 0}`)
+      if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId)) {
+        throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
+      }
       const dispatch = async (): Promise<void> => {
         // These operations happen before the provider boundary. A failure here
         // is a definite rejection and may safely release the reservation.
@@ -707,16 +1045,71 @@ export class ProviderRegistry implements PeerToolHost {
           throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
         }
 
-        this.activeTurns.add(threadId)
+        const startsNewProviderTurn = adapter.provider !== 'codex' || !this.hasOutstandingTurn(threadId)
+        if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
+        releasePreparation()
         try {
           await adapter.sendTurn(threadId, message, runtimeMode, acceptedImages)
         } catch (error) {
-          this.activeTurns.delete(threadId)
+          if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
           // Once the provider call starts, a generic failure is ambiguous. It
           // must remain dispatching so a retry cannot execute the turn twice.
           throw error
         }
       }
+
+      const messageId = origin
+        ? echoMessageId(origin)
+        : `turn_${Date.now()}_${++this.savedMessageSeq}`
+      const persistUserTurn = (required: boolean): void => {
+        try {
+          const inserted = saveMessageIfAbsent(
+            messageId,
+            threadId,
+            'user',
+            message,
+            acceptedImages ? JSON.stringify(acceptedImages) : undefined,
+          )
+          if (!inserted && !getMessageForConversationById(threadId, messageId) && required) {
+            throw new Error('conversation or message row is unavailable')
+          }
+        } catch (error) {
+          if (required) {
+            throw new TurnNotAcceptedError('turn could not be persisted before provider dispatch', {
+              cause: error,
+            })
+          }
+          log.warn(`failed to persist user turn for ${threadId}: ${error}`)
+        }
+      }
+      const publishUserTurn = (): void => {
+        let displayBody: string | undefined
+        let pillsMeta: ReturnType<typeof parsePersistedPillsMeta>
+        try {
+          const persisted = origin
+            ? getMessageForConversationById(threadId, messageId)
+            : undefined
+          displayBody = persisted?.display_body ?? undefined
+          pillsMeta = parsePersistedPillsMeta(persisted?.pills_meta)
+        } catch {
+          // A missing enrichment is normal for phone sends and older databases.
+        }
+        this.publish({
+          type: 'user.message',
+          threadId,
+          text: message,
+          displayBody,
+          pillsMeta,
+          images: acceptedImages,
+          origin,
+          at: Date.now(),
+        })
+      }
+
+      // Origin-aware callers delete their durable outbox copy after this
+      // handler acknowledges completion. Make the user row replayable before
+      // crossing the provider boundary, or a crash can lose the only copy.
+      if (origin) persistUserTurn(true)
 
       let acceptance: TurnAcceptanceResult | undefined
       if (origin) {
@@ -729,6 +1122,7 @@ export class ProviderRegistry implements PeerToolHost {
         )
         if (acceptance.duplicate) {
           log.info(`sendTurn ${threadId} - duplicate origin ${origin} (${acceptance.state})`)
+          if (acceptance.state === 'completed') publishUserTurn()
           return acceptance
         }
       } else {
@@ -745,38 +1139,15 @@ export class ProviderRegistry implements PeerToolHost {
       // `display_body`/`pills_meta` on every desktop send. Absent origin - the
       // phone's opening turn does not send one - still gets a row, under a
       // minted id, since nothing else will write it.
-      let displayBody: string | undefined
-      try {
-        saveMessageIfAbsent(
-          origin ? echoMessageId(origin) : `turn_${Date.now()}_${++this.savedMessageSeq}`,
-          threadId,
-          'user',
-          message,
-          acceptedImages ? JSON.stringify(acceptedImages) : undefined,
-        )
-      } catch (err) {
-        log.warn(`failed to persist user turn for ${threadId}: ${err}`)
-      }
-      try {
-        displayBody = origin
-          ? getMessageForConversationById(threadId, echoMessageId(origin))?.display_body ?? undefined
-          : undefined
-      } catch {
-        // A missing enrichment is normal for phone sends and older databases.
-      }
+      if (!origin) persistUserTurn(false)
       // AFTER the adapter accepts. Broadcasting first meant a failed send had
       // already consumed the origin from every other client's skip set, so the
       // retry rendered a duplicate bubble everywhere with no retraction.
-      this.publish({
-        type: 'user.message',
-        threadId,
-        text: message,
-        displayBody,
-        images: acceptedImages,
-        origin,
-        at: Date.now(),
-      })
+      publishUserTurn()
       return acceptance
+      } finally {
+        releasePreparation()
+      }
     })
 
     // A client asked, so the user typed it. `initiator` is forced rather than
@@ -851,22 +1222,7 @@ export class ProviderRegistry implements PeerToolHost {
       }
     })
 
-    this.host.handle(ProviderChannels.STOP_SESSION, async (threadId: string) => {
-      const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
-      await adapter.stopSession(threadId)
-      // A stop can land mid-turn, so no turn.completed is coming. Persist what
-      // the assistant already produced instead of dropping the buffer.
-      this.flushAssistantText(threadId)
-      this.sessionAdapters.delete(threadId)
-      this.sessionCwd.delete(threadId)
-      this.sessionStatus.delete(threadId)
-      this.sessionDescriptors.delete(threadId)
-      this.turnDepth.delete(threadId)
-      this.checkpoints.clear(threadId)
-      this.driftWatcher.onSessionStopped(threadId)
-      notebookManager.detach(threadId)
-    })
+    this.host.handle(ProviderChannels.STOP_SESSION, stopSession)
 
     log.info('IPC handlers registered')
   }

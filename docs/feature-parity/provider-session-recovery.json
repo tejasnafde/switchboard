@@ -1,0 +1,63 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "provider-session-recovery",
+  "summary": "Keep provider turns, profile rotation, message replay and remote IPC deterministic across desktop and mobile clients.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/provider-switch-ws.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/outboxModel.ts",
+        "apps/mobile/src/stores/outbox.ts",
+        "tests/unit/mobile-outbox.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/ProviderInstanceSwitch.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/backend/ipc-wire.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/codex-session-migrate.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "apps/mobile/src/lib/outboxStorage.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "The session and outbox contracts remain backward compatible and do not change package identity, signing, or update channels."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm test (Node-compatible suites) plus Electron-runtime SQLite acceptance suites",
+      "npm run typecheck",
+      "npx tsc --noEmit -p apps/mobile/tsconfig.json"
+    ],
+    "hardware": [
+      "Side-by-side native Android debug APK launched on CPH2487 without replacing the production package."
+    ],
+    "notExercised": [
+      "Live profile rotation across every configured OAuth account was not repeated after the final combined commit."
+    ]
+  }
+}

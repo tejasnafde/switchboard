@@ -1,5 +1,6 @@
 package app.switchboard.mobile.domain.remote
 
+import app.switchboard.mobile.domain.thread.MessagePill
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonValue
 
@@ -28,6 +29,23 @@ data class SessionSummary(
     val startedAt: Long,
     val messageCount: Long,
     val filePath: String,
+    val raw: JsonObject,
+    val agentType: String? = null,
+    val worktreePath: String? = null,
+    val worktreeBranch: String? = null,
+)
+
+data class MessageSearchResult(
+    val messageId: String,
+    val conversationId: String,
+    val role: String,
+    val content: String,
+    val snippet: String,
+    val conversationTitle: String,
+    val projectPath: String,
+    val agentType: String,
+    val worktreePath: String?,
+    val worktreeBranch: String?,
     val raw: JsonObject,
 )
 
@@ -70,6 +88,7 @@ data class ChatMessage(
     val toolCalls: List<MessageToolCall> = emptyList(),
     val images: List<MessageImage> = emptyList(),
     val displayBody: String? = null,
+    val pillsMeta: Map<String, MessagePill> = emptyMap(),
 )
 
 data class MessageToolCall(
@@ -153,6 +172,15 @@ data class MarkReadResult(
     val raw: JsonObject,
 )
 
+sealed interface CurrentBranchResult {
+    data class Available(val branch: String?) : CurrentBranchResult
+
+    data class Unavailable(
+        val message: String,
+        val missing: Boolean,
+    ) : CurrentBranchResult
+}
+
 data class CreateConversation(
     val id: String,
     val projectPath: String,
@@ -208,3 +236,7 @@ data class CommandFollowUp<C, F>(
 data class CommandBody(
     val body: JsonValue?,
 )
+
+sealed interface ArchiveConversationResult {
+    data object Archived : ArchiveConversationResult
+}

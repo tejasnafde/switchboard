@@ -1,11 +1,22 @@
 package app.switchboard.mobile.ui.navigation
 
+import app.switchboard.mobile.platform.deeplink.AppDeepLinkRoute
+import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
 import java.io.Serializable
 
 sealed interface AppRoute : Serializable {
     data object Connections : AppRoute
 
+    data object ManageConnections : AppRoute
+
+    data object Settings : AppRoute
+
     data object GoogleAccount : AppRoute
+
+    data class MessageSearch(
+        val connectionId: String,
+        val connectionLabel: String,
+    ) : AppRoute
 
     data class Pair(
         val editConnectionId: String? = null,
@@ -71,5 +82,11 @@ data class NavigationState private constructor(
 
     companion object {
         fun root(): NavigationState = NavigationState(listOf(AppRoute.Connections))
+    }
+}
+
+object AppDeepLinkNavigationResolver {
+    fun resolve(pending: PendingAppDeepLink): NavigationState = when (pending.route) {
+        AppDeepLinkRoute.Settings -> NavigationState.root().push(AppRoute.Settings)
     }
 }

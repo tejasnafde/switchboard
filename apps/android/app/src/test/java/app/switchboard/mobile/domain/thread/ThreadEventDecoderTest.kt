@@ -13,12 +13,22 @@ import org.junit.Test
 
 class ThreadEventDecoderTest {
     @Test
-    fun `user message decodes display body and images`() {
+    fun `user message decodes display body images and validated pill metadata`() {
         val event = ThreadEventDecoder.decode(
             event(
                 "user.message",
                 "text" to s("context wrapper\n\nvisible"),
                 "displayBody" to s("visible"),
+                "pillsMeta" to obj(
+                    "selection-1" to obj(
+                        "label" to s("Admin panel"),
+                        "kind" to s("chat-message"),
+                    ),
+                    "invalid" to obj(
+                        "label" to s("Ignored"),
+                        "kind" to s("other"),
+                    ),
+                ),
                 "images" to arr(
                     obj(
                         "url" to s("data:image/png;base64,AAA"),
@@ -33,6 +43,8 @@ class ThreadEventDecoderTest {
         val message = event.payload as ThreadEventPayload.UserMessage
         assertEquals("visible", message.displayBody)
         assertEquals("data:image/png;base64,AAA", message.images.single().url)
+        assertEquals(MessagePill("Admin panel", "chat-message"), message.pillsMeta["selection-1"])
+        assertEquals(setOf("selection-1"), message.pillsMeta.keys)
     }
     @Test
     fun decodesEveryKnownRuntimeEventWithoutDroppingExtensionFields() {

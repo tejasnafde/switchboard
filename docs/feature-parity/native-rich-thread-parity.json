@@ -1,0 +1,61 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "native-rich-thread-parity",
+  "summary": "Restore native thread parity for durable messages, image turns, profiles, pills, file diffs, git context and settings.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/pill-metadata.ts",
+        "src/renderer/components/chat/ChatPanel.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/outboxModel.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/PillBodyPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/FileDiffPresentation.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts",
+        "src/shared/provider-events.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/outboxStorage.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt"
+      ]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "The rich-thread wire changes are backward compatible and do not change package identity or signing."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Desktop provider, pill, image and durable-turn tests",
+      "React Native TypeScript and outbox tests",
+      "Native Android thread, composer, outbox, git, diff and pill tests"
+    ],
+    "hardware": [
+      "A six-image native composer was rendered and verified on CPH2487 using a side-by-side debug package."
+    ],
+    "notExercised": [
+      "A final live multi-image provider turn was not sent from the side-by-side debug package because it had no paired production backend."
+    ]
+  }
+}

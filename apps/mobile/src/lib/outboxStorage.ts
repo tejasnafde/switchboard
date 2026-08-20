@@ -8,7 +8,7 @@
  */
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { createLogger } from '@shared/logger'
-import type { QueuedMessage } from './outboxModel'
+import { parseQueuedMessage, type QueuedMessage } from './outboxModel'
 
 const log = createLogger('mobile:outbox-storage')
 
@@ -18,34 +18,9 @@ function keyFor(messageId: string): string {
   return `${KEY_PREFIX}${messageId}`
 }
 
-/** Shape check, not a cast: an older build may have written this. */
 function parseQueued(raw: string): QueuedMessage | null {
   try {
-    const value: unknown = JSON.parse(raw)
-    if (!value || typeof value !== 'object') return null
-    const m = value as Partial<QueuedMessage>
-    if (
-      typeof m.connectionId !== 'string' ||
-      typeof m.threadId !== 'string' ||
-      typeof m.messageId !== 'string' ||
-      typeof m.text !== 'string'
-    ) {
-      return null
-    }
-    return {
-      connectionId: m.connectionId,
-      threadId: m.threadId,
-      messageId: m.messageId,
-      text: m.text,
-      images: Array.isArray(m.images)
-        ? m.images.filter((i): i is { url: string; mimeType?: string } =>
-            Boolean(i) && typeof (i as { url?: unknown }).url === 'string',
-          )
-        : undefined,
-      runtimeMode: typeof m.runtimeMode === 'string' ? m.runtimeMode : undefined,
-      createdAt: typeof m.createdAt === 'number' ? m.createdAt : Date.now(),
-      attempts: typeof m.attempts === 'number' ? m.attempts : 0,
-    }
+    return parseQueuedMessage(JSON.parse(raw))
   } catch {
     return null
   }

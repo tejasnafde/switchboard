@@ -25,6 +25,7 @@ let persistedSessionHints: string[] = []
 let typedResumeSessionId: string | null = null
 let threadResumeError: string | null = null
 let turnSteerErrors: string[] = []
+let turnStartGate: Promise<void> | null = null
 
 type MockChild = EventEmitter & {
   stdout: PassThrough
@@ -135,7 +136,8 @@ function makeChild(): MockChild {
         })
       }
       if (message.method === 'turn/start') {
-        queueMicrotask(() => {
+        queueMicrotask(async () => {
+          if (turnStartGate) await turnStartGate
           const turnStartError = turnStartErrors.shift()
           if (turnStartError) {
             stdout.write(JSON.stringify({
@@ -448,6 +450,7 @@ describe('CodexAdapter', () => {
     typedResumeSessionId = null
     threadResumeError = null
     turnSteerErrors = []
+    turnStartGate = null
     vi.clearAllMocks()
   })
 
@@ -1111,7 +1114,7 @@ describe('CodexAdapter', () => {
     }))
   })
 
-  it('maps Codex command lifecycle items to existing tool started and completed events', async () => {
+  it('emits one completed command event after output deltas instead of cumulative snapshots', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
     const onEvent = vi.fn()
@@ -1134,18 +1137,178 @@ describe('CodexAdapter', () => {
         cwd: '/tmp/project',
       },
     })
-    expect(onEvent).toHaveBeenCalledWith({
-      type: 'tool.completed',
-      threadId: 'thread-1',
-      toolId: 'cmd-1',
-      output: 'running tests\n',
-    })
-    expect(onEvent).toHaveBeenCalledWith({
+    const completions = onEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'tool.completed' && event.toolId === 'cmd-1')
+
+    expect(completions).toEqual([{
       type: 'tool.completed',
       threadId: 'thread-1',
       toolId: 'cmd-1',
       output: 'all tests passed',
-    })
+    }])
+  })
+
+  it('uses accumulated command deltas once when the completed item omits aggregatedOutput', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'item/started',
+      params: {
+        threadId: 'codex-thread-1',
+        item: { id: 'cmd-fallback', type: 'commandExecution', command: 'printf fallback', status: 'inProgress' },
+      },
+    }) + '\n')
+    for (const delta of ['fallback ', 'output']) {
+      lastChild?.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/commandExecution/outputDelta',
+        params: { threadId: 'codex-thread-1', itemId: 'cmd-fallback', delta },
+      }) + '\n')
+    }
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'item/completed',
+      params: {
+        threadId: 'codex-thread-1',
+        item: { id: 'cmd-fallback', type: 'commandExecution', command: 'printf fallback', status: 'completed', exitCode: 0 },
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const completions = onEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.type === 'tool.completed' && event.toolId === 'cmd-fallback')
+    expect(completions).toEqual([{
+      type: 'tool.completed',
+      threadId: 'thread-1',
+      toolId: 'cmd-fallback',
+      output: 'fallback output',
+    }])
+  })
+
+  it('keeps forwarded command output bytes linear across many deltas', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, onEvent)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'item/started',
+      params: {
+        threadId: 'codex-thread-1',
+        item: { id: 'cmd-volume', type: 'commandExecution', command: 'large-output', status: 'inProgress' },
+      },
+    }) + '\n')
+    const deltas = Array.from({ length: 128 }, (_, index) => `${index.toString().padStart(3, '0')}:${'x'.repeat(508)}`)
+    for (const delta of deltas) {
+      lastChild?.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/commandExecution/outputDelta',
+        params: { threadId: 'codex-thread-1', itemId: 'cmd-volume', delta },
+      }) + '\n')
+    }
+    const aggregatedOutput = deltas.join('')
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'item/completed',
+      params: {
+        threadId: 'codex-thread-1',
+        item: {
+          id: 'cmd-volume',
+          type: 'commandExecution',
+          command: 'large-output',
+          status: 'completed',
+          exitCode: 0,
+          aggregatedOutput,
+        },
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const forwardedBytes = onEvent.mock.calls
+      .map(([event]) => event)
+      .filter((event) => event.toolId === 'cmd-volume' && typeof event.output === 'string')
+      .reduce((total, event) => total + Buffer.byteLength(event.output), 0)
+    expect(forwardedBytes).toBeLessThanOrEqual(Buffer.byteLength(aggregatedOutput) * 2)
+  })
+
+  it('bounds a completed command payload before it reaches IPC', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'item/completed',
+      params: {
+        threadId: 'codex-thread-1',
+        item: {
+          id: 'cmd-bounded',
+          type: 'commandExecution',
+          command: 'large-output',
+          status: 'completed',
+          aggregatedOutput: `first\n${'x'.repeat(300_000)}\nlast`,
+        },
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const completion = onEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'tool.completed' && event.toolId === 'cmd-bounded')
+    expect(completion.output.length).toBeLessThanOrEqual(256 * 1024)
+    expect(completion.output).toContain('first')
+    expect(completion.output).toContain('last')
+    expect(completion.output).toContain('<truncated')
+  })
+
+  it('bounds accumulated deltas when a completed command has no aggregate', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    for (const delta of [`first\n${'a'.repeat(150_000)}`, `${'b'.repeat(150_000)}\nlast`]) {
+      lastChild?.stdout.write(JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'item/commandExecution/outputDelta',
+        params: { threadId: 'codex-thread-1', itemId: 'cmd-fallback-bounded', delta },
+      }) + '\n')
+    }
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'item/completed',
+      params: {
+        threadId: 'codex-thread-1',
+        item: { id: 'cmd-fallback-bounded', type: 'commandExecution', command: 'large-output', status: 'completed' },
+      },
+    }) + '\n')
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const completion = onEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => event.type === 'tool.completed' && event.toolId === 'cmd-fallback-bounded')
+    expect(completion.output.length).toBeLessThanOrEqual(256 * 1024)
+    expect(completion.output).toContain('first')
+    expect(completion.output).toContain('last')
+    expect(completion.output).toContain('<truncated')
   })
 
   it('does not render the aggregate turn diff as a duplicate raw Edit card', async () => {
@@ -1402,6 +1565,36 @@ describe('CodexAdapter', () => {
     })
     // Must not open a second concurrent turn.
     expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
+  })
+
+  it('waits for an in-flight turn start response before steering a follow-up', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    let releaseTurnStart!: () => void
+    turnStartGate = new Promise<void>((resolve) => { releaseTurnStart = resolve })
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, vi.fn())
+
+    const first = adapter.sendTurn('thread-1', 'first prompt')
+    await vi.waitFor(() => {
+      expect(writes.map((line) => JSON.parse(line)).some((frame) => frame.method === 'turn/start')).toBe(true)
+    })
+    const second = adapter.sendTurn('thread-1', 'follow-up during turn/start')
+    await Promise.resolve()
+
+    let frames = writes.map((line) => JSON.parse(line))
+    expect(frames.filter((frame) => frame.method === 'turn/start')).toHaveLength(1)
+    expect(frames.some((frame) => frame.method === 'turn/steer')).toBe(false)
+
+    releaseTurnStart()
+    await Promise.all([first, second])
+    frames = writes.map((line) => JSON.parse(line))
+    expect(frames.filter((frame) => frame.method === 'turn/start')).toHaveLength(1)
+    expect(frames.filter((frame) => frame.method === 'turn/steer')).toHaveLength(1)
   })
 
   it('retries steering with Codex\'s live turn id instead of starting a concurrent turn', async () => {

@@ -24,6 +24,16 @@ describe('validateUserMessageImages', () => {
     expect(validateUserMessageImages(images)).toBe(images)
   })
 
+  it('accepts more than four images when their combined encoded payload fits the budget', () => {
+    const images = Array.from({ length: 6 }, (_, index) => ({
+      url: 'data:image/png;base64,AAA=',
+      mimeType: 'image/png',
+      name: `${index}.png`,
+    }))
+
+    expect(validateUserMessageImages(images)).toBe(images)
+  })
+
   it('rejects external URLs and mismatched MIME declarations', () => {
     expect(() => validateUserMessageImages([{ url: 'https://tracker.test/pixel.png' }])).toThrow()
     expect(() => validateUserMessageImages([

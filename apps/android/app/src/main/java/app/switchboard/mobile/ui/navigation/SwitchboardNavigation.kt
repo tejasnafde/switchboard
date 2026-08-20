@@ -4,11 +4,13 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -39,6 +41,7 @@ import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.platform.protocol.ProtocolHubEvent
 import app.switchboard.mobile.platform.notification.PendingNotificationRoute
+import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
 import app.switchboard.mobile.platform.google.GoogleAccountPresentation
 import app.switchboard.mobile.platform.google.GoogleCredentialImportResult
 import app.switchboard.mobile.platform.google.GoogleSignOutResult
@@ -55,15 +58,30 @@ import app.switchboard.mobile.ui.connections.ConnectionsPresenter
 import app.switchboard.mobile.ui.connections.ConnectionsScreen
 import app.switchboard.mobile.ui.connections.RuntimeConnectionsMapper
 import app.switchboard.mobile.ui.google.GoogleAccountScreen
+import app.switchboard.mobile.ui.home.HomeMachineSnapshot
+import app.switchboard.mobile.ui.home.HomeProjectRefreshCoordinator
+import app.switchboard.mobile.ui.home.HomePresenter
+import app.switchboard.mobile.ui.home.HomeRecentRow
+import app.switchboard.mobile.ui.home.HomeScreen
+import app.switchboard.mobile.ui.browse.BrowseCachedActivity
 import app.switchboard.mobile.ui.newsession.NewSessionScreen
 import app.switchboard.mobile.ui.pairing.PairingForm
 import app.switchboard.mobile.ui.pairing.PairingSaveIntent
 import app.switchboard.mobile.ui.pairing.PairingSaveResult
 import app.switchboard.mobile.ui.pairing.PairingScreen
+import app.switchboard.mobile.ui.search.MessageSearchRouteHost
+import app.switchboard.mobile.ui.search.MessageSearchScreen
+import app.switchboard.mobile.data.remote.MessageSearchState
+import app.switchboard.mobile.data.remote.GitContextCoordinator
 import app.switchboard.mobile.ui.thread.ThreadLoadState
 import app.switchboard.mobile.ui.thread.ThreadScreen
 import app.switchboard.mobile.ui.thread.ThreadComposerPresentation
 import app.switchboard.mobile.ui.thread.ThreadSessionScreen
+import app.switchboard.mobile.ui.thread.GitContextPresenter
+import app.switchboard.mobile.ui.settings.SettingsPresenter
+import app.switchboard.mobile.ui.settings.SettingsScreen
+import app.switchboard.mobile.update.UpdateAction
+import app.switchboard.mobile.update.UpdateState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.collect
 
@@ -91,11 +109,22 @@ fun SwitchboardNavigation(
     pendingNotificationRoute: PendingNotificationRoute? = null,
     notificationRouteWake: Long = 0,
     onNotificationRouteAccepted: (PendingNotificationRoute) -> Unit = {},
+    pendingAppDeepLink: PendingAppDeepLink? = null,
+    onAppDeepLinkAccepted: (PendingAppDeepLink) -> Unit = {},
+    updateState: UpdateState = UpdateState.Idle,
+    updatesEnabled: Boolean = false,
+    onUpdateAction: (UpdateAction) -> Unit = {},
 ) {
     var navigationState by rememberSaveable { mutableStateOf(NavigationState.root()) }
     val runtimeStatuses by (runtime?.statuses ?: EmptyRuntimeStatuses).collectAsState()
     val visibleConnections = remember(connectionsState, runtimeStatuses) {
         RuntimeConnectionsMapper.overlay(connectionsState, runtimeStatuses)
+    }
+
+    LaunchedEffect(pendingAppDeepLink?.requestId) {
+        val pending = pendingAppDeepLink ?: return@LaunchedEffect
+        navigationState = AppDeepLinkNavigationResolver.resolve(pending)
+        onAppDeepLinkAccepted(pending)
     }
 
     LaunchedEffect(
@@ -129,7 +158,46 @@ fun SwitchboardNavigation(
             ),
     ) {
         when (val route = navigationState.current) {
-            AppRoute.Connections -> ConnectionsScreen(
+            AppRoute.Connections -> HomeRouteHost(
+                connectionsState = visibleConnections,
+                snapshot = offlineSnapshot ?: emptyOfflineSnapshot(),
+                runtime = runtime,
+                googleAccountPresentation = googleAccountPresentation,
+                onGoogleAccount = {
+                    navigationState = navigationState.push(AppRoute.GoogleAccount)
+                },
+                onSettings = {
+                    navigationState = navigationState.push(AppRoute.Settings)
+                },
+                onAdd = { navigationState = navigationState.push(AppRoute.Pair()) },
+                onManageMachines = {
+                    navigationState = navigationState.push(AppRoute.ManageConnections)
+                },
+                onMachine = { connectionId ->
+                    navigationState = navigationState.push(
+                        AppRoute.Browse(
+                            connectionId = connectionId,
+                            connectionLabel = visibleConnections.labelFor(connectionId),
+                        ),
+                    )
+                },
+                onRecent = { recent ->
+                    navigationState = navigationState.push(
+                        AppRoute.Thread(
+                            connectionId = recent.connectionId,
+                            connectionLabel = recent.connectionLabel,
+                            threadId = recent.threadId,
+                            projectPath = recent.projectPath,
+                            worktreePath = recent.worktreePath,
+                            title = recent.title,
+                            provider = recent.provider,
+                        ),
+                    )
+                },
+                onRetry = { onConnectionIntent(ConnectionIntent.Retry) },
+            )
+
+            AppRoute.ManageConnections -> ConnectionsScreen(
                 presentation = ConnectionsPresenter.present(visibleConnections),
                 buildStamp = buildStamp,
                 onAdd = { navigationState = navigationState.push(AppRoute.Pair()) },
@@ -143,6 +211,7 @@ fun SwitchboardNavigation(
                 onGoogleAccount = {
                     navigationState = navigationState.push(AppRoute.GoogleAccount)
                 },
+                onBack = ::navigateBack,
                 onConnectionIntent = { intent ->
                     when (intent) {
                         is ConnectionIntent.Open -> {
@@ -168,6 +237,24 @@ fun SwitchboardNavigation(
                 },
             )
 
+            AppRoute.Settings -> SettingsScreen(
+                presentation = SettingsPresenter.present(
+                    account = googleAccountPresentation,
+                    connections = visibleConnections,
+                    updateState = updateState,
+                    versionName = buildStamp.removePrefix("v").substringBefore(" ·"),
+                    updatesEnabled = updatesEnabled,
+                ),
+                onBack = ::navigateBack,
+                onGoogleAccount = {
+                    navigationState = navigationState.push(AppRoute.GoogleAccount)
+                },
+                onManageMachines = {
+                    navigationState = navigationState.push(AppRoute.ManageConnections)
+                },
+                onUpdateAction = onUpdateAction,
+            )
+
             is AppRoute.Pair -> PairingScreen(
                 editConnectionId = route.editConnectionId,
                 startManual = route.startManual,
@@ -189,6 +276,43 @@ fun SwitchboardNavigation(
                 onSignOut = onGoogleSignOut,
                 onBack = ::navigateBack,
             )
+
+            is AppRoute.MessageSearch -> {
+                val lease = runtime?.lease(route.connectionId)
+                if (lease == null) {
+                    MessageSearchScreen(
+                        connectionLabel = route.connectionLabel,
+                        state = MessageSearchState(
+                            error = RootNavigationPolicy.fallback(
+                                runtimeStatuses[route.connectionId],
+                            ).message(),
+                        ),
+                        onQueryChange = {},
+                        onRetry = { runtime?.retry(route.connectionId) },
+                        onBack = ::navigateBack,
+                        onOpenResult = {},
+                    )
+                } else {
+                    MessageSearchRouteHost(
+                        connectionLabel = route.connectionLabel,
+                        lease = lease,
+                        onBack = ::navigateBack,
+                        onOpenResult = { result ->
+                            navigationState = navigationState.push(
+                                AppRoute.Thread(
+                                    connectionId = route.connectionId,
+                                    connectionLabel = route.connectionLabel,
+                                    threadId = result.conversationId,
+                                    projectPath = result.projectPath,
+                                    worktreePath = result.worktreePath,
+                                    title = result.conversationTitle,
+                                    provider = result.agentType,
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
 
             is AppRoute.Browse -> BrowseRouteHost(
                 route = route,
@@ -228,6 +352,14 @@ fun SwitchboardNavigation(
                         ),
                     )
                 },
+                onMessageSearch = {
+                    navigationState = navigationState.push(
+                        AppRoute.MessageSearch(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                        ),
+                    )
+                },
                 onBack = ::navigateBack,
             )
 
@@ -261,6 +393,110 @@ fun SwitchboardNavigation(
 }
 
 @Composable
+private fun HomeRouteHost(
+    connectionsState: ConnectionsLoadState,
+    snapshot: OfflineSnapshot,
+    runtime: RootNavigationRuntime?,
+    googleAccountPresentation: GoogleAccountPresentation,
+    onGoogleAccount: () -> Unit,
+    onSettings: () -> Unit,
+    onAdd: () -> Unit,
+    onManageMachines: () -> Unit,
+    onMachine: (String) -> Unit,
+    onRecent: (HomeRecentRow) -> Unit,
+    onRetry: () -> Unit,
+) {
+    var recentLimit by rememberSaveable { mutableStateOf(HOME_RECENT_PAGE_SIZE) }
+    val connectionItems = (connectionsState as? ConnectionsLoadState.Ready)
+        ?.connections
+        .orEmpty()
+    val snapshotStore = remember(runtime, snapshot) {
+        runtime?.browseSnapshotStore(snapshot)
+    }
+    val machineSnapshots = connectionItems.map { connection ->
+        val lease = runtime?.lease(connection.id)
+        key(connection.id, lease?.scope) {
+            val liveActivity = if (runtime != null && lease != null) {
+                val activity by remember(runtime, lease.scope) {
+                    runtime.browseActivity(lease.scope)
+                }.collectAsState()
+                activity
+            } else {
+                emptyMap()
+            }
+            val cachedActivity = remember(snapshot, connection.id) {
+                BrowseCachedActivity.from(snapshot, connection.id)
+            }
+            val projects = if (lease != null && snapshotStore != null) {
+                val refreshCoordinator = remember(
+                    connection.id,
+                    connection.label,
+                    lease.scope,
+                    snapshotStore,
+                ) {
+                    HomeProjectRefreshCoordinator(
+                        connectionId = connection.id,
+                        connectionLabel = connection.label,
+                        offlineSnapshot = snapshot,
+                        remote = SwitchboardBrowseRemote(lease.client),
+                        expectedGeneration = lease.scope.generation,
+                        snapshotStore = snapshotStore,
+                    )
+                }
+                DisposableEffect(refreshCoordinator) {
+                    refreshCoordinator.start()
+                    onDispose(refreshCoordinator::close)
+                }
+                val refreshed by refreshCoordinator.state.collectAsState()
+                refreshed.projects.homeProjects()
+            } else {
+                remember(snapshotStore, connection.id) {
+                    snapshotStore?.load(connection.id)?.projects.orEmpty()
+                }
+            }
+            val threadStates = projects
+                .asSequence()
+                .flatMap { it.sessions.asSequence() }
+                .mapNotNull { session ->
+                    runtime?.cachedThread(connection.id, session.id)?.let { session.id to it }
+                }
+                .toMap()
+            HomeMachineSnapshot(
+                connectionId = connection.id,
+                connectionLabel = connection.label,
+                projects = projects,
+                threadStates = threadStates,
+                activity = cachedActivity + liveActivity,
+            )
+        }
+    }
+    val recents = remember(machineSnapshots, recentLimit) {
+        HomePresenter.recents(machineSnapshots, recentLimit)
+    }
+    HomeScreen(
+        recents = recents,
+        machines = ConnectionsPresenter.present(connectionsState),
+        googleAccount = googleAccountPresentation,
+        onRecent = onRecent,
+        onMachine = onMachine,
+        onShowMore = {
+            recentLimit = (recentLimit + HOME_RECENT_PAGE_SIZE).coerceAtMost(recents.total)
+        },
+        onManageMachines = onManageMachines,
+        onAddMachine = onAdd,
+        onGoogleAccount = onGoogleAccount,
+        onSettings = onSettings,
+        onRetryMachines = onRetry,
+    )
+}
+
+private fun BrowseLoadState<BrowseProjectRecord>.homeProjects(): List<Project> = when (this) {
+    is BrowseLoadState.Loading -> cached.map(BrowseProjectRecord::project)
+    is BrowseLoadState.Ready -> items.map(BrowseProjectRecord::project)
+    is BrowseLoadState.Failed -> cached.map(BrowseProjectRecord::project)
+}
+
+@Composable
 private fun GoogleAccountRouteHost(
     accountPresentation: GoogleAccountPresentation,
     onImportCredentials: suspend (String) -> GoogleCredentialImportResult,
@@ -291,6 +527,7 @@ private fun BrowseRouteHost(
     onProjectTap: (Project) -> Unit,
     onSessionTap: (Conversation) -> Unit,
     onNewSession: (String, String) -> Unit,
+    onMessageSearch: () -> Unit,
     onBack: () -> Unit,
 ) {
     val lease = remember(runtime, route.connectionId, status) {
@@ -317,6 +554,7 @@ private fun BrowseRouteHost(
             onSessionTap = onSessionTap,
             onRetry = { runtime?.retry(route.connectionId) },
             onNewSession = onNewSession,
+            onMessageSearch = onMessageSearch,
             onBack = onBack,
         )
         return
@@ -331,6 +569,7 @@ private fun BrowseRouteHost(
         onProjectTap = onProjectTap,
         onSessionTap = onSessionTap,
         onNewSession = onNewSession,
+        onMessageSearch = onMessageSearch,
         onBack = onBack,
     )
 }
@@ -345,6 +584,7 @@ private fun ConnectedBrowseRoute(
     onProjectTap: (Project) -> Unit,
     onSessionTap: (Conversation) -> Unit,
     onNewSession: (String, String) -> Unit,
+    onMessageSearch: () -> Unit,
     onBack: () -> Unit,
 ) {
     val initialCollapsed = remember(route.connectionId, snapshot) {
@@ -397,6 +637,7 @@ private fun ConnectedBrowseRoute(
             }
         },
         onNewSession = onNewSession,
+        onMessageSearch = onMessageSearch,
         onRenameConversation = coordinator::renameConversation,
         onToggleWorkspace = coordinator::toggleWorkspace,
         onBack = onBack,
@@ -616,6 +857,7 @@ private fun ConnectedThreadRoute(
             },
             clock = ThreadSessionClock(System::currentTimeMillis),
             initialComposer = savedDraft,
+            snapshotStore = runtime.threadSnapshots,
             projectPath = route.projectPath,
             worktreePath = route.worktreePath,
             providerHint = route.provider,
@@ -655,6 +897,32 @@ private fun ConnectedThreadRoute(
     val viewingRenewalRegistration = remember(runtime) {
         { callback: () -> Unit -> runtime.registerViewingLeaseRenewal(callback) }
     }
+    val gitContextCoordinator = remember(
+        lease.scope,
+        route.projectPath,
+        route.worktreePath,
+        lease.client,
+    ) {
+        GitContextCoordinator(
+            connectionId = route.connectionId,
+            expectedGeneration = lease.scope.generation,
+            cwd = route.worktreePath ?: route.projectPath,
+            branchHint = null,
+            remote = lease.client,
+        )
+    }
+    val gitContextState by gitContextCoordinator.state.collectAsState()
+    LaunchedEffect(gitContextCoordinator) { gitContextCoordinator.refresh() }
+    DisposableEffect(gitContextCoordinator) {
+        onDispose(gitContextCoordinator::close)
+    }
+    val gitContext = remember(route.projectPath, route.worktreePath, gitContextState) {
+        GitContextPresenter.present(
+            projectPath = route.projectPath,
+            worktreePath = route.worktreePath,
+            state = gitContextState,
+        )
+    }
 
     ThreadSessionScreen(
         coordinator = coordinator,
@@ -669,6 +937,8 @@ private fun ConnectedThreadRoute(
             runtime.performOutboxAction(composerKey, origin, action)
         },
         composerError = composerError,
+        gitContext = gitContext,
+        onRefreshGitContext = gitContextCoordinator::refresh,
         viewingLeaseLifecycle = viewingLeaseLifecycle,
         registerViewingLeaseRenewal = viewingRenewalRegistration,
     )
@@ -701,6 +971,11 @@ private fun <T> LeaseFallback.toBrowseLoadState(): BrowseLoadState<T> = when (th
     is LeaseFallback.Retryable -> BrowseLoadState.Failed(message)
 }
 
+private fun LeaseFallback.message(): String = when (this) {
+    LeaseFallback.Loading -> "Connecting to machine"
+    is LeaseFallback.Retryable -> message
+}
+
 private fun emptyOfflineSnapshot() = OfflineSnapshot(
     connections = emptyList(),
     credentialRefs = emptyList(),
@@ -716,3 +991,5 @@ private fun emptyOfflineSnapshot() = OfflineSnapshot(
     pendingControlActions = emptyList(),
     quarantinedRecords = emptyList(),
 )
+
+private const val HOME_RECENT_PAGE_SIZE = 5

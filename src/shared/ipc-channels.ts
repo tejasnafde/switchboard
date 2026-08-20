@@ -276,6 +276,7 @@ export const ProviderChannels = {
   INTERRUPT: 'provider:interrupt',
   RESPOND_TO_REQUEST: 'provider:respond-to-request',
   STOP_SESSION: 'provider:stop-session',
+  SWITCH_INSTANCE: 'provider:switch-instance',
   SET_RUNTIME_MODE: 'provider:set-runtime-mode',
   SET_MODEL: 'provider:set-model',
   OPENCODE_LIST_MODELS: 'provider:opencode-list-models',

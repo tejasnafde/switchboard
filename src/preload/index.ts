@@ -18,7 +18,7 @@ import type {
   SaveMessageParams,
   MobilePairingStatus,
 } from '@shared/types'
-import type { RuntimeEvent, RuntimeMode, ApprovalDecision } from '@shared/provider-events'
+import type { RuntimeEvent, RuntimeMode, ApprovalDecision, ProviderInstanceSwitchRequest, ProviderInstanceSwitchResult } from '@shared/provider-events'
 import type { DeviceSessionView, PairingCode } from '@shared/device-auth'
 import type { PartialClientConfig } from '@shared/google-oauth'
 import type { LiveSessionSummary } from '@shared/live-sessions'
@@ -619,6 +619,38 @@ const api = {
 
     stopSession: (threadId: string) =>
       transport.invoke(ProviderChannels.STOP_SESSION, threadId),
+
+    switchInstance: async (
+      threadId: string,
+      request: ProviderInstanceSwitchRequest,
+    ): Promise<ProviderInstanceSwitchResult> => {
+      const target = routingTable.resolve(ProviderChannels.SWITCH_INSTANCE, [threadId, request])
+      if (target !== 'local') {
+        try {
+          const instances = await router.invokeOn<import('@shared/types').ProviderInstance[]>(
+            'local',
+            ProviderInstanceChannels.LIST,
+          )
+          const instance = instances.find((candidate) => candidate.id === request.targetInstanceId)
+          if (instance && (instance.agentType === 'claude-code' || instance.agentType === 'codex')) {
+            const remoteConfigDir = await router.invokeOn<string | null>(
+              'local',
+              ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
+              instance.agentType,
+              instance.id,
+            )
+            request = {
+              ...request,
+              targetInstanceName: instance.displayName,
+              ...(remoteConfigDir ? { targetRemoteConfigDir: remoteConfigDir } : {}),
+            }
+          }
+        } catch (err) {
+          log.warn('profile switch enrichment failed; remote will reject an unknown profile safely', err)
+        }
+      }
+      return transport.invoke(ProviderChannels.SWITCH_INSTANCE, threadId, request)
+    },
 
     isAvailable: (provider: 'claude' | 'codex') =>
       transport.invoke(ProviderChannels.IS_AVAILABLE, provider),

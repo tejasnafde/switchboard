@@ -2,16 +2,22 @@ package app.switchboard.mobile.data.remote
 
 import app.switchboard.mobile.domain.remote.AnswerQuestion
 import app.switchboard.mobile.domain.remote.ApprovalDecision
+import app.switchboard.mobile.domain.remote.ArchiveConversationResult
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.Conversation
+import app.switchboard.mobile.domain.remote.CurrentBranchResult
 import app.switchboard.mobile.domain.remote.CreateConversation
 import app.switchboard.mobile.domain.remote.ImageInput
 import app.switchboard.mobile.domain.remote.LoadedSession
+import app.switchboard.mobile.domain.remote.MessageSearchResult
 import app.switchboard.mobile.domain.remote.MarkReadResult
 import app.switchboard.mobile.domain.remote.ModelOption
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.ProviderSkill
 import app.switchboard.mobile.domain.remote.ProviderInstance
+import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchRequest
+import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchResult
+import app.switchboard.mobile.domain.remote.decodeProviderInstanceSwitch
 import app.switchboard.mobile.domain.remote.RemoteDecoders
 import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RemoteRequestKey
@@ -40,14 +46,19 @@ object BackendChannels {
     const val GetConversations = "app:get-conversations"
     const val ListWorkspaces = "app:workspace-list"
     const val LoadSession = "app:load-session-by-id"
+    const val SearchMessages = "app:search-messages"
     const val RenameConversation = "app:rename-conversation"
+    const val ArchiveConversation = "app:archive-conversation"
     const val CreateConversation = "app:create-conversation"
     const val MarkRead = "app:mark-read"
     const val GetSetting = "settings:get"
     const val SetSetting = "settings:set"
+    const val CurrentBranch = "git:current-branch"
     const val StartSession = "provider:start-session"
     const val SendTurn = "provider:send-turn"
     const val Interrupt = "provider:interrupt"
+    const val StopSession = "provider:stop-session"
+    const val SwitchInstance = "provider:switch-instance"
     const val ListSkills = "provider:list-skills"
     const val ListModels = "provider:list-models"
     const val ListProviderInstances = "provider-instances:list"
@@ -64,7 +75,7 @@ object BackendChannels {
 class SwitchboardRemoteClient(
     val connectionId: String,
     private val rpc: RemoteRpc,
-) {
+) : MessageSearchRemote, GitContextRemote {
     fun serverVersion(callback: (RemoteResponse<String>) -> Unit) =
         call(BackendChannels.ServerVersion, decoder = {
             (it as? JsonString)?.value ?: error("Expected server version string")
@@ -80,6 +91,16 @@ class SwitchboardRemoteClient(
         BackendChannels.GetConversations,
         array(JsonString(projectPath)),
         RemoteDecoders::conversations,
+        callback,
+    )
+
+    override fun searchMessages(
+        query: String,
+        callback: (RemoteResponse<List<MessageSearchResult>>) -> Unit,
+    ): RequestSubmission = call(
+        BackendChannels.SearchMessages,
+        array(JsonString(query)),
+        RemoteDecoders::messageSearch,
         callback,
     )
 
@@ -115,6 +136,16 @@ class SwitchboardRemoteClient(
     ) = command(
         BackendChannels.RenameConversation,
         array(JsonString(conversationId), JsonString(title)),
+        callback,
+    )
+
+    fun archiveConversation(
+        conversationId: String,
+        callback: (RemoteResponse<ArchiveConversationResult>) -> Unit,
+    ) = call(
+        BackendChannels.ArchiveConversation,
+        array(JsonString(conversationId)),
+        ::decodeArchiveConversation,
         callback,
     )
 
@@ -196,6 +227,16 @@ class SwitchboardRemoteClient(
         callback,
     )
 
+    override fun currentBranch(
+        cwd: String,
+        callback: (RemoteResponse<CurrentBranchResult>) -> Unit,
+    ): RequestSubmission = call(
+        BackendChannels.CurrentBranch,
+        array(JsonString(cwd)),
+        RemoteDecoders::currentBranch,
+        callback,
+    )
+
     fun startSession(
         input: StartSession,
         callback: (RemoteResponse<StartedSession>) -> Unit,
@@ -247,6 +288,23 @@ class SwitchboardRemoteClient(
 
     fun interrupt(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) =
         command(BackendChannels.Interrupt, array(JsonString(threadId)), callback)
+
+    fun switchInstance(
+        threadId: String,
+        request: ProviderInstanceSwitchRequest,
+        callback: (RemoteResponse<ProviderInstanceSwitchResult>) -> Unit,
+    ) = call(
+        BackendChannels.SwitchInstance,
+        array(
+            JsonString(threadId),
+            obj(
+                "targetInstanceId" to JsonString(request.targetInstanceId),
+                "expectedCurrentInstanceId" to request.expectedCurrentInstanceId.jsonStringOrNull(),
+            ),
+        ),
+        ::decodeProviderInstanceSwitch,
+        callback,
+    )
 
     fun listSkills(
         threadId: String,
@@ -346,6 +404,19 @@ class SwitchboardRemoteClient(
             ?.takeIf(String::isNotBlank)
             ?: "Backend rejected push request"
         return PushBackendResult.Rejected(error)
+    }
+
+    private fun decodeArchiveConversation(value: JsonValue?): ArchiveConversationResult {
+        val body = value as? JsonObject ?: error("Expected archive response object")
+        val ok = (body.values["ok"] as? JsonBoolean)?.value
+            ?: error("Expected archive response ok field")
+        val archived = (body.values["archived"] as? JsonBoolean)?.value
+            ?: error("Expected archive response archived field")
+        if (ok && archived) return ArchiveConversationResult.Archived
+        val reason = (body.values["error"] as? JsonString)?.value
+            ?.takeIf(String::isNotBlank)
+            ?: "Backend did not confirm the archive"
+        error(reason)
     }
 
     private fun <T> call(

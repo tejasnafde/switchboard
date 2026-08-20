@@ -1,7 +1,6 @@
 package app.switchboard.mobile.data.composer
 
 import app.switchboard.mobile.domain.composer.ComposerAttachment
-import app.switchboard.mobile.domain.composer.ComposerAttachmentPolicy
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
@@ -72,10 +71,8 @@ class ComposerDraftCoordinator(
         sources: List<ComposerImageSource>,
     ): ComposerDraftMutation {
         val current = mutableDrafts.value[key] ?: ComposerDraft(key)
-        val remaining = (ComposerAttachmentPolicy.MaxAttachments - current.attachments.size)
-            .coerceAtLeast(0)
-        if (remaining == 0 || sources.isEmpty()) return ComposerDraftMutation.Success
-        val staged = when (val result = stager.stage(sources.take(remaining))) {
+        if (sources.isEmpty()) return ComposerDraftMutation.Success
+        val staged = when (val result = stager.stage(sources)) {
             is ComposerAttachmentStageResult.Failure -> return ComposerDraftMutation.Failure(result.reason)
             is ComposerAttachmentStageResult.Success -> result.attachments
         }
@@ -99,9 +96,6 @@ class ComposerDraftCoordinator(
         sources: List<ComposerImageSource>,
     ): ComposerDraftMutation {
         val previous = mutableDrafts.value[draft.key]
-        if (sources.size > ComposerAttachmentPolicy.MaxAttachments) {
-            return ComposerDraftMutation.Failure("A draft supports at most 4 images")
-        }
         val staged = when (val result = stager.stage(sources)) {
             is ComposerAttachmentStageResult.Failure -> return ComposerDraftMutation.Failure(result.reason)
             is ComposerAttachmentStageResult.Success -> result.attachments

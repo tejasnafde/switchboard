@@ -9,9 +9,13 @@
 import { describe, it, expect } from 'vitest'
 import {
   deliveryAction,
+  markRejected,
+  nextDeliverablePerThread,
+  parseQueuedMessage,
   retryDelayMs,
   shouldRetry,
   MAX_RETRY_DELAY_MS,
+  type QueuedMessage,
 } from '../../apps/mobile/src/lib/outboxModel'
 import { TurnDeduper } from '../../src/shared/turn-dedupe'
 
@@ -82,6 +86,38 @@ describe('shouldRetry', () => {
     // mistake and the harder one to notice.
     expect(shouldRetry(new Error('No session: thread-1'))).toBe(false)
     expect(shouldRetry(new Error('no handler: provider:send-turn'))).toBe(false)
+  })
+})
+
+describe('deterministic rejection recovery', () => {
+  const image = { url: 'data:image/png;base64,AAAA', mimeType: 'image/png' }
+  const message: QueuedMessage = {
+    connectionId: 'mac',
+    threadId: 'thread',
+    messageId: 'turn-1',
+    text: 'inspect this',
+    images: [image],
+    runtimeMode: 'sandbox',
+    createdAt: 1,
+    attempts: 0,
+  }
+
+  it('preserves the complete queued turn as a blocked editable record', () => {
+    expect(markRejected(message, new Error('Images exceed the 3 MiB synchronization limit'))).toEqual({
+      ...message,
+      blockedReason: 'Images exceed the 3 MiB synchronization limit',
+    })
+  })
+
+  it('restores the blocked reason with the turn after a process restart', () => {
+    const blocked = markRejected(message, new Error('Unsupported image type'))
+    expect(parseQueuedMessage(JSON.parse(JSON.stringify(blocked)))).toEqual(blocked)
+  })
+
+  it('does not let a blocked turn prevent a later valid turn from sending', () => {
+    const blocked = markRejected(message, new Error('Unsupported image type'))
+    const later = { ...message, messageId: 'turn-2', text: 'continue', images: undefined }
+    expect(nextDeliverablePerThread([blocked, later])).toEqual([later])
   })
 })
 

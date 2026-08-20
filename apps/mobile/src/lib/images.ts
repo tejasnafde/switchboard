@@ -17,8 +17,11 @@ export interface PickedAsset {
   fileName?: string | null
 }
 
-/** Cap on one image. Base64 inflates it by a third before it crosses a socket. */
-export const MAX_IMAGE_BYTES = 8 * 1024 * 1024
+/** Ceiling on the complete encoded data URLs attached to one turn. */
+export const MAX_TURN_WIRE_BYTES = 3 * 1024 * 1024
+
+/** Largest decoded payload that could fit before the data-URL header is added. */
+export const MAX_IMAGE_BYTES = Math.floor(MAX_TURN_WIRE_BYTES * 3 / 4)
 
 const EXT_TO_MIME: Record<string, string> = {
   png: 'image/png',
@@ -26,17 +29,26 @@ const EXT_TO_MIME: Record<string, string> = {
   jpeg: 'image/jpeg',
   gif: 'image/gif',
   webp: 'image/webp',
-  heic: 'image/heic',
-  heif: 'image/heif',
-  bmp: 'image/bmp',
 }
 
-/** Picker-reported type, else the extension, else jpeg for a camera roll. */
-export function inferMimeType(asset: Pick<PickedAsset, 'uri' | 'mimeType' | 'fileName'>): string {
-  if (asset.mimeType && asset.mimeType.startsWith('image/')) return asset.mimeType
+const SUPPORTED_MIME_TYPES = new Set(Object.values(EXT_TO_MIME))
+
+function canonicalMimeType(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase()
+  if (normalized === 'image/jpg') return 'image/jpeg'
+  return normalized && SUPPORTED_MIME_TYPES.has(normalized) ? normalized : null
+}
+
+/** Picker-reported type, else a supported extension. Unknown bytes stay unknown. */
+export function inferMimeType(
+  asset: Pick<PickedAsset, 'uri' | 'mimeType' | 'fileName'>,
+): string | null {
+  const reported = canonicalMimeType(asset.mimeType)
+  if (reported) return reported
+  if (asset.mimeType?.trim().toLowerCase().startsWith('image/')) return null
   const name = asset.fileName ?? asset.uri
   const ext = name.split('?')[0].split('.').pop()?.toLowerCase()
-  return (ext && EXT_TO_MIME[ext]) || 'image/jpeg'
+  return (ext && EXT_TO_MIME[ext]) || null
 }
 
 /** Decoded byte length of a base64 string, without decoding it. */
@@ -47,7 +59,7 @@ export function base64ByteLength(b64: string): number {
 
 export type ImageResult =
   | { ok: true; payload: ImagePayload }
-  | { ok: false; reason: 'no-data' | 'too-large' }
+  | { ok: false; reason: 'no-data' | 'too-large' | 'unsupported-type' }
 
 /** Needs `base64: true` from the picker - a file:// uri means nothing to a remote backend. */
 export function assetToPayload(asset: PickedAsset): ImageResult {
@@ -55,15 +67,11 @@ export function assetToPayload(asset: PickedAsset): ImageResult {
   if (!b64) return { ok: false, reason: 'no-data' }
   if (base64ByteLength(b64) > MAX_IMAGE_BYTES) return { ok: false, reason: 'too-large' }
   const mimeType = inferMimeType(asset)
-  return { ok: true, payload: { url: `data:${mimeType};base64,${b64}`, mimeType } }
+  if (!mimeType) return { ok: false, reason: 'unsupported-type' }
+  const payload = { url: `data:${mimeType};base64,${b64}`, mimeType }
+  if (payload.url.length > MAX_TURN_WIRE_BYTES) return { ok: false, reason: 'too-large' }
+  return { ok: true, payload }
 }
-
-/**
- * Ceiling on one turn's attachments. TcpHost enforces its frame cap by
- * destroying the connection, so an oversized turn looks like the backend
- * dropping out. Kept well under it.
- */
-export const MAX_TURN_WIRE_BYTES = 12 * 1024 * 1024
 
 /** Wire cost of the attachments as they will be sent. */
 export function totalWireBytes(payloads: Array<Pick<ImagePayload, 'url'>>): number {

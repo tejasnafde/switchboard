@@ -144,6 +144,7 @@ jobs:
             '[.[] | select(.draft == false and (.tag_name | startswith("mobile-v"))) | .assets[] | select(.name | endswith(".apk"))][0].browser_download_url // empty')"
           if [[ -n "$PREVIOUS_APK_URL" ]]; then
             curl -fL --retry 3 --retry-delay 2 -o "$RUNNER_TEMP/switchboard-previous.apk" "$PREVIOUS_APK_URL"
+            node ../../scripts/verify-android-apk.mjs --identity-only --apk "$RUNNER_TEMP/switchboard-previous.apk"
             PREVIOUS_BADGING="$("$AAPT2" dump badging "$RUNNER_TEMP/switchboard-previous.apk")"
             PREVIOUS_VERSION_CODE="$(sed -n "s/^package:.* versionCode='\([0-9][0-9]*\)'.*/\1/p" <<< "$PREVIOUS_BADGING" | head -1)"
             if (( NEW_VERSION_CODE <= PREVIOUS_VERSION_CODE )); then

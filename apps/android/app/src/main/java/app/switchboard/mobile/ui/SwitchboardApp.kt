@@ -18,12 +18,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import app.switchboard.mobile.AppContract
+import app.switchboard.mobile.BuildConfig
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.ui.connections.ConnectionIntent
 import app.switchboard.mobile.ui.connections.ConnectionsLoadState
 import app.switchboard.mobile.ui.navigation.RootNavigationRuntime
 import app.switchboard.mobile.platform.notification.PendingNotificationRoute
+import app.switchboard.mobile.platform.deeplink.PendingAppDeepLink
 import app.switchboard.mobile.platform.google.GoogleAccountPresentation
 import app.switchboard.mobile.platform.google.GoogleCredentialImportResult
 import app.switchboard.mobile.platform.google.GoogleSignOutResult
@@ -42,7 +43,7 @@ import app.switchboard.mobile.update.UpdateState
 fun SwitchboardApp(
     modifier: Modifier = Modifier,
     connectionsState: ConnectionsLoadState = ConnectionsLoadState.Ready(emptyList()),
-    buildStamp: String = "v${AppContract.VERSION_NAME} · native",
+    buildStamp: String = "v${BuildConfig.VERSION_NAME} · native",
     resolveEditForm: (String) -> PairingForm? = { null },
     onConnectionIntent: (ConnectionIntent) -> Unit = {},
     onPairingIntent: suspend (PairingSaveIntent) -> PairingSaveResult = {
@@ -60,7 +61,10 @@ fun SwitchboardApp(
     pendingNotificationRoute: PendingNotificationRoute? = null,
     notificationRouteWake: Long = 0,
     onNotificationRouteAccepted: (PendingNotificationRoute) -> Unit = {},
+    pendingAppDeepLink: PendingAppDeepLink? = null,
+    onAppDeepLinkAccepted: (PendingAppDeepLink) -> Unit = {},
     updateState: UpdateState = UpdateState.Idle,
+    updatesEnabled: Boolean = false,
     onUpdateAction: (UpdateAction) -> Unit = {},
 ) {
     val updatePresentation = UpdateSurfacePresentation.from(updateState)
@@ -127,6 +131,11 @@ fun SwitchboardApp(
                 pendingNotificationRoute = pendingNotificationRoute,
                 notificationRouteWake = notificationRouteWake,
                 onNotificationRouteAccepted = onNotificationRouteAccepted,
+                pendingAppDeepLink = pendingAppDeepLink,
+                onAppDeepLinkAccepted = onAppDeepLinkAccepted,
+                updateState = updateState,
+                updatesEnabled = updatesEnabled,
+                onUpdateAction = onUpdateAction,
             )
 
         }

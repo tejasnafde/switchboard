@@ -51,3 +51,14 @@ object ThreadChromePolicy {
         return String.format(Locale.US, "%,d / %,d tokens", used, maximum)
     }
 }
+
+object ThreadArchivePolicy {
+    fun canArchive(status: String?, archiving: Boolean): Boolean =
+        !archiving && status?.lowercase(Locale.ROOT) in setOf(
+            "idle",
+            "ready",
+            "cached",
+            "error",
+            "failed",
+        )
+}

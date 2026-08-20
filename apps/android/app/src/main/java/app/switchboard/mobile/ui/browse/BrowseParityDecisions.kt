@@ -4,9 +4,17 @@ import app.switchboard.mobile.domain.remote.BrowseDecisions
 import app.switchboard.mobile.domain.remote.Project
 import app.switchboard.mobile.domain.remote.Workspace
 
+enum class BrowseThreadAttention {
+    Unknown,
+    None,
+    Approval,
+    Input,
+}
+
 data class BrowseThreadActivity(
     val status: String?,
     val unread: Int,
+    val attention: BrowseThreadAttention = BrowseThreadAttention.Unknown,
 )
 
 data class BrowseProjectActivity(
