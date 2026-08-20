@@ -123,3 +123,13 @@ export function shouldRetry(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error ?? '')
   return /closed|timed out|queue full|network|socket|ECONN|not connected/i.test(message)
 }
+
+export type DeliveryFailureDisposition = 'cleanup-retry' | 'retry' | 'reject'
+
+export function deliveryFailureDisposition(
+  providerAccepted: boolean,
+  error: unknown,
+): DeliveryFailureDisposition {
+  if (providerAccepted) return 'cleanup-retry'
+  return shouldRetry(error) ? 'retry' : 'reject'
+}

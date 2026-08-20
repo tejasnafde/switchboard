@@ -14,15 +14,16 @@ import { createLogger } from '@shared/logger'
 import type { RuntimeMode } from '@shared/provider-events'
 import {
   deliveryAction,
+  deliveryFailureDisposition,
   markRejected,
   nextDeliverablePerThread,
   retryDelayMs,
-  shouldRetry,
   type QueuedMessage,
 } from '../lib/outboxModel'
 import { loadQueued, removeQueued, saveQueued } from '../lib/outboxStorage'
 import { getClient } from './connections'
 import { useChatStore, threadKey } from './chat'
+import { prepareMobileHandoffTurn } from '../lib/handoffTurn'
 
 const log = createLogger('store:outbox')
 
@@ -155,18 +156,26 @@ async function deliver(message: QueuedMessage): Promise<void> {
     return
   }
 
+  let providerAccepted = false
   try {
+    // A same-provider profile recovery can intentionally start a fresh native
+    // session. Resolve its persisted handoff only when the queued turn is
+    // actually deliverable; this survives offline sends and app restarts.
+    const prepared = await prepareMobileHandoffTurn(client, message.threadId, message.text)
     await client.sendTurn(
       message.threadId,
-      message.text,
+      prepared.wireMessage,
       message.runtimeMode as RuntimeMode | undefined,
       message.images,
       // Doubles as the idempotency key, so a retry is safe.
       message.messageId,
     )
+    providerAccepted = true
+    if (prepared.pending) await client.setPendingHandoff(message.threadId, null)
     await forget(message.messageId)
   } catch (err) {
-    if (!shouldRetry(err)) {
+    const disposition = deliveryFailureDisposition(providerAccepted, err)
+    if (disposition === 'reject') {
       // Understood and refused: repeating cannot help. Keep the committed
       // payload as a blocked record so text and attachments remain recoverable.
       const blocked = markRejected(message, err)
@@ -186,6 +195,9 @@ async function deliver(message: QueuedMessage): Promise<void> {
         message: `Message not sent: ${err instanceof Error ? err.message : String(err)}`,
       })
       return
+    }
+    if (disposition === 'cleanup-retry') {
+      log.warn('provider accepted queued message; retrying handoff cleanup', err)
     }
     const attempts = message.attempts + 1
     retryNotBefore.set(message.messageId, Date.now() + retryDelayMs(attempts))

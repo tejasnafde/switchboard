@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   deliveryAction,
+  deliveryFailureDisposition,
   markRejected,
   nextDeliverablePerThread,
   parseQueuedMessage,
@@ -86,6 +87,17 @@ describe('shouldRetry', () => {
     // mistake and the harder one to notice.
     expect(shouldRetry(new Error('No session: thread-1'))).toBe(false)
     expect(shouldRetry(new Error('no handler: provider:send-turn'))).toBe(false)
+  })
+})
+
+describe('deliveryFailureDisposition', () => {
+  it('retries cleanup without reporting a delivered provider turn as rejected', () => {
+    expect(deliveryFailureDisposition(true, new Error('database is read-only'))).toBe('cleanup-retry')
+  })
+
+  it('retains normal retry classification before provider acceptance', () => {
+    expect(deliveryFailureDisposition(false, new Error('WebSocket closed'))).toBe('retry')
+    expect(deliveryFailureDisposition(false, new Error('No session'))).toBe('reject')
   })
 })
 

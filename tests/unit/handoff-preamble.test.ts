@@ -135,6 +135,12 @@ describe('stripHandoffPreamble', () => {
     expect(stripHandoffPreamble(`${preamble}\n\ntail`)).toBe('tail')
   })
 
+  it('uses the final footer when replayed history quotes the footer sentence', () => {
+    const quoted = `Earlier we discussed: ${HANDOFF_PREAMBLE_FOOTER}`
+    const wire = `${buildHandoffPreamble([user(quoted), assistant('noted')])}\n\nactual message`
+    expect(stripHandoffPreamble(wire)).toBe('actual message')
+  })
+
   it('is a no-op for ordinary messages', () => {
     expect(stripHandoffPreamble('plain message')).toBe('plain message')
     expect(stripHandoffPreamble('')).toBe('')

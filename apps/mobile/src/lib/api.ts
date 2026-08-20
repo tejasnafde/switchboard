@@ -7,7 +7,14 @@ import { WsTransport } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
 import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PushChannels, SttChannels } from '@shared/ipc-channels'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
-import type { RuntimeEvent, RuntimeMode, ProviderKind, ApprovalDecision } from '@shared/provider-events'
+import type {
+  RuntimeEvent,
+  RuntimeMode,
+  ProviderKind,
+  ApprovalDecision,
+  ProviderInstanceSwitchRequest,
+  ProviderInstanceSwitchResult,
+} from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
@@ -208,6 +215,18 @@ export class SwitchboardClient {
 
   stopSession(threadId: string): Promise<void> {
     return this.transport.invoke(ProviderChannels.STOP_SESSION, threadId)
+  }
+
+  switchInstance(threadId: string, input: ProviderInstanceSwitchRequest): Promise<ProviderInstanceSwitchResult> {
+    return this.transport.invoke(ProviderChannels.SWITCH_INSTANCE, threadId, input)
+  }
+
+  getPendingHandoff(threadId: string): Promise<{ from: string | null }> {
+    return this.transport.invoke(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, threadId)
+  }
+
+  setPendingHandoff(threadId: string, from: string | null): Promise<{ ok: boolean }> {
+    return this.transport.invoke(AppChannels.SET_CONVERSATION_PENDING_HANDOFF, threadId, from)
   }
 
   setRuntimeMode(threadId: string, mode: RuntimeMode): Promise<void> {

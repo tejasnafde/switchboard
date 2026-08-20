@@ -14,14 +14,12 @@ import { RuntimeEventBus } from './event-bus'
 import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-drift'
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
 import { promisify } from 'node:util'
 import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb, getMessageForConversationById, setConversationProviderInstanceId } from '../db/database'
+import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb, getMessageForConversationById } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -40,8 +38,8 @@ import {
   type PeerMessageInput,
 } from '@shared/peer-messaging'
 import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
-import { defaultClaudeDir, ensureClaudeSessionResumable } from './claude-session-migrate'
-import { ensureCodexSessionResumable } from './codex-session-migrate'
+import { defaultClaudeDir, prepareClaudeProfileSwitch } from './claude-session-migrate'
+import { prepareCodexProfileSwitch } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
 import type { AgentType } from '@shared/types'
 import type {
@@ -80,6 +78,11 @@ type ProviderCredentialSnapshot = {
   remoteConfigDir?: string
 }
 
+type StoppedSessionSnapshot = {
+  descriptor: ProviderSession
+  credentials: ProviderCredentialSnapshot
+}
+
 export class ProviderRegistry implements PeerToolHost {
   private adapters: Map<ProviderKind, ProviderAdapter>
   private opencodeAcp: OpencodeAcpAdapter
@@ -98,6 +101,10 @@ export class ProviderRegistry implements PeerToolHost {
   /** Exact credentials/config location used by the live adapter. Kept private
    * so a failed rotation can restore the same identity even if DB rows change. */
   private sessionCredentials = new Map<string, ProviderCredentialSnapshot>()
+  /** Fences callbacks by provider-process execution, not conversation id. A
+   * stopped source and its replacement intentionally share a thread id. */
+  private sessionEpochs = new Map<string, number>()
+  private nextSessionEpoch = 0
   /** Worktree list cache per repo folder (10s TTL, failures negatively
    *  cached, refs realpath-normalized once at fill). Drift state lives in
    *  the watcher, turn-scoped. */
@@ -644,10 +651,18 @@ export class ProviderRegistry implements PeerToolHost {
       return checkRemoteProviderAuth(agentType, remoteProviderConfigDir(agentType, remoteConfigDir))
     })
 
-    const stopSession = async (threadId: string): Promise<void> => {
+    const stopSession = async (threadId: string): Promise<StoppedSessionSnapshot | null> => {
       const adapter = this.sessionAdapters.get(threadId)
-      if (!adapter) return
+      if (!adapter) return null
       await adapter.stopSession(threadId)
+      // stopSession is the adapter's drain boundary. Session-rotation events
+      // remain valid through it, so snapshot only after it resolves.
+      const descriptor = this.sessionDescriptors.get(threadId)
+      const credentials = this.sessionCredentials.get(threadId)
+      if (!descriptor || !credentials) {
+        throw new Error('Provider stopped without a recoverable session snapshot')
+      }
+      this.sessionEpochs.delete(threadId)
       this.flushAssistantText(threadId)
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
@@ -659,6 +674,13 @@ export class ProviderRegistry implements PeerToolHost {
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
       notebookManager.detach(threadId)
+      return {
+        descriptor: { ...descriptor },
+        credentials: {
+          ...credentials,
+          resolvedEnv: { ...credentials.resolvedEnv },
+        },
+      }
     }
 
     const startSession = async (
@@ -711,6 +733,7 @@ export class ProviderRegistry implements PeerToolHost {
       })
       void startPromise.catch(() => {})
       this.startingSessions.set(opts.threadId, startPromise)
+      let allocatedEpoch: number | null = null
       try {
 
       // Remote backends support Claude Code and Codex. Reject maintenance-only
@@ -780,7 +803,11 @@ export class ProviderRegistry implements PeerToolHost {
 
       let latestSessionId = opts.resumeSessionId
       const providerInstanceId = resolvedInstanceId ?? null
+      const executionEpoch = ++this.nextSessionEpoch
+      allocatedEpoch = executionEpoch
+      this.sessionEpochs.set(opts.threadId, executionEpoch)
       const session = await adapter.startSession(enrichedOpts, (event) => {
+        if (this.sessionEpochs.get(opts.threadId) !== executionEpoch) return
         if (event.type === 'session') latestSessionId = event.sessionId
         if (eventGate?.state === 'staging' || eventGate?.state === 'flushing') {
           eventGate.events.push(event)
@@ -819,6 +846,9 @@ export class ProviderRegistry implements PeerToolHost {
       resolveStart(session)
       return session
       } catch (err) {
+        if (allocatedEpoch !== null && this.sessionEpochs.get(initialOpts.threadId) === allocatedEpoch) {
+          this.sessionEpochs.delete(initialOpts.threadId)
+        }
         rejectStart(err)
         throw err
       } finally {
@@ -884,7 +914,7 @@ export class ProviderRegistry implements PeerToolHost {
       if (!oldCredentials) {
         return failure('context-unavailable', 'The live profile credentials are unavailable for a safe rollback')
       }
-      const oldOpts: SessionStartOpts = {
+      let oldOpts: SessionStartOpts = {
         threadId,
         provider: descriptor.provider,
         cwd: descriptor.cwd,
@@ -896,45 +926,27 @@ export class ProviderRegistry implements PeerToolHost {
       }
       const targetInstanceId = input.targetInstanceId
       const targetInstanceName = target?.displayName ?? input.targetInstanceName ?? targetInstanceId
-      const targetOpts: SessionStartOpts = {
+      let targetOpts: SessionStartOpts = {
         ...oldOpts,
         instanceId: targetInstanceId,
         ...(input.targetRemoteConfigDir ? { remoteConfigDir: input.targetRemoteConfigDir } : {}),
       }
-      const continuity = descriptor.sessionId ? 'preserved' as const : 'not-needed' as const
       const targetEventGate: ProviderEventGate = { state: 'staging', events: [] }
       const oldRemoteConfig = oldCredentials.remoteConfigDir && agentType !== 'opencode'
         ? remoteProviderConfigDir(agentType, oldCredentials.remoteConfigDir)
         : null
-      const migrationCandidates = Array.from(new Set([
-        ...(oldRemoteConfig ? [oldRemoteConfig] : []),
-        ...(oldCredentials.resolvedOauthDir ? [oldCredentials.resolvedOauthDir] : []),
-      ]))
-
-      if (descriptor.provider === 'claude' && descriptor.sessionId) {
-        const migration = ensureClaudeSessionResumable({
-          sessionId: descriptor.sessionId,
-          cwd: descriptor.cwd,
-          toDir: remoteTargetConfig ?? target?.oauthDir ?? defaultClaudeDir(),
-          candidates: [...migrationCandidates, defaultClaudeDir(), ...listOauthDirsForAgent('claude-code')],
-        })
-        if (!migration.ok) {
-          return failure('context-unavailable', 'The existing Claude transcript could not be prepared for the selected profile')
-        }
-      }
-      if (descriptor.provider === 'codex' && descriptor.sessionId) {
-        const migration = await ensureCodexSessionResumable({
-          sessionId: descriptor.sessionId,
-          toDir: remoteTargetConfig ?? target?.oauthDir ?? join(homedir(), '.codex'),
-          candidates: [...migrationCandidates, join(homedir(), '.codex'), ...listOauthDirsForAgent('codex')],
-        })
-        if (!migration.ok) {
-          return failure('context-unavailable', 'The existing Codex rollout could not be prepared for the selected profile')
-        }
-      }
-
+      const codexDefaultDir = remoteProviderConfigDir('codex', undefined)
+      const startFresh = input.onContextConflict === 'start-fresh'
         try {
-          await stopSession(threadId)
+          const stopped = await stopSession(threadId)
+          if (!stopped) throw new Error('The source provider session disappeared during the switch')
+          oldOpts = {
+            ...oldOpts,
+            resumeSessionId: stopped.descriptor.sessionId,
+          }
+          targetOpts = startFresh
+            ? { ...targetOpts, resumeSessionId: undefined }
+            : { ...targetOpts, resumeSessionId: stopped.descriptor.sessionId }
         } catch (stopError) {
           this.publish({ type: 'status', threadId, status: 'error' })
           return failure(
@@ -943,9 +955,53 @@ export class ProviderRegistry implements PeerToolHost {
             false,
           )
         }
+
+        if (!startFresh && oldOpts.resumeSessionId) {
+          const preparation = descriptor.provider === 'claude'
+            ? await prepareClaudeProfileSwitch({
+                sessionId: oldOpts.resumeSessionId,
+                cwd: descriptor.cwd,
+                fromDir: oldRemoteConfig ?? oldCredentials.resolvedOauthDir ?? defaultClaudeDir(),
+                toDir: remoteTargetConfig ?? target?.oauthDir ?? defaultClaudeDir(),
+              })
+            : await prepareCodexProfileSwitch({
+                sessionId: oldOpts.resumeSessionId,
+                fromDir: oldRemoteConfig ?? oldCredentials.resolvedOauthDir ?? codexDefaultDir,
+                toDir: remoteTargetConfig ?? target?.oauthDir ?? codexDefaultDir,
+              })
+          if (!preparation.ok) {
+            try {
+              await startSession(oldOpts, true, undefined, oldCredentials)
+              const conflict = preparation.reason === 'context-conflict' || preparation.reason === 'concurrent-modification'
+              return failure(
+                conflict ? 'context-conflict' : 'context-preparation-failed',
+                preparation.detail,
+                true,
+              )
+            } catch (rollbackError) {
+              this.publish({ type: 'status', threadId, status: 'error' })
+              return failure(
+                'rollback-failed',
+                `Context preparation failed: ${preparation.detail}. Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+                false,
+                null,
+              )
+            }
+          }
+        }
+
+        const continuity = startFresh
+          ? 'degraded' as const
+          : oldOpts.resumeSessionId ? 'preserved' as const : 'not-needed' as const
         try {
-          await startSession(targetOpts, false, targetEventGate)
-          setConversationProviderInstanceId(threadId, targetInstanceId)
+          const targetSession = await startSession(targetOpts, false, targetEventGate)
+          commitConversationProviderSwitch({
+            conversationId: threadId,
+            provider: agentType,
+            providerInstanceId: targetInstanceId,
+            providerSessionId: targetSession.sessionId ?? null,
+            ...(startFresh ? { pendingHandoffFrom: agentType } : {}),
+          })
         } catch (targetError) {
           targetEventGate.state = 'discarded'
           targetEventGate.events.length = 0
@@ -1235,6 +1291,7 @@ export class ProviderRegistry implements PeerToolHost {
     }
     this.sessionAdapters.clear()
     this.sessionCwd.clear()
+    this.sessionEpochs.clear()
     if (this.rendererUnsub) {
       this.rendererUnsub()
       this.rendererUnsub = null

@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import {
   ensureClaudeSessionResumable,
+  prepareClaudeProfileSwitch,
   listClaudeSessionCopies,
   findClaudeSessionFile,
   claudeSessionResumableIn,
@@ -166,6 +167,70 @@ describe('transcript placement', () => {
     seed(profileA, REPO, 'turns\n')
     const result = ensure(profileA, TMP_WORKTREE, [profileA, join(root, 'never-created')])
     expect(result.ok).toBe(true)
+  })
+
+  it('advances only the selected target from the stopped source transcript', async () => {
+    const first = '{"type":"user","message":"one"}\n'
+    const second = '{"type":"assistant","message":"two"}\n'
+    const source = seed(profileA, REPO, first + second)
+    const target = seed(profileB, REPO, first)
+
+    const result = await prepareClaudeProfileSwitch({
+      sessionId: SESSION_ID,
+      cwd: REPO,
+      fromDir: profileA,
+      toDir: profileB,
+    })
+
+    expect(result).toEqual({
+      ok: true,
+      copied: true,
+      compatibility: 'target-prefix',
+      sourcePath: source,
+      targetPath: target,
+    })
+    expect(readFileSync(target, 'utf8')).toBe(first + second)
+    expect(readFileSync(source, 'utf8')).toBe(first + second)
+  })
+
+  it('refuses independently extended selected-profile transcripts', async () => {
+    const first = '{"type":"user","message":"one"}\n'
+    const source = seed(profileA, REPO, first + '{"type":"assistant","message":"source"}\n')
+    const target = seed(profileB, REPO, first + '{"type":"assistant","message":"target"}\n')
+
+    const result = await prepareClaudeProfileSwitch({
+      sessionId: SESSION_ID,
+      cwd: REPO,
+      fromDir: profileA,
+      toDir: profileB,
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: 'context-conflict',
+      sourcePath: source,
+      targetPath: target,
+    })
+    expect(readFileSync(source, 'utf8')).toContain('source')
+    expect(readFileSync(target, 'utf8')).toContain('target')
+  })
+
+  it('uses a compatible target superset without overwriting it', async () => {
+    const first = '{"type":"user","message":"one"}\n'
+    seed(profileA, REPO, first)
+    const target = seed(profileB, REPO, first + '{"type":"assistant","message":"two"}\n')
+
+    await expect(prepareClaudeProfileSwitch({
+      sessionId: SESSION_ID,
+      cwd: REPO,
+      fromDir: profileA,
+      toDir: profileB,
+    })).resolves.toMatchObject({
+      ok: true,
+      copied: false,
+      compatibility: 'source-prefix',
+      targetPath: target,
+    })
   })
 })
 
