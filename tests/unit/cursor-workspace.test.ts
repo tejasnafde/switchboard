@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { afterEach, describe, expect, it } from 'vitest'
 import { rmSync } from 'fs'
 import {
@@ -23,18 +24,21 @@ afterEach(() => {
 
 describe('Cursor workspace matching', () => {
   it('decodes a local file URI without treating encoded separators as text', () => {
-    expect(decodeCursorFileUri('file:///Users/tejas/My%20Project')).toBe('/Users/tejas/My Project')
+    const localPath = join(fixture(), 'My Project')
+
+    expect(decodeCursorFileUri(pathToFileURL(localPath).href)).toBe(localPath)
     expect(decodeCursorFileUri('https://example.test/repo')).toBeNull()
   })
 
   it('matches a folder workspace by exact normalized path', () => {
     const storage = fixture()
+    const project = join(storage, 'projects', 'switchboard')
     writeFileSync(join(storage, 'workspace.json'), JSON.stringify({
-      folder: 'file:///Users/tejas/projects/switchboard',
+      folder: pathToFileURL(project).href,
     }))
 
-    expect(workspaceStorageMatchesProject(storage, '/Users/tejas/projects/switchboard')).toBe(true)
-    expect(workspaceStorageMatchesProject(storage, '/Users/tejas/projects/switchboard-child')).toBe(false)
+    expect(workspaceStorageMatchesProject(storage, project)).toBe(true)
+    expect(workspaceStorageMatchesProject(storage, `${project}-child`)).toBe(false)
   })
 
   it('normalizes separators and case on Windows without weakening POSIX matching', () => {
