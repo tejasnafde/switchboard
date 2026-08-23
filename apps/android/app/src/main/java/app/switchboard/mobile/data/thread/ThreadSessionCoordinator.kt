@@ -30,6 +30,7 @@ import app.switchboard.mobile.domain.thread.ThreadEventScope
 import app.switchboard.mobile.domain.thread.ThreadSnapshot
 import app.switchboard.mobile.domain.thread.UserMessageVisibility
 import app.switchboard.mobile.platform.protocol.Cancelable
+import app.switchboard.mobile.protocol.JsonCodec
 import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
@@ -361,7 +362,8 @@ object LoadedSessionSnapshotMapper {
                                 id = "h-${message.id}-t-${tool.id}",
                                 toolId = tool.id,
                                 toolName = tool.name,
-                                input = JsonString(tool.input),
+                                input = runCatching { JsonCodec.parse(tool.input) }
+                                    .getOrElse { JsonString(tool.input) },
                                 output = tool.output,
                                 state = "done",
                             ),

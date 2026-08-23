@@ -1,5 +1,7 @@
 package app.switchboard.mobile.ui.thread
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.provider.OpenableColumns
 import android.graphics.BitmapFactory
 import android.util.Base64
@@ -80,7 +82,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.Placeholder
@@ -169,7 +173,7 @@ fun ThreadScreen(
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
     var lightboxUrl by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     var settingsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
-    val presentation = ThreadPresenter.present(loadState)
+    val presentation = remember(loadState) { ThreadPresenter.present(loadState) }
     val metadata = presentation.metadataOrNull()
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
     val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
@@ -1400,13 +1404,9 @@ private fun TextRow(row: ThreadRowPresentation.Text) {
 @Composable
 private fun ToolRow(row: ThreadRowPresentation.Tool) {
     var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
-    var showingFullOutput by rememberSaveable(row.key) { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val toggle = {
-        if (expanded) showingFullOutput = false
-        expanded = !expanded
-    }
+    val toggle = { expanded = !expanded }
     val accessibilityLabel = listOf(row.label, row.detail)
         .filter(String::isNotBlank)
         .joinToString(", ")
@@ -1431,9 +1431,9 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(ToolActivityLayoutPolicy.CollapsedRowHeightDp.dp)
+                .heightIn(min = ToolActivityLayoutPolicy.CollapsedRowHeightDp.dp)
                 .clip(RoundedCornerShape(6.dp))
-                .background(if (pressed && row.hasOutput) SurfaceRaised else Color.Transparent)
+                .background(if (pressed) SurfaceRaised else Color.Transparent)
                 .then(interactionModifier)
                 .semantics(mergeDescendants = true) {
                     contentDescription = accessibilityLabel
@@ -1443,6 +1443,19 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
                             if (expanded) "Completed, expanded" else "Completed, collapsed"
                         } else {
                             "Completed"
+                        }
+                    }
+                    if (row.hasOutput) {
+                        if (expanded) {
+                            collapse {
+                                toggle()
+                                true
+                            }
+                        } else {
+                            expand {
+                                toggle()
+                                true
+                            }
                         }
                     }
                 }
@@ -1513,11 +1526,9 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
             }
         }
         if (expanded && row.hasOutput) {
-            val outputPreview = remember(row.output) {
-                ToolOutputPresenter.preview(row.output.orEmpty())
-            }
-            val visibleOutput = if (showingFullOutput) row.output.orEmpty() else outputPreview.text
-            val outputPages = remember(visibleOutput) { ToolOutputPresenter.pages(visibleOutput) }
+            val output = row.output.orEmpty()
+            val outputPages = remember(output) { ToolOutputPresenter.pages(output) }
+            val context = LocalContext.current
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1525,35 +1536,34 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
                     .padding(horizontal = 10.dp, vertical = 9.dp)
                     .testTag(ThreadTestTags.toolOutput(row.key)),
             ) {
-                key(showingFullOutput) {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 320.dp)
-                            .testTag(ThreadTestTags.toolOutputList(row.key)),
-                    ) {
-                        items(
-                            count = outputPages.pageCount,
-                            key = { page -> page },
-                        ) { page ->
-                            SelectionContainer {
-                                Text(
-                                    text = outputPages.page(page),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontFamily = GeistMono,
-                                    fontSize = 11.sp,
-                                )
-                            }
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 320.dp)
+                        .testTag(ThreadTestTags.toolOutputList(row.key)),
+                ) {
+                    items(
+                        count = outputPages.pageCount,
+                        key = { page -> page },
+                    ) { page ->
+                        SelectionContainer {
+                            Text(
+                                text = outputPages.page(page),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontFamily = GeistMono,
+                                fontSize = 11.sp,
+                            )
                         }
                     }
                 }
-                if (outputPreview.truncated) {
-                    TextButton(
-                        onClick = { showingFullOutput = !showingFullOutput },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    ) {
-                        Text(if (showingFullOutput) "Show preview" else "Show full output")
-                    }
+                TextButton(
+                    onClick = {
+                        context.getSystemService(ClipboardManager::class.java)
+                            .setPrimaryClip(ClipData.newPlainText("Tool output", output))
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                ) {
+                    Text("Copy full output")
                 }
             }
         }

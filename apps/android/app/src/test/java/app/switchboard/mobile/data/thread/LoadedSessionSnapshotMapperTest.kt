@@ -125,7 +125,7 @@ class LoadedSessionSnapshotMapperTest {
         assertEquals(listOf(image), (feed[0] as FeedItem.User).images)
         val tool = feed[2] as FeedItem.Tool
         assertEquals("Read", tool.toolName)
-        assertEquals(JsonString("{\"path\":\"README.md\"}"), tool.input)
+        assertEquals(JsonObject(linkedMapOf("path" to JsonString("README.md"))), tool.input)
         assertEquals("ok", tool.output)
         assertTrue(tool.state == "done")
     }

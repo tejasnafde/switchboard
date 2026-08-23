@@ -37,7 +37,7 @@
   },
   "verification": {
     "automated": [
-      "ThreadPresentationTest and ToolOutputPresentationTest pass, covering normalized labels/details/icons/state, malformed and historical inputs, 140-character summaries, stable keys, and bounded output previews.",
+      "ThreadPresentationTest, LoadedSessionSnapshotMapperTest, and ToolOutputPresentationTest pass, covering normalized labels/details/icons/state, malformed and historical inputs, 140-character summaries, stable keys, and lossless newline-aware output paging.",
       "ThreadScreenRegressionTest compiles with compact-row regression coverage for 48 dp effective bounds, disclosure, semantics, ordering, recomposition, large fonts, bounded output, and ten-tool density.",
       "Native Android testDebugUnitTest, lintDebug, assembleDebug, and compileDebugAndroidTestKotlin pass.",
       "Repository TypeScript typecheck and the complete split-runtime repository test gate pass."

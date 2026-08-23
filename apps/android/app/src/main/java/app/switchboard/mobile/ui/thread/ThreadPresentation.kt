@@ -150,7 +150,7 @@ sealed interface ThreadRowPresentation {
     }
 
     data class Tool(
-        val source: FeedItem.Tool,
+        override val key: String,
         val label: String,
         val detail: String,
         val iconKind: ToolIconKind,
@@ -158,7 +158,6 @@ sealed interface ThreadRowPresentation {
         val activityState: ToolActivityState,
         val output: String?,
     ) : ThreadRowPresentation {
-        override val key = source.id
         override val kind = ThreadRowKind.TOOL
         val hasOutput: Boolean
             get() = activityState == ToolActivityState.COMPLETED && !output.isNullOrBlank()
@@ -328,7 +327,7 @@ object ThreadPresenter {
         is FeedItem.Tool -> {
             val summary = toolSummary(item.toolName, item.input)
             ThreadRowPresentation.Tool(
-                source = item,
+                key = item.id,
                 label = summary.label,
                 detail = summary.detail,
                 iconKind = summary.iconKind,

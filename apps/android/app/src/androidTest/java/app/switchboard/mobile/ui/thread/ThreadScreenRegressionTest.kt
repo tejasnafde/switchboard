@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHasNoClickAction
 import androidx.compose.ui.test.assertHeightIsEqualTo
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
@@ -392,6 +393,7 @@ class ThreadScreenRegressionTest {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Completed, collapsed"))
             .assert(onClickLabel("Show output"))
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsActions.Expand))
         compose.onNodeWithText("Input").assertDoesNotExist()
         compose.onNodeWithText(output, substring = true).assertDoesNotExist()
         compose.onNodeWithTag(ThreadTestTags.toolOutput("tool")).assertDoesNotExist()
@@ -412,6 +414,7 @@ class ThreadScreenRegressionTest {
         first.performClick()
         first.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Completed, expanded"))
             .assert(onClickLabel("Hide output"))
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsActions.Collapse))
         compose.onNodeWithTag(ThreadTestTags.toolOutput("first")).assertIsDisplayed()
         compose.onNodeWithText("first output").assertIsDisplayed()
         compose.onNodeWithText("second output").assertDoesNotExist()
@@ -520,7 +523,7 @@ class ThreadScreenRegressionTest {
 
         assertTrue(label.right <= detail.left)
         assertTrue(detail.right <= disclosure.left)
-        compose.onNodeWithTag(ThreadTestTags.toolRow("large-font")).assertHeightIsEqualTo(48.dp)
+        compose.onNodeWithTag(ThreadTestTags.toolRow("large-font")).assertHeightIsAtLeast(48.dp)
     }
 
     @Test
@@ -550,12 +553,11 @@ class ThreadScreenRegressionTest {
 
         compose.onNodeWithTag(ThreadTestTags.toolRow("large-output")).performClick()
         compose.onNodeWithText("preview start", substring = true).assertIsDisplayed()
-        compose.onNodeWithText("unique full-output end", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Show full output").performClick()
         val lastPage = ToolOutputPresenter.pages(output).pageCount - 1
         compose.onNodeWithTag(ThreadTestTags.toolOutputList("large-output"))
             .performScrollToIndex(lastPage)
         compose.onNodeWithText("unique full-output end", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("Copy full output").assertIsDisplayed()
     }
 
     private fun composer() = ThreadComposerPresentation(

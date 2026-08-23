@@ -12,7 +12,7 @@ Desktop `ToolCallBlock.tsx` and React Native/iOS `ToolItem` already present comp
 
 ## Considered approaches
 
-1. **Flat inline row with full output composed only when expanded (chosen).** This removes redundant chrome, preserves full output, keeps the interaction local, and does not introduce navigation or storage work.
+1. **Flat inline row with lazy full output only when expanded (chosen).** This removes redundant chrome, preserves full output, composes it in bounded newline-aware pages, keeps the interaction local, and does not introduce navigation or storage work.
 2. **Flat row with a bounded output preview and a second “show full” state.** This protects against very large output but adds another control and state transition. It is unnecessary because collapsed rows compose no output, and the current feed already stores the full value.
 3. **Dedicated output inspector.** This provides the most room for very large output but broadens the task into Android navigation and lifecycle work, which is explicitly out of scope.
 
@@ -39,7 +39,7 @@ The presenter will normalize Claude, Codex, OpenCode, notebook, MCP, and unknown
 3. the useful detail on the same line, visually ellipsized while retaining the full bounded detail in merged semantics;
 4. a decorative disclosure icon only for completed tools with nonblank output.
 
-Only expandable rows receive click semantics and `Role.Button`. Expansion is stored with `rememberSaveable(row.key)`, so a running-to-completed update and unrelated feed recomposition preserve the state for that stable tool identity. Expanded output is composed only after the user requests it, appears immediately below the row without card chrome, and remains complete and selectable.
+Only expandable rows receive click semantics and `Role.Button`. Expansion is stored with `rememberSaveable(row.key)`, so a running-to-completed update and unrelated feed recomposition preserve the state for that stable tool identity. Expanded output is composed lazily only after the user requests it, appears immediately below the row without card chrome, and remains readable and selectable in bounded pages. A copy action preserves one-step access to the complete value.
 
 ## Accessibility
 
