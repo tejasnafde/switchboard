@@ -50,6 +50,7 @@ describe('Cursor workspace matching', () => {
     const root = fixture()
     const storage = join(root, 'storage')
     const project = join(root, 'apps', 'web')
+    const shared = join(root, 'shared')
     const workspaceFile = join(root, 'team.code-workspace')
     mkdirSync(storage)
     mkdirSync(project, { recursive: true })
@@ -57,11 +58,11 @@ describe('Cursor workspace matching', () => {
       // Cursor and VS Code permit JSON comments here.
       "folders": [
         { "path": "apps/web" },
-        { "uri": "file:///Users/example/shared" }
+        { "uri": ${JSON.stringify(pathToFileURL(shared).href)} }
       ]
     }`)
     writeFileSync(join(storage, 'workspace.json'), JSON.stringify({
-      workspace: `file://${workspaceFile}`,
+      workspace: pathToFileURL(workspaceFile).href,
     }))
 
     expect(workspaceStorageMatchesProject(storage, project)).toBe(true)

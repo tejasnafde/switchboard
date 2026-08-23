@@ -2,6 +2,14 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.40 - Keep Cursor recovery portable
+
+### Fixed
+- **The Cursor workspace regression suite still contained one macOS-only URI.** Every file URI fixture now comes from a native path, so Windows exercises the same exact-match and percent-decoding behavior without an expected decode warning.
+
+### Notes
+- This is a test-portability follow-up; runtime Cursor import behavior is unchanged.
+
 ## 0.8.39 - Keep code copy controls steady while agents stream
 
 ### Fixed
