@@ -4,8 +4,11 @@ import { homedir } from 'os'
 import { basename, join } from 'path'
 import type { ChatMessage, SessionSummary } from '@shared/types'
 import { workspaceStorageMatchesProject } from './workspace'
+import { createMainLogger } from '../logger'
 
 type JsonRecord = Record<string, unknown>
+
+const log = createMainLogger('cursor:store')
 
 interface CursorConversationLocation {
   summary: SessionSummary
@@ -95,11 +98,17 @@ function hasTable(db: Database.Database, table: string): boolean {
 }
 
 function openReadonly(path: string): Database.Database | null {
+  if (!existsSync(path)) return null
   try {
     return new Database(path, { readonly: true, fileMustExist: true })
-  } catch {
+  } catch (error) {
+    log.warn('could not open Cursor database', { path, error: errorName(error) })
     return null
   }
+}
+
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : typeof error
 }
 
 function matchingWorkspaceDirs(projectPath: string, userDir: string): string[] {
@@ -110,7 +119,8 @@ function matchingWorkspaceDirs(projectPath: string, userDir: string): string[] {
       .filter((entry) => entry.isDirectory())
       .map((entry) => join(storageRoot, entry.name))
       .filter((dir) => workspaceStorageMatchesProject(dir, projectPath))
-  } catch {
+  } catch (error) {
+    log.warn('could not scan Cursor workspace storage', { storageRoot, error: errorName(error) })
     return []
   }
 }
@@ -148,8 +158,8 @@ function legacyLocations(workspaceDirs: string[]): CursorConversationLocation[] 
           },
         })
       }
-    } catch {
-      // One malformed legacy database must not hide other Cursor workspaces.
+    } catch (error) {
+      log.warn('could not read legacy Cursor database', { databasePath, error: errorName(error) })
     } finally {
       db.close()
     }
@@ -206,7 +216,8 @@ function globalLocations(workspaceDirs: string[], userDir: string): CursorConver
         },
       }]
     })
-  } catch {
+  } catch (error) {
+    log.warn('could not read global Cursor database', { databasePath, error: errorName(error) })
     return []
   } finally {
     db.close()
@@ -251,6 +262,36 @@ function normalizeBubbles(composerId: string, bubbles: JsonRecord[], fallbackTim
   return messages
 }
 
+function loadStoredBubbles(
+  db: Database.Database,
+  location: CursorConversationLocation,
+  composer: JsonRecord,
+): ChatMessage[] {
+  const inline = inlineBubbles(composer)
+  if (inline.length) return normalizeBubbles(location.composerId, inline, location.summary.startedAt)
+  if (!hasTable(db, 'cursorDiskKV')) return []
+
+  const headers = composerHeaders(composer)
+  const prefix = `bubbleId:${location.composerId}:`
+  const rows = db.prepare('SELECT key, value FROM cursorDiskKV WHERE substr(key, 1, ?) = ?')
+    .all(prefix.length, prefix) as Array<{ key: string; value: unknown }>
+  const bubbles = new Map<string, JsonRecord>()
+  for (const row of rows) {
+    const bubble = record(parseCursorJsonValue(row.value))
+    if (!bubble) continue
+    const id = typeof bubble.bubbleId === 'string'
+      ? bubble.bubbleId
+      : row.key.slice(prefix.length)
+    bubbles.set(id, bubble)
+  }
+  const ordered = headers.flatMap((header): JsonRecord[] => {
+    const id = typeof header.bubbleId === 'string' ? header.bubbleId : ''
+    const bubble = bubbles.get(id)
+    return bubble ? [{ ...header, ...bubble }] : []
+  })
+  return normalizeBubbles(location.composerId, ordered, location.summary.startedAt)
+}
+
 function loadGlobal(location: CursorConversationLocation): ChatMessage[] {
   const db = openReadonly(location.databasePath)
   if (!db) return []
@@ -259,28 +300,28 @@ function loadGlobal(location: CursorConversationLocation): ChatMessage[] {
       .get(`composerData:${location.composerId}`) as { value: unknown } | undefined
     const composer = record(parseCursorJsonValue(composerRow?.value))
     if (!composer) return []
-    const inline = inlineBubbles(composer)
-    if (inline.length) return normalizeBubbles(location.composerId, inline, location.summary.startedAt)
-
-    const headers = composerHeaders(composer)
-    const rows = db.prepare('SELECT key, value FROM cursorDiskKV WHERE key GLOB ?')
-      .all(`bubbleId:${location.composerId}:*`) as Array<{ key: string; value: unknown }>
-    const bubbles = new Map<string, JsonRecord>()
-    for (const row of rows) {
-      const bubble = record(parseCursorJsonValue(row.value))
-      if (!bubble) continue
-      const id = typeof bubble.bubbleId === 'string'
-        ? bubble.bubbleId
-        : row.key.slice(`bubbleId:${location.composerId}:`.length)
-      bubbles.set(id, bubble)
-    }
-    const ordered = headers.flatMap((header): JsonRecord[] => {
-      const id = typeof header.bubbleId === 'string' ? header.bubbleId : ''
-      const bubble = bubbles.get(id)
-      return bubble ? [{ ...header, ...bubble }] : []
+    return loadStoredBubbles(db, location, composer)
+  } catch (error) {
+    log.warn('could not load global Cursor conversation', {
+      databasePath: location.databasePath,
+      error: errorName(error),
     })
-    return normalizeBubbles(location.composerId, ordered, location.summary.startedAt)
-  } catch {
+    return []
+  } finally {
+    db.close()
+  }
+}
+
+function loadLegacy(location: CursorConversationLocation): ChatMessage[] {
+  const db = openReadonly(location.databasePath)
+  if (!db) return []
+  try {
+    return loadStoredBubbles(db, location, location.inlineComposer ?? {})
+  } catch (error) {
+    log.warn('could not load legacy Cursor conversation', {
+      databasePath: location.databasePath,
+      error: errorName(error),
+    })
     return []
   } finally {
     db.close()
@@ -304,10 +345,6 @@ export async function loadCursorConversation(
   if (!location) return null
   const messages = location.format === 'global'
     ? loadGlobal(location)
-    : normalizeBubbles(
-      location.composerId,
-      inlineBubbles(location.inlineComposer ?? {}),
-      location.summary.startedAt,
-    )
+    : loadLegacy(location)
   return { summary: location.summary, messages }
 }

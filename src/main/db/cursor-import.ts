@@ -12,6 +12,7 @@ export interface CursorSnapshot {
   projectPath: string
   title: string
   startedAt: number
+  sourceMessageCount: number
   messages: CursorSnapshotMessage[]
 }
 
@@ -24,6 +25,9 @@ export function importCursorSnapshot(
   db: Database.Database,
   snapshot: CursorSnapshot,
 ): CursorSnapshotResult {
+  if (snapshot.sourceMessageCount > 0 && snapshot.messages.length === 0) {
+    throw new Error('Cursor reported messages, but their content could not be loaded')
+  }
   const conversationId = `cursor:${snapshot.composerId}`
   return db.transaction((): CursorSnapshotResult => {
     const existing = db.prepare(

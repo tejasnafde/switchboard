@@ -1,6 +1,9 @@
-import { readFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { dirname, join, posix, win32 } from 'path'
 import { fileURLToPath } from 'url'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('cursor:workspace')
 
 interface CursorWorkspaceMetadata {
   folder?: unknown
@@ -21,7 +24,10 @@ export function decodeCursorFileUri(value: string): string | null {
     const url = new URL(value)
     if (url.protocol !== 'file:') return null
     return fileURLToPath(url)
-  } catch {
+  } catch (error) {
+    log.warn('could not decode Cursor file URI', {
+      error: error instanceof Error ? error.name : typeof error,
+    })
     return null
   }
 }
@@ -89,10 +95,15 @@ function stripJsonComments(input: string): string {
 }
 
 function readJson(path: string, comments = false): unknown {
+  if (!existsSync(path)) return null
   try {
     const raw = readFileSync(path, 'utf8')
     return JSON.parse(comments ? stripJsonComments(raw) : raw)
-  } catch {
+  } catch (error) {
+    log.warn('could not read Cursor workspace metadata', {
+      path,
+      error: error instanceof Error ? error.name : typeof error,
+    })
     return null
   }
 }

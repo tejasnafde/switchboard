@@ -59,4 +59,11 @@ describe('release signing mode', () => {
       win: { signAndEditExecutable: true },
     })
   })
+
+  it('pins local macOS distribution scripts to the unsigned path', () => {
+    const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: Record<string, string> }
+    for (const name of ['dist', 'dist:fast', 'dist:arm64', 'dist:x64', 'dist:mac', 'dist:publish']) {
+      expect(pkg.scripts[name]).toContain('CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder')
+    }
+  })
 })

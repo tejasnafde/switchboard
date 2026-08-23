@@ -88,6 +88,30 @@ describe('Cursor conversation stores', () => {
     ])
   })
 
+  it('loads legacy headers from literal per-bubble keys even when the composer id contains glob characters', async () => {
+    const { userDir, project } = fixture()
+    const matching = workspace(userDir, 'matching', project)
+    const db = createTables(join(matching, 'state.vscdb'))
+    const composerId = 'legacy[*]?'
+    db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)').run(
+      'composer.composerData',
+      JSON.stringify({
+        allComposers: [{
+          composerId,
+          name: 'Header-only legacy',
+          fullConversationHeadersOnly: [{ bubbleId: 'u1', type: 1 }],
+        }],
+      }),
+    )
+    const insert = db.prepare('INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)')
+    insert.run(`bubbleId:${composerId}:u1`, JSON.stringify({ bubbleId: 'u1', type: 1, text: 'literal match' }))
+    insert.run('bubbleId:legacyXxY:u1', JSON.stringify({ bubbleId: 'u1', type: 1, text: 'glob leak' }))
+    db.close()
+
+    const loaded = await loadCursorConversation(project, composerId, userDir)
+    expect(loaded?.messages.map((message) => message.content)).toEqual(['literal match'])
+  })
+
   it('reads current global headers and ordered per-bubble records', async () => {
     const { userDir, project } = fixture()
     workspace(userDir, 'workspace-hash', project)

@@ -150,6 +150,7 @@ export function registerAppHandlers(host: BackendHost): void {
           projectPath,
           title: loaded.summary.title,
           startedAt: loaded.summary.startedAt,
+          sourceMessageCount: loaded.summary.messageCount,
           messages: loaded.messages,
         })
       } catch (error) {
