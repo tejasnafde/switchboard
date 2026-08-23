@@ -2,6 +2,18 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.37 - Never show a turn the provider never received
+
+### Fixed
+- **A Desktop turn with several images could appear in the transcript and survive a restart without ever reaching the provider.** The backend now owns one typed, atomic submission envelope containing the provider text, visible body, pills, validated images, runtime mode, stable origin, and handoff metadata. The user row, title, activity, and handoff state commit only after that exact payload crosses the provider acceptance boundary.
+- **Retrying an uncertain send could either duplicate provider work or let a later message skip ahead.** Exact origins and payload hashes now reconcile against durable reserved, dispatching, ambiguous, and completed states. Completed duplicates replay the canonical user event without a second dispatch; changed payloads conflict; true post-boundary uncertainty blocks later origins until durable state proves the outcome.
+- **Definite rejection could leave a sent-looking bubble while discarding editable input.** Startup and pre-dispatch failures release their reservation, restore idle state, keep text, pills, and attachments recoverable, and suppress title/activity changes. React Native/iOS and native Android outboxes preserve their stable origins and attachment files under the same classification.
+
+### Notes
+- There is still no four-image or seven-image count cap. Admission validates PNG/JPEG/WebP/GIF data URLs against the existing 3 MiB aggregate synchronization budget.
+- Older paired mobile clients retain an explicit compatibility path during Desktop/backend rollout. Native Android remains at 0.5.5 for this release; its existing origin-bearing outbox is compatible with the new backend, while the paired Android source changes await a separately verified signed APK release.
+- The release gate passed 2,698 Desktop tests across 269 files, both TypeScript projects, 17 React Native tests, and 739 Android tests. A built-Electron live Codex turn sent seven genuine screenshots below 3 MiB and produced exactly one provider dispatch, one completed durable acceptance, one seven-image database row, and one canonical user event; Codex independently counted all seven attachments.
+
 ## 0.8.36 - Switch accounts without losing the thread
 
 ### Added
