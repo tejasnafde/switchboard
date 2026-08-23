@@ -9,6 +9,7 @@
       "evidence": [
         "src/main/cursor/store.ts",
         "src/renderer/components/sidebar/NativeSessionImportModal.tsx",
+        "tests/unit/cursor-workspace.test.ts",
         "tests/unit/cursor-store.test.ts",
         "tests/unit/cursor-import.test.ts"
       ]
@@ -54,7 +55,7 @@
   },
   "verification": {
     "automated": [
-      "Cursor workspace, legacy/current storage, snapshot, handoff, Desktop UI, React Native presentation, root typecheck and build gates",
+      "Cursor workspace matching with native file-URI fixtures on macOS, Linux, and Windows; legacy/current storage, snapshot, handoff, Desktop UI, React Native presentation, root typecheck and build gates",
       "Feature-parity validator against origin/main"
     ],
     "hardware": [],
