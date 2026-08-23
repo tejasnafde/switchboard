@@ -20,6 +20,7 @@ import {
   removeAcceptedOrigin,
   recoverRejectedDraft,
   selectRejectedForEdit,
+  queuedBubbleExists,
   retryDelayMs,
   shouldRetry,
   MAX_RETRY_DELAY_MS,
@@ -211,6 +212,17 @@ describe('canonical acceptance reconciliation', () => {
       accepted: undefined,
       remaining: messages,
     })
+  })
+})
+
+describe('outbox bubble restoration', () => {
+  it('restores a durable intent when the debounced transcript cache missed it', () => {
+    expect(queuedBubbleExists([], 'user-origin-1')).toBe(false)
+  })
+
+  it('does not duplicate an optimistic bubble or its canonical history row', () => {
+    expect(queuedBubbleExists(['user-origin-1'], 'user-origin-1')).toBe(true)
+    expect(queuedBubbleExists(['h-user-origin-1'], 'user-origin-1')).toBe(true)
   })
 })
 

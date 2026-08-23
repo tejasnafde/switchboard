@@ -11,12 +11,13 @@
  */
 import { create } from 'zustand'
 import { createLogger } from '@shared/logger'
-import type { RuntimeMode } from '@shared/provider-events'
+import { echoMessageId, type RuntimeMode } from '@shared/provider-events'
 import {
   deliveryAction,
   deliveryFailureDisposition,
   markRejected,
   nextDeliverablePerThread,
+  queuedBubbleExists,
   removeAcceptedOrigin,
   retryDelayMs,
   selectRejectedForEdit,
@@ -24,7 +25,7 @@ import {
 } from '../lib/outboxModel'
 import { loadQueued, removeQueued, saveQueued } from '../lib/outboxStorage'
 import { getClient } from './connections'
-import { useChatStore, threadKey } from './chat'
+import { chatCacheReady, useChatStore, threadKey } from './chat'
 import { prepareMobileHandoffTurn } from '../lib/handoffTurn'
 import { submitQueuedTurn } from '../lib/outboxDelivery'
 
@@ -117,6 +118,19 @@ export async function hydrateOutbox(): Promise<void> {
   if (messages.length === 0) return
   log.info(`restored ${messages.length} unsent message(s)`)
   useOutboxStore.setState({ messages })
+  await chatCacheReady
+  for (const message of messages) {
+    const key = threadKey(message.connectionId, message.threadId)
+    const bubbleId = echoMessageId(message.messageId)
+    const itemIds = useChatStore.getState().threads[key]?.items.map((item) => item.id) ?? []
+    if (queuedBubbleExists(itemIds, bubbleId)) continue
+    useChatStore.getState().addUserMessage(
+      key,
+      message.text,
+      message.images?.map((image) => image.url),
+      bubbleId,
+    )
+  }
   void drain()
 }
 

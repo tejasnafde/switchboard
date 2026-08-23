@@ -139,6 +139,10 @@ export function removeAcceptedOrigin(
   return { accepted, remaining: messages.filter((message) => message !== accepted) }
 }
 
+export function queuedBubbleExists(itemIds: string[], bubbleId: string): boolean {
+  return itemIds.some((itemId) => itemId === bubbleId || itemId === `h-${bubbleId}`)
+}
+
 export function outboxPresentation(message: QueuedMessage): {
   state: 'queued' | 'ambiguous' | 'failed'
   label: string
