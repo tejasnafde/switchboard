@@ -143,6 +143,9 @@ export function registerAppHandlers(host: BackendHost): void {
     if (source === 'cursor') {
       const loaded = await loadCursorConversation(projectPath, sessionId)
       if (!loaded) return { ok: false, error: 'The Cursor transcript could not be read' }
+      if (!loaded.complete) {
+        return { ok: false, error: 'The Cursor transcript is incomplete; no snapshot was changed' }
+      }
       let imported: ReturnType<typeof importCursorSnapshot>
       try {
         imported = importCursorSnapshot(getDb(), {
@@ -150,7 +153,6 @@ export function registerAppHandlers(host: BackendHost): void {
           projectPath,
           title: loaded.summary.title,
           startedAt: loaded.summary.startedAt,
-          sourceMessageCount: loaded.summary.messageCount,
           messages: loaded.messages,
         })
       } catch (error) {

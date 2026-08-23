@@ -163,10 +163,48 @@ describe('Cursor conversation stores', () => {
     })])
 
     const loaded = await loadCursorConversation(project, 'current-1', userDir)
+    expect(loaded?.complete).toBe(true)
     expect(loaded?.messages.map(({ id, role, content, timestamp }) => ({ id, role, content, timestamp }))).toEqual([
       { id: 'cursor:current-1:u2', role: 'user', content: 'question', timestamp: 2100 },
       { id: 'cursor:current-1:a2', role: 'assistant', content: 'answer', timestamp: 2200 },
     ])
+  })
+
+  it('distinguishes a complete tool-only conversation from missing user message bodies', async () => {
+    const { userDir, project } = fixture()
+    workspace(userDir, 'workspace-hash', project)
+    mkdirSync(join(userDir, 'globalStorage'))
+    const db = createTables(join(userDir, 'globalStorage', 'state.vscdb'))
+    db.exec(`
+      CREATE TABLE composerHeaders (
+        composerId TEXT PRIMARY KEY, workspaceId TEXT, createdAt INTEGER,
+        lastUpdatedAt INTEGER, isArchived INTEGER, isSubagent INTEGER,
+        recency INTEGER, checkpointAt INTEGER, value TEXT
+      );
+    `)
+    const insertHeader = db.prepare(`INSERT INTO composerHeaders
+      (composerId, workspaceId, createdAt, lastUpdatedAt, isArchived, isSubagent, recency, checkpointAt, value)
+      VALUES (?, 'workspace-hash', 1, 2, 0, 0, 1, 0, '{}')`)
+    const insertKv = db.prepare('INSERT INTO cursorDiskKV (key, value) VALUES (?, ?)')
+    insertHeader.run('tool-only')
+    insertKv.run('composerData:tool-only', JSON.stringify({
+      fullConversationHeadersOnly: [{ bubbleId: 't1', type: 3 }],
+    }))
+    insertKv.run('bubbleId:tool-only:t1', JSON.stringify({ bubbleId: 't1', type: 3, text: 'tool call' }))
+    insertHeader.run('missing-user')
+    insertKv.run('composerData:missing-user', JSON.stringify({
+      fullConversationHeadersOnly: [{ bubbleId: 'u1', type: 1 }],
+    }))
+    db.close()
+
+    await expect(loadCursorConversation(project, 'tool-only', userDir)).resolves.toMatchObject({
+      complete: true,
+      messages: [],
+    })
+    await expect(loadCursorConversation(project, 'missing-user', userDir)).resolves.toMatchObject({
+      complete: false,
+      messages: [],
+    })
   })
 
   it('isolates malformed records and returns an empty result when Cursor is absent', async () => {

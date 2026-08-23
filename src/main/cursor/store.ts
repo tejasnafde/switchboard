@@ -21,6 +21,12 @@ interface CursorConversationLocation {
 export interface LoadedCursorConversation {
   summary: SessionSummary
   messages: ChatMessage[]
+  complete: boolean
+}
+
+interface CursorMessageLoad {
+  messages: ChatMessage[]
+  complete: boolean
 }
 
 function cursorUserDir(): string {
@@ -266,12 +272,20 @@ function loadStoredBubbles(
   db: Database.Database,
   location: CursorConversationLocation,
   composer: JsonRecord,
-): ChatMessage[] {
+): CursorMessageLoad {
   const inline = inlineBubbles(composer)
-  if (inline.length) return normalizeBubbles(location.composerId, inline, location.summary.startedAt)
-  if (!hasTable(db, 'cursorDiskKV')) return []
+  if (inline.length) {
+    return {
+      messages: normalizeBubbles(location.composerId, inline, location.summary.startedAt),
+      complete: true,
+    }
+  }
 
   const headers = composerHeaders(composer)
+  const textHeaders = headers.filter((header) => roleOf(header) !== null)
+  if (!hasTable(db, 'cursorDiskKV')) {
+    return { messages: [], complete: textHeaders.length === 0 }
+  }
   const prefix = `bubbleId:${location.composerId}:`
   const rows = db.prepare('SELECT key, value FROM cursorDiskKV WHERE substr(key, 1, ?) = ?')
     .all(prefix.length, prefix) as Array<{ key: string; value: unknown }>
@@ -289,32 +303,37 @@ function loadStoredBubbles(
     const bubble = bubbles.get(id)
     return bubble ? [{ ...header, ...bubble }] : []
   })
-  return normalizeBubbles(location.composerId, ordered, location.summary.startedAt)
+  return {
+    messages: normalizeBubbles(location.composerId, ordered, location.summary.startedAt),
+    complete: textHeaders.every((header) => (
+      typeof header.bubbleId === 'string' && bubbles.has(header.bubbleId)
+    )),
+  }
 }
 
-function loadGlobal(location: CursorConversationLocation): ChatMessage[] {
+function loadGlobal(location: CursorConversationLocation): CursorMessageLoad {
   const db = openReadonly(location.databasePath)
-  if (!db) return []
+  if (!db) return { messages: [], complete: false }
   try {
     const composerRow = db.prepare('SELECT value FROM cursorDiskKV WHERE key = ?')
       .get(`composerData:${location.composerId}`) as { value: unknown } | undefined
     const composer = record(parseCursorJsonValue(composerRow?.value))
-    if (!composer) return []
+    if (!composer) return { messages: [], complete: false }
     return loadStoredBubbles(db, location, composer)
   } catch (error) {
     log.warn('could not load global Cursor conversation', {
       databasePath: location.databasePath,
       error: errorName(error),
     })
-    return []
+    return { messages: [], complete: false }
   } finally {
     db.close()
   }
 }
 
-function loadLegacy(location: CursorConversationLocation): ChatMessage[] {
+function loadLegacy(location: CursorConversationLocation): CursorMessageLoad {
   const db = openReadonly(location.databasePath)
-  if (!db) return []
+  if (!db) return { messages: [], complete: false }
   try {
     return loadStoredBubbles(db, location, location.inlineComposer ?? {})
   } catch (error) {
@@ -322,7 +341,7 @@ function loadLegacy(location: CursorConversationLocation): ChatMessage[] {
       databasePath: location.databasePath,
       error: errorName(error),
     })
-    return []
+    return { messages: [], complete: false }
   } finally {
     db.close()
   }
@@ -343,8 +362,8 @@ export async function loadCursorConversation(
   const location = discoverLocations(projectPath, userDir)
     .find((candidate) => candidate.composerId === composerId)
   if (!location) return null
-  const messages = location.format === 'global'
+  const loaded = location.format === 'global'
     ? loadGlobal(location)
     : loadLegacy(location)
-  return { summary: location.summary, messages }
+  return { summary: location.summary, ...loaded }
 }

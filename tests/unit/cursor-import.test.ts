@@ -42,7 +42,6 @@ const first = {
   projectPath: '/repo',
   title: 'Imported from Cursor',
   startedAt: 100,
-  sourceMessageCount: 2,
   messages: [
     { id: 'cursor:composer-1:u1', role: 'user', content: 'question', timestamp: 110 },
     { id: 'cursor:composer-1:a1', role: 'assistant', content: 'answer', timestamp: 120 },
@@ -79,7 +78,6 @@ describe('Cursor snapshot import', () => {
     const refreshed = importCursorSnapshot(db, {
       ...first,
       title: 'Renamed in Cursor',
-      sourceMessageCount: 1,
       messages: [{ id: 'cursor:composer-1:u2', role: 'user', content: 'new', timestamp: 200 }],
     })
 
@@ -91,19 +89,28 @@ describe('Cursor snapshot import', () => {
     db.close()
   })
 
-  it('refuses an empty load when Cursor advertised messages without touching the prior snapshot', () => {
+  it('refuses an empty refresh that would erase a prior snapshot', () => {
     const db = database()
     importCursorSnapshot(db, first)
 
     expect(() => importCursorSnapshot(db, {
       ...first,
-      sourceMessageCount: 2,
       messages: [],
     })).toThrow('could not be loaded')
     expect(db.prepare('SELECT id, content FROM messages ORDER BY timestamp').all()).toEqual([
       { id: 'cursor:composer-1:u1', content: 'question' },
       { id: 'cursor:composer-1:a1', content: 'answer' },
     ])
+    db.close()
+  })
+
+  it('allows a first import with no normalized text messages', () => {
+    const db = database()
+    expect(importCursorSnapshot(db, { ...first, messages: [] })).toEqual({
+      conversationId: 'cursor:composer-1',
+      refreshed: true,
+    })
+    expect(db.prepare('SELECT count(*) AS count FROM messages').get()).toEqual({ count: 0 })
     db.close()
   })
 

@@ -12,7 +12,6 @@ export interface CursorSnapshot {
   projectPath: string
   title: string
   startedAt: number
-  sourceMessageCount: number
   messages: CursorSnapshotMessage[]
 }
 
@@ -25,9 +24,6 @@ export function importCursorSnapshot(
   db: Database.Database,
   snapshot: CursorSnapshot,
 ): CursorSnapshotResult {
-  if (snapshot.sourceMessageCount > 0 && snapshot.messages.length === 0) {
-    throw new Error('Cursor reported messages, but their content could not be loaded')
-  }
   const conversationId = `cursor:${snapshot.composerId}`
   return db.transaction((): CursorSnapshotResult => {
     const existing = db.prepare(
@@ -57,6 +53,15 @@ export function importCursorSnapshot(
         WHERE id = ?
       `).run(conversationId)
       return { conversationId, refreshed: false }
+    }
+
+    const wouldEraseSnapshot = existing
+      && snapshot.messages.length === 0
+      && Boolean(db.prepare(
+        'SELECT 1 FROM messages WHERE conversation_id = ? LIMIT 1',
+      ).get(conversationId))
+    if (wouldEraseSnapshot) {
+      throw new Error('Cursor content could not be loaded; the existing snapshot was left unchanged')
     }
 
     const updatedAt = snapshot.messages.reduce(
