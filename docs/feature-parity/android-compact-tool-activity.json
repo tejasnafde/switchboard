@@ -36,11 +36,15 @@
   },
   "verification": {
     "automated": [
-      "Pending: focused Android presentation and Compose regression tests, Android unit/lint/assemble gates, repository typecheck, and feature-parity validation."
+      "ThreadPresentationTest and ToolActivityLayoutPolicyTest pass, covering normalized labels/details/icons/state, malformed inputs, 140-character bounds, stable keys, and the 48 dp density policy.",
+      "ThreadScreenRegressionTest compiles with compact-row regression coverage for disclosure, semantics, ordering, recomposition, large fonts, and ten-tool density.",
+      "Native Android testDebugUnitTest, lintDebug, assembleDebug, and compileDebugAndroidTestKotlin pass.",
+      "Repository TypeScript typecheck and the complete split-runtime repository test gate pass."
     ],
     "hardware": [],
     "notExercised": [
-      "Pending verification: connected emulator/device, live provider combinations, TalkBack, D-pad/keyboard, font scaling, orientation, and before/after screenshots."
+      "No Android device or emulator was connected, so connectedDebugAndroidTest and device screenshots were not run.",
+      "Live Claude, Codex, and OpenCode turns, reconnect/history reload, TalkBack, Switch Access, D-pad/keyboard focus, device font scaling, and portrait/landscape checks were not exercised on hardware."
     ]
   }
 }

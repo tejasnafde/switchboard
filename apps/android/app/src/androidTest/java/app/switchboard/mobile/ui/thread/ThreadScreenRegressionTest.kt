@@ -1,14 +1,22 @@
 package app.switchboard.mobile.ui.thread
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHasNoClickAction
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertTextContains
-import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -17,6 +25,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import app.switchboard.mobile.data.thread.ThreadState
 import app.switchboard.mobile.data.thread.ThreadArchiveState
 import app.switchboard.mobile.data.thread.ThreadProfileState
@@ -25,10 +36,13 @@ import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.composer.ComposerAttachment
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.MessagePill
+import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.ui.theme.SwitchboardTheme
 import org.junit.Rule
 import org.junit.Test
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 
 class ThreadScreenRegressionTest {
     @Test
@@ -357,6 +371,170 @@ class ThreadScreenRegressionTest {
         ).assertIsDisplayed()
     }
 
+    @Test
+    fun collapsedToolShowsUsefulSummaryAtOneAccessible48DpTarget() {
+        val output = "hidden output that must not enter collapsed semantics"
+        setTools(
+            listOf(tool("tool", "Bash", "command" to "npm test -- --runInBand", output = output)),
+        )
+
+        val row = compose.onNodeWithTag(ThreadTestTags.toolRow("tool"))
+        row.assertIsDisplayed()
+            .assertTextContains("Bash")
+            .assertTextContains("npm test -- --runInBand")
+            .assertHeightIsEqualTo(48.dp)
+            .assertWidthIsAtLeast(48.dp)
+            .assertHasClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Completed, collapsed"))
+        compose.onNodeWithText("Input").assertDoesNotExist()
+        compose.onNodeWithText(output, substring = true).assertDoesNotExist()
+        compose.onNodeWithTag(ThreadTestTags.toolOutput("tool")).assertDoesNotExist()
+        compose.onNodeWithTag(ThreadTestTags.toolStatus("tool"), useUnmergedTree = false).assertDoesNotExist()
+        compose.onNodeWithTag(ThreadTestTags.toolStatus("tool"), useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun completedOutputDisclosesAndCollapsesOnlyThatToolsSelectableBody() {
+        setTools(
+            listOf(
+                tool("first", "Read", "path" to "README.md", output = "first output"),
+                tool("second", "Read", "path" to "CHANGELOG.md", output = "second output"),
+            ),
+        )
+
+        val first = compose.onNodeWithTag(ThreadTestTags.toolRow("first"))
+        first.performClick()
+        first.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Completed, expanded"))
+        compose.onNodeWithTag(ThreadTestTags.toolOutput("first")).assertIsDisplayed()
+        compose.onNodeWithText("first output").assertIsDisplayed()
+        compose.onNodeWithText("second output").assertDoesNotExist()
+
+        first.performClick()
+        first.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Completed, collapsed"))
+        compose.onNodeWithText("first output").assertDoesNotExist()
+    }
+
+    @Test
+    fun completedBlankOutputHasNoFalseDisclosureOrButtonRole() {
+        setTools(listOf(tool("blank", "Read", "path" to "README.md", output = "  ")))
+
+        compose.onNodeWithTag(ThreadTestTags.toolRow("blank"))
+            .assertHasNoClickAction()
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
+        compose.onNodeWithTag(ThreadTestTags.toolDisclosure("blank"), useUnmergedTree = true)
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun runningToolUsesAStableSpinnerSlotAndExplicitRunningState() {
+        setTools(listOf(tool("running", "Bash", "command" to "npm test", state = "running")))
+
+        compose.onNodeWithTag(ThreadTestTags.toolRow("running"))
+            .assertHasNoClickAction()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Running"))
+            .assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.Role))
+        compose.onNodeWithTag(ThreadTestTags.toolStatus("running"), useUnmergedTree = true)
+            .assertIsDisplayed()
+        compose.onNodeWithTag(ThreadTestTags.toolDisclosure("running"), useUnmergedTree = true)
+            .assertDoesNotExist()
+    }
+
+    @Test
+    fun expansionSurvivesUnrelatedFeedAndOutputUpdates() {
+        var feed by mutableStateOf<List<FeedItem>>(
+            listOf(
+                tool("inspected", "Read", "path" to "README.md", output = "keep visible"),
+                tool("late", "Grep", "pattern" to "ThreadRow", state = "running"),
+            ),
+        )
+        setDynamicTools { feed }
+        compose.onNodeWithTag(ThreadTestTags.toolRow("inspected")).performClick()
+
+        compose.runOnIdle {
+            feed = feed.map {
+                if (it is FeedItem.Tool && it.id == "late") {
+                    it.copy(state = "done", output = "late output")
+                } else {
+                    it
+                }
+            } + FeedItem.User("unrelated", "new message", 2)
+        }
+
+        compose.onNodeWithText("keep visible").assertIsDisplayed()
+        compose.onNodeWithTag(ThreadTestTags.toolDisclosure("late"), useUnmergedTree = true)
+            .assertExists()
+        compose.onNodeWithText("late output").assertDoesNotExist()
+    }
+
+    @Test
+    fun runningCompletionUpdatesInPlaceWithoutReorderingChronologicalFeed() {
+        var feed by mutableStateOf(
+            listOf(
+                tool("first", "Read", "path" to "first.kt"),
+                tool("middle", "Bash", "command" to "npm test", state = "running"),
+                tool("last", "WebSearch", "query" to "Compose semantics"),
+            ),
+        )
+        setDynamicTools { feed }
+        assertVisualOrder("first", "middle", "last")
+
+        compose.runOnIdle {
+            feed = feed.map {
+                if (it.id == "middle") it.copy(state = "done", output = "passed") else it
+            }
+        }
+
+        compose.onAllNodesWithTag(ThreadTestTags.toolRow("middle")).assertCountEquals(1)
+        assertVisualOrder("first", "middle", "last")
+        compose.onNodeWithTag(ThreadTestTags.toolDisclosure("middle"), useUnmergedTree = true)
+            .assertExists()
+    }
+
+    @Test
+    fun largeFontKeepsLabelDetailAndDisclosureInNonOverlappingSlots() {
+        setTools(
+            listOf(
+                tool(
+                    "large-font",
+                    "Bash",
+                    "command" to "a very long command whose visual detail must ellipsize before the disclosure",
+                    output = "output",
+                ),
+            ),
+            fontScale = 2f,
+        )
+
+        val label = compose.onNodeWithTag(ThreadTestTags.toolLabel("large-font"), useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val detail = compose.onNodeWithTag(ThreadTestTags.toolDetail("large-font"), useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+        val disclosure = compose.onNodeWithTag(ThreadTestTags.toolDisclosure("large-font"), useUnmergedTree = true)
+            .fetchSemanticsNode().boundsInRoot
+
+        assertTrue(label.right <= detail.left)
+        assertTrue(detail.right <= disclosure.left)
+        compose.onNodeWithTag(ThreadTestTags.toolRow("large-font")).assertHeightIsEqualTo(48.dp)
+    }
+
+    @Test
+    fun tenToolFeedStaysScrollableAtCompactRowHeight() {
+        setTools(
+            (0 until 10).map { index ->
+                tool("tool-$index", "Bash", "command" to "command $index")
+            },
+        )
+
+        compose.onNodeWithTag(ThreadTestTags.toolRow("tool-0"))
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertHeightIsEqualTo(48.dp)
+        compose.onNodeWithTag(ThreadTestTags.toolRow("tool-9"))
+            .performScrollTo()
+            .assertIsDisplayed()
+            .assertHeightIsEqualTo(48.dp)
+    }
+
     private fun composer() = ThreadComposerPresentation(
         draft = "",
         runtimeMode = RuntimeMode.Sandbox,
@@ -389,6 +567,56 @@ class ThreadScreenRegressionTest {
         updatedAt = 1,
         raw = app.switchboard.mobile.protocol.JsonObject(linkedMapOf()),
     )
+
+    private fun setTools(feed: List<FeedItem>, fontScale: Float = 1f) {
+        setDynamicTools(fontScale) { feed }
+    }
+
+    private fun setDynamicTools(
+        fontScale: Float = 1f,
+        feed: () -> List<FeedItem>,
+    ) {
+        compose.setContent {
+            SwitchboardTheme {
+                val density = LocalDensity.current
+                CompositionLocalProvider(
+                    LocalDensity provides Density(density.density, fontScale),
+                ) {
+                    ThreadScreen(
+                        threadId = "tools-thread",
+                        title = "Tools",
+                        backendLabel = "Mac",
+                        loadState = ThreadLoadState.Ready(ThreadState(feed = feed())),
+                        onRetry = {},
+                        onAction = {},
+                        onBack = {},
+                    )
+                }
+            }
+        }
+    }
+
+    private fun tool(
+        id: String,
+        name: String,
+        input: Pair<String, String>,
+        state: String = "done",
+        output: String? = null,
+    ) = FeedItem.Tool(
+        id = id,
+        toolId = id,
+        toolName = name,
+        input = JsonObject(linkedMapOf(input.first to JsonString(input.second))),
+        output = output,
+        state = state,
+    )
+
+    private fun assertVisualOrder(vararg ids: String) {
+        val tops = ids.map { id ->
+            compose.onNodeWithTag(ThreadTestTags.toolRow(id)).fetchSemanticsNode().boundsInRoot.top
+        }
+        assertTrue(tops.zipWithNext().all { (first, second) -> first < second })
+    }
 
     private data class Fixture(
         val id: String,

@@ -5,9 +5,14 @@ import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.thread.QuestionOption
 import app.switchboard.mobile.domain.thread.ThreadQuestion
 import app.switchboard.mobile.domain.thread.TodoEntry
+import app.switchboard.mobile.protocol.JsonArray
+import app.switchboard.mobile.protocol.JsonBoolean
+import app.switchboard.mobile.protocol.JsonNull
+import app.switchboard.mobile.protocol.JsonNumber
 import app.switchboard.mobile.protocol.JsonObject
 import app.switchboard.mobile.protocol.JsonString
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -45,7 +50,7 @@ class ThreadPresentationTest {
         )
 
         val tool = content.rows.filterIsInstance<ThreadRowPresentation.Tool>().single()
-        assertEquals("README.md", tool.input)
+        assertEquals("README.md", tool.detail)
         assertEquals("done", tool.output)
         val file = content.rows.filterIsInstance<ThreadRowPresentation.FileEdit>().single()
         assertEquals(1, file.addedLines)
@@ -77,8 +82,209 @@ class ThreadPresentationTest {
             ),
         ) as ThreadRowPresentation.Tool
 
-        assertEquals("npm test -- --runInBand", row.input)
-        assertTrue(row.input.length <= 140)
+        assertEquals("npm test -- --runInBand", row.detail)
+        assertTrue(row.detail.length <= 140)
+    }
+
+    @Test
+    fun shellArrayCommandsHaveNormalizedPresentationWithoutChangingTheirStableKey() {
+        val row = ThreadPresenter.row(
+            FeedItem.Tool(
+                id = "stable-tool-row",
+                toolId = "provider-tool-id",
+                toolName = "shell",
+                input = JsonArray(listOf()),
+                state = "running",
+            ).copy(
+                input = JsonObject(
+                    linkedMapOf(
+                        "command" to JsonArray(
+                            listOf(JsonString("npm"), JsonString("test"), JsonString("--runInBand")),
+                        ),
+                    ),
+                ),
+            ),
+        ) as ThreadRowPresentation.Tool
+
+        assertEquals("stable-tool-row", row.key)
+        assertEquals("Bash", row.label)
+        assertEquals("npm test --runInBand", row.detail)
+        assertEquals(ToolIconKind.SHELL, row.iconKind)
+        assertTrue(row.monospaceDetail)
+        assertEquals(ToolActivityState.RUNNING, row.activityState)
+    }
+
+    @Test
+    fun shellAliasesSupportStringAndArrayCommands() {
+        val stringCommand = toolRow(
+            name = "Bash",
+            input = obj("command" to JsonString("npm   test\n-- --runInBand")),
+        )
+        val arrayCommand = toolRow(
+            name = "exec_command",
+            input = obj(
+                "command" to JsonArray(
+                    listOf(JsonString("git"), JsonString("status"), JsonNumber("7")),
+                ),
+            ),
+        )
+
+        assertEquals("Bash", stringCommand.label)
+        assertEquals("npm test -- --runInBand", stringCommand.detail)
+        assertEquals("git status", arrayCommand.detail)
+        assertEquals(ToolIconKind.SHELL, arrayCommand.iconKind)
+        assertTrue(stringCommand.monospaceDetail)
+    }
+
+    @Test
+    fun fileAndNotebookAliasesPresentTheirPath() {
+        val cases = listOf(
+            Triple("read_file", obj("path" to JsonString("README.md")), "Read" to ToolIconKind.READ),
+            Triple("write-file", obj("filePath" to JsonString("src/App.kt")), "Write" to ToolIconKind.WRITE),
+            Triple("apply_patch", obj("file_path" to JsonString("src/Main.kt")), "Edit" to ToolIconKind.EDIT),
+            Triple("NotebookRead", obj("notebook_path" to JsonString("analysis.ipynb")), "Read notebook" to ToolIconKind.NOTEBOOK),
+            Triple("notebook_edit", obj("path" to JsonString("notes.ipynb")), "Edit notebook" to ToolIconKind.NOTEBOOK),
+        )
+
+        cases.forEach { (name, input, expected) ->
+            val row = toolRow(name, input)
+            assertEquals(name, expected.first, row.label)
+            assertEquals(name, expected.second, row.iconKind)
+            assertTrue(name, row.detail.isNotBlank())
+            assertTrue(name, row.monospaceDetail)
+        }
+    }
+
+    @Test
+    fun searchAliasesPresentPatternsAndScopesWithoutRawJson() {
+        val grep = toolRow(
+            "search_files",
+            obj(
+                "pattern" to JsonString("ThreadRow"),
+                "path" to JsonString("apps/android"),
+            ),
+        )
+        val glob = toolRow("file_glob", obj("query" to JsonString("**/Thread*.kt")))
+        val list = toolRow("list-files", obj("directory" to JsonString("apps/android")))
+
+        assertEquals("Grep", grep.label)
+        assertEquals("\"ThreadRow\" in apps/android", grep.detail)
+        assertEquals(ToolIconKind.SEARCH, grep.iconKind)
+        assertEquals("Glob", glob.label)
+        assertEquals("**/Thread*.kt", glob.detail)
+        assertEquals("List files", list.label)
+        assertEquals("apps/android", list.detail)
+    }
+
+    @Test
+    fun webAliasesPresentUrlsAndQueries() {
+        val fetch = toolRow("web_fetch", obj("uri" to JsonString("https://example.com/docs")))
+        val search = toolRow("WebSearch", obj("q" to JsonString("Compose merged semantics")))
+
+        assertEquals("Web", fetch.label)
+        assertEquals("https://example.com/docs", fetch.detail)
+        assertEquals(ToolIconKind.WEB, fetch.iconKind)
+        assertTrue(fetch.monospaceDetail)
+        assertEquals("Web", search.label)
+        assertEquals("Compose merged semantics", search.detail)
+        assertFalse(search.monospaceDetail)
+    }
+
+    @Test
+    fun taskAndSubagentAliasesPresentDescriptions() {
+        listOf("task", "subagent", "spawn_agent").forEach { name ->
+            val row = toolRow(name, obj("description" to JsonString("Audit provider lifecycle")))
+            assertEquals(name, "Task", row.label)
+            assertEquals(name, "Audit provider lifecycle", row.detail)
+            assertEquals(name, ToolIconKind.TASK, row.iconKind)
+            assertFalse(name, row.monospaceDetail)
+        }
+    }
+
+    @Test
+    fun unknownAndMcpToolsDegradeToReadableBoundedSummaries() {
+        val unknown = toolRow(
+            "custom_provider_action",
+            obj("command" to JsonString("do the useful thing")),
+        )
+        val mcp = toolRow(
+            "mcp__linear__create_issue",
+            obj("description" to JsonString("Track Android density")),
+        )
+        val keysOnly = toolRow(
+            "WeirdTool",
+            obj(
+                "project_id" to JsonString("switchboard"),
+                "labels" to JsonArray(emptyList()),
+            ),
+        )
+
+        assertEquals("Custom provider action", unknown.label)
+        assertEquals("do the useful thing", unknown.detail)
+        assertEquals(ToolIconKind.OTHER, unknown.iconKind)
+        assertEquals("Create issue", mcp.label)
+        assertEquals("Track Android density", mcp.detail)
+        assertEquals("Weird tool", keysOnly.label)
+        assertEquals("project id, labels", keysOnly.detail)
+        assertFalse(keysOnly.detail.startsWith("{"))
+    }
+
+    @Test
+    fun nullScalarArrayAndMalformedInputShapesNeverCrashOrDumpJson() {
+        val inputs = listOf(null, JsonNull, JsonString("raw"), JsonNumber("42"), JsonBoolean(true), JsonArray(listOf(JsonString("raw"))))
+
+        inputs.forEachIndexed { index, input ->
+            val row = toolRow("unknown_tool", input)
+            assertEquals(index.toString(), "Unknown tool", row.label)
+            assertEquals(index.toString(), "", row.detail)
+        }
+    }
+
+    @Test
+    fun everyToolDetailNormalizesWhitespaceAndStopsAt140Characters() {
+        val row = toolRow(
+            "task",
+            obj("prompt" to JsonString("  audit\n\t" + "x".repeat(200) + "  ")),
+        )
+
+        assertEquals(140, row.detail.length)
+        assertTrue(row.detail.startsWith("audit x"))
+        assertTrue(row.detail.endsWith("…"))
+        assertFalse(row.detail.contains('\n'))
+        assertFalse(row.detail.contains('\t'))
+    }
+
+    @Test
+    fun activityStateAndDisclosureDataAreNormalizedWithoutDisplayingRawDone() {
+        val running = toolRow("bash", obj("command" to JsonString("npm test")), state = "running")
+        val blank = toolRow("bash", obj("command" to JsonString("npm test")), output = "  ")
+        val complete = toolRow("bash", obj("command" to JsonString("npm test")), output = "passed")
+
+        assertEquals(ToolActivityState.RUNNING, running.activityState)
+        assertFalse(running.hasOutput)
+        assertEquals(ToolActivityState.COMPLETED, blank.activityState)
+        assertFalse(blank.hasOutput)
+        assertEquals(ToolActivityState.COMPLETED, complete.activityState)
+        assertTrue(complete.hasOutput)
+    }
+
+    @Test
+    fun runningToCompletedPresentationKeepsTheSameStableIdentity() {
+        val started = FeedItem.Tool(
+            id = "t-provider-id",
+            toolId = "provider-id",
+            toolName = "Read",
+            input = obj("path" to JsonString("README.md")),
+            state = "running",
+        )
+        val running = ThreadPresenter.row(started) as ThreadRowPresentation.Tool
+        val completed = ThreadPresenter.row(started.copy(state = "done", output = "contents"))
+            as ThreadRowPresentation.Tool
+
+        assertEquals(running.key, completed.key)
+        assertEquals("t-provider-id", completed.key)
+        assertEquals(ToolActivityState.RUNNING, running.activityState)
+        assertEquals(ToolActivityState.COMPLETED, completed.activityState)
     }
 
     @Test
@@ -224,4 +430,23 @@ class ThreadPresentationTest {
         options = listOf(QuestionOption("A", "First"), QuestionOption("B", null)),
         multiSelect = false,
     )
+
+    private fun toolRow(
+        name: String,
+        input: app.switchboard.mobile.protocol.JsonValue?,
+        state: String = "done",
+        output: String? = null,
+    ): ThreadRowPresentation.Tool = ThreadPresenter.row(
+        FeedItem.Tool(
+            id = "tool-$name",
+            toolId = "provider-$name",
+            toolName = name,
+            input = input,
+            output = output,
+            state = state,
+        ),
+    ) as ThreadRowPresentation.Tool
+
+    private fun obj(vararg entries: Pair<String, app.switchboard.mobile.protocol.JsonValue>) =
+        JsonObject(linkedMapOf(*entries))
 }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.foundation.layout.Arrangement
@@ -25,11 +26,13 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -76,8 +79,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.buildAnnotatedString
@@ -1394,29 +1401,154 @@ private fun TextRow(row: ThreadRowPresentation.Text) {
 
 @Composable
 private fun ToolRow(row: ThreadRowPresentation.Tool) {
-    val hasDetails = row.input.isNotBlank() || !row.output.isNullOrBlank()
     var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
-    CardContainer(tint = TextDim) {
-        PressableLine(
-            enabled = hasDetails,
-            onClick = { expanded = !expanded },
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val toggle = { expanded = !expanded }
+    val accessibilityLabel = listOf(row.label, row.detail)
+        .filter(String::isNotBlank)
+        .joinToString(", ")
+    val interactionModifier = if (row.hasOutput) {
+        Modifier.clickable(
+            interactionSource = interactionSource,
+            indication = null,
+            role = Role.Button,
+            onClick = toggle,
+        )
+    } else {
+        Modifier
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(ToolActivityLayoutPolicy.CollapsedRowHeightDp.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(if (pressed && row.hasOutput) SurfaceRaised else Color.Transparent)
+                .then(interactionModifier)
+                .semantics(mergeDescendants = true) {
+                    contentDescription = accessibilityLabel
+                    stateDescription = when (row.activityState) {
+                        ToolActivityState.RUNNING -> "Running"
+                        ToolActivityState.COMPLETED -> if (row.hasOutput) {
+                            if (expanded) "Completed, expanded" else "Completed, collapsed"
+                        } else {
+                            "Completed"
+                        }
+                    }
+                    if (row.hasOutput) {
+                        role = Role.Button
+                        onClick(label = if (expanded) "Hide output" else "Show output") {
+                            toggle()
+                            true
+                        }
+                    }
+                }
+                .testTag(ThreadTestTags.toolRow(row.key)),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (row.source.state == "running") {
-                CircularProgressIndicator(modifier = Modifier.size(15.dp), strokeWidth = 2.dp)
+            Box(
+                modifier = Modifier
+                    .width(24.dp)
+                    .height(ToolActivityLayoutPolicy.CollapsedRowHeightDp.dp)
+                    .clearAndSetSemantics { }
+                    .testTag(ThreadTestTags.toolStatus(row.key)),
+                contentAlignment = Alignment.CenterStart,
+            ) {
+                if (row.activityState == ToolActivityState.RUNNING) {
+                    CircularProgressIndicator(
+                        color = Accent,
+                        modifier = Modifier.size(15.dp),
+                        strokeWidth = 2.dp,
+                    )
+                } else {
+                    Text(
+                        text = toolGlyph(row.iconKind),
+                        color = Green.copy(alpha = 0.78f),
+                        fontFamily = GeistMono,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                    )
+                }
             }
             Text(
-                text = row.source.toolName,
+                text = row.label,
                 fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(start = if (row.source.state == "running") 9.dp else 0.dp),
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .widthIn(max = 112.dp)
+                    .testTag(ThreadTestTags.toolLabel(row.key)),
             )
-            Spacer(Modifier.weight(1f))
-            Text(row.source.state, color = TextDim, style = MaterialTheme.typography.labelSmall)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = row.detail,
+                color = TextDim,
+                fontFamily = if (row.monospaceDetail) GeistMono else null,
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier
+                    .weight(1f)
+                    .testTag(ThreadTestTags.toolDetail(row.key)),
+            )
+            if (row.hasOutput) {
+                Box(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height(ToolActivityLayoutPolicy.CollapsedRowHeightDp.dp)
+                        .clearAndSetSemantics { }
+                        .testTag(ThreadTestTags.toolDisclosure(row.key)),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Text(
+                        text = if (expanded) "⌃" else "⌄",
+                        color = TextDim,
+                        fontSize = 14.sp,
+                    )
+                }
+            }
         }
-        if (expanded && hasDetails) {
-            if (row.input.isNotBlank()) MonoBlock("Input", row.input)
-            row.output?.takeIf(String::isNotBlank)?.let { MonoBlock("Output", it) }
+        if (expanded && row.hasOutput) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SurfaceRaised)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 10.dp, vertical = 9.dp)
+                    .testTag(ThreadTestTags.toolOutput(row.key)),
+            ) {
+                SelectionContainer {
+                    Text(
+                        text = row.output.orEmpty(),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontFamily = GeistMono,
+                        fontSize = 11.sp,
+                        softWrap = false,
+                    )
+                }
+            }
         }
     }
+}
+
+private fun toolGlyph(kind: ToolIconKind): String = when (kind) {
+    ToolIconKind.SHELL -> ">_"
+    ToolIconKind.READ -> "▤"
+    ToolIconKind.WRITE -> "+"
+    ToolIconKind.EDIT -> "✎"
+    ToolIconKind.SEARCH -> "⌕"
+    ToolIconKind.FILES -> "▣"
+    ToolIconKind.WEB -> "◎"
+    ToolIconKind.TASK -> "✦"
+    ToolIconKind.NOTEBOOK -> "▦"
+    ToolIconKind.OTHER -> "◇"
 }
 
 @Composable
@@ -1763,20 +1895,6 @@ private fun CardContainer(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(9.dp),
         ) { content() }
-    }
-}
-
-@Composable
-private fun MonoBlock(label: String, text: String) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
-            .background(SurfaceRaised)
-            .padding(10.dp),
-    ) {
-        Text(label, color = TextDim, style = MaterialTheme.typography.labelSmall)
-        Text(text, fontFamily = GeistMono, fontSize = 11.sp)
     }
 }
 

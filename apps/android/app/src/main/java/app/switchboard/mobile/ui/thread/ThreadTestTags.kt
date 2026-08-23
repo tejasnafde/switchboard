@@ -9,4 +9,11 @@ object ThreadTestTags {
     const val ARCHIVE_ACTION = "thread-archive-action"
     const val ARCHIVE_CONFIRM = "thread-archive-confirm"
     const val APPROVAL_SLOT = "thread-approval-slot"
+
+    fun toolRow(key: String) = "thread-tool-row:$key"
+    fun toolStatus(key: String) = "thread-tool-status:$key"
+    fun toolLabel(key: String) = "thread-tool-label:$key"
+    fun toolDetail(key: String) = "thread-tool-detail:$key"
+    fun toolDisclosure(key: String) = "thread-tool-disclosure:$key"
+    fun toolOutput(key: String) = "thread-tool-output:$key"
 }

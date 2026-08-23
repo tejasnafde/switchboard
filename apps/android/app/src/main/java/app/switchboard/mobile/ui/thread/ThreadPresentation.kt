@@ -14,6 +14,40 @@ import java.util.Locale
 private const val RAW_NOTICE_DIAGNOSTIC_MAX_CHARS = 8_000
 private const val RAW_NOTICE_TRUNCATION_MARKER = "… <diagnostic truncated>"
 private const val TOOL_DETAIL_MAX_CHARS = 140
+private val TOOL_CAMEL_CASE = Regex("([a-z0-9])([A-Z])")
+private val TOOL_NAME_SEPARATORS = Regex("[^a-z0-9]+")
+private val TOOL_KEY_SEPARATORS = Regex("[^A-Za-z0-9]+")
+private val TOOL_WHITESPACE = Regex("\\s+")
+private val APPLY_PATCH_FILE = Regex("(?m)^\\*\\*\\* (?:Add|Update|Delete) File: (.+)$")
+private val SHELL_TOOL_NAMES = setOf(
+    "bash", "shell", "terminal", "exec", "exec_command", "execute", "execute_command",
+    "run_command", "shell_command", "command",
+)
+private val READ_TOOL_NAMES = setOf("read", "read_file", "readfile", "file_read")
+private val WRITE_TOOL_NAMES = setOf("write", "write_file", "writefile", "file_write")
+private val EDIT_TOOL_NAMES = setOf("edit", "edit_file", "multiedit", "multi_edit", "apply_patch", "patch")
+private val NOTEBOOK_READ_TOOL_NAMES = setOf("notebookread", "notebook_read", "read_notebook")
+private val NOTEBOOK_EDIT_TOOL_NAMES = setOf("notebookedit", "notebook_edit", "edit_notebook")
+private val GREP_TOOL_NAMES = setOf("grep", "rg", "ripgrep", "search", "search_files", "searchfiles", "file_search")
+private val GLOB_TOOL_NAMES = setOf("glob", "file_glob", "find_files")
+private val LIST_TOOL_NAMES = setOf("list_files", "listfiles", "ls", "directory_list")
+private val WEB_FETCH_TOOL_NAMES = setOf("webfetch", "web_fetch", "fetch", "fetch_url")
+private val WEB_SEARCH_TOOL_NAMES = setOf("websearch", "web_search", "search_web")
+private val TASK_TOOL_NAMES = setOf("task", "agent", "subagent", "spawn_agent", "delegate")
+private val FILE_PATH_KEYS = listOf("file_path", "path", "filePath", "notebook_path", "notebookPath")
+private val UNKNOWN_TOOL_DETAIL_KEYS = listOf(
+    "command" to true,
+    "cmd" to true,
+    "file_path" to true,
+    "path" to true,
+    "filePath" to true,
+    "pattern" to true,
+    "query" to false,
+    "url" to true,
+    "uri" to true,
+    "description" to false,
+    "prompt" to false,
+)
 
 sealed interface ThreadLoadState {
     data class Loading(val cached: ThreadState? = null) : ThreadLoadState
@@ -78,6 +112,24 @@ enum class ThreadRowKind {
     RAW_NOTICE,
 }
 
+enum class ToolIconKind {
+    SHELL,
+    READ,
+    WRITE,
+    EDIT,
+    SEARCH,
+    FILES,
+    WEB,
+    TASK,
+    NOTEBOOK,
+    OTHER,
+}
+
+enum class ToolActivityState {
+    RUNNING,
+    COMPLETED,
+}
+
 sealed interface ThreadRowPresentation {
     val key: String
     val kind: ThreadRowKind
@@ -97,11 +149,17 @@ sealed interface ThreadRowPresentation {
 
     data class Tool(
         val source: FeedItem.Tool,
-        val input: String,
+        val label: String,
+        val detail: String,
+        val iconKind: ToolIconKind,
+        val monospaceDetail: Boolean,
+        val activityState: ToolActivityState,
         val output: String?,
     ) : ThreadRowPresentation {
         override val key = source.id
         override val kind = ThreadRowKind.TOOL
+        val hasOutput: Boolean
+            get() = activityState == ToolActivityState.COMPLETED && !output.isNullOrBlank()
     }
 
     data class Denial(val source: FeedItem.Denial) : ThreadRowPresentation {
@@ -265,11 +323,22 @@ object ThreadPresenter {
             durationLabel = item.durationMs?.let(::formatDuration),
         )
 
-        is FeedItem.Tool -> ThreadRowPresentation.Tool(
-            source = item,
-            input = toolDetail(item.toolName, item.input),
-            output = item.output,
-        )
+        is FeedItem.Tool -> {
+            val summary = toolSummary(item.toolName, item.input)
+            ThreadRowPresentation.Tool(
+                source = item,
+                label = summary.label,
+                detail = summary.detail,
+                iconKind = summary.iconKind,
+                monospaceDetail = summary.monospaceDetail,
+                activityState = if (item.state == "running") {
+                    ToolActivityState.RUNNING
+                } else {
+                    ToolActivityState.COMPLETED
+                },
+                output = item.output,
+            )
+        }
 
         is FeedItem.Denial -> ThreadRowPresentation.Denial(item)
         is FeedItem.Approval -> ThreadRowPresentation.Approval(item)
@@ -314,34 +383,151 @@ object ThreadPresenter {
             RAW_NOTICE_TRUNCATION_MARKER
     }
 
-    private fun toolDetail(toolName: String, input: JsonValue?): String {
-        val values = (input as? JsonObject)?.values ?: return ""
+    private data class ToolSummary(
+        val label: String,
+        val detail: String,
+        val iconKind: ToolIconKind,
+        val monospaceDetail: Boolean,
+    )
+
+    private fun toolSummary(toolName: String, input: JsonValue?): ToolSummary {
+        val canonical = canonicalToolName(toolName)
+        val values = (input as? JsonObject)?.values.orEmpty()
         fun string(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
             (values[key] as? JsonString)?.value?.takeIf(String::isNotBlank)
         }
-        val detail = when (toolName.lowercase(Locale.US)) {
-            "bash", "shell" -> when (val command = values["command"]) {
-                is JsonString -> command.value
-                is JsonArray -> command.values.mapNotNull { (it as? JsonString)?.value }.joinToString(" ")
-                else -> ""
+
+        val summary = when (canonical) {
+            in SHELL_TOOL_NAMES -> ToolSummary(
+                label = "Bash",
+                detail = when (val command = values["command"] ?: values["cmd"] ?: values["args"]) {
+                    is JsonString -> command.value
+                    is JsonArray -> command.values.mapNotNull { (it as? JsonString)?.value }.joinToString(" ")
+                    else -> ""
+                },
+                iconKind = ToolIconKind.SHELL,
+                monospaceDetail = true,
+            )
+
+            in READ_TOOL_NAMES -> ToolSummary("Read", filePath(values), ToolIconKind.READ, true)
+            in WRITE_TOOL_NAMES -> ToolSummary("Write", filePath(values), ToolIconKind.WRITE, true)
+            in EDIT_TOOL_NAMES -> ToolSummary("Edit", editPath(canonical, values), ToolIconKind.EDIT, true)
+            in NOTEBOOK_READ_TOOL_NAMES -> ToolSummary("Read notebook", filePath(values), ToolIconKind.NOTEBOOK, true)
+            in NOTEBOOK_EDIT_TOOL_NAMES -> ToolSummary("Edit notebook", filePath(values), ToolIconKind.NOTEBOOK, true)
+            in GREP_TOOL_NAMES -> {
+                val pattern = string("pattern", "query", "regex").orEmpty()
+                val path = string("path", "dir", "directory")
+                ToolSummary(
+                    "Grep",
+                    if (pattern.isBlank()) "" else "\"$pattern\"" + (path?.let { " in $it" } ?: ""),
+                    ToolIconKind.SEARCH,
+                    true,
+                )
             }
 
-            "read", "read_file", "write", "write_file", "edit", "multiedit", "notebookedit" ->
-                string("file_path", "path", "filePath", "notebook_path").orEmpty()
+            in GLOB_TOOL_NAMES -> ToolSummary(
+                "Glob",
+                string("pattern", "query", "glob").orEmpty(),
+                ToolIconKind.SEARCH,
+                true,
+            )
 
-            "grep", "search_files", "glob" -> string("pattern", "query", "regex").orEmpty()
-            "list_files", "ls" -> string("path", "dir", "directory").orEmpty()
-            "webfetch", "fetch" -> string("url", "uri").orEmpty()
-            "websearch" -> string("query", "q").orEmpty()
-            "task" -> string("description", "prompt").orEmpty()
-            else -> string("command", "file_path", "path", "pattern", "query", "url", "description")
-                ?: values.keys.joinToString(", ")
+            in LIST_TOOL_NAMES -> ToolSummary(
+                "List files",
+                string("path", "dir", "directory").orEmpty(),
+                ToolIconKind.FILES,
+                true,
+            )
+
+            in WEB_FETCH_TOOL_NAMES -> ToolSummary(
+                "Web",
+                string("url", "uri").orEmpty(),
+                ToolIconKind.WEB,
+                true,
+            )
+
+            in WEB_SEARCH_TOOL_NAMES -> ToolSummary(
+                "Web",
+                string("query", "q").orEmpty(),
+                ToolIconKind.WEB,
+                false,
+            )
+
+            in TASK_TOOL_NAMES -> ToolSummary(
+                "Task",
+                string("description", "prompt", "task").orEmpty(),
+                ToolIconKind.TASK,
+                false,
+            )
+
+            else -> unknownToolSummary(toolName, values)
         }
-        return detail.replace(Regex("\\s+"), " ").trim().let { condensed ->
+        return summary.copy(detail = condenseToolDetail(summary.detail))
+    }
+
+    private fun filePath(values: Map<String, JsonValue>): String =
+        FILE_PATH_KEYS
+            .firstNotNullOfOrNull { key -> (values[key] as? JsonString)?.value?.takeIf(String::isNotBlank) }
+            .orEmpty()
+
+    private fun editPath(canonical: String, values: Map<String, JsonValue>): String {
+        val explicit = filePath(values)
+        if (explicit.isNotBlank() || canonical != "apply_patch") return explicit
+        val patch = listOf("patch", "input", "diff")
+            .firstNotNullOfOrNull { key -> (values[key] as? JsonString)?.value }
+            .orEmpty()
+        return APPLY_PATCH_FILE
+            .find(patch)
+            ?.groupValues
+            ?.get(1)
+            .orEmpty()
+    }
+
+    private fun unknownToolSummary(
+        toolName: String,
+        values: Map<String, JsonValue>,
+    ): ToolSummary {
+        val best = UNKNOWN_TOOL_DETAIL_KEYS.firstNotNullOfOrNull { (key, monospace) ->
+            (values[key] as? JsonString)?.value?.takeIf(String::isNotBlank)?.let { it to monospace }
+        }
+        return ToolSummary(
+            label = humanizeToolName(toolName),
+            detail = best?.first ?: values.keys.joinToString(", ") {
+                humanizeKey(it).lowercase(Locale.US)
+            },
+            iconKind = ToolIconKind.OTHER,
+            monospaceDetail = best?.second ?: false,
+        )
+    }
+
+    private fun canonicalToolName(toolName: String): String {
+        val leaf = if (toolName.startsWith("mcp__", ignoreCase = true)) {
+            toolName.substringAfterLast("__")
+        } else {
+            toolName
+        }
+        return leaf
+            .replace(TOOL_CAMEL_CASE, "$1_$2")
+            .lowercase(Locale.US)
+            .replace(TOOL_NAME_SEPARATORS, "_")
+            .trim('_')
+    }
+
+    private fun humanizeToolName(toolName: String): String =
+        humanizeKey(canonicalToolName(toolName)).ifBlank { "Tool" }
+
+    private fun humanizeKey(value: String): String = value
+        .replace(TOOL_CAMEL_CASE, "$1 $2")
+        .replace(TOOL_KEY_SEPARATORS, " ")
+        .trim()
+        .lowercase(Locale.US)
+        .replaceFirstChar { it.titlecase(Locale.US) }
+
+    private fun condenseToolDetail(detail: String): String =
+        detail.replace(TOOL_WHITESPACE, " ").trim().let { condensed ->
             if (condensed.length <= TOOL_DETAIL_MAX_CHARS) condensed
             else condensed.take(TOOL_DETAIL_MAX_CHARS - 1) + "…"
         }
-    }
 
     private fun contentStatus(state: ThreadLoadState): ThreadContentStatus = when (state) {
         is ThreadLoadState.Loading -> ThreadContentStatus(
