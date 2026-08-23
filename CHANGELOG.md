@@ -2,6 +2,17 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.39 - Keep code copy controls steady while agents stream
+
+### Fixed
+- **Markdown code-block Copy buttons could flash, disappear, or differ by provider timing.** Each code block now renders its complete `<pre>/<code>/button` structure atomically, while transient mutability is tracked per assistant message. Coalesced content flushes before completion, error, interruption, or shutdown settles the touched message, so late status and tool events cannot race the control out of the DOM.
+- **A finished block could become unstable while later prose or another turn streamed.** Closed earlier fences remain settled, historical and remounted messages start settled, and every tagged or untagged block receives exactly one React-owned delegated control. Plan cards use the same renderer instead of maintaining a second imperative decorator.
+- **The hover-only affordance looked missing and was incomplete for keyboard and touch users.** Settled controls now have a quiet visible resting state, `:focus-visible` treatment, coarse-pointer visibility, exact-code clipboard extraction, stable copied feedback, and handled/logged clipboard failures. Focus on a settled control survives later content commits without being stolen after the user moves elsewhere.
+
+### Notes
+- This is a renderer-only Desktop Electron fix. React Native/iOS and native Android use separate rich-text renderers and do not share the affected DOM ownership path; backend events, stored messages, migrations, wire contracts, and rollout flags are unchanged.
+- Regression coverage includes cumulative snapshots, appended deltas, flush-before-completion ordering, completion followed by unrelated events, error/interruption settlement, multiple fence styles, historical messages, file pills, plan cards, clipboard denial, keyboard focus, coarse pointers, and an isolated Electron Playwright flow that never opens the live Switchboard database or provider credentials.
+
 ## 0.8.38 - Bring Cursor history into the switchboard
 
 ### Added
