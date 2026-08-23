@@ -1,0 +1,46 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-compact-tool-activity",
+  "summary": "Replace oversized native Android tool cards with compact, informative, accessible activity rows.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "Desktop already renders compact tool-specific label/detail rows in src/renderer/components/chat/ToolCallBlock.tsx; this Android density fix does not change desktop behavior."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "React Native/iOS already renders a quiet one-line ToolItem with a humanized summary, tool icon, running spinner, and output-only disclosure in apps/mobile/src/screens/ThreadScreen.tsx."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadPresentationTest.kt",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The existing tool.started, tool.completed, and turn.completed event contract and reducer identity policy are preserved without wire-format changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Tool input and output already persist in historical thread snapshots, while expansion remains transient UI state keyed by the existing stable row identity."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "The UI-only fix changes no package identity, version, signing configuration, schema, deep link, or update channel; it is recorded for the next native Android app release and the debug APK is assembled during verification."
+    }
+  },
+  "verification": {
+    "automated": [
+      "Pending: focused Android presentation and Compose regression tests, Android unit/lint/assemble gates, repository typecheck, and feature-parity validation."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Pending verification: connected emulator/device, live provider combinations, TalkBack, D-pad/keyboard, font scaling, orientation, and before/after screenshots."
+    ]
+  }
+}
