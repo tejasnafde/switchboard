@@ -254,7 +254,7 @@ class NewSessionCoordinator(
                 id = value.threadId,
                 projectPath = projectPath,
                 agentType = value.agentType,
-                title = value.message.takeIf(String::isNotEmpty)?.let(NewSessionTitle::generate),
+                title = null,
             ),
         ) { response ->
             synchronized(this) {
@@ -323,8 +323,7 @@ class NewSessionCoordinator(
         onStarted(
             NewSessionStarted(
                 threadId = value.threadId,
-                title = value.message.takeIf(String::isNotEmpty)?.let(NewSessionTitle::generate)
-                    ?: mutableState.value.projectName,
+                title = mutableState.value.projectName,
                 projectPath = projectPath,
             ),
         )

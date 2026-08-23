@@ -17,6 +17,7 @@ import app.switchboard.mobile.protocol.JsonNull
 import app.switchboard.mobile.protocol.JsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -66,6 +67,7 @@ class NewSessionCoordinatorTest {
 
         coordinator.submit()
         assertEquals("mob-id", remote.creates.single().first.id)
+        assertNull(remote.creates.single().first.title)
         assertTrue(remote.starts.isEmpty())
         remote.creates.single().second(success("create", CommandBody(JsonNull)))
         assertEquals("mob-id", remote.starts.single().first.threadId)
@@ -80,6 +82,7 @@ class NewSessionCoordinatorTest {
         assertEquals(1, remote.creates.size)
         assertEquals(1, remote.starts.size)
         assertEquals("mob-id", started.single().threadId)
+        assertEquals("Repo", started.single().title)
     }
 
     @Test
