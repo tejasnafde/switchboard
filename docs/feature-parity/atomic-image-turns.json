@@ -78,14 +78,17 @@
       "npm run typecheck",
       "npm test",
       "npm run validate:feature-parity -- --base origin/main",
+      "npm run build:fast && node scripts/smoke-test.mjs",
+      "node e2e/backend-host.e2e.mjs (real Electron preload/IPC/backend-host path)",
       "cd apps/mobile && npx tsc --noEmit -p tsconfig.json",
+      "cd apps/mobile && npm test -- --runInBand (17 tests passed)",
       "cd apps/android && ./gradlew testDebugUnitTest (739 tests passed under OpenJDK 17)"
     ],
     "hardware": [
+      "Desktop manual acceptance on 2026-08-23: seven genuine 640x400 macOS screenshots (2,775,842 aggregate data-URL characters, below 3 MiB) were submitted in one real Codex gpt-5.6-sol turn through the built Electron preload/backend using the codex-lenskart-sna4 OAuth profile. Durable acceptance completed once, exactly one seven-image user row and one seven-image user.message event were observed, displayBody survived, the registry log contained exactly one matching submitUserTurn dispatch, and Codex answered 7 when asked to count the attachments.",
       "Earlier image-count admission smoke installed a side-by-side Android debug APK on CPH2487 and rendered six deterministic attachments; it did not exercise this atomic backend contract."
     ],
     "notExercised": [
-      "Desktop manual smoke with seven genuine screenshots in one Codex turn, including log and durable-acceptance confirmation of exactly one provider dispatch, has not yet been exercised.",
       "React Native/iOS atomic rejection, ambiguous retry, and attachment recovery have not been exercised on iOS hardware.",
       "Native Android atomic rejection, ambiguous retry, and private attachment recovery have not been exercised on Android hardware.",
       "Mixed-version rollout is covered by automated new-Desktop/old-backend rejection and new-backend/legacy-origin compatibility tests, but was not exercised with separately packaged released builds."
