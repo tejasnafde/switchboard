@@ -77,6 +77,7 @@ data class Conversation(
     val worktreePath: String?,
     val worktreeBranch: String?,
     val raw: JsonObject,
+    val originSource: String? = null,
 )
 
 data class ChatMessage(

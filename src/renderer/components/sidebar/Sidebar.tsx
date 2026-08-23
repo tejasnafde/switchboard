@@ -285,7 +285,8 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
   }, [projects])
 
   const handleImportNative = useCallback(async (session: SessionSummary) => {
-    if (!importProject || (session.source !== 'claude-code' && session.source !== 'codex')) return
+    if (!importProject
+      || (session.source !== 'claude-code' && session.source !== 'codex' && session.source !== 'cursor')) return
     setImportingId(session.id)
     setImportError(null)
     try {

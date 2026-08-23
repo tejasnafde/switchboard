@@ -18,6 +18,12 @@ function recoveryRole(session: SessionSummary): string {
   return 'Conversation'
 }
 
+function sourceBadge(session: SessionSummary): string {
+  if (session.source === 'codex') return 'CODEX'
+  if (session.source === 'cursor') return 'CURSOR'
+  return 'CLAUDE'
+}
+
 export function filterRecoveryCandidates(
   candidates: SessionSummary[],
   query: string,
@@ -145,7 +151,7 @@ export function NativeSessionImportModal({
                 data-unavailable={!importable || undefined}
               >
                 <span className="recovery-modal-provider">
-                  {session.source === 'codex' ? 'CODEX' : 'CLAUDE'}
+                  {sourceBadge(session)}
                 </span>
                 <div className="recovery-modal-summary">
                   <div className="recovery-modal-title" title={session.title}>{session.title}</div>

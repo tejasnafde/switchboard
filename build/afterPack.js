@@ -44,6 +44,10 @@ const path = require('path')
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return
+  if (process.env.SB_SIGNING_MODE === 'signed') {
+    console.log('[afterPack] production signing selected; skipping unsigned compatibility signature')
+    return
+  }
 
   const appPath = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
   const bundleId = context.packager.appInfo.id // com.tejasnafde.switchboard

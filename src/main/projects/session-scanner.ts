@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { generateTitle } from '@shared/auto-title'
 import type { SessionSummary, SessionSource } from '@shared/types'
 import { createMainLogger } from '../logger'
+import { scanCursorSessions } from '../cursor/store'
 
 const log = createMainLogger('projects:scanner')
 
@@ -377,11 +378,13 @@ export async function scanAllSessions(
   projectPath: string,
   claudeBaseDirs?: string[],
   codexBaseDirs?: string[],
+  cursorUserDir?: string,
 ): Promise<SessionSummary[]> {
-  const [claude, codex, opencode] = await Promise.all([
+  const [claude, codex, opencode, cursor] = await Promise.all([
     scanClaudeCodeSessions(projectPath, claudeBaseDirs),
     scanCodexSessions(projectPath, codexBaseDirs),
     scanOpenCodeSessions(projectPath),
+    scanCursorSessions(projectPath, cursorUserDir),
   ])
-  return [...claude, ...codex, ...opencode].sort((a, b) => b.startedAt - a.startedAt)
+  return [...claude, ...codex, ...opencode, ...cursor].sort((a, b) => b.startedAt - a.startedAt)
 }

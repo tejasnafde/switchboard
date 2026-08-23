@@ -10,6 +10,7 @@ import type { RuntimeMode } from '@shared/provider-events'
 import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ProjectOrganizationItem } from '@shared/types'
+import type { SessionSource } from '@shared/types'
 import { deriveProjectPositions } from './projectOrdering'
 import type { ConversationSidebarRole } from './conversationSidebarRole'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
@@ -476,6 +477,14 @@ function migrate(db: Database.Database): void {
     db.exec('ALTER TABLE conversations ADD COLUMN pending_handoff_from TEXT')
   }
 
+  // Migration (2026-08-24): preserve where an app-owned conversation was
+  // imported from without pretending that source is a runnable provider.
+  // Cursor imports continue through Claude Code, while the sidebar and remote
+  // clients retain the original Cursor provenance.
+  if (!convCols.some((c) => c.name === 'origin_source')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN origin_source TEXT')
+  }
+
   // Rebuild FTS index from existing messages
   try {
     const ftsCount = (db.prepare('SELECT count(*) as c FROM messages_fts').get() as { c: number } | undefined)?.c ?? 0
@@ -933,6 +942,7 @@ export interface ConversationRow {
   created_at: number
   updated_at: number
   archived: number
+  origin_source?: SessionSource | null
   sidebar_role?: ConversationSidebarRole | null
   /** ID of the source conversation a fork was spun from. Null for native conversations. */
   parent_conversation_id?: string | null

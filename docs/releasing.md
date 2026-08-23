@@ -62,6 +62,33 @@ If `verify` fails, the Release is partial and clients will not see the version.
 Re-run the failed matrix job from the Actions UI; it is safe to re-run because
 electron-builder dedups uploads by name.
 
+### Signing modes
+
+Release CI selects signing independently for each platform. With no signing
+secrets, it deliberately produces the existing unsigned artifacts. With every
+secret for a platform, it uses `electron-builder.signed.yml`, refuses unsigned
+fallbacks, and verifies the resulting signature before packaging finishes.
+Providing only part of a credential set fails the job before electron-builder
+runs; secret values are never printed.
+
+macOS signed releases require these repository secrets:
+
+- `MAC_CSC_LINK`
+- `MAC_CSC_KEY_PASSWORD`
+- `APPLE_ID`
+- `APPLE_APP_SPECIFIC_PASSWORD`
+- `APPLE_TEAM_ID`
+
+Windows signed releases require:
+
+- `WIN_CSC_LINK`
+- `WIN_CSC_KEY_PASSWORD`
+
+The macOS lane enables hardened runtime, Developer ID signing, notarization,
+and ticket validation. The Windows lane enables Authenticode and validates the
+packed executable. A manual workflow dispatch exercises the same selection and
+verification without publishing.
+
 Note: macOS ships as a `.zip` (not `.dmg`) - `dmg-builder` crashes on the
 `macos-14` CI runner (`hdiutil: create failed - Device not configured`).
 Users drag `Switchboard.app` from the zip to `/Applications` on first install.
@@ -145,8 +172,8 @@ crashes at SDK init.
 
 ## macOS Gatekeeper / unsigned-build caveats
 
-We don't have an Apple Developer certificate, so app bundles are
-unsigned. Users will see one of two prompts:
+Artifacts from a credential-free release run are unsigned. Users will see one
+of two prompts:
 
 - **First install**: "Switchboard can't be opened because the
   developer cannot be verified." - Right-click the app in Finder →
@@ -160,22 +187,18 @@ The auto-update flow itself works fine - the updater downloads the
 new version and replaces the app bundle. It's purely the post-replace
 launch that gets re-quarantined.
 
-If we ever buy a cert: populate `mac.identity` in `electron-builder.yml`
-with the `Developer ID Application: Tejas (TEAM_ID)` cert name, set
-`hardenedRuntime: true`, add notarization credentials as CI secrets
-(`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID`), and
-electron-builder will sign + notarize on every release.
+Once the five macOS secrets above are configured, CI automatically switches to
+the signed overlay. Do not hard-code a certificate identity in the repository.
 
 ---
 
 ## Windows SmartScreen caveats
 
-Windows builds are also unsigned. Users see "Windows protected your
-PC" the first time they run the installer - click **More info → Run
-anyway**. Auto-update is silent thereafter.
+Artifacts from a credential-free Windows run are unsigned. Users see "Windows
+protected your PC" the first time they run the installer - click **More info →
+Run anyway**. Auto-update is silent thereafter.
 
-Buying a Windows code-signing cert (~$200–400/yr from Sectigo or
-similar) removes the prompt; until then, accept the friction.
+Adding the two Windows secrets above switches the release lane to Authenticode.
 
 ---
 

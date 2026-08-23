@@ -1,8 +1,9 @@
 # electron-builder configuration.
 #
-# Unsigned local builds for now - no Apple Developer certificate yet.
-# Output is a zip in `release/`. Users need to allow the unsigned app
-# through Gatekeeper on first launch (see docs/releasing.md).
+# This is the credential-free local/CI configuration. Release CI switches to
+# electron-builder.signed.yml only when a complete platform credential set is
+# present. Keeping this path explicit lets contributors package the app without
+# production secrets while preventing partially configured release signing.
 
 appId: com.tejasnafde.switchboard
 productName: Switchboard
@@ -86,10 +87,9 @@ mac:
     - target: zip
       arch:
         - arm64
-  # Unsigned for now. When a cert is available, populate:
-  #   identity: "Developer ID Application: Tejas (TEAM_ID)"
-  # and hardened runtime + notarization.
-  identity: null
+  # The signed release overlay enables hardened runtime, notarization and
+  # forceCodeSigning. CSC_IDENTITY_AUTO_DISCOVERY=false keeps this base config
+  # unsigned in CI; local builds without a certificate are unsigned naturally.
   hardenedRuntime: false
   gatekeeperAssess: false
   # Icon must exist at resources/icons/switchboard-logo-1024.png; we point

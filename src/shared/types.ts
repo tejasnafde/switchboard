@@ -64,10 +64,11 @@ export function defaultInstanceId(kind: AgentType): string {
  * display the agent's name - status bar, message-bubble author, notifications,
  * export headers - so we never drift to hardcoded "Claude" strings.
  */
-export function agentLabel(type: AgentType | undefined): string {
+export function agentLabel(type: AgentType | 'cursor' | undefined): string {
   if (type === 'codex') return 'Codex'
   if (type === 'opencode') return 'OpenCode'
   if (type === 'terminal') return 'Terminal'
+  if (type === 'cursor') return 'Cursor'
   return 'Claude Code'
 }
 
@@ -390,6 +391,8 @@ export interface ConversationRow {
   title: string
   created_at: number
   updated_at: number
+  /** Import provenance, distinct from the provider used to continue the chat. */
+  origin_source?: SessionSource | null
   /**
    * The wire carries the whole row, and a client starting a session must route
    * cwd as `worktree_path ?? project_path`. Optional: a synthesized row omits

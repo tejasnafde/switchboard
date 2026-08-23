@@ -140,7 +140,7 @@ const api = {
     openFolder: () => transport.invoke(AppChannels.OPEN_FOLDER),
     scanSessions: (projectPath: string) =>
       transport.invoke(AppChannels.SCAN_SESSIONS, projectPath),
-    importSession: (projectPath: string, sessionId: string, source: 'claude-code' | 'codex') =>
+    importSession: (projectPath: string, sessionId: string, source: 'claude-code' | 'codex' | 'cursor') =>
       transport.invoke(AppChannels.IMPORT_SESSION, projectPath, sessionId, source),
     getProjects: () => transport.invoke(AppChannels.GET_PROJECTS),
     removeProject: (projectPath: string): Promise<{ ok: true }> =>

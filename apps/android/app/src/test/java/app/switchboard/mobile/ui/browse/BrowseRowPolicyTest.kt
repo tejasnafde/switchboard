@@ -45,6 +45,10 @@ class BrowseRowPolicyTest {
             BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "opencode", status = "running")),
         )
         assertEquals("Codex · saved", BrowseRowPolicy.conversationSupportingLabel(conversation(agentType = "codex")))
+        assertEquals(
+            "Cursor · saved",
+            BrowseRowPolicy.conversationSupportingLabel(conversation(originSource = "cursor")),
+        )
     }
 
     private fun project(
@@ -68,6 +72,7 @@ class BrowseRowPolicyTest {
 
     private fun conversation(
         agentType: String = "claude",
+        originSource: String? = null,
         unread: Int = 0,
         status: String? = null,
     ) = BrowseConversationRow(
@@ -75,6 +80,7 @@ class BrowseRowPolicyTest {
             id = "thread-1",
             projectPath = "/work/switchboard",
             agentType = agentType,
+            originSource = originSource,
             sessionId = "thread-1",
             title = "Fix mobile UI",
             createdAt = 0,
@@ -86,6 +92,7 @@ class BrowseRowPolicyTest {
         id = "thread-1",
         title = "Fix mobile UI",
         agentType = agentType,
+        originSource = originSource,
         updatedAt = 0,
         availableOffline = true,
         unread = unread,

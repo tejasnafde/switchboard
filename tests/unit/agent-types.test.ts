@@ -47,6 +47,7 @@ describe('agentLabel', () => {
     expect(agentLabel('codex')).toBe('Codex')
     expect(agentLabel('opencode')).toBe('OpenCode')
     expect(agentLabel('terminal')).toBe('Terminal')
+    expect(agentLabel('cursor')).toBe('Cursor')
   })
 
   it('falls back to Claude Code for undefined', () => {

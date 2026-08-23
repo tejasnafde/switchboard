@@ -29,7 +29,7 @@ The result: you `⌘-Tab` between 3-4 apps constantly. Your agent can't see your
 | Terminal multiplexing | ✅ Split panes, vertical tabs | ❌ No terminals | ✅ Tabs + splits | ✅ |
 | Agent chat UI | ❌ Raw TUI only | ✅ Web GUI for Codex/Claude | ❌ | ✅ |
 | Multiple concurrent agents | ✅ Via panes | ❌ Single thread | ❌ | ✅ |
-| Import existing conversations | ❌ | ❌ | ❌ | ✅ Claude + Codex (Cursor import not yet started) |
+| Import existing conversations | ❌ | ❌ | ❌ | ✅ Claude + Codex + Cursor |
 | Terminal → Agent context | ❌ Copy-paste | ❌ | ❌ | ✅ Select text, ⌘+L |
 | Declarative project layouts | ❌ (via `.vscode/terminals.json` hack) | ❌ | ✅ YAML launch configs | ✅ YAML, lives in repo |
 | Per-project workspace persistence | ❌ | Partial (thread per project) | ❌ (session restore) | ✅ |
@@ -89,7 +89,7 @@ This is the killer differentiator. On first launch for a project, Switchboard sc
 | Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | JSONL with CWD metadata |
 | Cursor | `~/Library/Application Support/Cursor/User/workspaceStorage/*/state.vscdb` | SQLite → `composer.composerData` key |
 
-All three get normalized into a unified conversation format and shown in the sidebar as "Previous Sessions." You can browse, search, and *fork* any past conversation into a new active agent thread. Your history follows you into the new tool.
+All three get normalized into a unified conversation format and shown in the recovery inventory. Cursor is read-only: Switchboard snapshots only the transcript you explicitly import, preserves Cursor provenance, and continues it through Claude Code with a bounded one-time context handoff. Cursor's databases are never modified.
 
 ### Layer 4 - Project Layout Config (the "Switchboard File")
 

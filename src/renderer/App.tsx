@@ -32,7 +32,7 @@ import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
-import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
+import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 
 const log = createRendererLogger('app')
@@ -599,7 +599,7 @@ export function App() {
         machineId: effectiveMachineId,
         worktreePath: session.worktreePath ?? null,
         worktreeBranch: session.worktreeBranch ?? null,
-        resumeSessionId: session.id,
+        resumeSessionId: resolveSessionResumeId(session.source, session.id),
         title: session.title,
       })
       setActiveSession(session.id)

@@ -5,7 +5,7 @@ queue. Captured here so they don't get lost when the next conversation
 boots fresh. Each section ends with a "what unblocks this" note so we
 know what would have to change to pull it into the active queue.
 
-Last refreshed: 2026-05-04.
+Last refreshed: 2026-08-24.
 
 ---
 
@@ -127,7 +127,16 @@ including the BYOK plumbing and the project-terminology biasing.
 
 ---
 
-## 4. Provider hot-swap mid-conversation - context preservation
+## 4. Provider hot-swap mid-conversation - context preservation - ✅ SHIPPED
+
+> **Update (2026-08-24):** The adapter-agnostic bounded handoff path shipped.
+> Cross-provider changes schedule `pending_handoff_from`; the first accepted
+> turn injects a versioned, bounded transcript preamble and clears the marker
+> atomically. Same-provider OAuth profile changes preserve the provider-native
+> transcript through validated, conflict-aware migration and resume. Cursor
+> imports use the same one-time handoff into their runnable Claude continuation.
+> Regression coverage lives in `conversation-rotation-fallback.test.ts`,
+> `provider-switch-ws.test.ts`, and `user-turn-submission-contract.test.ts`.
 
 **Shape.** Switchboard already lets the user swap agent type mid-chat
 via `handleAgentTypeChange` in `ChatPanel.tsx`. Today's behaviour: tear

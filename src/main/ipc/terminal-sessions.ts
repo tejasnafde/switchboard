@@ -12,7 +12,8 @@ export function projectManagedRootSessions(
     .filter((conversation) => conversation.archived === 0 && !delegatedConversationIds.has(conversation.id))
     .map((conversation) => ({
       id: conversation.id,
-      source: (conversation.agent_type === 'terminal' ? 'switchboard' : conversation.agent_type) as SessionSource,
+      source: (conversation.origin_source
+        ?? (conversation.agent_type === 'terminal' ? 'switchboard' : conversation.agent_type)) as SessionSource,
       title: conversation.title,
       startedAt: conversation.updated_at,
       messageCount: 0,
@@ -106,6 +107,7 @@ export function sessionSummaryToConversationRow(
     title: s.title ?? 'Untitled',
     created_at: s.startedAt,
     updated_at: s.startedAt,
+    origin_source: s.source === 'cursor' ? 'cursor' : null,
     archived: 0,
     worktree_path: s.worktreePath ?? null,
     worktree_branch: s.worktreeBranch ?? null,

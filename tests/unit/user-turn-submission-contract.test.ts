@@ -37,6 +37,16 @@ describe('atomic user-turn envelope', () => {
     expect(() => contract.validateUserTurnSubmission(submission())).not.toThrow()
   })
 
+  it('accepts Cursor as import-only handoff provenance', () => {
+    expect(() => contract.validateUserTurnSubmission(submission({
+      handoff: {
+        expectedFrom: 'cursor',
+        markerId: 'cursor-handoff-1',
+        markerText: '[[sb:context-handoff]] Cursor → Claude Code',
+      },
+    }))).not.toThrow()
+  })
+
   it('rejects aggregate image data above 3 MiB without adding a count cap', () => {
     const images = Array.from({ length: 7 }, (_, index) => ({
       url: `data:image/png;base64,${'A'.repeat(450_000 + index)}`,

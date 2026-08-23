@@ -28,7 +28,7 @@ export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
 export type ProviderKind = 'claude' | 'codex' | 'opencode'
 
 export interface UserTurnHandoffV1 {
-  expectedFrom: 'claude-code' | 'codex' | 'opencode'
+  expectedFrom: 'claude-code' | 'codex' | 'opencode' | 'cursor'
   markerId: string
   markerText: string
 }
@@ -249,7 +249,7 @@ export function validateUserMessageImages<T extends { url: string; mimeType?: st
   return images
 }
 
-const USER_TURN_HANDOFF_PROVIDERS = new Set(['claude-code', 'codex', 'opencode'])
+const USER_TURN_HANDOFF_PROVIDERS = new Set(['claude-code', 'codex', 'opencode', 'cursor'])
 const USER_TURN_PILL_KINDS = new Set<UserMessagePillKind>(['file', 'terminal', 'chat-message'])
 
 /** Validate the complete commit-bearing turn before any submission mutation. */

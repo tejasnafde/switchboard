@@ -1,0 +1,66 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "cursor-import",
+  "summary": "Discover Cursor conversations read-only, snapshot an explicitly selected transcript, preserve its provenance, and continue it through a runnable provider with one bounded handoff.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/cursor/store.ts",
+        "src/renderer/components/sidebar/NativeSessionImportModal.tsx",
+        "tests/unit/cursor-store.test.ts",
+        "tests/unit/cursor-import.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/conversationSource.ts",
+        "tests/unit/mobile-conversation-source.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/browse/BrowseModels.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/browse/BrowseRowPolicyTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/ipc/app.ts",
+        "src/main/ipc/terminal-sessions.ts",
+        "src/preload/index.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "src/main/db/cursor-import.ts",
+        "tests/unit/cursor-import.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/releasing.md",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Cursor workspace, legacy/current storage, snapshot, handoff, Desktop UI, React Native presentation, root typecheck and build gates",
+      "Feature-parity validator against origin/main"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Native Android tests were not run locally because this machine has no Android SDK; CI is the release authority for that lane.",
+      "A physical iOS or Android client was not paired to a Desktop containing an imported Cursor conversation."
+    ]
+  }
+}

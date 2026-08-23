@@ -82,6 +82,30 @@ describe('NativeSessionImportModal', () => {
     expect(css).toMatch(/\.recovery-modal-action:disabled/)
   })
 
+  it('renders Cursor as import provenance instead of a provider adapter', () => {
+    const cursor: SessionSummary = {
+      id: 'composer-1',
+      source: 'cursor',
+      title: 'Imported chat',
+      startedAt: 3,
+      messageCount: 2,
+      filePath: '/Cursor/User/globalStorage/state.vscdb',
+      nativeRole: 'foreground',
+    }
+    const markup = renderToStaticMarkup(createElement(recoveryModal.NativeSessionImportModal, {
+      projectName: 'Switchboard',
+      candidates: [cursor],
+      importingId: null,
+      error: null,
+      onImport: () => {},
+      onClose: () => {},
+    }))
+
+    expect(markup).toContain('CURSOR')
+    expect(markup).toContain('Imported chat')
+    expect(recoveryModal.filterRecoveryCandidates([cursor], 'cursor')).toEqual([cursor])
+  })
+
   it('traps keyboard focus and restores the recovery trigger on close', () => {
     expect(modalSource).toMatch(/const dialogRef = useRef/)
     expect(modalSource).toMatch(/event\.key !== 'Tab'/)

@@ -408,14 +408,15 @@ Traps:
 - Native app menu (`⌘,` for settings, standard Edit/View/Window)
 - File-based logger at `~/Library/Application Support/switchboard/logs/`
 - Launch-config YAML parser (runtime hydration on launch)
+- **Cursor recovery import** (2026-08-24): read-only legacy/current SQLite discovery, exact project matching, explicit idempotent snapshot, durable Cursor provenance, and one-time bounded Claude continuation handoff
+- **Credential-aware Desktop signing** (2026-08-24): complete macOS/Windows secrets select forced production signing (plus macOS notarization); absent secrets preserve unsigned packaging; partial sets fail closed
+- **Launch-config hot reload + startup orchestration**: `.switchboard/launch-config.yaml` changes reconcile live layouts and per-pane `wait_for` gates commands
+- **Provider/profile context preservation**: cross-provider changes inject one bounded handoff; same-provider OAuth rotations migrate and resume validated native transcripts
 
 ## What's NOT working yet
 
-- **Code-signing** - unsigned macOS arm64/x64 `.dmg`/`.zip` and Windows `.exe`/`.zip` builds ship via `npm run dist:*`; `electron-updater` is wired (`main/updater.ts`, auto + manual). Awaiting Apple Developer cert.
-- **launch-config.yaml hot-reload** + `on_start` wait/then orchestration - partial; runtime hydration works
-- **Cursor import** (read `state.vscdb`) - not started
+- **Production signing credentials** - implementation is ready, but releases remain unsigned until repository secrets contain the actual Apple Developer ID/notarization and Windows Authenticode credentials.
 - **Codex / OpenCode fork resume** - fork creates the new conversation but only Claude resumes real context; Codex/OpenCode start cold (audit record / summary only)
-- **Provider hot-swap context preservation** - swapping agent mid-chat keeps the visible stream but the new adapter starts with zero context (see `docs/notes/roadmap-deferred.md` #4)
 
 ## Skill exposure (shipped 2026-04-26)
 

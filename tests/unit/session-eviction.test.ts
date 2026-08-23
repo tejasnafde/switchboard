@@ -6,6 +6,7 @@ import {
   resolveSessionOpenAgentType,
   resolveSessionSelectTarget,
   shouldRetrySessionLoadAfterCreate,
+  resolveSessionResumeId,
 } from '../../src/renderer/utils/session-eviction'
 
 describe('resolveSessionSelectTarget', () => {
@@ -36,6 +37,14 @@ describe('resolveSessionDisplayTitle', () => {
 describe('resolveSessionOpenAgentType', () => {
   it('uses the canonical current provider after a mixed-provider history load', () => {
     expect(resolveSessionOpenAgentType('claude-code', 'codex')).toBe('codex')
+  })
+})
+
+describe('resolveSessionResumeId', () => {
+  it('starts a Cursor import cold until its first native provider segment exists', () => {
+    expect(resolveSessionResumeId('cursor', 'cursor:composer-1')).toBeUndefined()
+    expect(resolveSessionResumeId('claude-code', 'native-1')).toBe('native-1')
+    expect(resolveSessionResumeId('codex', 'native-2')).toBe('native-2')
   })
 })
 

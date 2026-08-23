@@ -1075,11 +1075,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         const preamble = buildHandoffPreamble(history)
         if (preamble) {
           wireMessage = `${preamble}\n\n${message}`
-          const handoffFrom = pendingHandoffFrom as AgentType
+          const handoffFrom = pendingHandoffFrom as NonNullable<UserTurnSubmissionV1['handoff']>['expectedFrom']
           const markerText = handoffFrom === agentType
             ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(agentType)} profile restarted with visible history`
             : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(handoffFrom)} → ${agentLabel(agentType)}`
-          if (handoffFrom === 'claude-code' || handoffFrom === 'codex' || handoffFrom === 'opencode') {
+          if (handoffFrom === 'claude-code'
+            || handoffFrom === 'codex'
+            || handoffFrom === 'opencode'
+            || handoffFrom === 'cursor') {
             handoff = {
               expectedFrom: handoffFrom,
               markerId: '',

@@ -6,7 +6,7 @@
 
 ---
 
-## Current status (2026-06-19)
+## Current status (2026-08-24)
 
 The phase checkboxes below are the original day-1 spec and are kept as a
 historical reference rather than a live progress tracker. Here's what's
@@ -18,12 +18,12 @@ actually shipped:
 | 1 - Terminal Engine | ✅ Done | Row/Window/Pane model (tmux-style), splits, keyboard nav, resize |
 | 2 - Agent Bridge | ✅ Done | Claude SDK + Codex app-server JSON-RPC + OpenCode ACP adapter (legacy retired 2026-05-02) |
 | 3 - Context Bridge | ✅ Done | `⌘L` multi-source dispatch (terminal / file-viewer / chat-message) + `⌘K` quick prompt |
-| 4 - Conversation History | 🟨 Partial | Claude + Codex importers working; Cursor import not started |
-| 5 - workspace.yaml | 🟨 Partial | Parser + launch-time hydration works; hot-reload + `on_start` wait/then not done |
+| 4 - Conversation History | ✅ Done | Claude, Codex, OpenCode and read-only Cursor recovery inventory; imported Cursor history continues through Claude with a one-time bounded handoff |
+| 5 - Launch configs | ✅ Done | `.switchboard/launch-config.yaml` hydration, hot reload and per-pane `wait_for` startup orchestration shipped |
 | 6 - Multi-Agent | ✅ Done | All three adapters at parity; side-by-side dual chat panels (`⌘|`) shipped |
 | 7 - Polish & UX | ✅ Done | Theme system, design system, command palette, keyboard-first nav, project switcher, status bar, system notifications, feature tour, ⌘F in-pane search all done. (Vim-nav for terminals still open.) |
 | 8 - Persistence | 🟨 Partial | Workspace state + conversation persistence + FTS search done. Reconnect to running PTYs not done. |
-| 9 - Distribution | 🟨 In progress | electron-builder + auto-update shipped. Code-signing deferred (no Apple Developer account). `switchboard` CLI deferred indefinitely. |
+| 9 - Distribution | 🟨 In progress | electron-builder + auto-update shipped. Release CI signs/notarizes when complete credentials exist and preserves an explicit unsigned path when absent. `switchboard` CLI remains deferred. |
 | 10 - Advanced | 🟥 Not started | Plugin system, team features, auto-summarize, virtual scrolling |
 
 ### Recent feature additions beyond the original plan
@@ -47,7 +47,11 @@ actually shipped:
 - **Project favicons** in sidebar via `sb-favicon://` custom protocol
 - **~790 unit tests** across 86 files
 
-Current focus: code-signing (blocked on Apple Developer account), Cursor import, workspace.yaml hot-reload.
+The four stale roadmap gaps recorded in June are closed: Cursor import is
+implemented, launch configs hot-reload with `wait_for`, provider/profile swaps
+carry bounded context or native transcripts, and release signing is
+credential-aware and fail-closed. Production certificate enrollment remains an
+operator credential task rather than an implementation gap.
 
 ---
 
@@ -175,10 +179,10 @@ Current focus: code-signing (blocked on Apple Developer account), Cursor import,
 - [ ] Parse into normalized format
 
 ### 4d - Cursor importer
-- [ ] Read `~/Library/Application Support/Cursor/User/workspaceStorage/*/state.vscdb`
-- [ ] Use `better-sqlite3` to query `composer.composerData` key
-- [ ] Parse JSON blob into normalized conversations
-- [ ] Match to project by workspace folder path in SQLite metadata
+- [x] Read legacy workspace-local and current global Cursor SQLite stores in read-only mode
+- [x] Parse bounded composer/bubble records into normalized conversations
+- [x] Match exact folder and multi-root workspace membership
+- [x] Snapshot selected history idempotently with durable Cursor provenance
 
 ### 4e - Session sidebar
 - [ ] `SessionSidebar` component in left panel

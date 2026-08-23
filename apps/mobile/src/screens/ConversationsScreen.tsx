@@ -19,7 +19,7 @@ import {
 } from 'react-native'
 import { useFocusEffect } from '@react-navigation/native'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
-import { agentShortLabel, isAgentType, type ConversationRow } from '@shared/types'
+import { isAgentType, type ConversationRow } from '@shared/types'
 import { formatRelativeTime } from '@shared/format'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, statusColor, type, HIT } from '../theme'
@@ -27,12 +27,9 @@ import { keyboardAvoidance } from '../lib/keyboardAvoidance'
 import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
+import { conversationSourceLabel } from '../lib/conversationSource'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
-
-function agentChipLabel(agentType: string): string {
-  return isAgentType(agentType) ? agentShortLabel(agentType) : agentType
-}
 
 /**
  * Title line with live status dot + unread pill. Primitive selectors keyed to
@@ -233,7 +230,7 @@ export default function ConversationsScreen({ route, navigation }: Props) {
               <RowMeta threadKeyStr={threadKey(connectionId, item.id)} title={item.title} />
               <View style={styles.metaLine}>
                 <View style={styles.agentChip}>
-                  <Text style={styles.agentChipText}>{agentChipLabel(item.agent_type)}</Text>
+                  <Text style={styles.agentChipText}>{conversationSourceLabel(item)}</Text>
                 </View>
                 <Text style={styles.time}>{formatRelativeTime(item.updated_at)}</Text>
               </View>

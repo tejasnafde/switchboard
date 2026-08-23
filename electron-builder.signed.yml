@@ -1,0 +1,15 @@
+extends: ./electron-builder.yml
+
+# Never fall back to an unsigned artifact after signing was selected.
+forceCodeSigning: true
+afterSign: build/afterSign.js
+
+mac:
+  hardenedRuntime: true
+  gatekeeperAssess: true
+  notarize: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+
+win:
+  signAndEditExecutable: true

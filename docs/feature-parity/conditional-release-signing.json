@@ -1,0 +1,52 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "conditional-release-signing",
+  "summary": "Select signed release packaging only for complete platform credential sets, fail closed for partial secrets, and retain an explicit unsigned contributor path.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "electron-builder.signed.yml",
+        "build/afterSign.js",
+        "tests/unit/signing-mode.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native/iOS release channel and package identity are unchanged; this feature governs Electron release artifacts only."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android uses its separate production keystore workflow documented in docs/releasing.md and is not packaged by electron-builder."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Signing selection changes artifact production and does not alter the Desktop/mobile wire contract."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Signing selection introduces no stored application data or migration."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/release.yml",
+        "scripts/signing-mode.mjs",
+        "electron-builder.signed.yml",
+        "docs/releasing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/signing-mode.test.ts covers absent, complete and partial credentials plus the production builder overlay",
+      "Release jobs run codesign/notarization-ticket or Authenticode verification when signed mode is selected"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Production macOS signing/notarization was not exercised locally because no Developer ID credentials are installed.",
+      "Production Windows Authenticode was not exercised locally because no Windows certificate is installed and this host is macOS."
+    ]
+  }
+}

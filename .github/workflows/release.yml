@@ -9,9 +9,9 @@
 # on every commit while still catching regressions when a tag goes out.
 # A separate `ci.yml` (not in this commit) covers per-PR typecheck/test.
 #
-# Builds are unsigned. macOS users will get a Gatekeeper prompt on each
-# update; Windows users see SmartScreen "More info → Run anyway" once.
-# These tradeoffs are documented in `docs/releasing.md`.
+# A complete credential set produces signed artifacts (and a notarized macOS
+# app). No credentials preserves the supported unsigned contributor path.
+# Partial credentials fail closed before packaging.
 name: Release
 
 on:
@@ -103,6 +103,25 @@ jobs:
       - name: Build renderer + main
         run: npm run build
 
+      - name: Select macOS signing mode
+        if: runner.os == 'macOS'
+        id: signing_mac
+        run: node scripts/signing-mode.mjs mac
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Select Windows signing mode
+        if: runner.os == 'Windows'
+        id: signing_windows
+        run: node scripts/signing-mode.mjs windows
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+
       # `--publish always` makes electron-builder upload artifacts to
       # the GitHub Release matching the current tag. The matrix runs
       # both jobs in parallel; both target the same Release and
@@ -111,13 +130,26 @@ jobs:
       # Tag push publishes to the Release; a manual dispatch only builds
       # (validation), so it never uploads assets to any Release.
       - name: Build & publish
-        run: npx electron-builder --publish ${{ github.event_name == 'workflow_dispatch' && 'never' || 'always' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config=()
+          if [ "$SB_SIGNING_MODE" = "signed" ]; then
+            config=(--config electron-builder.signed.yml)
+          fi
+          npx electron-builder "${config[@]}" --publish "$PUBLISH_MODE"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Disable electron-builder's notarize step explicitly. Without
-          # this it can hang on macOS waiting for an Apple ID prompt
-          # that will never come (we have no developer cert).
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          PUBLISH_MODE: ${{ github.event_name == 'workflow_dispatch' && 'never' || 'always' }}
+          SB_SIGNING_MODE: ${{ steps.signing_mac.outputs.mode || steps.signing_windows.outputs.mode }}
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (steps.signing_mac.outputs.mode == 'signed' || steps.signing_windows.outputs.mode == 'signed') && 'true' || 'false' }}
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
   # A partial Release is the worst outcome this pipeline can produce: the
   # install artifacts are useless without their `latest*.yml`, and a missing

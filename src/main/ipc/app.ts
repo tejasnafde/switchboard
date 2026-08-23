@@ -64,6 +64,7 @@ import {
   getRecoveryConversationTitles,
   recordConversationSegment,
   findManagedConversationForNativeSession,
+  getDb,
 } from '../db/database'
 import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
@@ -73,6 +74,8 @@ import { forkConversation } from '../conversations/fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
 import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversationSidebarRole'
+import { loadCursorConversation } from '../cursor/store'
+import { importCursorSnapshot } from '../db/cursor-import'
 
 const log = createLogger('ipc:app')
 
@@ -129,13 +132,34 @@ export function registerAppHandlers(host: BackendHost): void {
   host.handle(AppChannels.IMPORT_SESSION, async (
     projectPath: string,
     sessionId: string,
-    source: 'claude-code' | 'codex',
+    source: 'claude-code' | 'codex' | 'cursor',
   ) => {
     const scanned = await scanAllSessions(projectPath, claudeCandidateDirs(), codexCandidateDirs())
     const candidates = enrichRecoveryCandidates(scanned)
     const candidate = candidates.find((session) => session.id === sessionId && session.source === source)
     if (!candidate) return { ok: false, error: 'Native session is no longer available' }
     if (!candidate.filePath) return { ok: false, error: 'This provider has no importable transcript' }
+
+    if (source === 'cursor') {
+      const loaded = await loadCursorConversation(projectPath, sessionId)
+      if (!loaded) return { ok: false, error: 'The Cursor transcript could not be read' }
+      let imported: ReturnType<typeof importCursorSnapshot>
+      try {
+        imported = importCursorSnapshot(getDb(), {
+          composerId: loaded.summary.id,
+          projectPath,
+          title: loaded.summary.title,
+          startedAt: loaded.summary.startedAt,
+          messages: loaded.messages,
+        })
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : 'Cursor import failed' }
+      }
+      host.emit(AppChannels.CONVERSATIONS_CHANGED)
+      return { ok: true, session: projectManagedRootSessions(
+        getManagedRootConversationsForProject(projectPath),
+      ).find((session) => session.id === imported.conversationId) ?? null }
+    }
 
     const delegated = candidate.nativeRole === 'subagent' || candidate.nativeRole === 'utility'
     const existingId = findManagedConversationForNativeSession(source, candidate.id, delegated)

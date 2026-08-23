@@ -2,6 +2,22 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.38 - Bring Cursor history into the switchboard
+
+### Added
+- **Cursor conversations now appear in the recovery inventory.** Switchboard discovers both legacy workspace-local and current global Cursor SQLite layouts through exact folder or multi-root workspace membership, reads them without write access, and imports only the transcript the user selects.
+- **Imported Cursor history can continue as a real agent chat.** The snapshot keeps durable Cursor provenance across Desktop, React Native/iOS, native Android, and the shared wire row while Claude Code remains the runnable provider. Its first accepted turn receives the existing bounded handoff exactly once; later turns resume the native provider segment normally.
+- **Desktop release signing is production-ready.** Complete platform credentials select forced signing, hardened runtime and notarization on macOS or Authenticode on Windows. Missing credentials retain the documented unsigned path; partial credential sets fail before packaging, and signed output is verified in the builder hook.
+
+### Fixed
+- **The roadmap still reported shipped behavior as missing.** Launch-config hot reload and `wait_for` startup orchestration, cross-provider bounded handoffs, and same-provider OAuth transcript migration are now recorded against their implementations and regression suites.
+- **Re-importing Cursor could have risked replacing continued work.** Snapshots refresh idempotently only before a provider continuation exists; once a native segment is recorded, the managed history is left untouched.
+
+### Notes
+- Cursor JSON records are size-bounded, malformed records are isolated, and Cursor's own databases are never changed.
+- The repository currently has no macOS or Windows signing secrets, so this release uses the supported unsigned packaging path. Adding the documented complete credential sets will activate signed artifacts without another code change.
+- Android provenance code is covered by source tests but could not be run locally because this machine has no Android SDK; the release CI remains the automated authority for that lane.
+
 ## 0.8.37 - Never show a turn the provider never received
 
 ### Fixed

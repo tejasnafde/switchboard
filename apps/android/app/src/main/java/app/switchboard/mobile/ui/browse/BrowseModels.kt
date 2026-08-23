@@ -124,6 +124,7 @@ data class BrowseConversationRow(
     val availableOffline: Boolean,
     val unread: Int,
     val status: String?,
+    val originSource: String? = null,
 )
 
 sealed interface BrowseProjectsPresentation {
@@ -231,6 +232,7 @@ object BrowsePresenter {
                     availableOffline = offlineIndex.contains(conversation.id),
                     unread = activity[conversation.id]?.unread ?: 0,
                     status = activity[conversation.id]?.status,
+                    originSource = conversation.originSource,
                 )
             },
             status = status(state, "conversations", visible.size),
@@ -297,7 +299,7 @@ object BrowseRowPolicy {
     }
 
     fun conversationSupportingLabel(row: BrowseConversationRow): String = listOfNotNull(
-        agentLabel(row.agentType),
+        if (row.originSource == "cursor") "Cursor" else agentLabel(row.agentType),
         when {
             row.status.isFailureStatus() -> row.status
             row.unread > 0 -> "${row.unread} unread"
