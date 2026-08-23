@@ -1,4 +1,5 @@
 import {
+  Component,
   forwardRef,
   useCallback,
   useEffect,
@@ -8,10 +9,13 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type FocusEvent,
   type MouseEvent,
+  type RefObject,
 } from 'react'
 import { marked, Renderer, type Tokens } from 'marked'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('chat:markdown-copy')
 
 interface RenderMarkdownOptions {
   mutable?: boolean
@@ -56,6 +60,7 @@ function findCopyButton(target: unknown): CopyButtonTarget | null {
 export async function copyCodeFromTarget(
   target: unknown,
   writeText: (text: string) => Promise<void>,
+  onError?: (error: unknown) => void,
 ): Promise<number | null> {
   const button = findCopyButton(target)
   const index = Number(button?.dataset?.codeCopyIndex)
@@ -66,9 +71,20 @@ export async function copyCodeFromTarget(
   try {
     await writeText(code.textContent ?? '')
     return index
-  } catch {
+  } catch (error) {
+    onError?.(error)
     return null
   }
+}
+
+export function focusedCopyIndexBeforeReplacement<T>(
+  root: Pick<FocusRoot<T>, 'contains'>,
+  activeElement: T,
+): number | null {
+  if (!root.contains(activeElement)) return null
+  const button = findCopyButton(activeElement)
+  const index = Number(button?.dataset?.codeCopyIndex)
+  return button && Number.isInteger(index) ? index : null
 }
 
 export function scheduleCopyFeedback<T>(
@@ -147,6 +163,45 @@ export function renderMarkdownWithCopyControls(
   return marked.parse(markdown, { async: false, renderer }) as string
 }
 
+interface AtomicMarkdownRootProps {
+  html: string
+  className: string
+  style?: CSSProperties
+  rootRef: RefObject<HTMLDivElement | null>
+  onClick: (event: MouseEvent<HTMLDivElement>) => void
+}
+
+class AtomicMarkdownRoot extends Component<AtomicMarkdownRootProps> {
+  getSnapshotBeforeUpdate(previousProps: AtomicMarkdownRootProps): number | null {
+    if (previousProps.html === this.props.html) return null
+    const root = this.props.rootRef.current
+    return root ? focusedCopyIndexBeforeReplacement(root, document.activeElement) : null
+  }
+
+  componentDidUpdate(
+    _previousProps: AtomicMarkdownRootProps,
+    _previousState: unknown,
+    focusedIndex: number | null,
+  ): void {
+    const root = this.props.rootRef.current
+    if (root && focusedIndex !== null) {
+      restoreCopyButtonFocus(root, focusedIndex, document.activeElement, document.body)
+    }
+  }
+
+  render() {
+    return (
+      <div
+        ref={this.props.rootRef}
+        className={this.props.className}
+        style={this.props.style}
+        onClick={this.props.onClick}
+        dangerouslySetInnerHTML={{ __html: this.props.html }}
+      />
+    )
+  }
+}
+
 export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithCopyControlsProps>(
   function MarkdownWithCopyControls(
     { markdown, mutable = false, className = 'markdown-content', style },
@@ -156,7 +211,6 @@ export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithC
     const rootRef = useRef<HTMLDivElement>(null)
     const cancelFeedbackRef = useRef<(() => void) | null>(null)
     const previousFeedbackIndexRef = useRef<number | null>(null)
-    const focusedBlockIndexRef = useRef<number | null>(null)
     const mountedRef = useRef(false)
     const rendered = useMemo(
       () => renderMarkdownWithCopyControls(markdown, { mutable }),
@@ -183,23 +237,7 @@ export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithC
         if (button) applyCopyButtonFeedback(button, index, index === copiedBlockIndex)
       }
       previousFeedbackIndexRef.current = copiedBlockIndex
-      const focusedIndex = focusedBlockIndexRef.current
-      if (!restoreCopyButtonFocus(root, focusedIndex, document.activeElement, document.body)) {
-        focusedBlockIndexRef.current = null
-      }
     }, [copiedBlockIndex, rendered])
-
-    const handleFocusCapture = useCallback((event: FocusEvent<HTMLDivElement>) => {
-      const button = findCopyButton(event.target)
-      const index = Number(button?.dataset?.codeCopyIndex)
-      focusedBlockIndexRef.current = button && Number.isInteger(index) ? index : null
-    }, [])
-
-    const handleBlurCapture = useCallback((event: FocusEvent<HTMLDivElement>) => {
-      if (event.relatedTarget && !rootRef.current?.contains(event.relatedTarget)) {
-        focusedBlockIndexRef.current = null
-      }
-    }, [])
 
     const handleClick = useCallback((event: MouseEvent<HTMLDivElement>) => {
       if (!findCopyButton(event.target)) return
@@ -211,7 +249,9 @@ export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithC
         }
         return navigator.clipboard.writeText(text)
       }
-      void copyCodeFromTarget(event.target, writeText).then((index) => {
+      void copyCodeFromTarget(event.target, writeText, (error) => {
+        log.warn('clipboard write failed', error)
+      }).then((index) => {
         if (index === null || !mountedRef.current) return
         cancelFeedbackRef.current?.()
         cancelFeedbackRef.current = scheduleCopyFeedback(
@@ -223,16 +263,12 @@ export const MarkdownWithCopyControls = forwardRef<HTMLDivElement, MarkdownWithC
       })
     }, [])
 
-    return (
-      <div
-        ref={rootRef}
-        className={className}
-        style={style}
-        onClick={handleClick}
-        onFocusCapture={handleFocusCapture}
-        onBlurCapture={handleBlurCapture}
-        dangerouslySetInnerHTML={{ __html: rendered }}
-      />
-    )
+    return <AtomicMarkdownRoot
+      html={rendered}
+      className={className}
+      style={style}
+      rootRef={rootRef}
+      onClick={handleClick}
+    />
   },
 )

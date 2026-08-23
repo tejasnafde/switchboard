@@ -1,5 +1,8 @@
 import { useState, useMemo, useRef } from 'react'
 import type { ToolCall } from '@shared/types'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('chat:tool-call')
 
 interface ToolCallBlockProps {
   toolCall: ToolCall
@@ -220,7 +223,9 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    }).catch(() => {})
+    }).catch((error: unknown) => {
+      log.warn('clipboard write failed', error)
+    })
   }
 
   const variantStyles: Record<string, React.CSSProperties> = {

@@ -6,6 +6,7 @@ import { MessageBubble } from '../../src/renderer/components/chat/MessageBubble'
 import { PlanCard } from '../../src/renderer/components/chat/PlanCard'
 import {
   copyCodeFromTarget,
+  focusedCopyIndexBeforeReplacement,
   renderMarkdownWithCopyControls,
   restoreCopyButtonFocus,
   scheduleCopyFeedback,
@@ -173,6 +174,7 @@ describe('Markdown code-block copy controls', () => {
   })
 
   it('contains clipboard rejection and leaves copied feedback inactive', async () => {
+    const errors: unknown[] = []
     const code = { textContent: 'denied' }
     const pre = { querySelector: () => code }
     let button: { dataset: { codeCopyIndex: string }; closest: (selector: string) => unknown }
@@ -181,8 +183,27 @@ describe('Markdown code-block copy controls', () => {
       closest: (selector: string) => selector === 'pre' ? pre : selector === '.code-copy-btn' ? button : null,
     }
 
-    await expect(copyCodeFromTarget(button, () => Promise.reject(new Error('clipboard denied'))))
+    const denied = new Error('clipboard denied')
+    await expect(copyCodeFromTarget(
+      button,
+      () => Promise.reject(denied),
+      (error) => errors.push(error),
+    ))
       .resolves.toBeNull()
+    expect(errors).toEqual([denied])
+  })
+
+  it('restores focus only when a copy control is focused before replacement', () => {
+    let button: { dataset: { codeCopyIndex: string }; closest: (selector: string) => unknown }
+    button = {
+      dataset: { codeCopyIndex: '2' },
+      closest: (selector: string) => selector === '.code-copy-btn' ? button : null,
+    }
+    const outside = {}
+    const root = { contains: (target: unknown) => target === button }
+
+    expect(focusedCopyIndexBeforeReplacement(root, button)).toBe(2)
+    expect(focusedCopyIndexBeforeReplacement(root, outside)).toBeNull()
   })
 
   it('keeps copied feedback through rerenders and resets it cleanly', () => {
