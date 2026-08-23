@@ -223,25 +223,81 @@ class OutboxCoordinatorTest {
     }
 
     @Test
-    fun staleSendCompletionCannotOverwriteAnEditedPayloadOrStatus() {
+    fun inFlightPendingTurnCannotEnterEditingOrReplaceItsPayload() {
         val fixture = Fixture()
-        fixture.coordinator.enqueue(draft("thread-a", text = "before"))
-        val oldCompletion = fixture.sender.callback("origin-1")
-        fixture.environment.gates["thread-a"] = DeliveryGate(DeliveryReadiness.Offline, false)
+        fixture.coordinator.enqueue(
+            draft(
+                "thread-a",
+                text = "before",
+                attachments = listOf(AttachmentDraft("content://old", "image/png")),
+            ),
+        )
 
-        assertEquals("before", fixture.coordinator.beginEdit("origin-1")?.text)
+        assertEquals(null, fixture.coordinator.beginEdit("origin-1"))
         val replaced = fixture.coordinator.replace(
             "origin-1",
-            draft("thread-a", text = "after"),
+            draft(
+                "thread-a",
+                text = "after",
+                attachments = listOf(AttachmentDraft("content://new", "image/png")),
+            ),
         )
-        oldCompletion(SendOutcome.Accepted(SendReceipt.legacy()))
 
-        assertTrue(replaced is EnqueueResult.Durable)
+        assertTrue(replaced is EnqueueResult.StorageFailure)
         val current = fixture.coordinator.records().single()
-        assertEquals("after", current.text)
-        assertEquals("origin-1", current.origin)
-        assertEquals("remote_origin-1", current.bubbleId)
-        assertTrue(current.deliveryState is OutboxDeliveryState.Pending)
+        assertEquals("before", current.text)
+        assertEquals("private://old", current.attachments.single().privateUri)
+        assertFalse(fixture.log.contains("discard:private://old"))
+    }
+
+    @Test
+    fun ambiguousTurnCannotEnterEditingOrReplaceItsPayload() {
+        val fixture = Fixture()
+        fixture.coordinator.enqueue(
+            draft(
+                "thread-a",
+                text = "before",
+                attachments = listOf(AttachmentDraft("content://old", "image/png")),
+            ),
+        )
+        fixture.sender.complete("origin-1", SendOutcome.Ambiguous("unknown"))
+
+        assertEquals(null, fixture.coordinator.beginEdit("origin-1"))
+        val replaced = fixture.coordinator.replace(
+            "origin-1",
+            draft(
+                "thread-a",
+                text = "after",
+                attachments = listOf(AttachmentDraft("content://new", "image/png")),
+            ),
+        )
+
+        assertTrue(replaced is EnqueueResult.StorageFailure)
+        val current = fixture.coordinator.records().single()
+        assertEquals("before", current.text)
+        assertEquals("private://old", current.attachments.single().privateUri)
+        assertTrue(current.deliveryState is OutboxDeliveryState.Ambiguous)
+        assertFalse(fixture.log.contains("discard:private://old"))
+    }
+
+    @Test
+    fun ambiguousTurnCannotBeDismissedAndRetainsItsAttachments() {
+        val fixture = Fixture()
+        fixture.coordinator.enqueue(
+            draft(
+                "thread-a",
+                attachments = listOf(AttachmentDraft("content://photo", "image/png")),
+            ),
+        )
+        fixture.sender.complete("origin-1", SendOutcome.Ambiguous("unknown"))
+
+        fixture.coordinator.dismiss("origin-1")
+
+        val retained = fixture.coordinator.records().single()
+        assertEquals("private://photo", retained.attachments.single().privateUri)
+        assertTrue(retained.deliveryState is OutboxDeliveryState.Ambiguous)
+        assertFalse(fixture.log.contains("delete:origin-1"))
+        assertFalse(fixture.log.contains("discard:private://photo"))
     }
 
     @Test

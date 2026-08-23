@@ -105,6 +105,11 @@ class OutboxCoordinator(
     @Synchronized
     fun beginEdit(origin: String): QueuedTurn? {
         val turn = records[origin] ?: return null
+        if (
+            turn.deliveryState is OutboxDeliveryState.Ambiguous ||
+            turn.deliveryState is OutboxDeliveryState.Acknowledged ||
+            origin in inFlightOrigins
+        ) return null
         editingOrigins += origin
         invalidateAttempt(turn)
         scheduler.cancel(origin)
@@ -118,6 +123,13 @@ class OutboxCoordinator(
             ?: return EnqueueResult.StorageFailure("Queued turn no longer exists")
         if (draft.connectionId != before.connectionId || draft.threadId != before.threadId) {
             return EnqueueResult.StorageFailure("Queued turn scope cannot change")
+        }
+        if (
+            before.deliveryState is OutboxDeliveryState.Ambiguous ||
+            before.deliveryState is OutboxDeliveryState.Acknowledged ||
+            origin in inFlightOrigins
+        ) {
+            return EnqueueResult.StorageFailure("Queued turn cannot be edited while delivery is uncertain")
         }
         val staged = when (val result = attachmentStager.stage(draft.attachments)) {
             is AttachmentStageResult.Failure -> return EnqueueResult.AttachmentFailure(result.reason)
@@ -170,7 +182,10 @@ class OutboxCoordinator(
     @Synchronized
     fun dismiss(origin: String) {
         val turn = records[origin] ?: return
-        if (turn.deliveryState is OutboxDeliveryState.Pending) return
+        if (
+            turn.deliveryState is OutboxDeliveryState.Pending ||
+            turn.deliveryState is OutboxDeliveryState.Ambiguous
+        ) return
         when (store.delete(origin)) {
             is OutboxStorageResult.Failure -> return
             OutboxStorageResult.Success -> {

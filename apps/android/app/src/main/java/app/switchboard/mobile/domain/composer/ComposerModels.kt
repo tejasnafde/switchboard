@@ -79,9 +79,9 @@ enum class OutboxUiAction {
 object OutboxPresentationPolicy {
     fun actions(turn: QueuedTurn): Set<OutboxUiAction> = when (turn.deliveryState) {
         OutboxDeliveryState.Pending -> setOf(OutboxUiAction.Edit)
-        is OutboxDeliveryState.Ambiguous,
-        is OutboxDeliveryState.Terminal,
-        -> setOf(OutboxUiAction.Retry, OutboxUiAction.Edit, OutboxUiAction.Dismiss)
+        is OutboxDeliveryState.Ambiguous -> setOf(OutboxUiAction.Retry)
+        is OutboxDeliveryState.Terminal ->
+            setOf(OutboxUiAction.Retry, OutboxUiAction.Edit, OutboxUiAction.Dismiss)
 
         is OutboxDeliveryState.Acknowledged -> emptySet()
     }

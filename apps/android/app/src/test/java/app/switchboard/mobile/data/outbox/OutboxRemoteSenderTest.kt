@@ -121,6 +121,25 @@ class OutboxRemoteSenderTest {
     }
 
     @Test
+    fun changedPayloadOriginConflictIsPermanentAndActionable() {
+        val rpc = FakeRpc()
+        val outcomes = mutableListOf<SendOutcome>()
+        sender(rpc).send(turn(), outcomes::add)
+
+        rpc.reply(
+            RpcOutcome.Failure(
+                RpcFailure.Remote("turn origin was already used with a different payload"),
+            ),
+        )
+
+        val outcome = outcomes.single() as SendOutcome.Permanent
+        assertEquals(
+            "This turn's retry identity was already used with different text or images. Send the edit as a new message.",
+            outcome.reason,
+        )
+    }
+
+    @Test
     fun materializationAndInvalidRuntimeFailuresArePermanentBeforeInvoke() {
         val rpc = FakeRpc()
         val failedMaterializer = OutboxImageMaterializer {

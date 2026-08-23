@@ -101,7 +101,7 @@ class OutboxRemoteSender(
         }
         return when (val outcome = response.outcome) {
             is RemoteOutcome.Success -> SendResponseDecoder.decode(outcome.value.body)
-            is RemoteOutcome.Failure -> deterministicImageRejection(outcome.message)
+            is RemoteOutcome.Failure -> deterministicRejection(outcome.message)
                 ?.let(SendOutcome::Permanent)
                 ?: SendOutcome.TransportAmbiguous(outcome.message)
         }
@@ -109,8 +109,15 @@ class OutboxRemoteSender(
 
 }
 
-private fun deterministicImageRejection(message: String): String? =
-    IMAGE_REJECTION_MESSAGES.firstOrNull(message::contains)
+private fun deterministicRejection(message: String): String? {
+    if (ORIGIN_CONFLICT_MESSAGE in message) return ORIGIN_CONFLICT_RECOVERY
+    return IMAGE_REJECTION_MESSAGES.firstOrNull(message::contains)
+}
+
+private const val ORIGIN_CONFLICT_MESSAGE =
+    "turn origin was already used with a different payload"
+private const val ORIGIN_CONFLICT_RECOVERY =
+    "This turn's retry identity was already used with different text or images. Send the edit as a new message."
 
 private val IMAGE_REJECTION_MESSAGES = listOf(
     "Images must be PNG, JPEG, WebP, or GIF data URLs",
@@ -187,7 +194,7 @@ private class SubmissionAwareCompletion(
         RpcFailure.ServiceDestroyed,
         is RpcFailure.ConnectionLost,
         -> SendOutcome.TransportAmbiguous(reason.toString())
-        is RpcFailure.Remote -> deterministicImageRejection(reason.error)
+        is RpcFailure.Remote -> deterministicRejection(reason.error)
             ?.let(SendOutcome::Permanent)
             ?: SendOutcome.TransportAmbiguous(reason.error)
     }
