@@ -34,6 +34,7 @@ private val LIST_TOOL_NAMES = setOf("list_files", "listfiles", "ls", "directory_
 private val WEB_FETCH_TOOL_NAMES = setOf("webfetch", "web_fetch", "fetch", "fetch_url")
 private val WEB_SEARCH_TOOL_NAMES = setOf("websearch", "web_search", "search_web")
 private val TASK_TOOL_NAMES = setOf("task", "agent", "subagent", "spawn_agent", "delegate")
+private val TODO_TOOL_NAMES = setOf("todowrite", "todo_write", "update_plan", "write_todos")
 private val FILE_PATH_KEYS = listOf("file_path", "path", "filePath", "notebook_path", "notebookPath")
 private val UNKNOWN_TOOL_DETAIL_KEYS = listOf(
     "command" to true,
@@ -122,6 +123,7 @@ enum class ToolIconKind {
     WEB,
     TASK,
     NOTEBOOK,
+    TODO,
     OTHER,
 }
 
@@ -390,21 +392,33 @@ object ThreadPresenter {
         val monospaceDetail: Boolean,
     )
 
+    private data class NormalizedToolName(
+        val canonical: String,
+        val mcpServer: String? = null,
+    )
+
     private fun toolSummary(toolName: String, input: JsonValue?): ToolSummary {
-        val canonical = canonicalToolName(toolName)
-        val values = (input as? JsonObject)?.values.orEmpty()
+        val normalizedName = normalizedToolName(toolName)
+        val canonical = normalizedName.canonical
+        val values = toolValues(input)
         fun string(vararg keys: String): String? = keys.firstNotNullOfOrNull { key ->
             (values[key] as? JsonString)?.value?.takeIf(String::isNotBlank)
+        }
+        fun command(key: String): String? = when (val value = values[key]) {
+            is JsonString -> value.value.takeIf(String::isNotBlank)
+            is JsonArray -> value.values
+                .mapNotNull { (it as? JsonString)?.value?.takeIf(String::isNotBlank) }
+                .takeIf(List<String>::isNotEmpty)
+                ?.joinToString(" ")
+            else -> null
         }
 
         val summary = when (canonical) {
             in SHELL_TOOL_NAMES -> ToolSummary(
                 label = "Bash",
-                detail = when (val command = values["command"] ?: values["cmd"] ?: values["args"]) {
-                    is JsonString -> command.value
-                    is JsonArray -> command.values.mapNotNull { (it as? JsonString)?.value }.joinToString(" ")
-                    else -> ""
-                },
+                detail = listOf("command", "cmd", "args")
+                    .firstNotNullOfOrNull(::command)
+                    .orEmpty(),
                 iconKind = ToolIconKind.SHELL,
                 monospaceDetail = true,
             )
@@ -440,14 +454,14 @@ object ThreadPresenter {
             )
 
             in WEB_FETCH_TOOL_NAMES -> ToolSummary(
-                "Web",
+                "Fetch",
                 string("url", "uri").orEmpty(),
                 ToolIconKind.WEB,
                 true,
             )
 
             in WEB_SEARCH_TOOL_NAMES -> ToolSummary(
-                "Web",
+                "Web search",
                 string("query", "q").orEmpty(),
                 ToolIconKind.WEB,
                 false,
@@ -460,27 +474,57 @@ object ThreadPresenter {
                 false,
             )
 
+            in TODO_TOOL_NAMES -> {
+                val count = listOf("todos", "plan", "items")
+                    .firstNotNullOfOrNull { key -> (values[key] as? JsonArray)?.values?.size }
+                ToolSummary(
+                    "Plan",
+                    count?.let { "$it ${if (it == 1) "item" else "items"}" }.orEmpty(),
+                    ToolIconKind.TODO,
+                    false,
+                )
+            }
+
             else -> unknownToolSummary(toolName, values)
         }
-        return summary.copy(detail = condenseToolDetail(summary.detail))
+        val label = normalizedName.mcpServer?.let { server ->
+            "${humanizeKey(server)} · ${humanizeKey(canonical)}"
+        } ?: summary.label
+        return summary.copy(
+            label = label,
+            detail = condenseToolDetail(summary.detail),
+        )
+    }
+
+    private fun toolValues(input: JsonValue?): Map<String, JsonValue> = when (input) {
+        is JsonObject -> input.values
+        is JsonString -> runCatching { JsonCodec.parse(input.value) as? JsonObject }
+            .getOrNull()
+            ?.values
+            .orEmpty()
+        else -> emptyMap()
     }
 
     private fun filePath(values: Map<String, JsonValue>): String =
         FILE_PATH_KEYS
             .firstNotNullOfOrNull { key -> (values[key] as? JsonString)?.value?.takeIf(String::isNotBlank) }
+            ?.let(::concisePath)
             .orEmpty()
 
     private fun editPath(canonical: String, values: Map<String, JsonValue>): String {
         val explicit = filePath(values)
-        if (explicit.isNotBlank() || canonical != "apply_patch") return explicit
+        if (explicit.isNotBlank() || canonical !in setOf("apply_patch", "patch")) return explicit
         val patch = listOf("patch", "input", "diff")
-            .firstNotNullOfOrNull { key -> (values[key] as? JsonString)?.value }
+            .firstNotNullOfOrNull { key ->
+                (values[key] as? JsonString)?.value?.takeIf(String::isNotBlank)
+            }
             .orEmpty()
-        return APPLY_PATCH_FILE
-            .find(patch)
-            ?.groupValues
-            ?.get(1)
-            .orEmpty()
+        val paths = APPLY_PATCH_FILE.findAll(patch).map { it.groupValues[1] }.toList()
+        return when (paths.size) {
+            0 -> ""
+            1 -> concisePath(paths.single())
+            else -> "${paths.size} files"
+        }
     }
 
     private fun unknownToolSummary(
@@ -500,21 +544,23 @@ object ThreadPresenter {
         )
     }
 
-    private fun canonicalToolName(toolName: String): String {
-        val leaf = if (toolName.startsWith("mcp__", ignoreCase = true)) {
-            toolName.substringAfterLast("__")
-        } else {
-            toolName
-        }
-        return leaf
-            .replace(TOOL_CAMEL_CASE, "$1_$2")
-            .lowercase(Locale.US)
-            .replace(TOOL_NAME_SEPARATORS, "_")
-            .trim('_')
+    private fun normalizedToolName(toolName: String): NormalizedToolName {
+        val parts = toolName.split("__")
+        val isMcp = parts.size >= 3 && parts.first().equals("mcp", ignoreCase = true)
+        return NormalizedToolName(
+            canonical = canonicalToolName(if (isMcp) parts.last() else toolName),
+            mcpServer = parts.getOrNull(1)?.takeIf { isMcp },
+        )
     }
 
+    private fun canonicalToolName(toolName: String): String = toolName
+        .replace(TOOL_CAMEL_CASE, "$1_$2")
+        .lowercase(Locale.US)
+        .replace(TOOL_NAME_SEPARATORS, "_")
+        .trim('_')
+
     private fun humanizeToolName(toolName: String): String =
-        humanizeKey(canonicalToolName(toolName)).ifBlank { "Tool" }
+        humanizeKey(normalizedToolName(toolName).canonical).ifBlank { "Tool" }
 
     private fun humanizeKey(value: String): String = value
         .replace(TOOL_CAMEL_CASE, "$1 $2")
@@ -528,6 +574,11 @@ object ThreadPresenter {
             if (condensed.length <= TOOL_DETAIL_MAX_CHARS) condensed
             else condensed.take(TOOL_DETAIL_MAX_CHARS - 1) + "…"
         }
+
+    private fun concisePath(path: String): String {
+        val parts = path.split('/').filter(String::isNotBlank)
+        return if (parts.size > 4) "…/${parts.takeLast(3).joinToString("/")}" else path
+    }
 
     private fun contentStatus(state: ThreadLoadState): ThreadContentStatus = when (state) {
         is ThreadLoadState.Loading -> ThreadContentStatus(

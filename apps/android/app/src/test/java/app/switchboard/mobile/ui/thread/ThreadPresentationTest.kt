@@ -181,11 +181,11 @@ class ThreadPresentationTest {
         val fetch = toolRow("web_fetch", obj("uri" to JsonString("https://example.com/docs")))
         val search = toolRow("WebSearch", obj("q" to JsonString("Compose merged semantics")))
 
-        assertEquals("Web", fetch.label)
+        assertEquals("Fetch", fetch.label)
         assertEquals("https://example.com/docs", fetch.detail)
         assertEquals(ToolIconKind.WEB, fetch.iconKind)
         assertTrue(fetch.monospaceDetail)
-        assertEquals("Web", search.label)
+        assertEquals("Web search", search.label)
         assertEquals("Compose merged semantics", search.detail)
         assertFalse(search.monospaceDetail)
     }
@@ -222,7 +222,7 @@ class ThreadPresentationTest {
         assertEquals("Custom provider action", unknown.label)
         assertEquals("do the useful thing", unknown.detail)
         assertEquals(ToolIconKind.OTHER, unknown.iconKind)
-        assertEquals("Create issue", mcp.label)
+        assertEquals("Linear · Create issue", mcp.label)
         assertEquals("Track Android density", mcp.detail)
         assertEquals("Weird tool", keysOnly.label)
         assertEquals("project id, labels", keysOnly.detail)
@@ -285,6 +285,94 @@ class ThreadPresentationTest {
         assertEquals("t-provider-id", completed.key)
         assertEquals(ToolActivityState.RUNNING, running.activityState)
         assertEquals(ToolActivityState.COMPLETED, completed.activityState)
+    }
+
+    @Test
+    fun serializedHistoryInputUsesTheSameSummaryAsLiveJson() {
+        val row = toolRow(
+            "Bash",
+            JsonString("{\"command\":\"npm test -- --runInBand\"}"),
+        )
+
+        assertEquals("npm test -- --runInBand", row.detail)
+    }
+
+    @Test
+    fun shellCommandFallsThroughExplicitNullToArrayArgs() {
+        val row = toolRow(
+            "exec_command",
+            obj(
+                "command" to JsonNull,
+                "args" to JsonArray(listOf(JsonString("git"), JsonString("status"))),
+            ),
+        )
+
+        assertEquals("git status", row.detail)
+    }
+
+    @Test
+    fun patchAliasesSkipBlankCandidatesAndSummarizeOneOrManyFiles() {
+        val one = toolRow(
+            "apply_patch",
+            obj(
+                "patch" to JsonString(""),
+                "input" to JsonString("*** Update File: src/Main.kt\n@@"),
+            ),
+        )
+        val many = toolRow(
+            "patch",
+            obj(
+                "patch" to JsonString(
+                    "*** Update File: src/Main.kt\n@@\n*** Add File: src/New.kt\n+new",
+                ),
+            ),
+        )
+
+        assertEquals("src/Main.kt", one.detail)
+        assertEquals("2 files", many.detail)
+    }
+
+    @Test
+    fun mcpNamespaceRemainsVisibleEvenWhenTheLeafMatchesABuiltInAlias() {
+        val row = toolRow(
+            "mcp__notion__search",
+            obj("query" to JsonString("Android density")),
+        )
+
+        assertEquals("Notion · Search", row.label)
+        assertEquals("\"Android density\"", row.detail)
+        assertEquals(ToolIconKind.SEARCH, row.iconKind)
+    }
+
+    @Test
+    fun todoAliasesSummarizeArraySizeInsteadOfListingRawKeys() {
+        val row = toolRow(
+            "TodoWrite",
+            obj(
+                "todos" to JsonArray(
+                    listOf(JsonString("one"), JsonString("two"), JsonString("three")),
+                ),
+            ),
+        )
+
+        assertEquals("Plan", row.label)
+        assertEquals("3 items", row.detail)
+        assertEquals(ToolIconKind.TODO, row.iconKind)
+        assertFalse(row.monospaceDetail)
+    }
+
+    @Test
+    fun deepPathsKeepTheirIdentifyingTailVisible() {
+        val row = toolRow(
+            "Read",
+            obj(
+                "file_path" to JsonString(
+                    "/Users/tejas/Desktop/projects/switchboard/apps/android/app/src/main/ThreadScreen.kt",
+                ),
+            ),
+        )
+
+        assertEquals("…/src/main/ThreadScreen.kt", row.detail)
     }
 
     @Test

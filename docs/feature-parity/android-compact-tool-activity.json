@@ -17,6 +17,7 @@
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ToolOutputPresentation.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadPresentationTest.kt",
         "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
       ]
@@ -36,8 +37,8 @@
   },
   "verification": {
     "automated": [
-      "ThreadPresentationTest and ToolActivityLayoutPolicyTest pass, covering normalized labels/details/icons/state, malformed inputs, 140-character bounds, stable keys, and the 48 dp density policy.",
-      "ThreadScreenRegressionTest compiles with compact-row regression coverage for disclosure, semantics, ordering, recomposition, large fonts, and ten-tool density.",
+      "ThreadPresentationTest and ToolOutputPresentationTest pass, covering normalized labels/details/icons/state, malformed and historical inputs, 140-character summaries, stable keys, and bounded output previews.",
+      "ThreadScreenRegressionTest compiles with compact-row regression coverage for 48 dp effective bounds, disclosure, semantics, ordering, recomposition, large fonts, bounded output, and ten-tool density.",
       "Native Android testDebugUnitTest, lintDebug, assembleDebug, and compileDebugAndroidTestKotlin pass.",
       "Repository TypeScript typecheck and the complete split-runtime repository test gate pass."
     ],

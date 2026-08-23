@@ -81,8 +81,6 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.onClick
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.Placeholder
@@ -1402,9 +1400,13 @@ private fun TextRow(row: ThreadRowPresentation.Text) {
 @Composable
 private fun ToolRow(row: ThreadRowPresentation.Tool) {
     var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
+    var showingFullOutput by rememberSaveable(row.key) { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val toggle = { expanded = !expanded }
+    val toggle = {
+        if (expanded) showingFullOutput = false
+        expanded = !expanded
+    }
     val accessibilityLabel = listOf(row.label, row.detail)
         .filter(String::isNotBlank)
         .joinToString(", ")
@@ -1413,6 +1415,7 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
             interactionSource = interactionSource,
             indication = null,
             role = Role.Button,
+            onClickLabel = if (expanded) "Hide output" else "Show output",
             onClick = toggle,
         )
     } else {
@@ -1422,7 +1425,8 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
+            .padding(horizontal = 16.dp)
+            .testTag(ThreadTestTags.toolContainer(row.key)),
     ) {
         Row(
             modifier = Modifier
@@ -1439,13 +1443,6 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
                             if (expanded) "Completed, expanded" else "Completed, collapsed"
                         } else {
                             "Completed"
-                        }
-                    }
-                    if (row.hasOutput) {
-                        role = Role.Button
-                        onClick(label = if (expanded) "Hide output" else "Show output") {
-                            toggle()
-                            true
                         }
                     }
                 }
@@ -1516,22 +1513,34 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
             }
         }
         if (expanded && row.hasOutput) {
-            Box(
+            val outputPreview = remember(row.output) {
+                ToolOutputPresenter.preview(row.output.orEmpty())
+            }
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(SurfaceRaised)
-                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 10.dp, vertical = 9.dp)
                     .testTag(ThreadTestTags.toolOutput(row.key)),
             ) {
-                SelectionContainer {
-                    Text(
-                        text = row.output.orEmpty(),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontFamily = GeistMono,
-                        fontSize = 11.sp,
-                        softWrap = false,
-                    )
+                Box(Modifier.horizontalScroll(rememberScrollState())) {
+                    SelectionContainer {
+                        Text(
+                            text = if (showingFullOutput) outputPreview.fullText else outputPreview.text,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = GeistMono,
+                            fontSize = 11.sp,
+                            softWrap = false,
+                        )
+                    }
+                }
+                if (outputPreview.truncated) {
+                    TextButton(
+                        onClick = { showingFullOutput = !showingFullOutput },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    ) {
+                        Text(if (showingFullOutput) "Show preview" else "Show full output")
+                    }
                 }
             }
         }
@@ -1548,6 +1557,7 @@ private fun toolGlyph(kind: ToolIconKind): String = when (kind) {
     ToolIconKind.WEB -> "◎"
     ToolIconKind.TASK -> "✦"
     ToolIconKind.NOTEBOOK -> "▦"
+    ToolIconKind.TODO -> "✓"
     ToolIconKind.OTHER -> "◇"
 }
 

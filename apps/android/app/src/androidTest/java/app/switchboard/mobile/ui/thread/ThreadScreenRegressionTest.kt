@@ -5,6 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -379,6 +380,8 @@ class ThreadScreenRegressionTest {
         )
 
         val row = compose.onNodeWithTag(ThreadTestTags.toolRow("tool"))
+        compose.onNodeWithTag(ThreadTestTags.toolContainer("tool"))
+            .assertHeightIsEqualTo(48.dp)
         row.assertIsDisplayed()
             .assertTextContains("Bash")
             .assertTextContains("npm test -- --runInBand")
@@ -387,6 +390,7 @@ class ThreadScreenRegressionTest {
             .assertHasClickAction()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Completed, collapsed"))
+            .assert(onClickLabel("Show output"))
         compose.onNodeWithText("Input").assertDoesNotExist()
         compose.onNodeWithText(output, substring = true).assertDoesNotExist()
         compose.onNodeWithTag(ThreadTestTags.toolOutput("tool")).assertDoesNotExist()
@@ -406,6 +410,7 @@ class ThreadScreenRegressionTest {
         val first = compose.onNodeWithTag(ThreadTestTags.toolRow("first"))
         first.performClick()
         first.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Completed, expanded"))
+            .assert(onClickLabel("Hide output"))
         compose.onNodeWithTag(ThreadTestTags.toolOutput("first")).assertIsDisplayed()
         compose.onNodeWithText("first output").assertIsDisplayed()
         compose.onNodeWithText("second output").assertDoesNotExist()
@@ -529,10 +534,24 @@ class ThreadScreenRegressionTest {
             .performScrollTo()
             .assertIsDisplayed()
             .assertHeightIsEqualTo(48.dp)
+        compose.onNodeWithTag(ThreadTestTags.toolContainer("tool-0"))
+            .assertHeightIsEqualTo(48.dp)
         compose.onNodeWithTag(ThreadTestTags.toolRow("tool-9"))
             .performScrollTo()
             .assertIsDisplayed()
             .assertHeightIsEqualTo(48.dp)
+    }
+
+    @Test
+    fun largeOutputRequiresAnExplicitActionBeforeComposingTheFullValue() {
+        val output = "preview start\n" + "x".repeat(20_000) + "\nunique full-output end"
+        setTools(listOf(tool("large-output", "Bash", "command" to "npm test", output = output)))
+
+        compose.onNodeWithTag(ThreadTestTags.toolRow("large-output")).performClick()
+        compose.onNodeWithText("preview start", substring = true).assertIsDisplayed()
+        compose.onNodeWithText("unique full-output end", substring = true).assertDoesNotExist()
+        compose.onNodeWithText("Show full output").performClick()
+        compose.onNodeWithText("unique full-output end", substring = true).assertIsDisplayed()
     }
 
     private fun composer() = ThreadComposerPresentation(
@@ -616,6 +635,10 @@ class ThreadScreenRegressionTest {
             compose.onNodeWithTag(ThreadTestTags.toolRow(id)).fetchSemanticsNode().boundsInRoot.top
         }
         assertTrue(tops.zipWithNext().all { (first, second) -> first < second })
+    }
+
+    private fun onClickLabel(label: String) = SemanticsMatcher("OnClick label is $label") { node ->
+        SemanticsActions.OnClick in node.config && node.config[SemanticsActions.OnClick].label == label
     }
 
     private data class Fixture(
