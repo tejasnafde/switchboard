@@ -17,4 +17,5 @@ object ThreadTestTags {
     fun toolDetail(key: String) = "thread-tool-detail:$key"
     fun toolDisclosure(key: String) = "thread-tool-disclosure:$key"
     fun toolOutput(key: String) = "thread-tool-output:$key"
+    fun toolOutputList(key: String) = "thread-tool-output-list:$key"
 }

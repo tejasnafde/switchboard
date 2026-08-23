@@ -23,6 +23,15 @@ class ToolOutputPresentationTest {
         assertTrue(preview.text.length <= ToolOutputPresenter.PreviewMaxChars)
         assertTrue(preview.text.startsWith("start"))
         assertFalse(preview.text.contains("unique end"))
-        assertEquals(output, preview.fullText)
+    }
+
+    @Test
+    fun fullOutputIsSplitIntoBoundedLazyPagesWithoutLosingContent() {
+        val output = "start\n" + "x".repeat(20_000) + "\nunique end"
+        val pages = ToolOutputPresenter.pages(output)
+
+        assertTrue(pages.pageCount > 1)
+        assertTrue((0 until pages.pageCount).all { pages.page(it).length <= ToolOutputPresenter.PageMaxChars })
+        assertEquals(output, (0 until pages.pageCount).joinToString("") { pages.page(it) })
     }
 }

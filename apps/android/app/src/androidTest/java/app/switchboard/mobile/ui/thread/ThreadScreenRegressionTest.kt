@@ -25,6 +25,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -551,6 +552,9 @@ class ThreadScreenRegressionTest {
         compose.onNodeWithText("preview start", substring = true).assertIsDisplayed()
         compose.onNodeWithText("unique full-output end", substring = true).assertDoesNotExist()
         compose.onNodeWithText("Show full output").performClick()
+        val lastPage = ToolOutputPresenter.pages(output).pageCount - 1
+        compose.onNodeWithTag(ThreadTestTags.toolOutputList("large-output"))
+            .performScrollToIndex(lastPage)
         compose.onNodeWithText("unique full-output end", substring = true).assertIsDisplayed()
     }
 

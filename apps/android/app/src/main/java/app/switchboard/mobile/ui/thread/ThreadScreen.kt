@@ -1516,6 +1516,8 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
             val outputPreview = remember(row.output) {
                 ToolOutputPresenter.preview(row.output.orEmpty())
             }
+            val visibleOutput = if (showingFullOutput) row.output.orEmpty() else outputPreview.text
+            val outputPages = remember(visibleOutput) { ToolOutputPresenter.pages(visibleOutput) }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1523,15 +1525,26 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
                     .padding(horizontal = 10.dp, vertical = 9.dp)
                     .testTag(ThreadTestTags.toolOutput(row.key)),
             ) {
-                Box(Modifier.horizontalScroll(rememberScrollState())) {
-                    SelectionContainer {
-                        Text(
-                            text = if (showingFullOutput) outputPreview.fullText else outputPreview.text,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontFamily = GeistMono,
-                            fontSize = 11.sp,
-                            softWrap = false,
-                        )
+                key(showingFullOutput) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 320.dp)
+                            .testTag(ThreadTestTags.toolOutputList(row.key)),
+                    ) {
+                        items(
+                            count = outputPages.pageCount,
+                            key = { page -> page },
+                        ) { page ->
+                            SelectionContainer {
+                                Text(
+                                    text = outputPages.page(page),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontFamily = GeistMono,
+                                    fontSize = 11.sp,
+                                )
+                            }
+                        }
                     }
                 }
                 if (outputPreview.truncated) {
