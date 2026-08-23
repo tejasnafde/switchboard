@@ -39,16 +39,16 @@
     "automated": [
       "npx vitest run tests/unit/code-block-copy-controls.test.ts tests/unit/message-copy-lifecycle.test.ts tests/unit/code-copy-integration-contract.test.ts",
       "npm run typecheck",
-      "npx vitest run --exclude tests/unit/durable-turn-acceptance.test.ts --exclude tests/unit/turn-acceptance-store.test.ts",
-      "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/vitest/vitest.mjs run tests/unit/durable-turn-acceptance.test.ts tests/unit/turn-acceptance-store.test.ts",
-      "node e2e/code-copy-controls.e2e.mjs",
+      "Standard Node Vitest run excluding the five Electron-native better-sqlite3 suites: 2,648 tests across 267 files",
+      "Electron-native Vitest run for atomic-user-turn-submission, desktop-image-send-contract, provider-switch-ws, durable-turn-acceptance, and turn-acceptance-store: 76 tests across 5 files",
       "npm run build:fast",
-      "npm run validate:feature-parity -- --base main"
+      "node e2e/code-copy-controls.e2e.mjs with isolated HOME, TMPDIR, SB_USER_DATA, and provider config directories",
+      "npm run validate:feature-parity -- --base v0.8.37"
     ],
     "hardware": [],
     "notExercised": [
       "Live Claude, Codex, and OpenCode streaming was not exercised because the existing Switchboard instance has active user sessions and the single-instance lock prevents isolated manual verification without disrupting them; normalized cumulative, delta, completion, tool/status, error, and interruption sequences are covered by automated tests.",
-      "Keyboard, coarse-pointer, and denied-clipboard behavior is covered at the renderer/component contract level but was not exercised on physical desktop or touch hardware in this worktree.",
+      "Keyboard focus/activation and denied-clipboard behavior were exercised in isolated Electron Playwright; coarse-pointer discoverability is covered by the stylesheet contract but was not exercised on physical touch hardware.",
       "React Native/iOS and native Android hardware verification is not applicable because neither surface shares this renderer or copy-control contract."
     ]
   }
