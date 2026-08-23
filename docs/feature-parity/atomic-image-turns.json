@@ -2,61 +2,93 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "atomic-image-turns",
-  "summary": "Make image attachment admission byte-budget-driven across all clients and preserve the Desktop composer until the backend accepts one atomic turn.",
+  "summary": "Commit complete user turns at the backend provider-acceptance boundary so rejected or ambiguous multi-image sends cannot masquerade as sent.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
       "evidence": [
+        "src/renderer/services/desktopTurnSubmission.ts",
         "src/renderer/components/chat/ChatInput.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
-        "tests/unit/desktop-image-send-contract.test.ts"
+        "src/preload/index.ts",
+        "tests/unit/desktop-image-send-contract.test.ts",
+        "tests/unit/session-events.test.ts"
       ]
     },
     "reactNativeIos": {
       "status": "implemented",
       "evidence": [
-        "apps/mobile/src/lib/images.ts",
-        "apps/mobile/src/components/ImageAttachments.tsx",
-        "tests/unit/mobile-images.test.ts"
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/lib/outboxDelivery.ts",
+        "apps/mobile/src/lib/outboxModel.ts",
+        "apps/mobile/src/stores/outbox.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "tests/unit/mobile-api-turn-compat.test.ts",
+        "tests/unit/mobile-outbox-delivery.test.ts",
+        "tests/unit/mobile-outbox.test.ts"
       ]
     },
     "nativeAndroid": {
       "status": "implemented",
       "evidence": [
-        "apps/android/app/src/main/java/app/switchboard/mobile/platform/outbox/OutboxImageMaterializer.kt",
-        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/platform/outbox/OutboxImageMaterializerTest.kt"
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxRemoteSender.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/NewSessionCoordinator.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxRemoteSenderTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/NewSessionCoordinatorTest.kt"
       ]
     },
     "sharedBackendApi": {
       "status": "implemented",
       "evidence": [
         "src/shared/provider-events.ts",
-        "tests/unit/user-message-visibility.test.ts"
+        "src/shared/ipc-channels.ts",
+        "src/main/provider/durable-turn-acceptance.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/atomic-user-turn-submission.test.ts",
+        "tests/unit/provider-switch-ws.test.ts",
+        "tests/unit/user-turn-submission-contract.test.ts"
       ]
     },
     "storageDataMigration": {
-      "status": "not_applicable",
-      "reason": "Image arrays and outbox attachments keep their existing stored shapes; the change removes a count admission rule without changing schemas or migrations."
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/turn-acceptance.ts",
+        "tests/unit/turn-acceptance-store.test.ts",
+        "apps/mobile/src/lib/outboxStorage.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxDatabase.kt"
+      ]
     },
     "updateRelease": {
-      "status": "not_applicable",
-      "reason": "No package identity, signing configuration, updater contract, versioning rule, or release channel changes."
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts",
+        "apps/mobile/src/lib/api.ts",
+        "src/shared/ws-protocol.ts",
+        "tests/unit/mobile-api-turn-compat.test.ts",
+        "tests/unit/provider-switch-ws.test.ts",
+        "docs/plans/2026-08-23-atomic-user-turn-submission-design.md"
+      ]
     }
   },
   "verification": {
     "automated": [
-      "npx vitest run tests/unit/user-message-visibility.test.ts tests/unit/mobile-images.test.ts tests/unit/desktop-image-send-contract.test.ts tests/unit/cross-surface-image-count-contract.test.ts",
-      "npm run typecheck:renderer",
-      "cd apps/android && ./gradlew testDebugUnitTest --tests app.switchboard.mobile.platform.outbox.OutboxImageMaterializerTest --tests app.switchboard.mobile.domain.composer.ComposerDraftPolicyTest"
+      "npx vitest run tests/unit/user-turn-submission-contract.test.ts tests/unit/turn-acceptance-store.test.ts tests/unit/atomic-user-turn-submission.test.ts tests/unit/desktop-image-send-contract.test.ts tests/unit/provider-switch-ws.test.ts tests/unit/provider-types.test.ts tests/unit/ws-protocol.test.ts tests/unit/tcp-host.test.ts tests/unit/session-events.test.ts tests/unit/opencode-acp-adapter.test.ts tests/unit/mobile-api-turn-compat.test.ts tests/unit/mobile-outbox-delivery.test.ts tests/unit/mobile-outbox.test.ts tests/unit/mobile-turn-submit.test.ts --maxWorkers=1 --minWorkers=1 --pool=forks",
+      "npm run typecheck",
+      "npm test",
+      "npm run validate:feature-parity -- --base origin/main",
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json",
+      "cd apps/android && ./gradlew testDebugUnitTest (739 tests passed under OpenJDK 17)"
     ],
     "hardware": [
-      "Side-by-side Android debug APK installed on CPH2487; instrumentation rendered six dummy image attachments, kept the draft and aggregate-budget error visible, and kept the attachment control enabled."
+      "Earlier image-count admission smoke installed a side-by-side Android debug APK on CPH2487 and rendered six deterministic attachments; it did not exercise this atomic backend contract."
     ],
     "notExercised": [
-      "Desktop drag/paste with more than four real screenshots was not smoke-tested in the running Electron app.",
-      "React Native/iOS picker behavior was not exercised on an iOS device.",
-      "Native Android's external document picker and a live backend image turn were not exercised; the on-device test used six deterministic dummy attachments."
+      "Desktop manual smoke with seven genuine screenshots in one Codex turn, including log and durable-acceptance confirmation of exactly one provider dispatch, has not yet been exercised.",
+      "React Native/iOS atomic rejection, ambiguous retry, and attachment recovery have not been exercised on iOS hardware.",
+      "Native Android atomic rejection, ambiguous retry, and private attachment recovery have not been exercised on Android hardware.",
+      "Mixed-version rollout is covered by automated new-Desktop/old-backend rejection and new-backend/legacy-origin compatibility tests, but was not exercised with separately packaged released builds."
     ]
   }
 }

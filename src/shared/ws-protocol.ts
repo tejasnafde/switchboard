@@ -32,7 +32,7 @@ export const NON_REPLAYABLE_EVENT_CHANNELS: ReadonlySet<string> = new Set([
   'terminal:exit',
 ])
 
-export const BACKEND_CAPABILITIES = ['durable_turn_origin'] as const
+export const BACKEND_CAPABILITIES = ['durable_turn_origin', 'atomic_user_turn_v1'] as const
 
 export function isReplayableEventChannel(channel: string): boolean {
   return !NON_REPLAYABLE_EVENT_CHANNELS.has(channel)

@@ -5,7 +5,16 @@
  * deep inside application code instead of being rejected at the edge.
  */
 import { describe, it, expect } from 'vitest'
-import { decodeFrame, encodeFrame, isReplayableEventChannel } from '../../src/shared/ws-protocol'
+import { BACKEND_CAPABILITIES, decodeFrame, encodeFrame, isReplayableEventChannel } from '../../src/shared/ws-protocol'
+
+describe('backend capabilities', () => {
+  it('advertises atomic user turns without removing durable origins', () => {
+    expect(BACKEND_CAPABILITIES).toEqual(expect.arrayContaining([
+      'durable_turn_origin',
+      'atomic_user_turn_v1',
+    ]))
+  })
+})
 
 describe('decodeFrame', () => {
   it('round-trips every frame kind', () => {

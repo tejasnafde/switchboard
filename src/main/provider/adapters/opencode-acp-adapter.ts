@@ -495,29 +495,6 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       return
     }
 
-    // Persist a summary on the first turn so the scanner can find this session.
-    if (!active.firstUserMessage && active.sessionId) {
-      active.firstUserMessage = message
-      try {
-        const opencodeDir = join(homedir(), '.opencode', 'sessions')
-        const projectSessionsDir = join(opencodeDir, encodeClaudeProjectPath(active.session.cwd))
-        await fs.mkdir(projectSessionsDir, { recursive: true })
-        const summaryPath = join(projectSessionsDir, `${active.sessionId}.json`)
-        const summary: Pick<SessionSummary, 'id' | 'source' | 'title' | 'startedAt'> & { projectPath: string } = {
-          id: active.sessionId,
-          source: 'opencode',
-          title: generateTitle(message),
-          startedAt: active.session.createdAt,
-          projectPath: active.session.cwd,
-        }
-        await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2))
-        log.info(`persisted opencode session summary to ${summaryPath}`)
-      } catch (err) {
-        log.warn(`Failed to persist OpenCode session summary: ${err instanceof Error ? err.message : String(err)}`)
-      }
-    }
-
-
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
       try {
@@ -551,7 +528,17 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     }
 
     const sessionId = active.sessionId
-    const promptPromise = active.connection.prompt({ sessionId, prompt })
+    let dispatchedPrompt: ReturnType<ClientSideConnection['prompt']>
+    try {
+      dispatchedPrompt = active.connection.prompt({ sessionId, prompt })
+    } catch (error) {
+      active.session.status = 'idle'
+      active.turnStartedAt = null
+      active.onEvent({ type: 'status', threadId, status: 'idle' })
+      throw error
+    }
+
+    const promptPromise = dispatchedPrompt
       .then((res) => {
         active.session.status = 'idle'
         const durationMs =
@@ -582,6 +569,29 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         active.inFlightPrompt = null
       })
     active.inFlightPrompt = promptPromise
+
+    // The summary makes the session visible to scanners, so it must not exist
+    // until the ACP connection has accepted the prompt invocation.
+    if (!active.firstUserMessage) {
+      active.firstUserMessage = message
+      try {
+        const opencodeDir = join(homedir(), '.opencode', 'sessions')
+        const projectSessionsDir = join(opencodeDir, encodeClaudeProjectPath(active.session.cwd))
+        await fs.mkdir(projectSessionsDir, { recursive: true })
+        const summaryPath = join(projectSessionsDir, `${sessionId}.json`)
+        const summary: Pick<SessionSummary, 'id' | 'source' | 'title' | 'startedAt'> & { projectPath: string } = {
+          id: sessionId,
+          source: 'opencode',
+          title: generateTitle(message),
+          startedAt: active.session.createdAt,
+          projectPath: active.session.cwd,
+        }
+        await fs.writeFile(summaryPath, JSON.stringify(summary, null, 2))
+        log.info(`persisted opencode session summary to ${summaryPath}`)
+      } catch (err) {
+        log.warn(`Failed to persist OpenCode session summary: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
   }
 
   async interruptTurn(threadId: string): Promise<void> {

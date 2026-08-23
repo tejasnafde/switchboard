@@ -35,6 +35,12 @@ import { BranchPickerTrigger } from './BranchPicker'
 import { composerFooterLayout } from './composerFooterLayout'
 import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
 import { serializeBodyWithPills } from '../../services/chatInputBody'
+import {
+  desktopComposerFingerprint,
+  desktopPreparedTurns,
+  desktopTurnAttempts,
+} from '../../services/desktopTurnSubmission'
+import { onUserTurnAccepted } from '../../services/session-events'
 
 type RuntimeMode = 'plan' | 'sandbox' | 'full-access' | 'accept-edits'
 
@@ -61,6 +67,7 @@ interface ChatInputProps {
     mode?: string,
     images?: ImageAttachment[],
     extras?: {
+      origin?: string
       displayBody?: string
       pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
     },
@@ -237,6 +244,7 @@ export function ChatInput({
   const [isSubmitting, setIsSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const submissionRef = useRef(0)
+  const acceptedOriginsRef = useRef(new Set<string>())
   const sessionIdRef = useRef(sessionId)
   sessionIdRef.current = sessionId
   // Live caret offset into `value`. Updated on every editor change so we
@@ -408,6 +416,38 @@ export function ChatInput({
     return out
   }, [pills])
 
+  const composerFingerprint = useMemo(() => desktopComposerFingerprint({
+    value,
+    runtimeMode,
+    pills: pills.map((pill) => ({
+      id: pill.id,
+      kind: pill.kind,
+      label: pill.label,
+      content: pill.content,
+    })),
+    images: images.map((image) => ({
+      id: image.id,
+      name: image.file.name,
+      size: image.file.size,
+      type: image.file.type,
+      lastModified: image.file.lastModified,
+    })),
+  }), [value, runtimeMode, pills, images])
+
+  useEffect(() => onUserTurnAccepted((acceptedSessionId, origin) => {
+    if (!sessionId || acceptedSessionId !== sessionId) return
+    acceptedOriginsRef.current.add(origin)
+    if (!desktopTurnAttempts.matches(sessionId, composerFingerprint, origin)) return
+    desktopTurnAttempts.accept(sessionId, origin)
+    desktopPreparedTurns.accept(sessionId, origin)
+    clearDraft(sessionId)
+    clearPills(sessionId)
+    clearImages(sessionId)
+    setValue('')
+    setSendError(null)
+    insertedPillsRef.current.clear()
+  }), [sessionId, composerFingerprint, clearDraft, clearPills, clearImages])
+
   // ⌘L pill insertion: contextBridge.captureSelection() calls
   // addPill(sessionId, pill) and dispatches `sb-pill-added`. We listen
   // and insert the pill at the current caret position via Lexical's
@@ -478,6 +518,9 @@ export function ChatInput({
     if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current) return
     const submittedSessionId = sessionId
     const submission = ++submissionRef.current
+    const origin = submittedSessionId
+      ? desktopTurnAttempts.originFor(submittedSessionId, composerFingerprint)
+      : undefined
     // Pills are inline `[[pill:id]]` tokens in `value`. Expand each into
     // its full content (path marker + fenced block, terminal block, or
     // chat-message quote) before handing off. Tokens whose pills were
@@ -498,7 +541,10 @@ export function ChatInput({
         body,
         undefined,
         images.length > 0 ? images : undefined,
-        hasPills ? { displayBody: trimmed, pillsMeta } : undefined,
+        {
+          origin,
+          ...(hasPills ? { displayBody: trimmed, pillsMeta } : {}),
+        },
       )
     } catch (error) {
       result = { accepted: false, error: error instanceof Error ? error.message : String(error) }
@@ -508,6 +554,9 @@ export function ChatInput({
         setIsSubmitting(false)
       }
     }
+    if (!result.accepted && origin && acceptedOriginsRef.current.delete(origin)) {
+      result = { accepted: true }
+    }
     if (!result.accepted) {
       if (sessionIdRef.current === submittedSessionId && submission === submissionRef.current) {
         setSendError(result.error)
@@ -515,6 +564,7 @@ export function ChatInput({
       return
     }
     if (submittedSessionId) {
+      if (origin) desktopTurnAttempts.accept(submittedSessionId, origin)
       clearDraft(submittedSessionId)
       if (hasPills) clearPills(submittedSessionId)
       clearImages(submittedSessionId)
@@ -522,7 +572,7 @@ export function ChatInput({
     if (sessionIdRef.current !== submittedSessionId || submission !== submissionRef.current) return
     setValue('')
     insertedPillsRef.current.clear()
-  }, [value, pills, pillsById, images, disabled, onSend, sessionId, clearDraft, clearPills, clearImages])
+  }, [value, pills, pillsById, images, disabled, onSend, sessionId, composerFingerprint, clearDraft, clearPills, clearImages])
 
   // ─── Slash command handling ─────────────────────────────────
   const dismissSlash = useCallback(() => {

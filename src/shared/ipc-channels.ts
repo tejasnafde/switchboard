@@ -273,6 +273,7 @@ export const ProviderInstanceChannels = {
 export const ProviderChannels = {
   START_SESSION: 'provider:start-session',
   SEND_TURN: 'provider:send-turn',
+  SUBMIT_USER_TURN: 'provider:submit-user-turn',
   INTERRUPT: 'provider:interrupt',
   RESPOND_TO_REQUEST: 'provider:respond-to-request',
   STOP_SESSION: 'provider:stop-session',

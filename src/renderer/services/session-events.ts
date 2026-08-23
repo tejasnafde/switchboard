@@ -45,6 +45,21 @@ export function emitSessionActivity(sessionId: string, timestamp: number = Date.
   }
 }
 
+type UserTurnAcceptedListener = (sessionId: string, origin: string) => void
+
+const userTurnAcceptedListeners = new Set<UserTurnAcceptedListener>()
+
+export function onUserTurnAccepted(cb: UserTurnAcceptedListener): () => void {
+  userTurnAcceptedListeners.add(cb)
+  return () => userTurnAcceptedListeners.delete(cb)
+}
+
+export function emitUserTurnAccepted(sessionId: string, origin: string): void {
+  for (const listener of userTurnAcceptedListeners) {
+    try { listener(sessionId, origin) } catch { /* ignore */ }
+  }
+}
+
 // ─── Session created ──────────────────────────────────────────────
 
 export interface NewSession {

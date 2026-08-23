@@ -18,6 +18,32 @@ afterEach(() => {
 })
 
 describe('SqliteTurnAcceptanceStore', () => {
+  it('migrates the existing acceptance table for canonical envelopes', () => {
+    const db = new Database(':memory:')
+    db.exec(`
+      CREATE TABLE mobile_turn_acceptances (
+        client_scope TEXT NOT NULL,
+        thread_id TEXT NOT NULL,
+        origin TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        state TEXT NOT NULL,
+        accepted_at INTEGER NOT NULL,
+        completed_at INTEGER,
+        PRIMARY KEY (client_scope, thread_id, origin)
+      ) WITHOUT ROWID;
+    `)
+
+    ensureTurnAcceptanceSchema(db)
+
+    const columns = db.prepare('PRAGMA table_info(mobile_turn_acceptances)').all() as Array<{ name: string }>
+    expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      'envelope_json',
+      'message_id',
+      'event_at',
+    ]))
+    db.close()
+  })
+
   it('atomically reserves and lets only one caller enter dispatch', () => {
     const db = new Database(':memory:')
     ensureTurnAcceptanceSchema(db)
@@ -105,6 +131,118 @@ describe('SqliteTurnAcceptanceStore', () => {
     store.beginDispatch(retryable, 'payload')
     expect(store.release(retryable, 'payload')).toBe(true)
     expect(store.reserve(retryable, 'payload')).toEqual({ kind: 'reserved', state: 'reserved' })
+    db.close()
+  })
+
+  it('stages an exact envelope and blocks a different origin on the thread', () => {
+    const db = atomicTurnDb()
+    const store = new SqliteTurnAcceptanceStore(() => db) as SqliteTurnAcceptanceStore & {
+      reserveEnvelope(
+        key: TurnAcceptanceKey,
+        payloadHash: string,
+        envelopeJson: string,
+        messageId: string,
+        eventAt: number,
+      ): { kind: string; state?: string; blockingOrigin?: string }
+      readEnvelope(key: TurnAcceptanceKey): string | null
+    }
+    const first = acceptanceKey({ origin: 'first' })
+    const second = acceptanceKey({ clientScope: 'scope-b', origin: 'second' })
+
+    expect(store.reserveEnvelope(first, 'hash-first', '{"exact":true}', 'remote_first', 100)).toEqual({
+      kind: 'reserved',
+      state: 'reserved',
+    })
+    expect(store.readEnvelope(first)).toBe('{"exact":true}')
+    expect(store.reserveEnvelope(second, 'hash-second', '{"later":true}', 'remote_second', 101)).toEqual({
+      kind: 'blocked',
+      state: 'reserved',
+      blockingOrigin: 'first',
+    })
+    expect(db.prepare('SELECT count(*) AS count FROM messages').get()).toEqual({ count: 0 })
+    db.close()
+  })
+
+  it('atomically commits the complete user row, handoff, title, and acceptance', () => {
+    const db = atomicTurnDb()
+    const store = new SqliteTurnAcceptanceStore(() => db) as SqliteTurnAcceptanceStore & {
+      reserveEnvelope(
+        key: TurnAcceptanceKey,
+        payloadHash: string,
+        envelopeJson: string,
+        messageId: string,
+        eventAt: number,
+      ): { kind: string }
+      completeUserTurn(
+        key: TurnAcceptanceKey,
+        payloadHash: string,
+        turn: Record<string, unknown>,
+      ): { completed: boolean; conversationTitle?: string }
+    }
+    const key = acceptanceKey()
+    store.reserveEnvelope(key, 'hash', '{"turn":true}', 'remote_origin-a', 100)
+    expect(store.beginDispatch(key, 'hash')).toBe(true)
+
+    expect(store.completeUserTurn(key, 'hash', {
+      messageId: 'remote_origin-a',
+      providerText: 'expanded provider text',
+      imagesJson: '[{"url":"data:image/png;base64,AA"}]',
+      displayBody: '[[pill:file-1]] explain this',
+      pillsMetaJson: '{"file-1":{"label":"src/main.ts","kind":"file"}}',
+      acceptedAt: 200,
+      autoTitle: 'Explain this',
+      handoff: {
+        expectedFrom: 'codex',
+        markerId: 'handoff-1',
+        markerText: '[[sb:context-handoff]] Codex → Claude',
+      },
+    })).toEqual({ completed: true, conversationTitle: 'Explain this' })
+
+    expect(db.prepare(`
+      SELECT role, content, images, display_body, pills_meta, timestamp
+        FROM messages WHERE id = 'remote_origin-a'
+    `).get()).toEqual({
+      role: 'user',
+      content: 'expanded provider text',
+      images: '[{"url":"data:image/png;base64,AA"}]',
+      display_body: '[[pill:file-1]] explain this',
+      pills_meta: '{"file-1":{"label":"src/main.ts","kind":"file"}}',
+      timestamp: 200,
+    })
+    expect(db.prepare(`SELECT content FROM messages WHERE id = 'handoff-1'`).get()).toEqual({
+      content: '[[sb:context-handoff]] Codex → Claude',
+    })
+    expect(db.prepare(`SELECT title, pending_handoff_from, updated_at FROM conversations WHERE id = 'thread-a'`).get()).toEqual({
+      title: 'Explain this',
+      pending_handoff_from: null,
+      updated_at: 200,
+    })
+    expect(store.reserve(key, 'hash')).toEqual({ kind: 'duplicate', state: 'completed' })
+    db.close()
+  })
+
+  it('rolls back completion when a message id belongs to another thread', () => {
+    const db = atomicTurnDb()
+    db.exec(`
+      INSERT INTO conversations VALUES ('thread-b', 'Other', NULL, 1);
+      INSERT INTO messages
+        (id, conversation_id, role, content, timestamp)
+      VALUES ('remote_origin-a', 'thread-b', 'user', 'other turn', 1);
+    `)
+    const store = new SqliteTurnAcceptanceStore(() => db)
+    const key = acceptanceKey()
+    store.reserveEnvelope(key, 'hash', '{"turn":true}', 'remote_origin-a', 100)
+    store.beginDispatch(key, 'hash')
+
+    expect(() => store.completeUserTurn(key, 'hash', {
+      messageId: 'remote_origin-a',
+      providerText: 'must not overwrite',
+      acceptedAt: 200,
+    })).toThrow('belongs to another turn')
+    expect(db.prepare("SELECT state FROM mobile_turn_acceptances WHERE origin = 'origin-a'").get())
+      .toEqual({ state: 'dispatching' })
+    expect(db.prepare("SELECT conversation_id, content FROM messages WHERE id = 'remote_origin-a'").get())
+      .toEqual({ conversation_id: 'thread-b', content: 'other turn' })
     db.close()
   })
 })
@@ -221,4 +359,30 @@ function acceptanceKey(overrides: Partial<TurnAcceptanceKey> = {}): TurnAcceptan
     origin: 'origin-a',
     ...overrides,
   }
+}
+
+function atomicTurnDb(): Database.Database {
+  const db = new Database(':memory:')
+  db.exec(`
+    CREATE TABLE conversations (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      pending_handoff_from TEXT,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE TABLE messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      content TEXT NOT NULL,
+      tool_calls TEXT,
+      images TEXT,
+      timestamp INTEGER NOT NULL,
+      display_body TEXT,
+      pills_meta TEXT
+    );
+    INSERT INTO conversations VALUES ('thread-a', 'New conversation', 'codex', 1);
+  `)
+  ensureTurnAcceptanceSchema(db)
+  return db
 }

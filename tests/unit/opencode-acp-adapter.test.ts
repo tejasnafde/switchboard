@@ -1,10 +1,14 @@
-import { describe, it, expect } from 'vitest'
+import { promises as fs } from 'node:fs'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import {
+  OpencodeAcpAdapter,
   mapSessionUpdate,
   mapAvailableCommands,
   pickPermissionOptions,
   parseImageInput,
 } from '../../src/main/provider/adapters/opencode-acp-adapter'
+
+afterEach(() => vi.restoreAllMocks())
 
 /**
  * Pure event-mapping tests for the OpenCode ACP adapter. The adapter's
@@ -14,6 +18,40 @@ import {
  */
 
 const tid = 't1'
+
+describe('OpenCode first-turn acceptance', () => {
+  it('does not persist a session title when prompt dispatch rejects synchronously', async () => {
+    const mkdir = vi.spyOn(fs, 'mkdir').mockResolvedValue(undefined)
+    const adapter = new OpencodeAcpAdapter()
+    const prompt = vi.fn(() => { throw new Error('prompt rejected') })
+    const sessions = Reflect.get(adapter, 'sessions') as Map<string, unknown>
+    const active = {
+      session: {
+        threadId: tid,
+        provider: 'opencode',
+        status: 'idle',
+        runtimeMode: 'sandbox',
+        cwd: '/tmp/project',
+        createdAt: 1,
+      },
+      onEvent: vi.fn(),
+      child: null,
+      connection: { prompt },
+      sessionId: 'native-session',
+      pendingPermissions: new Map(),
+      skills: [],
+      availableModels: [],
+      inFlightPrompt: null,
+      turnStartedAt: null,
+      assistantMessageText: new Map(),
+    }
+    sessions.set(tid, active)
+
+    await expect(adapter.sendTurn(tid, 'not accepted')).rejects.toThrow('prompt rejected')
+    expect(mkdir).not.toHaveBeenCalled()
+    expect(active.session.status).toBe('idle')
+  })
+})
 
 describe('mapSessionUpdate', () => {
   it('maps agent_message_chunk → content (assistant)', () => {

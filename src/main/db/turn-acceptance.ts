@@ -13,6 +13,38 @@ export type ReserveTurnResult =
   | { kind: 'duplicate'; state: TurnAcceptanceState }
   | { kind: 'conflict'; state: TurnAcceptanceState }
 
+export type ReserveEnvelopeResult = ReserveTurnResult | {
+  kind: 'blocked'
+  state: 'reserved' | 'dispatching'
+  blockingOrigin: string
+}
+
+export interface AcceptedUserTurnRecord {
+  messageId: string
+  providerText: string
+  imagesJson?: string
+  displayBody?: string
+  pillsMetaJson?: string
+  acceptedAt: number
+  autoTitle?: string
+  handoff?: {
+    expectedFrom: string
+    markerId: string
+    markerText: string
+  }
+}
+
+export interface CanonicalUserTurnRow {
+  messageId: string
+  providerText: string
+  imagesJson: string | null
+  displayBody: string | null
+  pillsMetaJson: string | null
+  eventAt: number
+  conversationTitle: string | null
+  envelopeJson: string | null
+}
+
 export interface TurnAcceptanceStore {
   reserve(key: TurnAcceptanceKey, payloadHash: string): ReserveTurnResult
   beginDispatch(key: TurnAcceptanceKey, payloadHash: string): boolean
@@ -38,6 +70,20 @@ export function ensureTurnAcceptanceSchema(db: Database.Database): void {
       PRIMARY KEY (client_scope, thread_id, origin)
     ) WITHOUT ROWID;
   `)
+  const columns = db.prepare('PRAGMA table_info(mobile_turn_acceptances)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'envelope_json')) {
+    db.exec('ALTER TABLE mobile_turn_acceptances ADD COLUMN envelope_json TEXT')
+  }
+  if (!columns.some((column) => column.name === 'message_id')) {
+    db.exec('ALTER TABLE mobile_turn_acceptances ADD COLUMN message_id TEXT')
+  }
+  if (!columns.some((column) => column.name === 'event_at')) {
+    db.exec('ALTER TABLE mobile_turn_acceptances ADD COLUMN event_at INTEGER')
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_turn_acceptances_thread_state
+      ON mobile_turn_acceptances(thread_id, state)
+  `)
 }
 
 /**
@@ -51,6 +97,58 @@ export function recoverUndispatchedTurns(db: Database.Database): void {
 
 export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
   constructor(private readonly database: () => Database.Database) {}
+
+  reserveEnvelope(
+    key: TurnAcceptanceKey,
+    payloadHash: string,
+    envelopeJson: string,
+    messageId: string,
+    eventAt: number,
+  ): ReserveEnvelopeResult {
+    const db = this.database()
+    return db.transaction((): ReserveEnvelopeResult => {
+      const existing = this.read(db, key)
+      if (existing) {
+        if (existing.payload_hash !== payloadHash) return { kind: 'conflict', state: existing.state }
+        return { kind: 'duplicate', state: existing.state }
+      }
+      const blocker = db.prepare(`
+        SELECT origin, state
+          FROM mobile_turn_acceptances
+         WHERE thread_id = ? AND state IN ('reserved', 'dispatching')
+         ORDER BY accepted_at ASC
+         LIMIT 1
+      `).get(key.threadId) as { origin: string; state: 'reserved' | 'dispatching' } | undefined
+      if (blocker) {
+        return { kind: 'blocked', state: blocker.state, blockingOrigin: blocker.origin }
+      }
+      db.prepare(`
+        INSERT INTO mobile_turn_acceptances
+          (client_scope, thread_id, origin, payload_hash, state, accepted_at,
+           envelope_json, message_id, event_at)
+        VALUES (?, ?, ?, ?, 'reserved', ?, ?, ?, ?)
+      `).run(
+        key.clientScope,
+        key.threadId,
+        key.origin,
+        payloadHash,
+        eventAt,
+        envelopeJson,
+        messageId,
+        eventAt,
+      )
+      return { kind: 'reserved', state: 'reserved' }
+    })()
+  }
+
+  readEnvelope(key: TurnAcceptanceKey): string | null {
+    const row = this.database().prepare(`
+      SELECT envelope_json
+        FROM mobile_turn_acceptances
+       WHERE client_scope = ? AND thread_id = ? AND origin = ?
+    `).get(key.clientScope, key.threadId, key.origin) as { envelope_json: string | null } | undefined
+    return row?.envelope_json ?? null
+  }
 
   reserve(key: TurnAcceptanceKey, payloadHash: string): ReserveTurnResult {
     const db = this.database()
@@ -83,6 +181,104 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
        WHERE client_scope = ? AND thread_id = ? AND origin = ?
          AND payload_hash = ? AND state = 'dispatching'
     `).run(Date.now(), key.clientScope, key.threadId, key.origin, payloadHash).changes === 1
+  }
+
+  completeUserTurn(
+    key: TurnAcceptanceKey,
+    payloadHash: string,
+    turn: AcceptedUserTurnRecord,
+  ): { completed: boolean; conversationTitle?: string } {
+    const db = this.database()
+    return db.transaction(() => {
+      const completion = db.prepare(`
+        UPDATE mobile_turn_acceptances
+           SET state = 'completed', completed_at = ?, event_at = ?
+         WHERE client_scope = ? AND thread_id = ? AND origin = ?
+           AND payload_hash = ? AND state = 'dispatching'
+      `).run(
+        turn.acceptedAt,
+        turn.acceptedAt,
+        key.clientScope,
+        key.threadId,
+        key.origin,
+        payloadHash,
+      )
+      if (completion.changes !== 1) return { completed: false }
+
+      const hasAcceptedUserTurn = Boolean(db.prepare(`
+        SELECT 1 FROM messages
+         WHERE conversation_id = ? AND role = 'user'
+         LIMIT 1
+      `).get(key.threadId))
+      const transcript = db.prepare(`
+        INSERT INTO messages
+          (id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)
+        VALUES (?, ?, 'user', ?, NULL, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          content = excluded.content,
+          images = COALESCE(excluded.images, messages.images),
+          display_body = COALESCE(excluded.display_body, messages.display_body),
+          pills_meta = COALESCE(excluded.pills_meta, messages.pills_meta)
+        WHERE messages.conversation_id = excluded.conversation_id
+          AND messages.role = 'user'
+      `).run(
+        turn.messageId,
+        key.threadId,
+        turn.providerText,
+        turn.imagesJson ?? null,
+        turn.acceptedAt,
+        turn.displayBody ?? null,
+        turn.pillsMetaJson ?? null,
+      )
+      if (transcript.changes !== 1) {
+        throw new Error('canonical user message id belongs to another turn')
+      }
+
+      if (turn.handoff) {
+        db.prepare(`
+          INSERT OR IGNORE INTO messages
+            (id, conversation_id, role, content, tool_calls, images, timestamp, display_body, pills_meta)
+          VALUES (?, ?, 'system', ?, NULL, NULL, ?, NULL, NULL)
+        `).run(turn.handoff.markerId, key.threadId, turn.handoff.markerText, turn.acceptedAt - 1)
+        db.prepare(`
+          UPDATE conversations
+             SET pending_handoff_from = NULL
+           WHERE id = ? AND pending_handoff_from = ?
+        `).run(key.threadId, turn.handoff.expectedFrom)
+      }
+
+      let conversationTitle: string | undefined
+      if (!hasAcceptedUserTurn && turn.autoTitle) {
+        const changed = db.prepare(`
+          UPDATE conversations
+             SET title = ?
+           WHERE id = ? AND title = 'New conversation'
+        `).run(turn.autoTitle, key.threadId).changes
+        if (changed === 1) conversationTitle = turn.autoTitle
+      }
+      db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?')
+        .run(turn.acceptedAt, key.threadId)
+      return { completed: true, ...(conversationTitle ? { conversationTitle } : {}) }
+    })()
+  }
+
+  readCanonicalUserTurn(key: TurnAcceptanceKey): CanonicalUserTurnRow | null {
+    const row = this.database().prepare(`
+      SELECT a.message_id AS messageId,
+             m.content AS providerText,
+             m.images AS imagesJson,
+             m.display_body AS displayBody,
+             m.pills_meta AS pillsMetaJson,
+             COALESCE(a.event_at, m.timestamp) AS eventAt,
+             c.title AS conversationTitle,
+             a.envelope_json AS envelopeJson
+        FROM mobile_turn_acceptances a
+        JOIN messages m ON m.id = a.message_id AND m.conversation_id = a.thread_id
+        JOIN conversations c ON c.id = a.thread_id
+       WHERE a.client_scope = ? AND a.thread_id = ? AND a.origin = ?
+         AND a.state = 'completed'
+    `).get(key.clientScope, key.threadId, key.origin) as CanonicalUserTurnRow | undefined
+    return row ?? null
   }
 
   release(key: TurnAcceptanceKey, payloadHash: string): boolean {

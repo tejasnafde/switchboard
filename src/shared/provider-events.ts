@@ -27,6 +27,57 @@ export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
 
 export type ProviderKind = 'claude' | 'codex' | 'opencode'
 
+export interface UserTurnHandoffV1 {
+  expectedFrom: 'claude-code' | 'codex' | 'opencode'
+  markerId: string
+  markerText: string
+}
+
+export interface UserTurnSubmissionV1 {
+  version: 1
+  threadId: string
+  origin: string
+  providerText: string
+  displayBody?: string
+  pillsMeta?: UserMessagePillsMeta
+  images?: Array<{ url: string; mimeType?: string; name?: string }>
+  runtimeMode?: RuntimeMode
+  handoff?: UserTurnHandoffV1
+  autoTitleText?: string
+}
+
+export type UserTurnSubmissionResult =
+  | {
+      status: 'accepted'
+      accepted: true
+      duplicate: boolean
+      state: 'completed'
+      acceptedAt: number
+      conversationTitle?: string
+    }
+  | {
+      status: 'pending' | 'ambiguous'
+      accepted: false
+      duplicate: boolean
+      state: 'pending' | 'ambiguous'
+      reason: string
+    }
+  | {
+      status: 'rejected'
+      accepted: false
+      duplicate: false
+      state: 'rejected'
+      retryable: boolean
+      reason: string
+    }
+  | {
+      status: 'conflict'
+      accepted: false
+      duplicate: true
+      state: 'conflict'
+      reason: string
+    }
+
 // ─── Event union ───────────────────────────────────────────────
 
 /**
@@ -198,6 +249,90 @@ export function validateUserMessageImages<T extends { url: string; mimeType?: st
   return images
 }
 
+const USER_TURN_HANDOFF_PROVIDERS = new Set(['claude-code', 'codex', 'opencode'])
+const USER_TURN_PILL_KINDS = new Set<UserMessagePillKind>(['file', 'terminal', 'chat-message'])
+
+/** Validate the complete commit-bearing turn before any submission mutation. */
+export function validateUserTurnSubmission(input: unknown): UserTurnSubmissionV1 {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    throw new Error('User turn submission must be an object')
+  }
+  const value = input as Partial<UserTurnSubmissionV1>
+  if (value.version !== 1) throw new Error('Unsupported user turn submission version')
+  if (typeof value.threadId !== 'string' || !value.threadId.trim()) {
+    throw new Error('User turn thread identity is required')
+  }
+  if (typeof value.origin !== 'string' || !value.origin.trim()) {
+    throw new Error('User turn origin is required')
+  }
+  if (typeof value.providerText !== 'string') {
+    throw new Error('User turn provider text is required')
+  }
+  if (value.displayBody !== undefined && typeof value.displayBody !== 'string') {
+    throw new Error('User turn display body must be text')
+  }
+  if (value.runtimeMode !== undefined && !(['plan', 'sandbox', 'accept-edits', 'full-access'] as unknown[]).includes(value.runtimeMode)) {
+    throw new Error('User turn runtime mode is invalid')
+  }
+  if (value.autoTitleText !== undefined && typeof value.autoTitleText !== 'string') {
+    throw new Error('User turn title text must be text')
+  }
+  if (value.pillsMeta !== undefined) {
+    if (!value.pillsMeta || typeof value.pillsMeta !== 'object' || Array.isArray(value.pillsMeta)) {
+      throw new Error('User turn pill metadata is invalid')
+    }
+    for (const [id, pill] of Object.entries(value.pillsMeta)) {
+      if (!id || !pill || typeof pill !== 'object' || typeof pill.label !== 'string' || !USER_TURN_PILL_KINDS.has(pill.kind)) {
+        throw new Error('User turn pill metadata is invalid')
+      }
+    }
+  }
+  if (value.handoff !== undefined) {
+    const handoff = value.handoff
+    if (
+      !handoff ||
+      typeof handoff !== 'object' ||
+      !USER_TURN_HANDOFF_PROVIDERS.has(handoff.expectedFrom) ||
+      typeof handoff.markerId !== 'string' || !handoff.markerId ||
+      typeof handoff.markerText !== 'string' || !handoff.markerText
+    ) {
+      throw new Error('User turn handoff metadata is invalid')
+    }
+  }
+  validateUserMessageImages(value.images)
+  return value as UserTurnSubmissionV1
+}
+
+/** Stable exact serialization used as the input to the backend SHA-256 hash. */
+export function canonicalUserTurnSubmission(input: unknown): string {
+  const value = validateUserTurnSubmission(input)
+  const pillsMeta = value.pillsMeta
+    ? Object.fromEntries(Object.entries(value.pillsMeta).sort(([left], [right]) => left.localeCompare(right)))
+    : null
+  return JSON.stringify({
+    version: value.version,
+    threadId: value.threadId,
+    origin: value.origin,
+    providerText: value.providerText,
+    displayBody: value.displayBody ?? null,
+    pillsMeta,
+    images: value.images?.map((image) => ({
+      url: image.url,
+      mimeType: image.mimeType ?? null,
+      name: image.name ?? null,
+    })) ?? null,
+    runtimeMode: value.runtimeMode ?? null,
+    handoff: value.handoff
+      ? {
+          expectedFrom: value.handoff.expectedFrom,
+          markerId: value.handoff.markerId,
+          markerText: value.handoff.markerText,
+        }
+      : null,
+    autoTitleText: value.autoTitleText ?? null,
+  })
+}
+
 const SYNTHETIC_USER_BLOCKS: ReadonlyArray<{
   start: string
   end: string
@@ -272,6 +407,8 @@ export interface RuntimeUserMessageEvent {
   images?: Array<{ url: string; mimeType?: string; name?: string }>
   origin?: string
   at: number
+  conversationTitle?: string
+  handoffMarker?: { id: string; text: string }
 }
 
 export type UserMessagePillKind = 'file' | 'terminal' | 'chat-message'

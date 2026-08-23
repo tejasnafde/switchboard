@@ -22,10 +22,25 @@ import { writeMachineNotice } from '../../src/renderer/services/terminal-registr
 import {
   shouldDeliverProviderEvent,
   onProviderEvent,
+  onUserTurnAccepted,
+  emitUserTurnAccepted,
   decideMachineTransition,
   initMachineReconnectResync,
   __resetMachineReconnectResyncForTests,
 } from '../../src/renderer/services/session-events'
+
+describe('user-turn acceptance events', () => {
+  it('reconciles the exact origin and unsubscribes cleanly', () => {
+    const accepted: string[] = []
+    const unsubscribe = onUserTurnAccepted((threadId, origin) => accepted.push(`${threadId}:${origin}`))
+
+    emitUserTurnAccepted('thread-1', 'origin-1')
+    unsubscribe()
+    emitUserTurnAccepted('thread-1', 'origin-2')
+
+    expect(accepted).toEqual(['thread-1:origin-1'])
+  })
+})
 
 describe('shouldDeliverProviderEvent', () => {
   it('passes through when the event carries no machineId (older adapters)', () => {

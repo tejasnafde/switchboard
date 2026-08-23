@@ -15,6 +15,7 @@ describe('provider types', () => {
   it('ProviderChannels has all required channels', () => {
     expect(ProviderChannels.START_SESSION).toBe('provider:start-session')
     expect(ProviderChannels.SEND_TURN).toBe('provider:send-turn')
+    expect(ProviderChannels.SUBMIT_USER_TURN).toBe('provider:submit-user-turn')
     expect(ProviderChannels.INTERRUPT).toBe('provider:interrupt')
     expect(ProviderChannels.RESPOND_TO_REQUEST).toBe('provider:respond-to-request')
     expect(ProviderChannels.STOP_SESSION).toBe('provider:stop-session')

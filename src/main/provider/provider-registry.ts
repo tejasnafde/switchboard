@@ -19,13 +19,14 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb, getMessageForConversationById } from '../db/database'
+import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
+  AtomicUserTurnSubmission,
   DurableTurnAcceptance,
   TurnNotAcceptedError,
-  turnPayloadHash,
+  TurnOriginConflictError,
   type TurnAcceptanceResult,
 } from './durable-turn-acceptance'
 import { sessionDefaultsFor } from './session-defaults'
@@ -52,11 +53,11 @@ import type {
   RuntimeMode,
 } from './types'
 import {
-  echoMessageId,
   validateUserMessageImages,
   type ProviderInstanceSwitchRequest,
+  type UserTurnSubmissionResult,
+  type UserTurnSubmissionV1,
 } from '@shared/provider-events'
-import { parsePersistedPillsMeta } from './pill-metadata'
 
 const log = createLogger('provider:registry')
 
@@ -120,8 +121,7 @@ export class ProviderRegistry implements PeerToolHost {
    * same way in chat.
    */
   private checkpoints = new CheckpointTracker()
-  /** Durable origin acceptance shared by every transport and backend restart. */
-  private readonly turnAcceptance: DurableTurnAcceptance
+  private readonly atomicTurnSubmission: Pick<AtomicUserTurnSubmission, 'submit'>
   /** Provider startup shared by every client that reaches a thread before its adapter exists. */
   private startingSessions = new Map<string, Promise<ProviderSession>>()
   private switchingSessions = new Set<string>()
@@ -154,7 +154,8 @@ export class ProviderRegistry implements PeerToolHost {
   constructor(
     host: BackendHost,
     adapters?: Map<ProviderKind, ProviderAdapter>,
-    turnAcceptance?: DurableTurnAcceptance,
+    _turnAcceptance?: DurableTurnAcceptance,
+    atomicTurnSubmission?: Pick<AtomicUserTurnSubmission, 'submit'>,
   ) {
     activeRegistry = this
     this.host = host
@@ -164,9 +165,11 @@ export class ProviderRegistry implements PeerToolHost {
       ['codex', new CodexAdapter()],
       ['opencode', this.opencodeAcp],
     ])
-    this.turnAcceptance = turnAcceptance ?? new DurableTurnAcceptance(
-      new SqliteTurnAcceptanceStore(() => getDb()),
-    )
+    const turnStore = new SqliteTurnAcceptanceStore(() => getDb())
+    this.atomicTurnSubmission = atomicTurnSubmission ?? new AtomicUserTurnSubmission({
+      store: turnStore,
+      publish: (event) => this.publish(event),
+    })
     this.bus = new RuntimeEventBus()
     this.rendererUnsub = this.bus.subscribe((event) => this.forwardToRenderer(event))
     // Lets an adapter expose the peer tools to its model. Only the Claude
@@ -627,6 +630,65 @@ export class ProviderRegistry implements PeerToolHost {
     }
   }
 
+  private async submitAtomicUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
+    const threadId = input.threadId
+    if (this.switchingSessions.has(threadId)) {
+      return rejectedAtomicTurn('Session queue full while a profile switch is in progress')
+    }
+    const starting = this.startingSessions.get(threadId)
+    if (starting) await starting
+    if (this.switchingSessions.has(threadId)) {
+      return rejectedAtomicTurn('Session queue full while a profile switch is in progress')
+    }
+    const adapter = this.sessionAdapters.get(threadId)
+    if (!adapter) return rejectedAtomicTurn(`No session: ${threadId}`)
+
+    this.beginPreparingTurn(threadId)
+    let preparationPending = true
+    const releasePreparation = (): void => {
+      if (!preparationPending) return
+      preparationPending = false
+      this.finishPreparingTurn(threadId)
+    }
+    try {
+      log.info(`submitUserTurn ${threadId} chars=${input.providerText.length} mode=${input.runtimeMode ?? 'sandbox'} images=${input.images?.length ?? 0}`)
+      const clientScope = currentBackendRequestContext()?.clientScope
+        ?? hashClientScope('unscoped-local', 'backend-host-without-request-context')
+      return await this.atomicTurnSubmission.submit(input, {
+        clientScope,
+        prepare: async () => {
+          if (this.switchingSessions.has(threadId)) {
+            throw new TurnNotAcceptedError('Session queue full while a profile switch is in progress')
+          }
+          if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId)) {
+            throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
+          }
+          try {
+            const cwd = this.sessionCwd.get(threadId)
+            if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
+            notebookManager.beginTurn(threadId)
+            this.turnDepth.set(threadId, 0)
+          } catch (error) {
+            throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
+          }
+        },
+        dispatch: async () => {
+          const startsNewProviderTurn = adapter.provider !== 'codex' || !this.hasOutstandingTurn(threadId)
+          if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
+          releasePreparation()
+          try {
+            await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images)
+          } catch (error) {
+            if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
+            throw error
+          }
+        },
+      })
+    } finally {
+      releasePreparation()
+    }
+  }
+
   registerIpcHandlers(): void {
     this.host.handle(ProviderChannels.IS_AVAILABLE, async (provider: ProviderKind) => {
       // On a remote VM, gray out the providers that don't run there.
@@ -635,6 +697,9 @@ export class ProviderRegistry implements PeerToolHost {
       if (!adapter) return false
       return adapter.isAvailable()
     })
+
+    this.host.handle(ProviderChannels.SUBMIT_USER_TURN, async (input: UserTurnSubmissionV1) =>
+      this.submitAtomicUserTurn(input))
 
     // Proactive remote-auth preflight for the chat-open banner. `_threadId`
     // exists ONLY so the preload RoutingTable (which keys on args[0]) routes
@@ -1060,6 +1125,18 @@ export class ProviderRegistry implements PeerToolHost {
     })
 
     this.host.handle(ProviderChannels.SEND_TURN, async (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string): Promise<TurnAcceptanceResult | undefined> => {
+      if (origin) {
+        const result = await this.submitAtomicUserTurn({
+          version: 1,
+          threadId,
+          origin,
+          providerText: message,
+          autoTitleText: message,
+          runtimeMode: runtimeMode ?? undefined,
+          images: images ?? undefined,
+        })
+        return legacyAcceptanceResult(result)
+      }
       if (this.switchingSessions.has(threadId)) {
         // "queue full" intentionally classifies this as retryable in the
         // durable mobile outbox. The reservation has not crossed the provider
@@ -1114,93 +1191,30 @@ export class ProviderRegistry implements PeerToolHost {
         }
       }
 
-      const messageId = origin
-        ? echoMessageId(origin)
-        : `turn_${Date.now()}_${++this.savedMessageSeq}`
-      const persistUserTurn = (required: boolean): void => {
-        try {
-          const inserted = saveMessageIfAbsent(
-            messageId,
-            threadId,
-            'user',
-            message,
-            acceptedImages ? JSON.stringify(acceptedImages) : undefined,
-          )
-          if (!inserted && !getMessageForConversationById(threadId, messageId) && required) {
-            throw new Error('conversation or message row is unavailable')
-          }
-        } catch (error) {
-          if (required) {
-            throw new TurnNotAcceptedError('turn could not be persisted before provider dispatch', {
-              cause: error,
-            })
-          }
-          log.warn(`failed to persist user turn for ${threadId}: ${error}`)
-        }
-      }
-      const publishUserTurn = (): void => {
-        let displayBody: string | undefined
-        let pillsMeta: ReturnType<typeof parsePersistedPillsMeta>
-        try {
-          const persisted = origin
-            ? getMessageForConversationById(threadId, messageId)
-            : undefined
-          displayBody = persisted?.display_body ?? undefined
-          pillsMeta = parsePersistedPillsMeta(persisted?.pills_meta)
-        } catch {
-          // A missing enrichment is normal for phone sends and older databases.
-        }
-        this.publish({
-          type: 'user.message',
+      // Positional callers without an origin predate durable idempotency. Keep
+      // that wire shape installable, but never route origin-bearing clients
+      // through this compatibility writer.
+      await dispatch()
+      const messageId = `turn_${Date.now()}_${++this.savedMessageSeq}`
+      try {
+        saveMessageIfAbsent(
+          messageId,
           threadId,
-          text: message,
-          displayBody,
-          pillsMeta,
-          images: acceptedImages,
-          origin,
-          at: Date.now(),
-        })
-      }
-
-      // Origin-aware callers delete their durable outbox copy after this
-      // handler acknowledges completion. Make the user row replayable before
-      // crossing the provider boundary, or a crash can lose the only copy.
-      if (origin) persistUserTurn(true)
-
-      let acceptance: TurnAcceptanceResult | undefined
-      if (origin) {
-        const clientScope = currentBackendRequestContext()?.clientScope
-          ?? hashClientScope('unscoped-local', 'backend-host-without-request-context')
-        acceptance = await this.turnAcceptance.accept(
-          { clientScope, threadId, origin },
-          turnPayloadHash(message, runtimeMode, acceptedImages),
-          dispatch,
+          'user',
+          message,
+          acceptedImages ? JSON.stringify(acceptedImages) : undefined,
         )
-        if (acceptance.duplicate) {
-          log.info(`sendTurn ${threadId} - duplicate origin ${origin} (${acceptance.state})`)
-          if (acceptance.state === 'completed') publishUserTurn()
-          return acceptance
-        }
-      } else {
-        // Positional callers that predate origins retain their exact behavior.
-        await dispatch()
+      } catch (error) {
+        log.warn(`failed to persist originless compatibility turn for ${threadId}: ${error}`)
       }
-      // Persisted here because the renderer was the only writer, so a turn sent
-      // from the phone left no row: absent from search, absent from the DB
-      // fallback, and `updated_at` never moved.
-      //
-      // Fill-only, and that is the whole subtlety. The renderer writes the same
-      // id (`echoMessageId`) BEFORE it calls sendTurn, carrying the pill
-      // metadata only it has; this runs after, so a plain REPLACE nulled
-      // `display_body`/`pills_meta` on every desktop send. Absent origin - the
-      // phone's opening turn does not send one - still gets a row, under a
-      // minted id, since nothing else will write it.
-      if (!origin) persistUserTurn(false)
-      // AFTER the adapter accepts. Broadcasting first meant a failed send had
-      // already consumed the origin from every other client's skip set, so the
-      // retry rendered a duplicate bubble everywhere with no retraction.
-      publishUserTurn()
-      return acceptance
+      this.publish({
+        type: 'user.message',
+        threadId,
+        text: message,
+        images: acceptedImages,
+        at: Date.now(),
+      })
+      return undefined
       } finally {
         releasePreparation()
       }
@@ -1298,6 +1312,33 @@ export class ProviderRegistry implements PeerToolHost {
     }
     this.bus.clear()
   }
+}
+
+function rejectedAtomicTurn(reason: string): UserTurnSubmissionResult {
+  return {
+    status: 'rejected',
+    accepted: false,
+    duplicate: false,
+    state: 'rejected',
+    retryable: true,
+    reason,
+  }
+}
+
+function legacyAcceptanceResult(result: UserTurnSubmissionResult): TurnAcceptanceResult {
+  if (result.status === 'accepted') {
+    return { accepted: true, duplicate: result.duplicate, state: 'completed' }
+  }
+  if (result.status === 'pending' || result.status === 'ambiguous') {
+    return {
+      accepted: false,
+      duplicate: result.duplicate,
+      state: result.state,
+      reason: result.reason,
+    }
+  }
+  if (result.status === 'conflict') throw new TurnOriginConflictError()
+  throw new TurnNotAcceptedError(result.reason)
 }
 
 /** Last-constructed registry, for callers without a reference (ipc/app.ts's

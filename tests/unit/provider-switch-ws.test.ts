@@ -5,14 +5,15 @@
  * → back over the wire). Proves the daily plan-hopping workflow survives a
  * backend running on a VM, with no Electron and no real provider auth.
  *
- * DB access in the registry's START_SESSION path is mocked - this exercises the
- * transport + registry + adapter wiring, not SQLite.
+ * Session metadata access is mocked. Atomic user-turn tests use a real in-memory
+ * SQLite transcript and acceptance store across the transport boundary.
  */
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { WebSocketServer, type AddressInfo } from 'ws'
+import Database from 'better-sqlite3'
 
 vi.mock('../../src/main/db/providerInstances', () => ({
   resolveProviderInstance: (agentType: string, id?: string) => ({
@@ -135,7 +136,8 @@ import { WsTransport } from '../../src/shared/ws-transport'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
-import { DurableTurnAcceptance } from '../../src/main/provider/durable-turn-acceptance'
+import { AtomicUserTurnSubmission, DurableTurnAcceptance } from '../../src/main/provider/durable-turn-acceptance'
+import { SqliteTurnAcceptanceStore, ensureTurnAcceptanceSchema } from '../../src/main/db/turn-acceptance'
 import type {
   ReserveTurnResult,
   TurnAcceptanceKey,
@@ -434,6 +436,7 @@ class BusyOpenCodeAdapter implements ProviderAdapter {
 let wss: WebSocketServer | null = null
 let client: WsTransport | null = null
 let registry: ProviderRegistry | null = null
+let atomicDb: Database.Database | null = null
 /** Scratch cwds this file created, removed in afterEach so repeated runs do not
  *  pile up dirs under TMPDIR. */
 const scratchDirs: string[] = []
@@ -441,15 +444,54 @@ const scratchDirs: string[] = []
 async function setup(
   adapter: ProviderAdapter = new MockEchoAdapter(),
   providerKey: 'claude' | 'codex' | 'opencode' = 'claude',
+  atomicSubmission?: {
+    submit(input: unknown, context: { clientScope: string; prepare: () => Promise<void>; dispatch: () => Promise<void> }): Promise<unknown>
+  },
 ) {
   const cwd = mkdtempSync(join(tmpdir(), 'sb-prov-'))
   scratchDirs.push(cwd)
   wss = new WebSocketServer({ port: 0 })
   const host = new WsHost(wss)
-  registry = new ProviderRegistry(
+  let effectiveAtomicSubmission = atomicSubmission
+  if (!effectiveAtomicSubmission) {
+    atomicDb = new Database(':memory:')
+    atomicDb.exec(`
+      CREATE TABLE conversations (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        pending_handoff_from TEXT,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE messages (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tool_calls TEXT,
+        images TEXT,
+        timestamp INTEGER NOT NULL,
+        display_body TEXT,
+        pills_meta TEXT
+      );
+      INSERT INTO conversations VALUES ('t1', 'New conversation', NULL, 1);
+    `)
+    ensureTurnAcceptanceSchema(atomicDb)
+    effectiveAtomicSubmission = new AtomicUserTurnSubmission({
+      store: new SqliteTurnAcceptanceStore(() => atomicDb!),
+      publish: (event) => host.emit(ProviderChannels.EVENT, event),
+    })
+  }
+  const RegistryWithAtomic = ProviderRegistry as unknown as new (
+    host: WsHost,
+    adapters: Map<'claude' | 'codex' | 'opencode', ProviderAdapter>,
+    acceptance: DurableTurnAcceptance,
+    atomicSubmission?: typeof atomicSubmission,
+  ) => ProviderRegistry
+  registry = new RegistryWithAtomic(
     host,
     new Map([[providerKey, adapter]]),
     new DurableTurnAcceptance(new TestTurnAcceptanceStore()),
+    effectiveAtomicSubmission,
   )
   registry.registerIpcHandlers()
   await new Promise<void>((res) => wss!.on('listening', () => res()))
@@ -458,7 +500,7 @@ async function setup(
   const events: RuntimeEvent[] = []
   client = new WsTransport(`ws://localhost:${port}`)
   client.on(ProviderChannels.EVENT, (e: RuntimeEvent) => events.push(e))
-  return { cwd, events }
+  return { cwd, events, atomicDb }
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 40))
@@ -474,6 +516,8 @@ afterEach(async () => {
   client = null
   await registry?.stopAll()
   registry = null
+  atomicDb?.close()
+  atomicDb = null
   await new Promise<void>((res) => (wss ? wss.close(() => res()) : res()))
   wss = null
   while (scratchDirs.length) rmSync(scratchDirs.pop()!, { recursive: true, force: true })
@@ -550,33 +594,79 @@ describe('provider switching over the WebSocket boundary', () => {
     expect(events.some((e) => e.type === 'turn.completed')).toBe(true)
   })
 
+  it('submits a typed atomic user-turn envelope across the real transport', async () => {
+    const adapter = new MockEchoAdapter()
+    const seen: unknown[] = []
+    const atomicSubmission = {
+      submit: async (input: unknown, context: { clientScope: string; prepare: () => Promise<void>; dispatch: () => Promise<void> }) => {
+        seen.push(input)
+        await context.prepare()
+        await context.dispatch()
+        return {
+          status: 'accepted', accepted: true, duplicate: false, state: 'completed', acceptedAt: 100,
+        }
+      },
+    }
+    const { cwd, events } = await setup(adapter, 'claude', atomicSubmission)
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    const envelope = {
+      version: 1,
+      threadId: 't1',
+      origin: 'desktop-atomic-1',
+      providerText: 'expanded provider text',
+      displayBody: '[[pill:file-1]] explain this',
+      pillsMeta: { 'file-1': { label: 'src/main.ts', kind: 'file' } },
+      images: [{ url: 'data:image/png;base64,AAAA', mimeType: 'image/png', name: 'one.png' }],
+      runtimeMode: 'sandbox',
+    }
+
+    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, envelope)).resolves.toMatchObject({
+      status: 'accepted',
+    })
+    expect(seen).toEqual([envelope])
+    await flush()
+    expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1)
+  })
+
   // The renderer was the only writer of `messages`, so a turn sent from the
   // phone left no row at all: no search hit, no DB fallback, and `updated_at`
   // never moved so the chat stayed buried in the phone's own sort.
   it('persists a turn sent by a client that is not the desktop renderer', async () => {
-    const { cwd } = await setup()
-    saved.length = 0
+    const { cwd, atomicDb } = await setup()
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     const accepted = await client!.invoke(
       ProviderChannels.SEND_TURN, 't1', 'from the phone', undefined, undefined, 'o-1',
     )
     await flush()
 
-    const turn = saved.find((m) => m.role === 'user')
+    const turn = atomicDb!.prepare(`
+      SELECT id, conversation_id AS conversationId, role, content
+        FROM messages
+       WHERE role = 'user'
+    `).get() as typeof saved[number] | undefined
     expect(turn).toBeDefined()
     expect(turn?.content).toBe('from the phone')
     expect(turn?.conversationId).toBe('t1')
     // echoMessageId(origin) - the id the optimistic bubble already uses, so the
     // renderer's own richer write targets this row instead of adding a second.
     expect(turn?.id).toBe('remote_o-1')
+    expect(atomicDb!.prepare("SELECT title FROM conversations WHERE id = 't1'").get())
+      .toEqual({ title: 'from the phone' })
     expect(accepted).toEqual({ accepted: true, duplicate: false, state: 'completed' })
   })
 
-  it('does not dispatch or acknowledge a durable phone turn that cannot be persisted', async () => {
-    const { cwd, events } = await setup()
-    allowUserTurnPersistence = false
-    persistedRows.clear()
+  it('keeps a post-dispatch transcript commit failure ambiguous', async () => {
+    const adapter = new MockEchoAdapter()
+    const { cwd, events, atomicDb } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    atomicDb!.exec(`
+      CREATE TRIGGER reject_user_transcript
+      BEFORE INSERT ON messages
+      WHEN NEW.role = 'user'
+      BEGIN
+        SELECT RAISE(ABORT, 'transcript unavailable');
+      END;
+    `)
 
     await expect(client!.invoke(
       ProviderChannels.SEND_TURN,
@@ -585,22 +675,32 @@ describe('provider switching over the WebSocket boundary', () => {
       undefined,
       [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
       'durable-origin',
-    )).rejects.toThrow('persist')
+    )).resolves.toMatchObject({ accepted: false, state: 'ambiguous' })
 
-    expect(events.some((event) => event.type === 'turn.completed')).toBe(false)
+    expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1)
     expect(events.some((event) => event.type === 'user.message')).toBe(false)
+    expect(adapter.starts).toHaveLength(1)
+    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE role = 'user'").get())
+      .toEqual({ count: 0 })
+    expect(atomicDb!.prepare(`
+      SELECT state FROM mobile_turn_acceptances WHERE origin = 'durable-origin'
+    `).get()).toEqual({ state: 'dispatching' })
   })
 
   it('broadcasts images and available persisted pill presentation with the user echo', async () => {
-    const { cwd, events } = await setup()
-    saved.length = 0
-    persistedRows.clear()
-    persistedRows.set('remote_o-image', {
-      display_body: '[[pill:selection-1]] show this',
-      pills_meta: JSON.stringify({
+    const { cwd, events, atomicDb } = await setup()
+    atomicDb!.prepare(`
+      INSERT INTO messages
+        (id, conversation_id, role, content, timestamp, display_body, pills_meta)
+      VALUES (?, 't1', 'user', ?, 1, ?, ?)
+    `).run(
+      'remote_o-image',
+      'context wrapper\n\nshow this',
+      '[[pill:selection-1]] show this',
+      JSON.stringify({
         'selection-1': { label: 'Admin panel', kind: 'chat-message' },
       }),
-    })
+    )
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     const images = [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }]
     await client!.invoke(
@@ -621,12 +721,13 @@ describe('provider switching over the WebSocket boundary', () => {
   })
 
   it('does not broadcast corrupt persisted pill metadata', async () => {
-    const { cwd, events } = await setup()
-    persistedRows.clear()
-    persistedRows.set('remote_o-corrupt-pill', {
-      display_body: 'show [[pill:private]]',
-      pills_meta: '{not-json',
-    })
+    const { cwd, events, atomicDb } = await setup()
+    atomicDb!.prepare(`
+      INSERT INTO messages
+        (id, conversation_id, role, content, timestamp, display_body, pills_meta)
+      VALUES ('remote_o-corrupt-pill', 't1', 'user', 'expanded content', 1,
+              'show [[pill:private]]', '{not-json')
+    `).run()
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
     await client!.invoke(
       ProviderChannels.SEND_TURN, 't1', 'expanded content', undefined, undefined, 'o-corrupt-pill',
@@ -659,7 +760,7 @@ describe('provider switching over the WebSocket boundary', () => {
 
   it('definitely rejects a second OpenCode prompt while its first turn is active', async () => {
     const adapter = new BusyOpenCodeAdapter()
-    const { cwd, events } = await setup(adapter)
+    const { cwd, events, atomicDb } = await setup(adapter)
     await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
 
     await expect(client!.invoke(
@@ -671,6 +772,28 @@ describe('provider switching over the WebSocket boundary', () => {
 
     expect(adapter.sendCount).toBe(1)
     expect(events.filter((event) => event.type === 'user.message')).toHaveLength(1)
+    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE content = 'second'").get())
+      .toEqual({ count: 0 })
+  })
+
+  it('does not persist a legacy-origin row when checkpoint preparation rejects', async () => {
+    const { cwd, events, atomicDb } = await setup()
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    Reflect.set(registry!, 'checkpoints', {
+      beginTurn: async () => { throw new Error('checkpoint failed') },
+      finishTurn: async () => [],
+      clear: () => {},
+    })
+
+    await expect(client!.invoke(
+      ProviderChannels.SEND_TURN, 't1', 'must not look sent', undefined, undefined, 'legacy-rejected',
+    )).rejects.toThrow('turn preparation failed')
+
+    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM messages WHERE content = 'must not look sent'").get())
+      .toEqual({ count: 0 })
+    expect(atomicDb!.prepare("SELECT COUNT(*) AS count FROM mobile_turn_acceptances WHERE origin = 'legacy-rejected'").get())
+      .toEqual({ count: 0 })
+    expect(events.some((event) => event.type === 'user.message')).toBe(false)
   })
 
   it('persists a turn even when the client sends no origin (the phone\'s first message)', async () => {

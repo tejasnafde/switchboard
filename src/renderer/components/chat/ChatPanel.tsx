@@ -14,8 +14,14 @@ import { chatIdentity } from './chatIdentity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
-import { generateTitle } from '@shared/auto-title'
-import { onSessionRename, emitSessionRename, emitSessionActivity, onProviderEvent, claimProviderEvent } from '../../services/session-events'
+import {
+  onSessionRename,
+  emitSessionRename,
+  emitSessionActivity,
+  emitUserTurnAccepted,
+  onProviderEvent,
+  claimProviderEvent,
+} from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
 import { isAssistantStreamingEnabled } from '../../services/streamingPref'
 import { createRendererLogger } from '../../logger'
@@ -28,7 +34,18 @@ import {
 } from '../../services/streamingBuffer'
 import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
-import { echoMessageId, validateUserMessageImages, visibleUserMessageText } from '@shared/provider-events'
+import {
+  echoMessageId,
+  validateUserMessageImages,
+  visibleUserMessageText,
+  type UserTurnSubmissionV1,
+} from '@shared/provider-events'
+import {
+  desktopComposerFingerprint,
+  desktopPreparedTurns,
+  desktopTurnAttempts,
+  submitDesktopUserTurn,
+} from '../../services/desktopTurnSubmission'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
@@ -104,20 +121,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   const removeSession = useAgentStore((s) => s.removeSession)
   const providerStartedRef = useRef<Set<string>>(new Set())
   const pendingNoteRef = useRef<{ sessionId: string; text: string } | null>(null)
-  // Mid-turn sends wait here and flush FIFO when the turn ends. Without this,
-  // each provider diverged: Codex fired a concurrent turn/start, OpenCode
-  // silently dropped the message. Queued items replay through handleSend.
-  const messageQueueRef = useRef<
-    Array<{
-      sessionId: string
-      message: string
-      images?: Array<{ file: File; previewUrl: string }>
-      extras?: {
-        displayBody?: string
-        pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
-      }
-    }>
-  >([])
   const agentStartedRef = useRef<Set<string>>(new Set())
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
 
@@ -419,22 +422,36 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }
 
       switch (event.type) {
-        // A turn submitted somewhere else (the phone, a second window), OR the
-        // echo of our own send. Both are safe to append: our optimistic message
-        // already carries `remote_<origin>` as its id, so the store's
-        // id-idempotency collapses the echo onto it.
+        // This canonical event is the only point where Desktop presents the
+        // user turn as sent. Mobile outboxes may already have a pending bubble;
+        // the shared origin id collapses their accepted echo onto it.
         case 'user.message': {
+          if (event.handoffMarker) {
+            appendMessage(tid, {
+              id: event.handoffMarker.id,
+              role: 'system',
+              content: event.handoffMarker.text,
+              timestamp: event.at - 1,
+            })
+          }
           const visibleText = visibleUserMessageText(event.text, event.displayBody)
-          if (visibleText === null) break
-          appendMessage(tid, {
-            id: echoMessageId(event.origin ?? String(event.at)),
-            role: 'user',
-            content: event.text,
-            displayBody: visibleText === event.text ? undefined : visibleText,
-            pillsMeta: event.pillsMeta,
-            images: event.images,
-            timestamp: event.at,
-          })
+          if (visibleText !== null) {
+            appendMessage(tid, {
+              id: echoMessageId(event.origin ?? String(event.at)),
+              role: 'user',
+              content: event.text,
+              displayBody: visibleText === event.text ? undefined : visibleText,
+              pillsMeta: event.pillsMeta,
+              images: event.images,
+              timestamp: event.at,
+            })
+          }
+          emitSessionActivity(tid, event.at)
+          if (event.conversationTitle) {
+            setTitle(tid, event.conversationTitle)
+            emitSessionRename(tid, event.conversationTitle)
+          }
+          if (event.origin) emitUserTurnAccepted(tid, event.origin)
           break
         }
         case 'content': {
@@ -755,7 +772,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }
     })
     return () => removeProvider()
-  }, [appendMessage, updateMessage, updateStatus])
+  }, [appendMessage, updateMessage, updateStatus, setTitle])
 
   // ── Legacy agent event listeners (old --print mode) ───────────
   useEffect(() => {
@@ -905,17 +922,6 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     // handleSend isn't in deps since we don't want to re-fire - it's called once
   }, [status, sessionId])
 
-  // Flush the next queued mid-turn message when the turn ends. One per idle
-  // tick: the replayed send flips status back to running, so the rest keep
-  // waiting until their turn (FIFO). handleSend deliberately omitted from deps.
-  useEffect(() => {
-    if (status !== 'idle') return
-    const idx = messageQueueRef.current.findIndex((item) => item.sessionId === sessionId)
-    if (idx === -1) return
-    const [item] = messageQueueRef.current.splice(idx, 1)
-    setTimeout(() => handleSend(item.message, undefined, item.images, item.extras), 50)
-  }, [status, sessionId])
-
   // ── Rename handler ────────────────────────────────────────────
   const startRename = useCallback(() => {
     setEditTitleValue(chatTitle)
@@ -947,6 +953,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       _mode?: string,
       images?: Array<{ file: File; previewUrl: string }>,
       extras?: {
+        origin?: string
         displayBody?: string
         pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
       },
@@ -1017,25 +1024,26 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         }
       }
 
-      // Mid-turn send routing happens only after image admission succeeds, so
-      // an invalid queued OpenCode turn cannot clear the composer and fail
-      // later without its source attachments. Claude and Codex can steer live;
-      // OpenCode ACP holds the accepted draft until the current turn ends.
+      // Mid-turn admission happens only after image validation. OpenCode
+      // cannot accept another prompt while busy, so keep this draft editable
+      // instead of treating an in-memory queue as backend acceptance.
       const liveStatus = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.status
       const busy = liveStatus === 'running' || liveStatus === 'thinking'
       if (busy && agentType === 'opencode') {
-        messageQueueRef.current.push({ sessionId, message, images, extras })
-        return { accepted: true }
+        return {
+          accepted: false,
+          error: 'OpenCode is still working. Your text and attachments are preserved; send again when it finishes.',
+        }
       }
 
       // Cross-provider context handoff. A pending flag - set by an agent
       // switch over existing history, or by a degraded Codex / OpenCode
       // fork - means the current adapter has never seen the visible
       // transcript. Prefix this turn's wire message with the transcript
-      // preamble, exactly once: the flag is cleared before the send fires
-      // so no retry or reload path can re-inject.
+      // preamble. The backend clears the flag in the acceptance transaction.
       let wireMessage = message
       let pendingHandoffFrom: string | null = null
+      let handoff: UserTurnSubmissionV1['handoff']
       try {
         pendingHandoffFrom = (await window.api.app.getConversationPendingHandoff(sessionId)).from
       } catch (err) {
@@ -1048,24 +1056,48 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         if (preamble) {
           wireMessage = `${preamble}\n\n${message}`
           const handoffFrom = pendingHandoffFrom as AgentType
-          const marker: ChatMessage = {
-            id: `handoff_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            role: 'system',
-            content: handoffFrom === agentType
-              ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(agentType)} profile restarted with visible history`
-              : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(handoffFrom)} → ${agentLabel(agentType)}`,
-            timestamp: Date.now(),
+          const markerText = handoffFrom === agentType
+            ? `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(agentType)} profile restarted with visible history`
+            : `${CONTEXT_HANDOFF_MARKER_PREFIX} ${agentLabel(handoffFrom)} → ${agentLabel(agentType)}`
+          if (handoffFrom === 'claude-code' || handoffFrom === 'codex' || handoffFrom === 'opencode') {
+            handoff = {
+              expectedFrom: handoffFrom,
+              markerId: '',
+              markerText,
+            }
           }
-          appendMessage(sessionId, marker)
-          window.api.app.saveMessage({
-            id: marker.id,
-            conversationId: sessionId,
-            role: marker.role,
-            content: marker.content,
-          }).catch((err) => log.warn('failed to persist handoff marker', err))
         }
       }
       const handoffInjected = wireMessage !== message
+
+      const origin = extras?.origin ?? desktopTurnAttempts.originFor(
+        sessionId,
+        desktopComposerFingerprint({
+          message,
+          runtimeMode,
+          images: images?.map((image) => ({
+            name: image.file.name,
+            size: image.file.size,
+            type: image.file.type,
+            lastModified: image.file.lastModified,
+          })),
+          extras,
+        }),
+      )
+      if (handoff) handoff.markerId = `handoff_${origin}`
+
+      const turn = desktopPreparedTurns.prepare({
+        version: 1,
+        threadId: sessionId,
+        origin,
+        providerText: wireMessage,
+        displayBody: handoffInjected ? (extras?.displayBody ?? message) : extras?.displayBody,
+        pillsMeta: handoffInjected ? (extras?.pillsMeta ?? {}) : extras?.pillsMeta,
+        images: messageImages,
+        runtimeMode,
+        handoff,
+        autoTitleText: message,
+      })
 
       // Start only after image preparation and validation. A definite startup
       // rejection leaves the composer intact and does not create a false user
@@ -1074,92 +1106,39 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       const providerKind = agentType === 'codex' ? 'codex' : agentType === 'opencode' ? 'opencode' : 'claude'
       const effectiveMode = runtimeMode
 
-      if (!providerStartedRef.current.has(sessionId)) {
-        providerStartedRef.current.add(sessionId)
-        try {
-          const sessionForCwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
-          const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
-          const cwd = sessionForCwd?.worktreePath ?? linkedCard?.worktreePath ?? projectPath ?? '.'
-          window.api.routing.bind(sessionId, sessionForCwd?.machineId ?? 'local')
-          await providerApi.startSession({
-            threadId: sessionId,
-            provider: providerKind,
-            cwd,
-            runtimeMode: effectiveMode,
-            resumeSessionId,
-            model: model || undefined,
-            reasoningEffort,
-            instanceId,
-          })
-        } catch (error) {
-          providerStartedRef.current.delete(sessionId)
-          updateStatus(sessionId, 'idle')
-          return {
-            accepted: false,
-            error: `Failed to start session: ${error instanceof Error ? error.message : String(error)}`,
+      const outcome = await submitDesktopUserTurn(turn, {
+        startSession: async () => {
+          if (providerStartedRef.current.has(sessionId)) return
+          providerStartedRef.current.add(sessionId)
+          try {
+            const sessionForCwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+            const linkedCard = useKanbanStore.getState().findByConversationId(sessionId)
+            const cwd = sessionForCwd?.worktreePath ?? linkedCard?.worktreePath ?? projectPath ?? '.'
+            window.api.routing.bind(sessionId, sessionForCwd?.machineId ?? 'local')
+            await providerApi.startSession({
+              threadId: sessionId,
+              provider: providerKind,
+              cwd,
+              runtimeMode: effectiveMode,
+              resumeSessionId,
+              model: model || undefined,
+              reasoningEffort,
+              instanceId,
+            })
+          } catch (error) {
+            providerStartedRef.current.delete(sessionId)
+            updateStatus(sessionId, 'idle')
+            throw error
           }
-        }
-      }
-
-      // The id the backend's echo will carry, so the echo lands on THIS message
-      // instead of appending a second copy. appendMessage is idempotent by id
-      // (agent-store), which makes the de-dupe a property of the data rather
-      // than of a skip set that has to survive a remount, a hot reload, or a
-      // second panel claiming the event.
-      const origin = `d${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      // Convention (shared/types.ts): `content` is the text the agent saw,
-      // `displayBody` is what the bubble renders. An injected preamble
-      // therefore lives in `content` and the bubble shows only the user's
-      // own text - same mechanism that keeps pill expansions out of view.
-      const userMsg: ChatMessage = {
-        id: echoMessageId(origin),
-        role: 'user',
-        content: wireMessage,
-        images: messageImages,
-        timestamp: Date.now(),
-        displayBody: handoffInjected ? (extras?.displayBody ?? message) : extras?.displayBody,
-        pillsMeta: handoffInjected ? (extras?.pillsMeta ?? {}) : extras?.pillsMeta,
-      }
-      appendMessage(sessionId, userMsg)
-      // Optimistic status so the "thinking" indicator shows immediately -
-      // real status events from the provider will override this.
-      updateStatus(sessionId, 'running')
-      // Live-bump the sidebar so this chat jumps to the top with "now".
-      emitSessionActivity(sessionId, userMsg.timestamp)
-
-      window.api.app.saveMessage({
-        id: userMsg.id,
-        conversationId: sessionId,
-        role: 'user',
-        content: wireMessage,
-        images: messageImages ? JSON.stringify(messageImages) : undefined,
-        displayBody: userMsg.displayBody,
-        pillsMeta: userMsg.pillsMeta ? JSON.stringify(userMsg.pillsMeta) : undefined,
-      }).catch(() => {})
-
-      // Auto-generate title from first user message
-      if (messages.length === 0) {
-        const title = generateTitle(message)
-        setTitle(sessionId, title)
-        window.api.app.renameConversation(sessionId, title).catch(() => {})
-        emitSessionRename(sessionId, title)
-      }
-
-      try {
-        await providerApi.sendTurn(sessionId, wireMessage, runtimeMode, messageImages, origin)
-        if (handoffInjected) {
-          window.api.app.setConversationPendingHandoff(sessionId, null).catch((err) => {
-            log.warn('failed to clear pending handoff flag after accepted turn', err)
-          })
-        }
+        },
+        submit: (submission) => providerApi.submitUserTurn(submission),
+      })
+      if (outcome.accepted) {
+        desktopTurnAttempts.accept(sessionId, origin)
+        desktopPreparedTurns.accept(sessionId, origin)
         return { accepted: true }
-      } catch (error) {
-        updateStatus(sessionId, 'idle')
-        return {
-          accepted: false,
-          error: `Failed to send: ${error instanceof Error ? error.message : String(error)}`,
-        }
       }
+      return { accepted: false, error: outcome.error }
     },
     // `instanceId`, `model`, `reasoningEffort` matter on the FIRST send
     // after a session restart (e.g. instance chip switch resets

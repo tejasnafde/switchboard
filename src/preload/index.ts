@@ -18,7 +18,15 @@ import type {
   SaveMessageParams,
   MobilePairingStatus,
 } from '@shared/types'
-import type { RuntimeEvent, RuntimeMode, ApprovalDecision, ProviderInstanceSwitchRequest, ProviderInstanceSwitchResult } from '@shared/provider-events'
+import type {
+  RuntimeEvent,
+  RuntimeMode,
+  ApprovalDecision,
+  ProviderInstanceSwitchRequest,
+  ProviderInstanceSwitchResult,
+  UserTurnSubmissionResult,
+  UserTurnSubmissionV1,
+} from '@shared/provider-events'
 import type { DeviceSessionView, PairingCode } from '@shared/device-auth'
 import type { PartialClientConfig } from '@shared/google-oauth'
 import type { LiveSessionSummary } from '@shared/live-sessions'
@@ -570,6 +578,9 @@ const api = {
 
     sendTurn: (threadId: string, message: string, runtimeMode?: RuntimeMode, images?: Array<{ url: string; mimeType?: string }>, origin?: string) =>
       transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images, origin),
+
+    submitUserTurn: (turn: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> =>
+      transport.invoke(ProviderChannels.SUBMIT_USER_TURN, turn),
 
     interrupt: (threadId: string) =>
       transport.invoke(ProviderChannels.INTERRUPT, threadId),

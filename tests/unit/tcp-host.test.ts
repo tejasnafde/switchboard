@@ -93,7 +93,7 @@ describe('TcpHost auth gate', () => {
     expect(await r.next()).toMatchObject({ ok: true, result: 'authed' })
     expect(await r.next()).toMatchObject({
       k: 'ready',
-      capabilities: ['durable_turn_origin'],
+      capabilities: ['durable_turn_origin', 'atomic_user_turn_v1'],
     })
   })
 
