@@ -214,18 +214,21 @@ describe('execProc (real child processes)', () => {
   })
 
   it('resolves with code + captured output on normal completion', async () => {
-    const res = await execProc('sh', ['-c', 'printf hi; printf oops >&2; exit 3'])
+    const res = await execProc(process.execPath, [
+      '-e',
+      "process.stdout.write('hi'); process.stderr.write('oops'); process.exitCode = 3",
+    ])
     expect(res).toEqual({ code: 3, stdout: 'hi', stderr: 'oops' })
   })
 
   it('kills a hung command and resolves code 1 with a timeout message once the limit elapses', async () => {
-    const res = await execProc('sleep', ['30'], undefined, 100)
+    const res = await execProc(process.execPath, ['-e', 'setTimeout(() => {}, 30_000)'], undefined, 100)
     expect(res.code).toBe(1)
     expect(res.stderr).toMatch(/command timed out after \d+s/)
   })
 
   it('does not time out a command that finishes within the limit', async () => {
-    const res = await execProc('sh', ['-c', 'printf ok'], undefined, 5000)
+    const res = await execProc(process.execPath, ['-e', "process.stdout.write('ok')"], undefined, 5000)
     expect(res.code).toBe(0)
     expect(res.stdout).toBe('ok')
   })

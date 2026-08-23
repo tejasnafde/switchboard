@@ -2,6 +2,14 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.42 - Ship the stable code-copy release
+
+### Fixed
+- **A remote-provisioning process-runner test used Unix commands on the Windows release gate.** The same real child-process behavior is now exercised with the current Node executable on every runner, covering captured output, non-zero exit codes, timeouts, and normal completion without relying on `sh` or `sleep`.
+
+### Notes
+- This patch carries the stable Markdown code-copy controls and the Bash 3.2-compatible macOS packaging fix forward from the incomplete v0.8.39-v0.8.41 release attempts.
+
 ## 0.8.41 - Publish stable code-copy controls on every desktop
 
 ### Fixed
