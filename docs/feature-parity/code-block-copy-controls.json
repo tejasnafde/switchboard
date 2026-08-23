@@ -39,11 +39,11 @@
     "automated": [
       "npx vitest run tests/unit/code-block-copy-controls.test.ts tests/unit/message-copy-lifecycle.test.ts tests/unit/code-copy-integration-contract.test.ts",
       "npm run typecheck",
-      "Standard Node Vitest run excluding the five Electron-native better-sqlite3 suites: 2,648 tests across 267 files",
-      "Electron-native Vitest run for atomic-user-turn-submission, desktop-image-send-contract, provider-switch-ws, durable-turn-acceptance, and turn-acceptance-store: 76 tests across 5 files",
+      "Standard Node Vitest run excluding the seven Electron-native better-sqlite3 suites: 2,663 tests across 270 files",
+      "Electron-native Vitest run for atomic-user-turn-submission, desktop-image-send-contract, provider-switch-ws, durable-turn-acceptance, turn-acceptance-store, cursor-import, and cursor-store: 91 tests across 7 files",
       "npm run build:fast",
       "node e2e/code-copy-controls.e2e.mjs with isolated HOME, TMPDIR, SB_USER_DATA, and provider config directories",
-      "npm run validate:feature-parity -- --base v0.8.37"
+      "npm run validate:feature-parity -- --base v0.8.38"
     ],
     "hardware": [],
     "notExercised": [
