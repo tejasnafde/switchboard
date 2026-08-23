@@ -76,6 +76,7 @@ export class DurableTurnAcceptance {
 
 export interface AtomicUserTurnContext {
   clientScope: string
+  conversationId?: string
   prepare: () => Promise<void>
   dispatch: () => Promise<void>
 }
@@ -106,9 +107,9 @@ export class AtomicUserTurnSubmission {
       return rejectedResult(error, false)
     }
 
-    const key: TurnAcceptanceKey = {
+    let key: TurnAcceptanceKey = {
       clientScope: context.clientScope,
-      threadId: turn.threadId,
+      threadId: context.conversationId ?? turn.threadId,
       origin: turn.origin,
     }
     const payloadHash = createHash('sha256').update(canonical).digest('hex')
@@ -135,6 +136,7 @@ export class AtomicUserTurnSubmission {
       }
     }
     if (reservation.kind === 'duplicate') {
+      if ('clientScope' in reservation) key = { ...key, clientScope: reservation.clientScope }
       if (reservation.state === 'completed') return this.replayCompleted(key)
       if (reservation.state === 'reserved') {
         return {

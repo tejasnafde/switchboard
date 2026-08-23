@@ -163,6 +163,34 @@ describe('AtomicUserTurnSubmission', () => {
     harness.close()
   })
 
+  it('replays the canonical turn when the same origin returns under a new client scope', async () => {
+    const harness = fixture()
+    await harness.service.submit(submission(), harness.context())
+
+    const result = await harness.service.submit(submission(), {
+      ...harness.context(),
+      clientScope: 'repaired-phone',
+    })
+
+    expect(result).toMatchObject({ status: 'accepted', duplicate: true })
+    expect(harness.dispatches).toBe(1)
+    expect(harness.userRows()).toHaveLength(1)
+    harness.close()
+  })
+
+  it('persists and publishes against the resolved root conversation', async () => {
+    const harness = fixture()
+    const result = await harness.service.submit(submission({ threadId: 'rotated-provider-id' }), {
+      ...harness.context(),
+      conversationId: 'thread-1',
+    })
+
+    expect(result).toMatchObject({ status: 'accepted' })
+    expect(harness.userRows()[0]).toMatchObject({ conversation_id: 'thread-1' })
+    expect(harness.events[0]).toMatchObject({ threadId: 'thread-1' })
+    harness.close()
+  })
+
   it('hard-conflicts when the same origin changes text or images', async () => {
     const harness = fixture()
     await harness.service.submit(submission(), harness.context())

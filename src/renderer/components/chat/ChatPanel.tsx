@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
+import { useDraftStore } from '../../stores/draft-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
@@ -44,6 +45,7 @@ import {
   desktopComposerFingerprint,
   desktopPreparedTurns,
   desktopTurnAttempts,
+  submitProgrammaticTurn,
   submitDesktopUserTurn,
 } from '../../services/desktopTurnSubmission'
 import { downscaleImage } from '../../services/imageDownscale'
@@ -897,7 +899,17 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       ;window.api.provider?.setRuntimeMode?.(sessionId, 'sandbox').catch((err) => {
         log.warn('setRuntimeMode failed before implementing plan', err)
       })
-      setTimeout(() => handleSend('Implement the plan you proposed.'), 50)
+      setTimeout(() => {
+        const text = 'Implement the plan you proposed.'
+        void submitProgrammaticTurn(text, handleSend, (_rejectedText, error) => {
+          appendMessage(sessionId, {
+            id: `error_${Date.now()}`,
+            role: 'system',
+            content: `Plan implementation was not sent: ${error}`,
+            timestamp: Date.now(),
+          })
+        })
+      }, 50)
     } else {
       setTimeout(() => {
         // Focus the chat input so user can iterate on the plan
@@ -906,7 +918,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       }, 50)
     }
   // handleSend is defined below; safe as long as sessionId/deps are right
-  }, [sessionId, storeSetRuntimeMode])
+  }, [sessionId, storeSetRuntimeMode, appendMessage])
 
   // Flush a pending approval note once the agent is idle again
   useEffect(() => {
@@ -917,10 +929,18 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     pendingNoteRef.current = null
     // Send via the existing handleSend path so UI + provider see it
     setTimeout(() => {
-      handleSend(pending.text)
+      void submitProgrammaticTurn(pending.text, handleSend, (text, error) => {
+        useDraftStore.getState().appendDraft(pending.sessionId, text)
+        appendMessage(pending.sessionId, {
+          id: `error_${Date.now()}`,
+          role: 'system',
+          content: `Approval note was not sent and was restored to the composer: ${error}`,
+          timestamp: Date.now(),
+        })
+      })
     }, 100)
     // handleSend isn't in deps since we don't want to re-fire - it's called once
-  }, [status, sessionId])
+  }, [status, sessionId, appendMessage])
 
   // ── Rename handler ────────────────────────────────────────────
   const startRename = useCallback(() => {

@@ -5,6 +5,7 @@ import { AtomicUserTurnSubmission } from '../../src/main/provider/durable-turn-a
 import {
   createDesktopTurnAttemptRegistry,
   createDesktopPreparedTurnRegistry,
+  submitProgrammaticTurn,
   submitDesktopUserTurn,
 } from '../../src/renderer/services/desktopTurnSubmission'
 import type { UserTurnSubmissionV1 } from '../../src/shared/provider-events'
@@ -170,5 +171,20 @@ describe('Desktop atomic user-turn submission', () => {
     expect(registry.prepare(changed)).toBe(first)
     registry.accept(first.threadId, first.origin)
     expect(registry.prepare(changed)).toBe(changed)
+  })
+
+  it('returns a rejected programmatic turn to an explicit recovery surface', async () => {
+    const recover = vi.fn()
+
+    await expect(submitProgrammaticTurn(
+      'approval note',
+      async () => ({ accepted: false, error: 'Conversation is not durably available yet' }),
+      recover,
+    )).resolves.toBe(false)
+
+    expect(recover).toHaveBeenCalledWith(
+      'approval note',
+      'Conversation is not durably available yet',
+    )
   })
 })

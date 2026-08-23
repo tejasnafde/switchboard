@@ -163,6 +163,21 @@ describe('SqliteTurnAcceptanceStore', () => {
     db.close()
   })
 
+  it('treats an origin as thread-global across client scopes', () => {
+    const db = atomicTurnDb()
+    const store = new SqliteTurnAcceptanceStore(() => db)
+    const first = acceptanceKey({ clientScope: 'desktop' })
+    const pairedAgain = acceptanceKey({ clientScope: 'phone' })
+
+    expect(store.reserveEnvelope(first, 'same-hash', '{"turn":true}', 'remote_origin-a', 100))
+      .toMatchObject({ kind: 'reserved' })
+    expect(store.reserveEnvelope(pairedAgain, 'same-hash', '{"turn":true}', 'remote_origin-a', 101))
+      .toEqual({ kind: 'duplicate', state: 'reserved', clientScope: 'desktop' })
+    expect(store.reserveEnvelope(pairedAgain, 'changed-hash', '{"turn":false}', 'remote_origin-a', 102))
+      .toEqual({ kind: 'conflict', state: 'reserved' })
+    db.close()
+  })
+
   it('atomically commits the complete user row, handoff, title, and acceptance', () => {
     const db = atomicTurnDb()
     const store = new SqliteTurnAcceptanceStore(() => db) as SqliteTurnAcceptanceStore & {

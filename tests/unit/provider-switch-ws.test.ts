@@ -41,6 +41,8 @@ vi.mock('../../src/main/provider/remote-gate', async (importOriginal) => {
 /** Records what the registry persists, so a missing method cannot pass as a log line. */
 const saved: Array<{ id: string; conversationId: string; role: string; content: string; images?: string; displayBody?: string }> = []
 let allowUserTurnPersistence = true
+let conversationExists = true
+let resolvedRootThreadId: string | null = null
 const persistedRows = new Map<string, { display_body: string | null; pills_meta?: string | null }>()
 const recordedSegments: Array<{
   conversationId: string
@@ -86,7 +88,8 @@ vi.mock('../../src/main/db/database', () => ({
   getConversationAgentType: () => null,
   getConversationProviderInstanceId: () => null,
   getConversationTitle: () => null,
-  resolveRootThreadId: (id: string) => id,
+  getConversationById: (id: string) => conversationExists ? { id } : undefined,
+  resolveRootThreadId: (id: string) => resolvedRootThreadId ?? id,
   getSetting: () => null,
   setConversationProviderInstanceId: (threadId: string, instanceId: string) => {
     if (!allowInstancePersistence) throw new Error('database is read-only')
@@ -237,6 +240,16 @@ class MockEchoAdapter implements ProviderAdapter {
 
   publishStatus(threadId: string, status: 'idle' | 'running'): void {
     this.emit.get(threadId)?.({ type: 'status', threadId, status })
+  }
+}
+
+class MissingLocalSessionOnceAdapter extends MockEchoAdapter {
+  attempts = 0
+
+  override async sendTurn(threadId: string, message: string): Promise<void> {
+    this.attempts += 1
+    if (this.attempts === 1) throw new Error(`Session ${threadId} not found`)
+    await super.sendTurn(threadId, message)
   }
 }
 
@@ -507,6 +520,8 @@ const flush = () => new Promise((r) => setTimeout(r, 40))
 
 afterEach(async () => {
   allowUserTurnPersistence = true
+  conversationExists = true
+  resolvedRootThreadId = null
   allowInstancePersistence = true
   persistedInstanceSelections.length = 0
   profileSwitchCommits.length = 0
@@ -626,6 +641,64 @@ describe('provider switching over the WebSocket boundary', () => {
     expect(seen).toEqual([envelope])
     await flush()
     expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1)
+  })
+
+  it('definitely rejects before dispatch when the conversation row is missing', async () => {
+    const adapter = new MockEchoAdapter()
+    const { cwd, atomicDb } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    conversationExists = false
+
+    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+      version: 1,
+      threadId: 't1',
+      origin: 'missing-conversation',
+      providerText: 'must not dispatch',
+    })).resolves.toMatchObject({ status: 'rejected', state: 'rejected' })
+    expect(atomicDb!.prepare('SELECT count(*) AS count FROM mobile_turn_acceptances').get())
+      .toEqual({ count: 0 })
+    expect(atomicDb!.prepare('SELECT count(*) AS count FROM messages').get())
+      .toEqual({ count: 0 })
+  })
+
+  it('releases a local adapter precondition failure so the same origin can retry', async () => {
+    const adapter = new MissingLocalSessionOnceAdapter()
+    const { cwd, atomicDb } = await setup(adapter)
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    const turn = {
+      version: 1,
+      threadId: 't1',
+      origin: 'local-session-race',
+      providerText: 'retry me exactly',
+    }
+
+    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, turn))
+      .resolves.toMatchObject({ status: 'rejected' })
+    expect(atomicDb!.prepare('SELECT count(*) AS count FROM mobile_turn_acceptances').get())
+      .toEqual({ count: 0 })
+    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, turn))
+      .resolves.toMatchObject({ status: 'accepted' })
+    expect(adapter.attempts).toBe(2)
+  })
+
+  it('commits a rotated provider id against its root conversation', async () => {
+    resolvedRootThreadId = 't1'
+    const { cwd, atomicDb, events } = await setup()
+    await client!.invoke(ProviderChannels.START_SESSION, {
+      threadId: 'provider-leaf', provider: 'claude', cwd,
+    })
+
+    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+      version: 1,
+      threadId: 'provider-leaf',
+      origin: 'rotated-origin',
+      providerText: 'continue after rotation',
+    })).resolves.toMatchObject({ status: 'accepted' })
+    await flush()
+
+    expect(atomicDb!.prepare("SELECT conversation_id FROM messages WHERE role = 'user'").get())
+      .toEqual({ conversation_id: 't1' })
+    expect(events.find((event) => event.type === 'user.message')).toMatchObject({ threadId: 't1' })
   })
 
   // The renderer was the only writer of `messages`, so a turn sent from the

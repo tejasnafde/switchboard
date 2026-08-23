@@ -23,6 +23,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { Readable, Writable } from 'stream'
 import { promises as fs } from 'fs'
+import { TurnNotAcceptedError } from '../durable-turn-acceptance'
 import {
   ClientSideConnection,
   ndJsonStream,
@@ -535,7 +536,10 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       active.session.status = 'idle'
       active.turnStartedAt = null
       active.onEvent({ type: 'status', threadId, status: 'idle' })
-      throw error
+      throw new TurnNotAcceptedError(
+        error instanceof Error ? error.message : 'OpenCode rejected the turn before dispatch',
+        { cause: error },
+      )
     }
 
     const promptPromise = dispatchedPrompt

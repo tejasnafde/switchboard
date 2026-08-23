@@ -19,7 +19,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationTitle, resolveRootThreadId, getDb } from '../db/database'
+import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -642,6 +642,10 @@ export class ProviderRegistry implements PeerToolHost {
     }
     const adapter = this.sessionAdapters.get(threadId)
     if (!adapter) return rejectedAtomicTurn(`No session: ${threadId}`)
+    const conversationId = resolveRootThreadId(threadId)
+    if (!getConversationById(conversationId)) {
+      return rejectedAtomicTurn('Conversation is not durably available yet. Retry this exact turn.')
+    }
 
     this.beginPreparingTurn(threadId)
     let preparationPending = true
@@ -656,6 +660,7 @@ export class ProviderRegistry implements PeerToolHost {
         ?? hashClientScope('unscoped-local', 'backend-host-without-request-context')
       return await this.atomicTurnSubmission.submit(input, {
         clientScope,
+        conversationId,
         prepare: async () => {
           if (this.switchingSessions.has(threadId)) {
             throw new TurnNotAcceptedError('Session queue full while a profile switch is in progress')
@@ -680,6 +685,9 @@ export class ProviderRegistry implements PeerToolHost {
             await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images)
           } catch (error) {
             if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
+            if (isDefiniteAdapterPreconditionFailure(error, threadId)) {
+              throw new TurnNotAcceptedError(errorMessage(error), { cause: error })
+            }
             throw error
           }
         },
@@ -1323,6 +1331,18 @@ function rejectedAtomicTurn(reason: string): UserTurnSubmissionResult {
     retryable: true,
     reason,
   }
+}
+
+function isDefiniteAdapterPreconditionFailure(error: unknown, threadId: string): boolean {
+  const message = errorMessage(error)
+  return message === `Session ${threadId} not found`
+    || message === `Session ${threadId} not found or not connected`
+    || message === `No OpenCode ACP session: ${threadId}`
+    || message === 'OpenCode ACP session not initialized'
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function legacyAcceptanceResult(result: UserTurnSubmissionResult): TurnAcceptanceResult {

@@ -7,6 +7,7 @@ import {
   pickPermissionOptions,
   parseImageInput,
 } from '../../src/main/provider/adapters/opencode-acp-adapter'
+import { TurnNotAcceptedError } from '../../src/main/provider/durable-turn-acceptance'
 
 afterEach(() => vi.restoreAllMocks())
 
@@ -47,7 +48,7 @@ describe('OpenCode first-turn acceptance', () => {
     }
     sessions.set(tid, active)
 
-    await expect(adapter.sendTurn(tid, 'not accepted')).rejects.toThrow('prompt rejected')
+    await expect(adapter.sendTurn(tid, 'not accepted')).rejects.toBeInstanceOf(TurnNotAcceptedError)
     expect(mkdir).not.toHaveBeenCalled()
     expect(active.session.status).toBe('idle')
   })

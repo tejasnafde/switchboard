@@ -17,6 +17,10 @@ export type ReserveEnvelopeResult = ReserveTurnResult | {
   kind: 'blocked'
   state: 'reserved' | 'dispatching'
   blockingOrigin: string
+} | {
+  kind: 'duplicate'
+  state: TurnAcceptanceState
+  clientScope: string
 }
 
 export interface AcceptedUserTurnRecord {
@@ -111,6 +115,20 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
       if (existing) {
         if (existing.payload_hash !== payloadHash) return { kind: 'conflict', state: existing.state }
         return { kind: 'duplicate', state: existing.state }
+      }
+      const sameOrigin = db.prepare(`
+        SELECT client_scope AS clientScope, payload_hash AS payloadHash, state
+          FROM mobile_turn_acceptances
+         WHERE thread_id = ? AND origin = ?
+         LIMIT 1
+      `).get(key.threadId, key.origin) as {
+        clientScope: string
+        payloadHash: string
+        state: TurnAcceptanceState
+      } | undefined
+      if (sameOrigin) {
+        if (sameOrigin.payloadHash !== payloadHash) return { kind: 'conflict', state: sameOrigin.state }
+        return { kind: 'duplicate', state: sameOrigin.state, clientScope: sameOrigin.clientScope }
       }
       const blocker = db.prepare(`
         SELECT origin, state

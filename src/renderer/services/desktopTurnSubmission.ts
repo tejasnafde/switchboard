@@ -135,6 +135,21 @@ export function createDesktopPreparedTurnRegistry(): DesktopPreparedTurnRegistry
 
 export const desktopPreparedTurns = createDesktopPreparedTurnRegistry()
 
+export async function submitProgrammaticTurn(
+  text: string,
+  send: (text: string) => Promise<{ accepted: true } | { accepted: false; error: string }>,
+  recover: (text: string, error: string) => void,
+): Promise<boolean> {
+  try {
+    const result = await send(text)
+    if (result.accepted) return true
+    recover(text, result.error)
+  } catch (error) {
+    recover(text, errorMessage(error))
+  }
+  return false
+}
+
 export function desktopComposerFingerprint(value: unknown): string {
   return JSON.stringify(value)
 }
