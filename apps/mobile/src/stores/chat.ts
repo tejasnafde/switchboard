@@ -463,7 +463,6 @@ export const useChatStore = create<ChatState>()(
     set((s) => ({
       threads: patchThread(s.threads, key, (t) => ({
         items: [...t.items, { kind: 'user', id: id ?? `u-${Date.now()}`, text, at: Date.now(), images }],
-        status: 'running',
       })),
     })),
 

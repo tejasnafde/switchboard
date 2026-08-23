@@ -97,9 +97,27 @@ describe('buildTurn', () => {
     const images = [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }]
     expect(buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hi', images }).queued.images).toEqual(images)
   })
+
+  it('keeps a first-turn title candidate with the durable intent', () => {
+    expect(buildTurn({
+      connectionId: CONN,
+      threadId: THREAD,
+      text: 'investigate atomic delivery',
+      titleCandidate: 'investigate atomic delivery',
+    }).queued.titleCandidate).toBe('investigate atomic delivery')
+  })
 })
 
 describe('a built turn against the real echo', () => {
+  it('does not mark a queued bubble as a running provider turn', () => {
+    useChatStore.setState({ threads: { [KEY]: { ...emptyThread(), status: 'idle' } } })
+    const turn = buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hello' })
+
+    useChatStore.getState().addUserMessage(KEY, 'hello', undefined, turn.bubbleId)
+
+    expect(useChatStore.getState().threads[KEY].status).toBe('idle')
+  })
+
   it('renders one bubble, not two, once the backend echoes it back', () => {
     const turn = buildTurn({ connectionId: CONN, threadId: THREAD, text: 'hello' })
     useChatStore.getState().addUserMessage(KEY, 'hello', undefined, turn.bubbleId)

@@ -26,6 +26,14 @@ export interface QueuedMessage {
   /** A deterministic backend refusal. Retained so the original text and
    *  attachments remain recoverable instead of being deleted as delivered. */
   blockedReason?: string
+  /** Exact provider-visible text frozen before the first delivery attempt. */
+  providerText?: string
+  /** Whether the frozen provider text contains a pending handoff preamble. */
+  pendingHandoff?: boolean
+  /** Unconfirmed delivery is retained without presenting the bubble as sent. */
+  deliveryState?: 'ambiguous'
+  /** Generated from the first visible turn, applied only after acceptance. */
+  titleCandidate?: string
 }
 
 /** Shape check for records restored from an older or current app build. */
@@ -56,7 +64,117 @@ export function parseQueuedMessage(value: unknown): QueuedMessage | null {
     blockedReason: typeof message.blockedReason === 'string' && message.blockedReason
       ? message.blockedReason
       : undefined,
+    providerText: typeof message.providerText === 'string' ? message.providerText : undefined,
+    pendingHandoff: typeof message.pendingHandoff === 'boolean' ? message.pendingHandoff : undefined,
+    deliveryState: message.deliveryState === 'ambiguous' ? 'ambiguous' : undefined,
+    titleCandidate: typeof message.titleCandidate === 'string' ? message.titleCandidate : undefined,
   }
+}
+
+export type AcceptanceDisposition = 'accepted' | 'pending' | 'ambiguous' | 'rejected' | 'conflict'
+
+export interface DecodedTurnAcceptance {
+  disposition: AcceptanceDisposition
+  retryable: boolean
+  reason?: string
+}
+
+/** Old backends returned no body after accepting the positional call. */
+export function decodeTurnAcceptance(result: unknown): DecodedTurnAcceptance {
+  if (result === undefined) return { disposition: 'accepted', retryable: false }
+  if (!result || typeof result !== 'object') return { disposition: 'ambiguous', retryable: true }
+  const acceptance = result as {
+    accepted?: unknown
+    state?: unknown
+    status?: unknown
+    retryable?: unknown
+    reason?: unknown
+  }
+  const reason = typeof acceptance.reason === 'string' ? acceptance.reason : undefined
+  if (acceptance.status === 'rejected') {
+    return { disposition: 'rejected', retryable: acceptance.retryable === true, reason }
+  }
+  if (acceptance.status === 'conflict') return { disposition: 'conflict', retryable: false, reason }
+  if (acceptance.status === 'accepted') return { disposition: 'accepted', retryable: false, reason }
+  if (acceptance.status === 'pending') return { disposition: 'pending', retryable: true, reason }
+  if (acceptance.status === 'ambiguous') return { disposition: 'ambiguous', retryable: true, reason }
+  if (acceptance.accepted === true && acceptance.state === 'completed') {
+    return { disposition: 'accepted', retryable: false, reason }
+  }
+  if (acceptance.accepted === false && acceptance.state === 'pending') {
+    return { disposition: 'pending', retryable: true, reason }
+  }
+  return { disposition: 'ambiguous', retryable: true, reason }
+}
+
+export function acceptanceDisposition(result: unknown): AcceptanceDisposition {
+  return decodeTurnAcceptance(result).disposition
+}
+
+export function freezePreparedTurn(
+  message: QueuedMessage,
+  prepared: { pending: boolean; wireMessage: string },
+): QueuedMessage {
+  if (message.providerText !== undefined) return message
+  return {
+    ...message,
+    providerText: prepared.wireMessage,
+    pendingHandoff: prepared.pending,
+  }
+}
+
+export function removeAcceptedOrigin(
+  messages: QueuedMessage[],
+  connectionId: string,
+  threadId: string,
+  origin: string,
+): { accepted: QueuedMessage | undefined; remaining: QueuedMessage[] } {
+  const accepted = messages.find(
+    (message) =>
+      message.connectionId === connectionId &&
+      message.threadId === threadId &&
+      message.messageId === origin,
+  )
+  if (!accepted) return { accepted: undefined, remaining: messages }
+  return { accepted, remaining: messages.filter((message) => message !== accepted) }
+}
+
+export function outboxPresentation(message: QueuedMessage): {
+  state: 'queued' | 'ambiguous' | 'failed'
+  label: string
+} {
+  if (message.blockedReason) {
+    return { state: 'failed', label: `Not sent - ${message.blockedReason}` }
+  }
+  if (message.deliveryState === 'ambiguous') {
+    return { state: 'ambiguous', label: 'Delivery unconfirmed' }
+  }
+  return { state: 'queued', label: 'Waiting to send' }
+}
+
+export function recoverRejectedDraft(message: QueuedMessage): {
+  text: string
+  images: Array<{ id: string; previewUri: string; url: string; mimeType: string }>
+} | null {
+  if (!message.blockedReason) return null
+  return {
+    text: message.text,
+    images: (message.images ?? []).map((image, index) => ({
+      id: `recovered-${message.messageId}-${index}`,
+      previewUri: image.url,
+      url: image.url,
+      mimeType: image.mimeType ?? 'image/png',
+    })),
+  }
+}
+
+export function selectRejectedForEdit(
+  messages: QueuedMessage[],
+  messageId: string,
+): QueuedMessage | null {
+  return messages.find(
+    (message) => message.messageId === messageId && Boolean(message.blockedReason),
+  ) ?? null
 }
 
 /** Preserve the committed turn while recording why automatic delivery stopped. */

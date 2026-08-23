@@ -136,7 +136,6 @@ export default function NewSessionScreen({ route, navigation }: Props) {
         id: threadId,
         projectPath,
         agentType,
-        title: message ? generateTitle(message) : undefined,
       })
       // Failure rejects (no { ok } envelope) - the catch below shows it.
       // instanceId / model left undefined means "let the backend decide":
@@ -155,7 +154,13 @@ export default function NewSessionScreen({ route, navigation }: Props) {
       if (message) {
         // Through the outbox with an origin, like every other send. A raw
         // sendTurn here made the opening message render twice.
-        const turn = buildTurn({ connectionId, threadId, text: message, runtimeMode: mode })
+        const turn = buildTurn({
+          connectionId,
+          threadId,
+          text: message,
+          runtimeMode: mode,
+          titleCandidate: generateTitle(message),
+        })
         useChatStore.getState().addUserMessage(key, message, undefined, turn.bubbleId)
         enqueue(turn.queued).catch((err: unknown) => {
           // The durable write failed, so this message will never be sent. Take

@@ -8,11 +8,18 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
+  acceptanceDisposition,
+  decodeTurnAcceptance,
   deliveryAction,
   deliveryFailureDisposition,
+  freezePreparedTurn,
+  outboxPresentation,
   markRejected,
   nextDeliverablePerThread,
   parseQueuedMessage,
+  removeAcceptedOrigin,
+  recoverRejectedDraft,
+  selectRejectedForEdit,
   retryDelayMs,
   shouldRetry,
   MAX_RETRY_DELAY_MS,
@@ -101,6 +108,112 @@ describe('deliveryFailureDisposition', () => {
   })
 })
 
+describe('atomic acceptance results', () => {
+  it('keeps pending and ambiguous acknowledgements in the outbox', () => {
+    expect(acceptanceDisposition({ accepted: false, duplicate: true, state: 'pending' })).toBe('pending')
+    expect(acceptanceDisposition({ accepted: false, duplicate: true, state: 'ambiguous' })).toBe('ambiguous')
+    expect(acceptanceDisposition({ status: 'pending', accepted: false, state: 'pending' })).toBe('pending')
+    expect(acceptanceDisposition({ status: 'ambiguous', accepted: false, state: 'ambiguous' })).toBe('ambiguous')
+  })
+
+  it('accepts completed results and old backends that returned no body', () => {
+    expect(acceptanceDisposition({ accepted: true, duplicate: false, state: 'completed' })).toBe('accepted')
+    expect(acceptanceDisposition({ accepted: true, duplicate: true, state: 'completed' })).toBe('accepted')
+    expect(acceptanceDisposition({ status: 'accepted', accepted: true, state: 'completed' })).toBe('accepted')
+    expect(acceptanceDisposition(undefined)).toBe('accepted')
+  })
+
+  it('preserves typed definite rejections and conflicts for editing', () => {
+    expect(acceptanceDisposition({ status: 'rejected', retryable: false, reason: 'too large' })).toBe('rejected')
+    expect(acceptanceDisposition({ status: 'conflict', reason: 'origin changed' })).toBe('conflict')
+    expect(decodeTurnAcceptance({
+      status: 'rejected',
+      accepted: false,
+      state: 'rejected',
+      duplicate: false,
+      retryable: true,
+      reason: 'provider starting',
+    })).toEqual({ disposition: 'rejected', retryable: true, reason: 'provider starting' })
+    expect(decodeTurnAcceptance({
+      status: 'conflict',
+      accepted: false,
+      state: 'conflict',
+      duplicate: true,
+      reason: 'origin changed',
+    })).toEqual({ disposition: 'conflict', retryable: false, reason: 'origin changed' })
+  })
+})
+
+describe('stable retry payload', () => {
+  const message: QueuedMessage = {
+    connectionId: 'mac',
+    threadId: 'thread',
+    messageId: 'turn-1',
+    text: 'continue',
+    images: [{ url: 'data:image/png;base64,AAAA', mimeType: 'image/png' }],
+    runtimeMode: 'sandbox',
+    createdAt: 1,
+    attempts: 0,
+  }
+
+  it('freezes the first handoff-expanded provider payload', () => {
+    const first = freezePreparedTurn(message, {
+      pending: true,
+      wireMessage: 'handoff history\n\ncontinue',
+    })
+    const retry = freezePreparedTurn(first, {
+      pending: false,
+      wireMessage: 'continue',
+    })
+
+    expect(retry.providerText).toBe('handoff history\n\ncontinue')
+    expect(retry.pendingHandoff).toBe(true)
+    expect(retry.images).toEqual(message.images)
+  })
+
+  it('restores the frozen payload after serialization', () => {
+    const prepared = freezePreparedTurn(message, {
+      pending: true,
+      wireMessage: 'handoff history\n\ncontinue',
+    })
+    expect(parseQueuedMessage(JSON.parse(JSON.stringify(prepared)))).toEqual(prepared)
+  })
+})
+
+describe('canonical acceptance reconciliation', () => {
+  const queued = (messageId: string, threadId = 'thread'): QueuedMessage => ({
+    connectionId: 'mac',
+    threadId,
+    messageId,
+    text: messageId,
+    createdAt: 1,
+    attempts: 0,
+  })
+
+  it('removes only the queued record proven accepted by its origin', () => {
+    const result = removeAcceptedOrigin(
+      [queued('accepted'), queued('other'), { ...queued('accepted', 'other-thread') }],
+      'mac',
+      'thread',
+      'accepted',
+    )
+
+    expect(result.accepted?.messageId).toBe('accepted')
+    expect(result.remaining.map((message) => `${message.threadId}:${message.messageId}`)).toEqual([
+      'thread:other',
+      'other-thread:accepted',
+    ])
+  })
+
+  it('does nothing for another client origin', () => {
+    const messages = [queued('mine')]
+    expect(removeAcceptedOrigin(messages, 'mac', 'thread', 'theirs')).toEqual({
+      accepted: undefined,
+      remaining: messages,
+    })
+  })
+})
+
 describe('deterministic rejection recovery', () => {
   const image = { url: 'data:image/png;base64,AAAA', mimeType: 'image/png' }
   const message: QueuedMessage = {
@@ -130,6 +243,41 @@ describe('deterministic rejection recovery', () => {
     const blocked = markRejected(message, new Error('Unsupported image type'))
     const later = { ...message, messageId: 'turn-2', text: 'continue', images: undefined }
     expect(nextDeliverablePerThread([blocked, later])).toEqual([later])
+  })
+
+  it('distinguishes queued, ambiguous, and definitely failed records', () => {
+    expect(outboxPresentation(message)).toEqual({ state: 'queued', label: 'Waiting to send' })
+    expect(outboxPresentation({ ...message, deliveryState: 'ambiguous' })).toEqual({
+      state: 'ambiguous',
+      label: 'Delivery unconfirmed',
+    })
+    expect(outboxPresentation(markRejected(message, new Error('Unsupported image type')))).toEqual({
+      state: 'failed',
+      label: 'Not sent - Unsupported image type',
+    })
+  })
+
+  it('recovers rejected text and image data URLs for editing', () => {
+    const blocked = markRejected(message, new Error('Unsupported image type'))
+    expect(recoverRejectedDraft(blocked)).toEqual({
+      text: 'inspect this',
+      images: [{
+        id: 'recovered-turn-1-0',
+        previewUri: image.url,
+        url: image.url,
+        mimeType: 'image/png',
+      }],
+    })
+    expect(recoverRejectedDraft(message)).toBeNull()
+  })
+
+  it('keeps rejected attachments durable while the composer edits a copy', () => {
+    const blocked = markRejected(message, new Error('Unsupported image type'))
+    const messages = [blocked]
+
+    expect(selectRejectedForEdit(messages, blocked.messageId)).toEqual(blocked)
+    expect(messages).toEqual([blocked])
+    expect(messages[0].images).toEqual([image])
   })
 })
 

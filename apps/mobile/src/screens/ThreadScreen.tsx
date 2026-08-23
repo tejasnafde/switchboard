@@ -39,7 +39,14 @@ import { Markdown } from '../components/Markdown'
 import { summarizeTool, toolIcon } from '../lib/toolSummary'
 import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
-import { drain, enqueue, queuedFor, useOutboxStore } from '../stores/outbox'
+import {
+  completeRejectedEdit,
+  drain,
+  enqueue,
+  openRejectedForEdit,
+  queuedFor,
+  useOutboxStore,
+} from '../stores/outbox'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
 import { ModePicker } from '../components/ModePicker'
@@ -57,6 +64,7 @@ import { SendMicButton } from '../components/SendMicButton'
 import { useDictation, type VoiceNote } from '../hooks/useDictation'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
+import { outboxPresentation, recoverRejectedDraft } from '../lib/outboxModel'
 
 /** How much of a long thread to pull on open. The feed says when it is a window. */
 const HISTORY_WINDOW = 250
@@ -408,9 +416,18 @@ export default function ThreadScreen({ route, navigation }: Props) {
    * turn. That distinction now lives in the outbox rather than in a second
    * queue here.
    */
-  const queuedCount = useOutboxStore(
-    (o) => o.messages.filter((m) => m.connectionId === connectionId && m.threadId === threadId).length,
+  const allQueuedMessages = useOutboxStore((outbox) => outbox.messages)
+  const queuedMessages = useMemo(
+    () => allQueuedMessages.filter(
+      (message) => message.connectionId === connectionId && message.threadId === threadId,
+    ),
+    [allQueuedMessages, connectionId, threadId],
   )
+  const queuedByBubbleId = useMemo(
+    () => new Map(queuedMessages.map((message) => [echoMessageId(message.messageId), message])),
+    [queuedMessages],
+  )
+  const waitingCount = queuedMessages.filter((message) => !message.blockedReason).length
 
   // A turn ending is the most likely moment a waiting message becomes
   // deliverable, so nudge the queue rather than waiting out its backoff.
@@ -423,6 +440,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // An image with no caption is a legitimate turn.
     if (!text && attachments.length === 0) return
     const images = attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
+    const editingId = useOutboxStore.getState().editingId
+    const editingMessage = editingId
+      ? queuedMessages.find((message) => message.messageId === editingId)
+      : undefined
     setDraft('')
     setVoiceNote(null)
     setAttachments([])
@@ -432,27 +453,39 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // A backend check here would only cover the cases we can SEE are broken,
     // and the expensive ones are the ambiguous ones: a socket that still reads
     // as open, a reconnect in flight, a turn already running.
-    const turn = buildTurn({ connectionId, threadId, text, images, runtimeMode: thread.runtimeMode })
+    const titleCandidate = editingMessage?.titleCandidate ?? (
+      isNew && thread.items.filter((item) => item.kind === 'user').length === 0 && text
+        ? generateTitle(text)
+        : undefined
+    )
+    const turn = buildTurn({
+      connectionId,
+      threadId,
+      text,
+      images,
+      runtimeMode: thread.runtimeMode,
+      titleCandidate,
+    })
     // Title from the first message, as the desktop does. `isNew` matters: an
     // existing chat whose items were emptied by /clear, or one whose history
     // has not loaded yet, also has no user items - titling those would
     // overwrite a title the user already has.
-    if (isNew && thread.items.filter((i) => i.kind === 'user').length === 0 && text) {
-      const title = generateTitle(text)
-      getClient(connectionId)
-        ?.renameConversation(threadId, title)
-        .catch((err: unknown) => log.warn('could not set the chat title', err))
-    }
     useChatStore.getState().addUserMessage(key, text, images.map((i) => i.url), turn.bubbleId)
-    enqueue(turn.queued).catch((err: unknown) => {
-      // The durable write failed, so the message is out of the queue again.
-      // Take the optimistic bubble back down and give the user what they typed,
-      // rather than leaving a bubble that reads as sent and never will be.
-      useChatStore.getState().removeUserMessage(key, turn.bubbleId)
-      setDraft((current) => (current ? current : text))
-      setAttachments(attachments)
-      reportError(err)
-    })
+    enqueue(turn.queued)
+      .then(async () => {
+        if (!editingId) return
+        await completeRejectedEdit(editingId)
+        useChatStore.getState().removeUserMessage(key, echoMessageId(editingId))
+      })
+      .catch((err: unknown) => {
+        // The durable write failed, so the message is out of the queue again.
+        // Take the optimistic bubble back down and give the user what they typed,
+        // rather than leaving a bubble that reads as sent and never will be.
+        useChatStore.getState().removeUserMessage(key, turn.bubbleId)
+        setDraft((current) => (current ? current : text))
+        setAttachments(attachments)
+        reportError(err)
+      })
   }
 
   const addAttachments = useCallback((added: Attachment[]) => {
@@ -509,13 +542,30 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const focusComposer = useCallback(() => composerRef.current?.focus(), [])
 
+  const editRejected = useCallback((messageId: string) => {
+    const rejected = openRejectedForEdit(messageId)
+    if (!rejected) return
+    const recovered = recoverRejectedDraft(rejected)
+    if (!recovered) return
+    setDraft(recovered.text)
+    setAttachments(recovered.images)
+    usePrefsStore.getState().rememberDraft(key, recovered.text)
+    composerRef.current?.focus()
+  }, [key])
+
   const renderItem = useCallback(
     ({ item }: { item: FeedItem }) => {
       switch (item.kind) {
         case 'user':
+          const queued = queuedByBubbleId.get(item.id)
+          const delivery = queued ? outboxPresentation(queued) : null
           return (
             <View style={styles.userRow}>
-              <View style={styles.userBubble}>
+              <Pressable
+                disabled={delivery?.state !== 'failed'}
+                onPress={() => queued && void editRejected(queued.messageId)}
+                style={styles.userBubble}
+              >
                 {item.images?.map((url, i) => (
                   <Pressable key={`${item.id}-img-${i}`} onPress={() => setLightbox(url)}>
                     <Image source={{ uri: url }} style={styles.sentImage} resizeMode="cover" />
@@ -524,7 +574,15 @@ export default function ThreadScreen({ route, navigation }: Props) {
                 {/* An image with no caption is a valid message, so the label is
                     conditional rather than a placeholder like "[1 image]". */}
                 {item.text.length > 0 && <Text style={styles.userText}>{item.text}</Text>}
-              </View>
+                {delivery && (
+                  <Text style={[
+                    styles.deliveryText,
+                    delivery.state === 'failed' && styles.deliveryFailed,
+                  ]}>
+                    {delivery.label}{delivery.state === 'failed' ? ' - tap to edit' : ''}
+                  </Text>
+                )}
+              </Pressable>
             </View>
           )
         case 'text':
@@ -557,7 +615,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
           return <Text style={styles.errorText}>{item.message}</Text>
       }
     },
-    [decideApproval, submitAnswers, implementPlan, focusComposer, backendLabel, setLightbox],
+    [
+      decideApproval,
+      submitAnswers,
+      implementPlan,
+      focusComposer,
+      backendLabel,
+      setLightbox,
+      queuedByBubbleId,
+      editRejected,
+    ],
   )
 
   // Null hides the chip: a backend with no configured profiles has nothing to
@@ -760,9 +827,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
         </View>
         {voiceNote && <VoiceNoteBar note={voiceNote} />}
         {dictation.refining && <Text style={styles.queuedNote}>Refining transcript…</Text>}
-        {queuedCount > 0 && (
+        {waitingCount > 0 && (
           <Text style={styles.queuedNote}>
-            {queuedCount} {queuedCount === 1 ? 'message' : 'messages'} waiting to send
+            {waitingCount} {waitingCount === 1 ? 'message' : 'messages'} awaiting confirmation
           </Text>
         )}
         {slashQuery !== null && <SlashMenu commands={slashMatches} onPick={runSlash} />}
@@ -1150,6 +1217,14 @@ const styles = StyleSheet.create({
   userText: {
     ...type.bodySm,
     color: colors.text,
+  },
+  deliveryText: {
+    marginTop: space.xs,
+    ...type.monoSm,
+    color: colors.textFaint,
+  },
+  deliveryFailed: {
+    color: colors.red,
   },
   // Prose is the hero: it gets the widest measure and the most contrast, while
   // tool cards below deliberately recede.

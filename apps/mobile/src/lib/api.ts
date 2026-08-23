@@ -14,6 +14,8 @@ import type {
   ApprovalDecision,
   ProviderInstanceSwitchRequest,
   ProviderInstanceSwitchResult,
+  UserTurnSubmissionV1,
+  UserTurnSubmissionResult,
 } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
@@ -200,8 +202,31 @@ export class SwitchboardClient {
     images?: Array<{ url: string; mimeType?: string }>,
     /** Echoed back on the user.message broadcast so we skip our own turn. */
     origin?: string,
-  ): Promise<void> {
+  ): Promise<UserTurnSubmissionResult | undefined> {
     return this.transport.invoke(ProviderChannels.SEND_TURN, threadId, message, runtimeMode, images, origin)
+  }
+
+  /**
+   * Atomically submits the complete user turn on backends that expose the
+   * envelope contract. A missing handler identifies an older paired backend,
+   * where the positional call is the only compatible path. Transport errors
+   * are never downgraded because the first invocation may have committed.
+   */
+  async submitTurn(envelope: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult | undefined> {
+    try {
+      return await this.transport.invoke(ProviderChannels.SUBMIT_USER_TURN, envelope)
+    } catch (error) {
+      if (!(error instanceof Error) || !/^no handler: provider:submit-user-turn$/i.test(error.message)) {
+        throw error
+      }
+      return this.sendTurn(
+        envelope.threadId,
+        envelope.providerText,
+        envelope.runtimeMode,
+        envelope.images,
+        envelope.origin,
+      )
+    }
   }
 
   /** Skills the live agent reports. Empty until its session is up. */

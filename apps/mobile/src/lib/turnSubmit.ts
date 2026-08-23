@@ -18,6 +18,7 @@ export interface BuildTurnInput {
   text: string
   images?: Array<{ url: string; mimeType?: string }>
   runtimeMode?: string
+  titleCandidate?: string
 }
 
 export interface BuiltTurn {
@@ -39,6 +40,7 @@ export function buildTurn(input: BuildTurnInput): BuiltTurn {
       // An empty list is not the same as none on the wire.
       images: input.images && input.images.length > 0 ? input.images : undefined,
       runtimeMode: input.runtimeMode,
+      titleCandidate: input.titleCandidate,
       createdAt: Date.now(),
       attempts: 0,
     },

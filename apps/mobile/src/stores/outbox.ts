@@ -17,13 +17,16 @@ import {
   deliveryFailureDisposition,
   markRejected,
   nextDeliverablePerThread,
+  removeAcceptedOrigin,
   retryDelayMs,
+  selectRejectedForEdit,
   type QueuedMessage,
 } from '../lib/outboxModel'
 import { loadQueued, removeQueued, saveQueued } from '../lib/outboxStorage'
 import { getClient } from './connections'
 import { useChatStore, threadKey } from './chat'
 import { prepareMobileHandoffTurn } from '../lib/handoffTurn'
+import { submitQueuedTurn } from '../lib/outboxDelivery'
 
 const log = createLogger('store:outbox')
 
@@ -67,6 +70,45 @@ async function forget(messageId: string): Promise<void> {
   retryNotBefore.delete(messageId)
   useOutboxStore.setState((s) => ({ messages: s.messages.filter((m) => m.messageId !== messageId) }))
   await removeQueued(messageId)
+}
+
+async function finishAccepted(message: QueuedMessage): Promise<void> {
+  const client = getClient(message.connectionId)
+  if (!client) throw new Error('Backend not connected during acceptance cleanup')
+  if (message.pendingHandoff) await client.setPendingHandoff(message.threadId, null)
+  if (message.titleCandidate) await client.renameConversation(message.threadId, message.titleCandidate)
+  await forget(message.messageId)
+}
+
+/** A canonical echo proves acceptance even if the RPC acknowledgement was lost. */
+export async function acknowledgeAcceptedOrigin(
+  connectionId: string,
+  threadId: string,
+  origin: string,
+): Promise<boolean> {
+  const reconciled = removeAcceptedOrigin(
+    useOutboxStore.getState().messages,
+    connectionId,
+    threadId,
+    origin,
+  )
+  if (!reconciled.accepted) return false
+  await finishAccepted(reconciled.accepted)
+  return true
+}
+
+export function openRejectedForEdit(messageId: string): QueuedMessage | null {
+  const message = selectRejectedForEdit(useOutboxStore.getState().messages, messageId)
+  if (!message) return null
+  useOutboxStore.setState({ editingId: messageId })
+  return message
+}
+
+export async function completeRejectedEdit(messageId: string): Promise<void> {
+  await forget(messageId)
+  useOutboxStore.setState((state) => ({
+    editingId: state.editingId === messageId ? null : state.editingId,
+  }))
 }
 
 /** Restore anything left over from a previous run. */
@@ -158,53 +200,99 @@ async function deliver(message: QueuedMessage): Promise<void> {
 
   let providerAccepted = false
   try {
-    // A same-provider profile recovery can intentionally start a fresh native
-    // session. Resolve its persisted handoff only when the queued turn is
-    // actually deliverable; this survives offline sends and app restarts.
-    const prepared = await prepareMobileHandoffTurn(client, message.threadId, message.text)
-    await client.sendTurn(
-      message.threadId,
-      prepared.wireMessage,
-      message.runtimeMode as RuntimeMode | undefined,
-      message.images,
-      // Doubles as the idempotency key, so a retry is safe.
-      message.messageId,
-    )
-    providerAccepted = true
-    if (prepared.pending) await client.setPendingHandoff(message.threadId, null)
-    await forget(message.messageId)
+    const delivered = await submitQueuedTurn(message, {
+      prepare: (queued) => prepareMobileHandoffTurn(client, queued.threadId, queued.text),
+      persist: async (prepared) => {
+        useOutboxStore.setState((state) => ({
+          messages: state.messages.map((candidate) =>
+            candidate.messageId === prepared.messageId ? prepared : candidate,
+          ),
+        }))
+        await saveQueued(prepared)
+      },
+      send: (prepared) => client.submitTurn({
+        version: 1,
+        threadId: prepared.threadId,
+        origin: prepared.messageId,
+        providerText: prepared.providerText ?? prepared.text,
+        displayBody: prepared.text,
+        images: prepared.images,
+        runtimeMode: prepared.runtimeMode as RuntimeMode | undefined,
+        autoTitleText: prepared.titleCandidate,
+      }),
+    })
+    const prepared = delivered.message
+    if (delivered.disposition === 'accepted') {
+      providerAccepted = true
+      await finishAccepted(prepared)
+      return
+    }
+    if (
+      (delivered.disposition === 'rejected' && !delivered.retryable) ||
+      delivered.disposition === 'conflict'
+    ) {
+      await preserveRejected(prepared, delivered.reason ?? 'Backend refused the message', chat)
+      return
+    }
+    await preserveForRetry(prepared, delivered.disposition === 'ambiguous')
   } catch (err) {
     const disposition = deliveryFailureDisposition(providerAccepted, err)
     if (disposition === 'reject') {
-      // Understood and refused: repeating cannot help. Keep the committed
-      // payload as a blocked record so text and attachments remain recoverable.
-      const blocked = markRejected(message, err)
-      retryNotBefore.delete(message.messageId)
-      useOutboxStore.setState((state) => ({
-        messages: state.messages.map((candidate) =>
-          candidate.messageId === message.messageId ? blocked : candidate,
-        ),
-      }))
-      await saveQueued(blocked).catch((storageError: unknown) =>
-        log.warn('could not persist a rejected queued message', storageError),
-      )
-      log.warn('backend refused a queued message; preserving it for editing', err)
-      chat.ingest(message.connectionId, {
-        type: 'error',
-        threadId: message.threadId,
-        message: `Message not sent: ${err instanceof Error ? err.message : String(err)}`,
-      })
+      const current = currentQueued(message) ?? message
+      await preserveRejected(current, err instanceof Error ? err.message : String(err), chat)
       return
     }
     if (disposition === 'cleanup-retry') {
       log.warn('provider accepted queued message; retrying handoff cleanup', err)
     }
-    const attempts = message.attempts + 1
-    retryNotBefore.set(message.messageId, Date.now() + retryDelayMs(attempts))
-    const updated = { ...message, attempts }
-    useOutboxStore.setState((s) => ({
-      messages: s.messages.map((m) => (m.messageId === message.messageId ? updated : m)),
-    }))
-    await saveQueued(updated).catch((e: unknown) => log.warn('could not persist a retry count', e))
+    await preserveForRetry(currentQueued(message) ?? message, true)
   }
+}
+
+function currentQueued(message: QueuedMessage): QueuedMessage | undefined {
+  return useOutboxStore.getState().messages.find(
+    (candidate) =>
+      candidate.connectionId === message.connectionId &&
+      candidate.threadId === message.threadId &&
+      candidate.messageId === message.messageId,
+  )
+}
+
+async function preserveForRetry(message: QueuedMessage, ambiguous: boolean): Promise<void> {
+  const attempts = message.attempts + 1
+  retryNotBefore.set(message.messageId, Date.now() + retryDelayMs(attempts))
+  const updated: QueuedMessage = {
+    ...message,
+    attempts,
+    deliveryState: ambiguous ? 'ambiguous' : undefined,
+  }
+  useOutboxStore.setState((state) => ({
+    messages: state.messages.map((candidate) =>
+      candidate.messageId === message.messageId ? updated : candidate,
+    ),
+  }))
+  await saveQueued(updated).catch((error: unknown) => log.warn('could not persist a retry count', error))
+}
+
+async function preserveRejected(
+  message: QueuedMessage,
+  reason: string,
+  chat: ReturnType<typeof useChatStore.getState>,
+): Promise<void> {
+  const blocked = markRejected(message, new Error(reason))
+  retryNotBefore.delete(message.messageId)
+  useOutboxStore.setState((state) => ({
+    messages: state.messages.map((candidate) =>
+      candidate.messageId === message.messageId ? blocked : candidate,
+    ),
+  }))
+  await saveQueued(blocked).catch((storageError: unknown) =>
+    log.warn('could not persist a rejected queued message', storageError),
+  )
+  log.warn('backend refused a queued message; preserving it for editing', reason)
+  chat.ingest(message.connectionId, {
+    type: 'error',
+    threadId: message.threadId,
+    message: `Message not sent: ${reason}`,
+  })
 }

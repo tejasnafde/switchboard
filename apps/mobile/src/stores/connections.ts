@@ -28,7 +28,7 @@ import {
   saveConnectionToken,
 } from '../lib/secrets'
 import { useChatStore } from './chat'
-import { drain as drainOutbox } from './outbox'
+import { acknowledgeAcceptedOrigin, drain as drainOutbox } from './outbox'
 
 const log = createLogger('store:connections')
 
@@ -247,7 +247,14 @@ export const useConnectionsStore = create<ConnectionsState>()(
         clients.set(id, client)
         eventUnsubs.set(
           id,
-          client.onEvent((event) => useChatStore.getState().ingest(id, event)),
+          client.onEvent((event) => {
+            if (event.type === 'user.message' && event.origin) {
+              void acknowledgeAcceptedOrigin(id, event.threadId, event.origin).catch((err: unknown) =>
+                log.warn('could not reconcile an accepted queued message', err),
+              )
+            }
+            useChatStore.getState().ingest(id, event)
+          }),
         )
       },
 
