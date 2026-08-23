@@ -40,7 +40,7 @@
   },
   "verification": {
     "automated": [
-      "tests/unit/signing-mode.test.ts covers absent, complete and partial credentials plus the production builder overlay",
+      "tests/unit/signing-mode.test.ts covers absent, complete and partial credentials, the production builder overlay, and the macOS Bash 3.2 unsigned packaging path",
       "Release jobs run codesign/notarization-ticket or Authenticode verification when signed mode is selected"
     ],
     "hardware": [],

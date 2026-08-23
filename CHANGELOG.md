@@ -2,6 +2,14 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.41 - Publish stable code-copy controls on every desktop
+
+### Fixed
+- **The unsigned macOS release lane could pass every application gate and then fail before packaging.** Release packaging now branches explicitly between signed and unsigned electron-builder commands instead of expanding an empty Bash array, which is invalid under the macOS runner's Bash 3.2 with `set -u`.
+
+### Notes
+- This patch supersedes the incomplete artifact sets for v0.8.39 and v0.8.40. It contains the same stable Markdown code-copy implementation and its regression coverage; no renderer behavior changed after Claude's final no-issues review.
+
 ## 0.8.40 - Keep Cursor recovery portable
 
 ### Fixed

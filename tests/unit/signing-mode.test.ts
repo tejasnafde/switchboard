@@ -67,4 +67,13 @@ describe('release signing mode', () => {
       expect(pkg.scripts[name]).toContain('CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder')
     }
   })
+
+  it('keeps release packaging compatible with the macOS Bash 3.2 runner', () => {
+    const workflow = readFileSync('.github/workflows/release.yml', 'utf8')
+
+    expect(workflow).not.toContain('config=()')
+    expect(workflow).not.toContain('${config[@]}')
+    expect(workflow).toContain('npx electron-builder --config electron-builder.signed.yml --publish "$PUBLISH_MODE"')
+    expect(workflow).toContain('npx electron-builder --publish "$PUBLISH_MODE"')
+  })
 })
