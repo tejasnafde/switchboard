@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "code-block-copy-controls",
+  "summary": "Keep desktop Markdown code-block copy controls stable, accessible, and independent of provider event timing.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MarkdownWithCopyControls.tsx",
+        "src/renderer/services/messageLifecycle.ts",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "tests/unit/code-block-copy-controls.test.ts",
+        "tests/unit/message-copy-lifecycle.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile uses its own React Native Markdown block parser and native View/Text code-block renderer; it does not share the desktop Marked renderer or expose the affected copy-control contract."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "ThreadRichTextRenderer.kt renders code blocks with Compose primitives and does not share the desktop Marked renderer or its copy controls; the separate Android tool-summary density issue is outside this fix."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The fix consumes existing normalized content, status, error, and turn.completed events in renderer-local transient state without changing the runtime-event wire contract or coalescer ordering contract."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Mutable/settled message state is transient renderer state; persisted and historical messages default to settled, so no database field, migration, or upgrade conversion is required."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "This is an unconditional desktop renderer bug fix with no feature flag, package identity, signing, deep-link, update-channel, release-packaging, or rollout compatibility change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/code-block-copy-controls.test.ts tests/unit/message-copy-lifecycle.test.ts tests/unit/code-copy-integration-contract.test.ts",
+      "npm run typecheck",
+      "npx vitest run --exclude tests/unit/durable-turn-acceptance.test.ts --exclude tests/unit/turn-acceptance-store.test.ts",
+      "ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron ./node_modules/vitest/vitest.mjs run tests/unit/durable-turn-acceptance.test.ts tests/unit/turn-acceptance-store.test.ts",
+      "npm run build:fast",
+      "npm run validate:feature-parity -- --base main"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Live Claude, Codex, and OpenCode streaming was not exercised because the existing Switchboard instance has active user sessions and the single-instance lock prevents isolated manual verification without disrupting them; normalized cumulative, delta, completion, tool/status, error, and interruption sequences are covered by automated tests.",
+      "Keyboard, coarse-pointer, and denied-clipboard behavior is covered at the renderer/component contract level but was not exercised on physical desktop or touch hardware in this worktree.",
+      "React Native/iOS and native Android hardware verification is not applicable because neither surface shares this renderer or copy-control contract."
+    ]
+  }
+}

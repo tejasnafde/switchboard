@@ -34,6 +34,11 @@ import {
   drainTurn,
 } from '../../services/streamingBuffer'
 import { createContentCoalescer, type ContentCoalescer } from '../../services/contentCoalescer'
+import {
+  finishRuntimeEventLifecycle,
+  messageLifecycle,
+  prepareRuntimeEventLifecycle,
+} from '../../services/messageLifecycle'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import {
   echoMessageId,
@@ -281,6 +286,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     providerStartedRef.current.delete(sessionId)
     agentStartedRef.current.delete(sessionId)
     await window.api.provider?.stopSession?.(sessionId).catch(() => {})
+    messageLifecycle.settleThread(sessionId)
   }, [sessionId, storeSetAgentType, agentType, activeSession?.messages?.length, appendMessage])
 
   // Existing sessions rotate atomically on the backend: it owns stop/start,
@@ -416,12 +422,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
       // increment. Exactly one listener does the store work.
       if (!claimProviderEvent(event)) return
 
-      // Any non-content event must land AFTER whatever content is pending
-      // for this thread, or message order flips (e.g. a buffered first
-      // snapshot appending after a tool.started that arrived later).
-      if (event.type !== 'content') {
-        contentCoalescerRef.current?.flushThread(tid)
-      }
+      prepareRuntimeEventLifecycle(
+        event,
+        messageLifecycle,
+        (threadId) => contentCoalescerRef.current?.flushThread(threadId),
+      )
 
       switch (event.type) {
         // This canonical event is the only point where Desktop presents the
@@ -772,6 +777,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           break
         }
       }
+      finishRuntimeEventLifecycle(event, messageLifecycle)
     })
     return () => removeProvider()
   }, [appendMessage, updateMessage, updateStatus, setTitle])
@@ -1504,11 +1510,14 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
           // there is nothing in main to interrupt and no event will ever
           // arrive, so clear the stuck status locally instead of no-oping.
           if (!providerStartedRef.current.has(sessionId)) {
+            messageLifecycle.settleThread(sessionId)
             updateStatus(sessionId, 'idle')
             return
           }
           try {
             await window.api.provider?.interrupt?.(sessionId)
+            contentCoalescerRef.current?.flushThread(sessionId)
+            messageLifecycle.settleThread(sessionId)
           } catch (err) {
             log.warn('provider interrupt failed; stopping wedged session', { sessionId, err })
             await window.api.provider?.stopSession?.(sessionId).catch((stopErr: unknown) => {
@@ -1516,14 +1525,20 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
             })
             providerStartedRef.current.delete(sessionId)
             agentStartedRef.current.delete(sessionId)
+            contentCoalescerRef.current?.flushThread(sessionId)
+            messageLifecycle.settleThread(sessionId)
             updateStatus(sessionId, 'idle')
           }
         }}
         onClearMessages={() => {
-          if (sessionId) clearMessages(sessionId)
+          if (!sessionId) return
+          contentCoalescerRef.current?.flushThread(sessionId)
+          messageLifecycle.settleThread(sessionId)
+          clearMessages(sessionId)
         }}
         onArchive={() => {
           if (!sessionId) return
+          messageLifecycle.settleThread(sessionId)
           window.api.app.archiveConversation(sessionId, projectPath, chatTitle).catch(() => {})
           removeSession(sessionId)
         }}

@@ -1,6 +1,6 @@
-import { useMemo, useRef, useEffect, useState } from 'react'
-import { marked } from 'marked'
+import { useState } from 'react'
 import type { PlanAttachment } from '@shared/types'
+import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
 
 interface PlanCardProps {
   plan: PlanAttachment
@@ -13,36 +13,9 @@ interface PlanCardProps {
  * Renders markdown + Accept / Reject actions.
  */
 export function PlanCard({ plan, onApprove, onReject }: PlanCardProps) {
-  const rendered = useMemo(() => marked.parse(plan.markdown, { async: false }) as string, [plan.markdown])
-  const ref = useRef<HTMLDivElement>(null)
   // Approving sends the turn on a 50ms timer, so nothing on the card changes
   // for long enough that a double-click lands two turns.
   const [approving, setApproving] = useState(false)
-
-  // Attach per-code-block copy buttons (same as MessageBubble)
-  useEffect(() => {
-    const root = ref.current
-    if (!root) return
-    root.querySelectorAll('pre').forEach((pre) => {
-      if (pre.querySelector(':scope > .code-copy-btn')) return
-      pre.style.position = 'relative'
-      const btn = document.createElement('button')
-      btn.className = 'code-copy-btn'
-      btn.type = 'button'
-      btn.textContent = 'Copy'
-      btn.addEventListener('click', (e) => {
-        e.preventDefault(); e.stopPropagation()
-        const code = pre.querySelector('code')
-        const text = code?.textContent ?? pre.textContent ?? ''
-        navigator.clipboard.writeText(text).then(() => {
-          btn.textContent = 'Copied'
-          btn.classList.add('copied')
-          setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied') }, 1500)
-        }).catch(() => {})
-      })
-      pre.appendChild(btn)
-    })
-  }, [rendered])
 
   return (
     <div
@@ -79,11 +52,10 @@ export function PlanCard({ plan, onApprove, onReject }: PlanCardProps) {
       </div>
 
       {/* Plan markdown */}
-      <div
-        ref={ref}
+      <MarkdownWithCopyControls
+        markdown={plan.markdown}
         className="markdown-content"
         style={{ padding: '10px 14px', fontSize: '13px' }}
-        dangerouslySetInnerHTML={{ __html: rendered }}
       />
 
       {/* Actions */}

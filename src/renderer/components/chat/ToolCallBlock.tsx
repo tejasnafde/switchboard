@@ -211,11 +211,12 @@ function FileLabel({ path }: { path: string }) {
 
 function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'code'; children: React.ReactNode }) {
   const [copied, setCopied] = useState(false)
-  const preRef = useRef<HTMLPreElement>(null)
+  const codeRef = useRef<HTMLSpanElement>(null)
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
-    const text = preRef.current?.textContent ?? ''
+    const text = codeRef.current?.textContent ?? ''
+    if (typeof navigator.clipboard?.writeText !== 'function') return
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
@@ -240,8 +241,19 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
     },
   }
   return (
-    <div style={{ position: 'relative' }} className="tool-code-block">
-      <pre ref={preRef} style={{
+    <div className="tool-code-block">
+      <div className="tool-code-toolbar">
+        <button
+          onClick={handleCopy}
+          className={`code-copy-btn${copied ? ' copied' : ''}`}
+          type="button"
+          aria-label={`${copied ? 'Copied' : 'Copy'} code block`}
+          aria-live="polite"
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre style={{
         margin: 0,
         padding: '6px 10px',
         fontFamily: 'var(--font-mono)',
@@ -253,15 +265,8 @@ function CodeBlock({ variant, children }: { variant: 'command' | 'output' | 'cod
         borderRadius: '3px',
         ...variantStyles[variant],
       }}>
-        {children}
+        <span ref={codeRef}>{children}</span>
       </pre>
-      <button
-        onClick={handleCopy}
-        className={`code-copy-btn${copied ? ' copied' : ''}`}
-        type="button"
-      >
-        {copied ? 'Copied' : 'Copy'}
-      </button>
     </div>
   )
 }

@@ -1,6 +1,5 @@
 import { memo, useMemo, useState, useRef, useEffect, useLayoutEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { marked } from 'marked'
 import { agentShortLabel, type ChatMessage } from '@shared/types'
 import { fmtDuration } from '@shared/format'
 import { ToolCallBlock } from './ToolCallBlock'
@@ -20,6 +19,8 @@ import { forkAndOpenSession } from '../../services/forkSession'
 import { parseRotationMarker } from './rotationMarker'
 import { TodoList } from './TodoList'
 import { useBookmarkStore } from '../../stores/bookmark-store'
+import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
+import { useMessageMutable } from '../../services/messageLifecycle'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -61,10 +62,8 @@ export function resolveBubbleProjectPath(
 }
 
 /**
- * Quiet-gap debounce for the DOM post-processing effects (copy buttons +
- * file pills). Streaming commits land ~every 33ms, so the timer keeps
- * resetting until the stream pauses/ends; static bubbles pay one
- * imperceptible delay.
+ * Quiet-gap debounce for the inline file-pill enhancement. Copy controls are
+ * part of the atomic Markdown render and do not use this post-processing path.
  */
 const POST_PROCESS_DEBOUNCE_MS = 120
 
@@ -90,12 +89,12 @@ function resolveFileCached(projectPath: string, path: string): Promise<boolean> 
 }
 
 export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve, hideTurnDuration = false }: MessageBubbleProps) {
-  const renderedContent = useMemo(() => {
+  const markdownContent = useMemo(() => {
     if (!message.content) return ''
     // Escape lone tildes used as "approximately" (e.g. ~34) so they don't
     // pair up into ~~strikethrough~~ in GFM markdown.
     const escaped = message.content.replace(/~(\d)/g, '\\~$1')
-    return marked.parse(escaped, { async: false }) as string
+    return escaped
   }, [message.content])
 
   const [copied, setCopied] = useState(false)
@@ -103,12 +102,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   const bookmarkId = useBookmarkStore((s) => s.idFor(sessionId ?? '', message.timestamp))
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const markdownRef = useRef<HTMLDivElement>(null)
-  // While a turn streams, marked re-parses each snapshot: an unterminated ```
-  // fence or a 4-space-indented line renders as a transient <pre> that reflows
-  // away when more tokens land. Gate DOM decoration on this so copy buttons
-  // (and file pills) aren't attached to code blocks that vanish a frame later.
-  const sessionStatus = useAgentStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
-  const isStreaming = sessionStatus === 'running' || sessionStatus === 'thinking'
+  const isMutable = useMessageMutable(sessionId, message.id)
   // Right-click → Fork popover. Anchored at the click coordinates;
   // dismisses on click-outside / Escape. We resolve the fork's source
   // conversation lazily off `useAgentStore.getState()` at click time so
@@ -121,46 +115,6 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // landed without forcing them to dig into the sidebar's secondary line.
   const [forkToast, setForkToast] = useState<string | null>(null)
 
-  // Inject copy buttons on each <pre> code block after markdown renders.
-  // Debounced: during streaming this effect used to re-run the DOM walk on
-  // every content commit; deferring until a quiet gap runs it once per
-  // message in practice (the timer resets while content keeps changing).
-  useEffect(() => {
-    // Skip while streaming; the effect re-runs when isStreaming flips false
-    // and decorates the settled <pre> blocks then.
-    if (isStreaming) return
-    const timer = setTimeout(() => {
-      const root = markdownRef.current
-      if (!root) return
-      const pres = root.querySelectorAll('pre')
-      pres.forEach((pre) => {
-        // Skip if already processed
-        if (pre.querySelector(':scope > .code-copy-btn')) return
-        pre.style.position = 'relative'
-        const btn = document.createElement('button')
-        btn.className = 'code-copy-btn'
-        btn.type = 'button'
-        btn.textContent = 'Copy'
-        btn.addEventListener('click', (e) => {
-          e.preventDefault()
-          e.stopPropagation()
-          const code = pre.querySelector('code')
-          const text = code?.textContent ?? pre.textContent ?? ''
-          navigator.clipboard.writeText(text).then(() => {
-            btn.textContent = 'Copied'
-            btn.classList.add('copied')
-            setTimeout(() => {
-              btn.textContent = 'Copy'
-              btn.classList.remove('copied')
-            }, 1500)
-          }).catch(() => {})
-        })
-        pre.appendChild(btn)
-      })
-    }, POST_PROCESS_DEBOUNCE_MS)
-    return () => clearTimeout(timer)
-  }, [renderedContent, isStreaming])
-
   // Inline file-pill enhancement: replace `<code>src/foo.ts:42-58</code>`
   // with clickable chips that open the file viewer at that line range.
   // Verifies existence on disk via debounced files:resolve before swapping
@@ -168,7 +122,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // Debounced like the copy-button effect above: the TreeWalker pass plus
   // per-path resolve IPC used to fire on every streaming commit.
   useEffect(() => {
-    if (isStreaming) return
+    if (isMutable) return
     const timer = setTimeout(() => {
       const root = markdownRef.current
       if (!root) return
@@ -219,7 +173,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       })
     }, POST_PROCESS_DEBOUNCE_MS)
     return () => clearTimeout(timer)
-  }, [renderedContent, isStreaming, sessionId])
+  }, [markdownContent, isMutable, sessionId])
 
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
@@ -433,10 +387,11 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             })()}
           </div>
         ) : (
-          <div
+          <MarkdownWithCopyControls
             ref={markdownRef}
+            markdown={markdownContent}
+            mutable={isMutable}
             className="markdown-content"
-            dangerouslySetInnerHTML={{ __html: renderedContent }}
             style={{ overflow: 'hidden' }}
           />
         ))}
