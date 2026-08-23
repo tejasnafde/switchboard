@@ -90,6 +90,9 @@ mac:
   # The signed release overlay enables hardened runtime, notarization and
   # forceCodeSigning. CSC_IDENTITY_AUTO_DISCOVERY=false keeps this base config
   # unsigned in CI; local builds without a certificate are unsigned naturally.
+  # identity:null also prevents electron-builder's arm64 fallback signature
+  # from overwriting afterPack's stable identifier-only designated requirement.
+  identity: null
   hardenedRuntime: false
   gatekeeperAssess: false
   # Icon must exist at resources/icons/switchboard-logo-1024.png; we point

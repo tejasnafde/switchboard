@@ -5,6 +5,9 @@ forceCodeSigning: true
 afterSign: build/afterSign.js
 
 mac:
+  # Qualifier, not a hard-coded team identity. electron-builder resolves the
+  # Developer ID Application certificate imported from MAC_CSC_LINK.
+  identity: Developer ID Application
   hardenedRuntime: true
   gatekeeperAssess: true
   notarize: true

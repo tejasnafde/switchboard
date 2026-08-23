@@ -17,6 +17,8 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - Cursor JSON records are size-bounded, malformed records are isolated, and Cursor's own databases are never changed.
 - The repository currently has no macOS or Windows signing secrets, so this release uses the supported unsigned packaging path. Adding the documented complete credential sets will activate signed artifacts without another code change.
 - Android provenance code is covered by source tests but could not be run locally because this machine has no Android SDK; the release CI remains the automated authority for that lane.
+- Claude's adversarial review found and drove fixes for legacy header-only bubbles, destructive empty refreshes, literal composer-ID matching, boundary logging, and tool-only history classification; its final focused pass reported no issues.
+- The final local gate passed 2,728 tests across 274 files, both Desktop typechecks, React Native typecheck, lint, production builds, packaged-main smoke boot, feature-parity validation, and an unsigned arm64 ZIP whose stable identifier-only designated requirement passed strict codesign verification.
 
 ## 0.8.37 - Never show a turn the provider never received
 

@@ -43,7 +43,7 @@ describe('release signing mode', () => {
     const base = load(readFileSync('electron-builder.yml', 'utf8')) as Record<string, any>
     const signed = load(readFileSync('electron-builder.signed.yml', 'utf8')) as Record<string, any>
 
-    expect(base.mac.identity).toBeUndefined()
+    expect(base.mac.identity).toBeNull()
     expect(base.mac.hardenedRuntime).toBe(false)
     expect(base.win.signAndEditExecutable).toBe(false)
     expect(signed).toMatchObject({
@@ -51,6 +51,7 @@ describe('release signing mode', () => {
       forceCodeSigning: true,
       afterSign: 'build/afterSign.js',
       mac: {
+        identity: 'Developer ID Application',
         hardenedRuntime: true,
         notarize: true,
         entitlements: 'build/entitlements.mac.plist',
