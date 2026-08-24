@@ -1678,6 +1678,7 @@ function ChatWorkspacePanels({
       >
         <ChatPanel
           chatSlot="primary"
+          visible={!tabbed || focusedSlot === 'primary'}
           showFocusIndicator={showFocusIndicator}
           onClose={dual ? () => closeChatSlot('primary') : undefined}
           onOpenBeside={onOpenBeside}
@@ -1704,6 +1705,7 @@ function ChatWorkspacePanels({
       >
         <ChatPanel
           chatSlot="secondary"
+          visible={dual && (!tabbed || focusedSlot === 'secondary')}
           showFocusIndicator={showFocusIndicator}
           onClose={() => closeChatSlot('secondary')}
           onOpenBeside={onOpenBeside}

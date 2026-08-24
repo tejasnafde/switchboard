@@ -2,6 +2,17 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.50 - Repair rich chats and acknowledge idle sends
+
+### Fixed
+- **Rich remote chats keep their rows separated as content changes.** Same-key turns now remeasure during the React commit, cache resets are separated from DOM measurement, and hidden tabs rebuild their row sizes when revealed. The bottom-follow guard no longer mistakes TanStack's own height corrections for a user scroll, which was the immediate cause of later messages rendering at stale 120px offsets and overlapping.
+- **Cold idle-chat sends acknowledge the click immediately.** Desktop shows a transient `Sending…` bubble before provider startup, reconciles it in place with the canonical accepted turn, removes it on definite rejection, retains `Delivery unconfirmed` while recovery is required, and marks an explicitly abandoned attempt `Delivery unresolved · not resent`. These rows remain renderer-only: SQLite persistence, title/activity updates, handoff cleanup, and provider admission still require the existing atomic backend acceptance.
+
+### Notes
+- This patch changes Desktop behavior only. React Native/iOS and native Android already use durable pending outboxes and keep their existing release versions; the shared atomic API, stored data, package identity, deep links, and provider credentials are unchanged.
+- Direct upgrades from Desktop v0.8.35 and v0.8.49 use the existing migration path and are rehearsed in isolated temporary profiles. The running v0.8.35 profile is never opened, copied, stopped, or mutated.
+- macOS releases remain unsigned until production signing credentials are configured. macOS 12 or later is required.
+
 ## 0.8.49 - Stabilize Desktop quit and chat rendering
 
 ### Fixed

@@ -1,0 +1,62 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "desktop-chat-feedback-reliability",
+  "summary": "Keep rich Desktop transcript rows measured correctly and acknowledge cold idle sends without weakening atomic delivery.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/services/desktopTurnSubmission.ts",
+        "tests/unit/desktop-pending-turn.test.ts",
+        "e2e/dual-chat-workspace.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "React Native/iOS uses its own native transcript and already renders its durable pending and ambiguous outbox states; it does not import the Desktop TanStack virtualizer or Desktop transient message state."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android uses a Compose transcript backed by its Room outbox, which already owns pending, ambiguous, and acknowledged presentation and does not share Desktop renderer code."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The existing versioned atomic submission, canonical user.message event, and recovery contracts are unchanged; deliveryState is renderer-only and never crosses IPC or the remote protocol."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Pending Desktop messages are not persisted and no schema or stored message shape changes; v0.8.35 and v0.8.49 profiles use the existing migration path."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "package.json",
+        "CHANGELOG.md",
+        "docs/plans/2026-08-25-chat-rendering-and-send-feedback-design.md",
+        ".github/workflows/release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/desktop-pending-turn.test.ts tests/unit/desktop-image-send-contract.test.ts tests/unit/message-list.test.ts tests/unit/chat-workspace.test.ts",
+      "node e2e/dual-chat-workspace.e2e.mjs",
+      "npm run typecheck",
+      "npm test",
+      "npm run build",
+      "npm run validate:feature-parity -- --all",
+      "npm run typecheck --prefix apps/mobile",
+      "npm test --prefix apps/mobile",
+      "./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug assembleRelease compileDebugAndroidTestKotlin"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The user's live v0.8.35 profile and reported remote conversation are not opened or mutated; the failure sequence is exercised in a disposable real-Electron fixture.",
+      "Physical iOS and Android hardware are not exercised because neither native transcript nor outbox implementation changes in this patch."
+    ]
+  }
+}

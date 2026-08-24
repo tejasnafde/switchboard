@@ -43,13 +43,16 @@ import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import {
   echoMessageId,
   validateUserMessageImages,
-  visibleUserMessageText,
   type UserTurnSubmissionV1,
 } from '@shared/provider-events'
 import {
+  acceptedDesktopUserMessage,
   desktopComposerFingerprint,
   desktopPreparedTurns,
   desktopTurnAttempts,
+  pendingDesktopTurnDisposition,
+  pendingDesktopUserMessage,
+  resolvedDesktopTurnDeliveryState,
   submitProgrammaticTurn,
   submitDesktopUserTurn,
   type DesktopTurnSubmissionDependencies,
@@ -78,6 +81,7 @@ interface ChatPanelProps {
    */
   sessionIdOverride?: string | null
   chatSlot?: ChatSlot
+  visible?: boolean
   showFocusIndicator?: boolean
   /** Optional close button for the right-hand panel in dual mode. */
   onClose?: () => void
@@ -113,7 +117,7 @@ function upsertAssistantContent(threadId: string, messageId: string, chunk: Cont
   }
 }
 
-export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = false, onClose, onOpenBeside }: ChatPanelProps = {}) {
+export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFocusIndicator = false, onClose, onOpenBeside }: ChatPanelProps = {}) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code')
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
@@ -160,6 +164,13 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
 
   const messages = activeSession?.messages ?? []
   const status = activeSession?.status ?? 'idle'
+  const pendingDeliveryState = useMemo(() => {
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index]
+      if (message.role === 'user') return message.deliveryState
+    }
+    return undefined
+  }, [messages])
   const hasSession = activeSession !== undefined
   // Fallback token estimate only when the adapter hasn't reported real usage.
   // Memoized so it isn't an O(n) sum over all messages on every render (which,
@@ -502,17 +513,19 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
               timestamp: event.at - 1,
             })
           }
-          const visibleText = visibleUserMessageText(event.text, event.displayBody)
-          if (visibleText !== null) {
-            appendMessage(tid, {
-              id: echoMessageId(event.origin ?? String(event.at)),
-              role: 'user',
-              content: event.text,
-              displayBody: visibleText === event.text ? undefined : visibleText,
-              pillsMeta: event.pillsMeta,
-              images: event.images,
-              timestamp: event.at,
-            })
+          const acceptedMessage = acceptedDesktopUserMessage(event)
+          if (acceptedMessage) {
+            const existing = useAgentStore.getState().sessions
+              .find((session) => session.id === tid)?.messages
+              .some((message) => message.id === acceptedMessage.id)
+            if (existing) {
+              updateMessage(tid, acceptedMessage.id, {
+                ...acceptedMessage,
+                deliveryState: undefined,
+              })
+            } else {
+              appendMessage(tid, acceptedMessage)
+            }
           }
           emitSessionActivity(tid, event.at)
           if (event.conversationTitle) {
@@ -1188,6 +1201,21 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
         autoTitleText: message,
       })
 
+      // Immediate but honest feedback: this row is keyed exactly like the
+      // canonical echo, yet remains renderer-only and visibly pending until
+      // the backend commits acceptance. A cold provider start can take over a
+      // second (and longer remotely), so withholding all feedback made idle
+      // sends look queued or lost.
+      const pendingMessage = pendingDesktopUserMessage(turn)
+      const pendingAlreadyExists = useAgentStore.getState().sessions
+        .find((session) => session.id === sessionId)?.messages
+        .some((candidate) => candidate.id === pendingMessage.id)
+      if (pendingAlreadyExists) {
+        updateMessage(sessionId, pendingMessage.id, pendingMessage)
+      } else {
+        appendMessage(sessionId, pendingMessage)
+      }
+
       // Start only after image preparation and validation. A definite startup
       // rejection leaves the composer intact and does not create a false user
       // turn or a persisted system bubble.
@@ -1232,13 +1260,29 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
             : 'An earlier message has unconfirmed delivery and is blocking this send. Continue without resending the earlier message?',
         )
         if (confirmed) {
-          const resolution = await providerApi.resolveUserTurn({
-            version: 1,
-            threadId: sessionId,
-            origin: recoveryOrigin,
-            action: 'abandon',
-          })
+          let resolution
+          try {
+            resolution = await providerApi.resolveUserTurn({
+              version: 1,
+              threadId: sessionId,
+              origin: recoveryOrigin,
+              action: 'abandon',
+            })
+          } catch (error) {
+            updateMessage(sessionId, pendingMessage.id, { deliveryState: 'unconfirmed' })
+            return {
+              accepted: false,
+              error: `Could not resolve unconfirmed delivery: ${error instanceof Error ? error.message : String(error)}`,
+            }
+          }
           if (resolution.status === 'abandoned' || resolution.status === 'completed') {
+            // The recovered origin may be this pending row or an older row
+            // blocking the new send. Preserve an abandoned attempt without
+            // falsely presenting it as accepted; a completed record is
+            // authoritative acceptance.
+            updateMessage(sessionId, echoMessageId(recoveryOrigin), {
+              deliveryState: resolvedDesktopTurnDeliveryState(resolution.status),
+            })
             if (recoveringCurrentTurn) {
               if (resolution.status === 'abandoned') {
                 desktopTurnAttempts.accept(sessionId, recoveryOrigin)
@@ -1260,14 +1304,28 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
               outcome = await submitDesktopUserTurn(turn, submissionDependencies)
             }
           } else {
+            updateMessage(sessionId, pendingMessage.id, { deliveryState: 'unconfirmed' })
             return { accepted: false, error: resolution.reason }
           }
         }
       }
+      const disposition = pendingDesktopTurnDisposition(outcome)
       if (outcome.accepted) {
+        // The accepted result is itself authoritative. Usually the canonical
+        // event has already reconciled this row, but clearing here also covers
+        // a renderer event lost between backend commit and IPC delivery.
+        updateMessage(sessionId, pendingMessage.id, {
+          deliveryState: undefined,
+          timestamp: outcome.result.acceptedAt,
+        })
         desktopTurnAttempts.accept(sessionId, origin)
         desktopPreparedTurns.accept(sessionId, origin)
         return { accepted: true }
+      }
+      if (disposition === 'remove') {
+        useAgentStore.getState().removeMessage(sessionId, pendingMessage.id)
+      } else {
+        updateMessage(sessionId, pendingMessage.id, { deliveryState: 'unconfirmed' })
       }
       return { accepted: false, error: outcome.error }
     },
@@ -1277,7 +1335,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
     // these in the deps, the captured closure stays on the prior values and
     // the new session boots under the old credentials - visible as "instance
     // switch had no effect" in the registry log.
-    [sessionId, agentType, projectPath, runtimeMode, appendMessage, messages.length, resumeSessionId, setTitle, instanceId, model, reasoningEffort],
+    [sessionId, agentType, projectPath, runtimeMode, appendMessage, updateMessage, messages.length, resumeSessionId, setTitle, instanceId, model, reasoningEffort],
   )
 
   // ── In-pane search: compute matching message ids (substring on text) ──
@@ -1556,7 +1614,13 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
         {/* Status text */}
         {hasSession && (
           <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
-            {status === 'running' ? 'thinking\u2026' : status === 'idle' ? 'ready' : status}
+            {status === 'running'
+              ? 'thinking\u2026'
+              : status === 'idle' && pendingDeliveryState === 'pending'
+                ? 'sending\u2026'
+                : status === 'idle' && pendingDeliveryState === 'unconfirmed'
+                  ? 'unconfirmed'
+                  : status === 'idle' ? 'ready' : status}
           </span>
         )}
       </div>
@@ -1569,6 +1633,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
       <MessageList
         messages={messages}
         sessionId={sessionId}
+        visible={visible}
         agentType={activeSession?.type ?? agentType}
         onApproval={handleApproval}
         onAnswerQuestion={handleAnswerQuestion}
@@ -1577,7 +1642,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
       />
 
       {/* Thinking indicator */}
-      {(status === 'running' || status === 'thinking') && (
+      {(status === 'running' || status === 'thinking' || pendingDeliveryState === 'pending') && (
         <div style={{
           padding: '8px 16px',
           display: 'flex',
@@ -1592,7 +1657,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = fa
             <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0.2s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
             <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0.4s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
           </span>
-          <span>{status === 'thinking' ? 'Thinking\u2026' : 'Working\u2026'}</span>
+          <span>{pendingDeliveryState === 'pending' && status === 'idle'
+            ? 'Sending\u2026'
+            : status === 'thinking' ? 'Thinking\u2026' : 'Working\u2026'}</span>
         </div>
       )}
 

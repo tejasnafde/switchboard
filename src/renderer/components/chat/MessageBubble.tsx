@@ -335,7 +335,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         // Skip the menu for system / error messages - they aren't fork
         // anchors. Image-lightbox right-click is portal'd to body and
         // doesn't bubble through this handler, so it stays unaffected.
-        if (!isForkableForkMessage(message)) return
+        if (message.deliveryState || !isForkableForkMessage(message)) return
         e.preventDefault()
         setForkMenu({ x: e.clientX, y: e.clientY })
         setForkError(null)
@@ -345,6 +345,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         flexDirection: 'column',
         alignItems: isUser ? 'flex-end' : 'flex-start',
         padding: '3px 16px',
+        opacity: message.deliveryState === 'pending' ? 0.76 : 1,
       }}
     >
       {/* Message content */}
@@ -570,11 +571,31 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         )}
       </div>
 
+      {message.deliveryState && (
+        <div
+          role="status"
+          style={{
+            marginTop: '2px',
+            paddingRight: isUser ? '2px' : 0,
+            fontSize: '10px',
+            color: message.deliveryState === 'unconfirmed'
+              ? 'var(--warning)'
+              : 'var(--text-muted)',
+          }}
+        >
+          {message.deliveryState === 'pending'
+            ? 'Sending\u2026'
+            : message.deliveryState === 'unconfirmed'
+              ? 'Delivery unconfirmed'
+              : 'Delivery unresolved · not resent'}
+        </div>
+      )}
+
       {/* Message action bar - sits BELOW the bubble so the buttons never
           overlap message text. Low opacity at rest; full on bubble-row
           hover (via `.message-bubble-row:hover` CSS rule). Leaves room
           here for future actions (edit, retry, thread, etc). */}
-      {message.content && (
+      {message.content && !message.deliveryState && (
         <div
           className="message-actions"
           style={{

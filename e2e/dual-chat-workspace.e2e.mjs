@@ -38,7 +38,12 @@ function assert(condition, message) {
 }
 
 async function selectSidebarSession(win, title, sessionId) {
-  await win.locator('.sidebar-thread-main', { hasText: title }).click()
+  const projectThread = win.locator('.sidebar-thread-main', { hasText: title })
+  if (await projectThread.count() > 0 && await projectThread.first().isVisible()) {
+    await projectThread.first().click()
+  } else {
+    await win.locator('.sidebar-recent-row', { hasText: title }).first().click()
+  }
   await win.locator(`[data-chat-slot="primary"][data-session-id="${sessionId}"]`).waitFor()
 }
 
@@ -82,6 +87,7 @@ try {
     await window.api.routing.invokeOn('local', 'app:add-project-path', projectBPath)
     await window.api.app.createConversation({ id: 'dual-a', projectPath: projectAPath, agentType: 'claude-code', title: 'Dual A' })
     await window.api.app.createConversation({ id: 'dual-b', projectPath: projectBPath, agentType: 'codex', title: 'Dual B' })
+    await window.api.app.createConversation({ id: 'idle-feedback', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Feedback' })
     await window.api.app.createConversation({ id: 'tall-history', projectPath: projectAPath, agentType: 'claude-code', title: 'Tall History' })
     await window.api.app.saveMessage({ id: 'seed-a', conversationId: 'dual-a', role: 'assistant', content: 'Seed response from A' })
     await window.api.app.saveMessage({ id: 'seed-b', conversationId: 'dual-b', role: 'assistant', content: 'Seed response from B' })
@@ -105,7 +111,49 @@ try {
   const reloadedProjects = await win.evaluate(() => window.api.app.getProjects())
   assert(reloadedProjects.some((project) => project.sessions.some((session) => session.id === 'dual-a')), 'session A survives renderer reload')
   assert(reloadedProjects.some((project) => project.sessions.some((session) => session.id === 'dual-b')), 'session B survives renderer reload')
-  await win.locator('.sidebar-thread-title', { hasText: 'Dual A' }).waitFor({ timeout: 20_000 })
+  try {
+    await win.locator('.sidebar-recent-row', { hasText: 'Dual A' }).waitFor({ timeout: 20_000 })
+  } catch (error) {
+    console.error('renderer body after sidebar timeout', (await win.locator('body').innerText()).slice(0, 4_000))
+    throw error
+  }
+
+  // A cold idle send must acknowledge the click before provider startup
+  // finishes. Stub only this renderer's provider boundary: the accepted
+  // result deliberately arrives without a canonical event, exercising the
+  // authoritative-result fallback as well as the pending presentation.
+  await selectSidebarSession(win, 'Idle Feedback', 'idle-feedback')
+  const idlePanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-feedback"]')
+  const providerStubbed = await app.evaluate(({ ipcMain }) => {
+    ipcMain.removeHandler('provider:start-session')
+    ipcMain.handle('provider:start-session', async () => {
+      await new Promise((resolve) => setTimeout(resolve, 800))
+    })
+    ipcMain.removeHandler('provider:submit-user-turn')
+    ipcMain.handle('provider:submit-user-turn', async () => {
+      return {
+        status: 'accepted',
+        accepted: true,
+        duplicate: false,
+        state: 'completed',
+        acceptedAt: Date.now(),
+      }
+    })
+    return true
+  })
+  assert(providerStubbed, 'idle-send fixture installs a delayed provider boundary')
+  const idleComposer = idlePanel.getByLabel('Chat message')
+  await idleComposer.fill('Cold idle feedback check')
+  await idleComposer.press('Enter')
+  const idleSending = idlePanel.getByText('Sending…', { exact: true }).first()
+  await idleSending.waitFor({ timeout: 700 })
+  assert(
+    (await idleComposer.textContent())?.includes('Cold idle feedback check'),
+    'cold idle send keeps the exact draft until acceptance',
+  )
+  await idleSending.waitFor({ state: 'detached', timeout: 2_000 })
+  assert(!(await idleComposer.textContent())?.includes('Cold idle feedback check'), 'accepted idle send clears the draft')
+  assert(await idlePanel.getByText('Cold idle feedback check').count() === 1, 'accepted idle send keeps one reconciled bubble')
 
   // A large remote history arrives in one load. Dynamic row measurement must
   // finish without leaving tall turns at the 120 px estimate, which paints
@@ -163,6 +211,7 @@ try {
     await win.waitForTimeout(30)
   }
   await win.locator('[data-chat-slot="primary"]').getByText('Live question 18: choose a layout option').waitFor()
+  await win.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
   const liveGeometry = await win.locator('[data-chat-slot="primary"] [data-index]').evaluateAll((rows) =>
     rows
       .map((row) => {
@@ -176,7 +225,38 @@ try {
     return next && next.top < row.bottom - 0.5
   })
   assert(liveGeometry.length > 1, 'live tall history mounts multiple virtual rows')
+  if (overlappingLiveTurns.length > 0) {
+    console.error('overlapping live turn geometry', JSON.stringify({ liveGeometry, overlappingLiveTurns }))
+  }
   assert(overlappingLiveTurns.length === 0, 'live dynamically measured rows never overlap while following')
+
+  // Grow one already-mounted assistant message in place. This preserves both
+  // its message id and its virtual turn key, matching streaming/card updates
+  // that change height without appending another transcript row.
+  await emitProviderEvents([{
+    type: 'content',
+    threadId: 'tall-history',
+    messageId: 'same-key-growth',
+    text: 'same-key start',
+    streamKind: 'assistant',
+  }])
+  await win.locator('[data-chat-slot="primary"]').getByText('same-key start').waitFor()
+  const grownText = Array.from({ length: 90 }, (_, index) => `same-key grown line ${index + 1}`).join('\n')
+  await emitProviderEvents([{
+    type: 'content',
+    threadId: 'tall-history',
+    messageId: 'same-key-growth',
+    text: grownText,
+    streamKind: 'assistant',
+  }])
+  await win.locator('[data-chat-slot="primary"]').getByText('same-key grown line 90').waitFor()
+  await win.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const sameKeyOverlaps = await win.locator('[data-chat-slot="primary"] [data-index]').evaluateAll((rows) =>
+    rows
+      .map((row) => row.getBoundingClientRect())
+      .some((row, index, rects) => rects[index + 1] && rects[index + 1].top < row.bottom - 0.5),
+  )
+  assert(!sameKeyOverlaps, 'an existing virtual turn can grow in place without overlapping its successor')
 
   // Load both histories once, then restore A as the primary chat.
   await selectSidebarSession(win, 'Dual A', 'dual-a')
@@ -244,6 +324,39 @@ try {
   await win.locator('[data-chat-slot="secondary"][data-session-id="dual-b"]').waitFor()
   assert((await secondaryComposer.textContent())?.includes('Independent draft B'), 'reopening B preserves its independent draft')
   assert(await secondary.getByText('STREAM-B-ONLY').count() === 1, 'reopening B preserves streamed messages without duplication')
+
+  // Narrow workspaces present dual chats as tabs and retain both panels with
+  // display:none. Messages arriving in the hidden tab must be measured and
+  // bottom-anchored when focus reveals it without changing its session id.
+  await win.setViewportSize({ width: 640, height: 900 })
+  await win.locator('[data-chat-workspace][data-chat-presentation="tabs"]').waitFor()
+  await win.getByRole('tab', { name: 'Dual A' }).click()
+  await win.locator('[data-chat-slot-wrapper="secondary"]').waitFor({ state: 'hidden' })
+  const hiddenEvents = Array.from({ length: 36 }, (_, index) => ({
+    type: index % 2 === 0 ? 'user.message' : 'content',
+    threadId: 'dual-b',
+    ...(index % 2 === 0
+      ? { at: Date.now() + index, origin: `hidden-origin-${index}`, text: `Hidden tab turn ${index + 1}` }
+      : { messageId: `hidden-answer-${index}`, text: `Hidden tab answer ${index + 1}\n${liveParagraph}`, streamKind: 'assistant' }),
+  }))
+  await emitProviderEvents(hiddenEvents)
+  await win.getByRole('tab', { name: 'Dual B' }).click()
+  await win.locator('[data-chat-slot-wrapper="secondary"]').waitFor({ state: 'visible' })
+  await win.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const revealedScroll = await secondary.locator('[data-message-list-scroll]').evaluate((scroller) => {
+    return {
+      scrollTop: scroller.scrollTop,
+      clientHeight: scroller.clientHeight,
+      scrollHeight: scroller.scrollHeight,
+    }
+  })
+  if (revealedScroll.scrollTop + revealedScroll.clientHeight < revealedScroll.scrollHeight - 2) {
+    console.error('revealed hidden chat scroll geometry', JSON.stringify(revealedScroll))
+  }
+  assert(
+    revealedScroll.scrollTop + revealedScroll.clientHeight >= revealedScroll.scrollHeight - 2,
+    'revealing a populated hidden chat restores its bottom anchor',
+  )
 
   console.log('\nall dual-chat workspace checks passed')
 } finally {

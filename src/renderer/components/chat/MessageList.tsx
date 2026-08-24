@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo } from 'react'
+import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react'
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { MessageBubble } from './MessageBubble'
 import { useVirtualizer } from '@tanstack/react-virtual'
@@ -9,6 +9,7 @@ import { activitySummaryLabel, projectTurnPresentation } from './turnPresentatio
 interface MessageListProps {
   messages: ChatMessage[]
   sessionId?: string | null
+  visible?: boolean
   agentType?: AgentType
   // Promise-returning so the cards downstream can re-enable themselves when
   // the underlying IPC rejects.
@@ -20,6 +21,58 @@ interface MessageListProps {
     status: 'accepted' | 'rejected' | 'partial',
     contentToWrite: string | null,
   ) => void | Promise<void>
+}
+
+function MeasuredTurn({
+  index,
+  start,
+  group,
+  measureElement,
+  children,
+}: {
+  index: number
+  start: number
+  group: ChatMessage[]
+  measureElement: (node: HTMLDivElement | null) => void
+  children: ReactNode
+}) {
+  const rowRef = useRef<HTMLDivElement>(null)
+  const previousGroupRef = useRef<ChatMessage[] | null>(null)
+  const setRowRef = useCallback((node: HTMLDivElement | null) => {
+    rowRef.current = node
+    measureElement(node)
+  }, [measureElement])
+
+  // ResizeObserver is the long-lived safety net, but a React commit already
+  // knows this same-key turn may have changed height. Grouping creates fresh
+  // array wrappers whenever any message changes, so compare the preserved
+  // message object identities and only force layout for the affected turn.
+  useLayoutEffect(() => {
+    const previous = previousGroupRef.current
+    previousGroupRef.current = group
+    const changed = !previous
+      || previous.length !== group.length
+      || group.some((message, messageIndex) => message !== previous[messageIndex])
+    if (changed && rowRef.current) measureElement(rowRef.current)
+  })
+
+  return (
+    <div
+      ref={setRowRef}
+      data-index={index}
+      data-virtual-turn
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        width: '100%',
+        transform: `translateY(${start}px)`,
+        marginBottom: '4px',
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
 /**
@@ -84,12 +137,15 @@ export function roleLabel(role: ChatMessage['role'], agentType: AgentType = 'cla
  * matches the pre-virtualized layout exactly; tests for `groupIntoTurns`
  * still pass since the grouping is the same.
  */
-export function MessageList({ messages, sessionId, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
+export function MessageList({ messages, sessionId, visible = true, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const isScrollLockedRef = useRef(false)
+  const programmaticScrollRef = useRef(false)
   const prevSessionIdRef = useRef<string | null | undefined>(sessionId)
 
   const turns = useMemo(() => groupIntoTurns(messages), [messages])
+  const turnsLengthRef = useRef(turns.length)
+  turnsLengthRef.current = turns.length
 
   // Skill-name set for the current session - passed to each bubble so
   // leading-`/cmd` chips only render for commands that actually exist.
@@ -117,34 +173,113 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
     if (!container) return
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight
+    if (programmaticScrollRef.current) {
+      if (distanceFromBottom <= 50) isScrollLockedRef.current = false
+      return
+    }
     isScrollLockedRef.current = distanceFromBottom > 50
   }, [])
 
-  // Jump to bottom instantly when switching sessions - UNLESS the session
-  // switch was triggered by a search-result click (pendingScrollToMessage
-  // for this same sessionId is set). In that case, the pending-scroll
-  // effect below will jump to the right row; we mustn't race it to the
-  // bottom first.
+  const beginProgrammaticFollow = useCallback(() => {
+    programmaticScrollRef.current = true
+  }, [])
+
+  const finishProgrammaticFollow = useCallback(() => {
+    const container = containerRef.current
+    if (container) {
+      const distanceFromBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight
+      if (distanceFromBottom <= 50) isScrollLockedRef.current = false
+    }
+    programmaticScrollRef.current = false
+  }, [])
+
+  const measureMountedTurns = useCallback(() => {
+    containerRef.current
+      ?.querySelectorAll<HTMLDivElement>('[data-virtual-turn]')
+      .forEach((row) => virtualizer.measureElement(row))
+  }, [virtualizer])
+
+  const scrollToLatestIfFollowing = useCallback(() => {
+    const turnCount = turnsLengthRef.current
+    if (isScrollLockedRef.current || turnCount === 0) return
+    const pending = useAgentStore.getState().pendingScrollToMessage
+    if (pending && pending.sessionId === sessionId) return
+    virtualizer.scrollToIndex(turnCount - 1, { align: 'end', behavior: 'auto' })
+  }, [sessionId, virtualizer])
+
+  // Session changes and tab reveals are explicit inputs. ResizeObserver can
+  // coalesce a fast display:none → flex cycle and never report the zero-size
+  // state, so visibility cannot be inferred reliably from geometry alone.
   useEffect(() => {
-    if (prevSessionIdRef.current !== sessionId) {
+    const sessionChanged = prevSessionIdRef.current !== sessionId
+    if (sessionChanged) {
       prevSessionIdRef.current = sessionId
       const pending = useAgentStore.getState().pendingScrollToMessage
       const hasPendingForThis = pending && pending.sessionId === sessionId
       isScrollLockedRef.current = !!hasPendingForThis
       if (hasPendingForThis) return
-      // A persistently mounted secondary panel may have initialized at
-      // display:none with a zero-size viewport. Remeasure after the slot is
-      // visible, then scroll using those dimensions.
-      requestAnimationFrame(() => {
-        virtualizer.measure()
-        requestAnimationFrame(() => {
-          if (turns.length > 0) {
-            virtualizer.scrollToIndex(turns.length - 1, { align: 'end' })
-          }
-        })
-      })
     }
-  }, [sessionId])
+    if (!visible || turnsLengthRef.current === 0) return
+    beginProgrammaticFollow()
+    virtualizer.measure()
+    let secondFrame = 0
+    let finalFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      measureMountedTurns()
+      secondFrame = requestAnimationFrame(() => {
+        measureMountedTurns()
+        scrollToLatestIfFollowing()
+        finalFrame = requestAnimationFrame(finishProgrammaticFollow)
+      })
+    })
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+      cancelAnimationFrame(finalFrame)
+      finishProgrammaticFollow()
+    }
+  }, [sessionId, visible, beginProgrammaticFollow, finishProgrammaticFollow, measureMountedTurns, scrollToLatestIfFollowing, virtualizer])
+
+  // A tab, board, or pane can reveal this list by changing an ancestor from
+  // display:none without changing sessionId. TanStack observes the new
+  // viewport size, but it cannot infer that hidden follow-scroll attempts were
+  // no-ops. Rebuild measurements and restore the bottom anchor on reveal.
+  useEffect(() => {
+    const container = containerRef.current
+    if (!visible || !container || typeof ResizeObserver === 'undefined') return
+    let wasVisible = container.clientWidth > 0 && container.clientHeight > 0
+    let firstFrame = 0
+    let secondFrame = 0
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect
+      const visible = !!box && box.width > 0 && box.height > 0
+      if (visible && !wasVisible) {
+        // Clearing is intentionally separated from DOM measurement by a
+        // frame. Measuring immediately after `measure()` compares against
+        // the old measurement array and can leave the new size map empty,
+        // making every row fall back to the 120px estimate.
+        beginProgrammaticFollow()
+        virtualizer.measure()
+        firstFrame = requestAnimationFrame(() => {
+          measureMountedTurns()
+          secondFrame = requestAnimationFrame(() => {
+            measureMountedTurns()
+            scrollToLatestIfFollowing()
+            requestAnimationFrame(finishProgrammaticFollow)
+          })
+        })
+      }
+      wasVisible = visible
+    })
+    observer.observe(container)
+    return () => {
+      observer.disconnect()
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+      finishProgrammaticFollow()
+    }
+  }, [sessionId, visible, turns.length > 0, beginProgrammaticFollow, finishProgrammaticFollow, measureMountedTurns, scrollToLatestIfFollowing, virtualizer])
 
   // Auto-scroll-to-bottom on new messages (only if user hasn't scrolled up).
   // Same guard as above: if a pending search-jump is in flight for this
@@ -153,14 +288,28 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
     if (isScrollLockedRef.current || turns.length === 0) return
     const pending = useAgentStore.getState().pendingScrollToMessage
     if (pending && pending.sessionId === sessionId) return
-    // rAF lets the appended row mount before the jump. Keep this instant:
-    // TanStack Virtual suppresses measurements outside its target buffer
-    // during smooth scrolling, which leaves tall rows at the estimate and
-    // makes independently positioned turns overlap.
-    requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(turns.length - 1, { align: 'end', behavior: 'auto' })
+    // The first pass mounts the target buffer and measures it; the second uses
+    // those sizes to place and anchor the final row. Keep both jumps instant:
+    // smooth scrolling suppresses measurements outside its target buffer.
+    beginProgrammaticFollow()
+    let secondFrame = 0
+    let finalFrame = 0
+    const firstFrame = requestAnimationFrame(() => {
+      measureMountedTurns()
+      scrollToLatestIfFollowing()
+      secondFrame = requestAnimationFrame(() => {
+        measureMountedTurns()
+        scrollToLatestIfFollowing()
+        finalFrame = requestAnimationFrame(finishProgrammaticFollow)
+      })
     })
-  }, [messages.length])
+    return () => {
+      cancelAnimationFrame(firstFrame)
+      cancelAnimationFrame(secondFrame)
+      cancelAnimationFrame(finalFrame)
+      finishProgrammaticFollow()
+    }
+  }, [messages.length, beginProgrammaticFollow, finishProgrammaticFollow, measureMountedTurns, scrollToLatestIfFollowing, sessionId, turns.length])
 
   // Honor "scroll to message" requests (from SearchModal). Finds the turn
   // containing the target message, jumps the virtualizer there, then
@@ -264,7 +413,10 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
   return (
     <div
       ref={containerRef}
+      data-message-list-scroll
       onScroll={handleScroll}
+      onWheel={() => { programmaticScrollRef.current = false }}
+      onPointerDown={() => { programmaticScrollRef.current = false }}
       style={{
         flex: 1,
         overflowY: 'auto',
@@ -312,18 +464,12 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
           )
 
           return (
-            <div
+            <MeasuredTurn
               key={vi.key}
-              data-index={vi.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${vi.start}px)`,
-                marginBottom: '4px',
-              }}
+              index={vi.index}
+              start={vi.start}
+              group={group}
+              measureElement={virtualizer.measureElement}
             >
               {/* Turn role label */}
               <div style={{
@@ -373,7 +519,7 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
                   minute: '2-digit',
                 })}
               </div>
-            </div>
+            </MeasuredTurn>
           )
         })}
       </div>

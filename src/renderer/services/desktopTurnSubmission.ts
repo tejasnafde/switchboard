@@ -1,8 +1,12 @@
 import {
+  echoMessageId,
   validateUserTurnSubmission,
+  visibleUserMessageText,
+  type RuntimeUserMessageEvent,
   type UserTurnSubmissionResult,
   type UserTurnSubmissionV1,
 } from '@shared/provider-events'
+import type { ChatMessage } from '@shared/types'
 
 export type DesktopTurnSubmissionOutcome =
   | { accepted: true; delivery: 'accepted'; result: Extract<UserTurnSubmissionResult, { accepted: true }> }
@@ -16,6 +20,51 @@ export type DesktopTurnSubmissionOutcome =
 export interface DesktopTurnSubmissionDependencies {
   startSession: () => Promise<void>
   submit: (turn: UserTurnSubmissionV1) => Promise<UserTurnSubmissionResult>
+}
+
+export function pendingDesktopUserMessage(
+  turn: UserTurnSubmissionV1,
+  timestamp: number = Date.now(),
+): ChatMessage {
+  return {
+    id: echoMessageId(turn.origin),
+    role: 'user',
+    content: turn.providerText,
+    displayBody: turn.displayBody,
+    pillsMeta: turn.pillsMeta,
+    images: turn.images,
+    timestamp,
+    deliveryState: 'pending',
+  }
+}
+
+export function acceptedDesktopUserMessage(event: RuntimeUserMessageEvent): ChatMessage | null {
+  const visibleText = visibleUserMessageText(event.text, event.displayBody)
+  if (visibleText === null) return null
+  return {
+    id: echoMessageId(event.origin ?? String(event.at)),
+    role: 'user',
+    content: event.text,
+    displayBody: visibleText === event.text ? undefined : visibleText,
+    pillsMeta: event.pillsMeta,
+    images: event.images,
+    timestamp: event.at,
+  }
+}
+
+export function pendingDesktopTurnDisposition(
+  outcome: DesktopTurnSubmissionOutcome,
+): 'accepted' | 'remove' | 'unconfirmed' {
+  if (outcome.accepted) return 'accepted'
+  return outcome.delivery === 'pending' || outcome.delivery === 'ambiguous'
+    ? 'unconfirmed'
+    : 'remove'
+}
+
+export function resolvedDesktopTurnDeliveryState(
+  status: 'abandoned' | 'completed',
+): ChatMessage['deliveryState'] {
+  return status === 'abandoned' ? 'abandoned' : undefined
 }
 
 /**

@@ -264,6 +264,12 @@ export interface ChatMessage {
   displayBody?: string
   /** Pill metadata keyed by token id. Persisted as JSON alongside `displayBody`. */
   pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
+  /**
+   * Renderer-only state for a Desktop turn that has not received its
+   * canonical backend echo. Pending messages are never persisted through the
+   * ordinary transcript path; the accepted echo clears this field in place.
+   */
+  deliveryState?: 'pending' | 'unconfirmed' | 'abandoned'
 }
 
 export interface AgentMessagePayload {
