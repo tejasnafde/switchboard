@@ -17,6 +17,7 @@ import type { WorktreeCreationStatus } from '@shared/worktree-creation'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 import { searchMessagesInDatabase, type SearchResult } from './message-search'
 import { commitConversationProfileSwitch } from './conversation-profile-commit'
+import { ensureConversationForkSchema } from './conversation-fork'
 import {
   ensureWorktreeCreationSchema,
   getKanbanWorktreeCreationKey as getKanbanWorktreeCreationKeyFromDb,
@@ -569,6 +570,7 @@ function migrate(db: Database.Database): void {
   `)
 
   ensureTurnAcceptanceSchema(db)
+  ensureConversationForkSchema(db)
   recoverUndispatchedTurns(db)
   ensureWorktreeCreationSchema(db)
 
@@ -1009,6 +1011,17 @@ export interface ConversationRow {
   worktree_creation_id?: string | null
   worktree_creation_status?: WorktreeCreationStatus | null
   worktree_creation_recovery_json?: string | null
+  provider_instance_id?: string | null
+  runtime_mode?: RuntimeMode | null
+  model?: string | null
+  reasoning_effort?: string | null
+  launch_config_name?: string | null
+  pending_handoff_from?: string | null
+  fork_anchor_digest?: string | null
+  fork_anchor_role?: string | null
+  fork_anchor_timestamp?: number | null
+  fork_anchor_canonical_count?: number | null
+  fork_resume_mode?: string | null
 }
 
 /**
