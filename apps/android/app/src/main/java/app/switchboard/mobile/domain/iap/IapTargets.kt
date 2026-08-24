@@ -15,6 +15,12 @@ data class IapTarget(
     val networkInterface: String = "nic0",
 )
 
+data class IapTargetSelection(
+    val available: List<IapDiscoveredTarget>,
+    val discoveredCount: Int,
+    val alreadyAddedCount: Int,
+)
+
 object IapTargetDiscovery {
     fun merge(sources: List<List<IapDiscoveredTarget>>): List<IapDiscoveredTarget> {
         val seen = mutableSetOf<String>()
@@ -27,6 +33,43 @@ object IapTargetDiscovery {
             }
         }
     }
+
+    fun select(
+        sources: List<List<IapDiscoveredTarget>>,
+        saved: List<IapTarget>,
+    ): IapTargetSelection {
+        val discovered = mergeNormalized(sources)
+        val savedKeys = saved.mapTo(mutableSetOf(), ::key)
+        val available = discovered.filterNot { key(it) in savedKeys }
+        return IapTargetSelection(
+            available = available,
+            discoveredCount = discovered.size,
+            alreadyAddedCount = discovered.size - available.size,
+        )
+    }
+
+    private fun mergeNormalized(sources: List<List<IapDiscoveredTarget>>): List<IapDiscoveredTarget> {
+        val seen = mutableSetOf<String>()
+        return buildList {
+            for (source in sources) {
+                for (target in source) {
+                    if (seen.add(key(target))) add(target)
+                }
+            }
+        }
+    }
+
+    private fun key(target: IapDiscoveredTarget): String = listOf(
+        target.project,
+        target.zone,
+        target.instance,
+    ).joinToString("\u0000") { it.trim().lowercase() }
+
+    private fun key(target: IapTarget): String = listOf(
+        target.project,
+        target.zone,
+        target.instance,
+    ).joinToString("\u0000") { it.trim().lowercase() }
 }
 
 sealed interface IapManualTargetResult {

@@ -4,8 +4,12 @@
  * coercing it to 22.
  */
 import { describe, it, expect } from 'vitest'
-import { isDuplicateMachine, parsePort } from '../../src/renderer/components/sidebar/addMachineValidation'
-import type { Machine } from '@shared/machines'
+import {
+  isDuplicateMachine,
+  parsePort,
+  partitionSshHosts,
+} from '../../src/renderer/components/sidebar/addMachineValidation'
+import type { Machine, SshHost } from '@shared/machines'
 
 const mk = (over: Partial<Machine>): Machine => ({
   id: 'm1', name: 'prod', sshAlias: null, sshHost: '10.0.0.1', sshUser: null,
@@ -31,6 +35,30 @@ describe('isDuplicateMachine', () => {
   it('does not flag a genuinely new host', () => {
     const remotes = [mk({ sshAlias: 'a', sshHost: 'a.example.com' })]
     expect(isDuplicateMachine(remotes, { sshAlias: 'b', sshHost: 'b.example.com' })).toBe(false)
+  })
+})
+
+describe('partitionSshHosts', () => {
+  const hosts: SshHost[] = [
+    { alias: 'new-box', hostName: 'new.example.com', user: 'ubuntu', port: 22 },
+    { alias: 'prod-box', hostName: 'changed.example.com', user: 'deploy', port: 2222 },
+    { alias: 'manual-box', hostName: 'manual.example.com', user: 'root', port: 22 },
+  ]
+
+  it('keeps only actionable hosts in the available partition', () => {
+    const remotes = [
+      mk({ id: 'alias', sshAlias: 'PROD-BOX', sshHost: 'old.example.com', sshUser: 'deploy' }),
+      mk({ id: 'manual', sshAlias: null, sshHost: 'manual.example.com', sshUser: 'root' }),
+    ]
+
+    expect(partitionSshHosts(hosts, remotes)).toEqual({
+      available: [hosts[0]],
+      alreadyAdded: [hosts[1], hosts[2]],
+    })
+  })
+
+  it('returns every host as available when no machines have been saved', () => {
+    expect(partitionSshHosts(hosts, [])).toEqual({ available: hosts, alreadyAdded: [] })
   })
 })
 

@@ -7,6 +7,7 @@ import app.switchboard.mobile.domain.remote.BrowseDecisions
 import app.switchboard.mobile.domain.remote.CommandFollowUp
 import app.switchboard.mobile.domain.remote.CreateConversation
 import app.switchboard.mobile.domain.remote.ImageInput
+import app.switchboard.mobile.domain.iap.IapDiscoveredTarget
 import app.switchboard.mobile.domain.remote.ProviderKind
 import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchRequest
 import app.switchboard.mobile.domain.remote.ProviderInstanceSwitchResult
@@ -35,6 +36,33 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SwitchboardRemoteClientTest {
+    @Test
+    fun `IAP discovery uses the existing machine channel and decodes SSH config targets`() {
+        val rpc = FakeRemoteRpc()
+        val client = SwitchboardRemoteClient("mac-a", rpc)
+        val responses = mutableListOf<RemoteResponse<List<IapDiscoveredTarget>>>()
+        rpc.reply(
+            JsonArray(
+                listOf(
+                    obj(
+                        "alias" to JsonString("work-vm"),
+                        "instance" to JsonString("vm-a"),
+                        "project" to JsonString("project-a"),
+                        "zone" to JsonString("asia-south1-b"),
+                    ),
+                ),
+            ),
+        )
+
+        client.listIapTargets(responses::add)
+
+        assertCall(rpc, "machines:list-iap-targets")
+        assertEquals(
+            IapDiscoveredTarget("work-vm", "vm-a", "project-a", "asia-south1-b"),
+            (responses.single().outcome as RemoteOutcome.Success).value.single(),
+        )
+    }
+
     @Test
     fun `push commands preserve arguments and parse domain rejection inside successful response`() {
         val rpc = FakeRemoteRpc()

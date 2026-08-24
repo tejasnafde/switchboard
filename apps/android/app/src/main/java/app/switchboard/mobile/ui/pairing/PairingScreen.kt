@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -26,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.switchboard.mobile.ui.theme.GeistMono
 import app.switchboard.mobile.ui.theme.TextDim
+import app.switchboard.mobile.domain.iap.IapDiscoveredTarget
+import app.switchboard.mobile.domain.iap.IapTargetSelection
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -62,6 +66,9 @@ fun PairingScreen(
     modifier: Modifier = Modifier,
     googleAccountReady: Boolean = false,
     onGoogleAccountRequired: () -> Unit = {},
+    discoverIapTargets: suspend () -> IapTargetSelection = {
+        IapTargetSelection(emptyList(), 0, 0)
+    },
 ) {
     if (editConnectionId != null && initialForm == null) {
         MissingEditState(onBack = onBack, modifier = modifier)
@@ -96,7 +103,17 @@ fun PairingScreen(
     }
     var validationError by remember(editConnectionId) { mutableStateOf<PairingValidation.Invalid?>(null) }
     var saveState by remember(editConnectionId) { mutableStateOf<PairingSaveState>(PairingSaveState.Idle) }
+    var iapDiscovery by remember(editConnectionId) {
+        mutableStateOf<IapTargetSelection?>(null)
+    }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(kind, editConnectionId) {
+        if (kind == PairingConnectionKind.IAP && editConnectionId == null) {
+            iapDiscovery = null
+            iapDiscovery = discoverIapTargets()
+        }
+    }
 
     fun clearValidationError(field: PairingField) {
         if (validationError?.field == field) validationError = null
@@ -202,6 +219,19 @@ fun PairingScreen(
                         label = { Text("Google IAP") },
                     )
                 }
+            }
+            if (kind == PairingConnectionKind.IAP && editConnectionId == null) {
+                IapDiscoverySection(
+                    presentation = PairingIapDiscoveryPolicy.present(iapDiscovery),
+                    onSelect = { target ->
+                        if (label.isBlank()) label = target.alias
+                        project = target.project
+                        zone = target.zone
+                        instance = target.instance
+                        validationError = null
+                        saveState = PairingSaveState.Idle
+                    },
+                )
             }
             PairingField(
                 label = "Name",
@@ -381,6 +411,86 @@ fun PairingScreen(
                     Text("Scan a QR instead")
                 }
             }
+        }
+    }
+}
+
+sealed interface IapDiscoveryPresentation {
+    data object Loading : IapDiscoveryPresentation
+    data class Available(val targets: List<IapDiscoveredTarget>) : IapDiscoveryPresentation
+    data class AllAdded(val count: Int) : IapDiscoveryPresentation
+    data object Empty : IapDiscoveryPresentation
+}
+
+object PairingIapDiscoveryPolicy {
+    fun present(selection: IapTargetSelection?): IapDiscoveryPresentation = when {
+        selection == null -> IapDiscoveryPresentation.Loading
+        selection.available.isNotEmpty() -> IapDiscoveryPresentation.Available(selection.available)
+        selection.discoveredCount > 0 -> IapDiscoveryPresentation.AllAdded(selection.alreadyAddedCount)
+        else -> IapDiscoveryPresentation.Empty
+    }
+}
+
+@Composable
+private fun IapDiscoverySection(
+    presentation: IapDiscoveryPresentation,
+    onSelect: (IapDiscoveredTarget) -> Unit,
+) {
+    Column(modifier = Modifier.padding(bottom = 16.dp)) {
+        Text(
+            text = "FROM CONNECTED MACS",
+            color = TextDim,
+            style = MaterialTheme.typography.labelSmall,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        when (presentation) {
+            IapDiscoveryPresentation.Loading -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                Text(
+                    text = "Reading SSH config…",
+                    color = TextDim,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(start = 10.dp),
+                )
+            }
+
+            is IapDiscoveryPresentation.Available -> presentation.targets.forEach { target ->
+                OutlinedButton(
+                    onClick = { onSelect(target) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 8.dp)
+                        .heightIn(min = 48.dp),
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(target.alias, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            "${target.project} · ${target.zone}",
+                            color = TextDim,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text("Use")
+                }
+            }
+
+            is IapDiscoveryPresentation.AllAdded -> Text(
+                text = "All ${presentation.count} discovered VMs are already added.",
+                color = TextDim,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+
+            IapDiscoveryPresentation.Empty -> Text(
+                text = "No SSH-config VMs found on a connected Mac. Enter one manually below.",
+                color = TextDim,
+                style = MaterialTheme.typography.bodyMedium,
+            )
         }
     }
 }

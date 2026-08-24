@@ -13,6 +13,11 @@ import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
 import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.domain.iap.IapDiscoveredTarget
+import app.switchboard.mobile.domain.iap.IapTarget
+import app.switchboard.mobile.domain.iap.IapTargetDiscovery
+import app.switchboard.mobile.domain.iap.IapTargetSelection
+import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
@@ -24,6 +29,11 @@ import app.switchboard.mobile.ui.browse.BrowseThreadActivity
 import java.io.Closeable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlin.coroutines.resume
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.suspendCancellableCoroutine
 
 class AndroidRootNavigationRuntime(
     private val fleet: ConnectionFleet,
@@ -46,6 +56,18 @@ class AndroidRootNavigationRuntime(
     override val queuedTurns: StateFlow<List<QueuedTurn>> = composer.queuedTurns
 
     override fun lease(connectionId: String): ReadyClientLease? = clients.lease(connectionId)
+
+    override suspend fun discoverIapTargets(
+        connectionIds: List<String>,
+        saved: List<IapTarget>,
+    ): IapTargetSelection = coroutineScope {
+        val sources = connectionIds
+            .distinct()
+            .mapNotNull(clients::lease)
+            .map { lease -> async { lease.discoverIapTargets() } }
+            .awaitAll()
+        IapTargetDiscovery.select(sources, saved)
+    }
 
     override fun connect(connectionId: String) = fleet.connect(connectionId)
 
@@ -100,3 +122,14 @@ class AndroidRootNavigationRuntime(
     override fun registerViewingLeaseRenewal(callback: () -> Unit): Closeable =
         registerViewingRenewal(callback)
 }
+
+private suspend fun ReadyClientLease.discoverIapTargets(): List<IapDiscoveredTarget> =
+    suspendCancellableCoroutine { continuation ->
+        client.listIapTargets { response ->
+            val targets = when (val outcome = response.outcome) {
+                is RemoteOutcome.Success -> outcome.value
+                is RemoteOutcome.Failure -> emptyList()
+            }
+            if (continuation.isActive) continuation.resume(targets)
+        }
+    }

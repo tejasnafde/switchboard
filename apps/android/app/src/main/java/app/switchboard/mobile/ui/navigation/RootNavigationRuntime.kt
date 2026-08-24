@@ -15,6 +15,8 @@ import app.switchboard.mobile.domain.connection.ConnectionStatus
 import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.domain.iap.IapTarget
+import app.switchboard.mobile.domain.iap.IapTargetSelection
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
@@ -52,6 +54,11 @@ interface RootNavigationRuntime {
         get() = EmptyNewSessionWorktreeCreationStore
 
     fun lease(connectionId: String): ReadyClientLease?
+
+    suspend fun discoverIapTargets(
+        connectionIds: List<String>,
+        saved: List<IapTarget>,
+    ): IapTargetSelection = IapTargetSelection(emptyList(), 0, 0)
 
     fun connect(connectionId: String)
 

@@ -1,0 +1,76 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ssh-host-discovery-refresh",
+  "summary": "Refresh machine discovery whenever an add flow opens, keep saved machines out of the actionable list, and provide SSH-config-backed IAP discovery on both mobile implementations.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/sidebar/AddMachineModal.tsx",
+        "src/renderer/components/sidebar/addMachineValidation.ts",
+        "tests/unit/add-machine-validation.test.ts",
+        "e2e/ssh-host-discovery.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/iapDiscovery.ts",
+        "apps/mobile/src/screens/PairScreen.tsx",
+        "tests/unit/mobile-iap-discovery.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/iap/IapTargets.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/AndroidRootNavigationRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/pairing/PairingScreen.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClientTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/iap/IapTargetSelectionTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/pairing/PairingIapDiscoveryPolicyTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ipc-channels.ts",
+        "src/main/ipc/machines.ts",
+        "apps/mobile/src/lib/api.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Discovery reads the existing SSH config and saved connection records without changing either stored shape, identity, credential handling, database schema, or migration behavior."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/plans/2026-08-24-ssh-host-discovery-refresh-design.md",
+        "docs/releasing.md",
+        "CHANGELOG.md",
+        "apps/android/app/build.gradle.kts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Desktop and React Native discovery policy Vitest coverage",
+      "Native Android discovery policy, decoder, and presentation JVM tests",
+      "Repository typecheck and complete test gate",
+      "React Native/iOS TypeScript typecheck",
+      "Native Android JVM tests, lint, debug assembly, and Android-test compilation in GitHub Actions",
+      "Feature-parity validation against origin/main",
+      "Electron Playwright E2E that rewrites an isolated SSH config between Add machine openings"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "React Native/iOS discovery was not exercised on iPhone hardware.",
+      "Native Android discovery and signed in-place upgrade were not exercised on Android hardware.",
+      "Desktop packaged auto-update was not exercised from the previous public build."
+    ]
+  }
+}

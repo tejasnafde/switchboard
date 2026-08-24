@@ -72,6 +72,8 @@ import app.switchboard.mobile.ui.pairing.PairingForm
 import app.switchboard.mobile.ui.pairing.PairingSaveIntent
 import app.switchboard.mobile.ui.pairing.PairingSaveResult
 import app.switchboard.mobile.ui.pairing.PairingScreen
+import app.switchboard.mobile.domain.iap.IapTarget
+import app.switchboard.mobile.domain.iap.IapTargetSelection
 import app.switchboard.mobile.ui.search.MessageSearchRouteHost
 import app.switchboard.mobile.ui.search.MessageSearchScreen
 import app.switchboard.mobile.data.remote.MessageSearchState
@@ -270,6 +272,21 @@ fun SwitchboardNavigation(
                 ),
                 onGoogleAccountRequired = {
                     navigationState = navigationState.push(AppRoute.GoogleAccount)
+                },
+                discoverIapTargets = {
+                    val ready = visibleConnections as? ConnectionsLoadState.Ready
+                    val ids = ready?.connections.orEmpty().map { it.id }
+                    val saved = ready?.connections.orEmpty().mapNotNull { connection ->
+                        val form = resolveEditForm(connection.id)
+                        if (form?.kind != app.switchboard.mobile.ui.pairing.PairingConnectionKind.IAP) {
+                            null
+                        } else {
+                            val port = form.port.toIntOrNull() ?: return@mapNotNull null
+                            IapTarget(form.project, form.zone, form.instance, port)
+                        }
+                    }
+                    runtime?.discoverIapTargets(ids, saved)
+                        ?: IapTargetSelection(emptyList(), 0, 0)
                 },
             )
 

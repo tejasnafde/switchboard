@@ -1,5 +1,6 @@
 package app.switchboard.mobile.domain.remote
 
+import app.switchboard.mobile.domain.iap.IapDiscoveredTarget
 import app.switchboard.mobile.domain.thread.decodeMessagePills
 import app.switchboard.mobile.protocol.JsonArray
 import app.switchboard.mobile.protocol.JsonBoolean
@@ -10,6 +11,17 @@ import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.protocol.JsonValue
 
 object RemoteDecoders {
+    fun iapTargets(value: JsonValue?): List<IapDiscoveredTarget> =
+        value.array().values.map {
+            val raw = it.obj()
+            IapDiscoveredTarget(
+                alias = raw.stringRequired("alias"),
+                instance = raw.stringRequired("instance"),
+                project = raw.stringRequired("project"),
+                zone = raw.stringRequired("zone"),
+            )
+        }
+
     fun projects(value: JsonValue?): List<Project> =
         value.array().values.map { project(it.obj()) }
 

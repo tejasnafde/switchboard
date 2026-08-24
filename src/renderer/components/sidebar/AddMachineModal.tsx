@@ -5,11 +5,11 @@
  * form edits an existing machine in place (ssh picker hidden, saves via
  * update() - no connect side effect).
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useMachineStore } from '../../stores/machine-store'
 import { filterSshHosts } from './sshHostFilter'
-import { isDuplicateMachine, parsePort } from './addMachineValidation'
+import { isDuplicateMachine, parsePort, partitionSshHosts } from './addMachineValidation'
 import { createRendererLogger } from '../../logger'
 import type { SshHost, Machine, MachineInput } from '@shared/machines'
 
@@ -21,6 +21,7 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
   const add = useMachineStore((s) => s.add)
   const update = useMachineStore((s) => s.update)
   const connect = useMachineStore((s) => s.connect)
+  const loadSshHosts = useMachineStore((s) => s.loadSshHosts)
 
   const editing = !!editMachine
   const [name, setName] = useState(editMachine?.name ?? '')
@@ -35,8 +36,24 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
   // one's re-hydrate lands (which would add the same host twice).
   const [adding, setAdding] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [refreshing, setRefreshing] = useState(!editing)
+  const [showAlreadyAdded, setShowAlreadyAdded] = useState(false)
 
-  const filteredHosts = filterSshHosts(sshHosts, search)
+  useEffect(() => {
+    if (editing) return
+    let current = true
+    setRefreshing(true)
+    void loadSshHosts().finally(() => {
+      if (current) setRefreshing(false)
+    })
+    return () => { current = false }
+  }, [editing, loadSshHosts])
+
+  const { available, alreadyAdded } = partitionSshHosts(sshHosts, remotes)
+  const filteredAvailable = filterSshHosts(available, search)
+  const filteredAlreadyAdded = filterSshHosts(alreadyAdded, search)
+  const searching = search.trim().length > 0
+  const addedSectionOpen = searching ? filteredAlreadyAdded.length > 0 : showAlreadyAdded
   const parsedPort = parsePort(port)
 
   const runAs = () => remoteUser.trim() || null
@@ -118,7 +135,7 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
       // else submits the manual form. Without the split, Enter while
       // searching would submit a half-abandoned manual entry.
       if (target.dataset.sshSearch) {
-        if (filteredHosts.length > 0) addFromSsh(filteredHosts[0])
+        if (filteredAvailable.length > 0) addFromSsh(filteredAvailable[0])
       } else {
         addManual()
       }
@@ -130,9 +147,12 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
       <div className="machine-modal" onClick={(e) => e.stopPropagation()} onKeyDown={onKeyDown}>
         <div className="machine-modal-title">{editing ? 'Edit machine' : 'Add machine'}</div>
 
-        {!editing && sshHosts.length > 0 && (
+        {!editing && (refreshing || sshHosts.length > 0) && (
           <div className="machine-modal-section">
-            <div className="machine-modal-label">From ~/.ssh/config</div>
+            <div className="machine-modal-section-heading">
+              <div className="machine-modal-label">From ~/.ssh/config</div>
+              {refreshing && <div className="machine-modal-refreshing" role="status">Refreshing…</div>}
+            </div>
             <input
               className="machine-modal-input"
               placeholder={`Search ${sshHosts.length} hosts...`}
@@ -142,30 +162,55 @@ export function AddMachineModal({ onClose, editMachine }: { onClose: () => void;
               autoFocus
             />
             <div className="machine-modal-hostlist">
-              {filteredHosts.map((h) => {
-                const isDup = isDuplicateMachine(remotes, { sshAlias: h.alias, sshHost: h.hostName ?? h.alias, sshUser: h.user ?? null })
-                return (
-                  <button
-                    key={h.alias}
-                    className="machine-modal-host"
-                    onClick={() => addFromSsh(h)}
-                    disabled={adding || isDup}
-                    title={isDup ? 'Already added' : undefined}
-                  >
-                    <span className="machine-modal-host-alias">
-                      {h.alias}
-                      {isDup ? ' (already added)' : ''}
-                    </span>
-                    <span className="machine-modal-host-addr">
-                      {h.user ? `${h.user}@` : ''}
-                      {h.hostName}
-                      {h.port !== 22 ? `:${h.port}` : ''}
-                    </span>
-                  </button>
-                )
-              })}
-              {filteredHosts.length === 0 && <div className="machine-modal-empty">No matching hosts</div>}
+              {filteredAvailable.map((h) => (
+                <button
+                  key={h.alias}
+                  className="machine-modal-host"
+                  onClick={() => addFromSsh(h)}
+                  disabled={adding}
+                >
+                  <span className="machine-modal-host-alias">{h.alias}</span>
+                  <span className="machine-modal-host-addr">
+                    {h.user ? `${h.user}@` : ''}
+                    {h.hostName}
+                    {h.port !== 22 ? `:${h.port}` : ''}
+                  </span>
+                </button>
+              ))}
+              {!refreshing && filteredAvailable.length === 0 && (
+                <div className="machine-modal-empty">
+                  {available.length === 0 && alreadyAdded.length > 0 && !searching
+                    ? `All ${alreadyAdded.length} SSH hosts are already added`
+                    : 'No new matching hosts'}
+                </div>
+              )}
             </div>
+            {alreadyAdded.length > 0 && (
+              <details
+                className="machine-modal-added"
+                open={addedSectionOpen}
+                onToggle={(event) => {
+                  if (!searching) setShowAlreadyAdded(event.currentTarget.open)
+                }}
+              >
+                <summary>Already added ({alreadyAdded.length})</summary>
+                <div className="machine-modal-hostlist machine-modal-hostlist--added">
+                  {filteredAlreadyAdded.map((h) => (
+                    <div key={h.alias} className="machine-modal-host machine-modal-host--added">
+                      <span className="machine-modal-host-alias">{h.alias}</span>
+                      <span className="machine-modal-host-addr">
+                        {h.user ? `${h.user}@` : ''}
+                        {h.hostName}
+                        {h.port !== 22 ? `:${h.port}` : ''}
+                      </span>
+                    </div>
+                  ))}
+                  {filteredAlreadyAdded.length === 0 && (
+                    <div className="machine-modal-empty">No added hosts match</div>
+                  )}
+                </div>
+              </details>
+            )}
           </div>
         )}
 

@@ -3,7 +3,7 @@
  * they're unit-testable without mounting the component (see sshHostFilter.ts
  * for the same pattern applied to the host search box).
  */
-import type { Machine } from '@shared/machines'
+import type { Machine, SshHost } from '@shared/machines'
 
 /** True when `candidate` matches an already-added remote by ssh alias, or by
  *  user@host when neither side has an alias. Prevents the same host from
@@ -19,6 +19,25 @@ export function isDuplicateMachine(
     if (alias && m.sshAlias && m.sshAlias.trim().toLowerCase() === alias) return true
     return m.sshHost.trim().toLowerCase() === host && (m.sshUser?.trim().toLowerCase() ?? '') === user
   })
+}
+
+export function partitionSshHosts(
+  hosts: SshHost[],
+  remotes: Machine[],
+): { available: SshHost[]; alreadyAdded: SshHost[] } {
+  const available: SshHost[] = []
+  const alreadyAdded: SshHost[] = []
+  for (const host of hosts) {
+    const target = isDuplicateMachine(remotes, {
+      sshAlias: host.alias,
+      sshHost: host.hostName ?? host.alias,
+      sshUser: host.user ?? null,
+    })
+      ? alreadyAdded
+      : available
+    target.push(host)
+  }
+  return { available, alreadyAdded }
 }
 
 const MIN_PORT = 1
@@ -37,4 +56,3 @@ export function parsePort(input: string): number | null {
   if (n < MIN_PORT || n > MAX_PORT) return null
   return n
 }
-

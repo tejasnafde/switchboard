@@ -31,6 +31,7 @@ import { useHeaderHeight } from '@react-navigation/elements'
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native'
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack'
 import type { SshIapTarget } from '@shared/machines'
+import { selectAvailableIapTargets, type IapTargetSelection } from '../lib/iapDiscovery'
 import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, fonts, radius, space, type, HIT } from '../theme'
@@ -93,7 +94,7 @@ export default function PairScreen() {
   const [kind, setKind] = useState<Kind>(editConfig?.kind ?? 'ws')
   // Editing cannot be done by scanning, so a saved machine opens straight to the form.
   const [manual, setManual] = useState(Boolean(editId))
-  const [discovered, setDiscovered] = useState<SshIapTarget[] | null>(null)
+  const [discovery, setDiscovery] = useState<IapTargetSelection | null>(null)
 
   const [label, setLabel] = useState(editConfig?.label ?? '')
   const [url, setUrl] = useState(editConfig?.kind === 'ws' ? editConfig.url : '')
@@ -117,6 +118,7 @@ export default function PairScreen() {
   useEffect(() => {
     if (kind !== 'iap') return
     let cancelled = false
+    setDiscovery(null)
     const configs = useConnectionsStore.getState().configs
     void Promise.all(
       configs.map(
@@ -127,15 +129,10 @@ export default function PairScreen() {
       ),
     ).then((lists) => {
       if (cancelled) return
-      const seen = new Set<string>()
-      const merged: SshIapTarget[] = []
-      for (const target of lists.flat()) {
-        const key = `${target.project}/${target.zone}/${target.instance}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        merged.push(target)
-      }
-      setDiscovered(merged)
+      setDiscovery(selectAvailableIapTargets(
+        lists,
+        configs.flatMap((config) => config.kind === 'iap' ? [config] : []),
+      ))
     })
     return () => {
       cancelled = true
@@ -282,15 +279,15 @@ export default function PairScreen() {
         <ScrollView contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
           <Text style={styles.overline}>WORK VM OVER IAP</Text>
 
-          {discovered === null ? (
+          {discovery === null ? (
             <View style={styles.loadingRow}>
               <ActivityIndicator size="small" color={colors.textDim} />
               <Text style={styles.mutedBody}>Asking your machines what they can reach</Text>
             </View>
-          ) : discovered.length > 0 ? (
+          ) : discovery.available.length > 0 ? (
             <>
               <Text style={styles.mutedBody}>From your Mac&apos;s ssh config. Tap to add.</Text>
-              {discovered.map((target) => (
+              {discovery.available.map((target) => (
                 <Pressable
                   key={`${target.project}/${target.zone}/${target.instance}`}
                   onPress={() => saveIap(target)}
@@ -305,6 +302,13 @@ export default function PairScreen() {
                 </Pressable>
               ))}
             </>
+          ) : discovery.discoveredCount > 0 ? (
+            <View style={styles.notice}>
+              <Text style={styles.noticeTitle}>All discovered VMs are already added</Text>
+              <Text style={styles.mutedBody}>
+                Manage existing connections from the Machines screen, or enter another VM manually.
+              </Text>
+            </View>
           ) : (
             <View style={styles.notice}>
               <Text style={styles.noticeTitle}>Nothing to discover yet</Text>

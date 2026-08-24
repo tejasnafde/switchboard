@@ -8,6 +8,7 @@ import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.CurrentBranchResult
 import app.switchboard.mobile.domain.remote.CreateConversation
 import app.switchboard.mobile.domain.remote.ImageInput
+import app.switchboard.mobile.domain.iap.IapDiscoveredTarget
 import app.switchboard.mobile.domain.remote.LoadedSession
 import app.switchboard.mobile.domain.remote.MessageSearchResult
 import app.switchboard.mobile.domain.remote.MarkReadResult
@@ -77,12 +78,16 @@ object BackendChannels {
     const val WorktreeCreationGet = "worktree-creation:get"
     const val WorktreeCreationAct = "worktree-creation:act"
     const val WorktreeCreationProgress = "worktree-creation:progress"
+    const val ListIapTargets = "machines:list-iap-targets"
 }
 
 class SwitchboardRemoteClient(
     val connectionId: String,
     private val rpc: RemoteRpc,
 ) : MessageSearchRemote, GitContextRemote {
+    fun listIapTargets(callback: (RemoteResponse<List<IapDiscoveredTarget>>) -> Unit) =
+        call(BackendChannels.ListIapTargets, decoder = RemoteDecoders::iapTargets, callback = callback)
+
     fun serverVersion(callback: (RemoteResponse<String>) -> Unit) =
         call(BackendChannels.ServerVersion, decoder = {
             (it as? JsonString)?.value ?: error("Expected server version string")
