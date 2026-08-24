@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   formatIdeSelection,
   formatTerminalContext,
+  contextElementForSelection,
   sessionIdForContextElement,
 } from '../../src/renderer/services/contextBridge'
 import { nextCommittedIdeBinding, sameIdeWorkspaceTarget } from '../../src/renderer/services/ideWorkspaceBinding'
@@ -112,6 +113,17 @@ describe('formatTerminalContext', () => {
 })
 
 describe('session-aware context routing', () => {
+  it('uses the focused terminal when the browser selection anchor has no routing metadata', () => {
+    const terminal = {
+      getAttribute: (name: string) => name === 'data-context-source' ? 'terminal' : null,
+      parentElement: null,
+    }
+    const xtermInput = { getAttribute: () => null, parentElement: terminal }
+    const unrelatedAnchor = { getAttribute: () => null, parentElement: null }
+
+    expect(contextElementForSelection(unrelatedAnchor, xtermInput)).toBe(xtermInput)
+  })
+
   it('resolves chat selection ownership from its containing message session', () => {
     const root = {
       getAttribute: (name: string) => name === 'data-session-id' ? 'right-session' : null,

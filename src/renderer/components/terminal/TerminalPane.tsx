@@ -112,6 +112,8 @@ export const TerminalPane = memo(function TerminalPane(props: TerminalPaneProps)
     <div
       ref={wrapperRef}
       data-terminal-pane="true"
+      data-context-source="terminal"
+      data-session-id={props.sessionId}
       style={{
         display: 'flex',
         flexDirection: 'column',

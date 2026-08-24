@@ -47,9 +47,18 @@ import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgent
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composerRegistry'
 import { useDraftStore } from './stores/draft-store'
-import { nextChatPresentation, shouldEvictReplacedSession, type ChatPresentation } from './services/chatWorkspace'
+import { nextChatPresentation, nextDualChatShortcutAction, shouldEvictReplacedSession, type ChatPresentation } from './services/chatWorkspace'
 
 const log = createRendererLogger('app')
+
+function toggleDualChatWorkspace(openPicker: () => void): void {
+  const layout = useLayoutStore.getState()
+  if (nextDualChatShortcutAction(layout) === 'close-secondary') {
+    layout.closeChatSlot('secondary')
+  } else {
+    openPicker()
+  }
+}
 
 /** Map a SessionSummary's provider `source` to the agent-store's `AgentType`. */
 function agentTypeForSource(source: SessionSummary['source']): 'claude-code' | 'codex' | 'opencode' {
@@ -403,7 +412,7 @@ export function App() {
 
   useEffect(() => {
     if (typeof window.api?.onOpenChatBeside !== 'function') return
-    return window.api.onOpenChatBeside(() => setSessionPickerOpen(true))
+    return window.api.onOpenChatBeside(() => toggleDualChatWorkspace(() => setSessionPickerOpen(true)))
   }, [])
 
   // ⌘W  close active TAB (close window when last tab)
@@ -1079,14 +1088,7 @@ export function App() {
         //
         else if (e.key === '|' || (e.key === '\\' && e.shiftKey)) {
           e.preventDefault()
-          const layout = useLayoutStore.getState()
-          if (layout.secondarySessionId) {
-            layout.closeChatSlot('secondary')
-          } else {
-            // Open the session picker - lets the user choose which session
-            // opens in the right panel instead of auto-picking the last one.
-            setSessionPickerOpen(true)
-          }
+          toggleDualChatWorkspace(() => setSessionPickerOpen(true))
         }
         // ⌘+Backspace - interrupt the current agent turn. xterm's helper
         // textarea counts as text input so ⌘+Delete keeps its line-kill behavior.
@@ -1336,7 +1338,7 @@ export function App() {
             </div>
             {activeTerminalPaneId && (
               <div style={{ width: '100%', height: '100%', display: 'flex', minWidth: 0 }}>
-                <TerminalSessionPane paneId={activeTerminalPaneId} />
+                <TerminalSessionPane paneId={activeTerminalPaneId} sessionId={companionAgentSessionId!} />
               </div>
             )}
           </div>

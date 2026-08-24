@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CHAT_WORKSPACE,
   nextChatPresentation,
+  nextDualChatShortcutAction,
   reconcileChatWorkspace,
   shouldEvictReplacedSession,
   type ChatWorkspaceState,
@@ -181,5 +182,10 @@ describe('chat workspace reconciliation', () => {
   it('never evicts a session that remains displayed after slot selection', () => {
     expect(shouldEvictReplacedSession('a', ['a', 'b'])).toBe(false)
     expect(shouldEvictReplacedSession('a', ['c', 'b'])).toBe(true)
+  })
+
+  it('gives native and renderer shortcuts the same open-or-close decision', () => {
+    expect(nextDualChatShortcutAction(DEFAULT_CHAT_WORKSPACE)).toBe('open-picker')
+    expect(nextDualChatShortcutAction(dual())).toBe('close-secondary')
   })
 })

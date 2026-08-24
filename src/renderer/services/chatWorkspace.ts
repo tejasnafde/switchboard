@@ -54,6 +54,14 @@ export function focusedChatSessionId(state: ChatWorkspaceState): string | null {
 
 export const companionSessionId = focusedChatSessionId
 
+export type DualChatShortcutAction = 'open-picker' | 'close-secondary'
+
+export function nextDualChatShortcutAction(
+  state: Pick<ChatWorkspaceState, 'secondarySessionId'>,
+): DualChatShortcutAction {
+  return state.secondarySessionId ? 'close-secondary' : 'open-picker'
+}
+
 export function shouldEvictReplacedSession(
   sessionId: string,
   displayedAfterSelection: readonly string[],

@@ -174,8 +174,13 @@ export function findActiveTerminalSelection(sessionId?: string | null): {
  * or null if there isn't one - caller should fall back to the legacy
  * terminal-only path.
  */
-export function findContextSource(el: Element | null): string | null {
-  let cur: Element | null = el
+export interface ContextElement {
+  getAttribute(name: string): string | null
+  parentElement: ContextElement | null
+}
+
+export function findContextSource(el: ContextElement | null): string | null {
+  let cur: ContextElement | null = el
   while (cur) {
     const v = cur.getAttribute?.('data-context-source')
     if (v) return v
@@ -184,9 +189,12 @@ export function findContextSource(el: Element | null): string | null {
   return null
 }
 
-interface ContextElement {
-  getAttribute(name: string): string | null
-  parentElement: ContextElement | null
+export function contextElementForSelection(
+  anchorElement: ContextElement | null,
+  activeElement: ContextElement | null,
+): ContextElement | null {
+  if (findContextSource(anchorElement)) return anchorElement
+  return findContextSource(activeElement) ? activeElement : null
 }
 
 export function sessionIdForContextElement(el: ContextElement | null): string | null {
@@ -231,12 +239,16 @@ export function captureSelection(): boolean {
     anchor instanceof Element
       ? anchor
       : (anchor?.parentElement ?? null)
-  const source = findContextSource(anchorEl)
+  const activeEl = typeof document !== 'undefined' && document.activeElement instanceof Element
+    ? document.activeElement
+    : null
+  const contextEl = contextElementForSelection(anchorEl, activeEl)
+  const source = findContextSource(contextEl)
 
   if (source === 'chat-message') {
     const text = getDomSelectionText()
     if (!text.trim()) return false
-    const sid = sessionIdForContextElement(anchorEl)
+    const sid = sessionIdForContextElement(contextEl)
     if (!sid) return false
     const session = useAgentStore.getState().sessions.find((s) => s.id === sid)
     const agent = session ? agentShortLabel(session.type) : 'agent'
@@ -256,7 +268,7 @@ export function captureSelection(): boolean {
   }
 
   if (source === 'terminal') {
-    return appendTerminalSelectionToDraft(sessionIdForContextElement(anchorEl))
+    return appendTerminalSelectionToDraft(sessionIdForContextElement(contextEl))
   }
 
   // Default: legacy terminal flow.

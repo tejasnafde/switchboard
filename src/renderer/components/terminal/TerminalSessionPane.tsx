@@ -7,9 +7,10 @@ import { attachToContainer, fitTerminal } from '../../services/terminal-registry
 
 interface Props {
   paneId: string
+  sessionId: string
 }
 
-export function TerminalSessionPane({ paneId }: Props) {
+export function TerminalSessionPane({ paneId, sessionId }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,6 +27,8 @@ export function TerminalSessionPane({ paneId }: Props) {
     <div
       ref={containerRef}
       data-terminal-pane={paneId}
+      data-context-source="terminal"
+      data-session-id={sessionId}
       style={{ flex: '1 1 0%', minWidth: 0, minHeight: 0, overflow: 'hidden' }}
     />
   )
