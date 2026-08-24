@@ -137,6 +137,7 @@ import { WsHost } from '../../src/main/backend/ws-host'
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import { WsTransport } from '../../src/shared/ws-transport'
 import { ProviderChannels } from '../../src/shared/ipc-channels'
+import { hashClientScope } from '../../src/main/backend/request-context'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../../src/main/provider/types'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
 import { AtomicUserTurnSubmission, DurableTurnAcceptance } from '../../src/main/provider/durable-turn-acceptance'
@@ -741,6 +742,10 @@ describe('provider switching over the WebSocket boundary', () => {
       END;
     `)
 
+    // v0.8.35's mobile outbox treats a resolved positional call as accepted
+    // regardless of its body. The compatibility endpoint must reject with a
+    // retry-classified transport-shaped error or that released client drops
+    // this ambiguous turn permanently.
     await expect(client!.invoke(
       ProviderChannels.SEND_TURN,
       't1',
@@ -748,7 +753,7 @@ describe('provider switching over the WebSocket boundary', () => {
       undefined,
       [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
       'durable-origin',
-    )).resolves.toMatchObject({ accepted: false, state: 'ambiguous' })
+    )).rejects.toThrow(/network.*unconfirmed/i)
 
     expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1)
     expect(events.some((event) => event.type === 'user.message')).toBe(false)
@@ -758,6 +763,33 @@ describe('provider switching over the WebSocket boundary', () => {
     expect(atomicDb!.prepare(`
       SELECT state FROM mobile_turn_acceptances WHERE origin = 'durable-origin'
     `).get()).toEqual({ state: 'dispatching' })
+  })
+
+  it('explicitly abandons an unconfirmed delivery before allowing the next origin', async () => {
+    const { cwd, atomicDb } = await setup()
+    await client!.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider: 'claude', cwd })
+    atomicDb!.prepare(`
+      INSERT INTO mobile_turn_acceptances
+        (client_scope, thread_id, origin, payload_hash, state, accepted_at)
+      VALUES (?, 't1', 'uncertain-origin', 'hash', 'dispatching', 1)
+    `).run(hashClientScope('trusted-ws', 'local-trust-boundary'))
+
+    await expect(client!.invoke(ProviderChannels.RESOLVE_USER_TURN, {
+      version: 1,
+      threadId: 't1',
+      origin: 'uncertain-origin',
+      action: 'abandon',
+    })).resolves.toEqual({ status: 'abandoned', changed: true })
+    expect(atomicDb!.prepare(`
+      SELECT state FROM mobile_turn_acceptances WHERE origin = 'uncertain-origin'
+    `).get()).toEqual({ state: 'abandoned' })
+
+    await expect(client!.invoke(ProviderChannels.SUBMIT_USER_TURN, {
+      version: 1,
+      threadId: 't1',
+      origin: 'next-origin',
+      providerText: 'next message',
+    })).resolves.toMatchObject({ status: 'accepted' })
   })
 
   it('broadcasts images and available persisted pill presentation with the user echo', async () => {

@@ -6,7 +6,12 @@ import {
 
 export type DesktopTurnSubmissionOutcome =
   | { accepted: true; delivery: 'accepted'; result: Extract<UserTurnSubmissionResult, { accepted: true }> }
-  | { accepted: false; delivery: 'rejected' | 'pending' | 'ambiguous' | 'conflict'; error: string }
+  | {
+      accepted: false
+      delivery: 'rejected' | 'pending' | 'ambiguous' | 'conflict'
+      error: string
+      recoveryOrigin?: string
+    }
 
 export interface DesktopTurnSubmissionDependencies {
   startSession: () => Promise<void>
@@ -54,6 +59,7 @@ export async function submitDesktopUserTurn(
       accepted: false,
       delivery: 'ambiguous',
       error: `Delivery is unconfirmed. Retry this exact turn: ${errorMessage(error)}`,
+      recoveryOrigin: turn.origin,
     }
   }
 
@@ -61,7 +67,7 @@ export async function submitDesktopUserTurn(
     return { accepted: true, delivery: 'accepted', result }
   }
   if (result.status === 'ambiguous') {
-    return { accepted: false, delivery: 'ambiguous', error: result.reason }
+    return { accepted: false, delivery: 'ambiguous', error: result.reason, recoveryOrigin: turn.origin }
   }
   if (result.status === 'pending') {
     return { accepted: false, delivery: 'pending', error: result.reason }
@@ -69,7 +75,14 @@ export async function submitDesktopUserTurn(
   if (result.status === 'conflict') {
     return { accepted: false, delivery: 'conflict', error: result.reason }
   }
-  return { accepted: false, delivery: 'rejected', error: result.reason }
+  return {
+    accepted: false,
+    delivery: 'rejected',
+    error: result.reason,
+    ...('blockingOrigin' in result && result.blockingOrigin
+      ? { recoveryOrigin: result.blockingOrigin }
+      : {}),
+  }
 }
 
 export interface DesktopTurnAttemptRegistry {

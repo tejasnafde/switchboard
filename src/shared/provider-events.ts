@@ -46,6 +46,19 @@ export interface UserTurnSubmissionV1 {
   autoTitleText?: string
 }
 
+export interface UserTurnResolutionV1 {
+  version: 1
+  threadId: string
+  origin: string
+  action: 'abandon'
+}
+
+export type UserTurnResolutionResult =
+  | { status: 'abandoned'; changed: boolean }
+  | { status: 'completed'; changed: false }
+  | { status: 'pending'; changed: false; reason: string }
+  | { status: 'not_found'; changed: false; reason: string }
+
 export type UserTurnSubmissionResult =
   | {
       status: 'accepted'
@@ -65,10 +78,11 @@ export type UserTurnSubmissionResult =
   | {
       status: 'rejected'
       accepted: false
-      duplicate: false
+      duplicate: boolean
       state: 'rejected'
       retryable: boolean
       reason: string
+      blockingOrigin?: string
     }
   | {
       status: 'conflict'

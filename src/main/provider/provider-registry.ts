@@ -57,6 +57,7 @@ import {
   type ProviderInstanceSwitchRequest,
   type UserTurnSubmissionResult,
   type UserTurnSubmissionV1,
+  type UserTurnResolutionV1,
 } from '@shared/provider-events'
 
 const log = createLogger('provider:registry')
@@ -121,7 +122,7 @@ export class ProviderRegistry implements PeerToolHost {
    * same way in chat.
    */
   private checkpoints = new CheckpointTracker()
-  private readonly atomicTurnSubmission: Pick<AtomicUserTurnSubmission, 'submit'>
+  private readonly atomicTurnSubmission: Pick<AtomicUserTurnSubmission, 'submit'> & Partial<Pick<AtomicUserTurnSubmission, 'resolve'>>
   /** Provider startup shared by every client that reaches a thread before its adapter exists. */
   private startingSessions = new Map<string, Promise<ProviderSession>>()
   private managedSessionStarter: ((opts: SessionStartOpts) => Promise<ProviderSession>) | null = null
@@ -156,7 +157,7 @@ export class ProviderRegistry implements PeerToolHost {
     host: BackendHost,
     adapters?: Map<ProviderKind, ProviderAdapter>,
     _turnAcceptance?: DurableTurnAcceptance,
-    atomicTurnSubmission?: Pick<AtomicUserTurnSubmission, 'submit'>,
+    atomicTurnSubmission?: Pick<AtomicUserTurnSubmission, 'submit'> & Partial<Pick<AtomicUserTurnSubmission, 'resolve'>>,
   ) {
     activeRegistry = this
     this.host = host
@@ -718,6 +719,15 @@ export class ProviderRegistry implements PeerToolHost {
 
     this.host.handle(ProviderChannels.SUBMIT_USER_TURN, async (input: UserTurnSubmissionV1) =>
       this.submitAtomicUserTurn(input))
+    this.host.handle(ProviderChannels.RESOLVE_USER_TURN, async (input: UserTurnResolutionV1) => {
+      if (!this.atomicTurnSubmission.resolve) throw new Error('turn resolution is unavailable')
+      const clientScope = currentBackendRequestContext()?.clientScope
+        ?? hashClientScope('unscoped-local', 'backend-host-without-request-context')
+      return this.atomicTurnSubmission.resolve(input, {
+        clientScope,
+        conversationId: resolveRootThreadId(input.threadId),
+      })
+    })
 
     // Proactive remote-auth preflight for the chat-open banner. `_threadId`
     // exists ONLY so the preload RoutingTable (which keys on args[0]) routes
@@ -1362,12 +1372,12 @@ function legacyAcceptanceResult(result: UserTurnSubmissionResult): TurnAcceptanc
     return { accepted: true, duplicate: result.duplicate, state: 'completed' }
   }
   if (result.status === 'pending' || result.status === 'ambiguous') {
-    return {
-      accepted: false,
-      duplicate: result.duplicate,
-      state: result.state,
-      reason: result.reason,
-    }
+    // v0.8.35 mobile typed this positional endpoint as Promise<void> and
+    // discarded any resolved body as success. Reject with its retry-classified
+    // network wording so it retains the exact origin instead of losing an
+    // ambiguous turn. Current clients use SUBMIT_USER_TURN and receive the
+    // structured state above directly.
+    throw new Error(`Network delivery unconfirmed; retry with the same origin. ${result.reason ?? ''}`.trim())
   }
   if (result.status === 'conflict') throw new TurnOriginConflictError()
   throw new TurnNotAcceptedError(result.reason)

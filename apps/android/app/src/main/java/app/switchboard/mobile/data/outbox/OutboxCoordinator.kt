@@ -179,6 +179,27 @@ class OutboxCoordinator(
         return true
     }
 
+    /** Called only after the backend durably records the user's decision not
+     * to redeliver an ambiguous provider call. */
+    @Synchronized
+    fun abandonResolved(origin: String): Boolean {
+        val turn = records[origin] ?: return false
+        if (turn.deliveryState !is OutboxDeliveryState.Ambiguous) return false
+        return when (store.delete(origin)) {
+            is OutboxStorageResult.Failure -> false
+            OutboxStorageResult.Success -> {
+                invalidateAttempt(turn)
+                records.remove(origin)
+                blockedThreads -= turn.threadKey()
+                attachmentStager.discard(turn.attachments)
+                scheduler.cancel(origin)
+                scheduledAt.remove(origin)
+                requestPump()
+                true
+            }
+        }
+    }
+
     @Synchronized
     fun dismiss(origin: String) {
         val turn = records[origin] ?: return

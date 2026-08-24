@@ -341,6 +341,61 @@ function reservePending(store: SqliteWorktreeCreationStore) {
 }
 
 describe('worktree creation restart recovery', () => {
+  it('finalizes a recorded rollback after a crash instead of rematerializing the removed worktree', async () => {
+    const harness = fixture()
+    const world: GitWorld = { state: { kind: 'absent' }, totalMaterializations: 0 }
+    const value = request()
+    const plan: WorktreeMaterializationPlan = {
+      repository: {
+        repositoryId: '/repo/.git',
+        commonGitDir: '/repo/.git',
+        projectPath: '/repo',
+      },
+      creationId: value.creationId,
+      requestedBaseRef: 'HEAD',
+      resolvedBaseCommit: RESOLVED_BASE_COMMIT,
+      branch: WORKTREE_BRANCH,
+      worktreePath: WORKTREE_PATH,
+      managedRoot: '/repo/.switchboard/worktrees',
+      containmentRoot: '/repo',
+    }
+    try {
+      harness.store.reserve({
+        machineId: value.repository.machineId,
+        creationId: value.creationId,
+        schemaVersion: value.schemaVersion,
+        requestJson: canonicalizeWorktreeCreationRequest(value),
+        payloadHash: createHash('sha256')
+          .update(canonicalizeWorktreeCreationIdentity(value))
+          .digest('hex'),
+        reservedPath: WORKTREE_PATH,
+        reservedBranch: WORKTREE_BRANCH,
+        requestedBaseRef: 'HEAD',
+        resolvedBaseCommit: RESOLVED_BASE_COMMIT,
+        materializationPlanJson: JSON.stringify(plan),
+        now: 900,
+      })
+      harness.db.prepare(`
+        UPDATE worktree_creations
+           SET phase = 'linking', status = 'pending', external_boundary = 'rollback_started'
+         WHERE machine_id = 'machine-local' AND creation_id = ?
+      `).run(value.creationId)
+
+      const git = new RecoveryGitPort(world)
+      const restarted = await createWorktreeCreationService(harness.options(git))
+      const recovered = await restarted.getWorktreeCreation({
+        machineId: value.repository.machineId,
+        creationId: value.creationId,
+      })
+
+      expect(recovered).toMatchObject({ phase: 'linking', status: 'rolled_back' })
+      expect(world.totalMaterializations).toBe(0)
+      expect(git.calls).not.toContain('materialize')
+    } finally {
+      harness.close()
+    }
+  })
+
   it('starts recovery in the background and single-flights a same-id retry while setup is blocked', async () => {
     const harness = fixture()
     const world: GitWorld = { state: { kind: 'absent' }, totalMaterializations: 0 }

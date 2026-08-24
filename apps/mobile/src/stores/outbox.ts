@@ -98,6 +98,31 @@ export async function acknowledgeAcceptedOrigin(
   return true
 }
 
+/** User-confirmed recovery for a provider call whose outcome cannot be proven.
+ * The backend resolves the durable blocker before the local record is removed,
+ * so a dropped response leaves the user able to repeat this action safely. */
+export async function abandonAmbiguous(
+  messageId: string,
+): Promise<{ message: QueuedMessage; status: 'abandoned' | 'completed' }> {
+  const message = useOutboxStore.getState().messages.find(
+    (candidate) => candidate.messageId === messageId && candidate.deliveryState === 'ambiguous',
+  )
+  if (!message) throw new Error('Unconfirmed message is no longer queued')
+  const client = getClient(message.connectionId)
+  if (!client) throw new Error('Backend not connected')
+  const result = await client.resolveTurn({
+    version: 1,
+    threadId: message.threadId,
+    origin: message.messageId,
+    action: 'abandon',
+  })
+  if (result.status !== 'abandoned' && result.status !== 'completed') {
+    throw new Error(result.reason)
+  }
+  await forget(message.messageId)
+  return { message, status: result.status }
+}
+
 export function openRejectedForEdit(messageId: string): QueuedMessage | null {
   const message = selectRejectedForEdit(useOutboxStore.getState().messages, messageId)
   if (!message) return null

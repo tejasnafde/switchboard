@@ -10,6 +10,8 @@ import { createServer, connect, type Server, type Socket } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { TcpHost } from '../../src/main/backend/tcp-host'
 import { currentBackendRequestContext } from '../../src/main/backend/request-context'
+import { TerminalChannels } from '../../src/shared/ipc-channels'
+import type { DeviceScope } from '../../src/shared/device-auth'
 
 let server: Server | null = null
 let sock: Socket | null = null
@@ -21,10 +23,10 @@ afterEach(() => {
   server = null
 })
 
-async function boot(token?: string): Promise<{ host: TcpHost; port: number }> {
+async function boot(token?: string, scopes?: readonly DeviceScope[]): Promise<{ host: TcpHost; port: number }> {
   const s = createServer()
   server = s
-  const host = new TcpHost(s, token)
+  const host = new TcpHost(s, token, scopes)
   await new Promise<void>((res) => s.listen(0, '127.0.0.1', () => res()))
   return { host, port: (s.address() as AddressInfo).port }
 }
@@ -189,5 +191,20 @@ describe('TcpHost framing', () => {
     host.emit('provider:event', { secret: true })
     await new Promise((res) => setTimeout(res, 40))
     expect(r.lines).toHaveLength(0)
+  })
+
+  it('filters outbound events through the authenticated device scopes', async () => {
+    const { host, port } = await boot(undefined, ['chat'])
+    host.handle('probe', () => 'ready')
+    const { socket, r } = await dial(port)
+    socket.write(JSON.stringify({ k: 'req', id: 1, ch: 'probe', args: [] }) + '\n')
+    expect(await r.next()).toMatchObject({ k: 'res', id: 1, ok: true })
+
+    host.emit(TerminalChannels.OUTPUT, 'terminal-1', 'secret output')
+    await new Promise((res) => setTimeout(res, 30))
+    expect(r.lines).toHaveLength(0)
+
+    host.emit('provider:event', { type: 'content', threadId: 'thread-1' })
+    expect(await r.next()).toMatchObject({ k: 'evt', ch: 'provider:event' })
   })
 })

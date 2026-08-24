@@ -418,8 +418,10 @@ export class ExecFileGitWorktreeAdapter {
     const inspection = await this.inspectMaterialization(plan)
     if (inspection.kind === 'absent') return { kind: 'absent' }
     if (inspection.kind === 'branch_only') {
-      if (mode === 'compensate' && inspection.headCommit !== plan.resolvedBaseCommit) {
-        return { kind: 'refused', reason: 'identity_mismatch' }
+      if (inspection.headCommit !== plan.resolvedBaseCommit) {
+        return mode === 'compensate'
+          ? { kind: 'refused', reason: 'identity_mismatch' }
+          : { kind: 'removed' }
       }
       await this.run(plan.repository.projectPath, ['branch', '-D', plan.branch])
       return { kind: 'removed' }
@@ -435,7 +437,9 @@ export class ExecFileGitWorktreeAdapter {
     ])).stdout
     if (status.trim().length > 0) return { kind: 'refused', reason: 'dirty' }
     await this.run(plan.repository.projectPath, ['worktree', 'remove', plan.worktreePath])
-    await this.run(plan.repository.projectPath, ['branch', '-D', plan.branch])
+    if (inspection.headCommit === plan.resolvedBaseCommit) {
+      await this.run(plan.repository.projectPath, ['branch', '-D', plan.branch])
+    }
     return { kind: 'removed' }
   }
 }

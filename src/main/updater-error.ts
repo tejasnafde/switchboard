@@ -30,6 +30,12 @@ export function isStaleDownloadError(raw: string): boolean {
  */
 const CHECK_TIMEOUT_RE = /^Update check timed out after \d+ms$/
 
+const MISSING_MANIFEST_RE = /(?:latest-mac\.yml|latest\.yml)[\s\S]*(?:404|not found)|(?:404|not found)[\s\S]*(?:latest-mac\.yml|latest\.yml)/i
+
+export function isMissingUpdateManifestError(raw: string): boolean {
+  return MISSING_MANIFEST_RE.test(raw)
+}
+
 /** True when the check passed its deadline but is still running. */
 export function isCheckTimeout(raw: string): boolean {
   return CHECK_TIMEOUT_RE.test(raw)
@@ -38,6 +44,9 @@ export function isCheckTimeout(raw: string): boolean {
 export function friendlyUpdateError(raw: string): string {
   if (NETWORK_RE.test(raw)) return 'No internet connection'
   if (isStaleDownloadError(raw)) return 'Update download was interrupted - try again'
+  if (isMissingUpdateManifestError(raw)) {
+    return 'The latest desktop release is missing its update manifest. Install from the release page or try again after the release is repaired.'
+  }
   // Not a failure: the request is still in flight and its real status
   // overwrites this. Measured, a slow path finished the check at ~77s.
   if (CHECK_TIMEOUT_RE.test(raw)) return 'Still checking. This network is slow to reach GitHub, so it will finish in the background.'

@@ -1145,6 +1145,7 @@ private fun RootNavigationRuntime.performOutboxAction(
 ) {
     when (action) {
         OutboxUiAction.Retry -> retryQueued(origin)
+        OutboxUiAction.Abandon -> abandonQueued(origin)
         OutboxUiAction.Edit -> beginQueuedEdit(key, origin)
         OutboxUiAction.Dismiss -> dismissQueued(origin)
     }

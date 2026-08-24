@@ -1245,6 +1245,30 @@ export class WorktreeCreationService {
   ): Promise<WorktreeCreationContinuation | void> {
     const key = { machineId: record.machineId, creationId: record.creationId }
 
+    if (record.externalBoundary === 'rollback_started') {
+      const inspection = await this.options.git.inspectMaterialization(plan)
+      if (request.owner.kind === 'fork') {
+        // The provider artifact may have crossed its own external boundary.
+        // Never recreate Git state while that outcome is unknown.
+        await this.markCleanupRequired(record)
+        return
+      }
+      if (inspection.kind === 'absent') {
+        this.rollBackReservation(record)
+        return
+      }
+      if (
+        inspection.kind === 'mismatch'
+        || (inspection.kind === 'exact' && inspection.headCommit !== plan.resolvedBaseCommit)
+        || (inspection.kind === 'branch_only' && inspection.headCommit !== plan.resolvedBaseCommit)
+      ) {
+        await this.markCleanupRequired(record)
+        return
+      }
+      await this.compensate(plan, record)
+      return
+    }
+
     const ownerCommitted = request.owner.kind === 'kanban-card'
       ? this.options.store.isKanbanOwnerCommitted(key)
       : request.owner.kind === 'conversation'
@@ -1386,9 +1410,10 @@ export class WorktreeCreationService {
 
   private async compensate(
     plan: WorktreeMaterializationPlan,
-    record: WorktreeCreationRecord,
+    inputRecord: WorktreeCreationRecord,
     cause?: unknown,
   ): Promise<WorktreeCreationSnapshot> {
+    const record = this.beginCompensation(inputRecord)
     let rollback: WorktreeRollbackResult
     try {
       rollback = await this.options.git.rollbackMaterialization(plan)
@@ -1429,10 +1454,11 @@ export class WorktreeCreationService {
 
   private async compensateFork(
     plan: WorktreeMaterializationPlan,
-    record: WorktreeCreationRecord,
+    inputRecord: WorktreeCreationRecord,
     stage: ForkWorktreeOwnerStage,
     cause?: unknown,
   ): Promise<WorktreeCreationSnapshot> {
+    const record = this.beginCompensation(inputRecord)
     let artifactRemoved = true
     let artifactError: unknown
     try {
@@ -1485,6 +1511,27 @@ export class WorktreeCreationService {
       record,
       cause === undefined ? undefined : this.compensatedError(record, cause),
     )
+  }
+
+  private beginCompensation(record: WorktreeCreationRecord): WorktreeCreationRecord {
+    if (record.externalBoundary === 'rollback_started') return record
+    const started = this.options.store.updateProgress({
+      machineId: record.machineId,
+      creationId: record.creationId,
+      expectedRevision: record.revision,
+      phase: record.phase,
+      status: 'pending',
+      externalBoundary: 'rollback_started',
+      now: this.now(),
+    })
+    if (started.kind === 'updated') {
+      this.publish(started.record)
+      return started.record
+    }
+    if (started.kind === 'stale' && started.record.externalBoundary === 'rollback_started') {
+      return started.record
+    }
+    throw new WorktreeCreationUnsafeActionError('Worktree creation changed before rollback could be recorded.')
   }
 
   private rollBackReservation(

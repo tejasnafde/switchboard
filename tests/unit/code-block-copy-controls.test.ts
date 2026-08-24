@@ -140,6 +140,35 @@ describe('Markdown code-block copy controls', () => {
     expect(copyControls(markup)).toHaveLength(1)
   })
 
+  it('treats raw HTML as text instead of executable renderer markup', () => {
+    const markup = renderMarkdownWithCopyControls([
+      '<script>window.api.files.deleteFile("/repo", "important")</script>',
+      '<img src=x onerror="window.api.app.quit()">',
+      '<svg><foreignObject><iframe srcdoc="<script>bad()</script>"></iframe></foreignObject></svg>',
+      '<form action="https://evil.invalid"><button>Send</button></form>',
+    ].join('\n'))
+
+    expect(markup).not.toMatch(/<(?:script|img|svg|foreignObject|iframe|form|button)\b/i)
+    expect(markup).not.toMatch(/<[^>]+\sonerror=/i)
+    expect(markup).toContain('&lt;script&gt;')
+  })
+
+  it('drops executable Markdown link and image destinations', () => {
+    const markup = renderMarkdownWithCopyControls([
+      '[script](javascript:window.api.app.quit())',
+      '[encoded](jav&#x61;script:alert(1))',
+      '[data](data:text/html,<script>alert(1)</script>)',
+      '![image](javascript:alert(1))',
+      '[safe](https://example.com/docs?q=1&x=2)',
+      '[relative](./docs/readme.md)',
+    ].join('\n\n'))
+
+    expect(markup).not.toMatch(/(?:href|src)="(?:javascript|data):/i)
+    expect(markup).not.toMatch(/href="jav&#x61;script:/i)
+    expect(markup).toContain('href="https://example.com/docs?q=1&amp;x=2"')
+    expect(markup).toContain('href="./docs/readme.md"')
+  })
+
   it('degrades to Marked output if its code wrapper shape changes', () => {
     const changed = '<div class="future-code"><code>safe</code></div>\n'
 

@@ -183,7 +183,7 @@ export async function removeWorktree(
 
   if (opts.deleteBranch && opts.deleteBranch.startsWith('kanban/')) {
     try {
-      await runner(['branch', '-D', opts.deleteBranch], repoPath)
+      await runner(['branch', '-d', opts.deleteBranch], repoPath)
     } catch (err) {
       log.warn(`branch delete (${opts.deleteBranch}) failed: ${err instanceof Error ? err.message : String(err)}`)
     }

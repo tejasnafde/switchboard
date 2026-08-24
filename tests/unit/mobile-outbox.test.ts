@@ -21,6 +21,7 @@ import {
   recoverRejectedDraft,
   selectRejectedForEdit,
   queuedBubbleExists,
+  resolvedAmbiguousBubbleAction,
   retryDelayMs,
   shouldRetry,
   MAX_RETRY_DELAY_MS,
@@ -142,6 +143,13 @@ describe('atomic acceptance results', () => {
       duplicate: true,
       reason: 'origin changed',
     })).toEqual({ disposition: 'conflict', retryable: false, reason: 'origin changed' })
+  })
+})
+
+describe('ambiguous resolution presentation', () => {
+  it('removes only an abandoned optimistic bubble', () => {
+    expect(resolvedAmbiguousBubbleAction('abandoned')).toBe('remove')
+    expect(resolvedAmbiguousBubbleAction('completed')).toBe('keep')
   })
 })
 

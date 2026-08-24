@@ -214,6 +214,7 @@ export class TcpHost implements BackendHost {
   }
 
   emit(channel: string, ...args: unknown[]): void {
+    if (!isChannelAllowed(this.deviceScopes, channel)) return
     const line = encodeFrame({ k: 'evt', ch: channel, args }) + '\n'
     for (const client of this.clients) {
       // Unauthed sockets must never receive session events.

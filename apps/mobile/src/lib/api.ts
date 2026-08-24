@@ -16,6 +16,8 @@ import type {
   ProviderInstanceSwitchResult,
   UserTurnSubmissionV1,
   UserTurnSubmissionResult,
+  UserTurnResolutionV1,
+  UserTurnResolutionResult,
 } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
@@ -284,6 +286,10 @@ export class SwitchboardClient {
         envelope.origin,
       )
     }
+  }
+
+  resolveTurn(resolution: UserTurnResolutionV1): Promise<UserTurnResolutionResult> {
+    return this.transport.invoke(ProviderChannels.RESOLVE_USER_TURN, resolution)
   }
 
   /** Skills the live agent reports. Empty until its session is up. */

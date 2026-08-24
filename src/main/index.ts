@@ -499,7 +499,7 @@ app.whenReady().then(() => {
       join(app.getAppPath(), 'resources/icons/switchboard-logo-512.png')
     )
     if (!dockIcon.isEmpty()) {
-      app.dock.setIcon(dockIcon)
+      app.dock?.setIcon(dockIcon)
     }
   }
 

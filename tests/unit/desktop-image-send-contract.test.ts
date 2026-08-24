@@ -132,6 +132,29 @@ describe('Desktop atomic user-turn submission', () => {
       accepted: false,
       delivery: 'ambiguous',
       error: 'Delivery is unconfirmed. Retry this exact turn: socket closed',
+      recoveryOrigin: 'desktop-origin-1',
+    })
+  })
+
+  it('surfaces the durable blocking origin after a Desktop restart', async () => {
+    const result = await submitDesktopUserTurn(envelope(undefined), {
+      startSession: async () => {},
+      submit: async () => ({
+        status: 'rejected',
+        accepted: false,
+        duplicate: false,
+        state: 'rejected',
+        retryable: true,
+        reason: 'Earlier turn delivery is unresolved',
+        blockingOrigin: 'origin-from-before-restart',
+      }),
+    })
+
+    expect(result).toEqual({
+      accepted: false,
+      delivery: 'rejected',
+      error: 'Earlier turn delivery is unresolved',
+      recoveryOrigin: 'origin-from-before-restart',
     })
   })
 

@@ -37,6 +37,46 @@ const PRODUCT_FILES = new Set([
 const MANIFEST_DIRECTORY = 'docs/feature-parity'
 const MANIFEST_PATTERN = /^docs\/feature-parity\/[^/]+\.json$/
 
+const SURFACE_EVIDENCE_PATTERNS = {
+  desktop: [
+    /^src\/(?:main|preload|renderer)\//,
+    /^resources\//,
+    /^build\//,
+    /^tests\//,
+    /^e2e\//,
+    /^electron-builder(?:\.signed)?\.yml$/,
+  ],
+  reactNativeIos: [/^apps\/mobile\//, /^tests\/unit\/mobile-/],
+  nativeAndroid: [/^apps\/android\//, /^tests\/unit\/(?:android|native-android)-/],
+  sharedBackendApi: [
+    /^src\/(?:main|preload|server|shared)\//,
+    /^apps\/mobile\/src\/lib\/api\.ts$/,
+    /^apps\/android\/.*\/(?:data\/remote|domain\/remote)\//,
+    /^tests\//,
+  ],
+  storageDataMigration: [
+    /^src\/main\/db\//,
+    /^src\/main\/conversations\//,
+    /^apps\/mobile\//,
+    /^apps\/android\//,
+    /^tests\//,
+    /^e2e\//,
+  ],
+  // Compatibility and rollout evidence may legitimately live beside the
+  // behavior it releases as well as in workflows, scripts, and docs.
+  updateRelease: [
+    /^\.github\//,
+    /^build\//,
+    /^scripts\//,
+    /^docs\//,
+    /^tests\//,
+    /^src\//,
+    /^apps\//,
+    /^(?:CHANGELOG|README)\.md$/,
+    /^(?:package\.json|app-update\.yml|electron-builder(?:\.signed)?\.yml)$/,
+  ],
+}
+
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim().length > 0
 }
@@ -45,7 +85,7 @@ function nonEmptyStringArray(value) {
   return Array.isArray(value) && value.length > 0 && value.every(nonEmptyString)
 }
 
-export function validateFeatureParityManifest(manifest) {
+export function validateFeatureParityManifest(manifest, { repoRoot } = {}) {
   const errors = []
   if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
     return ['manifest must be an object']
@@ -76,6 +116,30 @@ export function validateFeatureParityManifest(manifest) {
         errors.push(
           `surfaces.${surfaceName}.evidence must contain at least one item for implemented`,
         )
+      }
+      if (surface.status === 'implemented' && nonEmptyStringArray(surface.evidence) && repoRoot) {
+        const patterns = SURFACE_EVIDENCE_PATTERNS[surfaceName]
+        for (const rawEvidence of surface.evidence) {
+          const evidence = rawEvidence.split('#', 1)[0].replaceAll('\\', '/')
+          const evidencePath = resolve(repoRoot, evidence)
+          const rel = relative(repoRoot, evidencePath).replaceAll('\\', '/')
+          if (!evidence || rel.startsWith('../') || rel === '..') {
+            errors.push(`surfaces.${surfaceName}.evidence escapes the repository: ${rawEvidence}`)
+            continue
+          }
+          if (!existsSync(evidencePath)) {
+            errors.push(`surfaces.${surfaceName}.evidence path does not exist: ${rawEvidence}`)
+            continue
+          }
+          if (!patterns.some((pattern) => pattern.test(evidence))) {
+            const label = surfaceName === 'nativeAndroid'
+              ? 'native Android'
+              : surfaceName === 'reactNativeIos'
+                ? 'React Native/iOS'
+                : surfaceName
+            errors.push(`surfaces.${surfaceName}.evidence is outside the ${label} surface: ${rawEvidence}`)
+          }
+        }
       }
       if (surface.status === 'not_applicable' && !nonEmptyString(surface.reason)) {
         errors.push(`surfaces.${surfaceName}.reason is required for not_applicable`)
@@ -166,7 +230,7 @@ export function runFeatureParityValidation({ repoRoot, all = false, base = '', f
       failures.push(`${relative(repoRoot, manifestFile)}: invalid JSON (${error.message})`)
       continue
     }
-    for (const error of validateFeatureParityManifest(manifest)) {
+    for (const error of validateFeatureParityManifest(manifest, { repoRoot })) {
       failures.push(`${relative(repoRoot, manifestFile)}: ${error}`)
     }
   }

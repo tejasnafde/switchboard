@@ -96,6 +96,8 @@ class OutboxRuntime(
 
     fun retry(origin: String): Boolean = coordinator.retry(origin).also { publish() }
 
+    fun abandonResolved(origin: String): Boolean = coordinator.abandonResolved(origin).also { publish() }
+
     fun dismiss(origin: String) {
         coordinator.dismiss(origin)
         publish()

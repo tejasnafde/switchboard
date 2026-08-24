@@ -86,6 +86,8 @@ interface RootNavigationRuntime {
 
     fun retryQueued(origin: String) = Unit
 
+    fun abandonQueued(origin: String) = Unit
+
     fun dismissQueued(origin: String) = Unit
 
     fun eventsFor(scope: TransportScope): Flow<ProtocolHubEvent>

@@ -111,6 +111,12 @@ export function acceptanceDisposition(result: unknown): AcceptanceDisposition {
   return decodeTurnAcceptance(result).disposition
 }
 
+export function resolvedAmbiguousBubbleAction(
+  status: 'abandoned' | 'completed',
+): 'remove' | 'keep' {
+  return status === 'abandoned' ? 'remove' : 'keep'
+}
+
 export function freezePreparedTurn(
   message: QueuedMessage,
   prepared: { pending: boolean; wireMessage: string },

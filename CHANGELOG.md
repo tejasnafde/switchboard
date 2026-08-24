@@ -2,6 +2,31 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.47 - Certify the v0.8.35 upgrade
+
+### Fixed
+- **A live v0.8.35 profile can upgrade without an intermediate install.** The published v0.8.35 SQLite shape now has a repeatable migration fixture covering projects, conversations, messages, images, display bodies, settings, integrity, foreign keys, and idempotent relaunch.
+- **Desktop updates cannot be hidden by a mobile release.** Native Android releases no longer become GitHub Latest, and a missing desktop update manifest is surfaced as a repairable error instead of “up to date.”
+- **Unconfirmed turns no longer disappear or wedge a thread forever.** The v0.8.35 positional client retains ambiguous responses; current Desktop, iOS, and Android clients can explicitly continue without resending, durably resolving the blocker while preserving the original origin as abandoned. Resolution is scoped to the authenticated client and cannot race an active provider dispatch.
+- **The macOS update feed cannot install an incompatible runtime.** Electron 43 raises the app floor to macOS 12, and release metadata carries the Darwin 21 floor understood by the updater already shipped in v0.8.35. macOS 11 users stay on their compatible release instead of receiving an app that cannot launch.
+- **Remote chat scope can no longer cross file or event boundaries.** Canonical-path checks protect launch configuration from alternate roots and symlinks, and TCP event delivery applies the same scope filter as WebSocket delivery.
+- **Rendered agent Markdown no longer trusts raw HTML or executable URL schemes.** Raw tags are escaped and unsafe links/images are omitted while normal Markdown, code-copy controls, relative links, HTTP(S), and mail links remain intact.
+- **Worktree cleanup preserves user work.** Explicit removal never force-deletes an advanced branch, and restart recovery recognizes rollback intent instead of rematerializing a worktree already removed during compensation.
+- **Feature-parity evidence is now real evidence.** Validation rejects missing files, repository escapes, and cross-surface evidence that does not belong to the declared product slice.
+- **Runtime dependencies are clean.** Electron, better-sqlite3, electron-updater, electron-builder, Claude Agent SDK, js-yaml, Vite, Vitest, and affected transitive packages were moved to patched compatible releases; the unused DOM sanitizer dependency was removed.
+
+### Notes
+- Desktop/backend 0.8.47, the React Native/iOS production OTA, and native Android 0.5.9 carry the same ambiguous-turn recovery contract. Package identity, deep links, provider credentials, and existing stored data remain unchanged.
+- macOS 12 or later is required for Desktop 0.8.47. The update feed prevents older macOS installations from accepting this release.
+- The Desktop/runtime dependency audit is clean. Expo 57's development toolchain still reports upstream Metro/CLI advisories; npm offers only an incompatible Expo 46 downgrade for the remaining chain, so the existing iOS native fingerprint is preserved for OTA compatibility.
+- The upgrade rehearsal uses isolated temporary user data and never opens, copies, stops, or mutates a running v0.8.35 profile.
+
+## Native Android 0.5.9 - Resolve uncertain delivery safely
+
+### Fixed
+- **An ambiguous queued turn has an explicit exit.** Retry preserves the exact origin as before; Abandon asks the backend to durably resolve the uncertainty before deleting the local outbox record, so later messages can proceed without risking a duplicate provider call.
+- **Mobile releases cannot replace Desktop Latest.** The signed APK workflow publishes `mobile-v*` as a non-latest GitHub release while retaining package, signer, checksum, and monotonic version checks.
+
 ## 0.8.46 - Make conversation forks durable
 
 ### Added

@@ -64,6 +64,7 @@ object BackendChannels {
     const val CurrentBranch = "git:current-branch"
     const val StartSession = "provider:start-session"
     const val SendTurn = "provider:send-turn"
+    const val ResolveUserTurn = "provider:resolve-user-turn"
     const val Interrupt = "provider:interrupt"
     const val StopSession = "provider:stop-session"
     const val SwitchInstance = "provider:switch-instance"
@@ -360,6 +361,23 @@ class SwitchboardRemoteClient(
                 )
             } ?: JsonNull,
             origin?.let(::JsonString) ?: JsonNull,
+        ),
+        callback,
+    )
+
+    fun resolveUserTurn(
+        threadId: String,
+        origin: String,
+        callback: (RemoteResponse<CommandBody>) -> Unit,
+    ) = command(
+        BackendChannels.ResolveUserTurn,
+        array(
+            obj(
+                "version" to JsonNumber("1"),
+                "threadId" to JsonString(threadId),
+                "origin" to JsonString(origin),
+                "action" to JsonString("abandon"),
+            ),
         ),
         callback,
     )

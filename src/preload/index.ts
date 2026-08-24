@@ -569,6 +569,8 @@ const api = {
 
     submitUserTurn: (turn: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> =>
       transport.invoke(ProviderChannels.SUBMIT_USER_TURN, turn),
+    resolveUserTurn: (resolution: import('@shared/provider-events').UserTurnResolutionV1): Promise<import('@shared/provider-events').UserTurnResolutionResult> =>
+      transport.invoke(ProviderChannels.RESOLVE_USER_TURN, resolution),
 
     interrupt: (threadId: string) =>
       transport.invoke(ProviderChannels.INTERRUPT, threadId),

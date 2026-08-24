@@ -14,6 +14,8 @@ import {
   type RuntimeUserMessageEvent,
   type UserTurnSubmissionResult,
   type UserTurnSubmissionV1,
+  type UserTurnResolutionResult,
+  type UserTurnResolutionV1,
 } from '../../shared/provider-events'
 import { generateTitle } from '../../shared/auto-title'
 import { createMainLogger } from '../logger'
@@ -85,6 +87,7 @@ export class AtomicUserTurnSubmission {
   private readonly store: SqliteTurnAcceptanceStore
   private readonly publish: (event: RuntimeUserMessageEvent) => void
   private readonly now: () => number
+  private readonly activeDispatches = new Set<string>()
 
   constructor(options: {
     store: SqliteTurnAcceptanceStore
@@ -133,6 +136,7 @@ export class AtomicUserTurnSubmission {
         state: 'rejected',
         retryable: true,
         reason: `Earlier turn delivery is unresolved (${reservation.blockingOrigin})`,
+        blockingOrigin: reservation.blockingOrigin,
       }
     }
     if (reservation.kind === 'duplicate') {
@@ -145,6 +149,16 @@ export class AtomicUserTurnSubmission {
           duplicate: true,
           state: 'pending',
           reason: 'Turn is reserved for provider dispatch',
+        }
+      }
+      if (reservation.state === 'abandoned') {
+        return {
+          status: 'rejected',
+          accepted: false,
+          duplicate: true,
+          state: 'rejected',
+          retryable: false,
+          reason: 'Unconfirmed delivery was explicitly abandoned; edit and send it as a new message',
         }
       }
       return {
@@ -174,8 +188,68 @@ export class AtomicUserTurnSubmission {
       }
     }
 
+    const activeDispatch = turnKey(key)
+    this.activeDispatches.add(activeDispatch)
     try {
-      await context.dispatch()
+      return await this.dispatchAndCommit(turn, key, payloadHash, messageId, context.dispatch)
+    } finally {
+      this.activeDispatches.delete(activeDispatch)
+    }
+  }
+
+  resolve(
+    input: UserTurnResolutionV1,
+    context: Pick<AtomicUserTurnContext, 'clientScope' | 'conversationId'>,
+  ): UserTurnResolutionResult {
+    if (
+      !input || input.version !== 1 || input.action !== 'abandon' ||
+      typeof input.threadId !== 'string' || input.threadId.length === 0 ||
+      typeof input.origin !== 'string' || input.origin.length === 0
+    ) {
+      throw new Error('invalid user-turn resolution')
+    }
+    const key: TurnAcceptanceKey = {
+      clientScope: context.clientScope,
+      threadId: context.conversationId ?? input.threadId,
+      origin: input.origin,
+    }
+    if (this.activeDispatches.has(turnKey(key))) {
+      return {
+        status: 'pending',
+        changed: false,
+        reason: 'Provider dispatch is still in progress',
+      }
+    }
+    const result = this.store.resolveAmbiguous(key, input.action)
+    if (result.state === 'abandoned') {
+      return { status: 'abandoned', changed: result.changed }
+    }
+    if (result.state === 'completed') return { status: 'completed', changed: false }
+    if (result.state === 'reserved') {
+      return {
+        status: 'pending',
+        changed: false,
+        reason: 'Turn has not crossed the provider boundary and remains safe to retry',
+      }
+    }
+    return {
+      status: 'not_found',
+      changed: false,
+      reason: result.state === 'not_found'
+        ? 'No matching turn delivery was found'
+        : 'Turn delivery is not eligible for resolution',
+    }
+  }
+
+  private async dispatchAndCommit(
+    turn: UserTurnSubmissionV1,
+    key: TurnAcceptanceKey,
+    payloadHash: string,
+    messageId: string,
+    dispatch: () => Promise<void>,
+  ): Promise<UserTurnSubmissionResult> {
+    try {
+      await dispatch()
     } catch (error) {
       if (error instanceof TurnNotAcceptedError) {
         log.warn(`provider definitely rejected turn ${turn.threadId}`, error)
@@ -267,6 +341,10 @@ export class AtomicUserTurnSubmission {
       ...(row.conversationTitle ? { conversationTitle: row.conversationTitle } : {}),
     }
   }
+}
+
+function turnKey(key: TurnAcceptanceKey): string {
+  return `${key.clientScope}\0${key.threadId}\0${key.origin}`
 }
 
 function canonicalEvent(key: TurnAcceptanceKey, row: CanonicalUserTurnRow): RuntimeUserMessageEvent {

@@ -9,6 +9,7 @@ import {
   recoverUndispatchedTurns,
   type TurnAcceptanceKey,
 } from '../../src/main/db/turn-acceptance'
+import { AtomicUserTurnSubmission } from '../../src/main/provider/durable-turn-acceptance'
 import { commitConversationProfileSwitch } from '../../src/main/db/conversation-profile-commit'
 
 const scratch: string[] = []
@@ -92,6 +93,119 @@ describe('SqliteTurnAcceptanceStore', () => {
 
     expect(result).toEqual({ kind: 'duplicate', state: 'dispatching' })
     reopened.close()
+  })
+
+  it('durably abandons an ambiguous turn and stops it blocking later origins', () => {
+    const db = new Database(':memory:')
+    ensureTurnAcceptanceSchema(db)
+    const store = new SqliteTurnAcceptanceStore(() => db)
+    const first = acceptanceKey({ origin: 'uncertain' })
+    const second = acceptanceKey({ origin: 'next' })
+
+    store.reserveEnvelope(first, 'hash-a', '{"turn":1}', 'remote_uncertain', 100)
+    expect(store.beginDispatch(first, 'hash-a')).toBe(true)
+    expect(store.resolveAmbiguous(first, 'abandon')).toEqual({
+      state: 'abandoned',
+      changed: true,
+    })
+    expect(store.resolveAmbiguous(first, 'abandon')).toEqual({
+      state: 'abandoned',
+      changed: false,
+    })
+    expect(store.reserveEnvelope(second, 'hash-b', '{"turn":2}', 'remote_next', 101))
+      .toEqual({ kind: 'reserved', state: 'reserved' })
+    expect(store.reserveEnvelope(first, 'hash-a', '{"turn":1}', 'remote_uncertain', 102))
+      .toMatchObject({ kind: 'duplicate', state: 'abandoned' })
+    db.close()
+  })
+
+  it('will not abandon a completed turn or an unknown origin', () => {
+    const db = new Database(':memory:')
+    ensureTurnAcceptanceSchema(db)
+    const store = new SqliteTurnAcceptanceStore(() => db)
+    const completed = acceptanceKey({ origin: 'done' })
+    store.reserve(completed, 'hash')
+    store.beginDispatch(completed, 'hash')
+    store.complete(completed, 'hash')
+
+    expect(store.resolveAmbiguous(completed, 'abandon'))
+      .toEqual({ state: 'completed', changed: false })
+    expect(store.resolveAmbiguous({ ...completed, origin: 'missing' }, 'abandon'))
+      .toEqual({ state: 'not_found', changed: false })
+    db.close()
+  })
+
+  it('abandons only the authenticated client scope when origins collide', () => {
+    const db = new Database(':memory:')
+    ensureTurnAcceptanceSchema(db)
+    const store = new SqliteTurnAcceptanceStore(() => db)
+    const scopeA = acceptanceKey({ clientScope: 'scope-a', origin: 'shared-origin' })
+    const scopeB = acceptanceKey({ clientScope: 'scope-b', origin: 'shared-origin' })
+    store.reserve(scopeA, 'payload-a')
+    store.beginDispatch(scopeA, 'payload-a')
+    store.reserve(scopeB, 'payload-b')
+    store.beginDispatch(scopeB, 'payload-b')
+
+    expect(store.resolveAmbiguous(scopeA, 'abandon')).toEqual({ state: 'abandoned', changed: true })
+    expect(db.prepare(`
+      SELECT client_scope, state FROM mobile_turn_acceptances ORDER BY client_scope
+    `).all()).toEqual([
+      { client_scope: 'scope-a', state: 'abandoned' },
+      { client_scope: 'scope-b', state: 'dispatching' },
+    ])
+    db.close()
+  })
+
+  it('refuses abandonment while the original provider dispatch is still live', async () => {
+    const db = atomicTurnDb()
+    const backend = new AtomicUserTurnSubmission({
+      store: new SqliteTurnAcceptanceStore(() => db),
+      publish: () => {},
+    })
+    let rejectDispatch!: (error: Error) => void
+    let dispatchEntered!: () => void
+    const entered = new Promise<void>((resolve) => { dispatchEntered = resolve })
+    const dispatch = new Promise<void>((_resolve, reject) => { rejectDispatch = reject })
+    const turn = {
+      version: 1 as const,
+      threadId: 'thread-a',
+      origin: 'live-dispatch',
+      providerText: 'do not race this',
+    }
+    const submission = backend.submit(turn, {
+      clientScope: 'scope-a',
+      conversationId: 'thread-a',
+      prepare: async () => {},
+      dispatch: async () => {
+        dispatchEntered()
+        await dispatch
+      },
+    })
+    await entered
+
+    expect(backend.resolve({
+      version: 1,
+      threadId: 'thread-a',
+      origin: 'live-dispatch',
+      action: 'abandon',
+    }, { clientScope: 'scope-a', conversationId: 'thread-a' })).toEqual({
+      status: 'pending',
+      changed: false,
+      reason: 'Provider dispatch is still in progress',
+    })
+
+    rejectDispatch(new Error('connection outcome unknown'))
+    await expect(submission).resolves.toMatchObject({ status: 'ambiguous' })
+    expect(backend.resolve({
+      version: 1,
+      threadId: 'thread-a',
+      origin: 'live-dispatch',
+      action: 'abandon',
+    }, { clientScope: 'scope-a', conversationId: 'thread-a' })).toEqual({
+      status: 'abandoned',
+      changed: true,
+    })
+    db.close()
   })
 
   it('scopes equal origins by client and thread', () => {

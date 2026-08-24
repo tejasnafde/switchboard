@@ -32,6 +32,7 @@
       "status": "implemented",
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxRemoteSender.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/NewSessionCoordinator.kt",
         "apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxCoordinatorTest.kt",
@@ -57,7 +58,7 @@
         "src/main/db/turn-acceptance.ts",
         "tests/unit/turn-acceptance-store.test.ts",
         "apps/mobile/src/lib/outboxStorage.ts",
-        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/OutboxDatabase.kt"
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/outbox/RoomOutboxStore.kt"
       ]
     },
     "updateRelease": {

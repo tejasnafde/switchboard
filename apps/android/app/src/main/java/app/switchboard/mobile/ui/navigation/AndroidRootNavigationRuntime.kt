@@ -18,6 +18,8 @@ import app.switchboard.mobile.domain.iap.IapTarget
 import app.switchboard.mobile.domain.iap.IapTargetDiscovery
 import app.switchboard.mobile.domain.iap.IapTargetSelection
 import app.switchboard.mobile.domain.remote.RemoteOutcome
+import app.switchboard.mobile.protocol.JsonObject
+import app.switchboard.mobile.protocol.JsonString
 import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.ComposerImageSource
@@ -100,6 +102,18 @@ class AndroidRootNavigationRuntime(
     override fun beginQueuedEdit(key: ComposerDraftKey, origin: String) = composer.beginEdit(key, origin)
 
     override fun retryQueued(origin: String) = composer.retry(origin)
+
+    override fun abandonQueued(origin: String) {
+        val turn = outbox.records().firstOrNull { it.origin == origin } ?: return
+        val client = clients.lease(turn.connectionId)?.client ?: return
+        client.resolveUserTurn(turn.threadId, turn.origin) { response ->
+            val status = ((response.outcome as? RemoteOutcome.Success)?.value?.body as? JsonObject)
+                ?.values?.get("status") as? JsonString
+            if (status?.value == "abandoned" || status?.value == "completed") {
+                outbox.abandonResolved(origin)
+            }
+        }
+    }
 
     override fun dismissQueued(origin: String) = composer.dismiss(origin)
 

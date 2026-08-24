@@ -177,7 +177,7 @@ describe('removeWorktree', () => {
     const runner = vi.fn(async () => ({ stdout: '', stderr: '' }))
     await removeWorktree('/repo', '/repo/.switchboard/worktrees/foo', { force: true, deleteBranch: 'kanban/foo' }, runner)
     expect(runner).toHaveBeenNthCalledWith(1, ['worktree', 'remove', '--force', '/repo/.switchboard/worktrees/foo'], '/repo')
-    expect(runner).toHaveBeenNthCalledWith(2, ['branch', '-D', 'kanban/foo'], '/repo')
+    expect(runner).toHaveBeenNthCalledWith(2, ['branch', '-d', 'kanban/foo'], '/repo')
   })
 
   it('does NOT delete branches outside the kanban/ namespace', async () => {

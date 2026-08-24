@@ -48,6 +48,7 @@ import {
   openRejectedForEdit,
   queuedFor,
   useOutboxStore,
+  abandonAmbiguous,
 } from '../stores/outbox'
 import { usePrefsStore } from '../stores/prefs'
 import { usePushStore } from '../stores/push'
@@ -57,6 +58,7 @@ import { SlashMenu } from '../components/SlashMenu'
 import { allCommands, detectSlash, filterCommands, type SlashCommand } from '../lib/slash'
 import { profilesFor } from '../lib/profiles'
 import { buildTurn } from '../lib/turnSubmit'
+import { resolvedAmbiguousBubbleAction } from '../lib/outboxModel'
 import { keyboardAvoidance } from '../lib/keyboardAvoidance'
 import { historyToItems } from '../lib/threadHistory'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -572,6 +574,34 @@ export default function ThreadScreen({ route, navigation }: Props) {
     composerRef.current?.focus()
   }, [key])
 
+  const resolveAmbiguous = useCallback((messageId: string) => {
+    Alert.alert(
+      'Delivery unconfirmed',
+      'The agent may already have received this message. Continue without resending it to unblock later messages?',
+      [
+        { text: 'Keep retrying', style: 'cancel' },
+        {
+          text: 'Continue without resending',
+          style: 'destructive',
+          onPress: () => void abandonAmbiguous(messageId)
+            .then(({ message, status }) => {
+              if (resolvedAmbiguousBubbleAction(status) === 'remove') {
+                useChatStore.getState().removeUserMessage(key, echoMessageId(message.messageId))
+              }
+              useChatStore.getState().ingest(connectionId, {
+                type: 'error',
+                threadId,
+                message: status === 'completed'
+                  ? 'Message delivery was confirmed; it was not sent again.'
+                  : 'Unconfirmed message was not resent. Delivery may already have occurred.',
+              })
+            })
+            .catch(reportError),
+        },
+      ],
+    )
+  }, [connectionId, key, reportError, threadId])
+
   const forkFromMessage = useCallback((message: ChatMessage) => {
     const client = getClient(connectionId)
     if (!client) return
@@ -649,8 +679,12 @@ export default function ThreadScreen({ route, navigation }: Props) {
           return (
             <View style={styles.userRow}>
               <Pressable
-                disabled={delivery?.state !== 'failed'}
-                onPress={() => queued && void editRejected(queued.messageId)}
+                disabled={delivery?.state !== 'failed' && delivery?.state !== 'ambiguous'}
+                onPress={() => {
+                  if (!queued || !delivery) return
+                  if (delivery.state === 'failed') editRejected(queued.messageId)
+                  if (delivery.state === 'ambiguous') resolveAmbiguous(queued.messageId)
+                }}
                 onLongPress={() => {
                   const message = forkMessagesRef.current.get(item.id)
                   if (message) forkFromMessage(message)
@@ -670,7 +704,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
                     styles.deliveryText,
                     delivery.state === 'failed' && styles.deliveryFailed,
                   ]}>
-                    {delivery.label}{delivery.state === 'failed' ? ' - tap to edit' : ''}
+                    {delivery.label}{delivery.state === 'failed'
+                      ? ' - tap to edit'
+                      : delivery.state === 'ambiguous' ? ' - tap to resolve' : ''}
                   </Text>
                 )}
               </Pressable>
@@ -722,6 +758,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       setLightbox,
       queuedByBubbleId,
       editRejected,
+      resolveAmbiguous,
       forkFromMessage,
     ],
   )

@@ -72,6 +72,7 @@ object ComposerDraftPolicy {
 
 enum class OutboxUiAction {
     Retry,
+    Abandon,
     Edit,
     Dismiss,
 }
@@ -79,7 +80,7 @@ enum class OutboxUiAction {
 object OutboxPresentationPolicy {
     fun actions(turn: QueuedTurn): Set<OutboxUiAction> = when (turn.deliveryState) {
         OutboxDeliveryState.Pending -> setOf(OutboxUiAction.Edit)
-        is OutboxDeliveryState.Ambiguous -> setOf(OutboxUiAction.Retry)
+        is OutboxDeliveryState.Ambiguous -> setOf(OutboxUiAction.Retry, OutboxUiAction.Abandon)
         is OutboxDeliveryState.Terminal ->
             setOf(OutboxUiAction.Retry, OutboxUiAction.Edit, OutboxUiAction.Dismiss)
 

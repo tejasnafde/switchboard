@@ -71,6 +71,7 @@ describe('native Android publishing lane', () => {
     expect(workflow).toContain('sha256sum')
     expect(workflow).toContain('switchboard-${{ steps.version.outputs.version }}.apk.sha256')
     expect(workflow).toContain('gh release create')
+    expect(workflow).toContain('--latest=false')
   })
 
   test('rejects a tag-version mismatch or a non-increasing Android version code', () => {

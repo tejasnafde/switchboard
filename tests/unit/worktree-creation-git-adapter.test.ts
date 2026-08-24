@@ -381,6 +381,13 @@ describe('ExecFileGitWorktreeAdapter', () => {
 
     expect(await adapter.rollbackMaterialization(plan, 'explicit_remove')).toEqual({ kind: 'removed' })
     expect(await pathExists(plan.worktreePath)).toBe(false)
+    expect(await gitSucceeds(
+      fixture.repositoryPath,
+      'show-ref',
+      '--verify',
+      '--quiet',
+      `refs/heads/${plan.branch}`,
+    )).toBe(true)
   })
 
   it('removes a branch-only partial materialization only at the reserved base commit', async () => {
@@ -423,6 +430,6 @@ describe('ExecFileGitWorktreeAdapter', () => {
       '--verify',
       '--quiet',
       `refs/heads/${plan.branch}`,
-    )).toBe(false)
+    )).toBe(true)
   })
 })

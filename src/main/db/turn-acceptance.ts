@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3'
 
-export type TurnAcceptanceState = 'reserved' | 'dispatching' | 'completed'
+export type TurnAcceptanceState = 'reserved' | 'dispatching' | 'completed' | 'abandoned'
 
 export interface TurnAcceptanceKey {
   clientScope: string
@@ -83,6 +83,37 @@ export function ensureTurnAcceptanceSchema(db: Database.Database): void {
   }
   if (!columns.some((column) => column.name === 'event_at')) {
     db.exec('ALTER TABLE mobile_turn_acceptances ADD COLUMN event_at INTEGER')
+  }
+  const table = db.prepare(`
+    SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'mobile_turn_acceptances'
+  `).get() as { sql: string } | undefined
+  if (table && !table.sql.includes("'abandoned'")) {
+    db.transaction(() => {
+      db.exec(`
+        DROP INDEX IF EXISTS idx_turn_acceptances_thread_state;
+        ALTER TABLE mobile_turn_acceptances RENAME TO mobile_turn_acceptances_before_resolution;
+        CREATE TABLE mobile_turn_acceptances (
+          client_scope TEXT NOT NULL,
+          thread_id TEXT NOT NULL,
+          origin TEXT NOT NULL,
+          payload_hash TEXT NOT NULL,
+          state TEXT NOT NULL CHECK (state IN ('reserved', 'dispatching', 'completed', 'abandoned')),
+          accepted_at INTEGER NOT NULL,
+          completed_at INTEGER,
+          envelope_json TEXT,
+          message_id TEXT,
+          event_at INTEGER,
+          PRIMARY KEY (client_scope, thread_id, origin)
+        ) WITHOUT ROWID;
+        INSERT INTO mobile_turn_acceptances
+          (client_scope, thread_id, origin, payload_hash, state, accepted_at,
+           completed_at, envelope_json, message_id, event_at)
+        SELECT client_scope, thread_id, origin, payload_hash, state, accepted_at,
+               completed_at, envelope_json, message_id, event_at
+          FROM mobile_turn_acceptances_before_resolution;
+        DROP TABLE mobile_turn_acceptances_before_resolution;
+      `)
+    })()
   }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_turn_acceptances_thread_state
@@ -199,6 +230,29 @@ export class SqliteTurnAcceptanceStore implements TurnAcceptanceStore {
        WHERE client_scope = ? AND thread_id = ? AND origin = ?
          AND payload_hash = ? AND state = 'dispatching'
     `).run(Date.now(), key.clientScope, key.threadId, key.origin, payloadHash).changes === 1
+  }
+
+  resolveAmbiguous(
+    key: TurnAcceptanceKey,
+    resolution: 'abandon',
+  ): { state: TurnAcceptanceState | 'not_found'; changed: boolean } {
+    if (resolution !== 'abandon') throw new Error('unsupported turn resolution')
+    const db = this.database()
+    return db.transaction(() => {
+      const row = db.prepare(`
+        SELECT state FROM mobile_turn_acceptances
+         WHERE client_scope = ? AND thread_id = ? AND origin = ?
+         LIMIT 1
+      `).get(key.clientScope, key.threadId, key.origin) as { state: TurnAcceptanceState } | undefined
+      if (!row) return { state: 'not_found' as const, changed: false }
+      if (row.state !== 'dispatching') return { state: row.state, changed: false }
+      const changed = db.prepare(`
+        UPDATE mobile_turn_acceptances
+           SET state = 'abandoned', completed_at = ?
+         WHERE client_scope = ? AND thread_id = ? AND origin = ? AND state = 'dispatching'
+      `).run(Date.now(), key.clientScope, key.threadId, key.origin).changes === 1
+      return { state: changed ? 'abandoned' as const : row.state, changed }
+    })()
   }
 
   completeUserTurn(

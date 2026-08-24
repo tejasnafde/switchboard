@@ -21,6 +21,7 @@ import { FilesChannels } from '@shared/ipc-channels'
 import { listAllFiles, listDirEntries } from '../files/listing'
 import { writeFileSafe, deleteFileSafe } from '../files/writing'
 import { createMainLogger as createLogger } from '../logger'
+import { currentBackendRequestContext } from '../backend/request-context'
 
 const log = createLogger('ipc:files')
 
@@ -64,6 +65,18 @@ export async function resolveWithinRepo(repoRoot: string, subPath: string): Prom
   return candidate
 }
 
+async function assertRemoteMutationAllowed(candidate: string): Promise<void> {
+  const context = currentBackendRequestContext()
+  if (context?.transport !== 'remote' || context.deviceScopes?.includes('terminal')) return
+  const canonical = (await realpathOrAncestor(candidate)).replaceAll('\\', '/').toLowerCase()
+  if (
+    canonical.endsWith('/.switchboard/launch-config.yaml')
+    || canonical.endsWith('/.switchboard/workspace.yaml')
+  ) {
+    throw new Error('Not permitted: command-bearing project configuration requires terminal scope')
+  }
+}
+
 export function registerFilesHandlers(host: BackendHost): void {
   host.handle(FilesChannels.LIST_DIR, async (repoRoot: string, subPath: string = '') => {
     try {
@@ -95,6 +108,7 @@ export function registerFilesHandlers(host: BackendHost): void {
           return { ok: false, error: `File too large to write (cap ${MAX_WRITE_BYTES} bytes)` }
         }
         const abs = await resolveWithinRepo(repoRoot, subPath)
+        await assertRemoteMutationAllowed(abs)
         const res = await writeFileSafe(abs, content, { expectedMtimeMs })
         return res
       } catch (err) {
@@ -107,6 +121,7 @@ export function registerFilesHandlers(host: BackendHost): void {
   host.handle(FilesChannels.DELETE_FILE, async (repoRoot: string, subPath: string) => {
     try {
       const abs = await resolveWithinRepo(repoRoot, subPath)
+      await assertRemoteMutationAllowed(abs)
       return await deleteFileSafe(abs)
     } catch (err) {
       log.warn('delete-file failed', { repoRoot, subPath, err: (err as Error).message })

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { friendlyUpdateError, isStaleDownloadError } from '../../src/main/updater-error'
+import {
+  friendlyUpdateError,
+  isMissingUpdateManifestError,
+  isStaleDownloadError,
+} from '../../src/main/updater-error'
 
 /** Verbatim from a real 0.7.27 failure - the staging file was purged mid-download. */
 const STALE_RENAME =
@@ -31,8 +35,19 @@ describe('friendlyUpdateError', () => {
   })
 
   it('passes through non-network errors unchanged', () => {
-    expect(friendlyUpdateError('HttpError: 404 Not Found')).toBe('HttpError: 404 Not Found')
     expect(friendlyUpdateError('signature verification failed')).toBe('signature verification failed')
+  })
+
+  it('reports a missing desktop update manifest as a broken release channel', () => {
+    const mac = 'HttpError: 404 Not Found for latest-mac.yml'
+    const windows = 'Cannot download latest.yml: status 404'
+
+    expect(isMissingUpdateManifestError(mac)).toBe(true)
+    expect(isMissingUpdateManifestError(windows)).toBe(true)
+    expect(isMissingUpdateManifestError('HttpError: 404 Not Found for notes.md')).toBe(false)
+    expect(friendlyUpdateError(mac)).toBe(
+      'The latest desktop release is missing its update manifest. Install from the release page or try again after the release is repaired.',
+    )
   })
 
   it('maps a timed-out check to a message that names the restart escape hatch', () => {

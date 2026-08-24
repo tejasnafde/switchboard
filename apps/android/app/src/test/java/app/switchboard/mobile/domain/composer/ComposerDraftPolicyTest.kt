@@ -37,7 +37,7 @@ class ComposerDraftPolicyTest {
             OutboxPresentationPolicy.actions(turn(OutboxDeliveryState.Pending)),
         )
         assertEquals(
-            setOf(OutboxUiAction.Retry),
+            setOf(OutboxUiAction.Retry, OutboxUiAction.Abandon),
             OutboxPresentationPolicy.actions(
                 turn(OutboxDeliveryState.Ambiguous("The server may have accepted this turn")),
             ),

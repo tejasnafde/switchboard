@@ -227,5 +227,11 @@ jobs:
               cat "$y"
               exit 1
             fi
+            if [[ "$(basename "$y")" == "latest-mac.yml" ]] && \
+               ! grep -q "^minimumSystemVersion: 21.0.0$" "$y"; then
+              echo "::error::latest-mac.yml does not protect macOS 11 clients from the Electron 43 runtime floor"
+              cat "$y"
+              exit 1
+            fi
             echo "$(basename "$y") declares version ${V}"
           done

@@ -164,5 +164,6 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "Switchboard mobile ${{ steps.version.outputs.version }}" \
             --generate-notes \
+            --latest=false \
             "switchboard-${{ steps.version.outputs.version }}.apk" \
             "switchboard-${{ steps.version.outputs.version }}.apk.sha256"

@@ -146,18 +146,58 @@ function hasClosingFence(raw: string): boolean {
   })
 }
 
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function isSafeMarkdownDestination(href: string): boolean {
+  const compact = href.trim().replace(/[\u0000-\u0020\u007f]/g, '')
+  const firstDelimiter = compact.search(/[/:?#]/)
+  const schemePrefix = firstDelimiter < 0 ? compact : compact.slice(0, firstDelimiter)
+  // An entity before the first URL delimiter can be decoded by the browser
+  // into a hidden scheme character (for example jav&#x61;script:).
+  if (/&(?:#\d+|#x[\da-f]+|[a-z][\da-z]+);/i.test(schemePrefix)) return false
+  const scheme = /^([a-z][\da-z+.-]*):/i.exec(compact)?.[1]?.toLowerCase()
+  return !scheme || scheme === 'http' || scheme === 'https' || scheme === 'mailto'
+}
+
 export function renderMarkdownWithCopyControls(
   markdown: string,
   { mutable = false }: RenderMarkdownOptions = {},
 ): string {
   const renderer = new Renderer()
   const renderCode = renderer.code.bind(renderer)
+  const renderLink = renderer.link.bind(renderer)
+  const renderImage = renderer.image.bind(renderer)
   let blockIndex = 0
 
   renderer.code = (token: Tokens.Code) => {
     const index = blockIndex++
     const state = !mutable || hasClosingFence(token.raw) ? 'settled' : 'provisional'
     return wrapRenderedCodeBlock(renderCode(token), state, index)
+  }
+
+  renderer.html = (token: Tokens.HTML | Tokens.Tag) => escapeHtml(token.text)
+  renderer.link = (token: Tokens.Link) => {
+    if (!isSafeMarkdownDestination(token.href)) return renderer.parser.parseInline(token.tokens)
+    const rendered = renderLink(token)
+    return rendered.replace(
+      /^<a href="[^"]*"/,
+      `<a href="${escapeHtml(token.href)}"`,
+    )
+  }
+  renderer.image = (token: Tokens.Image) => {
+    if (!isSafeMarkdownDestination(token.href)) return escapeHtml(token.text)
+    const rendered = renderImage(token)
+    return rendered.replace(
+      /^<img src="[^"]*"/,
+      `<img src="${escapeHtml(token.href)}"`,
+    )
   }
 
   return marked.parse(markdown, { async: false, renderer }) as string

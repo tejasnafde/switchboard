@@ -158,14 +158,6 @@ export function registerAutoUpdater(window: BrowserWindow): void {
   })
   autoUpdater.on('error', (err) => {
     const msg = err.message ?? String(err)
-    // A 404 on latest-mac.yml / latest.yml just means no release artifact
-    // has been published for this tag yet (common while shipping dev builds
-    // via git tag only). Treat it as "up to date" so the UI stays quiet.
-    if (msg.includes('latest-mac.yml') || msg.includes('latest.yml')) {
-      log.info('no release artifact found - skipping update check')
-      send({ kind: 'up-to-date', version: app.getVersion() })
-      return
-    }
     // The staging file was purged mid-download (see isStaleDownloadError).
     // electron-updater has already emptied the pending dir by the time it
     // reports this, so a fresh check re-downloads cleanly. Retry once per

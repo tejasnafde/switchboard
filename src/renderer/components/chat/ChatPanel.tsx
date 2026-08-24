@@ -52,6 +52,7 @@ import {
   desktopTurnAttempts,
   submitProgrammaticTurn,
   submitDesktopUserTurn,
+  type DesktopTurnSubmissionDependencies,
 } from '../../services/desktopTurnSubmission'
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
@@ -1192,7 +1193,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }
       const providerKind = agentType === 'codex' ? 'codex' : agentType === 'opencode' ? 'opencode' : 'claude'
       const effectiveMode = runtimeMode
 
-      const outcome = await submitDesktopUserTurn(turn, {
+      const submissionDependencies: DesktopTurnSubmissionDependencies = {
         startSession: async () => {
           if (providerStartedRef.current.has(sessionId)) return
           providerStartedRef.current.add(sessionId)
@@ -1218,7 +1219,49 @@ export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }
           }
         },
         submit: (submission) => providerApi.submitUserTurn(submission),
-      })
+      }
+      let outcome = await submitDesktopUserTurn(turn, submissionDependencies)
+      if (!outcome.accepted && outcome.recoveryOrigin) {
+        const recoveryOrigin = outcome.recoveryOrigin
+        const recoveringCurrentTurn = recoveryOrigin === origin
+        const confirmed = window.confirm(
+          recoveringCurrentTurn
+            ? 'Delivery is unconfirmed and the agent may already have received this message. Continue without resending it?'
+            : 'An earlier message has unconfirmed delivery and is blocking this send. Continue without resending the earlier message?',
+        )
+        if (confirmed) {
+          const resolution = await providerApi.resolveUserTurn({
+            version: 1,
+            threadId: sessionId,
+            origin: recoveryOrigin,
+            action: 'abandon',
+          })
+          if (resolution.status === 'abandoned' || resolution.status === 'completed') {
+            if (recoveringCurrentTurn) {
+              if (resolution.status === 'abandoned') {
+                desktopTurnAttempts.accept(sessionId, recoveryOrigin)
+                desktopPreparedTurns.accept(sessionId, recoveryOrigin)
+                appendMessage(sessionId, {
+                  id: `turn_abandoned_${recoveryOrigin}`,
+                  role: 'system',
+                  content: 'Unconfirmed message was not resent. Delivery may already have occurred.',
+                  timestamp: Date.now(),
+                })
+                return { accepted: true }
+              }
+              // Replay the completed origin so the backend republishes its
+              // canonical event if the original response and event were lost.
+              outcome = await submitDesktopUserTurn(turn, submissionDependencies)
+            } else {
+              desktopTurnAttempts.accept(sessionId, recoveryOrigin)
+              desktopPreparedTurns.accept(sessionId, recoveryOrigin)
+              outcome = await submitDesktopUserTurn(turn, submissionDependencies)
+            }
+          } else {
+            return { accepted: false, error: resolution.reason }
+          }
+        }
+      }
       if (outcome.accepted) {
         desktopTurnAttempts.accept(sessionId, origin)
         desktopPreparedTurns.accept(sessionId, origin)

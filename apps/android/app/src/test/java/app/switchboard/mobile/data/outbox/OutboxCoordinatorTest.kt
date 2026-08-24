@@ -223,6 +223,20 @@ class OutboxCoordinatorTest {
     }
 
     @Test
+    fun backendResolvedAbandonmentRemovesTheBlockerWithoutResending() {
+        val fixture = Fixture()
+        fixture.coordinator.enqueue(draft("thread-a"))
+        fixture.sender.complete("origin-1", SendOutcome.Ambiguous("unknown"))
+        val sendsBeforeResolution = fixture.sender.sent.size
+
+        assertTrue(fixture.coordinator.abandonResolved("origin-1"))
+
+        assertTrue(fixture.coordinator.records().isEmpty())
+        assertEquals(sendsBeforeResolution, fixture.sender.sent.size)
+        assertTrue(fixture.log.any { it == "delete:origin-1" })
+    }
+
+    @Test
     fun inFlightPendingTurnCannotEnterEditingOrReplaceItsPayload() {
         val fixture = Fixture()
         fixture.coordinator.enqueue(

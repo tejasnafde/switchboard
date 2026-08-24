@@ -82,6 +82,58 @@ describe('feature parity policy', () => {
     )
   })
 
+  it('rejects nonexistent and surface-inappropriate evidence when validating a repository', () => {
+    const missing = structuredClone(completeManifest)
+    missing.surfaces.desktop = {
+      status: 'implemented',
+      evidence: ['src/renderer/does-not-exist.tsx'],
+    }
+    expect(validateFeatureParityManifest(missing, { repoRoot: process.cwd() })).toContain(
+      'surfaces.desktop.evidence path does not exist: src/renderer/does-not-exist.tsx',
+    )
+
+    const unrelated = structuredClone(completeManifest)
+    unrelated.surfaces.nativeAndroid = {
+      status: 'implemented',
+      evidence: ['src/renderer/components/chat/ChatPanel.tsx'],
+    }
+    expect(validateFeatureParityManifest(unrelated, { repoRoot: process.cwd() })).toContain(
+      'surfaces.nativeAndroid.evidence is outside the native Android surface: src/renderer/components/chat/ChatPanel.tsx',
+    )
+  })
+
+  it('accepts packaged migration rehearsals and artifact hooks as release evidence', () => {
+    const manifest = structuredClone(completeManifest)
+    manifest.surfaces.desktop = {
+      status: 'implemented',
+      evidence: ['tests/unit/desktop-image-send-contract.test.ts'],
+    }
+    manifest.surfaces.reactNativeIos = {
+      status: 'implemented',
+      evidence: ['tests/unit/mobile-outbox.test.ts'],
+    }
+    manifest.surfaces.nativeAndroid = {
+      status: 'implemented',
+      evidence: [
+        'apps/android/app/src/test/java/app/switchboard/mobile/data/outbox/OutboxCoordinatorTest.kt',
+      ],
+    }
+    manifest.surfaces.sharedBackendApi = {
+      status: 'implemented',
+      evidence: ['tests/unit/provider-switch-ws.test.ts'],
+    }
+    manifest.surfaces.storageDataMigration = {
+      status: 'implemented',
+      evidence: ['e2e/v0835-packaged-upgrade.e2e.mjs'],
+    }
+    manifest.surfaces.updateRelease = {
+      status: 'implemented',
+      evidence: ['build/artifactBuildCompleted.js'],
+    }
+
+    expect(validateFeatureParityManifest(manifest, { repoRoot: process.cwd() })).toEqual([])
+  })
+
   it('gates behavior-bearing product paths but not tests and documentation alone', () => {
     expect(requiresFeatureParityManifest(['src/renderer/components/chat/ChatInput.tsx'])).toBe(true)
     expect(requiresFeatureParityManifest(['apps/mobile/src/screens/Thread.tsx'])).toBe(true)
