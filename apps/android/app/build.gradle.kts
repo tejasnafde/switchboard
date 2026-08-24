@@ -37,8 +37,8 @@ android {
         applicationId = canonicalApplicationId
         minSdk = 24
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.5.6"
+        versionCode = 9
+        versionName = "0.5.7"
         buildConfigField("String", "EXPO_PROJECT_ID", "\"$easProjectId\"")
         buildConfigField("String", "PUSH_APPLICATION_ID", "\"$canonicalApplicationId\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

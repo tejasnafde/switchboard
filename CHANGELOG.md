@@ -2,6 +2,27 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## Native Android 0.5.7 - Discover work VMs from connected Macs
+
+### Added
+- **The Google IAP add flow now discovers SSH-config VMs through every connected Switchboard backend.** Available targets appear above the existing manual form; selecting one fills its name, project, zone, and instance while preserving the required backend-token and Google-account checks.
+
+### Fixed
+- **Already-saved IAP targets no longer clutter discovery.** Results are normalized across backends, merged once, and filtered against connections already stored on the phone. Partial backend failures leave successful results usable, and the empty state distinguishes “all added” from “nothing discovered.”
+
+### Notes
+- Native Android 0.5.7 keeps the existing package identity, signing key, connection storage, and manual signed-APK update channel. No Room migration or backend wire-format change is required.
+
+## 0.8.44 - Keep machine discovery fresh
+
+### Fixed
+- **Desktop rereads `~/.ssh/config` every time Add machine opens.** Newly added aliases appear without restarting Switchboard; the primary list now contains only actionable hosts, while saved hosts remain available in a separate collapsed “Already added” disclosure.
+- **React Native/iOS refreshes IAP discovery whenever its add flow opens.** Results from ready backends are merged by normalized VM identity and filtered against machines already saved on the phone, with distinct all-added and no-discovery states.
+
+### Notes
+- Desktop/backend 0.8.44 and the automatic React Native/iOS production OTA ship together. Native Android 0.5.7 ships separately through the production-signed APK workflow.
+- Discovery reuses the existing SSH and IAP contracts. Stored connections, credentials, package identities, deep links, and database schemas remain unchanged.
+
 ## Native Android 0.5.6 - Compact agent activity
 
 ### Fixed
