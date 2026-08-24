@@ -838,7 +838,22 @@ export function App() {
       // building a twin next to it.
       type LoadedSession = {
         messages: ChatMessage[]
-        meta: { id: string; title: string; projectPath: string; agentType: string; rootThreadId?: string } | null
+        meta: {
+          id: string
+          title: string
+          projectPath: string
+          agentType: string
+          rootThreadId?: string
+          worktreePath?: string | null
+          worktreeBranch?: string | null
+          worktreeId?: string | null
+          providerInstanceId?: string | null
+          runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'full-access' | null
+          model?: string | null
+          reasoningEffort?: 'low' | 'medium' | 'high' | null
+          launchConfigName?: string | null
+          forkMetadata?: import('@shared/conversation-fork').ForkLineageMetadata | null
+        } | null
       }
       let loaded: LoadedSession | null = null
       try {
@@ -885,14 +900,21 @@ export function App() {
         id: session.id,
         type: resolveSessionOpenAgentType(agentTypeForSource(session.source), loaded?.meta?.agentType),
         status: 'idle',
-        projectPath,
+        projectPath: loaded?.meta?.projectPath ?? projectPath,
         machineId: effectiveMachineId,
-        worktreeId: creationSnapshot?.worktreeId ?? null,
-        worktreePath: session.worktreePath ?? null,
-        worktreeBranch: session.worktreeBranch ?? null,
+        worktreeId: loaded?.meta?.worktreeId ?? creationSnapshot?.worktreeId ?? null,
+        worktreePath: loaded?.meta?.worktreePath ?? session.worktreePath ?? null,
+        worktreeBranch: loaded?.meta?.worktreeBranch ?? session.worktreeBranch ?? null,
         managedTerminalIds: creationSnapshot?.startupReceipt?.terminalIds,
-        resumeSessionId: resolveSessionResumeId(session.source, session.id),
+        resumeSessionId: loaded?.meta?.forkMetadata?.resumeMode === 'transcript-handoff'
+          ? undefined
+          : resolveSessionResumeId(session.source, session.id),
         title: session.title,
+        runtimeMode: loaded?.meta?.runtimeMode ?? undefined,
+        model: loaded?.meta?.model ?? undefined,
+        reasoningEffort: loaded?.meta?.reasoningEffort ?? undefined,
+        instanceId: loaded?.meta?.providerInstanceId ?? undefined,
+        forkMetadata: loaded?.meta?.forkMetadata ?? session.forkMetadata,
       })
       placeAndEvict(session.id)
 

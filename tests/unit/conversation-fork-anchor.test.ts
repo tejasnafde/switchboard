@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { digestForkMessage, type ForkAnchor } from '../../src/shared/conversation-fork'
 import {
+  isForkableCanonicalMessage,
   resolveCanonicalForkAnchor,
   type CanonicalForkMessage,
 } from '../../src/main/conversations/fork-anchor'
@@ -37,6 +38,20 @@ function anchor(value: ChatMessage, overrides: Partial<ForkAnchor> = {}): ForkAn
 }
 
 describe('canonical conversation fork anchor', () => {
+  it('offers anchors only for durable visible transcript messages', () => {
+    expect(isForkableCanonicalMessage(message('text', 'assistant', 'Done', 1))).toBe(true)
+    expect(isForkableCanonicalMessage(message('image', 'user', '', 2, {
+      images: [{ url: 'data:image/png;base64,AAAA' }],
+    }))).toBe(true)
+    expect(isForkableCanonicalMessage(message('notice', 'system', 'Fork status', 3))).toBe(false)
+    expect(isForkableCanonicalMessage(message('tool', 'assistant', '', 4, {
+      toolCalls: [{ id: 't', name: 'Bash', input: 'pwd', state: 'running' }],
+    }))).toBe(false)
+    expect(isForkableCanonicalMessage(message('approval', 'assistant', '', 5, {
+      approval: { requestId: 'r', toolName: 'Bash', input: {}, status: 'pending' },
+    }))).toBe(false)
+  })
+
   it('resolves an exact durable id and validates the full fingerprint', () => {
     const first = message('m-1', 'user', 'Implement this', 10)
     const selected = message('m-2', 'assistant', 'I will inspect it', 20)
@@ -56,6 +71,7 @@ describe('canonical conversation fork anchor', () => {
         provider: null,
         providerSessionId: null,
         providerEventId: null,
+        preview: 'I will inspect it',
       },
     })
   })

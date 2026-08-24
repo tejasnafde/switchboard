@@ -1,245 +1,52 @@
-# Session kickoff - `fork-to-worktree` (#5)
+# Fork into a worktree contract
 
-> **Implemented and superseded (2026-08-24).** The original kickoff below is
-> retained as historical design input. Fork worktrees now use the backend-owned
-> `WorktreeCreation` saga documented in
-> `docs/plans/2026-08-24-worktree-creation-transaction-design.md`. In particular,
-> `projectPath` remains the owning parent repository, `worktreePath` is the
-> execution CWD, and path strings are compatibility projections rather than
-> identity or cleanup authority.
+This note replaces the original fork-to-worktree kickoff. Worktree forks use
+the first-class backend transaction; fork code must not implement a competing
+Git orchestration layer.
 
-Drop this doc into a fresh Claude session as the first turn. It's
-self-contained: nothing here assumes prior conversation context.
+## Identity
 
-**Prerequisite**: `fork-from-message` (#4) ships first. This task
-extends that feature - read `session-kickoff-fork-from-message.md`
-alongside this doc; that one owns the conversation cloning and
-adapter-aware resume; this one owns the git worktree side.
+- `projectPath` is the canonical owning parent project used for grouping and
+  identity.
+- `worktreePath` is the execution checkout used by providers, terminals, the
+  IDE, file resolution, and Git operations.
+- `worktreeBranch` and `worktreeId` describe the managed checkout.
 
----
+A worktree path never replaces `conversations.project_path`.
 
-## What we're building
+## Git semantics
 
-When forking a conversation, optionally also branch the working tree:
+The backend resolves the canonical repository, source checkout, exact source
+HEAD SHA, and tracked/untracked status before side effects. A child fork from
+an existing worktree uses that checkout's HEAD but is placed under the stable
+canonical repository managed root, never inside the removable source
+worktree.
 
-1. Create a new git branch off `HEAD` (or off the parent
-   conversation's branch if it's already on a feature branch).
-2. `git worktree add` it to a path inside `<repo>/.switchboard/worktrees/`
-   (or wherever feels right - see "Worktree storage" below).
-3. The forked conversation retains the original repo as `projectPath` and
-   stores the new checkout separately as `worktreePath`. Providers, terminals,
-   and the IDE use `worktreePath` as their CWD.
-4. The branch name is auto-generated from a cheap-model summary of the
-   forked-from message (e.g. "fix-redis-timeout").
+The new checkout starts from the source checkout's committed HEAD. It does not
+reconstruct filesystem state from the historical message and does not copy
+uncommitted or untracked changes. Dirty sources require confirmation tied to
+the frozen HEAD and status digest; a changed source must be confirmed again.
 
-Why: lets the user explore "what if I tried a different approach to
-this turn" without a manual `git stash` / `git checkout -b` /
-`cd ../newdir` dance. Agent works on real files, committable, mergable
-back later.
+## Recovery
 
----
+The worktree transaction owns branch/path collision handling, per-repository
+serialization, durable receipts, rollback, and cleanup classification. Before
+provider or database commit, failures compensate the provider artifact,
+worktree, and branch. If commands could have modified the checkout, or cleanup
+fails, the backend retains it and returns `cleanup-required` with the exact path
+and branch. A dirty worktree is never auto-deleted.
 
-## Repo orientation (Switchboard)
+The fork owner transaction commits the managed worktree record, conversation,
+rich messages, handoff state, and idempotent result atomically. Retrying the
+same `requestId` returns that result.
 
-Read `CLAUDE.md` at repo root. Key surfaces:
+## UI wording
 
-- **Existing kanban worktree fields**: the `kanban_cards` table
-  already carries `worktreePath` and `worktreeBranch` columns - see
-  `src/main/db/database.ts` (search for `kanban_cards`). Worktree
-  creation logic for kanban cards already exists somewhere in
-  `src/main/` - find it via `git worktree add` grep. Reuse / share
-  helpers; do not duplicate.
-- **Project path scoping**: `projectPath` lives on `conversations`
-  rows AND on `AgentSession` in
-  `src/renderer/stores/agent-store.ts:24-69`. The terminal store
-  adopts backend-provisioned terminal handles and roots them in
-  `worktreePath`. The owning `projectPath` remains stable for sidebar grouping.
-- **`assertCwdReadable`** in `src/main/path-access.ts` runs as
-  pre-flight on `START_SESSION`. Make sure newly-created worktrees
-  pass it (they should - same physical disk as the parent repo).
-- **Cheap-model summary**: There's no existing helper for "run a
-  one-shot turn for a title". Cheapest path: spawn a quick Claude
-  Code SDK query with `maxTurns=1` (we already do this for
-  auto-titles in `src/shared/auto-title.ts` - read it; you can
-  factor a `summarizeForBranchName` next to `generateTitle`).
-- **Provider registry**: `src/main/provider/provider-registry.ts`
-  is where you'd add the IPC `conversations.forkWithWorktree` (or
-  add a `withWorktree: boolean` flag to the existing fork IPC from
-  #4 - preferred, less surface area).
+- Transcript only: “Fork conversation here”.
+- New checkout: “Fork conversation into a new worktree from current HEAD”.
 
----
+All clients show the dirty-source warning and navigate with the returned parent
+`projectPath` plus authoritative `worktreePath`.
 
-## Implementation plan
-
-### 1. Branch slug helper
-
-Pure function in `src/shared/branchSlug.ts`:
-
-```ts
-export function makeBranchSlug(summary: string): string
-```
-
-Lower-case, replace whitespace + non-alphanumerics with `-`, collapse
-runs of `-`, trim, cap length at ~40 chars, prefix with `fork/`.
-Example: "Fix Redis timeout in worker pool" → `fork/fix-redis-timeout-in-worker-pool`.
-
-Worth unit-testing - input/output table is straightforward.
-
-### 2. Branch name from message body
-
-> **Shipped implementation note:** `summarizeForBranchName` via LLM was
-> **deferred**. What shipped (2026-05-04) is a purely deterministic slug
-> derived from the first ~40 chars of the picked message body - the same
-> `makeBranchSlug` helper described in step 1. An LLM-powered rename pass
-> was explicitly cut to keep the fork operation synchronous and offline-safe.
-> The `generateTitle` pattern in `src/shared/auto-title.ts` remains the
-> reference if someone wants to add LLM naming later.
-
-Original plan for reference: use a single-turn Claude SDK query with
-`maxTurns=1` and the prompt "Summarize the following message in 4-8 words
-suitable for a git branch name. No punctuation, no leading verbs." Fall back
-to deterministic slug on failure; kick off rename in background.
-
-### 3. Worktree storage
-
-Decide between:
-
-- **Inside the repo** at `<repo>/.switchboard/worktrees/<slug>/` -
-  needs a `.gitignore` entry. Simple, discoverable, doesn't sprawl.
-  **Recommended**.
-- Sibling directory at `<repo>/../switchboard-worktrees/<slug>/` -
-  cleaner separation but more code to compute paths and explain to
-  users.
-
-Pick one and stick with it. Whatever you pick, make it configurable
-in settings later but ship a sensible default first.
-
-Add `.switchboard/` to `.gitignore` (only if option 1) - but only
-if the user's repo doesn't already ignore it. Read existing
-`.gitignore` first; append if missing; warn-don't-error if the file
-is locked.
-
-### 4. Worktree creation
-
-Helper `createForkWorktree(opts: { repoRoot: string; baseBranch: string;
-newBranch: string }): Promise<{ worktreePath: string; branch: string }>`:
-
-```sh
-git -C <repoRoot> worktree add -b <newBranch> <worktreePath> <baseBranch>
-```
-
-Capture stderr verbatim; surface it on failure. Things that go wrong:
-
-- Branch name collides with an existing branch (suffix `-2`, `-3`,
-  etc., up to a small N before failing).
-- Working tree at the target path already exists (same suffix logic).
-- Repo is shallow / has no commits (rare; user error - bail with a
-  clear message).
-
-### 5. Wire into `conversations.fork` (from #4)
-
-Extend the IPC payload:
-
-```ts
-fork(args: {
-  sourceConversationId: string
-  upToMessageId: string
-  withWorktree?: boolean   // NEW
-}): Promise<{ conversation: Conversation; resumeHint: string | null }>
-```
-
-When `withWorktree` is true:
-
-1. Determine `baseBranch` from the source conversation's `projectPath`
-   (`git -C <path> rev-parse --abbrev-ref HEAD`). If detached HEAD,
-   use the SHA and create the new branch off that.
-2. Generate slug from the picked message body via
-   `summarizeForBranchName`.
-3. `createForkWorktree(...)`.
-4. Override the new conversation's `project_path` with the worktree
-   path before INSERT.
-5. Persist `worktree_path` + `worktree_branch` on the new conversation
-   row (add columns if not already there from #4 - the kanban table
-   already has them so the pattern's clear).
-
-### 6. UI: option in the fork menu
-
-The right-click menu from #4 shipped with one entry ("Fork from
-here"). Add a second: **"Fork to worktree"**. Same flow but passes
-`withWorktree: true`. Show the chosen branch name in a tiny toast
-after creation: "Forked to fork/<slug>".
-
-### 7. Tests
-
-- `makeBranchSlug` table tests.
-- `createForkWorktree` is integration - gate it behind a `git`-
-  available check and skip in CI if needed. Use a tmp git repo
-  fixture.
-- DB: assert the forked conversation row has both `worktree_path`
-  and `worktree_branch` populated.
-- Resume verification: same as #4 but cwd should now be the worktree
-  path, not the original repo (terminal pane spawns there, file
-  pane lists from there).
-
----
-
-## Pitfalls / gotchas
-
-- **`git worktree add` locks**: Two forks racing on the same repo
-  can collide on `.git/worktrees/`. Serialize per-repo with a small
-  in-process mutex keyed by `repoRoot`.
-- **Submodules**: `git worktree add` doesn't recursively init
-  submodules. If the user's repo has them, doc it as a known
-  limitation; don't try to be clever.
-- **Untracked files**: aren't carried into the new worktree. That's
-  the standard `git worktree` behaviour and probably what users
-  expect, but call it out in any docs we write for this feature.
-- **Path display in sidebar**: forked conversation's display path
-  becomes ugly (e.g. `…/myrepo/.switchboard/worktrees/fork-fix-x/`).
-  Consider showing `<repo> · fork/fix-x` instead - the worktree
-  branch name is the human-meaningful part. Sidebar lives at
-  `src/renderer/components/sidebar/Sidebar.tsx`.
-- **Cleanup**: when a forked conversation is **archived** (existing
-  archive system - see CLAUDE.md "Archive system"), don't auto-delete
-  the worktree. The user may have committed work there. Show a
-  separate "Delete worktree" action in the conversation context menu
-  that does `git worktree remove` and `git branch -D` after a
-  confirm dialog. Out of scope for v1 if you're tight on time -
-  document as a follow-up.
-- **`thread_sessions`**: completely unrelated; ignore.
-- **Worktree on Windows**: use `path.join` everywhere; never hardcode
-  forward slashes. Switchboard supports Windows builds (electron-
-  builder targets `win`), so worktree path construction must respect
-  the platform separator.
-
----
-
-## Definition of done
-
-- `makeBranchSlug` ships with tests.
-- Branch slug is deterministically derived from the picked message body
-  (LLM naming deferred - see step 2 note above).
-- `createForkWorktree` works with collision handling.
-- `conversations.fork` accepts `withWorktree: true`.
-- "Fork to worktree" entry in the message context menu.
-- Forked conversation opens with cwd = new worktree path; terminal
-  pane and file pane read from there.
-- DB schema persists `worktree_path` + `worktree_branch` on the
-  forked conversation row.
-- Sidebar shows a friendly label (`<repo> · <branch>`) for worktree-
-  backed conversations.
-- `npm run typecheck && npm test` clean.
-- One CHANGELOG.md line.
-
----
-
-## Out of scope (deliberate)
-
-- Auto-merge of fork branches back to base (the user's existing ask
-  for "how do I merge 4-5 worktrees?" is a separate, larger feature
-  involving rerere + mergiraf + a top-level Branches screen).
-- "Delete worktree" UI (mentioned above as cleanup follow-up).
-- Cross-platform smoke (test on macOS first; Windows is a follow-up
-  unless trivial).
-- Per-fork environment overrides (different `.env`, different agent
-  config). Worktree shares parent's tooling; that's fine for v1.
+See `docs/plans/2026-08-24-worktree-creation-transaction-design.md` and
+`docs/plans/2026-08-24-conversation-fork-reliability-design.md`.

@@ -11,6 +11,7 @@ import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.remote.ArchiveConversationResult
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.LoadedSession
+import app.switchboard.mobile.domain.remote.ForkLineageMetadata
 import app.switchboard.mobile.domain.remote.MarkReadResult
 import app.switchboard.mobile.domain.remote.ModelOption
 import app.switchboard.mobile.domain.remote.NewSessionDecisions
@@ -76,6 +77,7 @@ data class ThreadSessionState(
     val profiles: ThreadProfileState = ThreadProfileState(),
     val archive: ThreadArchiveState = ThreadArchiveState(),
     val pendingActions: ThreadPendingActions = ThreadPendingActions(),
+    val forkMetadata: ForkLineageMetadata? = null,
 )
 
 data class ThreadArchiveState(
@@ -334,17 +336,18 @@ object LoadedSessionSnapshotMapper {
     fun map(threadId: String, loaded: LoadedSession): ThreadSnapshot {
         val feed = loaded.messages.flatMap { message ->
             when (message.role.lowercase()) {
-                "user" -> UserMessageVisibility.visibleText(message.content, message.displayBody)?.let { text ->
-                    listOf(FeedItem.User(
+                "user" -> {
+                    val text = UserMessageVisibility.visibleText(message.content, message.displayBody)
+                    if (text != null || message.images.isNotEmpty()) listOf(FeedItem.User(
                         id = "h-${message.id}",
-                        text = text,
+                        text = text.orEmpty(),
                         at = message.timestamp,
                         images = message.images,
                         pillsMeta = message.pillsMeta,
-                    ))
-                }.orEmpty()
+                    )) else emptyList()
+                }
 
-                "assistant", "system" -> buildList {
+                "assistant" -> buildList {
                     if (message.content.isNotBlank()) {
                         add(
                             FeedItem.Text(
@@ -439,6 +442,7 @@ class ThreadSessionCoordinator(
     private var models = ThreadModelState(selectedModelId = initialCached?.resolvedModel)
     private var profiles = ThreadProfileState(selectedInstanceId = initialCached?.instanceId)
     private var archive = ThreadArchiveState()
+    private var forkMetadata: ForkLineageMetadata? = null
     private var allProfiles: List<ProviderInstance> = emptyList()
     private val mutableState = MutableStateFlow(
         ThreadSessionState(load, composer, models = models, profiles = profiles),
@@ -882,6 +886,7 @@ class ThreadSessionCoordinator(
             if (!accepts(response, request, loadRequest)) return
             when (val outcome = response.outcome) {
                 is RemoteOutcome.Success -> {
+                    forkMetadata = outcome.value.meta?.forkMetadata
                     reduce(
                         ThreadAction.InstallSnapshot(
                             scope,
@@ -904,11 +909,28 @@ class ThreadSessionCoordinator(
         }
     }
 
-    private fun reattach(loaded: LoadedSession) = reattach(loaded.meta?.agentType)
+    private fun reattach(loaded: LoadedSession) {
+        val meta = loaded.meta ?: return
+        reattach(
+            agentType = meta.agentType,
+            cwdOverride = meta.worktreePath ?: worktreePath ?: meta.projectPath,
+            instanceId = meta.providerInstanceId,
+            model = meta.model,
+            runtimeMode = meta.runtimeMode?.toRuntimeModeOrNull(),
+            nativeResume = meta.forkMetadata?.resumeMode != "transcript-handoff",
+        )
+    }
 
-    private fun reattach(agentType: String?) {
+    private fun reattach(
+        agentType: String?,
+        cwdOverride: String? = null,
+        instanceId: String? = null,
+        model: String? = null,
+        runtimeMode: RuntimeMode? = null,
+        nativeResume: Boolean = true,
+    ) {
         if (agentType == null) return
-        val cwd = worktreePath ?: projectPath ?: return
+        val cwd = cwdOverride ?: worktreePath ?: projectPath ?: return
         val provider = providerKind(agentType)
         if (provider == null) {
             controlMessage = "Cannot reattach unknown provider $agentType"
@@ -926,7 +948,10 @@ class ThreadSessionCoordinator(
                     threadId = threadId,
                     provider = provider,
                     cwd = cwd,
-                    resumeSessionId = threadId,
+                    resumeSessionId = threadId.takeIf { nativeResume },
+                    instanceId = instanceId,
+                    model = model,
+                    runtimeMode = runtimeMode,
                 ),
             ) { response ->
                 synchronized(this) {
@@ -1157,6 +1182,7 @@ class ThreadSessionCoordinator(
                 questionRequestIds = pendingQuestionRequestIds.toSet(),
                 planIds = pendingPlanOrigins.keys.toSet(),
             ),
+            forkMetadata = forkMetadata,
         )
     }
 

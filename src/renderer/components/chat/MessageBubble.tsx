@@ -17,16 +17,13 @@ import { parseSlashCommandWrapper, splitSkillMentions } from './slashCommands'
 import { SkillChip } from './SkillChip'
 import {
   forkAndOpenSession,
-  releaseForkWorktreeIntent,
-  shouldClearForkWorktreeProgress,
 } from '../../services/forkSession'
+import { isForkableForkMessage } from '@shared/conversation-fork'
 import { parseRotationMarker } from './rotationMarker'
 import { TodoList } from './TodoList'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
 import { useMessageMutable } from '../../services/messageLifecycle'
-import { WorktreeCreationProgress } from '../worktree/WorktreeCreationProgress'
-import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
 import { buildForwardedContext, forwardingSource, forwardingTargets } from '../../services/chatForwarding'
 import { focusComposer } from '../../services/composerRegistry'
 
@@ -119,7 +116,6 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // briefly at the bottom of the chat - tells the user where their files
   // landed without forcing them to dig into the sidebar's secondary line.
   const [forkToast, setForkToast] = useState<string | null>(null)
-  const [forkWorktreeCreation, setForkWorktreeCreation] = useState<WorktreeCreationSnapshot | null>(null)
 
   // Inline file-pill enhancement: replace `<code>src/foo.ts:42-58</code>`
   // with clickable chips that open the file viewer at that line range.
@@ -240,7 +236,10 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     return null
   }
 
-  const handleForkRequest = async (withWorktree: boolean = false) => {
+  const handleForkRequest = async (
+    withWorktree: boolean = false,
+    dirtySourceConfirmed?: { headSha: string; statusDigest: string },
+  ) => {
     const store = useAgentStore.getState()
     // Prefer the conversation this bubble belongs to (passed from
     // MessageList) over the global activeSessionId - in dual-chat the
@@ -258,33 +257,37 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       setForkError('Cannot fork while a turn is in flight')
       return
     }
-    // Translate the clicked message id to a positional index in this
-    // session's currently-loaded message array. Position is the only
-    // contract that survives a JSONL re-parse on the main side, since
-    // JsonlParser regenerates ids on every call.
-    const messages = session.messages ?? []
-    const upToIndex = messages.findIndex((m) => m.id === message.id)
-    if (upToIndex < 0) {
-      setForkError('Message not in current session')
-      return
-    }
     setForkBusy(withWorktree ? 'worktree' : 'plain')
     setForkError(null)
     try {
       const res = await forkAndOpenSession(
         sourceId,
-        upToIndex,
-        message.id,
+        message,
         withWorktree,
-        setForkWorktreeCreation,
+        dirtySourceConfirmed,
       )
       if (!res.ok) {
-        setForkError(res.error ?? 'Fork failed')
+        if (res.dirtySource) {
+          const proceed = window.confirm(
+            `Create the worktree from committed HEAD ${res.dirtySource.headSha.slice(0, 12)}?\n\n`
+            + `${res.dirtySource.omittedChangeSummary}\n\nUncommitted and untracked changes will not be copied.`,
+          )
+          if (proceed) {
+            await handleForkRequest(true, {
+              headSha: res.dirtySource.headSha,
+              statusDigest: res.dirtySource.statusDigest,
+            })
+          }
+          return
+        }
+        const retained = res.recovery?.retainedPath
+          ? ` Retained worktree: ${res.recovery.retainedPath}`
+          : ''
+        setForkError(`${res.error.message}${retained}`)
       } else {
-        setForkWorktreeCreation(null)
         setForkMenu(null)
-        if (res.worktree) {
-          setForkToast(`Forked to ${res.worktree.branch}`)
+        if (res.result.git) {
+          setForkToast(`Forked to ${res.result.git.branch}`)
           // Self-dismiss after a beat - toast is informational, not
           // actionable, so a 4s window is plenty for the eye to catch.
           setTimeout(() => setForkToast(null), 4000)
@@ -294,40 +297,6 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       setForkError(err instanceof Error ? err.message : 'Fork failed')
     } finally {
       setForkBusy(false)
-    }
-  }
-
-  const handleForkWorktreeAction = async (action: WorktreeCreationRecoveryAction) => {
-    const snapshot = forkWorktreeCreation
-    if (!snapshot) return
-    try {
-      const updated = await window.api.worktreeCreation.act({
-        creationId: snapshot.creationId,
-        machineId: snapshot.provenance.machineId,
-        expectedRevision: snapshot.revision,
-        action,
-      })
-      setForkWorktreeCreation(updated)
-      if (updated.status === 'ready') await handleForkRequest(true)
-      if (shouldClearForkWorktreeProgress(updated)) {
-        const sourceId = sessionId
-        const source = sourceId
-          ? useAgentStore.getState().sessions.find((session) => session.id === sourceId)
-          : undefined
-        const upToIndex = source?.messages?.findIndex((candidate) => candidate.id === message.id) ?? -1
-        if (sourceId && upToIndex >= 0) {
-          releaseForkWorktreeIntent(sourceId, upToIndex, updated.creationId)
-        }
-        setForkWorktreeCreation(null)
-        if (updated.cleanupDisposition === 'retained') {
-          setForkToast(updated.worktreePath
-            ? `Worktree retained at ${updated.worktreePath}; the fork conversation was not started.`
-            : 'Fork artifacts were retained for manual recovery; the conversation was not started.')
-          setTimeout(() => setForkToast(null), 8_000)
-        }
-      }
-    } catch (error) {
-      setForkError(error instanceof Error ? error.message : 'Fork recovery failed')
     }
   }
 
@@ -366,7 +335,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         // Skip the menu for system / error messages - they aren't fork
         // anchors. Image-lightbox right-click is portal'd to body and
         // doesn't bubble through this handler, so it stays unaffected.
-        if (isSystem) return
+        if (!isForkableForkMessage(message)) return
         e.preventDefault()
         setForkMenu({ x: e.clientX, y: e.clientY })
         setForkError(null)
@@ -709,15 +678,6 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
         </div>,
         document.body,
       )}
-      {forkWorktreeCreation && forkWorktreeCreation.status !== 'ready' && createPortal(
-        <div style={{ position: 'fixed', right: 16, bottom: 42, width: 360, zIndex: 1400 }}>
-          <WorktreeCreationProgress
-            snapshot={forkWorktreeCreation}
-            onAction={(action) => { void handleForkWorktreeAction(action) }}
-          />
-        </div>,
-        document.body,
-      )}
 
       {/* Image lightbox - portalled to document.body so it escapes any
           transformed or overflow-hidden ancestor (the virtualizer uses
@@ -1044,7 +1004,7 @@ function ForkContextMenu({
       }}
     >
       <ForkMenuItem
-        label={busy === 'plain' ? 'Forking…' : 'Fork from here'}
+        label={busy === 'plain' ? 'Forking…' : 'Fork conversation here'}
         disabled={busy !== false}
         onClick={onFork}
         icon={
@@ -1058,7 +1018,7 @@ function ForkContextMenu({
         }
       />
       <ForkMenuItem
-        label={busy === 'worktree' ? 'Creating worktree…' : 'Fork to worktree'}
+        label={busy === 'worktree' ? 'Creating worktree…' : 'Fork conversation into a new worktree from current HEAD'}
         disabled={busy !== false}
         onClick={onForkWorktree}
         icon={
@@ -1073,7 +1033,7 @@ function ForkContextMenu({
             <rect x="14" y="13" width="8" height="8" rx="1" />
           </svg>
         }
-        sublabel="branches off HEAD"
+        sublabel="uncommitted and untracked changes are not copied"
       />
       {error && (
         <div style={{

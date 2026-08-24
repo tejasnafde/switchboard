@@ -23,6 +23,13 @@ export interface TruncateClaudeOptions {
    * in sync so the new file reads as a brand-new session, not a clone.
    */
   newSessionId?: string
+  /** Execution root recorded in Claude's native history. Forks into a
+   * worktree must not retain the source checkout as their resumed cwd. */
+  newCwd?: string
+}
+
+export interface TruncateClaudeAtEventResult extends TruncateClaudeResult {
+  anchorFound: boolean
 }
 
 export interface TruncateClaudeResult {
@@ -200,6 +207,64 @@ export function assembleClaudeFork(
     if (r.keptVisibleCount >= remaining) break
   }
   return { newContent: parts.join(''), anchorUuid, keptVisibleCount: consumed }
+}
+
+/**
+ * Assemble a Claude transcript through one exact durable JSONL event.
+ *
+ * This is the fork boundary used by the reliable contract. Unlike the
+ * legacy visible-count helper, repeated text or renderer-only rows cannot
+ * move the cut. A missing or duplicated event id is rejected as ambiguous.
+ */
+export function assembleClaudeForkAtEvent(
+  fragments: string[],
+  anchorEventId: string,
+  opts: TruncateClaudeOptions = {},
+): TruncateClaudeAtEventResult {
+  const parsedFragments = fragments.map((content) => content.split('\n').flatMap((raw) => {
+    const trimmed = raw.trim()
+    if (!trimmed) return []
+    try {
+      return [{ parsed: JSON.parse(trimmed) as Record<string, unknown> }]
+    } catch {
+      return []
+    }
+  }))
+  const matches = parsedFragments.flat().filter(({ parsed }) =>
+    isClaudeVisible(parsed) && parsed.uuid === anchorEventId)
+  if (matches.length !== 1) {
+    return {
+      newContent: '',
+      anchorUuid: null,
+      keptVisibleCount: 0,
+      anchorFound: false,
+    }
+  }
+
+  const kept: string[] = []
+  let keptVisibleCount = 0
+  let found = false
+  for (const fragment of parsedFragments) {
+    for (const { parsed } of fragment) {
+      const visible = isClaudeVisible(parsed)
+      if (visible) keptVisibleCount++
+      if (opts.newSessionId) parsed.sessionId = opts.newSessionId
+      if (opts.newCwd) parsed.cwd = opts.newCwd
+      kept.push(JSON.stringify(parsed))
+      if (visible && parsed.uuid === anchorEventId) {
+        found = true
+        break
+      }
+    }
+    if (found) break
+  }
+
+  return {
+    newContent: kept.length > 0 ? `${kept.join('\n')}\n` : '',
+    anchorUuid: found ? anchorEventId : null,
+    keptVisibleCount,
+    anchorFound: found,
+  }
 }
 
 /** Count visible Claude events in a raw JSONL string. Used by fork.ts

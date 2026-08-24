@@ -597,12 +597,7 @@ app.whenReady().then(() => {
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)
-  registerAppHandlers(backendHost, {
-    forkConversationWithWorktree: (input) => {
-      if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
-      return worktreeCreationRuntime.forkConversationWithWorktree(input)
-    },
-  })
+  registerAppHandlers(backendHost)
   registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
@@ -666,12 +661,7 @@ app.whenReady().then(() => {
         : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
       registerAgentHandlers(reactivatedHost)
-      registerAppHandlers(reactivatedHost, {
-        forkConversationWithWorktree: (input) => {
-          if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
-          return worktreeCreationRuntime.forkConversationWithWorktree(input)
-        },
-      })
+      registerAppHandlers(reactivatedHost)
       registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)

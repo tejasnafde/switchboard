@@ -1,0 +1,96 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "conversation-fork-reliability",
+  "summary": "Fork conversations from a backend-validated stable message anchor with rich atomic persistence, recoverable worktree and provider side effects, preserved execution identity, idempotent remote routing, honest provider resume modes, and durable lineage on every client.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/forkSession.ts",
+        "src/renderer/services/openConversationAtAnchor.ts",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/ForkLineageBanner.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "tests/unit/fork-session-worktree-projection.test.ts",
+        "tests/unit/fork-lineage-banner.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/lib/conversationFork.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/lib/__tests__/conversationFork.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/ConversationFork.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/ConversationForkWire.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/ConversationForkWireTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/conversation-fork.ts",
+        "src/main/conversations/conversation-fork-coordinator.ts",
+        "src/main/conversations/fork-anchor.ts",
+        "src/main/conversations/fork-provider-artifacts.ts",
+        "src/main/conversations/fork-worktree-owner.ts",
+        "src/main/conversations/history.ts",
+        "src/main/ipc/app.ts",
+        "src/preload/routing-table.ts",
+        "tests/unit/conversation-fork-coordinator.test.ts",
+        "tests/unit/conversation-fork-provider-artifacts.test.ts",
+        "tests/unit/conversation-fork-worktree-port.test.ts",
+        "tests/unit/conversation-fork-ipc.test.ts",
+        "tests/unit/routing-table.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/conversation-fork.ts",
+        "src/main/conversations/fork-message-codec.ts",
+        "src/main/conversations/fork-diagnostics.ts",
+        "tests/unit/conversation-fork-store.test.ts",
+        "tests/unit/conversation-fork-message-copy.test.ts",
+        "tests/unit/conversation-fork-diagnostics.test.ts",
+        "tests/unit/worktree-creation-fork-store.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/ws-protocol.ts",
+        "src/server/index.ts",
+        "docs/plans/2026-08-24-conversation-fork-reliability-design.md",
+        "docs/notes/session-kickoff-fork-from-message.md",
+        "docs/notes/session-kickoff-fork-to-worktree.md",
+        "tests/unit/ws-protocol.test.ts",
+        "tests/unit/tcp-host.test.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "The full desktop Vitest gate passed: 320 files and 3,101 tests, including fork, JSONL, SQLite foreign-key, worktree owner/rollback, routing, IPC, and provider-artifact coverage.",
+      "React Native passed TypeScript validation and all 3 Jest suites (18 tests).",
+      "Native Android testDebugUnitTest passed 797 tests; lintDebug, assembleDebug, and compileDebugAndroidTestKotlin passed under OpenJDK 17 and Android API 36."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Physical iOS and Android hardware interaction is not yet exercised.",
+      "A separately running remote machine disconnect-after-success scenario is covered by idempotency/routing tests but not yet exercised manually.",
+      "Claude native resume with both named OAuth profiles is pending final release verification."
+    ]
+  }
+}

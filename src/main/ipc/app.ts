@@ -34,12 +34,15 @@ import {
   getArchivedConversations,
   isConversationArchived,
   getConversationById,
+  getConversationForkMetadata,
   getConversationRuntimeMode,
   setConversationRuntimeMode,
   getConversationProviderInstanceId,
   setConversationProviderInstanceId,
   getConversationModel,
   setConversationModel,
+  getConversationReasoningEffort,
+  setConversationReasoningEffort,
   setConversationProviderSelection,
   getConversationPendingHandoff,
   setConversationPendingHandoff,
@@ -70,12 +73,9 @@ import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { loadConversationHistory } from '../conversations/history'
 import { loadJsonlCached } from '../agent/jsonl-cache'
-import {
-  forkConversation,
-  type ForkInput,
-  type ForkResult,
-  type ForkWorktreeCreationResult,
-} from '../conversations/fork'
+import { getConversationForkCoordinator } from '../conversations/conversation-fork-runtime'
+import type { ConversationForkCoordinator } from '../conversations/conversation-fork-coordinator'
+import { parseForkConversationRequest, type ForkConversationOutcome } from '@shared/conversation-fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
 import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversationSidebarRole'
@@ -110,7 +110,10 @@ function capTail<T extends { messages: ChatMessage[] }>(
  * Provider files are deliberately absent; SCAN_SESSIONS exposes those only in
  * the explicit Import/Recovery surface. */
 export async function visibleSessionsForProject(projectPath: string): Promise<SessionSummary[]> {
-  return projectManagedRootSessions(getManagedRootConversationsForProject(projectPath))
+  return projectManagedRootSessions(getManagedRootConversationsForProject(projectPath)).map((session) => {
+    const forkMetadata = getConversationForkMetadata(session.id)
+    return forkMetadata ? { ...session, forkMetadata } : session
+  })
 }
 
 function enrichRecoveryCandidates(candidates: SessionSummary[]): SessionSummary[] {
@@ -124,7 +127,7 @@ function enrichRecoveryCandidates(candidates: SessionSummary[]): SessionSummary[
 }
 
 export interface AppHandlerDependencies {
-  forkConversationWithWorktree?: (input: ForkInput) => Promise<ForkWorktreeCreationResult>
+  conversationFork?: Pick<ConversationForkCoordinator, 'createOrGet' | 'get'>
 }
 
 export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
@@ -403,7 +406,22 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     opts?: { limit?: number },
   ): Promise<{
     messages: ChatMessage[]
-    meta: { id: string; title: string; projectPath: string; agentType: string } | null
+    meta: {
+      id: string
+      title: string
+      projectPath: string
+      agentType: string
+      rootThreadId: string
+      worktreePath: string | null
+      worktreeBranch: string | null
+      worktreeId: string | null
+      providerInstanceId: string | null
+      runtimeMode: string | null
+      model: string | null
+      reasoningEffort: string | null
+      launchConfigName: string | null
+      forkMetadata: import('@shared/conversation-fork').ForkLineageMetadata | null
+    } | null
     total: number
     truncated: boolean
   }> => {
@@ -420,6 +438,15 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       projectPath: row.project_path,
       agentType: rootRow?.agent_type ?? row.agent_type,
       rootThreadId,
+      worktreePath: row.worktree_path ?? null,
+      worktreeBranch: row.worktree_branch ?? null,
+      worktreeId: row.worktree_id ?? null,
+      providerInstanceId: row.provider_instance_id ?? null,
+      runtimeMode: row.runtime_mode ?? null,
+      model: row.model ?? null,
+      reasoningEffort: row.reasoning_effort ?? null,
+      launchConfigName: getSessionLayout(row.id)?.launchConfigName ?? row.launch_config_name ?? null,
+      forkMetadata: getConversationForkMetadata(row.id),
     }
 
     try {
@@ -496,6 +523,13 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     setConversationModel(id, model)
     return { ok: true }
   })
+  host.handle(AppChannels.GET_CONVERSATION_REASONING_EFFORT, (id: string) => {
+    return { reasoningEffort: getConversationReasoningEffort(id) }
+  })
+  host.handle(AppChannels.SET_CONVERSATION_REASONING_EFFORT, (id: string, effort: string) => {
+    setConversationReasoningEffort(id, effort)
+    return { ok: true }
+  })
   host.handle(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, (
     id: string,
     agentType: string,
@@ -506,7 +540,7 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
   })
 
   // Pending cross-provider context handoff. Scheduled by an agent switch
-  // (ChatPanel) or a degraded fork (conversations/fork.ts); the chat panel
+  // (ChatPanel) or a transcript-handoff fork; the chat panel
   // consumes it on the next send by prefixing the transcript preamble, then
   // clears it so a reload cannot re-inject.
   host.handle(AppChannels.GET_CONVERSATION_PENDING_HANDOFF, (id: string) => {
@@ -602,41 +636,36 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
     }
   })
 
-  // Fork-from-message - clone a conversation up through the chosen
-  // message and wire the new conversation so the agent can resume with
-  // real context. See src/main/conversations/fork.ts.
-  host.handle(AppChannels.FORK_CONVERSATION, async (args: {
-      sourceConversationId: string
-      upToIndex: number
-      forkedAtMessageId?: string
-      creationId?: string
-      conversationId?: string
-      machineId?: string
-      requestedAt?: number
-      // #5: opt the fork into a fresh git worktree branched off HEAD.
-      withWorktree?: boolean
-    },
-  ) => {
-    try {
-      const result = args.withWorktree
-        ? await deps.forkConversationWithWorktree?.(args)
-        : await forkConversation(args)
-      if (!result) throw new Error('Fork worktree creation is unavailable.')
-      if ('worktreeCreation' in result) {
-        return {
-          ok: false,
-          error: `Fork worktree creation is ${result.worktreeCreation.phase}/${result.worktreeCreation.status}.`,
-          worktreeCreation: result.worktreeCreation,
-        }
+  host.handle(AppChannels.FORK_CONVERSATION, async (input: unknown): Promise<ForkConversationOutcome> => {
+    const parsed = parseForkConversationRequest(input)
+    if (!parsed.ok) {
+      const legacy = input !== null
+        && typeof input === 'object'
+        && 'upToIndex' in input
+      return {
+        kind: 'failed',
+        requestId: input !== null && typeof input === 'object'
+          && typeof (input as { requestId?: unknown }).requestId === 'string'
+          ? (input as { requestId: string }).requestId
+          : 'invalid-request',
+        error: {
+          code: legacy ? 'upgrade-required' : 'invalid-request',
+          message: legacy
+            ? 'This client uses the retired positional fork contract. Update Switchboard before retrying.'
+            : parsed.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; '),
+          retryable: false,
+        },
       }
-      log.info(`fork: ${args.sourceConversationId} → ${result.conversation.id} resumable=${result.resumable}`)
-      return { ok: true, ...result }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'unknown error'
-      log.error(`fork failed: ${message}`)
-      return { ok: false, error: message }
     }
+    return (deps.conversationFork ?? getConversationForkCoordinator()).createOrGet(parsed.value)
   })
+
+  host.handle(AppChannels.GET_CONVERSATION_FORK, (input: {
+    machineId?: string
+    requestId: string
+  }): ForkConversationOutcome | null => (
+    deps.conversationFork ?? getConversationForkCoordinator()
+  ).get(input.machineId ?? 'local', input.requestId))
 
   // ─── Bookmarks ───────────────────────────────────────────────────
   host.handle(BookmarkChannels.SAVE, (params: Parameters<typeof saveBookmark>[0]) => saveBookmark(params))

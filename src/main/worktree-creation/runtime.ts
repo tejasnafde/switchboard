@@ -1,6 +1,8 @@
 import type { BackendHost } from '../backend/host'
-import { getDb } from '../db/database'
+import { getConversationById, getDb, listConversationSegments } from '../db/database'
 import { SqliteWorktreeCreationStore } from '../db/worktree-creation'
+import { SqliteConversationForkStore } from '../db/conversation-fork'
+import { getProviderInstanceFull } from '../db/providerInstances'
 import {
   createWorktreeCreationProgressSink,
   registerWorktreeCreationHandlers,
@@ -25,11 +27,11 @@ import {
 import { readLaunchConfig } from '../launch-config/launch-config-store'
 import { getManagedTerminalRuntime } from '../ipc/terminal'
 import {
-  ForkWorktreeCoordinator,
+  ConversationForkWorktreePort,
   ForkWorktreeOwnerAdapter,
-  type ForkWorktreeCoordinatorInput,
 } from '../conversations/fork-worktree-owner'
-import type { ForkWorktreeCreationResult } from '../conversations/fork'
+import { DefaultProviderForkArtifacts } from '../conversations/fork-provider-artifacts'
+import { configureConversationForkWorktreePort } from '../conversations/conversation-fork-runtime'
 import type {
   GetWorktreeCreationRequest,
   WorktreeCreationActionRequest,
@@ -42,12 +44,9 @@ export interface WorktreeCreationRuntime {
   createWorktreeTransaction(input: WorktreeCreationRequest): Promise<WorktreeCreationSnapshot>
   getWorktreeCreation(input: GetWorktreeCreationRequest): Promise<WorktreeCreationSnapshot>
   actOnWorktreeCreation(input: WorktreeCreationActionRequest): Promise<WorktreeCreationSnapshot>
-  forkConversationWithWorktree(input: ForkWorktreeCoordinatorInput): Promise<ForkWorktreeCreationResult>
 }
 
-interface WorktreeCreationRuntimeApi extends WorktreeCreationApi {
-  forkConversationWithWorktree?(input: ForkWorktreeCoordinatorInput): Promise<ForkWorktreeCreationResult>
-}
+type WorktreeCreationRuntimeApi = WorktreeCreationApi
 
 export type WorktreeCreationServiceFactory = (
   progressSink: WorktreeCreationProgressSink,
@@ -68,14 +67,6 @@ export function createWorktreeCreationRuntime(
     actOnWorktreeCreation: async (input) =>
       (await service).actOnWorktreeCreation(input),
   }
-  const forkConversationWithWorktree = async (
-    input: ForkWorktreeCoordinatorInput,
-  ): Promise<ForkWorktreeCreationResult> => {
-    const coordinator = (await service).forkConversationWithWorktree
-    if (!coordinator) throw new Error('Fork worktree creation is unavailable in this runtime.')
-    return coordinator(input)
-  }
-
   const registerHost = (host: BackendHost): void => {
     progressSink.registerHost(host)
     registerWorktreeCreationHandlers(host, api)
@@ -86,7 +77,6 @@ export function createWorktreeCreationRuntime(
     createWorktreeTransaction: api.createWorktreeTransaction,
     getWorktreeCreation: api.getWorktreeCreation,
     actOnWorktreeCreation: api.actOnWorktreeCreation,
-    forkConversationWithWorktree,
   }
 }
 
@@ -95,10 +85,28 @@ export function createDefaultWorktreeCreationRuntime(
   getProviderRegistry: () => ManagedProviderRegistry | null = () => null,
 ): WorktreeCreationRuntime {
   return createWorktreeCreationRuntime(host, async (progressSink) => {
-    const store = new SqliteWorktreeCreationStore(getDb())
+    const database = getDb()
+    const store = new SqliteWorktreeCreationStore(database)
+    const forks = new SqliteConversationForkStore(database)
+    const git = new ExecFileGitWorktreeAdapter()
+    const providerArtifacts = new DefaultProviderForkArtifacts({
+      resolveInstance: getProviderInstanceFull,
+      listCompatibleSessionIds: (conversationId, providerInstanceId) => {
+        const ids = listConversationSegments(conversationId)
+          .filter((segment) => segment.provider === 'claude-code'
+            && segment.provider_instance_id === providerInstanceId)
+          .map((segment) => segment.provider_session_id)
+        const row = getConversationById(conversationId)
+        if (row?.agent_type === 'claude-code'
+          && row.provider_instance_id === providerInstanceId
+          && row.session_id
+          && !ids.includes(row.session_id)) ids.push(row.session_id)
+        return ids
+      },
+    })
     const service = startWorktreeCreationService({
       store,
-      git: new ExecFileGitWorktreeAdapter(),
+      git,
       progressSink,
       userDataDir: userDataDir(),
       setupConfig: new LaunchConfigWorktreeSetupConfig(),
@@ -110,11 +118,9 @@ export function createDefaultWorktreeCreationRuntime(
           getManagedTerminalRuntime(),
         ),
       ),
-      forkOwner: new ForkWorktreeOwnerAdapter(store),
+      forkOwner: new ForkWorktreeOwnerAdapter(store, forks, providerArtifacts),
     })
-    const coordinator = new ForkWorktreeCoordinator(service)
-    return Object.assign(service, {
-      forkConversationWithWorktree: (input: ForkWorktreeCoordinatorInput) => coordinator.create(input),
-    })
+    configureConversationForkWorktreePort(new ConversationForkWorktreePort(service, forks, git))
+    return service
   })
 }

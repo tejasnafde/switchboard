@@ -112,6 +112,14 @@ data class SessionMeta(
     val agentType: String,
     val rootThreadId: String?,
     val raw: JsonObject,
+    val worktreePath: String? = null,
+    val worktreeBranch: String? = null,
+    val worktreeId: String? = null,
+    val providerInstanceId: String? = null,
+    val runtimeMode: String? = null,
+    val model: String? = null,
+    val reasoningEffort: String? = null,
+    val forkMetadata: ForkLineageMetadata? = null,
 )
 
 data class LoadedSession(

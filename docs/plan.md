@@ -41,7 +41,7 @@ actually shipped:
 - **Gated `npm run build`** (typecheck + test required before build)
 - **OpenCode ACP adapter** - speaks Agent Client Protocol over long-lived `opencode acp` child; legacy `opencode run --format json` shell-out retired 2026-05-02
 - **Kanban board** (⌘⇧K) - workspace-scoped board; cards launch agents in git worktrees; drag-and-drop column moves; live session state (pulse/badge); auto-promote to `needs_input` on `AskUserQuestion`
-- **Conversation forking** - "Fork from here" right-click on any message; Claude resumes real context via JSONL truncation; optionally fork into a git worktree
+- **Conversation forking** - stable backend-resolved message anchors, native Claude resume when compatible, durable exactly-once Codex/OpenCode transcript handoff, and optional recoverable source-HEAD worktrees
 - **CodeMirror code editor** (⌘⇧E) - multi-tab, syntax highlight, git diff gutter, ⌘-click jump-to-def (TypeScript + Python LSP), ⌘P Quick Open, save with mtime conflict detection
 - **LSP integration** - `typescript-language-server` + `pyright` for definition / references / hover / symbols
 - **Lexical chat input** - rich textarea with inline file/terminal/chat pill chips, `@`-mention file autocomplete

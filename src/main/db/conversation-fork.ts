@@ -125,6 +125,10 @@ export function ensureConversationForkSchema(db: Database.Database): void {
   addColumn(db, 'conversations', conversationColumns, 'fork_anchor_timestamp INTEGER')
   addColumn(db, 'conversations', conversationColumns, 'fork_anchor_canonical_count INTEGER')
   addColumn(db, 'conversations', conversationColumns, 'fork_resume_mode TEXT')
+  addColumn(db, 'conversations', conversationColumns, 'fork_anchor_preview TEXT')
+  addColumn(db, 'conversations', conversationColumns, 'fork_git_base_sha TEXT')
+  addColumn(db, 'conversations', conversationColumns, 'fork_source_dirty INTEGER')
+  addColumn(db, 'conversations', conversationColumns, 'fork_omitted_change_summary TEXT')
   addColumn(db, 'conversations', conversationColumns, 'reasoning_effort TEXT')
   addColumn(db, 'conversations', conversationColumns, 'worktree_creation_id TEXT')
 
@@ -171,16 +175,18 @@ export class SqliteConversationForkStore {
       : null
   }
 
-  reserve(input: ReserveConversationForkInput): ReserveConversationForkResult {
-    const existing = this.get(input.machineId, input.request.requestId)
-    if (existing) {
-      return existing.requestHash === input.requestHash
-        ? { kind: 'duplicate', record: existing }
-        : { kind: 'conflict', record: existing }
-    }
+  getResultForConversation(conversationId: string): ForkConversationResult | null {
+    const row = this.db.prepare(`
+      SELECT result_json FROM conversation_fork_operations
+       WHERE result_conversation_id = ? AND status = 'completed'
+       ORDER BY updated_at DESC LIMIT 1
+    `).get(conversationId) as { result_json: string | null } | undefined
+    return row?.result_json ? JSON.parse(row.result_json) as ForkConversationResult : null
+  }
 
-    this.db.prepare(`
-      INSERT INTO conversation_fork_operations (
+  reserve(input: ReserveConversationForkInput): ReserveConversationForkResult {
+    const insert = this.db.prepare(`
+      INSERT OR IGNORE INTO conversation_fork_operations (
         machine_id, request_id, schema_version, request_json, request_hash,
         source_conversation_id, status, revision, prepared_json, prepared_hash,
         created_at, updated_at
@@ -199,13 +205,20 @@ export class SqliteConversationForkStore {
     )
     const record = this.get(input.machineId, input.request.requestId)
     if (!record) throw new Error('Fork operation reservation was not persisted')
-    return { kind: 'reserved', record }
+    if (record.requestHash !== input.requestHash) return { kind: 'conflict', record }
+    return insert.changes === 1
+      ? { kind: 'reserved', record }
+      : { kind: 'duplicate', record }
   }
 
   commitCompleted(input: CommitCompletedConversationForkInput): CommitCompletedConversationForkResult {
-    this.assertCommitMatchesResult(input)
+    return this.db.transaction(() => this.commitCompletedInCurrentTransaction(input))()
+  }
 
-    const commit = this.db.transaction(() => {
+  commitCompletedInCurrentTransaction(
+    input: CommitCompletedConversationForkInput,
+  ): CommitCompletedConversationForkResult {
+    this.assertCommitMatchesResult(input)
       const operation = this.get(input.machineId, input.requestId)
       if (!operation) throw new Error(`Fork operation not found: ${input.requestId}`)
       if (operation.status !== 'pending' || operation.revision !== input.expectedRevision) {
@@ -220,10 +233,12 @@ export class SqliteConversationForkStore {
           worktree_branch, worktree_id, worktree_creation_id, runtime_mode, model,
           reasoning_effort, provider_instance_id, pending_handoff_from,
           launch_config_name, sidebar_role, fork_anchor_digest, fork_anchor_role,
-          fork_anchor_timestamp, fork_anchor_canonical_count, fork_resume_mode
+          fork_anchor_timestamp, fork_anchor_canonical_count, fork_resume_mode,
+          fork_anchor_preview, fork_git_base_sha, fork_source_dirty,
+          fork_omitted_change_summary
         ) VALUES (
           ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed',
-          ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
       `).run(
         conversation.id,
@@ -250,6 +265,10 @@ export class SqliteConversationForkStore {
         conversation.anchor.timestamp,
         conversation.anchor.canonicalMessageCount,
         conversation.resumeMode,
+        conversation.anchor.preview,
+        input.result.git?.baseSha ?? null,
+        input.result.git ? (input.result.git.sourceDirty ? 1 : 0) : null,
+        input.result.git?.omittedChangeSummary ?? null,
       )
 
       const insertMessage = this.db.prepare(`
@@ -292,12 +311,9 @@ export class SqliteConversationForkStore {
       )
       if (update.changes !== 1) throw new Error('Fork operation changed during commit')
 
-      const record = this.get(input.machineId, input.requestId)
-      if (!record) throw new Error('Completed fork operation disappeared')
-      return { kind: 'committed' as const, record }
-    })
-
-    return commit()
+    const record = this.get(input.machineId, input.requestId)
+    if (!record) throw new Error('Completed fork operation disappeared')
+    return { kind: 'committed' as const, record }
   }
 
   private assertCommitMatchesResult(input: CommitCompletedConversationForkInput): void {

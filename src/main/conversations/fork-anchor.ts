@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import {
   digestForkMessage,
+  isForkableForkMessage,
   type ForkAnchor,
   type ResolvedForkAnchor,
 } from '../../shared/conversation-fork'
@@ -22,6 +23,12 @@ export interface ForkAnchorConflict {
   code: 'missing-anchor' | 'ambiguous-anchor' | 'stale-anchor' | 'non-forkable-anchor'
   message: string
   candidateCount: number
+}
+
+/** Product-level eligibility for a real transcript boundary. System status,
+ * approval UI and tool-only activity remain visible but cannot author forks. */
+export function isForkableCanonicalMessage(message: ChatMessage): boolean {
+  return isForkableForkMessage(message)
 }
 
 export type ResolveCanonicalForkAnchorResult =
@@ -130,6 +137,8 @@ export function resolveCanonicalForkAnchor(
       provider: provenance?.provider ?? null,
       providerSessionId: provenance?.providerSessionId ?? null,
       providerEventId: provenance?.providerEventId ?? null,
+      preview: selected.message.content.trim().replace(/\s+/g, ' ').slice(0, 140)
+        || (selected.message.images?.length ? 'Image attachment' : 'Conversation message'),
     },
   }
 }

@@ -27,6 +27,7 @@ const conversations = new Map<string, {
   provider_instance_id?: string | null
   runtime_mode?: string | null
   model?: string | null
+  reasoning_effort?: string | null
   archived?: number
   last_read_at?: number | null
   pending_handoff_from?: string | null
@@ -39,6 +40,9 @@ vi.mock('better-sqlite3', () => {
     prepare(sql: string) {
       return {
         get: (...args: unknown[]) => {
+          if (/SELECT \* FROM conversations WHERE id = \?/.test(sql)) {
+            return conversations.get(args[0] as string)
+          }
           if (/SELECT thread_id FROM thread_sessions WHERE claude_session_id = \?/.test(sql)) {
             const threadId = threadSessions.get(args[0] as string)
             return threadId !== undefined ? { thread_id: threadId } : undefined
@@ -54,6 +58,10 @@ vi.mock('better-sqlite3', () => {
           if (/SELECT model FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
             return row ? { model: row.model ?? null } : undefined
+          }
+          if (/SELECT reasoning_effort FROM conversations WHERE id = \?/.test(sql)) {
+            const row = conversations.get(args[0] as string)
+            return row ? { reasoning_effort: row.reasoning_effort ?? null } : undefined
           }
           if (/SELECT archived FROM conversations WHERE id = \?/.test(sql)) {
             const row = conversations.get(args[0] as string)
@@ -96,6 +104,13 @@ vi.mock('better-sqlite3', () => {
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
             row.model = model
+            return { changes: 1 }
+          }
+          if (/UPDATE conversations SET reasoning_effort = \?/.test(sql)) {
+            const [effort, , id] = args as [string, number, string]
+            const row = conversations.get(id)
+            if (!row) return { changes: 0 }
+            row.reasoning_effort = effort
             return { changes: 1 }
           }
           if (/UPDATE conversations SET archived = \?/.test(sql)) {
@@ -154,6 +169,9 @@ const {
   setConversationRuntimeMode,
   getConversationModel,
   setConversationModel,
+  getConversationReasoningEffort,
+  setConversationReasoningEffort,
+  getConversationByThreadId,
   archiveConversation,
   unarchiveConversation,
   isConversationArchived,
@@ -259,6 +277,31 @@ describe('model pin survives Claude session-id rotation', () => {
   it('returns null when neither the id nor its resolved root has a saved model', () => {
     conversations.set('agent_789', {})
     expect(getConversationModel('agent_789')).toBeNull()
+  })
+})
+
+describe('reasoning effort survives provider session-id rotation', () => {
+  it('reads and writes through the durable root conversation', () => {
+    conversations.set('agent_123', { reasoning_effort: 'low' })
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    expect(getConversationReasoningEffort('uuid-abc')).toBe('low')
+    setConversationReasoningEffort('uuid-abc', 'high')
+
+    expect(conversations.get('agent_123')?.reasoning_effort).toBe('high')
+    expect(conversations.has('uuid-abc')).toBe(false)
+  })
+})
+
+describe('conversation fork source survives Claude session-id rotation', () => {
+  it('loads the durable root row from a rotated provider UUID', () => {
+    conversations.set('agent_123', { agent_type: 'claude-code', session_id: 'uuid-abc' })
+    threadSessions.set('uuid-abc', 'agent_123')
+
+    expect(getConversationByThreadId('uuid-abc')).toMatchObject({
+      agent_type: 'claude-code',
+      session_id: 'uuid-abc',
+    })
   })
 })
 

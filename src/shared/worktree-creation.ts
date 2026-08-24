@@ -70,11 +70,11 @@ export interface KanbanCreationOwner {
 
 export interface ForkCreationOwner {
   kind: 'fork'
+  requestId: string
   conversationId: string
   parentConversationId: string
-  forkedAtMessageId?: string
-  upToIndex: number
-  title?: string
+  sourceDirty: boolean
+  omittedChangeSummary?: string
 }
 
 export type WorktreeCreationOwner =
@@ -455,19 +455,20 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
       }
     }
   } else if (ownerInput?.kind === 'fork') {
+    if (!validIdentifier(ownerInput.requestId)) issue('invalid_value', 'owner.requestId', 'Fork request identity is invalid.')
     if (!validIdentifier(ownerInput.conversationId)) issue('invalid_value', 'owner.conversationId', 'Fork conversation identity is invalid.')
     if (!validIdentifier(ownerInput.parentConversationId)) issue('invalid_value', 'owner.parentConversationId', 'Parent conversation identity is invalid.')
-    if (!Number.isInteger(ownerInput.upToIndex) || (ownerInput.upToIndex as number) < 0) {
-      issue('invalid_value', 'owner.upToIndex', 'Fork boundary must be a non-negative integer.')
-    }
-    if (validIdentifier(ownerInput.conversationId) && validIdentifier(ownerInput.parentConversationId) && Number.isInteger(ownerInput.upToIndex)) {
+    if (typeof ownerInput.sourceDirty !== 'boolean') issue('invalid_type', 'owner.sourceDirty', 'Fork source dirty state is required.')
+    if (validIdentifier(ownerInput.requestId) && validIdentifier(ownerInput.conversationId) && validIdentifier(ownerInput.parentConversationId) && typeof ownerInput.sourceDirty === 'boolean') {
       owner = {
         kind: 'fork',
+        requestId: ownerInput.requestId as string,
         conversationId: ownerInput.conversationId,
         parentConversationId: ownerInput.parentConversationId,
-        upToIndex: ownerInput.upToIndex as number,
-        ...(optionalString(ownerInput.forkedAtMessageId) ? { forkedAtMessageId: ownerInput.forkedAtMessageId as string } : {}),
-        ...(optionalString(ownerInput.title) ? { title: ownerInput.title as string } : {}),
+        sourceDirty: ownerInput.sourceDirty,
+        ...(optionalString(ownerInput.omittedChangeSummary)
+          ? { omittedChangeSummary: ownerInput.omittedChangeSummary as string }
+          : {}),
       }
     }
   } else if (ownerInput) {

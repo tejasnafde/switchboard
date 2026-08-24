@@ -324,6 +324,7 @@ export interface SessionSummary {
   nativeRole?: 'foreground' | 'subagent' | 'utility' | 'unknown'
   parentSessionId?: string | null
   depth?: number | null
+  forkMetadata?: import('./conversation-fork').ForkLineageMetadata
 }
 
 export interface Project {

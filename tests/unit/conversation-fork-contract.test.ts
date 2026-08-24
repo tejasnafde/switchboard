@@ -141,6 +141,24 @@ describe('conversation fork request contract', () => {
     expect(canonicalizeForkConversationIdentity(first))
       .not.toBe(canonicalizeForkConversationIdentity(worktree))
   })
+
+  it('keeps dirty-source confirmation in the audit request without changing the operation identity', () => {
+    const unconfirmed = {
+      ...request(),
+      checkout: { kind: 'new-worktree', basePolicy: 'source-head' } as const,
+    }
+    const confirmed = {
+      ...unconfirmed,
+      checkout: {
+        ...unconfirmed.checkout,
+        dirtySourceConfirmed: { headSha: 'b'.repeat(40), statusDigest: 'c'.repeat(64) },
+      },
+    }
+    expect(canonicalizeForkConversationRequest(unconfirmed))
+      .not.toBe(canonicalizeForkConversationRequest(confirmed))
+    expect(canonicalizeForkConversationIdentity(unconfirmed))
+      .toBe(canonicalizeForkConversationIdentity(confirmed))
+  })
 })
 
 describe('fork message digest', () => {

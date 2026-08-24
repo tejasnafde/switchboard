@@ -1,41 +1,33 @@
-/**
- * Fork-from-message orchestration on the renderer side.
- *
- * Calls the main-process IPC, then registers the new session in
- * `agent-store` with the cloned message list pre-loaded so the user
- * sees an exact copy the moment they land in the new tab. The agent's
- * resume primitive (Claude `--resume`, Codex sessionId) is wired via
- * `resumeSessionId` - the chat panel's existing startSession path picks
- * it up the first time the user sends a turn.
- */
+import {
+  canonicalizeForkMessage,
+  type DirtySourceConfirmation,
+  type DirtySourceReceipt,
+  type ForkConversationRequest,
+  type ForkConversationResult,
+  type ForkError,
+  type ForkRecoveryReceipt,
+} from '../../shared/conversation-fork'
+import type { ChatMessage } from '../../shared/types'
 import { useAgentStore } from '../stores/agent-store'
 import { useLayoutStore } from '../stores/layout-store'
-import type { WorktreeCreationSnapshot } from '../../shared/worktree-creation'
-
-export function shouldClearForkWorktreeProgress(
-  snapshot: Pick<WorktreeCreationSnapshot, 'status' | 'cleanupDisposition'>,
-): boolean {
-  return snapshot.cleanupDisposition === 'retained'
-    || snapshot.cleanupDisposition === 'removed'
-    || snapshot.status === 'cancelled'
-}
 
 interface DurableForkIntent {
+  requestId: string
   sourceConversationId: string
-  upToIndex: number
-  forkedAtMessageId?: string
-  withWorktree: true
-  creationId: string
-  conversationId: string
-  machineId: string
+  messageId: string
+  checkoutKind: ForkConversationRequest['checkout']['kind']
   requestedAt: number
 }
 
 const pendingForks = new Map<string, DurableForkIntent>()
-const FORK_STORAGE_KEY = 'switchboard.worktree-forks.desktop.v1'
+const FORK_STORAGE_KEY = 'switchboard.conversation-forks.desktop.v2'
 
-export function durableForkKey(sourceConversationId: string, upToIndex: number): string {
-  return `${sourceConversationId}\u0000${upToIndex}`
+export function durableForkKey(
+  sourceConversationId: string,
+  messageId: string,
+  checkoutKind: ForkConversationRequest['checkout']['kind'],
+): string {
+  return `${sourceConversationId}\u0000${messageId}\u0000${checkoutKind}`
 }
 
 function loadForks(): void {
@@ -43,171 +35,144 @@ function loadForks(): void {
   try {
     const stored = JSON.parse(window.localStorage?.getItem(FORK_STORAGE_KEY) ?? '[]') as DurableForkIntent[]
     for (const intent of stored) {
-      if (intent?.withWorktree && intent.creationId && intent.conversationId) {
-        pendingForks.set(durableForkKey(intent.sourceConversationId, intent.upToIndex), intent)
-      }
+      if (!intent?.requestId || !intent.sourceConversationId || !intent.messageId) continue
+      pendingForks.set(
+        durableForkKey(intent.sourceConversationId, intent.messageId, intent.checkoutKind),
+        intent,
+      )
     }
-  } catch { /* a corrupt renderer cache must not block forking */ }
+  } catch { /* backend idempotency remains authoritative */ }
 }
 
 function saveForks(): void {
   try {
     window.localStorage?.setItem(FORK_STORAGE_KEY, JSON.stringify([...pendingForks.values()]))
-  } catch { /* durable backend identity still protects a live renderer retry */ }
+  } catch { /* retries in this renderer still retain the in-memory request id */ }
 }
 
-export function releaseForkWorktreeIntent(
-  sourceConversationId: string,
-  upToIndex: number,
-  creationId: string,
-): void {
-  loadForks()
-  const key = durableForkKey(sourceConversationId, upToIndex)
-  if (pendingForks.get(key)?.creationId !== creationId) return
-  pendingForks.delete(key)
-  saveForks()
+async function sha256(value: string): Promise<string> {
+  const bytes = new TextEncoder().encode(value)
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
-interface ForkSessionProjectionInput {
-  conversation: {
-    id: string
-    projectPath: string
-    agentType: string
-    title: string
-  }
-  resumeHint: string | null
-  worktree?: { path: string; branch: string }
-}
-
-export function projectForkSession(input: ForkSessionProjectionInput) {
-  const type = input.conversation.agentType === 'codex'
-    ? 'codex' as const
-    : input.conversation.agentType === 'opencode'
-      ? 'opencode' as const
-      : 'claude-code' as const
+export function projectForkSession(result: ForkConversationResult) {
+  const conversation = result.conversation
   return {
-    id: input.conversation.id,
-    type,
+    id: conversation.id,
+    type: conversation.agentType,
     status: 'idle' as const,
-    projectPath: input.conversation.projectPath,
-    worktreePath: input.worktree?.path ?? null,
-    worktreeBranch: input.worktree?.branch ?? null,
-    resumeSessionId: input.resumeHint ?? undefined,
-    title: input.conversation.title,
+    projectPath: conversation.projectPath,
+    worktreePath: conversation.worktreePath,
+    worktreeBranch: conversation.worktreeBranch,
+    worktreeId: conversation.worktreeId,
+    machineId: conversation.machineId,
+    resumeSessionId: result.nativeResume?.sessionId,
+    title: conversation.title,
+    runtimeMode: conversation.runtimeMode,
+    model: conversation.model ?? undefined,
+    reasoningEffort: conversation.reasoningEffort ?? undefined,
+    instanceId: conversation.providerInstanceId ?? undefined,
+    forkMetadata: {
+      ...(conversation.machineId ? { machineId: conversation.machineId } : {}),
+      parentConversationId: conversation.parentConversationId,
+      parentTitle: conversation.parentTitle,
+      anchor: conversation.anchor,
+      resumeMode: conversation.resumeMode,
+      git: result.git,
+      warnings: result.warnings,
+    },
   }
 }
+
+export type ForkAndOpenResult =
+  | { ok: true; result: ForkConversationResult }
+  | {
+      ok: false
+      error: ForkError
+      recovery?: ForkRecoveryReceipt
+      dirtySource?: DirtySourceReceipt
+    }
 
 export async function forkAndOpenSession(
   sourceConversationId: string,
-  upToIndex: number,
-  forkedAtMessageId?: string,
-  /**
-   * When true, the main side also creates a fresh git worktree off the
-   * source repo's HEAD and roots the new conversation at it. The
-   * `worktree` field on the returned object echoes the new branch name
-   * so the caller can show a "Forked to fork/<slug>" toast.
-   */
-  withWorktree?: boolean,
-  onWorktreeProgress?: (snapshot: WorktreeCreationSnapshot) => void,
-): Promise<{
-  ok: boolean
-  error?: string
-  newSessionId?: string
-  resumable?: boolean
-  worktree?: { path: string; branch: string }
-  worktreeCreation?: WorktreeCreationSnapshot
-}> {
+  message: ChatMessage,
+  withWorktree = false,
+  dirtySourceConfirmed?: DirtySourceConfirmation,
+): Promise<ForkAndOpenResult> {
   const store = useAgentStore.getState()
   const source = store.sessions.find((session) => session.id === sourceConversationId)
-  const key = durableForkKey(sourceConversationId, upToIndex)
+  if (!source) {
+    return {
+      ok: false,
+      error: { code: 'source-not-found', message: 'Source conversation is not loaded.', retryable: false },
+    }
+  }
+  const checkoutKind = withWorktree ? 'new-worktree' : 'shared-checkout'
+  const key = durableForkKey(sourceConversationId, message.id, checkoutKind)
   loadForks()
-  const durable = withWorktree
-    ? pendingForks.get(key) ?? {
-        sourceConversationId,
-        upToIndex,
-        ...(forkedAtMessageId ? { forkedAtMessageId } : {}),
-        withWorktree: true as const,
-        creationId: crypto.randomUUID(),
-        conversationId: crypto.randomUUID(),
-        machineId: source?.machineId ?? 'local',
-        requestedAt: Date.now(),
-      }
-    : null
-  if (durable) {
-    pendingForks.set(key, durable)
-    saveForks()
-  }
-  const creationId = durable?.creationId ?? crypto.randomUUID()
-  const conversationId = durable?.conversationId ?? crypto.randomUUID()
-  const machineId = durable?.machineId ?? source?.machineId ?? 'local'
-  const unsubscribe = withWorktree && onWorktreeProgress
-    ? window.api.worktreeCreation.onProgress((event) => {
-        if (event.creationId !== creationId) return
-        void window.api.worktreeCreation.get({ creationId, machineId })
-          .then(onWorktreeProgress)
-          .catch(() => {})
-      })
-    : () => {}
-  const res = await window.api.app.forkConversation({
+  const intent = pendingForks.get(key) ?? {
+    requestId: crypto.randomUUID(),
     sourceConversationId,
-    upToIndex,
-    forkedAtMessageId,
-    withWorktree,
-    creationId,
-    conversationId,
-    machineId,
-    requestedAt: durable?.requestedAt ?? Date.now(),
-  }).finally(unsubscribe)
-  if (!res.ok) {
-    if (res.worktreeCreation) onWorktreeProgress?.(res.worktreeCreation)
-    return { ok: false, error: res.error, worktreeCreation: res.worktreeCreation }
+    messageId: message.id,
+    checkoutKind,
+    requestedAt: Date.now(),
+  }
+  pendingForks.set(key, intent)
+  saveForks()
+
+  const request: ForkConversationRequest = {
+    schemaVersion: 1,
+    requestId: intent.requestId,
+    sourceConversationId,
+    ...(source.machineId ? { machineId: source.machineId } : {}),
+    anchor: {
+      messageId: message.id,
+      role: message.role,
+      timestamp: message.timestamp,
+      contentDigest: await sha256(canonicalizeForkMessage(message)),
+    },
+    checkout: withWorktree
+      ? {
+          kind: 'new-worktree',
+          basePolicy: 'source-head',
+          ...(dirtySourceConfirmed ? { dirtySourceConfirmed } : {}),
+        }
+      : { kind: 'shared-checkout' },
+    provenance: { surface: 'desktop', requestedAt: intent.requestedAt },
   }
 
-  const { conversation, resumeHint, messages, resumable, worktree } = res
-  // Carry over the source session's runtime mode + model so the fork
-  // doesn't silently drop into 'sandbox'/default-model just because it
-  // landed in a fresh AgentSession entry. The agent backend resume picks
-  // up where the parent left off; the UI controls should match.
-  const projected = projectForkSession({ conversation, resumeHint, worktree })
-  const type = projected.type
-  window.api.routing.bind(conversation.id, machineId)
-  store.addSession({
-    ...projected,
-    machineId,
-    runtimeMode: source?.runtimeMode,
-    model: source?.model,
+  const prior = await window.api.app.getConversationFork({
+    requestId: request.requestId,
+    sourceConversationId,
+    ...(source.machineId ? { machineId: source.machineId } : {}),
   })
-  // For non-resumable forks (Codex / OpenCode today), prepend a synthetic
-  // system message so the user knows the new agent process starts cold -
-  // without it the fork looks identical to a real resume. The main side
-  // schedules a pending context handoff for these forks, so the first
-  // send replays the copied transcript as a preamble (ChatPanel).
-  const decorated = resumable
-    ? messages
-    : [
-        {
-          id: `system_fork_notice_${conversation.id}`,
-          role: 'system' as const,
-          // Strip both the plain `· fork` and the `· fork/<branch>` suffix
-          // (added by #5 for worktree-backed forks) so the synthetic notice
-          // names the *parent* conversation, not the fork itself.
-          content: `Forked from "${conversation.title.replace(/ · fork(\/[^·]*)?$/, '')}" - ${type === 'codex' ? 'Codex' : type === 'opencode' ? 'OpenCode' : 'this agent'} starts a fresh process here; the earlier turns replay as context with your first message.`,
-          timestamp: Date.now(),
-        },
-        ...messages,
-      ]
-
-  store.setMessages(conversation.id, decorated)
-  store.setActiveSession(conversation.id)
-
-  // Make sure we're on the chat view (in case the user was looking at
-  // kanban). Mirrors what `openSessionByClick` does in App.tsx.
-  useLayoutStore.getState().setAppView('chats')
-
-  if (durable) {
-    pendingForks.delete(key)
-    saveForks()
+  const outcome = prior?.kind === 'completed'
+    ? prior
+    : await window.api.app.forkConversation(request)
+  if (outcome.kind === 'confirmation-required') {
+    return {
+      ok: false,
+      error: {
+        code: 'dirty-source-changed',
+        message: outcome.dirtySource.omittedChangeSummary,
+        retryable: true,
+      },
+      dirtySource: outcome.dirtySource,
+    }
+  }
+  if (outcome.kind === 'failed') {
+    return { ok: false, error: outcome.error, ...(outcome.recovery ? { recovery: outcome.recovery } : {}) }
   }
 
-  return { ok: true, newSessionId: conversation.id, resumable, worktree }
+  const result = outcome.result
+  const projected = projectForkSession(result)
+  window.api.routing.bind(result.conversation.id, result.conversation.machineId ?? source.machineId ?? 'local')
+  store.addSession(projected)
+  store.setMessages(result.conversation.id, result.messages)
+  store.setActiveSession(result.conversation.id)
+  useLayoutStore.getState().setAppView('chats')
+  pendingForks.delete(key)
+  saveForks()
+  return { ok: true, result }
 }

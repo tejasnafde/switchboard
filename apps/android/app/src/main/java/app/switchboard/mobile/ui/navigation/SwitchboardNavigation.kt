@@ -3,6 +3,9 @@ package app.switchboard.mobile.ui.navigation
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -39,8 +42,12 @@ import app.switchboard.mobile.domain.composer.ComposerDraft
 import app.switchboard.mobile.domain.composer.ComposerDraftKey
 import app.switchboard.mobile.domain.composer.OutboxUiAction
 import app.switchboard.mobile.domain.outbox.QueuedTurn
+import app.switchboard.mobile.domain.remote.ChatMessage
 import app.switchboard.mobile.domain.remote.Conversation
+import app.switchboard.mobile.domain.remote.ForkConversationOutcome
+import app.switchboard.mobile.domain.remote.ForkDirtySource
 import app.switchboard.mobile.domain.remote.Project
+import app.switchboard.mobile.domain.remote.RemoteOutcome
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.platform.protocol.ProtocolHubEvent
 import app.switchboard.mobile.platform.notification.PendingNotificationRoute
@@ -78,6 +85,7 @@ import app.switchboard.mobile.ui.search.MessageSearchRouteHost
 import app.switchboard.mobile.ui.search.MessageSearchScreen
 import app.switchboard.mobile.data.remote.MessageSearchState
 import app.switchboard.mobile.data.remote.GitContextCoordinator
+import app.switchboard.mobile.data.remote.ConversationForkWire
 import app.switchboard.mobile.ui.thread.ThreadLoadState
 import app.switchboard.mobile.ui.thread.ThreadScreen
 import app.switchboard.mobile.ui.thread.ThreadComposerPresentation
@@ -407,6 +415,19 @@ fun SwitchboardNavigation(
                 status = runtimeStatuses[route.connectionId],
                 offlineSnapshot = offlineSnapshot,
                 onBack = ::navigateBack,
+                onForked = { fork ->
+                    navigationState = navigationState.push(
+                        AppRoute.Thread(
+                            connectionId = route.connectionId,
+                            connectionLabel = route.connectionLabel,
+                            threadId = fork.id,
+                            projectPath = fork.projectPath,
+                            worktreePath = fork.worktreePath,
+                            title = fork.title,
+                            provider = fork.agentType,
+                        ),
+                    )
+                },
             )
         }
     }
@@ -765,6 +786,7 @@ private fun ThreadRouteHost(
     status: ConnectionRuntimeState?,
     offlineSnapshot: OfflineSnapshot?,
     onBack: () -> Unit,
+    onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
         ComposerDraftKey(route.connectionId, route.threadId)
@@ -849,6 +871,7 @@ private fun ThreadRouteHost(
         composerError = composerErrors[composerKey],
         queuedTurns = queuedTurns,
         onBack = onBack,
+        onForked = onForked,
     )
 }
 
@@ -862,11 +885,29 @@ private fun ConnectedThreadRoute(
     composerError: String?,
     queuedTurns: List<QueuedTurn>,
     onBack: () -> Unit,
+    onForked: (app.switchboard.mobile.domain.remote.ForkConversationState) -> Unit,
 ) {
     val composerKey = remember(route.connectionId, route.threadId) {
         ComposerDraftKey(route.connectionId, route.threadId)
     }
     val coroutineScope = rememberCoroutineScope()
+    var forkError by remember(route.threadId) { mutableStateOf<String?>(null) }
+    var pendingDirtyFork by remember(route.threadId) { mutableStateOf<PendingAndroidFork?>(null) }
+    var forkAttemptKey by rememberSaveable(route.threadId) { mutableStateOf("") }
+    var forkAttemptId by rememberSaveable(route.threadId) { mutableStateOf("") }
+    fun requestIdFor(messageId: String, withWorktree: Boolean): String {
+        val key = "$messageId:${if (withWorktree) "worktree" else "shared"}"
+        if (forkAttemptKey != key || forkAttemptId.isBlank()) {
+            forkAttemptKey = key
+            forkAttemptId = java.util.UUID.randomUUID().toString()
+        }
+        return forkAttemptId
+    }
+    fun completeFork(conversation: app.switchboard.mobile.domain.remote.ForkConversationState) {
+        forkAttemptKey = ""
+        forkAttemptId = ""
+        onForked(conversation)
+    }
     val events = remember(runtime, lease.scope) { runtime.eventsFor(lease.scope) }
     val coordinator = remember(
         runtime,
@@ -990,7 +1031,111 @@ private fun ConnectedThreadRoute(
         onRefreshGitContext = gitContextCoordinator::refresh,
         viewingLeaseLifecycle = viewingLeaseLifecycle,
         registerViewingLeaseRenewal = viewingRenewalRegistration,
+        onFork = { messageId, withWorktree ->
+            lease.client.loadSession(route.threadId) { loadedResponse ->
+                when (val loaded = loadedResponse.outcome) {
+                    is RemoteOutcome.Failure -> forkError = loaded.message
+                    is RemoteOutcome.Success -> {
+                        val message = loaded.value.messages.singleOrNull { it.id == messageId }
+                        if (message == null) {
+                            forkError = "The selected message is no longer a unique canonical fork anchor."
+                        } else {
+                            val request = ConversationForkWire.request(
+                                requestIdFor(messageId, withWorktree),
+                                route.threadId,
+                                message,
+                                withWorktree,
+                                System.currentTimeMillis(),
+                            )
+                            lease.client.getConversationFork(request) { priorResponse ->
+                                when (val prior = priorResponse.outcome) {
+                                    is RemoteOutcome.Failure -> forkError = prior.message
+                                    is RemoteOutcome.Success -> {
+                                        fun accept(outcome: ForkConversationOutcome) {
+                                            when (outcome) {
+                                                is ForkConversationOutcome.Completed -> completeFork(outcome.result.conversation)
+                                                is ForkConversationOutcome.ConfirmationRequired -> {
+                                                    pendingDirtyFork = PendingAndroidFork(
+                                                        message,
+                                                        outcome.dirtySource,
+                                                        request.requestId,
+                                                    )
+                                                }
+                                                is ForkConversationOutcome.Failed -> forkError = outcome.failureMessage()
+                                            }
+                                        }
+                                        if (prior.value != null) {
+                                            accept(prior.value)
+                                        } else {
+                                            lease.client.forkConversation(request) { createdResponse ->
+                                                when (val created = createdResponse.outcome) {
+                                                    is RemoteOutcome.Failure -> forkError = created.message
+                                                    is RemoteOutcome.Success -> accept(created.value)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
     )
+    pendingDirtyFork?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { pendingDirtyFork = null },
+            title = { Text("Uncommitted changes will not be copied") },
+            text = { Text("The new worktree starts from ${pending.dirty.headSha.take(8)}. ${pending.dirty.omittedChangeSummary}") },
+            dismissButton = { TextButton(onClick = { pendingDirtyFork = null }) { Text("Cancel") } },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingDirtyFork = null
+                    val confirmed = ConversationForkWire.request(
+                        pending.requestId,
+                        route.threadId,
+                        pending.message,
+                        true,
+                        System.currentTimeMillis(),
+                        pending.dirty,
+                    )
+                    lease.client.forkConversation(confirmed) { response ->
+                        when (val result = response.outcome) {
+                            is RemoteOutcome.Failure -> forkError = result.message
+                            is RemoteOutcome.Success -> when (val outcome = result.value) {
+                                is ForkConversationOutcome.Completed -> completeFork(outcome.result.conversation)
+                                is ForkConversationOutcome.Failed -> forkError = outcome.failureMessage()
+                                is ForkConversationOutcome.ConfirmationRequired -> {
+                                    pendingDirtyFork = pending.copy(dirty = outcome.dirtySource)
+                                }
+                            }
+                        }
+                    }
+                }) { Text("Continue from HEAD") }
+            },
+        )
+    }
+    forkError?.let { message ->
+        AlertDialog(
+            onDismissRequest = { forkError = null },
+            title = { Text("Fork failed") },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { forkError = null }) { Text("OK") } },
+        )
+    }
+}
+
+private data class PendingAndroidFork(
+    val message: ChatMessage,
+    val dirty: ForkDirtySource,
+    val requestId: String,
+)
+
+private fun ForkConversationOutcome.Failed.failureMessage(): String = buildString {
+    append(message)
+    retainedPath?.let { append(" Retained worktree: $it") }
+    retainedBranch?.let { append(" ($it)") }
 }
 
 private fun RootNavigationRuntime.performOutboxAction(

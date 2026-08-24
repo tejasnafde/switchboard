@@ -2,7 +2,11 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { renderSnippetHtml } from './searchSnippet'
 import { resolveSessionSelectTarget } from '../utils/session-eviction'
-import type { ChatMessage, AgentType } from '@shared/types'
+import type { ChatMessage } from '@shared/types'
+import {
+  projectLoadedSearchSession,
+  type LoadedSearchSessionMeta,
+} from '../services/searchSessionProjection'
 
 interface SearchResult {
   messageId: string
@@ -70,7 +74,7 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
       try {
         const resp = await window.api.app.loadSessionById(result.conversationId) as {
           messages: ChatMessage[]
-          meta: { id: string; title: string; projectPath: string; agentType: string; rootThreadId?: string } | null
+          meta: LoadedSearchSessionMeta | null
         }
         // A hit can name a rotated id whose live thread is already in the
         // store; adding it again would build an unreachable twin.
@@ -80,14 +84,7 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
           store.sessions.map((s) => s.id),
         )
         if (resp.meta && targetId === result.conversationId) {
-          addSession({
-            id: resp.meta.id,
-            type: (resp.meta.agentType === 'codex' ? 'codex' : 'claude-code') as AgentType,
-            status: 'idle',
-            projectPath: resp.meta.projectPath,
-            resumeSessionId: resp.meta.id,
-            title: resp.meta.title,
-          })
+          addSession(projectLoadedSearchSession(resp.meta))
           if (resp.messages.length > 0) setMessages(resp.meta.id, resp.messages)
         }
       } catch {

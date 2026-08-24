@@ -7,6 +7,10 @@ import type {
   WorktreeCreationPhase,
   WorktreeCreationStatus,
 } from '../../shared/worktree-creation'
+import {
+  SqliteConversationForkStore,
+  type CommitCompletedConversationForkInput,
+} from './conversation-fork'
 
 export interface WorktreeCreationRecord {
   machineId: string
@@ -153,24 +157,7 @@ export interface CommitForkOwnerInput {
   creationId: string
   expectedRevision: number
   worktree: CommitConversationOwnerInput['worktree']
-  conversation: {
-    id: string
-    projectPath: string
-    agentType: string
-    sessionId: string | null
-    title: string
-    parentConversationId: string
-    forkedAtMessageId: string
-    worktreePath: string
-    worktreeBranch: string
-    pendingHandoffFrom: string | null
-  }
-  messages: Array<{
-    id: string
-    role: string
-    content: string
-    timestamp: number
-  }>
+  fork: CommitCompletedConversationForkInput
   now: number
 }
 
@@ -1142,12 +1129,13 @@ export class SqliteWorktreeCreationStore {
       const request = JSON.parse(current.requestJson) as WorktreeCreationRequest
       if (
         request.owner.kind !== 'fork'
-        || request.owner.conversationId !== input.conversation.id
-        || request.owner.parentConversationId !== input.conversation.parentConversationId
+        || request.owner.requestId !== input.fork.requestId
+        || request.owner.conversationId !== input.fork.conversation.id
+        || request.owner.parentConversationId !== input.fork.conversation.parentConversationId
       ) {
         throw new Error('worktree creation journal does not match the fork owner')
       }
-      if (input.conversation.projectPath !== input.worktree.projectPath) {
+      if (input.fork.conversation.projectPath !== input.worktree.projectPath) {
         throw new Error('fork conversation must retain the canonical parent project path')
       }
 
@@ -1167,7 +1155,7 @@ export class SqliteWorktreeCreationStore {
         input.worktree.branch,
         input.worktree.requestedBaseRef,
         input.worktree.resolvedBaseCommit,
-        input.conversation.id,
+        input.fork.conversation.id,
         request.purpose,
         JSON.stringify(request.provenance),
         request.lineage ? JSON.stringify(request.lineage) : null,
@@ -1175,42 +1163,13 @@ export class SqliteWorktreeCreationStore {
         input.now,
       )
 
-      this.db.prepare(`
-        INSERT INTO conversations (
-          id, project_path, agent_type, session_id, title, created_at, updated_at,
-          parent_conversation_id, forked_at_message_id,
-          worktree_path, worktree_branch, pending_handoff_from, sidebar_role,
-          worktree_id, worktree_creation_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed', ?, ?)
-      `).run(
-        input.conversation.id,
-        input.conversation.projectPath,
-        input.conversation.agentType,
-        input.conversation.sessionId,
-        input.conversation.title,
-        input.now,
-        input.now,
-        input.conversation.parentConversationId,
-        input.conversation.forkedAtMessageId,
-        input.conversation.worktreePath,
-        input.conversation.worktreeBranch,
-        input.conversation.pendingHandoffFrom,
-        input.worktree.id,
-        input.creationId,
-      )
-
-      const insertMessage = this.db.prepare(`
-        INSERT INTO messages (id, conversation_id, role, content, timestamp)
-        VALUES (?, ?, ?, ?, ?)
-      `)
-      for (const message of input.messages) {
-        insertMessage.run(
-          message.id,
-          input.conversation.id,
-          message.role,
-          message.content,
-          message.timestamp,
-        )
+      const forkCommit = new SqliteConversationForkStore(this.db)
+        .commitCompletedInCurrentTransaction({
+          ...input.fork,
+          worktreeCreationId: input.creationId,
+        })
+      if (forkCommit.kind !== 'committed') {
+        throw new Error('fork operation changed before worktree owner commit')
       }
 
       const transition = this.db.prepare(`

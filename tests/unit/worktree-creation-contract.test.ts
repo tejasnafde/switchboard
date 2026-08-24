@@ -135,11 +135,11 @@ describe('worktree creation request contract', () => {
       },
       owner: {
         kind: 'fork',
+        requestId: 'fork-request-1',
         conversationId: 'fork-1',
         parentConversationId: 'conversation-0',
-        forkedAtMessageId: 'message-8',
-        upToIndex: 8,
-        title: 'Alternate approach',
+        sourceDirty: true,
+        omittedChangeSummary: '1 tracked change will not be copied.',
       },
       purpose: 'fork',
       lineage: {
@@ -153,7 +153,7 @@ describe('worktree creation request contract', () => {
       ok: true,
       value: {
         checkout: { baseRef: 'feature/source' },
-        owner: { kind: 'fork', upToIndex: 8 },
+        owner: { kind: 'fork', requestId: 'fork-request-1', sourceDirty: true },
         lineage: { parentWorktreeId: 'worktree-parent' },
       },
     })

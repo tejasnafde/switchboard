@@ -13,9 +13,15 @@ import { scanCodexSessionCopies } from '../projects/session-scanner'
 import { loadJsonlCached } from '../agent/jsonl-cache'
 import { mergeConversationMessages } from '../agent/dedupe-messages'
 import { enrichMessagesWithDisplayBody } from '../ipc/enrichDisplayBody'
+import {
+  isForkableCanonicalMessage,
+  type CanonicalForkMessage,
+  type ForkMessageProvenance,
+} from './fork-anchor'
 
 export interface ConversationHistory {
   messages: ChatMessage[]
+  forkMessages: CanonicalForkMessage[]
   familyIds: string[]
   diskMessageCount: number
   databaseMessageCount: number
@@ -34,6 +40,7 @@ export async function loadConversationHistory(
     ...segments.map((segment) => segment.provider_session_id),
   ])
   const diskMessages: ChatMessage[] = []
+  const provenanceByMessageId = new Map<string, ForkMessageProvenance>()
 
   const claudeIds = new Set([
     ...familyIds,
@@ -46,7 +53,16 @@ export async function loadConversationHistory(
     for (const baseDir of claudeCandidateDirs()) {
       for (const copy of listClaudeSessionCopies(baseDir, sessionId)) {
         const messages = await loadJsonlCached(copy.path, 'claude-code')
-        if (messages) diskMessages.push(...messages)
+        if (messages) {
+          diskMessages.push(...messages)
+          for (const message of messages) {
+            provenanceByMessageId.set(message.id, {
+              provider: 'claude-code',
+              providerSessionId: sessionId,
+              providerEventId: message.id,
+            })
+          }
+        }
       }
     }
   }
@@ -55,7 +71,16 @@ export async function loadConversationHistory(
   for (const session of codexSessions) {
     if (!knownSessionIds.has(session.id) || !session.filePath) continue
     const messages = await loadJsonlCached(session.filePath, 'codex')
-    if (messages) diskMessages.push(...messages)
+    if (messages) {
+      diskMessages.push(...messages)
+      for (const message of messages) {
+        provenanceByMessageId.set(message.id, {
+          provider: 'codex',
+          providerSessionId: session.id,
+          providerEventId: message.id,
+        })
+      }
+    }
   }
 
   const databaseMessages = familyIds.flatMap((id) =>
@@ -74,6 +99,13 @@ export async function loadConversationHistory(
 
   return {
     messages,
+    forkMessages: messages.map((message) => ({
+      message,
+      forkable: isForkableCanonicalMessage(message),
+      ...(provenanceByMessageId.has(message.id)
+        ? { provenance: provenanceByMessageId.get(message.id) }
+        : {}),
+    })),
     familyIds,
     diskMessageCount: diskMessages.length,
     databaseMessageCount: databaseMessages.length,

@@ -164,11 +164,11 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - `worktree.ts` manages three creation flows: **kanban card** (`<repo>/.switchboard/worktrees/<slug>-<id>`, branch `kanban/<slug>-<id>`), **fork-from-message** (`<repo>/.switchboard/worktrees/<base>`, branch `fork/<name>`, collision-retry `-2`…`-20`), **session** (`$userData/worktrees/<repoSlug>-<hash>/<branchSlug>`, branch `sb/<slug>`). Plus `removeWorktree`, `listWorktrees`, `findStaleWorktrees`.
 - Worktrees live under `.switchboard/worktrees/` deliberately - avoids re-tripping the macOS TCC trap on `~/Desktop`-rooted repos and centralizes cleanup.
 
-### Conversation forking (`conversations/fork.ts`)
+### Conversation forking
 
-- IPC `app:fork-conversation`, input `{ sourceConversationId, upToIndex, forkedAtMessageId?, withWorktree? }`. Position-based (`upToIndex`), not id-based, because `JsonlParser` regenerates ids on every reload.
-- **Codex** is truly resumable: `assembleClaudeFork` (in `agent/jsonl-truncate.ts`) walks all chronological JSONL fragments, truncates, rewrites `sessionId` to a new UUID, writes `<newId>.jsonl` into the encoded project dir; the new id is passed as `resumeSessionId`. **Codex / OpenCode are degraded** (Codex writes a truncated rollout as an audit record; OpenCode is summary-only) - both start cold with a synthetic system notice prepended.
-- DB lineage: `conversations.parent_conversation_id` + `forked_at_message_id`; worktree forks also set `worktree_path` / `worktree_branch` and the title becomes `<parent> · fork/<slug>`. `thread_sessions` table flattens Codex's compaction-rotated session chains so ancestry walks are O(1).
+- IPC `app:fork-conversation` uses the versioned stable-anchor contract in `shared/conversation-fork.ts`: client request ID, source conversation ID, message ID + role/timestamp/full-message digest, and explicit shared-checkout or source-HEAD worktree policy. The backend owns IDs, canonical prefix resolution, provider artifacts, persistence, and worktree paths; `app:get-conversation-fork` reconciles response-loss retries.
+- Claude resumes natively only when the anchor has compatible lineage in the source conversation's committed credential profile. Codex and OpenCode use a durable exactly-once transcript handoff and never write fake resumable artifacts into provider discovery trees.
+- Fork conversation, rich messages, settings, handoff state, lineage, managed worktree projection, and operation result commit atomically. `project_path` remains the parent project; `worktree_path` is execution CWD. `thread_sessions` remains provider-session rotation lineage, separate from user-created fork lineage.
 
 ### Kanban board (⌘⇧K top-level view)
 
@@ -241,7 +241,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 ## What's NOT working yet
 
 - **Production signing credentials** - implementation is ready, but releases remain unsigned until repository secrets contain the actual Apple Developer ID/notarization and Windows Authenticode credentials.
-- **Codex / OpenCode fork resume** - fork creates the new conversation but only Codex resumes real context; Codex/OpenCode start cold (audit record / summary only)
+- **Codex / OpenCode native fork resume** - both use the explicit durable transcript-handoff mode until their protocols expose and Switchboard verifies a compatible native resume primitive
 
 ## Skill exposure (shipped 2026-04-26)
 

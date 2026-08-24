@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { truncateClaudeJsonl, truncateCodexJsonl, assembleClaudeFork } from '../../src/main/agent/jsonl-truncate'
+import {
+  assembleClaudeFork,
+  assembleClaudeForkAtEvent,
+  truncateClaudeJsonl,
+  truncateCodexJsonl,
+} from '../../src/main/agent/jsonl-truncate'
 
 // ── Claude JSONL fixtures ────────────────────────────────────────
 //
@@ -185,6 +190,30 @@ describe('assembleClaudeFork', () => {
     const r = assembleClaudeFork([fragmentA, fragmentB], 99)
     expect(r.keptVisibleCount).toBe(6)
     expect(r.anchorUuid).toBe('b-u2')
+  })
+})
+
+describe('assembleClaudeForkAtEvent', () => {
+  it('cuts at the exact stable Claude event id and rewrites session and cwd metadata', () => {
+    const result = assembleClaudeForkAtEvent(
+      [fragmentA, fragmentB],
+      'b-a1',
+      { newSessionId: 'fork-session', newCwd: '/repo/.switchboard/worktrees/fork' },
+    )
+    const lines = result.newContent.trim().split('\n').map((line) => JSON.parse(line))
+
+    expect(result).toMatchObject({ anchorUuid: 'b-a1', anchorFound: true })
+    expect(lines.at(-1).uuid).toBe('b-a1')
+    expect(lines.every((line) => line.sessionId === 'fork-session')).toBe(true)
+    expect(lines.every((line) => line.cwd === '/repo/.switchboard/worktrees/fork')).toBe(true)
+  })
+
+  it('rejects a missing or duplicated event id instead of cutting a similar message', () => {
+    expect(assembleClaudeForkAtEvent([fragmentA], 'missing', { newSessionId: 'fork' }))
+      .toMatchObject({ anchorFound: false, anchorUuid: null, newContent: '' })
+    const duplicate = `${fragmentA}${fragmentA}`
+    expect(assembleClaudeForkAtEvent([duplicate], 'a-a1', { newSessionId: 'fork' }))
+      .toMatchObject({ anchorFound: false, anchorUuid: null, newContent: '' })
   })
 })
 

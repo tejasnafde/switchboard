@@ -17,7 +17,17 @@
 // `fromThreadId` covers peer messages, whose payload names two threads and
 // neither of them `threadId`. The SENDING thread decides the backend: both
 // ends of a delivery live on it.
-const OBJECT_KEY_PRIORITY = ['threadId', 'fromThreadId', 'conversationId', 'id', 'repoRoot', 'projectPath', 'workspaceRoot', 'cwd'] as const
+const OBJECT_KEY_PRIORITY = [
+  'threadId',
+  'fromThreadId',
+  'conversationId',
+  'sourceConversationId',
+  'id',
+  'repoRoot',
+  'projectPath',
+  'workspaceRoot',
+  'cwd',
+] as const
 
 /** Extract the routing key (resource id) from a call's args, or null. */
 export function routingKey(args: unknown[]): string | null {

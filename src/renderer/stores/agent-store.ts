@@ -10,6 +10,9 @@ import { createRendererLogger } from '../logger'
 import { mergeLiveSessions, toAgentStatus, toAgentType } from './liveSessionMerge'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { isRuntimeMode } from '@shared/session-defaults'
+import type {
+  ForkLineageMetadata,
+} from '@shared/conversation-fork'
 
 const log = createRendererLogger('store:agent')
 
@@ -39,6 +42,7 @@ interface AgentSession {
   messages: ChatMessage[]
   conversationId?: string
   projectPath?: string
+  forkMetadata?: ForkLineageMetadata
   /**
    * The machine this session runs on. Undefined / 'local' = this laptop's
    * backend; a remote machine id routes the session's provider + terminal

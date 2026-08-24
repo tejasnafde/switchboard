@@ -26,6 +26,10 @@ describe('routingKey', () => {
   it('reads conversationId off a payload object (app.saveMessage({id, conversationId}))', () => {
     expect(routingKey([{ id: 'msg_1', conversationId: 'conv_1' }])).toBe('conv_1')
   })
+  it('routes a fork by its source conversation before the new request id exists', () => {
+    expect(routingKey([{ requestId: 'request-1', sourceConversationId: 'source-remote' }]))
+      .toBe('source-remote')
+  })
   it('prefers threadId over conversationId over id when several are present', () => {
     expect(routingKey([{ threadId: 't1', conversationId: 'c1', id: 'i1' }])).toBe('t1')
     expect(routingKey([{ conversationId: 'c1', id: 'i1' }])).toBe('c1')
@@ -62,6 +66,15 @@ describe('RoutingTable', () => {
   it('routes create-style calls by an explicit machineId on the payload', () => {
     const t = new RoutingTable()
     expect(t.resolve('terminal:create', [{ cwd: '/x', machineId: 'm2' }])).toBe('m2')
+  })
+
+  it('routes a fork through the source binding when machineId is omitted', () => {
+    const t = new RoutingTable()
+    t.bind('source-remote', 'm2')
+    expect(t.resolve('app:fork-conversation', [{
+      requestId: 'request-1',
+      sourceConversationId: 'source-remote',
+    }])).toBe('m2')
   })
 
   it('routes worktree creation by its explicit repository machine identity', () => {

@@ -2,46 +2,51 @@ import { describe, expect, it } from 'vitest'
 import {
   durableForkKey,
   projectForkSession,
-  shouldClearForkWorktreeProgress,
 } from '../../src/renderer/services/forkSession'
 
 describe('fork renderer session projection', () => {
-  it('clears fork progress after either retained or removed cleanup completes', () => {
-    expect(shouldClearForkWorktreeProgress({
-      status: 'cleanup_required',
-      cleanupDisposition: 'retained',
-    })).toBe(true)
-    expect(shouldClearForkWorktreeProgress({
-      status: 'rolled_back',
-      cleanupDisposition: 'removed',
-    })).toBe(true)
-    expect(shouldClearForkWorktreeProgress({
-      status: 'cleanup_required',
-    })).toBe(false)
-  })
-
-  it('keys a durable fork intent by stable transcript position instead of regenerated message IDs', () => {
-    expect(durableForkKey('conversation-parent-1', 4)).toBe('conversation-parent-1\0' + '4')
-    expect(durableForkKey('conversation-parent-1', 4)).toBe(durableForkKey('conversation-parent-1', 4))
-    expect(durableForkKey('conversation-parent-1', 5)).not.toBe(durableForkKey('conversation-parent-1', 4))
+  it('keys a durable fork intent by stable message identity and explicit checkout policy', () => {
+    expect(durableForkKey('conversation-parent-1', 'message-4', 'shared-checkout'))
+      .toBe('conversation-parent-1\0message-4\0shared-checkout')
+    expect(durableForkKey('conversation-parent-1', 'message-4', 'new-worktree'))
+      .not.toBe(durableForkKey('conversation-parent-1', 'message-4', 'shared-checkout'))
   })
 
   it('keeps the parent project identity and uses authoritative worktree metadata for execution', () => {
     expect(projectForkSession({
+      requestId: 'request-1',
       conversation: {
         id: 'conversation-fork-1',
         projectPath: '/projects/switchboard',
+        worktreePath: '/managed/switchboard/fix',
+        worktreeBranch: 'fork/fix',
+        worktreeId: 'worktree-1',
+        machineId: 'remote-a',
         agentType: 'claude-code',
+        providerInstanceId: 'claude-tech-team',
+        runtimeMode: 'sandbox',
+        model: 'claude-sonnet-5',
+        reasoningEffort: null,
+        launchConfigName: null,
         title: 'Switchboard · fork/fix',
         parentConversationId: 'conversation-parent-1',
-        forkedAtMessageId: 'message-2',
+        anchor: {
+          messageId: 'message-2', role: 'assistant', timestamp: 2,
+          contentDigest: 'a'.repeat(64), canonicalIndex: 1,
+          canonicalMessageCount: 2, resolution: 'exact-id',
+        },
+        resumeMode: 'native',
         createdAt: 1_777_000_000_000,
       },
-      resumeHint: 'claude-fork-session-1',
-      worktree: {
+      messages: [],
+      nativeResume: { provider: 'claude', sessionId: 'claude-fork-session-1' },
+      git: {
+        baseSha: 'b'.repeat(40),
         path: '/managed/switchboard/fix',
         branch: 'fork/fix',
+        sourceDirty: false,
       },
+      warnings: [],
     })).toMatchObject({
       id: 'conversation-fork-1',
       type: 'claude-code',
@@ -49,6 +54,9 @@ describe('fork renderer session projection', () => {
       worktreePath: '/managed/switchboard/fix',
       worktreeBranch: 'fork/fix',
       resumeSessionId: 'claude-fork-session-1',
+      machineId: 'remote-a',
+      instanceId: 'claude-tech-team',
+      forkMetadata: { parentConversationId: 'conversation-parent-1', resumeMode: 'native' },
     })
   })
 })

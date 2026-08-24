@@ -229,6 +229,26 @@ object RemoteDecoders {
         projectPath = raw.stringRequired("projectPath"),
         agentType = raw.stringRequired("agentType"),
         rootThreadId = raw.string("rootThreadId"),
+        worktreePath = raw.string("worktreePath"),
+        worktreeBranch = raw.string("worktreeBranch"),
+        worktreeId = raw.string("worktreeId"),
+        providerInstanceId = raw.string("providerInstanceId"),
+        runtimeMode = raw.string("runtimeMode"),
+        model = raw.string("model"),
+        reasoningEffort = raw.string("reasoningEffort"),
+        forkMetadata = (raw.values["forkMetadata"] as? JsonObject)?.let { fork ->
+            val anchor = fork.required("anchor").obj()
+            val git = fork.values["git"] as? JsonObject
+            ForkLineageMetadata(
+                parentConversationId = fork.stringRequired("parentConversationId"),
+                parentTitle = fork.stringRequired("parentTitle"),
+                anchorMessageId = anchor.stringRequired("messageId"),
+                anchorPreview = anchor.stringRequired("preview"),
+                resumeMode = fork.stringRequired("resumeMode"),
+                branch = git?.string("branch"),
+                baseSha = git?.string("baseSha"),
+            )
+        },
         raw = raw,
     )
 

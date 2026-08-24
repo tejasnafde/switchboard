@@ -47,6 +47,7 @@ fun ThreadSessionScreen(
     onRefreshGitContext: () -> Unit = {},
     viewingLeaseLifecycle: ThreadViewingLeaseLifecycle? = null,
     registerViewingLeaseRenewal: ((() -> Unit) -> Closeable)? = null,
+    onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
 ) {
     val session by coordinator.state.collectAsState()
     val router = remember(coordinator, commandDispatcher) {
@@ -93,6 +94,8 @@ fun ThreadSessionScreen(
         onRemoveImage = onRemoveImage,
         queuedTurns = queuedTurns,
         onOutboxAction = onOutboxAction,
+        forkMetadata = session.forkMetadata,
+        onFork = onFork,
     )
 }
 

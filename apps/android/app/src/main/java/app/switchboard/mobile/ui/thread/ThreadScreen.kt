@@ -12,6 +12,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -109,6 +110,7 @@ import app.switchboard.mobile.domain.remote.ApprovalDecision
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
+import app.switchboard.mobile.domain.remote.ForkLineageMetadata
 import app.switchboard.mobile.data.thread.ThreadPendingActions
 import app.switchboard.mobile.data.thread.ThreadArchiveState
 import app.switchboard.mobile.data.thread.ThreadModelState
@@ -168,11 +170,14 @@ fun ThreadScreen(
     onRemoveImage: (String) -> Unit = {},
     queuedTurns: List<QueuedTurn> = emptyList(),
     onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
+    forkMetadata: ForkLineageMetadata? = null,
+    onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
     var lightboxUrl by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     var settingsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
+    var forkMessageId by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     val presentation = remember(loadState) { ThreadPresenter.present(loadState) }
     val metadata = presentation.metadataOrNull()
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
@@ -254,6 +259,7 @@ fun ThreadScreen(
                 .padding(scaffoldPadding),
         ) {
             metadata?.let { ThreadMetricStrip(it) }
+            forkMetadata?.let { ForkLineageBanner(it) }
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
                 ThreadPresentation.Loading -> FullPageLoading()
@@ -284,6 +290,7 @@ fun ThreadScreen(
                                 pendingActions = pendingActions,
                                 onAction = onAction,
                                 onImageOpen = { lightboxUrl = it },
+                                onFork = { messageId -> forkMessageId = messageId },
                             )
                         }
                     }
@@ -295,6 +302,44 @@ fun ThreadScreen(
     lightboxUrl?.let { url ->
         ThreadImageLightbox(url = url, onDismiss = { lightboxUrl = null })
     }
+    forkMessageId?.let { messageId ->
+        Dialog(onDismissRequest = { forkMessageId = null }) {
+            Surface(shape = RoundedCornerShape(12.dp), color = SurfaceRaised) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Fork conversation", style = MaterialTheme.typography.titleMedium)
+                    TextButton(onClick = {
+                        forkMessageId = null
+                        onFork(messageId, false)
+                    }) { Text("Fork conversation here") }
+                    TextButton(onClick = {
+                        forkMessageId = null
+                        onFork(messageId, true)
+                    }) { Text("Fork into a new worktree from current HEAD") }
+                    TextButton(onClick = { forkMessageId = null }) { Text("Cancel") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ForkLineageBanner(metadata: ForkLineageMetadata) {
+    val resume = if (metadata.resumeMode == "native") "native resume" else "transcript handoff"
+    val git = metadata.branch?.let { branch ->
+        " · $branch${metadata.baseSha?.let { " from ${it.take(8)}" }.orEmpty()}"
+    }.orEmpty()
+    Text(
+        text = "Forked from ${metadata.parentTitle} · ${metadata.anchorPreview} · $resume$git",
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Surface)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .semantics { contentDescription = "Conversation fork lineage. Forked from ${metadata.parentTitle}. $resume." },
+        color = TextDim,
+        style = MaterialTheme.typography.labelSmall,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
 }
 
 private fun ThreadPresentation.metadataOrNull(): ThreadMetadataPresentation? = when (this) {
@@ -1078,10 +1123,18 @@ private fun ThreadRow(
     pendingActions: ThreadPendingActions,
     onAction: (ThreadUiAction) -> Unit,
     onImageOpen: (String) -> Unit,
+    onFork: (String) -> Unit,
 ) {
     when (row) {
-        is ThreadRowPresentation.User -> UserRow(row.source, onImageOpen)
-        is ThreadRowPresentation.Text -> TextRow(row)
+        is ThreadRowPresentation.User -> UserRow(
+            row.source,
+            onImageOpen,
+            onFork.takeIf { row.source.id.startsWith("h-") },
+        )
+        is ThreadRowPresentation.Text -> TextRow(
+            row,
+            onFork.takeIf { row.source.id.startsWith("h-") },
+        )
         is ThreadRowPresentation.Tool -> ToolRow(row)
         is ThreadRowPresentation.Denial -> NoticeCard(
             title = "Blocked · ${row.source.toolName}",
@@ -1139,10 +1192,19 @@ private fun ThreadRow(
 }
 
 @Composable
-private fun UserRow(item: FeedItem.User, onImageOpen: (String) -> Unit) {
+private fun UserRow(
+    item: FeedItem.User,
+    onImageOpen: (String) -> Unit,
+    onFork: ((String) -> Unit)? = null,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                enabled = onFork != null,
+                onClick = {},
+                onLongClick = { onFork?.invoke(item.id.removePrefix("h-")) },
+            )
             .padding(horizontal = 16.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.End,
     ) {
@@ -1358,12 +1420,20 @@ private fun imageSampleSize(width: Int, height: Int, maxDimension: Int): Int {
 }
 
 @Composable
-private fun TextRow(row: ThreadRowPresentation.Text) {
+private fun TextRow(
+    row: ThreadRowPresentation.Text,
+    onFork: ((String) -> Unit)? = null,
+) {
     var expanded by rememberSaveable(row.key) { mutableStateOf(false) }
     val reasoning = row.kind == ThreadRowKind.REASONING
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .combinedClickable(
+                enabled = onFork != null,
+                onClick = {},
+                onLongClick = { onFork?.invoke(row.source.messageId) },
+            )
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {

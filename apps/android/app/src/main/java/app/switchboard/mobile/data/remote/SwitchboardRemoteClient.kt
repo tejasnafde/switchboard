@@ -7,6 +7,8 @@ import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.Conversation
 import app.switchboard.mobile.domain.remote.CurrentBranchResult
 import app.switchboard.mobile.domain.remote.CreateConversation
+import app.switchboard.mobile.domain.remote.ForkConversationOutcome
+import app.switchboard.mobile.domain.remote.ForkConversationRequest
 import app.switchboard.mobile.domain.remote.ImageInput
 import app.switchboard.mobile.domain.iap.IapDiscoveredTarget
 import app.switchboard.mobile.domain.remote.LoadedSession
@@ -54,6 +56,8 @@ object BackendChannels {
     const val RenameConversation = "app:rename-conversation"
     const val ArchiveConversation = "app:archive-conversation"
     const val CreateConversation = "app:create-conversation"
+    const val ForkConversation = "app:fork-conversation"
+    const val GetConversationFork = "app:get-conversation-fork"
     const val MarkRead = "app:mark-read"
     const val GetSetting = "settings:get"
     const val SetSetting = "settings:set"
@@ -176,6 +180,29 @@ class SwitchboardRemoteClient(
                 "worktreeBranch" to input.worktreeBranch.jsonStringOrNull(),
             ),
         ),
+        callback,
+    )
+
+    fun forkConversation(
+        input: ForkConversationRequest,
+        callback: (RemoteResponse<ForkConversationOutcome>) -> Unit,
+    ) = call(
+        BackendChannels.ForkConversation,
+        array(input.raw),
+        ConversationForkWire::outcome,
+        callback,
+    )
+
+    fun getConversationFork(
+        input: ForkConversationRequest,
+        callback: (RemoteResponse<ForkConversationOutcome?>) -> Unit,
+    ) = call(
+        BackendChannels.GetConversationFork,
+        array(obj(
+            "requestId" to JsonString(input.requestId),
+            "sourceConversationId" to JsonString(input.sourceConversationId),
+        )),
+        { value -> if (value == null || value === JsonNull) null else ConversationForkWire.outcome(value) },
         callback,
     )
 

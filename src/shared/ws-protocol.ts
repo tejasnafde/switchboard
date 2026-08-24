@@ -36,6 +36,7 @@ export const BACKEND_CAPABILITIES = [
   'durable_turn_origin',
   'atomic_user_turn_v1',
   'worktree_creation_v1',
+  'conversation_fork_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

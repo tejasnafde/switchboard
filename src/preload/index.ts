@@ -220,6 +220,10 @@ const api = {
       transport.invoke(AppChannels.GET_CONVERSATION_MODEL, id),
     setConversationModel: (id: string, model: string): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_MODEL, id, model),
+    getConversationReasoningEffort: (id: string): Promise<{ reasoningEffort: 'low' | 'medium' | 'high' | null }> =>
+      transport.invoke(AppChannels.GET_CONVERSATION_REASONING_EFFORT, id),
+    setConversationReasoningEffort: (id: string, effort: 'low' | 'medium' | 'high'): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.SET_CONVERSATION_REASONING_EFFORT, id, effort),
     setConversationProviderSelection: (
       id: string,
       agentType: 'claude-code' | 'codex' | 'opencode',
@@ -302,42 +306,16 @@ const api = {
     organizeProjects: (items: import('@shared/types').ProjectOrganizationItem[]) =>
       transport.invoke(AppChannels.PROJECT_ORGANIZE, items),
 
-    /**
-     * Spawn a new conversation cloned from the first N messages of an
-     * existing one. Returns either `{ ok: true, conversation, resumeHint,
-     * messages, resumable }` or `{ ok: false, error }`.
-     */
-    forkConversation: (args: {
-      sourceConversationId: string
-      upToIndex: number
-      forkedAtMessageId?: string
-      creationId?: string
-      conversationId?: string
+    forkConversation: (
+      request: import('@shared/conversation-fork').ForkConversationRequest,
+    ): Promise<import('@shared/conversation-fork').ForkConversationOutcome> =>
+      transport.invoke(AppChannels.FORK_CONVERSATION, request),
+    getConversationFork: (input: {
+      requestId: string
       machineId?: string
-      requestedAt?: number
-      /** #5: when true, also `git worktree add` a fresh branch and root the
-       *  forked conversation at the new checkout. */
-      withWorktree?: boolean
-    }): Promise<
-      | {
-          ok: true
-          conversation: {
-            id: string
-            projectPath: string
-            agentType: string
-            title: string
-            parentConversationId: string
-            forkedAtMessageId: string
-            createdAt: number
-          }
-          resumeHint: string | null
-          messages: import('@shared/types').ChatMessage[]
-          resumable: boolean
-          /** Set iff `withWorktree: true` and creation succeeded. */
-          worktree?: { path: string; branch: string }
-        }
-      | { ok: false; error: string; worktreeCreation?: import('@shared/worktree-creation').WorktreeCreationSnapshot }
-    > => transport.invoke(AppChannels.FORK_CONVERSATION, args),
+      sourceConversationId?: string
+    }): Promise<import('@shared/conversation-fork').ForkConversationOutcome | null> =>
+      transport.invoke(AppChannels.GET_CONVERSATION_FORK, input),
   },
 
   // ─── Files (chip resolver + @-mentions + diff-card writes) ─────

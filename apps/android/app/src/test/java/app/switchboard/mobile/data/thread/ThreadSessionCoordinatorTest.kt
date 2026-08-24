@@ -257,7 +257,7 @@ class ThreadSessionCoordinatorTest {
         )
         assertEquals("hello", (ready.thread.feed[0] as FeedItem.User).text)
         assertEquals(true, (ready.thread.feed[1] as FeedItem.Text).done)
-        assertTrue(ready.thread.feed[2] is FeedItem.Text)
+        assertTrue(ready.thread.feed[2] is FeedItem.RawNotice)
     }
 
     @Test

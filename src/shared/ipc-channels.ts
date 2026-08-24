@@ -43,6 +43,8 @@ export const AppChannels = {
   SET_CONVERSATION_PROVIDER_INSTANCE_ID: 'app:set-conversation-provider-instance-id',
   GET_CONVERSATION_MODEL: 'app:get-conversation-model',
   SET_CONVERSATION_MODEL: 'app:set-conversation-model',
+  GET_CONVERSATION_REASONING_EFFORT: 'app:get-conversation-reasoning-effort',
+  SET_CONVERSATION_REASONING_EFFORT: 'app:set-conversation-reasoning-effort',
   SET_CONVERSATION_PROVIDER_SELECTION: 'app:set-conversation-provider-selection',
   GET_CONVERSATION_PENDING_HANDOFF: 'app:get-conversation-pending-handoff',
   SET_CONVERSATION_PENDING_HANDOFF: 'app:set-conversation-pending-handoff',
@@ -61,6 +63,7 @@ export const AppChannels = {
   ASSIGN_PROJECT_WORKSPACE: 'app:assign-project-workspace',
   PROJECT_ORGANIZE: 'app:project-organize',
   FORK_CONVERSATION: 'app:fork-conversation',
+  GET_CONVERSATION_FORK: 'app:get-conversation-fork',
   /** backend → renderer push: any client created or renamed a conversation. */
   CONVERSATIONS_CHANGED: 'app:conversations-changed',
   // Editor tabs persistence - open files survive app restart per session.

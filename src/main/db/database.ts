@@ -17,7 +17,8 @@ import type { WorktreeCreationStatus } from '@shared/worktree-creation'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 import { searchMessagesInDatabase, type SearchResult } from './message-search'
 import { commitConversationProfileSwitch } from './conversation-profile-commit'
-import { ensureConversationForkSchema } from './conversation-fork'
+import { ensureConversationForkSchema, SqliteConversationForkStore } from './conversation-fork'
+import type { ForkLineageMetadata } from '@shared/conversation-fork'
 import {
   ensureWorktreeCreationSchema,
   getKanbanWorktreeCreationKey as getKanbanWorktreeCreationKeyFromDb,
@@ -1022,13 +1023,17 @@ export interface ConversationRow {
   fork_anchor_timestamp?: number | null
   fork_anchor_canonical_count?: number | null
   fork_resume_mode?: string | null
+  fork_anchor_preview?: string | null
+  fork_git_base_sha?: string | null
+  fork_source_dirty?: number | null
+  fork_omitted_change_summary?: string | null
 }
 
 /**
  * Insert a conversation row that records its fork lineage. Mirrors
  * `createConversation` but writes the parent + anchor columns added in
  * the fork-from-message migration. Used by `forkConversation` in
- * `src/main/conversations/fork.ts`.
+ * Legacy callers only; reliable forks use the atomic conversation-fork store.
  */
 export function createForkedConversation(args: {
   id: string
@@ -1066,6 +1071,25 @@ export function getConversationById(id: string): ConversationRow | undefined {
   return getDb().prepare(
     'SELECT * FROM conversations WHERE id = ?'
   ).get(id) as ConversationRow | undefined
+}
+
+/** Resolve a provider-rotated session UUID to Switchboard's durable thread row. */
+export function getConversationByThreadId(id: string): ConversationRow | undefined {
+  return getConversationById(resolveRootThreadId(id))
+}
+
+export function getConversationForkMetadata(id: string): ForkLineageMetadata | null {
+  const result = new SqliteConversationForkStore(getDb()).getResultForConversation(id)
+  if (!result) return null
+  return {
+    ...(result.conversation.machineId ? { machineId: result.conversation.machineId } : {}),
+    parentConversationId: result.conversation.parentConversationId,
+    parentTitle: result.conversation.parentTitle,
+    anchor: result.conversation.anchor,
+    resumeMode: result.conversation.resumeMode,
+    ...(result.git ? { git: result.git } : {}),
+    warnings: result.warnings,
+  }
 }
 
 // ─── Thread ancestry ─────────────────────────────────────────────
@@ -1484,6 +1508,19 @@ export function setConversationModel(id: string, model: string): void {
   getDb().prepare(
     'UPDATE conversations SET model = ?, updated_at = ? WHERE id = ?'
   ).run(model, Date.now(), resolveRootThreadId(id))
+}
+
+export function getConversationReasoningEffort(id: string): string | null {
+  const row = getDb().prepare(
+    'SELECT reasoning_effort FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as { reasoning_effort: string | null } | undefined
+  return row?.reasoning_effort ?? null
+}
+
+export function setConversationReasoningEffort(id: string, effort: string): void {
+  getDb().prepare(
+    'UPDATE conversations SET reasoning_effort = ?, updated_at = ? WHERE id = ?'
+  ).run(effort, Date.now(), resolveRootThreadId(id))
 }
 
 /**

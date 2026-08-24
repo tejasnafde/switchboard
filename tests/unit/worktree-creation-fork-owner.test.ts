@@ -38,11 +38,10 @@ function request(): WorktreeCreationRequest {
     },
     owner: {
       kind: 'fork',
+      requestId: 'fork-request-1',
       conversationId: 'conversation-fork-1',
       parentConversationId: 'conversation-parent-1',
-      forkedAtMessageId: 'message-2',
-      upToIndex: 1,
-      title: 'Parent conversation · fork/fork-owner',
+      sourceDirty: false,
     },
     purpose: 'fork',
     setup: { policy: 'skip' },

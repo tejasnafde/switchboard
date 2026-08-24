@@ -189,6 +189,46 @@ export class ExecFileGitWorktreeAdapter {
     }
   }
 
+  async inspect(sourceCheckoutPath: string): Promise<{
+    canonicalProjectPath: string
+    sourceCheckoutPath: string
+    headSha: string
+    statusDigest: string
+    trackedChanges: number
+    untrackedChanges: number
+    omittedChangeSummary: string
+  }> {
+    const [repository, head, status] = await Promise.all([
+      this.resolveRepository(sourceCheckoutPath),
+      this.run(sourceCheckoutPath, ['rev-parse', '--verify', 'HEAD']),
+      this.run(sourceCheckoutPath, ['status', '--porcelain=v1', '-z', '--untracked-files=all']),
+    ])
+    const headSha = head.stdout.trim().toLowerCase()
+    if (!/^[0-9a-f]{40,64}$/.test(headSha)) throw new Error('Git returned an invalid source HEAD')
+    let trackedChanges = 0
+    let untrackedChanges = 0
+    for (const record of status.stdout.split('\0')) {
+      if (record.length < 3 || record[2] !== ' ') continue
+      if (record.startsWith('?? ')) untrackedChanges++
+      else if (!record.startsWith('!! ')) trackedChanges++
+    }
+    const parts = [
+      trackedChanges > 0 ? `${trackedChanges} tracked change${trackedChanges === 1 ? '' : 's'}` : '',
+      untrackedChanges > 0 ? `${untrackedChanges} untracked change${untrackedChanges === 1 ? '' : 's'}` : '',
+    ].filter(Boolean)
+    return {
+      canonicalProjectPath: repository.projectPath,
+      sourceCheckoutPath: await realpath(sourceCheckoutPath),
+      headSha,
+      statusDigest: createHash('sha256').update(status.stdout).digest('hex'),
+      trackedChanges,
+      untrackedChanges,
+      omittedChangeSummary: parts.length > 0
+        ? `${parts.join(' and ')} will not be copied.`
+        : 'The source checkout is clean.',
+    }
+  }
+
   async resolveRepository(cwd: string): Promise<ResolvedGitRepository> {
     if (!isAbsolute(cwd)) throw new Error(`Repository path must be absolute: ${cwd}`)
     const [commonResult, worktreesResult] = await Promise.all([

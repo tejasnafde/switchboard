@@ -46,6 +46,7 @@ export interface ResolvedForkAnchor extends ForkAnchor {
   provider?: 'claude-code' | 'codex' | 'opencode' | null
   providerSessionId?: string | null
   providerEventId?: string | null
+  preview: string
 }
 
 export type ForkResumeMode = 'native' | 'transcript-handoff'
@@ -65,6 +66,7 @@ export interface ForkConversationState {
   launchConfigName: string | null
   title: string
   parentConversationId: string
+  parentTitle: string
   anchor: ResolvedForkAnchor
   resumeMode: ForkResumeMode
   createdAt: number
@@ -90,6 +92,16 @@ export interface ForkConversationResult {
     sourceDirty: boolean
     omittedChangeSummary?: string
   }
+  warnings: ForkWarning[]
+}
+
+export interface ForkLineageMetadata {
+  machineId?: string
+  parentConversationId: string
+  parentTitle: string
+  anchor: ResolvedForkAnchor
+  resumeMode: ForkResumeMode
+  git?: ForkConversationResult['git']
   warnings: ForkWarning[]
 }
 
@@ -185,7 +197,10 @@ export function canonicalizeForkConversationRequest(request: ForkConversationReq
 
 export function canonicalizeForkConversationIdentity(request: ForkConversationRequest): string {
   const { requestedAt: _requestedAt, ...provenance } = request.provenance
-  return JSON.stringify(stableValue({ ...request, provenance }))
+  const checkout = request.checkout.kind === 'new-worktree'
+    ? { kind: request.checkout.kind, basePolicy: request.checkout.basePolicy }
+    : request.checkout
+  return JSON.stringify(stableValue({ ...request, checkout, provenance }))
 }
 
 export function canonicalizeForkMessage(message: ChatMessage): string {
@@ -200,6 +215,12 @@ export function digestForkMessage(
   const digest = sha256(canonicalizeForkMessage(message)).toLowerCase()
   if (!SHA256.test(digest)) throw new Error('Fork message digest must be a SHA-256 hex value')
   return digest
+}
+
+export function isForkableForkMessage(message: ChatMessage): boolean {
+  if (message.role !== 'user' && message.role !== 'assistant') return false
+  if (message.content.trim().length > 0) return true
+  return message.role === 'user' && (message.images?.length ?? 0) > 0
 }
 
 export function parseForkConversationRequest(input: unknown): ForkConversationParseResult {

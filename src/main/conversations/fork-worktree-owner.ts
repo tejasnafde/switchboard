@@ -1,328 +1,303 @@
-import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
-import { assembleClaudeFork, truncateCodexJsonl } from '../agent/jsonl-truncate'
-import { loadJsonlCached } from '../agent/jsonl-cache'
-import {
-  getConversationById,
-  getMessagesForConversation,
-  messageRowsToChatMessages,
-} from '../db/database'
-import { SqliteWorktreeCreationStore } from '../db/worktree-creation'
-import { resolveProviderInstance } from '../db/providerInstances'
-import { encodeClaudeProjectPath } from '../projects/session-scanner'
-import { defaultClaudeDir } from '../provider/claude-session-migrate'
+import { createHash } from 'node:crypto'
 import { slugifyForBranch } from '../../shared/branchSlug'
-import type { ChatMessage } from '../../shared/types'
-import type { WorktreeCreationSnapshot } from '../../shared/worktree-creation'
 import type {
-  ForkWorktreeCreationRequest,
+  ForkConversationOutcome,
+  ForkConversationRequest,
+  ForkConversationResult,
+} from '../../shared/conversation-fork'
+import type { ForkWorktreeCreationRequest } from '../worktree-creation/worktree-creation-service'
+import type {
   ForkWorktreeOwnerCommitInput,
   ForkWorktreeOwnerPort,
   ForkWorktreeOwnerPrepareInput,
   ForkWorktreeOwnerStage,
   WorktreeCreationService,
 } from '../worktree-creation/worktree-creation-service'
-import {
-  findCodexRolloutForConversation,
-  listClaudeFragmentPaths,
-  resolveNativeForkIndex,
-  type ForkInput,
-  type ForkResult,
-  type ForkWorktreeCreationResult,
-} from './fork'
-import { loadConversationHistory } from './history'
+import type { WorktreeCreationRequest, WorktreeCreationSnapshot } from '../../shared/worktree-creation'
+import { SqliteConversationForkStore } from '../db/conversation-fork'
+import { SqliteWorktreeCreationStore } from '../db/worktree-creation'
+import { cloneForkMessages, type ClonedForkMessages } from './fork-message-codec'
+import type {
+  ForkSourceGitReceipt,
+  PreparedForkSnapshot,
+  PreparedProviderForkArtifact,
+  ProviderForkArtifactPort,
+} from './conversation-fork-coordinator'
 
-interface ForkArtifact {
-  path: string
-  content: string
+export interface ForkSourceGitInspector {
+  inspect(sourceCheckoutPath: string): Promise<ForkSourceGitReceipt>
 }
 
-interface PreparedForkStage extends ForkWorktreeOwnerStage {
-  conversation: {
-    id: string
-    projectPath: string
-    agentType: string
-    sessionId: string | null
-    title: string
-    parentConversationId: string
-    forkedAtMessageId: string
-    worktreePath: string
-    worktreeBranch: string
-    pendingHandoffFrom: string | null
+interface PreparedForkWorktreeStage extends ForkWorktreeOwnerStage {
+  prepared: PreparedForkSnapshot
+  provider: PreparedProviderForkArtifact
+  cloned: ClonedForkMessages
+}
+
+function stageOf(stage: ForkWorktreeOwnerStage): PreparedForkWorktreeStage {
+  if (!('prepared' in stage) || !('provider' in stage) || !('cloned' in stage)) {
+    throw new Error('Fork worktree stage is invalid')
   }
-  messages: Array<{ id: string; role: string; content: string; timestamp: number }>
-  artifact?: ForkArtifact
-  resumable: boolean
+  return stage as PreparedForkWorktreeStage
 }
 
-function stageOf(stage: ForkWorktreeOwnerStage): PreparedForkStage {
-  if (!('conversation' in stage) || !('messages' in stage)) {
-    throw new Error('fork owner stage is invalid')
-  }
-  return stage as PreparedForkStage
-}
-
-function stripForSlug(body: string): string {
-  return body
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`[^`]+`/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80)
-}
-
-function stripForkSuffix(title: string): string {
-  return title.replace(/ · fork(\/[^·]*)?$/, '').trim()
-}
-
-async function writeExactArtifact(artifact: ForkArtifact): Promise<void> {
-  await mkdir(dirname(artifact.path), { recursive: true })
-  try {
-    await writeFile(artifact.path, artifact.content, { encoding: 'utf-8', flag: 'wx' })
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
-    const existing = await readFile(artifact.path, 'utf-8')
-    if (existing !== artifact.content) {
-      throw new Error(`fork transcript conflict at ${artifact.path}`)
-    }
-  }
-}
-
-async function prepareClaudeArtifact(
-  request: ForkWorktreeCreationRequest,
-  worktreePath: string,
-  keptMessages: ChatMessage[],
-): Promise<{ artifact?: ForkArtifact; resumable: boolean }> {
-  const fragmentPaths = listClaudeFragmentPaths(request.owner.parentConversationId)
-  if (fragmentPaths.length === 0) return { resumable: false }
-
-  const fragments: string[] = []
-  const nativeMessages: ChatMessage[] = []
-  for (const path of fragmentPaths) {
-    fragments.push(await readFile(path, 'utf-8'))
-    const parsed = await loadJsonlCached(path, 'claude-code')
-    if (parsed) nativeMessages.push(...parsed)
-  }
-  const nativeIndex = resolveNativeForkIndex(keptMessages, nativeMessages, keptMessages.length - 1)
-  if (nativeIndex === null) return { resumable: false }
-  const truncated = assembleClaudeFork(fragments, nativeIndex + 1, {
-    newSessionId: request.owner.conversationId,
-  })
-  if (!truncated.anchorUuid || truncated.keptVisibleCount === 0) return { resumable: false }
-
-  const projectDir = join(
-    resolveProviderInstance('claude-code', null)?.oauthDir ?? defaultClaudeDir(),
-    'projects',
-    encodeClaudeProjectPath(worktreePath),
-  )
-  return {
-    resumable: true,
-    artifact: {
-      path: join(projectDir, `${request.owner.conversationId}.jsonl`),
-      content: truncated.newContent,
-    },
-  }
-}
-
-async function prepareCodexArtifact(
-  request: ForkWorktreeCreationRequest,
-  keptMessages: ChatMessage[],
-): Promise<ForkArtifact | undefined> {
-  const sourceFile = await findCodexRolloutForConversation(request.owner.parentConversationId)
-  if (!sourceFile) return undefined
-  const raw = await readFile(sourceFile, 'utf-8')
-  const nativeMessages = await loadJsonlCached(sourceFile, 'codex') ?? []
-  const nativeIndex = resolveNativeForkIndex(keptMessages, nativeMessages, keptMessages.length - 1)
-  if (nativeIndex === null) return undefined
-  const truncated = truncateCodexJsonl(raw, nativeIndex + 1)
-  if (truncated.keptVisibleCount === 0) return undefined
-  return {
-    path: join(dirname(sourceFile), `rollout-fork-${request.owner.conversationId}.jsonl`),
-    content: truncated.newContent,
-  }
+function titleForBranch(sourceTitle: string, branch: string): string {
+  return `${sourceTitle.replace(/ · fork(\/[^·]*)?$/, '').trim()} · ${branch}`
 }
 
 export class ForkWorktreeOwnerAdapter implements ForkWorktreeOwnerPort {
-  constructor(private readonly store: SqliteWorktreeCreationStore) {}
+  constructor(
+    private readonly worktrees: SqliteWorktreeCreationStore,
+    private readonly forks: SqliteConversationForkStore,
+    private readonly providerArtifacts: ProviderForkArtifactPort,
+    private readonly clock: () => number = Date.now,
+  ) {}
 
-  async prepare(input: ForkWorktreeOwnerPrepareInput): Promise<PreparedForkStage> {
-    const source = getConversationById(input.request.owner.parentConversationId)
-    if (!source) throw new Error(`fork: unknown source conversation ${input.request.owner.parentConversationId}`)
-    if (source.project_path !== input.request.repository.projectPath) {
-      throw new Error('fork: source conversation moved to a different project')
+  async prepare(input: ForkWorktreeOwnerPrepareInput): Promise<PreparedForkWorktreeStage> {
+    const owner = input.request.owner
+    const operation = this.forks.get(input.request.repository.machineId, owner.requestId)
+    if (!operation || operation.status !== 'pending') {
+      throw new Error(`Fork operation ${owner.requestId} is unavailable for worktree preparation`)
     }
-
-    const sourceMessages = (await loadConversationHistory(source.id, source.project_path)).messages
-    if (input.request.owner.upToIndex < 0 || input.request.owner.upToIndex >= sourceMessages.length) {
-      throw new Error(`fork: boundary ${input.request.owner.upToIndex} is outside the source transcript`)
+    const prepared = JSON.parse(operation.preparedJson) as PreparedForkSnapshot
+    if (prepared.conversationId !== owner.conversationId
+      || prepared.source.conversationId !== owner.parentConversationId) {
+      throw new Error('Worktree owner does not match the frozen fork operation')
     }
-    const keptMessages = sourceMessages.slice(0, input.request.owner.upToIndex + 1)
-    const forkedAtMessageId = input.request.owner.forkedAtMessageId
-      ?? `idx:${input.request.owner.upToIndex}`
-    const title = `${stripForkSuffix(source.title)} · ${input.plan.branch}`
-
-    let artifact: ForkArtifact | undefined
-    let resumable = false
-    if (source.agent_type === 'claude-code') {
-      const prepared = await prepareClaudeArtifact(input.request, input.plan.worktreePath, keptMessages)
-      artifact = prepared.artifact
-      resumable = prepared.resumable
-    } else if (source.agent_type === 'codex') {
-      artifact = await prepareCodexArtifact(input.request, keptMessages)
-    }
-
+    const provider = await this.providerArtifacts.prepare({
+      request: JSON.parse(operation.requestJson) as ForkConversationRequest,
+      prepared,
+      targetCwd: input.plan.worktreePath,
+    })
+    const cloned = cloneForkMessages(
+      prepared.conversationId,
+      prepared.prefix,
+      (index) => `${prepared.conversationId}:message:${index}`,
+    )
     return {
-      ...(artifact ? { artifactPath: artifact.path, artifact } : {}),
-      conversation: {
-        id: input.request.owner.conversationId,
-        projectPath: source.project_path,
-        agentType: source.agent_type,
-        sessionId: resumable ? input.request.owner.conversationId : null,
-        title,
-        parentConversationId: source.id,
-        forkedAtMessageId,
-        worktreePath: input.plan.worktreePath,
-        worktreeBranch: input.plan.branch,
-        pendingHandoffFrom: resumable ? null : source.agent_type,
-      },
-      messages: keptMessages.map((message, index) => ({
-        id: `${input.request.owner.conversationId}:${index}`,
-        role: message.role,
-        content: message.content,
-        timestamp: message.timestamp,
-      })),
-      resumable,
+      prepared,
+      provider,
+      cloned,
+      ...(provider.stage && typeof provider.stage.path === 'string'
+        ? { artifactPath: provider.stage.path }
+        : {}),
     }
   }
 
   async publish(stage: ForkWorktreeOwnerStage): Promise<void> {
-    const artifact = stageOf(stage).artifact
-    if (artifact) await writeExactArtifact(artifact)
+    const provider = stageOf(stage).provider
+    if (provider.stage) await this.providerArtifacts.publish(provider.stage)
   }
 
   async commit(input: ForkWorktreeOwnerCommitInput) {
     const stage = stageOf(input.stage)
-    return this.store.commitForkOwner({
+    const operation = this.forks.get(input.machineId, input.request.owner.requestId)
+    if (!operation) throw new Error('Fork operation disappeared before worktree commit')
+    const createdAt = this.clock()
+    const conversation: ForkConversationResult['conversation'] = {
+      id: stage.prepared.conversationId,
+      projectPath: stage.prepared.source.projectPath,
+      worktreePath: input.worktree.worktreePath,
+      worktreeBranch: input.worktree.branch,
+      worktreeId: input.worktree.id,
+      machineId: stage.prepared.source.machineId,
+      agentType: stage.prepared.source.agentType,
+      providerInstanceId: stage.prepared.source.providerInstanceId,
+      runtimeMode: stage.prepared.source.runtimeMode,
+      model: stage.prepared.source.model,
+      reasoningEffort: stage.prepared.source.reasoningEffort,
+      launchConfigName: stage.prepared.source.launchConfigName,
+      title: titleForBranch(stage.prepared.source.title, input.worktree.branch),
+      parentConversationId: stage.prepared.source.conversationId,
+      parentTitle: stage.prepared.source.title,
+      anchor: stage.prepared.anchor,
+      resumeMode: stage.provider.resumeMode,
+      createdAt,
+    }
+    const result: ForkConversationResult = {
+      requestId: input.request.owner.requestId,
+      conversation,
+      messages: stage.cloned.messages,
+      ...(stage.provider.nativeResume ? { nativeResume: stage.provider.nativeResume } : {}),
+      git: {
+        baseSha: input.worktree.resolvedBaseCommit,
+        path: input.worktree.worktreePath,
+        branch: input.worktree.branch,
+        sourceDirty: input.request.owner.sourceDirty,
+        ...(input.request.owner.omittedChangeSummary
+          ? { omittedChangeSummary: input.request.owner.omittedChangeSummary }
+          : {}),
+      },
+      warnings: [
+        ...stage.provider.warnings,
+        ...stage.cloned.warnings.map((warning) => ({
+          code: warning.code,
+          message: `Message ${warning.messageId} preserved unsupported fields: ${warning.fields.join(', ')}.`,
+        })),
+      ],
+    }
+    return this.worktrees.commitForkOwner({
       machineId: input.machineId,
       creationId: input.creationId,
       expectedRevision: input.expectedRevision,
       worktree: input.worktree,
-      conversation: stage.conversation,
-      messages: stage.messages,
-      now: input.now,
+      fork: {
+        machineId: input.machineId,
+        requestId: input.request.owner.requestId,
+        expectedRevision: operation.revision,
+        conversation,
+        sessionId: stage.provider.sessionId,
+        pendingHandoffFrom: stage.provider.pendingHandoffFrom,
+        messages: stage.cloned.rows,
+        result,
+        worktreeCreationId: input.creationId,
+        now: createdAt,
+      },
+      now: createdAt,
     })
   }
 
   async compensate(stage: ForkWorktreeOwnerStage): Promise<void> {
-    const artifact = stageOf(stage).artifact
-    if (!artifact) return
-    try {
-      await unlink(artifact.path)
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    }
+    const provider = stageOf(stage).provider
+    if (provider.stage) await this.providerArtifacts.compensate(provider.stage)
   }
 
   isCommitted(key: { machineId: string; creationId: string }): boolean {
-    return this.store.isForkOwnerCommitted(key)
+    return this.worktrees.isForkOwnerCommitted(key)
   }
 }
 
-export interface ForkWorktreeCoordinatorInput extends ForkInput {
-  creationId?: string
-  conversationId?: string
-  machineId?: string
-}
-
-export function buildForkWorktreeRequest(args: {
-  source: { id: string; projectPath: string; worktreeBranch?: string | null }
-  selectedBody: string
-  input: ForkWorktreeCoordinatorInput
-  requestedAt: number
-}): ForkWorktreeCreationRequest {
-  const creationId = args.input.creationId ?? randomUUID()
-  const conversationId = args.input.conversationId ?? creationId
-  const machineId = args.input.machineId ?? 'local'
-  return {
-    schemaVersion: 1,
-    creationId,
-    repository: { projectPath: args.source.projectPath, machineId },
-    checkout: {
-      baseRef: args.source.worktreeBranch || 'HEAD',
-      branch: { namespace: 'fork', seed: slugifyForBranch(stripForSlug(args.selectedBody)) },
-      location: 'managed-in-repo',
-    },
-    owner: {
-      kind: 'fork',
-      conversationId,
-      parentConversationId: args.source.id,
-      ...(args.input.forkedAtMessageId
-        ? { forkedAtMessageId: args.input.forkedAtMessageId }
-        : {}),
-      upToIndex: args.input.upToIndex,
-    },
-    purpose: 'fork',
-    setup: { policy: 'skip' },
-    lineage: {
-      parentConversationId: args.source.id,
-      ...(args.input.forkedAtMessageId
-        ? { sourceMessageId: args.input.forkedAtMessageId }
-        : {}),
-    },
-    provenance: { surface: 'desktop', machineId, requestedAt: args.requestedAt },
-  }
-}
-
-export class ForkWorktreeCoordinator {
+export class ConversationForkWorktreePort {
   constructor(
     private readonly service: WorktreeCreationService,
-    private readonly now: () => number = Date.now,
+    private readonly forks: SqliteConversationForkStore,
+    private readonly git: ForkSourceGitInspector,
   ) {}
 
-  async create(input: ForkWorktreeCoordinatorInput): Promise<ForkWorktreeCreationResult> {
-    const source = getConversationById(input.sourceConversationId)
-    if (!source) throw new Error(`fork: unknown source conversation ${input.sourceConversationId}`)
-    const sourceMessages = (await loadConversationHistory(source.id, source.project_path)).messages
-    if (input.upToIndex < 0 || input.upToIndex >= sourceMessages.length) {
-      throw new Error(`fork: upToIndex ${input.upToIndex} out of range for source ${source.id}`)
+  async prepare(input: {
+    request: ForkConversationRequest
+    prepared: PreparedForkSnapshot
+  }): Promise<PreparedForkSnapshot> {
+    return {
+      ...input.prepared,
+      git: await this.git.inspect(input.prepared.source.sourceCheckoutPath),
     }
-    const selected = sourceMessages[input.upToIndex]
-    const request = buildForkWorktreeRequest({
-      source: {
-        id: source.id,
-        projectPath: source.project_path,
-        worktreeBranch: source.worktree_branch,
-      },
-      selectedBody: selected.content,
-      input,
-      requestedAt: input.requestedAt ?? this.now(),
-    })
-    const snapshot = await this.service.createWorktreeTransaction(request)
-    return this.resultFromSnapshot(snapshot, request.owner.conversationId)
   }
 
-  private resultFromSnapshot(snapshot: WorktreeCreationSnapshot, conversationId: string): ForkWorktreeCreationResult {
-    if (snapshot.status !== 'ready' || !snapshot.worktreePath || !snapshot.branch) {
-      return { worktreeCreation: snapshot }
+  async create(input: {
+    request: ForkConversationRequest
+    prepared: PreparedForkSnapshot
+  }): Promise<ForkConversationOutcome> {
+    const { request, prepared } = input
+    if (!prepared.git) throw new Error('Fork operation is missing its frozen Git source receipt')
+    const receipt = prepared.git
+    const current = await this.git.inspect(prepared.source.sourceCheckoutPath)
+    const confirmation = request.checkout.kind === 'new-worktree'
+      ? request.checkout.dirtySourceConfirmed
+      : undefined
+    const sourceDirty = receipt.trackedChanges > 0 || receipt.untrackedChanges > 0
+    if (sourceDirty && !confirmation) {
+      return {
+        kind: 'confirmation-required',
+        requestId: request.requestId,
+        dirtySource: receipt,
+      }
     }
-    const conversation = getConversationById(conversationId)
-    if (!conversation) throw new Error('fork owner commit completed without a conversation projection')
-    const resumable = conversation.session_id === conversation.id
+    const sourceChanged = current.headSha !== receipt.headSha || current.statusDigest !== receipt.statusDigest
+    if (sourceChanged || (confirmation
+      && (confirmation.headSha !== receipt.headSha || confirmation.statusDigest !== receipt.statusDigest))) {
+      return {
+        kind: 'failed',
+        requestId: request.requestId,
+        error: {
+          code: 'dirty-source-changed',
+          message: 'The source HEAD or working tree changed after confirmation.',
+          retryable: true,
+        },
+      }
+    }
+
+    const worktreeRequest = this.buildRequest(request, prepared, receipt, sourceDirty)
+    let snapshot: WorktreeCreationSnapshot
+    try {
+      snapshot = await this.service.createWorktreeTransaction(worktreeRequest)
+    } catch (error) {
+      return {
+        kind: 'failed',
+        requestId: request.requestId,
+        error: { code: 'git-failed', message: String(error), retryable: true },
+      }
+    }
+    const result = this.forks.getResult(prepared.source.machineId, request.requestId)
+    if (result) return { kind: 'completed', result }
+    const retained = snapshot.status === 'cleanup_required'
     return {
-      conversation: {
-        id: conversation.id,
-        projectPath: conversation.project_path,
-        agentType: conversation.agent_type,
-        title: conversation.title,
-        parentConversationId: conversation.parent_conversation_id ?? '',
-        forkedAtMessageId: conversation.forked_at_message_id ?? '',
-        createdAt: conversation.created_at,
+      kind: 'failed',
+      requestId: request.requestId,
+      error: {
+        code: retained ? 'cleanup-required' : 'git-failed',
+        message: snapshot.error?.message
+          ?? `Worktree creation stopped at ${snapshot.phase}/${snapshot.status}.`,
+        retryable: snapshot.error?.retryable ?? true,
       },
-      resumeHint: resumable ? conversation.session_id : null,
-      messages: messageRowsToChatMessages(getMessagesForConversation(conversation.id)),
-      resumable,
-      worktree: { path: snapshot.worktreePath, branch: snapshot.branch },
+      ...(retained
+        ? {
+            recovery: {
+              retainedPath: snapshot.worktreePath,
+              retainedBranch: snapshot.branch,
+              cleanupSafe: snapshot.recoveryActions.includes('remove'),
+            },
+          }
+        : {}),
     }
   }
+
+  private buildRequest(
+    request: ForkConversationRequest,
+    prepared: PreparedForkSnapshot,
+    receipt: ForkSourceGitReceipt,
+    sourceDirty: boolean,
+  ): ForkWorktreeCreationRequest {
+    const selected = prepared.prefix.at(-1)
+    const seed = slugifyForBranch((selected?.content || prepared.source.title).slice(0, 80))
+    return {
+      schemaVersion: 1,
+      creationId: request.requestId,
+      repository: {
+        projectPath: prepared.source.sourceCheckoutPath,
+        machineId: prepared.source.machineId,
+      },
+      checkout: {
+        baseRef: receipt.headSha,
+        branch: { namespace: 'fork', seed },
+        location: 'managed-in-repo',
+      },
+      owner: {
+        kind: 'fork',
+        requestId: request.requestId,
+        conversationId: prepared.conversationId,
+        parentConversationId: prepared.source.conversationId,
+        sourceDirty,
+        ...(sourceDirty ? { omittedChangeSummary: receipt.omittedChangeSummary } : {}),
+      },
+      purpose: 'fork',
+      setup: { policy: 'skip' },
+      lineage: {
+        ...(prepared.source.sourceWorktreeId
+          ? { parentWorktreeId: prepared.source.sourceWorktreeId }
+          : {}),
+        parentConversationId: prepared.source.conversationId,
+        sourceMessageId: prepared.anchor.messageId,
+      },
+      provenance: {
+        surface: request.provenance.surface === 'automation' ? 'desktop' : request.provenance.surface,
+        machineId: prepared.source.machineId,
+        requestedAt: request.provenance.requestedAt,
+      },
+    }
+  }
+}
+
+export function statusDigest(status: string): string {
+  return createHash('sha256').update(status).digest('hex')
 }

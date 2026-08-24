@@ -21,6 +21,11 @@ import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
 import type {
+  ForkConversationOutcome,
+  ForkConversationRequest,
+  ForkLineageMetadata,
+} from '@shared/conversation-fork'
+import type {
   GetWorktreeCreationRequest,
   WorktreeCreationActionRequest,
   WorktreeCreationProgressEvent,
@@ -60,7 +65,20 @@ export interface StartedSession {
  */
 export interface LoadedSession {
   messages: ChatMessage[]
-  meta: { id: string; title: string; projectPath: string; agentType: string } | null
+  meta: {
+    id: string
+    title: string
+    projectPath: string
+    agentType: string
+    worktreePath?: string | null
+    worktreeBranch?: string | null
+    worktreeId?: string | null
+    providerInstanceId?: string | null
+    runtimeMode?: RuntimeMode | null
+    model?: string | null
+    reasoningEffort?: 'low' | 'medium' | 'high' | null
+    forkMetadata?: ForkLineageMetadata | null
+  } | null
   /** Full message count on the backend, which may exceed `messages.length`. */
   total?: number
   /** True when `messages` is only the newest window of the thread. */
@@ -144,6 +162,18 @@ export class SwitchboardClient {
   /** `limit` returns only the newest N; the result reports `total`/`truncated`. */
   loadSessionById(conversationId: string, limit?: number): Promise<LoadedSession> {
     return this.transport.invoke(AppChannels.LOAD_SESSION_BY_ID, conversationId, { limit })
+  }
+
+  forkConversation(request: ForkConversationRequest): Promise<ForkConversationOutcome> {
+    return this.transport.invoke(AppChannels.FORK_CONVERSATION, request)
+  }
+
+  getConversationFork(request: {
+    requestId: string
+    sourceConversationId: string
+    machineId?: string
+  }): Promise<ForkConversationOutcome | null> {
+    return this.transport.invoke(AppChannels.GET_CONVERSATION_FORK, request)
   }
 
   renameConversation(conversationId: string, title: string): Promise<unknown> {

@@ -4,7 +4,12 @@ import {
   ensureWorktreeCreationSchema,
   SqliteWorktreeCreationStore,
 } from '../../src/main/db/worktree-creation'
+import {
+  ensureConversationForkSchema,
+  SqliteConversationForkStore,
+} from '../../src/main/db/conversation-fork'
 import type { WorktreeCreationRequest } from '../../src/shared/worktree-creation'
+import type { ForkConversationRequest, ForkConversationResult } from '../../src/shared/conversation-fork'
 
 const request: WorktreeCreationRequest = {
   schemaVersion: 1,
@@ -17,10 +22,10 @@ const request: WorktreeCreationRequest = {
   },
   owner: {
     kind: 'fork',
+    requestId: 'fork-request-1',
     conversationId: 'fork-conversation-1',
     parentConversationId: 'parent-conversation-1',
-    forkedAtMessageId: 'parent-message-2',
-    upToIndex: 1,
+    sourceDirty: false,
   },
   purpose: 'fork',
   setup: { policy: 'skip' },
@@ -47,6 +52,12 @@ function fixture() {
       worktree_path TEXT,
       worktree_branch TEXT,
       pending_handoff_from TEXT,
+      worktree_id TEXT,
+      worktree_creation_id TEXT,
+      runtime_mode TEXT,
+      model TEXT,
+      provider_instance_id TEXT,
+      launch_config_name TEXT,
       sidebar_role TEXT
     );
     CREATE TABLE messages (
@@ -54,7 +65,11 @@ function fixture() {
       conversation_id TEXT NOT NULL,
       role TEXT NOT NULL,
       content TEXT NOT NULL,
+      tool_calls TEXT,
+      images TEXT,
       timestamp INTEGER NOT NULL
+      ,display_body TEXT,
+      pills_meta TEXT
     );
     CREATE TABLE kanban_cards (
       id TEXT PRIMARY KEY,
@@ -66,6 +81,7 @@ function fixture() {
       updated_at INTEGER NOT NULL
     );
   `)
+  ensureConversationForkSchema(db)
   ensureWorktreeCreationSchema(db)
   const store = new SqliteWorktreeCreationStore(db)
   const reserved = store.reserve({
@@ -95,10 +111,53 @@ function fixture() {
     phase: 'linking', status: 'pending', now: 102,
   })
   if (linking.kind !== 'updated') throw new Error('fixture transition failed')
+  const forkRequest: ForkConversationRequest = {
+    schemaVersion: 1,
+    requestId: 'fork-request-1',
+    sourceConversationId: 'parent-conversation-1',
+    machineId: 'local',
+    anchor: {
+      messageId: 'parent-message-2', role: 'assistant', timestamp: 20,
+      contentDigest: 'a'.repeat(64),
+    },
+    checkout: { kind: 'new-worktree', basePolicy: 'source-head' },
+    provenance: { surface: 'desktop', requestedAt: 100 },
+  }
+  new SqliteConversationForkStore(db).reserve({
+    machineId: 'local', request: forkRequest, requestJson: JSON.stringify(forkRequest),
+    requestHash: 'fork-hash', preparedJson: '{}', preparedHash: 'prepared-hash', now: 100,
+  })
   return { db, store, linking: linking.record }
 }
 
 function commitInput(expectedRevision: number) {
+  const conversation: ForkConversationResult['conversation'] = {
+    id: 'fork-conversation-1', projectPath: '/repo',
+    worktreePath: '/repo/.switchboard/worktrees/fork-1',
+    worktreeBranch: 'fork/selected-turn', worktreeId: 'worktree-1',
+    machineId: 'local', agentType: 'claude-code', providerInstanceId: 'claude-work',
+    runtimeMode: 'sandbox', model: 'claude-sonnet-5', reasoningEffort: null,
+    launchConfigName: null, title: 'Parent chat · fork/selected-turn',
+    parentConversationId: 'parent-conversation-1',
+    anchor: {
+      messageId: 'parent-message-2', role: 'assistant', timestamp: 20,
+      contentDigest: 'a'.repeat(64), canonicalIndex: 1, canonicalMessageCount: 2,
+      resolution: 'exact-id', provider: 'claude-code', providerSessionId: 'source',
+      providerEventId: 'parent-message-2',
+    },
+    resumeMode: 'native', createdAt: 103,
+  }
+  const messages = [
+    { id: 'fork-conversation-1:0', conversationId: conversation.id, role: 'user', content: 'first', toolCallsJson: null, imagesJson: null, timestamp: 10, displayBody: null, pillsMetaJson: null, attachmentsJson: null },
+    { id: 'fork-conversation-1:1', conversationId: conversation.id, role: 'assistant', content: 'second', toolCallsJson: null, imagesJson: null, timestamp: 20, displayBody: null, pillsMetaJson: null, attachmentsJson: null },
+  ]
+  const result: ForkConversationResult = {
+    requestId: 'fork-request-1', conversation,
+    messages: messages.map((message) => ({ id: message.id, role: message.role as 'user' | 'assistant', content: message.content, timestamp: message.timestamp })),
+    nativeResume: { provider: 'claude', sessionId: conversation.id },
+    git: { baseSha: '0123456789abcdef0123456789abcdef01234567', path: conversation.worktreePath!, branch: conversation.worktreeBranch!, sourceDirty: false },
+    warnings: [],
+  }
   return {
     machineId: 'local',
     creationId: request.creationId,
@@ -112,22 +171,11 @@ function commitInput(expectedRevision: number) {
       requestedBaseRef: 'HEAD',
       resolvedBaseCommit: '0123456789abcdef0123456789abcdef01234567',
     },
-    conversation: {
-      id: 'fork-conversation-1',
-      projectPath: '/repo',
-      agentType: 'claude-code',
-      sessionId: 'fork-conversation-1',
-      title: 'Parent chat · fork/selected-turn',
-      parentConversationId: 'parent-conversation-1',
-      forkedAtMessageId: 'parent-message-2',
-      worktreePath: '/repo/.switchboard/worktrees/fork-1',
-      worktreeBranch: 'fork/selected-turn',
-      pendingHandoffFrom: null,
+    fork: {
+      machineId: 'local', requestId: 'fork-request-1', expectedRevision: 0,
+      conversation, sessionId: conversation.id, pendingHandoffFrom: null,
+      messages, result, worktreeCreationId: request.creationId, now: 103,
     },
-    messages: [
-      { id: 'fork-conversation-1:0', role: 'user', content: 'first', timestamp: 10 },
-      { id: 'fork-conversation-1:1', role: 'assistant', content: 'second', timestamp: 20 },
-    ],
     now: 103,
   }
 }

@@ -27,6 +27,8 @@ import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
 import type { ProviderInstance, ProviderSkill } from '@shared/types'
+import type { ChatMessage } from '@shared/types'
+import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens } from '@shared/format'
 import { echoMessageId } from '@shared/provider-events'
@@ -65,6 +67,7 @@ import { useDictation, type VoiceNote } from '../hooks/useDictation'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
 import { outboxPresentation, recoverRejectedDraft } from '../lib/outboxModel'
+import { forgetMobileForkRequest, mobileForkRequest } from '../lib/conversationFork'
 
 /** How much of a long thread to pull on open. The feed says when it is a window. */
 const HISTORY_WINDOW = 250
@@ -118,6 +121,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const [instanceId, setInstanceId] = useState<string | undefined>(undefined)
   const [profilePickerOpen, setProfilePickerOpen] = useState(false)
   const [rotating, setRotating] = useState(false)
+  const [forkMetadata, setForkMetadata] = useState<ForkLineageMetadata | null>(null)
+  const forkMessagesRef = useRef(new Map<string, ChatMessage>())
 
   // The accessory subscribes to the store itself, so this runs once per thread.
   useEffect(() => {
@@ -199,8 +204,17 @@ export default function ThreadScreen({ route, navigation }: Props) {
     }
     void (async () => {
       let provider: ProviderKind = 'claude'
+      let loadedMeta: Awaited<ReturnType<typeof client.loadSessionById>>['meta'] = null
       try {
         const loaded = await client.loadSessionById(threadId, HISTORY_WINDOW)
+        loadedMeta = loaded.meta
+        setForkMetadata(loaded.meta?.forkMetadata ?? null)
+        forkMessagesRef.current = new Map(loaded.messages.flatMap((message) => {
+          if (message.role === 'user' || (message.role === 'assistant' && message.content.trim())) {
+            return [[`h-${message.id}`, message] as const]
+          }
+          return []
+        }))
         provider = providerFromAgentType(loaded.meta?.agentType)
         setProvider(provider)
         const store = useChatStore.getState()
@@ -235,8 +249,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
           // phone started worktree-backed chats in the parent repo, and
           // whichever client started first fixed the cwd for both - so the
           // agent edited the wrong tree.
-          cwd: worktreePath ?? projectPath,
-          resumeSessionId: threadId,
+          cwd: loadedMeta?.worktreePath ?? worktreePath ?? loadedMeta?.projectPath ?? projectPath,
+          ...(loadedMeta?.forkMetadata?.resumeMode === 'transcript-handoff'
+            ? {}
+            : { resumeSessionId: threadId }),
+          runtimeMode: loadedMeta?.runtimeMode ?? undefined,
+          model: loadedMeta?.model ?? undefined,
+          instanceId: loadedMeta?.providerInstanceId ?? undefined,
         })
       } catch (err) {
         startedKeyRef.current = null
@@ -553,6 +572,74 @@ export default function ThreadScreen({ route, navigation }: Props) {
     composerRef.current?.focus()
   }, [key])
 
+  const forkFromMessage = useCallback((message: ChatMessage) => {
+    const client = getClient(connectionId)
+    if (!client) return
+    const execute = async (withWorktree: boolean): Promise<void> => {
+      let request = await mobileForkRequest({
+        connectionId,
+        sourceConversationId: threadId,
+        message,
+        withWorktree,
+      })
+      let outcome = await client.getConversationFork({
+        requestId: request.requestId,
+        sourceConversationId: threadId,
+      })
+      if (outcome?.kind !== 'completed') outcome = await client.forkConversation(request)
+      if (outcome.kind === 'confirmation-required') {
+        const dirtySource = outcome.dirtySource
+        const accepted = await new Promise<boolean>((resolve) => Alert.alert(
+          'Uncommitted changes will not be copied',
+          `The new worktree starts from ${dirtySource.headSha.slice(0, 8)}. ${dirtySource.omittedChangeSummary}`,
+          [
+            { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+            { text: 'Continue from HEAD', onPress: () => resolve(true) },
+          ],
+          { cancelable: false },
+        ))
+        if (!accepted) return
+        request = {
+          ...request,
+          checkout: {
+            kind: 'new-worktree',
+            basePolicy: 'source-head',
+            dirtySourceConfirmed: {
+              headSha: dirtySource.headSha,
+              statusDigest: dirtySource.statusDigest,
+            },
+          },
+        }
+        outcome = await client.forkConversation(request)
+      }
+      if (outcome.kind === 'confirmation-required') {
+        throw new Error('The source changed after confirmation. Review the changes and try again.')
+      }
+      if (outcome.kind === 'failed') throw new Error(outcome.error.message)
+      const fork = outcome.result.conversation
+      await forgetMobileForkRequest({
+        connectionId,
+        sourceConversationId: threadId,
+        messageId: message.id,
+        withWorktree,
+      }).catch((error) => log.warn('could not clear completed fork retry intent', error))
+      navigation.push('Thread', {
+        connectionId,
+        threadId: fork.id,
+        title: fork.title,
+        projectPath: fork.projectPath,
+        worktreePath: fork.worktreePath,
+        worktreeBranch: fork.worktreeBranch ?? undefined,
+        worktreeId: fork.worktreeId ?? undefined,
+      })
+    }
+    Alert.alert('Fork conversation', 'Choose how to branch from this message.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Fork conversation here', onPress: () => void execute(false).catch(reportError) },
+      { text: 'Fork into a new worktree from current HEAD', onPress: () => void execute(true).catch(reportError) },
+    ])
+  }, [connectionId, navigation, reportError, threadId])
+
   const renderItem = useCallback(
     ({ item }: { item: FeedItem }) => {
       switch (item.kind) {
@@ -564,6 +651,10 @@ export default function ThreadScreen({ route, navigation }: Props) {
               <Pressable
                 disabled={delivery?.state !== 'failed'}
                 onPress={() => queued && void editRejected(queued.messageId)}
+                onLongPress={() => {
+                  const message = forkMessagesRef.current.get(item.id)
+                  if (message) forkFromMessage(message)
+                }}
                 style={styles.userBubble}
               >
                 {item.images?.map((url, i) => (
@@ -586,7 +677,14 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </View>
           )
         case 'text':
-          return <TextItem item={item} />
+          return (
+            <TextItem
+              item={item}
+              onLongPress={forkMessagesRef.current.has(item.id)
+                ? () => forkFromMessage(forkMessagesRef.current.get(item.id)!)
+                : undefined}
+            />
+          )
         case 'tool':
           return <ToolItem item={item} />
         case 'denial':
@@ -624,6 +722,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
       setLightbox,
       queuedByBubbleId,
       editRejected,
+      forkFromMessage,
     ],
   )
 
@@ -708,6 +807,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </View>
           )}
           {thread.costUsd != null && <Text style={styles.costText}>${thread.costUsd.toFixed(2)}</Text>}
+        </View>
+      )}
+
+      {forkMetadata && (
+        <View style={styles.forkBanner} accessibilityRole="summary">
+          <Text style={styles.forkBannerText} numberOfLines={2}>
+            Forked from {forkMetadata.parentTitle} · {forkMetadata.anchor.preview} ·{' '}
+            {forkMetadata.resumeMode === 'native' ? 'native resume' : 'transcript handoff'}
+            {forkMetadata.git ? ` · ${forkMetadata.git.branch} from ${forkMetadata.git.baseSha.slice(0, 8)}` : ''}
+          </Text>
         </View>
       )}
 
@@ -861,7 +970,13 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
 // ─── Item renderers ────────────────────────────────────────────
 
-export const TextItem = memo(function TextItem({ item }: { item: Extract<FeedItem, { kind: 'text' }> }) {
+export const TextItem = memo(function TextItem({
+  item,
+  onLongPress,
+}: {
+  item: Extract<FeedItem, { kind: 'text' }>
+  onLongPress?: () => void
+}) {
   const [expanded, setExpanded] = useState(false)
 
   if (item.stream === 'reasoning') {
@@ -886,12 +1001,12 @@ export const TextItem = memo(function TextItem({ item }: { item: Extract<FeedIte
   }
 
   return (
-    <View style={styles.itemBlock}>
+    <Pressable style={styles.itemBlock} onLongPress={onLongPress} disabled={!onLongPress}>
       <Markdown text={item.text} />
       {item.done && item.durationMs != null && (
         <Text style={styles.durationText}>Worked for {fmtDuration(item.durationMs)}</Text>
       )}
-    </View>
+    </Pressable>
   )
 })
 
@@ -1161,6 +1276,18 @@ const styles = StyleSheet.create({
     color: colors.textDim,
     fontSize: 11,
     fontFamily: mono,
+  },
+  forkBanner: {
+    paddingHorizontal: space.lg,
+    paddingVertical: space.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  forkBannerText: {
+    color: colors.textDim,
+    fontSize: 11,
+    lineHeight: 15,
   },
   feedContent: {
     paddingVertical: 10,

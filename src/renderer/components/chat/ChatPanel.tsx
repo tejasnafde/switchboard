@@ -13,6 +13,7 @@ import { MessageList } from './MessageList'
 import { ChatInput, type ChatSendResult } from './ChatInput'
 import { chatIdentity } from './chatIdentity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
+import { ForkLineageBanner } from './ForkLineageBanner'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
 import {
@@ -275,6 +276,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }
   const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
     if (!sessionId) return
     storeSetReasoningEffort(sessionId, effort)
+    window.api.app.setConversationReasoningEffort(sessionId, effort).catch(() => {})
   }, [sessionId, storeSetReasoningEffort])
 
   useEffect(() => {
@@ -1513,6 +1515,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }
           </span>
         )}
       </div>
+
+      {activeSession?.forkMetadata && (
+        <ForkLineageBanner metadata={activeSession.forkMetadata} />
+      )}
 
       {/* Messages */}
       <MessageList
