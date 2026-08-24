@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   ensureWorktreeCreationSchema,
@@ -96,6 +97,8 @@ describe('managed worktree liveness catalog', () => {
 
   it('detaches every legacy projection sharing a canonical worktree after explicit cleanup', () => {
     const db = new Database(':memory:')
+    const projectPath = resolve('/repo')
+    const worktreePath = resolve(projectPath, '.switchboard', 'worktrees', 'shared')
     try {
       db.exec(`
         CREATE TABLE conversations (
@@ -108,15 +111,17 @@ describe('managed worktree liveness catalog', () => {
           worktree_path TEXT, worktree_branch TEXT, created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
-        INSERT INTO conversations VALUES (
-          'legacy-session', '/repo', 'claude-code', 'Legacy', 1, 1,
-          '/repo/.switchboard/worktrees/shared', 'sb/legacy'
-        );
-        INSERT INTO kanban_cards VALUES (
-          'legacy-card', '/repo', 'Legacy card',
-          '/repo/.switchboard/worktrees/shared', 'sb/legacy', 2, 2
-        );
       `)
+      db.prepare(`
+        INSERT INTO conversations VALUES (
+          'legacy-session', ?, 'claude-code', 'Legacy', 1, 1, ?, 'sb/legacy'
+        )
+      `).run(projectPath, worktreePath)
+      db.prepare(`
+        INSERT INTO kanban_cards VALUES (
+          'legacy-card', ?, 'Legacy card', ?, 'sb/legacy', 2, 2
+        )
+      `).run(projectPath, worktreePath)
       ensureWorktreeCreationSchema(db)
       const key = db.prepare(`
         SELECT worktree_creation_id AS creationId FROM conversations WHERE id = 'legacy-session'
@@ -163,6 +168,8 @@ describe('managed worktree liveness catalog', () => {
 
   it('only revisits unlinked projections while still discovering later legacy writes', () => {
     const db = new Database(':memory:')
+    const projectPath = resolve('/repo')
+    const laterWorktreePath = resolve(projectPath, '.switchboard', 'worktrees', 'later')
     try {
       db.exec(`
         CREATE TABLE conversations (
@@ -200,9 +207,8 @@ describe('managed worktree liveness catalog', () => {
         INSERT INTO conversations (
           id, project_path, agent_type, title, created_at, updated_at,
           worktree_path, worktree_branch
-        ) VALUES ('later-legacy', '/repo', 'claude-code', 'Later', 2, 2,
-          '/repo/.switchboard/worktrees/later', 'sb/later')
-      `).run()
+        ) VALUES ('later-legacy', ?, 'claude-code', 'Later', 2, 2, ?, 'sb/later')
+      `).run(projectPath, laterWorktreePath)
       ensureWorktreeCreationSchema(db)
 
       expect(db.prepare(`
@@ -220,6 +226,8 @@ describe('managed worktree liveness catalog', () => {
 
   it('revokes synthetic cleanup authority when a later legacy alias reveals a branch conflict', () => {
     const db = new Database(':memory:')
+    const projectPath = resolve('/repo')
+    const worktreePath = resolve(projectPath, '.switchboard', 'worktrees', 'shared')
     try {
       db.exec(`
         CREATE TABLE conversations (
@@ -232,11 +240,12 @@ describe('managed worktree liveness catalog', () => {
           worktree_path TEXT, worktree_branch TEXT, created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
-        INSERT INTO conversations VALUES (
-          'legacy-session', '/repo', 'claude-code', 'Legacy', 1, 1,
-          '/repo/.switchboard/worktrees/shared', 'sb/legacy'
-        );
       `)
+      db.prepare(`
+        INSERT INTO conversations VALUES (
+          'legacy-session', ?, 'claude-code', 'Legacy', 1, 1, ?, 'sb/legacy'
+        )
+      `).run(projectPath, worktreePath)
       ensureWorktreeCreationSchema(db)
       const original = db.prepare(`
         SELECT worktree_id, worktree_creation_id
@@ -247,9 +256,8 @@ describe('managed worktree liveness catalog', () => {
       db.prepare(`
         INSERT INTO kanban_cards (
           id, project_path, title, worktree_path, worktree_branch, created_at, updated_at
-        ) VALUES ('later-card', '/repo', 'Later',
-          '/repo/.switchboard/worktrees/shared', 'kanban/conflict', 2, 2)
-      `).run()
+        ) VALUES ('later-card', ?, 'Later', ?, 'kanban/conflict', 2, 2)
+      `).run(projectPath, worktreePath)
       ensureWorktreeCreationSchema(db)
 
       expect(db.prepare(`

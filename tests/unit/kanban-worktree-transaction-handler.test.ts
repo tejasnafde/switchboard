@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { resolve } from 'node:path'
 import type { BackendHost } from '../../src/main/backend/host'
 import { KanbanChannels } from '../../src/shared/ipc-channels'
 import type { KanbanCard } from '../../src/shared/kanban'
@@ -369,7 +370,7 @@ describe('Kanban worktree transaction compatibility handlers', () => {
 
   it('refuses stale path deletion unless Git registers the exact unowned path', async () => {
     const host = new FakeHost()
-    const registered = '/repo/.switchboard/worktrees/card-1'
+    const registered = resolve('/repo/.switchboard/worktrees/card-1')
     state.listWorktrees.mockResolvedValue([{ path: registered }])
     state.inUsePaths = new Set([registered])
     registerKanbanHandlers(host)

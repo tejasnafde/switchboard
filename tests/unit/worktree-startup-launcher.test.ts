@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { resolve } from 'node:path'
 import {
   ProviderWorktreeStartupLauncher,
   WorktreeLaunchConfigTerminalProvisioner,
@@ -224,9 +225,9 @@ configs:
     expect(readConfig).toHaveBeenCalledWith('/repo')
     expect(create).toHaveBeenCalledTimes(3)
     expect(create.mock.calls.map(([options]) => options)).toEqual([
-      expect.objectContaining({ cwd: '/managed/repo/apps/server', initialCommand: 'private-server-command' }),
-      expect.objectContaining({ cwd: '/managed/repo' }),
-      expect.objectContaining({ cwd: '/managed/repo/tests', initialCommand: 'private-test-command', waitFor: 'ready' }),
+      expect.objectContaining({ cwd: resolve('/managed/repo/apps/server'), initialCommand: 'private-server-command' }),
+      expect.objectContaining({ cwd: resolve('/managed/repo') }),
+      expect.objectContaining({ cwd: resolve('/managed/repo/tests'), initialCommand: 'private-test-command', waitFor: 'ready' }),
     ])
     expect(receipt.status).toBe('succeeded')
     expect(receipt.terminalIds).toHaveLength(3)
@@ -258,11 +259,11 @@ configs:
     expect(first.terminalIds).toHaveLength(2)
     expect(create).toHaveBeenCalledTimes(2)
     expect(create.mock.calls[0][0]).toMatchObject({
-      cwd: '/managed/repo',
+      cwd: resolve('/managed/repo'),
       initialCommand: 'private-default-command',
     })
     expect(create.mock.calls[1][0]).toMatchObject({
-      cwd: '/managed/repo',
+      cwd: resolve('/managed/repo'),
       initialCommand: 'private-bootstrap-command',
     })
   })
