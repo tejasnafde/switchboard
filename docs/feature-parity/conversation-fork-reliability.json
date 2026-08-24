@@ -84,13 +84,14 @@
     "automated": [
       "The full desktop Vitest gate passed: 320 files and 3,101 tests, including fork, JSONL, SQLite foreign-key, worktree owner/rollback, routing, IPC, and provider-artifact coverage.",
       "React Native passed TypeScript validation and all 3 Jest suites (18 tests).",
-      "Native Android testDebugUnitTest passed 797 tests; lintDebug, assembleDebug, and compileDebugAndroidTestKotlin passed under OpenJDK 17 and Android API 36."
+      "Native Android testDebugUnitTest passed 797 tests; lintDebug, assembleDebug, and compileDebugAndroidTestKotlin passed under OpenJDK 17 and Android API 36.",
+      "Live native-resume verification passed independently with the committed ~/.claude-tech-team and ~/.claude-tejas OAuth profiles: a disposable Claude session was cut at its exact assistant event, rewritten to a new session and CWD, resumed without transcript injection, and recalled an unrepeated nonce."
     ],
     "hardware": [],
     "notExercised": [
       "Physical iOS and Android hardware interaction is not yet exercised.",
       "A separately running remote machine disconnect-after-success scenario is covered by idempotency/routing tests but not yet exercised manually.",
-      "Claude native resume with both named OAuth profiles is pending final release verification."
+      "Codex and OpenCode exactly-once transcript handoff behavior is covered by automated tests but was not exercised against live provider processes."
     ]
   }
 }

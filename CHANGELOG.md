@@ -2,6 +2,35 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.46 - Make conversation forks durable
+
+### Added
+- **Forks now use a stable, backend-validated message anchor.** Every client sends an idempotent request with a durable message ID and full structured-content digest; the backend resolves one canonical history snapshot, rejects stale or ambiguous anchors, and returns the exact persisted conversation and newly identified rich messages.
+- **Fork lineage is durable and navigable.** Desktop, React Native/iOS, and native Android show the parent, anchor preview, native-resume versus transcript-handoff mode, and Git base/branch when present. Opening the parent returns to the exact canonical anchor.
+- **Fork retries and recovery are first-class.** SQLite journals each request, worktree creation delegates to the shared transaction, provider artifacts publish behind a compensation seam, and retrying the same request returns the original result instead of creating another branch, transcript, or conversation.
+
+### Fixed
+- **Worktree forks preserve project identity.** `projectPath` remains the owning project while `worktreePath` is the execution checkout; renderer state now preserves worktree, machine, provider profile, runtime mode, model, reasoning effort, and launch configuration across success, restart, search, and remote routing.
+- **Fork persistence is atomic and lossless.** Conversation lineage, resolved provenance, handoff state, and full structured messages—including image-only turns, tools, pills, display bodies, plans, questions, todos, and diffs—commit in one SQLite transaction, and returned message IDs match the stored rows.
+- **Provider resume claims now match reality.** Compatible Claude lineage resumes natively in the source conversation's committed profile. Codex and OpenCode use a durable exactly-once transcript handoff and no longer create fake rollout files in provider discovery directories.
+- **Git side effects are honest and recoverable.** Worktrees use the source checkout's frozen HEAD but a canonical non-nested managed root, dirty tracked and untracked state requires confirmation, clean pre-command failures compensate branch/worktree artifacts, and potentially modified trees are retained with an explicit cleanup receipt.
+- **Remote forks stay remote.** Routing recognizes the source conversation, binds the authoritative returned conversation to the same machine before activation, and preserves that machine for provider, terminal, IDE, file, archive, and later-fork calls.
+
+### Notes
+- The old positional `upToIndex` contract now fails with an explicit upgrade-required error instead of silently choosing the wrong boundary. Legacy fork diagnostics classify project-path drift, missing/orphaned worktrees, ambiguous anchors, and unusable Codex artifacts without deleting or rewriting uncertain data at startup.
+- The provider matrix is Claude native resume only for compatible committed lineage; Claude degrades explicitly when lineage/profile data is missing, while Codex and OpenCode use exactly-once transcript handoff.
+- Automated gates passed 3,103 desktop tests across 321 files, React Native TypeScript plus 18 tests, Android's 797 unit tests plus lint/APK/android-test compilation, production builds and smoke boot, and feature-parity validation. Live native resume passed with both named Claude OAuth profiles. Physical mobile hardware and a separately hosted remote-machine disconnect/retry remain unexercised.
+
+## Native Android 0.5.8 - Make conversation forks durable
+
+### Added
+- **Conversation messages can be forked directly from the native thread.** Long-press a canonical user or assistant turn to fork in the shared checkout or create a new worktree from current HEAD, with dirty-source confirmation and typed failure recovery.
+- **Returned fork identity is authoritative.** Navigation and process recreation preserve parent project grouping, execution worktree, branch, machine routing, provider profile, model, mode, reasoning effort, retry identity, and durable lineage/resume presentation.
+
+### Notes
+- Native Android 0.5.8 keeps package identity, signing key, Room data, connection state, and the production-signed APK update channel. It requires a backend advertising `conversation_fork_v1`; older backends remain usable without exposing the action.
+- Unit, lint, debug APK, and instrumentation-source compilation gates pass. No attached emulator or physical Android device was available for the fork interaction matrix.
+
 ## 0.8.45 - Make two chats work as one focused workspace
 
 ### Added
