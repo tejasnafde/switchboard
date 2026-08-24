@@ -60,15 +60,19 @@ const args = needsXvfb
   ? ['--auto-servernum', '--server-args=-screen 0 1024x768x24', electronPath, ...electronArgs]
   : electronArgs
 
+const electronEnv = {
+  ...process.env,
+  ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
+}
+// The variable controls Electron by its presence. On Windows, preserving it
+// with an empty value still enters Electron 43's Node bootstrap and aborts
+// before the main bundle loads because the browser snapshot is unavailable.
+delete electronEnv.ELECTRON_RUN_AS_NODE
+
 const child = spawn(command, args, {
   cwd: repoRoot,
   stdio: 'inherit',
-  env: {
-    ...process.env,
-    // Avoid surprises from the parent shell; this is just a boot check.
-    ELECTRON_RUN_AS_NODE: '',
-    ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
-  },
+  env: electronEnv,
 })
 
 const TIMEOUT_MS = 30_000

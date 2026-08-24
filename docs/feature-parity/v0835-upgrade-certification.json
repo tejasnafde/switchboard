@@ -69,6 +69,7 @@
         ".github/workflows/mobile-ota.yml",
         "build/artifactBuildCompleted.js",
         "electron-builder.yml",
+        "scripts/smoke-test.mjs",
         "scripts/validate-feature-parity.mjs",
         "tests/unit/android-native-ci.test.ts",
         "tests/unit/feature-parity-policy.test.ts",

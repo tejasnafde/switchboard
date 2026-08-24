@@ -19,6 +19,12 @@ describe('Desktop release compatibility gate', () => {
     expect(workflow).toContain('^minimumSystemVersion: 21.0.0$')
   })
 
+  it('removes run-as-node from the Electron smoke-test environment', () => {
+    const smokeTest = readFileSync(resolve('scripts/smoke-test.mjs'), 'utf8')
+    expect(smokeTest).toContain('delete electronEnv.ELECTRON_RUN_AS_NODE')
+    expect(smokeTest).not.toContain("ELECTRON_RUN_AS_NODE: ''")
+  })
+
   it('writes the Darwin 21 kernel floor understood by v0.8.35 electron-updater', async () => {
     const event = {
       file: '/release/Switchboard-0.8.47-arm64-mac.zip',
