@@ -2,6 +2,17 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## Native Android 0.5.6 - Compact agent activity
+
+### Fixed
+- **Agent tool calls no longer consume the thread as a stack of oversized cards.** Each call now uses a compact accessible activity row with a stable status slot, a humanized provider-agnostic label, and the useful bounded command, path, query, URL, or task summary visible immediately.
+- **Output disclosure now reflects whether output actually exists.** Completed tools with nonblank output expand in place, while running and blank-output tools expose no false action. Large output is rendered in bounded newline-aware lazy pages and retains a one-tap full-copy action.
+- **Tool accessibility now exposes coherent state and actions.** Rows merge decorative descendants, reserve the 48 dp minimum target, announce running/completed and expanded/collapsed state, and provide explicit Expand/Collapse semantics only when actionable.
+
+### Notes
+- Native Android 0.5.6 also includes the capability-gated transactional worktree creation source shipped with desktop/backend 0.8.43.
+- Automated Android unit, lint, assembly, and Android-test compilation gates pass. The production-signed physical-device upgrade matrix, TalkBack traversal, and device screenshots remain recorded as unexercised for this release.
+
 ## 0.8.43 - Make worktree creation one recoverable operation
 
 ### Added
@@ -16,7 +27,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - **Remote worktree creation now follows authenticated device scopes.** Chat-only phones may request provider-backed conversations, but cannot mutate repository setup/launch configuration, run startup commands, or spawn terminal layouts. Capability negotiation hides creation on older backends while preserving active recovery state through version skew.
 
 ### Notes
-- Desktop/backend v0.8.43 and the automatic React Native/iOS OTA ship together. Native Android 0.5.6 source is complete and capability-gated by `worktree_creation_v1`, but its production APK remains a named follow-up until the production-signed physical-device upgrade matrix is exercised; v0.5.5 remains compatible.
+- Desktop/backend v0.8.43 and the automatic React Native/iOS OTA ship together. Native Android 0.5.6 is capability-gated by `worktree_creation_v1` and releases separately through the manual production-signed APK lane; v0.5.5 remains compatible.
 - The additive database migration preserves old clients' `worktree_path` and `worktree_branch` projections. Existing paths are imported with legacy provenance; missing or reused paths are tolerated and never deleted automatically during migration.
 - Automated gates cover the real Electron preload-to-IPC-to-SQLite-to-Git path, 3,029 root tests across 312 files, both root TypeScript projects, the production bundles and smoke boot, 17 React Native tests plus shared mobile contracts, and the complete Android JVM suite with Android test-source compilation. Hardware and separately hosted remote-machine scenarios remain recorded as unexercised in the parity manifest.
 
