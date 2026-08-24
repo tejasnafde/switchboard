@@ -34,7 +34,8 @@ than scattered across applications.
 
 - Run Claude Code, Codex, or OpenCode in dedicated chat panes.
 - Start two agent chats side by side to compare approaches or delegate parallel
-  work.
+  work. Use **Open beside** in a chat header or session menu (`Cmd+Shift+\\`),
+  then **Copy prompt → other** to give both agents independently editable drafts.
 - Choose permission modes per chat: plan, sandbox, accept edits, or full
   access. Plan mode is enforced by Switchboard, not just requested from the
   provider.
@@ -104,6 +105,16 @@ the approach you want.
 Connect to a Linux host over SSH and start a project there. Switchboard
 provisions its helper, tunnels the connection, and keeps the familiar Claude
 Code chat, terminal, file, and git surface on your laptop.
+
+### Compare or delegate with two chats
+
+Open a conversation, choose **Open beside**, and select a second loaded chat.
+The highlighted chat owns the IDE, terminal strip, status bar, `Cmd+K`, and
+session-scoped commands; click anywhere in the other chat to switch that
+binding. **Copy prompt → other** clones the current draft, pills, and image
+attachments without linking the two composers. Each side is sent separately,
+so a provider failure never clears the other draft. Message file links, forks,
+and **Send to other panel** always use the message's own conversation.
 
 ## How it compares
 

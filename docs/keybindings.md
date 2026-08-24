@@ -2,11 +2,13 @@
 
 Shortcuts are **scoped by focus** - the same chord does the right thing
 depending on which pane is active, mirroring how VS Code uses `when:` clauses.
-Three contexts:
+Four contexts:
 
 - **Editor** - bindings live in the CodeMirror keymap; only fire when the code
   editor has focus.
 - **Terminal** - scoped to the focused terminal pane's subtree.
+- **Chat** - scoped to the focused primary or secondary chat. The focused chat
+  also binds the IDE, terminal strip, status bar, and quick prompt.
 - **Global** - app-level actions, handled regardless of focus.
 
 `⌘` = Cmd on macOS / Ctrl on Windows·Linux unless noted.
@@ -52,7 +54,7 @@ Three contexts:
 | `⌘B` | Toggle sidebar |
 | `⌘⇧E` | Toggle right pane (terminal ↔ files) |
 | `⌘⇧K` | Toggle kanban board |
-| `⌘\|` | Toggle dual-chat |
+| `⌘⇧\\` (`⌘\|`) | Open a chat beside the current one, or close the secondary chat |
 | `⌘⇧F` | Search across conversations |
 | `⌘,` | Settings |
 
@@ -64,3 +66,7 @@ Three contexts:
 - Most editor bindings come from CodeMirror's bundled `defaultKeymap` /
   `searchKeymap`; the app only adds the ones that touch app concepts
   (`F12`, `⌘W`, navigation).
+- In dual-chat mode, session-scoped shortcuts target the focused chat. Neutral
+  focus falls back to the primary chat. Terminal selections target the
+  terminal's owning session; IDE selections target the session to which the
+  workbench was bound when the selection was captured.

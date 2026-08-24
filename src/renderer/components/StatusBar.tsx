@@ -3,6 +3,7 @@ import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
 import { useProviderInstanceStore } from '../stores/provider-instance-store'
 import { agentLabel, defaultInstanceId } from '@shared/types'
+import { useLayoutStore } from '../stores/layout-store'
 
 /**
  * Bottom status bar.
@@ -17,7 +18,11 @@ import { agentLabel, defaultInstanceId } from '@shared/types'
  * footer for actions.
  */
 export function StatusBar() {
-  const activeSessionId = useAgentStore((s) => s.activeSessionId)
+  const activeSessionId = useLayoutStore((s) =>
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId
+      ? s.secondarySessionId
+      : s.primarySessionId,
+  )
   const session = useAgentStore((s) => s.sessions.find((x) => x.id === activeSessionId))
   const terminalSessionId = useTerminalStore((s) => s.activeSessionId)
   const terminalPaneCount = useTerminalStore((s) => {
@@ -57,6 +62,8 @@ export function StatusBar() {
 
   return (
     <div
+      data-status-bar
+      data-session-id={activeSessionId ?? undefined}
       style={{
         height: '22px',
         flexShrink: 0,

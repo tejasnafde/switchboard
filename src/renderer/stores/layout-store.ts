@@ -1,6 +1,21 @@
 import { create } from 'zustand'
 import { createRendererLogger } from '../logger'
 import { useAgentStore } from './agent-store'
+import {
+  companionSessionId,
+  displayedChatSessionIds,
+  focusedChatSessionId,
+  reconcileChatWorkspace,
+  sessionForSlot,
+  slotForSession,
+  type ChatSlot,
+  type ChatWorkspaceEvent,
+  type ChatWorkspaceState,
+} from '../services/chatWorkspace'
+import {
+  publishChatWorkspace,
+  registerChatWorkspaceController,
+} from '../services/chatWorkspaceRuntime'
 
 const log = createRendererLogger('store:layout')
 
@@ -75,15 +90,27 @@ interface LayoutStore {
   openInViewer: (
     path: string,
     lineRange?: { start: number; end: number } | null,
+    sessionId?: string | null,
   ) => void
 
-  // Side-by-side chat panels. When `dualChat` is true, App renders two
-  // ChatPanel instances with `rightSessionId` bound to the right panel.
   // `chatSplitRatio` is the fraction of the combined chat space given to
-  // the LEFT panel (0.5 = 50/50).
-  dualChat: boolean
-  rightSessionId: string | null
+  // the primary panel (0.5 = 50/50).
   chatSplitRatio: number
+  primarySessionId: string | null
+  secondarySessionId: string | null
+  focusedChatSlot: ChatSlot
+  selectChatSession: (sessionId: string) => void
+  openChatBeside: (sessionId: string) => void
+  focusChatSlot: (slot: ChatSlot) => void
+  closeChatSlot: (slot: ChatSlot) => void
+  reconcileChatSessions: (availableSessionIds: readonly string[]) => void
+  rotateChatSessionId: (fromSessionId: string, toSessionId: string) => void
+  forwardToChat: (sourceSessionId: string, targetSessionId: string) => void
+  focusedChatSessionId: () => string | null
+  displayedChatSessionIds: () => string[]
+  sessionForChatSlot: (slot: ChatSlot) => string | null
+  slotForChatSession: (sessionId: string) => ChatSlot | null
+  companionSessionId: () => string | null
 
   // ─── Persisted sidebar collapse state ────────────────────────
   // String[] (not Set) because settings are JSON-serialized via
@@ -109,16 +136,6 @@ interface LayoutStore {
   setSidebarWidth: (width: number) => void
   setTerminalWidth: (width: number) => void
 
-  // Dual-chat controls
-  openRightPanel: (sessionId: string) => void
-  closeRightPanel: () => void
-  /**
-   * Close the LEFT panel. In practice this swaps the right session into
-   * the primary `activeSessionId` slot and exits dual mode. Used when the
-   * user clicks the X on the left panel.
-   */
-  closeLeftPanel: (setActiveSession: (id: string) => void) => void
-  toggleDualChat: () => void
   setChatSplitRatio: (ratio: number) => void
 }
 
@@ -131,6 +148,40 @@ const APP_VIEW_KEY = 'layout.appView'
 const DATA_SCIENCE_MODE_KEY = 'layout.dataScienceMode'
 const KANBAN_WS_FILTER_KEY = 'layout.kanbanWorkspaceFilter'
 const KANBAN_PROJECT_FILTER_KEY = 'layout.kanbanProjectFilter'
+
+function currentChatWorkspace(): ChatWorkspaceState {
+  const state = useLayoutStore.getState()
+  return {
+    primarySessionId: state.primarySessionId,
+    secondarySessionId: state.secondarySessionId,
+    focusedSlot: state.focusedChatSlot,
+    splitRatio: state.chatSplitRatio,
+  }
+}
+
+function canonicalSessionId(sessionId: string): string {
+  const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
+  return session?.conversationId ?? sessionId
+}
+
+function applyChatWorkspaceEvent(event: ChatWorkspaceEvent): void {
+  const next = reconcileChatWorkspace(currentChatWorkspace(), event, canonicalSessionId)
+  publishChatWorkspace(next)
+  useLayoutStore.setState({
+    primarySessionId: next.primarySessionId,
+    secondarySessionId: next.secondarySessionId,
+    focusedChatSlot: next.focusedSlot,
+    chatSplitRatio: next.splitRatio,
+  })
+  useAgentStore.setState((state) => ({
+    activeSessionId: next.primarySessionId,
+    sessions: state.sessions.map((session) =>
+      session.id === next.primarySessionId && session.unreadCount !== 0
+        ? { ...session, unreadCount: 0 }
+        : session
+    ),
+  }))
+}
 
 function persistList(key: string, list: string[]): void {
   try {
@@ -151,9 +202,22 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   sidebarVisible: true,
   terminalVisible: true,
 
-  dualChat: false,
-  rightSessionId: null,
   chatSplitRatio: 0.5,
+  primarySessionId: null,
+  secondarySessionId: null,
+  focusedChatSlot: 'primary',
+  selectChatSession: (sessionId) => applyChatWorkspaceEvent({ type: 'select', sessionId }),
+  openChatBeside: (sessionId) => applyChatWorkspaceEvent({ type: 'open-beside', sessionId }),
+  focusChatSlot: (slot) => applyChatWorkspaceEvent({ type: 'focus', slot }),
+  closeChatSlot: (slot) => applyChatWorkspaceEvent({ type: 'close', slot }),
+  reconcileChatSessions: (availableSessionIds) => applyChatWorkspaceEvent({ type: 'restore', availableSessionIds }),
+  rotateChatSessionId: (fromSessionId, toSessionId) => applyChatWorkspaceEvent({ type: 'rotate', fromSessionId, toSessionId }),
+  forwardToChat: (sourceSessionId, targetSessionId) => applyChatWorkspaceEvent({ type: 'forward-target', sourceSessionId, targetSessionId }),
+  focusedChatSessionId: () => focusedChatSessionId(currentChatWorkspace()),
+  displayedChatSessionIds: () => displayedChatSessionIds(currentChatWorkspace()),
+  sessionForChatSlot: (slot) => sessionForSlot(currentChatWorkspace(), slot),
+  slotForChatSession: (sessionId) => slotForSession(currentChatWorkspace(), sessionId, canonicalSessionId),
+  companionSessionId: () => companionSessionId(currentChatWorkspace()),
 
   rightPaneMode: 'terminal',
   setRightPaneMode: (mode) => {
@@ -207,7 +271,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ kanbanProjectFilter: path })
   },
 
-  openInViewer: (path, lineRange = null) => {
+  openInViewer: (path, lineRange = null, sessionId = null) => {
     // Flip the right pane to the IDE, then route the open to the workbench
     // serving the active session's repo. Fire-and-forget: if the ext host
     // isn't connected yet (workbench still booting), the click simply
@@ -216,7 +280,8 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
     try {
       const agent = useAgentStore.getState()
-      const session = agent.sessions.find((x) => x.id === agent.activeSessionId)
+      const targetSessionId = sessionId ?? useLayoutStore.getState().companionSessionId()
+      const session = agent.sessions.find((x) => x.id === targetSessionId)
       const folder = session?.worktreePath ?? session?.projectPath
       if (folder) {
         // A remote session's workbench (and the file) live on that machine;
@@ -296,38 +361,17 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ terminalWidth: clamped })
   },
 
-  openRightPanel: (sessionId: string) => {
-    set({ dualChat: true, rightSessionId: sessionId })
-  },
-
-  closeRightPanel: () => {
-    set({ dualChat: false, rightSessionId: null })
-  },
-
-  closeLeftPanel: (setActiveSession) => {
-    const { rightSessionId } = get()
-    if (rightSessionId) {
-      // Promote the right session into the primary slot, then exit dual.
-      setActiveSession(rightSessionId)
-    }
-    set({ dualChat: false, rightSessionId: null })
-  },
-
-  toggleDualChat: () => {
-    const { dualChat } = get()
-    if (dualChat) {
-      set({ dualChat: false, rightSessionId: null })
-    } else {
-      // Caller should follow up with openRightPanel(id) to bind a session.
-      set({ dualChat: true })
-    }
-  },
-
   setChatSplitRatio: (ratio: number) => {
-    const clamped = Math.max(0.2, Math.min(0.8, ratio))
-    set({ chatSplitRatio: clamped })
+    applyChatWorkspaceEvent({ type: 'set-split-ratio', ratio })
   },
 }))
+
+registerChatWorkspaceController({
+  selectSession: (sessionId) => applyChatWorkspaceEvent({ type: 'select', sessionId }),
+  removeSession: (sessionId) => applyChatWorkspaceEvent({ type: 'remove', sessionId }),
+  rotateSession: (fromSessionId, toSessionId) =>
+    applyChatWorkspaceEvent({ type: 'rotate', fromSessionId, toSessionId }),
+})
 
 /**
  * Hydrate sidebar collapse state from settings DB. Called once at app boot

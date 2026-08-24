@@ -1,5 +1,39 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAgentStore } from '../stores/agent-store'
+import { useMachineStore } from '../stores/machine-store'
+
+interface PickerSessionIdentity {
+  id: string
+  type: string
+  title?: string
+  status: string
+  projectPath?: string
+  worktreePath?: string | null
+  worktreeBranch?: string | null
+  machineId?: string
+}
+
+export function sessionPickerIdentity(
+  session: PickerSessionIdentity,
+  machineName?: string,
+): { provider: string; title: string; context: string } {
+  const provider = session.type === 'codex'
+    ? 'Codex'
+    : session.type === 'opencode'
+      ? 'OpenCode'
+      : session.type === 'terminal'
+        ? 'Terminal'
+        : 'Claude'
+  const folder = (session.worktreePath ?? session.projectPath)?.split('/').filter(Boolean).pop()
+  const machine = session.machineId && session.machineId !== 'local'
+    ? machineName ?? session.machineId
+    : 'Local'
+  return {
+    provider,
+    title: session.title ?? session.id.slice(0, 8),
+    context: [folder, session.worktreeBranch, machine, session.status].filter(Boolean).join(' · '),
+  }
+}
 
 interface SessionPickerModalProps {
   open: boolean
@@ -21,13 +55,14 @@ export function SessionPickerModal({
   onClose,
   onPick,
   excludeIds = [],
-  title = 'Open in right panel',
+  title = 'Open a loaded chat beside this one',
 }: SessionPickerModalProps) {
   const sessions = useAgentStore((s) => s.sessions)
+  const remotes = useMachineStore((s) => s.remotes)
   const [activeIdx, setActiveIdx] = useState(0)
 
   const candidates = useMemo(
-    () => sessions.filter((s) => !excludeIds.includes(s.id)),
+    () => sessions.filter((s) => s.type !== 'terminal' && !excludeIds.includes(s.id)),
     [sessions, excludeIds],
   )
 
@@ -105,12 +140,16 @@ export function SessionPickerModal({
         </div>
         {candidates.length === 0 ? (
           <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center' }}>
-            No other sessions open. Start or select another chat first.
+            No other loaded chats are available. Open a chat from the sidebar, then choose Open beside.
           </div>
         ) : (
           <div style={{ overflowY: 'auto', padding: '4px 0' }}>
             {candidates.map((s, i) => {
               const selected = i === activeIdx
+              const identity = sessionPickerIdentity(
+                s,
+                remotes.find((machine) => machine.id === s.machineId)?.name,
+              )
               return (
                 <button
                   key={s.id}
@@ -121,7 +160,7 @@ export function SessionPickerModal({
                     width: '100%',
                     padding: '8px 14px',
                     gap: '8px',
-                    alignItems: 'baseline',
+                    alignItems: 'flex-start',
                     border: 'none',
                     background: selected ? 'var(--bg-hover)' : 'transparent',
                     color: 'var(--text-primary)',
@@ -135,26 +174,27 @@ export function SessionPickerModal({
                     color: selected ? 'var(--accent)' : 'var(--text-muted)',
                     minWidth: '46px',
                   }}>
-                    {s.type === 'codex' ? 'Codex' : s.type === 'opencode' ? 'OpenCode' : 'Claude'}
+                    {identity.provider}
                   </span>
                   <span style={{
                     flex: 1,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '2px',
+                    minWidth: 0,
+                  }}>
+                    <span style={{
                     fontSize: '13px',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
-                  }}>
-                    {s.title ?? s.id.slice(0, 8)}
-                  </span>
-                  {s.projectPath && (
-                    <span style={{
-                      fontFamily: 'var(--font-mono)',
-                      fontSize: '10.5px',
-                      color: 'var(--text-muted)',
                     }}>
-                      {s.projectPath.split('/').pop()}
+                    {identity.title}
                     </span>
-                  )}
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>
+                      {identity.context}
+                    </span>
+                  </span>
                 </button>
               )
             })}

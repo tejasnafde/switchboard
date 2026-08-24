@@ -11,7 +11,7 @@ describe('resolveBubbleProjectPath', () => {
     expect(resolveBubbleProjectPath(sessions, 'right', 'left')).toBe('/repo/right')
   })
 
-  it('falls back to the active session for legacy single-panel callers', () => {
-    expect(resolveBubbleProjectPath(sessions, undefined, 'left')).toBe('/repo/left')
+  it('does not guess from global focus when owning session context is absent', () => {
+    expect(resolveBubbleProjectPath(sessions, undefined, 'left')).toBeUndefined()
   })
 })

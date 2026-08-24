@@ -27,15 +27,14 @@ import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
 import { useMessageMutable } from '../../services/messageLifecycle'
 import { WorktreeCreationProgress } from '../worktree/WorktreeCreationProgress'
 import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
+import { buildForwardedContext, forwardingSource, forwardingTargets } from '../../services/chatForwarding'
+import { focusComposer } from '../../services/composerRegistry'
 
 interface MessageBubbleProps {
   message: ChatMessage
   /**
-   * Conversation id this bubble belongs to. Required for fork-from-message
-   * - without it, dual-chat right-clicks on the right panel would silently
-   * fork the *left* panel's session (the global activeSessionId). When
-   * undefined we fall back to activeSessionId, which is fine for the
-   * single-pane case.
+   * Conversation id this bubble belongs to. Explicit message actions are
+   * disabled without it rather than falling back to workspace focus.
    */
   sessionId?: string
   /**
@@ -61,10 +60,10 @@ interface MessageBubbleProps {
 export function resolveBubbleProjectPath(
   sessions: Array<{ id: string; projectPath?: string }>,
   sessionId: string | null | undefined,
-  activeSessionId: string | null,
+  _activeSessionId?: string | null,
 ): string | undefined {
-  const preferredId = sessionId ?? activeSessionId
-  return sessions.find((s) => s.id === preferredId)?.projectPath
+  if (!sessionId) return undefined
+  return sessions.find((s) => s.id === sessionId)?.projectPath
 }
 
 /**
@@ -134,7 +133,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       const root = markdownRef.current
       if (!root) return
       const store = useAgentStore.getState()
-      const projectPath = resolveBubbleProjectPath(store.sessions, sessionId, store.activeSessionId)
+      const projectPath = resolveBubbleProjectPath(store.sessions, sessionId)
       if (!projectPath) return
 
       enhanceFilePills(root, (ref: FilePathRef, originalText: string) => {
@@ -165,6 +164,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             ref.startLine && ref.endLine
               ? { start: ref.startLine, end: ref.endLine }
               : null,
+            sessionId,
           )
         })
 
@@ -245,7 +245,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     // Prefer the conversation this bubble belongs to (passed from
     // MessageList) over the global activeSessionId - in dual-chat the
     // active id tracks focus, not which panel was right-clicked.
-    const sourceId = sessionId ?? store.activeSessionId
+    const sourceId = sessionId
     const session = sourceId ? store.sessions.find((s) => s.id === sourceId) : null
     if (!sourceId || !session) {
       setForkError('No active session')
@@ -310,7 +310,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       setForkWorktreeCreation(updated)
       if (updated.status === 'ready') await handleForkRequest(true)
       if (shouldClearForkWorktreeProgress(updated)) {
-        const sourceId = sessionId ?? useAgentStore.getState().activeSessionId
+        const sourceId = sessionId
         const source = sourceId
           ? useAgentStore.getState().sessions.find((session) => session.id === sourceId)
           : undefined
@@ -618,7 +618,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             transition: 'opacity 0.12s',
           }}
         >
-          <ForwardMenu content={message.content} />
+          {sessionId && <ForwardMenu content={message.content} sourceSessionId={sessionId} />}
           <button
             onClick={handleBookmark}
             title={isBookmarked ? 'Remove from saved' : 'Save for later'}
@@ -789,12 +789,11 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
 /**
  * Forward-to-another-agent menu.
  *
- * Lists other open sessions in a small popover. Clicking one appends the
- * message content to that session's draft (prefixed with a blockquote so
- * the receiving agent sees the forwarded context clearly) and opens the
- * session in the right-hand panel via layout-store's `openRightPanel`.
+ * Lists eligible receiving sessions in a small popover. Clicking one appends
+ * source-attributed context to that session's draft, places it without
+ * duplicating either slot, and focuses its registered composer.
  */
-function ForwardMenu({ content }: { content: string }) {
+function ForwardMenu({ content, sourceSessionId }: { content: string; sourceSessionId: string }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -802,14 +801,14 @@ function ForwardMenu({ content }: { content: string }) {
   // Popover position in viewport coords - recomputed on open + scroll/resize
   // so it stays anchored to the button after portalling to document.body.
   const [popoverPos, setPopoverPos] = useState<{ top: number; right: number } | null>(null)
-  const activeSessionId = useAgentStore((s) => s.activeSessionId)
   // Only subscribe to the sessions array while the menu is open. Every visible
   // bubble mounts a ForwardMenu; subscribing unconditionally re-rendered them
   // all (and recomputed `others`) on every streamed token.
   const sessions = useAgentStore((s) => (open ? s.sessions : null))
   const appendDraft = useDraftStore((s) => s.appendDraft)
-  const openRightPanel = useLayoutStore((s) => s.openRightPanel)
-  const setActiveSession = useAgentStore((s) => s.setActiveSession)
+  const primarySessionId = useLayoutStore((s) => s.primarySessionId)
+  const secondarySessionId = useLayoutStore((s) => s.secondarySessionId)
+  const forwardToChat = useLayoutStore((s) => s.forwardToChat)
 
   // Close on click-outside + Escape. Replaces the brittle onMouseLeave
   // close which triggered the moment the cursor crossed the 2px gap
@@ -858,31 +857,21 @@ function ForwardMenu({ content }: { content: string }) {
     }
   }, [open])
 
-  const others = (sessions ?? []).filter((s) => s.id !== activeSessionId)
+  const displayedSessionIds = [primarySessionId, secondarySessionId].filter((id): id is string => Boolean(id))
+  const others = forwardingTargets(sessions ?? [], sourceSessionId, displayedSessionIds)
 
   // Used to be `if (others.length === 0) return null` - that hid the
   // button entirely for single-session users and made the feature
   // undiscoverable. Now always show the button; when clicked with no
   // targets, the popover shows an empty-state.
 
-  const handleForward = (targetId: string, targetTitle: string | undefined) => {
-    const sourceTitle =
-      useAgentStore.getState().sessions.find((s) => s.id === activeSessionId)?.title ?? 'chat'
-    const quoted = content
-      .split('\n')
-      .slice(0, 40) // cap forwarded context
-      .map((line) => `> ${line}`)
-      .join('\n')
-    appendDraft(
-      targetId,
-      `[Forwarded from "${sourceTitle}"]\n${quoted}\n\n`,
-    )
-    // Open the target session in the right panel if dual-chat is not already
-    // showing it; otherwise just focus it.
-    openRightPanel(targetId)
-    setActiveSession(targetId)
+  const handleForward = (targetId: string) => {
+    const source = useAgentStore.getState().sessions.find((session) => session.id === sourceSessionId)
+    if (!source || targetId === sourceSessionId) return
+    appendDraft(targetId, buildForwardedContext(content, forwardingSource(source)))
+    forwardToChat(sourceSessionId, targetId)
+    requestAnimationFrame(() => focusComposer(targetId))
     setOpen(false)
-    void targetTitle // reserved for future toast
   }
 
   return (
@@ -952,7 +941,7 @@ function ForwardMenu({ content }: { content: string }) {
           {others.map((sess) => (
             <button
               key={sess.id}
-              onClick={() => handleForward(sess.id, sess.title)}
+              onClick={() => handleForward(sess.id)}
               style={{
                 display: 'block',
                 width: '100%',
@@ -973,7 +962,9 @@ function ForwardMenu({ content }: { content: string }) {
               <span style={{ color: 'var(--text-muted)', fontSize: '10px', marginRight: '6px' }}>
                 {agentShortLabel(sess.type)}
               </span>
-              {sess.title ?? sess.id.slice(0, 8)}
+              {displayedSessionIds.includes(sess.id)
+                ? `Send to other panel · ${sess.title ?? sess.id.slice(0, 8)}`
+                : sess.title ?? sess.id.slice(0, 8)}
             </button>
           ))}
         </div>,

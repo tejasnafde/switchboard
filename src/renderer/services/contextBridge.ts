@@ -1,9 +1,9 @@
 /**
- * Context bridge between terminal panes and the active chat.
+ * Context bridge between terminal, IDE, and message surfaces and their
+ * owning chat sessions.
  *
  * Shared primitives for the ⌘L and ⌘K flows:
- *   - ⌘L: selects text in a terminal → appends a formatted context block
- *     to the active session's draft in the chat input.
+ *   - ⌘L: appends selected context to the source surface's owning session.
  *   - ⌘K: opens a floating quick-prompt bar, optionally pre-filled with the
  *     current terminal selection, and sends the prompt directly via
  *     `providerApi.sendTurn` without going through the ChatInput textarea.
@@ -19,6 +19,12 @@ import { emitSessionActivity } from './session-events'
 import { useDraftStore } from '../stores/draft-store'
 import { agentShortLabel } from '@shared/types'
 import { formatFileViewerContext, formatChatMessageContext } from './contextFormatters'
+import { useLayoutStore } from '../stores/layout-store'
+import { focusComposer } from './composerRegistry'
+import {
+  getCommittedIdeWorkspaceBinding,
+  type IdeWorkspaceBinding,
+} from './ideWorkspaceBinding'
 
 // Cap on captured terminal output so a runaway selection doesn't blow
 // the agent's context window. Modern context windows are 200k+ so 4k was
@@ -27,6 +33,13 @@ import { formatFileViewerContext, formatChatMessageContext } from './contextForm
 // almost any practical terminal selection without truncation. If a user
 // genuinely needs more, they can paste in chunks or use ⌘K instead.
 const MAX_SELECTION_CHARS = 50_000
+
+function reportUnavailableContextTarget(sessionId: string): void {
+  if (useAgentStore.getState().sessions.some((session) => session.id === sessionId)) return
+  window.dispatchEvent(new CustomEvent('sb-context-target-unavailable', {
+    detail: { sessionId },
+  }))
+}
 
 export interface TerminalContext {
   selection: string
@@ -112,7 +125,7 @@ export function captureTerminalContext(
 }
 
 /**
- * Find the most relevant terminal selection for the current session.
+ * Find the most relevant terminal selection for the requested session.
  *
  * Priority:
  *   1. The active pane in the active window (most recent focus)
@@ -121,12 +134,12 @@ export function captureTerminalContext(
  * Returns the first match + the sessionId/paneId that owned it.
  * Returns null when no terminal has a selection.
  */
-export function findActiveTerminalSelection(): {
+export function findActiveTerminalSelection(sessionId?: string | null): {
   sessionId: string
   paneId: string
   selection: string
 } | null {
-  const agentSid = useAgentStore.getState().activeSessionId
+  const agentSid = sessionId ?? useLayoutStore.getState().companionSessionId()
   if (!agentSid) return null
 
   const layout = useTerminalStore.getState().getLayout(agentSid)
@@ -171,6 +184,21 @@ export function findContextSource(el: Element | null): string | null {
   return null
 }
 
+interface ContextElement {
+  getAttribute(name: string): string | null
+  parentElement: ContextElement | null
+}
+
+export function sessionIdForContextElement(el: ContextElement | null): string | null {
+  let current = el
+  while (current) {
+    const sessionId = current.getAttribute('data-session-id')
+    if (sessionId) return sessionId
+    current = current.parentElement
+  }
+  return null
+}
+
 /**
  * Read the currently-selected text from the document selection. Returns
  * an empty string when there's no selection (or the selection is empty
@@ -208,7 +236,7 @@ export function captureSelection(): boolean {
   if (source === 'chat-message') {
     const text = getDomSelectionText()
     if (!text.trim()) return false
-    const sid = useAgentStore.getState().activeSessionId
+    const sid = sessionIdForContextElement(anchorEl)
     if (!sid) return false
     const session = useAgentStore.getState().sessions.find((s) => s.id === sid)
     const agent = session ? agentShortLabel(session.type) : 'agent'
@@ -221,8 +249,14 @@ export function captureSelection(): boolean {
       label: `${agent}: "${preview}${preview.length === 40 ? '…' : ''}"`,
       content,
     })
+    reportUnavailableContextTarget(sid)
     window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))
+    requestAnimationFrame(() => focusComposer(sid))
     return true
+  }
+
+  if (source === 'terminal') {
+    return appendTerminalSelectionToDraft(sessionIdForContextElement(anchorEl))
   }
 
   // Default: legacy terminal flow.
@@ -230,15 +264,15 @@ export function captureSelection(): boolean {
 }
 
 /**
- * ⌘L implementation: capture the active terminal selection (if any) and
- * append it as a context block to the active session's draft. The user
+ * ⌘L implementation: capture the owning terminal selection (if any) and
+ * append it as a context block to that session's draft. The user
  * then types their question and hits Send as normal.
  *
  * Returns `true` if a context block was appended, `false` otherwise
  * (caller can show a toast "select text in a terminal first").
  */
-export function appendTerminalSelectionToDraft(): boolean {
-  const found = findActiveTerminalSelection()
+export function appendTerminalSelectionToDraft(sessionId?: string | null): boolean {
+  const found = findActiveTerminalSelection(sessionId)
   if (!found) return false
 
   const ctx = captureTerminalContext(found.sessionId, found.paneId, found.selection)
@@ -251,12 +285,15 @@ export function appendTerminalSelectionToDraft(): boolean {
     label: `${ctx.paneLabel} (${lineCount} line${lineCount === 1 ? '' : 's'})`,
     content,
   })
+  reportUnavailableContextTarget(found.sessionId)
   window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: found.sessionId, pillId } }))
+  requestAnimationFrame(() => focusComposer(found.sessionId))
   return true
 }
 
 /**
- * ⌘K implementation: send a one-shot prompt to the active session,
+ * ⌘K implementation: send a one-shot prompt to the explicitly requested or
+ * focused session,
  * optionally with the current terminal selection as prepended context.
  * Bypasses the ChatInput draft - message goes straight to the agent.
  *
@@ -265,14 +302,14 @@ export function appendTerminalSelectionToDraft(): boolean {
  */
 export async function sendQuickPrompt(
   prompt: string,
-  opts?: { includeTerminalSelection?: boolean },
+  opts?: { includeTerminalSelection?: boolean; sessionId?: string | null },
 ): Promise<boolean> {
-  const agentSid = useAgentStore.getState().activeSessionId
+  const agentSid = opts?.sessionId ?? useLayoutStore.getState().focusedChatSessionId()
   if (!agentSid) return false
 
   let message = prompt
   if (opts?.includeTerminalSelection) {
-    const found = findActiveTerminalSelection()
+    const found = findActiveTerminalSelection(agentSid)
     if (found) {
       const ctx = captureTerminalContext(found.sessionId, found.paneId, found.selection)
       message = formatTerminalContext(ctx) + '\n' + prompt
@@ -321,12 +358,12 @@ export interface IdeSelection {
 }
 
 /** Relativize + format a workbench selection. Null when there is no session or no text. */
-export function formatIdeSelection(msg: IdeSelection): { label: string; block: string } | null {
-  const state = useAgentStore.getState()
-  const sid = state.activeSessionId
-  if (!sid || !msg.text.trim()) return null
-  const session = state.sessions.find((s) => s.id === sid)
-  const root = session?.worktreePath ?? session?.projectPath
+export function formatIdeSelection(
+  msg: IdeSelection,
+  binding: IdeWorkspaceBinding | null = getCommittedIdeWorkspaceBinding(),
+): { sessionId: string; label: string; block: string } | null {
+  if (!binding || !msg.text.trim()) return null
+  const root = binding.folder
   const path = root && msg.path.startsWith(root + '/') ? msg.path.slice(root.length + 1) : msg.path
   const block = formatFileViewerContext({
     path,
@@ -336,13 +373,16 @@ export function formatIdeSelection(msg: IdeSelection): { label: string; block: s
   })
   const fileName = path.split('/').pop() ?? path
   const range = msg.startLine === msg.endLine ? `${msg.startLine}` : `${msg.startLine}-${msg.endLine}`
-  return { label: `${fileName} (${range})`, block }
+  return { sessionId: binding.sessionId, label: `${fileName} (${range})`, block }
 }
 
-export function appendIdeSelectionToDraft(msg: IdeSelection): boolean {
-  const sid = useAgentStore.getState().activeSessionId
-  const formatted = formatIdeSelection(msg)
-  if (!sid || !formatted) return false
+export function appendIdeSelectionToDraft(
+  msg: IdeSelection,
+  binding: IdeWorkspaceBinding | null = getCommittedIdeWorkspaceBinding(),
+): boolean {
+  const formatted = formatIdeSelection(msg, binding)
+  if (!formatted) return false
+  const sid = formatted.sessionId
   const pillId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   useDraftStore.getState().addPill(sid, {
     id: pillId,
@@ -350,6 +390,8 @@ export function appendIdeSelectionToDraft(msg: IdeSelection): boolean {
     label: formatted.label,
     content: formatted.block,
   })
+  reportUnavailableContextTarget(sid)
   window.dispatchEvent(new CustomEvent('sb-pill-added', { detail: { sessionId: sid, pillId } }))
+  requestAnimationFrame(() => focusComposer(sid))
   return true
 }

@@ -6,12 +6,14 @@ import {
   formatTerminalContext,
   sendQuickPrompt,
 } from '../services/contextBridge'
+import { useLayoutStore } from '../stores/layout-store'
 
 interface QuickPromptModalProps {
   open: boolean
   onClose: () => void
   /** Pre-filled context from a workbench cmd+k selection (wins over terminal selection). */
   ideContext?: { preview: string; full: string } | null
+  targetSessionId?: string | null
 }
 
 /**
@@ -24,9 +26,15 @@ interface QuickPromptModalProps {
  *
  * Escapes via Esc or outside-click. Enter sends; Shift+Enter newline.
  */
-export function QuickPromptModal({ open, onClose, ideContext }: QuickPromptModalProps) {
+export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }: QuickPromptModalProps) {
+  const focusedSessionId = useLayoutStore((s) =>
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId
+      ? s.secondarySessionId
+      : s.primarySessionId,
+  )
+  const resolvedSessionId = targetSessionId ?? focusedSessionId
   const activeSession = useAgentStore((s) =>
-    s.sessions.find((sess) => sess.id === s.activeSessionId),
+    s.sessions.find((sess) => sess.id === resolvedSessionId),
   )
   const [value, setValue] = useState('')
   const [context, setContext] = useState<{ preview: string; full: string } | null>(null)
@@ -45,7 +53,7 @@ export function QuickPromptModal({ open, onClose, ideContext }: QuickPromptModal
     if (ideContext) {
       setContext(ideContext)
     } else {
-      const found = findActiveTerminalSelection()
+      const found = findActiveTerminalSelection(resolvedSessionId)
       if (found) {
         const ctx = captureTerminalContext(found.sessionId, found.paneId, found.selection)
         const block = formatTerminalContext(ctx)
@@ -58,7 +66,7 @@ export function QuickPromptModal({ open, onClose, ideContext }: QuickPromptModal
 
     // Focus after mount so the cursor starts in the input.
     setTimeout(() => textareaRef.current?.focus(), 20)
-  }, [open, ideContext])
+  }, [open, ideContext, resolvedSessionId])
 
   const agentLabel = useMemo(() => {
     if (!activeSession) return 'agent'
@@ -74,7 +82,7 @@ export function QuickPromptModal({ open, onClose, ideContext }: QuickPromptModal
     setStatus('sending')
     // Build the final message: context block (if present) + prompt
     const message = context ? `${context.full}\n${prompt}` : prompt
-    const ok = await sendQuickPrompt(message, { includeTerminalSelection: false })
+    const ok = await sendQuickPrompt(message, { includeTerminalSelection: false, sessionId: activeSession.id })
     if (ok) {
       onClose()
     } else {

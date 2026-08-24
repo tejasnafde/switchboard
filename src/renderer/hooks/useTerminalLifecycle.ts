@@ -6,6 +6,24 @@ import { planLaunchConfigSpawn, resolveLaunchConfigFallback, resolveCwd, type Sp
 import { recordLaunchConfigUsage } from '../services/launchConfigUsage'
 import { getRecentOutputPaneLabels } from '../services/terminal-registry'
 import { launchConfigListReducer } from '../services/launchConfigListReducer'
+import { useLayoutStore } from '../stores/layout-store'
+
+export function terminalHydrationTargets(
+  displayedSessionIds: readonly string[],
+  hydratedSessionIds: Set<string>,
+  hasRestoredLayout: (sessionId: string) => boolean,
+): string[] {
+  const targets: string[] = []
+  for (const sessionId of displayedSessionIds) {
+    if (hydratedSessionIds.has(sessionId)) continue
+    if (hasRestoredLayout(sessionId)) {
+      hydratedSessionIds.add(sessionId)
+      continue
+    }
+    targets.push(sessionId)
+  }
+  return targets
+}
 
 /**
  * Manages terminal lifecycle tied to agent sessions.
@@ -28,44 +46,38 @@ import { launchConfigListReducer } from '../services/launchConfigListReducer'
  */
 export function useTerminalLifecycle() {
   const hydratedSessionsRef = useRef<Set<string>>(new Set())
-  const activeSessionId = useAgentStore((s) => s.activeSessionId)
+  const primarySessionId = useLayoutStore((s) => s.primarySessionId)
+  const secondarySessionId = useLayoutStore((s) => s.secondarySessionId)
 
   useEffect(() => {
-    if (!activeSessionId) return
-
-    if (hydratedSessionsRef.current.has(activeSessionId)) return
-
-    const existing = useTerminalStore.getState().getLayout(activeSessionId)
-    if (existing.rows.length > 0) {
-      hydratedSessionsRef.current.add(activeSessionId)
-      return
+    const displayed = [primarySessionId, secondarySessionId].filter((id): id is string => Boolean(id))
+    const targets = terminalHydrationTargets(
+      displayed,
+      hydratedSessionsRef.current,
+      (sessionId) => useTerminalStore.getState().getLayout(sessionId).rows.length > 0,
+    )
+    for (const sessionId of targets) {
+      hydratedSessionsRef.current.add(sessionId)
+      const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
+      if (!session) continue
+      spawnTerminalsForSession(sessionId, session.worktreePath ?? session.projectPath)
     }
-
-    hydratedSessionsRef.current.add(activeSessionId)
-
-    const session = useAgentStore.getState().sessions.find((s) => s.id === activeSessionId)
-    if (!session) return
-
-    // Worktree-backed sessions get terminals in the worktree, matching the
-    // agent's cwd - not the shared parent checkout.
-    spawnTerminalsForSession(activeSessionId, session.worktreePath ?? session.projectPath)
-  }, [activeSessionId])
+  }, [primarySessionId, secondarySessionId])
 
   // Watch for launch-config.yaml changes to hot-reload
   useEffect(() => {
     if (!window.api.app.onLaunchConfigChanged) return
     const cleanup = window.api.app.onLaunchConfigChanged((projectPath) => {
-      const activeId = useAgentStore.getState().activeSessionId
-      if (!activeId) return
-
-      const session = useAgentStore.getState().sessions.find((s) => s.id === activeId)
-      if (session && session.projectPath === projectPath) {
+      const displayedIds = useLayoutStore.getState().displayedChatSessionIds()
+      for (const sessionId of displayedIds) {
+        const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
+        if (!session || session.projectPath !== projectPath) continue
         // Capture the session's current launch config name BEFORE clearing
         // so the respawn can ask for the same one - the resolver will
         // fall back to default if the user just deleted it from YAML.
-        const currentLaunchConfig = useTerminalStore.getState().getSessionLaunchConfigName(activeId)
-        useTerminalStore.getState().clearSessionLayout(activeId)
-        spawnTerminalsForSession(activeId, projectPath, true, currentLaunchConfig)
+        const currentLaunchConfig = useTerminalStore.getState().getSessionLaunchConfigName(sessionId)
+        useTerminalStore.getState().clearSessionLayout(sessionId)
+        spawnTerminalsForSession(sessionId, session.worktreePath ?? projectPath, true, currentLaunchConfig)
       }
     })
     return cleanup

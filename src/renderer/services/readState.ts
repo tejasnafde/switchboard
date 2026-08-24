@@ -12,6 +12,7 @@
  */
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { useAgentStore } from '../stores/agent-store'
+import { useLayoutStore } from '../stores/layout-store'
 import { onProviderEvent } from './session-events'
 import { createRendererLogger } from '../logger'
 
@@ -31,11 +32,22 @@ function markRead(threadId: string): void {
  * Withdrawing on blur matters: a stale claim would keep suppressing pushes for
  * that thread long after the user walked away from the Mac.
  */
-function reportViewing(threadId: string | null): void {
-  if (!threadId) return
-  window.api.push.reportViewing(threadId, document.hasFocus()).catch((err: unknown) => {
+function reportViewing(threadId: string, viewing: boolean): void {
+  window.api.push.reportViewing(threadId, viewing).catch((err: unknown) => {
     log.warn('reportViewing failed', err)
   })
+}
+
+export function readStateTargets(
+  displayedSessionIds: readonly string[],
+  focusedSessionId: string | null,
+  appVisible: boolean,
+): { markReadSessionIds: string[]; viewingSessionId: string | null } {
+  if (!appVisible) return { markReadSessionIds: [], viewingSessionId: null }
+  return {
+    markReadSessionIds: [...displayedSessionIds],
+    viewingSessionId: focusedSessionId ?? displayedSessionIds[0] ?? null,
+  }
 }
 
 /** Idempotent - only the first call subscribes. Returns an unsubscribe fn. */
@@ -43,37 +55,69 @@ export function initSharedReadState(): () => void {
   if (started) return () => {}
   started = true
 
-  let current = useAgentStore.getState().activeSessionId
-  if (current) {
-    markRead(current)
-    reportViewing(current)
+  let currentViewing: string | null = null
+  let lastDisplayedKey = ''
+
+  const sync = (): void => {
+    const layout = useLayoutStore.getState()
+    const appVisible = document.hasFocus() && document.visibilityState === 'visible'
+    const targets = readStateTargets(
+      layout.displayedChatSessionIds(),
+      layout.focusedChatSessionId(),
+      appVisible,
+    )
+    const displayedKey = targets.markReadSessionIds.join('\u0000')
+    if (displayedKey !== lastDisplayedKey) {
+      lastDisplayedKey = displayedKey
+      for (const sessionId of targets.markReadSessionIds) {
+        markRead(sessionId)
+        useAgentStore.getState().markSessionRead(sessionId)
+      }
+    }
+    if (targets.viewingSessionId === currentViewing) return
+    if (currentViewing) reportViewing(currentViewing, false)
+    currentViewing = targets.viewingSessionId
+    if (currentViewing) reportViewing(currentViewing, true)
   }
 
-  const unsubStore = useAgentStore.subscribe((state) => {
-    const next = state.activeSessionId
-    if (next === current) return
-    current = next
-    if (!next) return
-    markRead(next)
-    reportViewing(next)
-  })
+  sync()
+  const unsubStore = useLayoutStore.subscribe(sync)
 
   // Subscribed globally rather than per ChatPanel: the badge lives in the
   // sidebar and has to clear for threads no panel has open.
   const unsubEvents = onProviderEvent((event) => {
-    if (event.type !== 'thread.read') return
-    useAgentStore.getState().markSessionRead(event.threadId)
+    if (event.type === 'thread.read') {
+      useAgentStore.getState().markSessionRead(event.threadId)
+      return
+    }
+    if (
+      event.type === 'turn.completed'
+      && document.hasFocus()
+      && document.visibilityState === 'visible'
+      && useLayoutStore.getState().displayedChatSessionIds().includes(event.threadId)
+    ) {
+      markRead(event.threadId)
+      useAgentStore.getState().markSessionRead(event.threadId)
+    }
   })
 
-  const onFocusChange = (): void => reportViewing(current)
+  const onFocusChange = (): void => {
+    lastDisplayedKey = ''
+    sync()
+  }
   window.addEventListener('focus', onFocusChange)
   window.addEventListener('blur', onFocusChange)
+  document.addEventListener('visibilitychange', onFocusChange)
 
   // The backend treats a viewing claim as a lease that expires, because a
   // client that dies without withdrawing it would otherwise suppress pushes
   // forever. Desktop viewing is a global veto, so a lapsed lease here means
   // every phone starts buzzing about a thread the user is reading.
-  const renew = setInterval(() => reportViewing(current), VIEWING_RENEW_MS)
+  const renew = setInterval(() => {
+    if (currentViewing && document.hasFocus() && document.visibilityState === 'visible') {
+      reportViewing(currentViewing, true)
+    }
+  }, VIEWING_RENEW_MS)
 
   return () => {
     clearInterval(renew)
@@ -81,6 +125,8 @@ export function initSharedReadState(): () => void {
     unsubEvents()
     window.removeEventListener('focus', onFocusChange)
     window.removeEventListener('blur', onFocusChange)
+    document.removeEventListener('visibilitychange', onFocusChange)
+    if (currentViewing) reportViewing(currentViewing, false)
     started = false
   }
 }

@@ -4,6 +4,7 @@
  * edits and vice versa - without hoisting state or pulling in a store.
  */
 import type { RuntimeEvent } from '@shared/provider-events'
+import { createSingleOwnerEventReducer } from './providerEventReducerRegistry'
 import { useAgentStore } from '../stores/agent-store'
 import { writeMachineNotice } from './terminal-registry'
 import { createRendererLogger } from '../logger'
@@ -102,34 +103,6 @@ export function shouldDeliverProviderEvent(
 }
 
 /** window.api.provider.onEvent with cross-machine bleed filtered out. */
-/**
- * Events whose store mutations have already been applied.
- *
- * Every mounted ChatPanel registers its own listener and each one reduces the
- * WHOLE event stream, not just its own session - background sessions need
- * their unread counts and status kept current even with no pane open. That was
- * harmless while `content` carried a cumulative snapshot, because applying it
- * twice was last-write-wins. Now that it carries an increment, applying it
- * twice appends the same characters twice, so dual-chat mode duplicated every
- * fragment of every reply.
- *
- * A WeakSet keyed on the event object: the transport hands the same object to
- * every listener, and it becomes collectable as soon as the last one returns.
- */
-const claimedEvents = new WeakSet<RuntimeEvent>()
-
-/**
- * True for the FIRST caller to claim this event, false afterwards.
- *
- * Callers that mutate shared state must guard on it. Callers doing something
- * panel-local (scrolling, focus) must not.
- */
-export function claimProviderEvent(event: RuntimeEvent): boolean {
-  if (claimedEvents.has(event)) return false
-  claimedEvents.add(event)
-  return true
-}
-
 export function onProviderEvent(callback: (event: RuntimeEvent) => void): () => void {
   return window.api.provider.onEvent((event) => {
     if (event.threadId) {
@@ -145,6 +118,17 @@ export function onProviderEvent(callback: (event: RuntimeEvent) => void): () => 
     }
     callback(event)
   })
+}
+
+const providerEventReducers = createSingleOwnerEventReducer<RuntimeEvent>(onProviderEvent)
+
+/**
+ * Register a shared-state reducer. Multiple ChatPanels may stay mounted, but
+ * the transport subscribes once and exactly one stable owner reduces each
+ * event. If that owner unmounts, the next mounted panel takes over.
+ */
+export function onReducedProviderEvent(callback: (event: RuntimeEvent) => void): () => void {
+  return providerEventReducers.register(callback)
 }
 
 // ─── Reconnect resync ───────────────────────────────────────────────

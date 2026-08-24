@@ -757,6 +757,9 @@ const api = {
   onOpenSettings: (callback: () => void) =>
     transport.on('app:open-settings', () => callback()),
 
+  onOpenChatBeside: (callback: () => void) =>
+    transport.on('app:open-chat-beside', () => callback()),
+
   getLogPaths: () => transport.invoke('app:get-log-paths'),
 
   onClosePaneOrWindow: (callback: (opts: { shift?: boolean }) => void) =>

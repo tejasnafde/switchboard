@@ -1,4 +1,9 @@
 import { create } from 'zustand'
+import {
+  isChatSessionDisplayed,
+  removeRuntimeChatSession,
+  selectRuntimeChatSession,
+} from '../services/chatWorkspaceRuntime'
 import type { AgentStatus, AgentType, ChatMessage } from '@shared/types'
 import type { ReasoningEffort } from '@shared/models'
 import { createRendererLogger } from '../logger'
@@ -232,6 +237,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     })
     // Drop the routing-table entry so a stale id can't keep routing to its old machine.
     window.api.routing?.unbind?.(id)
+    removeRuntimeChatSession(id)
     set((state) => {
       const remaining = state.sessions.filter((s) => s.id !== id)
       return {
@@ -244,12 +250,15 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     })
   },
 
-  setActiveSession: (id) => set((state) => ({
-    activeSessionId: id,
-    sessions: state.sessions.map((s) =>
-      s.id === id ? { ...s, unreadCount: 0 } : s
-    ),
-  })),
+  setActiveSession: (id) => {
+    if (selectRuntimeChatSession(id)) return
+    set((state) => ({
+      activeSessionId: id,
+      sessions: state.sessions.map((s) =>
+        s.id === id ? { ...s, unreadCount: 0 } : s
+      ),
+    }))
+  },
 
   markSessionRead: (id) =>
     set((state) => ({
@@ -303,17 +312,14 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     set((state) => ({
       sessions: state.sessions.map((s) => {
         if (s.id !== sessionId) return s
-        // Idempotent: skip if a message with this ID already exists.
-        // With multiple ChatPanel panes open each registers its own
-        // ipcRenderer listener, so every provider event fires once per
-        // pane. Without this guard the same tool.started / content /
-        // approval message would be appended twice, causing React to
-        // warn about duplicate keys.
+        // Idempotent across persisted hydration, transport replay, and
+        // reconnect delivery. The shared provider reducer already guarantees
+        // that multiple mounted ChatPanels do not reduce an event twice.
         if (s.messages.some((m) => m.id === message.id)) return s
         return {
           ...s,
           messages: [...s.messages, message],
-          unreadCount: state.activeSessionId !== sessionId && message.role === 'assistant'
+          unreadCount: !isChatSessionDisplayed(sessionId) && message.role === 'assistant'
             ? s.unreadCount + 1
             : s.unreadCount,
         }

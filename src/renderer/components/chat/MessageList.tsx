@@ -132,11 +132,16 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
       const hasPendingForThis = pending && pending.sessionId === sessionId
       isScrollLockedRef.current = !!hasPendingForThis
       if (hasPendingForThis) return
-      // Wait for measurement pass, then scroll to last item.
+      // A persistently mounted secondary panel may have initialized at
+      // display:none with a zero-size viewport. Remeasure after the slot is
+      // visible, then scroll using those dimensions.
       requestAnimationFrame(() => {
-        if (turns.length > 0) {
-          virtualizer.scrollToIndex(turns.length - 1, { align: 'end' })
-        }
+        virtualizer.measure()
+        requestAnimationFrame(() => {
+          if (turns.length > 0) {
+            virtualizer.scrollToIndex(turns.length - 1, { align: 'end' })
+          }
+        })
       })
     }
   }, [sessionId])

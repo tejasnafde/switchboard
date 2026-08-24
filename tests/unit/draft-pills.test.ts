@@ -92,3 +92,23 @@ describe('draft text persistence (regression lock)', () => {
     expect(useDraftStore.getState().getDraft('s2')).toBe('hello')
   })
 })
+
+describe('dual-chat draft transfer', () => {
+  it('replaces the target payload atomically without mutating the source', () => {
+    const sourcePill = pill({ id: 'source-pill' })
+    useDraftStore.getState().setDraft('source', 'compare [[pill:source-pill]]')
+    useDraftStore.getState().addPill('source', sourcePill)
+
+    useDraftStore.getState().replaceDraftPayload('target', {
+      text: 'compare [[pill:target-pill]]',
+      pills: [{ ...sourcePill, id: 'target-pill' }],
+      images: [],
+    })
+
+    const state = useDraftStore.getState()
+    expect(state.getDraft('target')).toBe('compare [[pill:target-pill]]')
+    expect(state.pillsBySession.target?.[0].id).toBe('target-pill')
+    expect(state.getDraft('source')).toBe('compare [[pill:source-pill]]')
+    expect(state.pillsBySession.source?.[0].id).toBe('source-pill')
+  })
+})

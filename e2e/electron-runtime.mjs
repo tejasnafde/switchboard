@@ -50,7 +50,10 @@ export async function prepareElectronTestRuntime({
       const source = join(sourceModules, entry.name)
       const destination = join(runtimeModules, basename(entry.name))
       if (ISOLATED_MODULES.has(entry.name)) {
-        cpSync(source, destination, { recursive: true })
+        // Worktrees commonly symlink node_modules to another checkout. Native
+        // addons must still become real, isolated copies before rebuilding or
+        // electron-rebuild would mutate the checkout that owns the symlink.
+        cpSync(source, destination, { recursive: true, dereference: true })
       } else {
         linkDependency(source, destination, entry.isDirectory())
       }

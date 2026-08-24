@@ -45,6 +45,9 @@ import type { SessionSummary, ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
 import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
+import { focusComposer } from './services/composerRegistry'
+import { useDraftStore } from './stores/draft-store'
+import { nextChatPresentation, shouldEvictReplacedSession, type ChatPresentation } from './services/chatWorkspace'
 
 const log = createRendererLogger('app')
 
@@ -89,11 +92,6 @@ export function App() {
     setTerminalWidth,
     registerSidebarEl,
     registerTerminalEl,
-    dualChat,
-    rightSessionId,
-    chatSplitRatio,
-    openRightPanel,
-    closeRightPanel,
     rightPaneMode,
     toggleRightPaneMode,
     appView,
@@ -116,7 +114,8 @@ export function App() {
   // to the whole agent store - a bare useAgentStore() re-renders the entire
   // app tree on every streamed token of any session.
   const addSession = useAgentStore((s) => s.addSession)
-  const setActiveSession = useAgentStore((s) => s.setActiveSession)
+  const selectChatSession = useLayoutStore((s) => s.selectChatSession)
+  const openChatBeside = useLayoutStore((s) => s.openChatBeside)
   const setMessages = useAgentStore((s) => s.setMessages)
   const clearMessages = useAgentStore((s) => s.clearMessages)
   const setTitle = useAgentStore((s) => s.setTitle)
@@ -141,6 +140,15 @@ export function App() {
   const [tourOpen, setTourOpen] = useState(false)
   const [tourStartAt, setTourStartAt] = useState(0)
 
+  useEffect(() => {
+    const onUnavailable = (event: Event) => {
+      const sessionId = (event as CustomEvent<{ sessionId?: string }>).detail?.sessionId
+      setAppToast(`Context was kept for ${sessionId?.slice(0, 12) ?? 'the closed chat'}, but that chat is no longer open. Reopen it to recover the draft.`)
+    }
+    window.addEventListener('sb-context-target-unavailable', onUnavailable)
+    return () => window.removeEventListener('sb-context-target-unavailable', onUnavailable)
+  }, [])
+
   // First-run / what's-new gating: open the tour automatically when
   // `tour.lastSeenVersion` is missing or older than TOUR_VERSION, unless
   // the user has switched off `tour.autoplay`. Settings tab provides a
@@ -155,7 +163,7 @@ export function App() {
       if (!layout.terminalVisible) layout.toggleTerminal()
       // Pull focus out of the workbench webview into the terminal so app-level
       // keys (cmd+b toggles the Switchboard sidebar) work again.
-      const sid = useAgentStore.getState().activeSessionId
+      const sid = useLayoutStore.getState().companionSessionId()
       const pid = sid ? useTerminalStore.getState().getActivePaneId(sid) : null
       if (pid) setTimeout(() => focusTerminal(pid), 40)
     }), [])
@@ -172,13 +180,13 @@ export function App() {
   // Workbench selections: cmd+l appends a draft pill; cmd+k (intent 'edit')
   // opens the quick prompt pre-filled with the selection - Cursor-style, but
   // the edit runs through the active agent + in-chat diff review.
-  const [ideEditContext, setIdeEditContext] = useState<{ preview: string; full: string } | null>(null)
+  const [ideEditContext, setIdeEditContext] = useState<{ sessionId: string; preview: string; full: string } | null>(null)
   useEffect(() =>
     window.api.ide.onSelection((msg) => {
       if (msg.intent === 'edit') {
         const formatted = formatIdeSelection(msg)
         if (!formatted) return
-        setIdeEditContext({ preview: formatted.label, full: formatted.block })
+        setIdeEditContext({ sessionId: formatted.sessionId, preview: formatted.label, full: formatted.block })
         setQuickPromptOpen(true)
       } else {
         appendIdeSelectionToDraft(msg)
@@ -207,15 +215,11 @@ export function App() {
   const handleTryIt = useCallback((action: TryItAction) => {
     if (action.kind === 'focus-chat-with-slash') {
       // Focus the chat input and pre-type "/". ChatInput owns its own
-      // textarea ref via querySelector - keep this loose to avoid a new
-      // global event bus just for the tour.
       setTimeout(() => {
-        const ta = document.querySelector<HTMLTextAreaElement>('[data-chat-input-textarea]')
-        if (ta) {
-          ta.focus()
-          ta.value = '/'
-          ta.dispatchEvent(new Event('input', { bubbles: true }))
-        }
+        const sessionId = useLayoutStore.getState().focusedChatSessionId()
+        if (!sessionId) return
+        useDraftStore.getState().setDraft(sessionId, '/')
+        focusComposer(sessionId)
       }, 50)
     } else if (action.kind === 'open-search') {
       setSearchOpen(true)
@@ -260,6 +264,31 @@ export function App() {
 
   // Unread is shared with the phone, so opening a chat here clears it there.
   useEffect(() => initSharedReadState(), [])
+
+  // Slot bindings follow the set of renderer sessions through one reducer.
+  // This covers live-session adoption, archives/removals, and restored layout
+  // state whose conversations no longer exist. The legacy active id is used
+  // only to seed an otherwise empty primary slot during startup.
+  useEffect(() => {
+    let previousIds = ''
+    const sync = (state: ReturnType<typeof useAgentStore.getState>) => {
+      const ids = state.sessions.map((session) => session.id)
+      const key = state.sessions
+        .map((session) => `${session.id}:${session.conversationId ?? session.id}`)
+        .join('\u0000')
+      if (key === previousIds) return
+      previousIds = key
+      useLayoutStore.getState().reconcileChatSessions(ids)
+      if (!useLayoutStore.getState().primarySessionId) {
+        const initial = state.activeSessionId && ids.includes(state.activeSessionId)
+          ? state.activeSessionId
+          : ids[0]
+        if (initial) useLayoutStore.getState().selectChatSession(initial)
+      }
+    }
+    sync(useAgentStore.getState())
+    return useAgentStore.subscribe(sync)
+  }, [])
 
   // Machine registry (remote SSH hosts) - hydrate once on launch.
   useEffect(() => {
@@ -372,6 +401,11 @@ export function App() {
     return () => { remove() }
   }, [])
 
+  useEffect(() => {
+    if (typeof window.api?.onOpenChatBeside !== 'function') return
+    return window.api.onOpenChatBeside(() => setSessionPickerOpen(true))
+  }, [])
+
   // ⌘W  close active TAB (close window when last tab)
   // ⌘⇧W close entire active WINDOW (all tabs)
   // No active window → close the app window.
@@ -387,16 +421,15 @@ export function App() {
       if (focus === 'editor') return
 
       // Chat panel in dual mode → close that panel.
-      if (layoutState.dualChat && (focus === 'chat-left' || focus === 'chat-right')) {
-        if (focus === 'chat-right') layoutState.closeRightPanel()
-        else layoutState.closeLeftPanel(useAgentStore.getState().setActiveSession)
+      if (layoutState.secondarySessionId && (focus === 'chat-left' || focus === 'chat-right')) {
+        layoutState.closeChatSlot(focus === 'chat-right' ? 'secondary' : 'primary')
         return
       }
 
       // Only close a terminal when one is actually focused - never from
       // ambiguous focus (that's how ⌘W was killing SSH'd-in ptys).
       if (focus === 'terminal') {
-        const sid = useAgentStore.getState().activeSessionId
+        const sid = useLayoutStore.getState().companionSessionId()
         if (sid) {
           const layout = useTerminalStore.getState().getLayout(sid)
           const wid = layout.activeWindowId
@@ -450,7 +483,7 @@ export function App() {
       )
     }
     addSession(session)
-    setActiveSession(session.id)
+    selectChatSession(session.id)
     if (session.machineId === 'local') {
       emitSessionCreated({
         id: session.id,
@@ -466,7 +499,7 @@ export function App() {
         agentType: session.type,
       })
     }
-  }, [addSession, setActiveSession])
+  }, [addSession, selectChatSession])
 
   const makeNewChatCoordinator = useCallback(() => createDesktopNewChatCoordinator({
     worktrees: {
@@ -708,8 +741,19 @@ export function App() {
   // in kanban view, drop back to chats so the user actually sees the
   // session they just clicked.
   const handleSessionSelect = useCallback(
-    async (session: SessionSummary, projectPath: string, machineId: string = 'local') => {
+    async (
+      session: SessionSummary,
+      projectPath: string,
+      machineId: string = 'local',
+      placement: 'select' | 'beside' = 'select',
+    ) => {
       useLayoutStore.getState().setAppView('chats')
+      // Terminal summaries are companion surfaces, not chats. Treat an
+      // "open beside" request from a generic sidebar menu as an ordinary
+      // selection so a terminal can never occupy the secondary chat slot.
+      const placeSession = placement === 'beside' && session.agentType !== 'terminal'
+        ? openChatBeside
+        : selectChatSession
 
       const recoveryKey = retainedWorktreeCreationKey(session, machineId)
       if (recoveryKey) {
@@ -733,15 +777,24 @@ export function App() {
       // Keyed by session.id, which is arg0 of all those calls.
       window.api.routing.bind(session.id, effectiveMachineId)
 
-      // Evict messages from the current idle session before switching.
-      // Running sessions keep their messages so in-flight streaming isn't lost.
-      const current = storeState.sessions.find((s) => s.id === storeState.activeSessionId)
-      if (current && shouldEvictMessages(current)) {
-        clearMessages(current.id)
+      const currentId = useLayoutStore.getState().focusedChatSessionId()
+      const current = storeState.sessions.find((s) => s.id === currentId)
+      const placeAndEvict = (sessionId: string) => {
+        placeSession(sessionId)
+        if (
+          current
+          && shouldEvictMessages(current)
+          && shouldEvictReplacedSession(
+            current.id,
+            useLayoutStore.getState().displayedChatSessionIds(),
+          )
+        ) {
+          clearMessages(current.id)
+        }
       }
 
       if (existing) {
-        setActiveSession(session.id)
+        placeAndEvict(session.id)
         setTitle(session.id, resolveSessionDisplayTitle(session.title, existing.title))
         // Messages may have been evicted - reload from disk if so.
         if (needsMessageReload(existing)) {
@@ -767,7 +820,7 @@ export function App() {
       // Terminal sessions have no JSONL - PTY is gone after restart, just activate.
       if (session.agentType === 'terminal') {
         addSession({ id: session.id, type: 'terminal', status: 'idle', projectPath, title: session.title, machineId: effectiveMachineId })
-        setActiveSession(session.id)
+        placeAndEvict(session.id)
         return
       }
 
@@ -793,7 +846,7 @@ export function App() {
       if (targetId !== session.id) {
         const live = useAgentStore.getState().sessions.find((s) => s.id === targetId)
         window.api.routing.bind(targetId, live?.machineId ?? effectiveMachineId)
-        setActiveSession(targetId)
+        placeAndEvict(targetId)
         return
       }
 
@@ -832,7 +885,7 @@ export function App() {
         resumeSessionId: resolveSessionResumeId(session.source, session.id),
         title: session.title,
       })
-      setActiveSession(session.id)
+      placeAndEvict(session.id)
 
       // Ensure conversation row exists in DB so subsequent saveMessage /
       // bulkSaveMessages calls don't skip due to missing FK.
@@ -894,28 +947,51 @@ export function App() {
 
       if (loaded?.messages?.length) setMessages(session.id, loaded.messages)
     },
-    [addSession, setActiveSession, setMessages, clearMessages],
+    [addSession, selectChatSession, openChatBeside, setMessages, clearMessages],
   )
+
+  const handleOpenLoadedSessionBeside = useCallback(async (sessionId: string) => {
+    const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
+    if (!session) {
+      setAppToast('That chat is no longer loaded. Open it from the sidebar and try again.')
+      return
+    }
+    openChatBeside(sessionId)
+    if (needsMessageReload(session)) {
+      try {
+        const loaded = await window.api.app.loadSessionById(sessionId) as { messages?: ChatMessage[] } | null
+        if (loaded?.messages?.length) setMessages(sessionId, loaded.messages)
+      } catch (err) {
+        log.warn('open-beside history reload failed', { sessionId, err })
+        setAppToast('The chat opened, but its history could not be reloaded.')
+      }
+    }
+    requestAnimationFrame(() => focusComposer(sessionId))
+  }, [openChatBeside, setMessages])
 
   useEffect(() => {
     registerSidebarEl(sidebarRef.current)
     registerTerminalEl(terminalRef.current)
   }, [registerSidebarEl, registerTerminalEl])
 
-  // Sync terminal store's activeSession with agent store
-  const activeAgentSessionId = useAgentStore((s) => s.activeSessionId)
+  // The single companion terminal strip follows chat focus, not primary identity.
+  const companionAgentSessionId = useLayoutStore((s) =>
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId
+      ? s.secondarySessionId
+      : s.primarySessionId,
+  )
   // Narrow to the one primitive we render below (terminal pane id). Selecting
   // the whole session object returned a fresh reference every token and forced
   // a per-token App re-render.
   const activeTerminalPaneId = useAgentStore((s) => {
-    const a = s.sessions.find((x) => x.id === s.activeSessionId)
+    const a = s.sessions.find((x) => x.id === companionAgentSessionId)
     return a?.type === 'terminal' ? (a.terminalPaneId ?? null) : null
   })
   const termSetActiveSession = useTerminalStore((s) => s.setActiveSession)
 
   useEffect(() => {
-    termSetActiveSession(activeAgentSessionId)
-  }, [activeAgentSessionId, termSetActiveSession])
+    termSetActiveSession(companionAgentSessionId)
+  }, [companionAgentSessionId, termSetActiveSession])
 
   // Terminal lifecycle - spawn/kill PTYs on session change
   useTerminalLifecycle()
@@ -945,7 +1021,7 @@ export function App() {
           // Flipping to terminal: focus it (IdePane focuses the webview on the
           // flip to files). Keeps cmd+b/cmd+p routed to the pane you're in.
           if (useLayoutStore.getState().rightPaneMode === 'terminal') {
-            const sid = useAgentStore.getState().activeSessionId
+            const sid = useLayoutStore.getState().companionSessionId()
             const pid = sid ? useTerminalStore.getState().getActivePaneId(sid) : null
             if (pid) setTimeout(() => focusTerminal(pid), 40)
           }
@@ -975,12 +1051,12 @@ export function App() {
         else if (e.key.toLowerCase() === 't') {
           e.preventDefault()
           const agentState = useAgentStore.getState()
-          let sid = agentState.activeSessionId
+          let sid = useLayoutStore.getState().companionSessionId()
           if (!sid) {
             // Fallback - pick the most recent session so ⌘T still works
             // even if the user hasn't explicitly focused a chat.
             sid = agentState.sessions[0]?.id ?? null
-            if (sid) agentState.setActiveSession(sid)
+            if (sid) useLayoutStore.getState().selectChatSession(sid)
           }
           if (!sid) {
             log.warn('⌘T: no session available - open or create a chat first')
@@ -1001,19 +1077,11 @@ export function App() {
         // session on the right, or closes if already dual). When opening,
         // pick the most-recent session that isn't the currently active one.
         //
-        // Guard: skip when the user is typing in a text input / textarea /
-        // contenteditable - otherwise this shortcut eats characters and
-        // wipes in-progress drafts with attachments.
         else if (e.key === '|' || (e.key === '\\' && e.shiftKey)) {
-          const active = document.activeElement
-          const inXterm = active instanceof HTMLElement && active.classList.contains('xterm-helper-textarea')
-          const inText = !inXterm && active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')
-          const inContentEditable = active instanceof HTMLElement && active.closest('[contenteditable]:not([contenteditable="false"])')
-          if (inText || inContentEditable) return
           e.preventDefault()
           const layout = useLayoutStore.getState()
-          if (layout.dualChat) {
-            layout.closeRightPanel()
+          if (layout.secondarySessionId) {
+            layout.closeChatSlot('secondary')
           } else {
             // Open the session picker - lets the user choose which session
             // opens in the right panel instead of auto-picking the last one.
@@ -1023,7 +1091,7 @@ export function App() {
         // ⌘+Backspace - interrupt the current agent turn. xterm's helper
         // textarea counts as text input so ⌘+Delete keeps its line-kill behavior.
         else if (e.key === 'Backspace' && !e.shiftKey && !e.altKey) {
-          const sid = useAgentStore.getState().activeSessionId
+          const sid = useLayoutStore.getState().focusedChatSessionId()
           const s = useAgentStore.getState().sessions.find((x) => x.id === sid)
           if (s && (s.status === 'running' || s.status === 'thinking')) {
             const active = document.activeElement
@@ -1049,16 +1117,6 @@ export function App() {
           const appended = captureSelection()
           if (!appended) {
             log.info('⌘L: no selection - select text in a terminal, file viewer, or chat message first')
-          } else {
-            // Focus the chat input so user can immediately type their question.
-            // (ChatInput's textarea doesn't have a stable ref at the App level,
-            // so we query for it.)
-            setTimeout(() => {
-              const ta = document.querySelector<HTMLTextAreaElement>(
-                'textarea[placeholder^="Message"], textarea[placeholder^="Queue"]'
-              )
-              ta?.focus()
-            }, 40)
           }
         }
         // ⌘+K - quick prompt: open the floating prompt bar. Pre-fills
@@ -1069,7 +1127,7 @@ export function App() {
         }
         // ⌘+\ - new tab in the active window
         else if (e.key === '\\' && !e.shiftKey) {
-          const sid = useAgentStore.getState().activeSessionId
+          const sid = useLayoutStore.getState().companionSessionId()
           if (sid) {
             e.preventDefault()
             const st = useTerminalStore.getState()
@@ -1082,7 +1140,7 @@ export function App() {
         }
         // ⌘+⇧+] - next tab in active window
         else if (e.key === '}' || (e.key === ']' && e.shiftKey)) {
-          const sid = useAgentStore.getState().activeSessionId
+          const sid = useLayoutStore.getState().companionSessionId()
           if (sid) {
             e.preventDefault()
             useTerminalStore.getState().cyclePane(sid, 'next')
@@ -1092,7 +1150,7 @@ export function App() {
         }
         // ⌘+⇧+[ - prev tab in active window
         else if (e.key === '{' || (e.key === '[' && e.shiftKey)) {
-          const sid = useAgentStore.getState().activeSessionId
+          const sid = useLayoutStore.getState().companionSessionId()
           if (sid) {
             e.preventDefault()
             useTerminalStore.getState().cyclePane(sid, 'prev')
@@ -1102,7 +1160,7 @@ export function App() {
         }
         // ⌘+⌥+Arrow - navigate between windows directionally
         else if (e.altKey && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-          const sid = useAgentStore.getState().activeSessionId
+          const sid = useLayoutStore.getState().companionSessionId()
           if (!sid) return
           e.preventDefault()
           const dirMap = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' } as const
@@ -1112,7 +1170,7 @@ export function App() {
         }
         // ⌘+1..9 - focus window by index
         else if (e.key >= '1' && e.key <= '9') {
-          const sid = useAgentStore.getState().activeSessionId
+          const sid = useLayoutStore.getState().companionSessionId()
           if (sid) {
             const index = parseInt(e.key) - 1
             const ids = useTerminalStore.getState().getAllWindowIds(sid)
@@ -1211,7 +1269,14 @@ export function App() {
             borderRight: sidebarVisible ? '1px solid var(--border)' : 'none',
           }}
         >
-          <Sidebar onNewChat={handleNewChat} onSessionSelect={handleSessionSelect} isNewChatPending={isNewChatPending} />
+          <Sidebar
+            onNewChat={handleNewChat}
+            onSessionSelect={handleSessionSelect}
+            onOpenBeside={(session, projectPath, machineId) => {
+              void handleSessionSelect(session, projectPath, machineId, 'beside')
+            }}
+            isNewChatPending={isNewChatPending}
+          />
         </div>
 
         {/* Sidebar divider */}
@@ -1256,12 +1321,23 @@ export function App() {
                 : { flex: '1 1 0%', display: 'flex', minWidth: 0, overflow: 'hidden' }
             }
           >
-            {activeTerminalPaneId ? (
-              <TerminalSessionPane paneId={activeTerminalPaneId} />
-            ) : dualChat && rightSessionId ? (
-              <DualChatPanels rightSessionId={rightSessionId} />
-            ) : (
-              <ChatPanel />
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                display: activeTerminalPaneId ? 'none' : 'flex',
+                minWidth: 0,
+              }}
+            >
+              <ChatWorkspacePanels
+                dataScienceMode={dataScienceMode}
+                onOpenBeside={() => setSessionPickerOpen(true)}
+              />
+            </div>
+            {activeTerminalPaneId && (
+              <div style={{ width: '100%', height: '100%', display: 'flex', minWidth: 0 }}>
+                <TerminalSessionPane paneId={activeTerminalPaneId} />
+              </div>
             )}
           </div>
 
@@ -1386,13 +1462,9 @@ export function App() {
       <SessionPickerModal
         open={sessionPickerOpen}
         onClose={() => setSessionPickerOpen(false)}
-        onPick={(id) => openRightPanel(id)}
-        excludeIds={
-          useAgentStore.getState().activeSessionId
-            ? [useAgentStore.getState().activeSessionId as string]
-            : []
-        }
-        title="Open in right panel"
+        onPick={(id) => { void handleOpenLoadedSessionBeside(id) }}
+        excludeIds={useLayoutStore.getState().displayedChatSessionIds()}
+        title="Open a loaded chat beside this one"
       />
       <QuickPromptModal
         open={quickPromptOpen}
@@ -1401,6 +1473,7 @@ export function App() {
           setIdeEditContext(null)
         }}
         ideContext={ideEditContext}
+        targetSessionId={ideEditContext?.sessionId}
       />
       <FeatureTourModal
         open={tourOpen}
@@ -1491,57 +1564,126 @@ function ViewToggle(): React.ReactElement {
   )
 }
 
-/**
- * Dual-chat container - renders two ChatPanels and a performant split
- * handle between them. The ratio is written directly to the two panels'
- * `flexGrow` via refs during drag (no React re-renders, no store churn).
- * On release, the final ratio is committed to layout-store so it survives
- * remount / layout changes.
- */
-function DualChatPanels({ rightSessionId }: { rightSessionId: string }) {
+function ChatWorkspacePanels({
+  dataScienceMode,
+  onOpenBeside,
+}: {
+  dataScienceMode: boolean
+  onOpenBeside: () => void
+}) {
   const chatSplitRatio = useLayoutStore((s) => s.chatSplitRatio)
   const setChatSplitRatio = useLayoutStore((s) => s.setChatSplitRatio)
-  const closeRightPanel = useLayoutStore((s) => s.closeRightPanel)
-  const closeLeftPanel = useLayoutStore((s) => s.closeLeftPanel)
-  const setActiveSession = useAgentStore((s) => s.setActiveSession)
+  const primarySessionId = useLayoutStore((s) => s.primarySessionId)
+  const secondarySessionId = useLayoutStore((s) => s.secondarySessionId)
+  const focusedSlot = useLayoutStore((s) => s.focusedChatSlot)
+  const focusChatSlot = useLayoutStore((s) => s.focusChatSlot)
+  const closeChatSlot = useLayoutStore((s) => s.closeChatSlot)
+  const workspaceRef = useRef<HTMLDivElement>(null)
   const leftRef = useRef<HTMLDivElement>(null)
   const rightRef = useRef<HTMLDivElement>(null)
+  const [workspaceWidth, setWorkspaceWidth] = useState(1000)
+  const [splitDragging, setSplitDragging] = useState(false)
+  const [chatPresentation, setChatPresentation] = useState<ChatPresentation>(
+    dataScienceMode ? 'tabs' : 'split',
+  )
+  const primaryLabel = useAgentStore((state) =>
+    state.sessions.find((session) => session.id === primarySessionId)?.title ?? 'Primary chat',
+  )
+  const secondaryLabel = useAgentStore((state) =>
+    state.sessions.find((session) => session.id === secondarySessionId)?.title ?? 'Secondary chat',
+  )
+
+  useEffect(() => {
+    const element = workspaceRef.current
+    if (!element) return
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (typeof width === 'number') setWorkspaceWidth(width)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    setChatPresentation((current) =>
+      nextChatPresentation(current, workspaceWidth, dataScienceMode, splitDragging),
+    )
+  }, [workspaceWidth, dataScienceMode, splitDragging])
+
+  const dual = secondarySessionId !== null
+  const tabbed = dual && chatPresentation === 'tabs'
 
   return (
-    <>
+    <div
+      ref={workspaceRef}
+      data-chat-workspace
+      data-chat-presentation={chatPresentation}
+      style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', minWidth: 0 }}
+    >
+      {tabbed && (
+        <div className="chat-workspace-tabs" role="tablist" aria-label="Chats side by side">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={focusedSlot === 'primary'}
+            onClick={() => focusChatSlot('primary')}
+          >
+            {primaryLabel}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={focusedSlot === 'secondary'}
+            onClick={() => focusChatSlot('secondary')}
+          >
+            {secondaryLabel}
+          </button>
+        </div>
+      )}
+      <div style={{ flex: '1 1 0%', minHeight: 0, minWidth: 0, display: 'flex' }}>
       <div
         ref={leftRef}
-        data-chat-panel="left"
+        data-chat-slot-wrapper="primary"
         style={{
-          flex: `${chatSplitRatio} 1 0%`,
-          display: 'flex',
+          flex: dual && !tabbed ? `${chatSplitRatio} 1 0%` : '1 1 0%',
+          display: tabbed && focusedSlot !== 'primary' ? 'none' : 'flex',
           minWidth: 0,
           overflow: 'hidden',
         }}
       >
-        {/* Left X: promote the right session into the sole panel. */}
-        <ChatPanel onClose={() => closeLeftPanel(setActiveSession)} />
+        <ChatPanel
+          chatSlot="primary"
+          onClose={dual ? () => closeChatSlot('primary') : undefined}
+          onOpenBeside={onOpenBeside}
+        />
       </div>
-      <ChatSplitHandle
-        leftRef={leftRef}
-        rightRef={rightRef}
-        initialRatio={chatSplitRatio}
-        onCommit={setChatSplitRatio}
-      />
+      {dual && !tabbed && (
+        <ChatSplitHandle
+          leftRef={leftRef}
+          rightRef={rightRef}
+          initialRatio={chatSplitRatio}
+          onCommit={setChatSplitRatio}
+          onDraggingChange={setSplitDragging}
+        />
+      )}
       <div
         ref={rightRef}
-        data-chat-panel="right"
+        data-chat-slot-wrapper="secondary"
         style={{
-          flex: `${1 - chatSplitRatio} 1 0%`,
-          display: 'flex',
+          flex: !tabbed ? `${1 - chatSplitRatio} 1 0%` : '1 1 0%',
+          display: !dual || (tabbed && focusedSlot !== 'secondary') ? 'none' : 'flex',
           minWidth: 0,
           overflow: 'hidden',
         }}
       >
-        {/* Right X: just close the right panel, left stays as sole. */}
-        <ChatPanel sessionIdOverride={rightSessionId} onClose={closeRightPanel} />
+        <ChatPanel
+          chatSlot="secondary"
+          onClose={() => closeChatSlot('secondary')}
+          onOpenBeside={onOpenBeside}
+        />
       </div>
-    </>
+      </div>
+    </div>
   )
 }
 
@@ -1555,11 +1697,13 @@ function ChatSplitHandle({
   rightRef,
   initialRatio,
   onCommit,
+  onDraggingChange,
 }: {
   leftRef: React.RefObject<HTMLDivElement | null>
   rightRef: React.RefObject<HTMLDivElement | null>
   initialRatio: number
   onCommit: (ratio: number) => void
+  onDraggingChange?: (dragging: boolean) => void
 }) {
   const activePointerRef = useRef<number | null>(null)
   const currentRatioRef = useRef(initialRatio)
@@ -1573,11 +1717,12 @@ function ChatSplitHandle({
     const el = handleElRef.current
     if (el) { try { el.releasePointerCapture(activePointerRef.current) } catch { /* ignore */ } }
     activePointerRef.current = null
+    onDraggingChange?.(false)
     document.body.style.cursor = ''
     document.body.style.userSelect = ''
     hideDragOverlay()
     onCommit(currentRatioRef.current)
-  }, [onCommit])
+  }, [onCommit, onDraggingChange])
 
   useEffect(() => {
     const onBlur = () => endDrag()
@@ -1587,12 +1732,13 @@ function ChatSplitHandle({
       // Unmounted mid-drag: clear the stuck cursor / overlay.
       if (activePointerRef.current !== null) {
         activePointerRef.current = null
+        onDraggingChange?.(false)
         document.body.style.cursor = ''
         document.body.style.userSelect = ''
         hideDragOverlay()
       }
     }
-  }, [endDrag])
+  }, [endDrag, onDraggingChange])
 
   return (
     <div
@@ -1608,6 +1754,7 @@ function ChatSplitHandle({
       onPointerDown={(e) => {
         try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
         activePointerRef.current = e.pointerId
+        onDraggingChange?.(true)
         document.body.style.cursor = 'col-resize'
         document.body.style.userSelect = 'none'
         showDragOverlay('col-resize')

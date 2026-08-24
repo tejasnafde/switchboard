@@ -8,8 +8,8 @@
  * "Not looking at it" means any of:
  *   - The Electron window is not focused (`document.hasFocus() === false`)
  *   - The document is hidden (`document.visibilityState === 'hidden'`)
- *   - The finished turn belongs to a session that is NOT the currently-
- *     active one (user is typing in a different chat)
+ *   - The finished turn belongs to no chat currently displayed in the
+ *     visible window
  *
  * Uses the browser Notification API which Electron translates to native
  * platform notifications on macOS/Windows/Linux.
@@ -87,13 +87,20 @@ export function currentNotificationPermission(): NotificationPermission | 'unsup
   return Notification.permission
 }
 
+export function shouldSuppressTurnNotification(
+  threadId: string,
+  displayedSessionIds: readonly string[],
+  appVisible: boolean,
+): boolean {
+  return appVisible && displayedSessionIds.includes(threadId)
+}
+
 /**
  * Fire a native notification for a finished turn.
  *
  * Silently no-ops if:
  *   - Notifications are disabled in settings
- *   - The window is focused AND the turn is for the active session (i.e.
- *     the user is already looking at the result)
+ *   - The window is focused and the turn is for either displayed chat
  *   - Notification permission is denied
  */
 export async function notifyTurnCompleted(opts: {
@@ -101,16 +108,16 @@ export async function notifyTurnCompleted(opts: {
   projectName?: string
   agentLabel: string
   threadId: string
-  activeSessionId: string | null
+  displayedSessionIds: readonly string[]
   onClick?: () => void
 }): Promise<void> {
-  const { sessionTitle, projectName, agentLabel, threadId, activeSessionId, onClick } = opts
+  const { sessionTitle, projectName, agentLabel, threadId, displayedSessionIds, onClick } = opts
 
   if (!(await areNotificationsEnabled())) return
 
   // Suppress notification when user is already looking at this chat.
   const windowFocused = document.hasFocus() && document.visibilityState === 'visible'
-  const lookingAtThisChat = windowFocused && activeSessionId === threadId
+  const lookingAtThisChat = shouldSuppressTurnNotification(threadId, displayedSessionIds, windowFocused)
   if (lookingAtThisChat) return
 
   if (typeof Notification === 'undefined') return

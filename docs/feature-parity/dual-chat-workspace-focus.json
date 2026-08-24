@@ -1,0 +1,64 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "dual-chat-workspace-focus",
+  "summary": "Make desktop dual chat discoverable and route chat, IDE, terminal, context, forwarding, unread, notifications, and keyboard actions through explicit primary, secondary, focused, and displayed session identities.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/chatWorkspace.ts",
+        "src/renderer/stores/layout-store.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/ide/IdePane.tsx",
+        "tests/unit/chat-workspace.test.ts",
+        "tests/unit/chat-workspace-store.test.ts",
+        "tests/unit/chat-workspace-routing.test.ts",
+        "tests/unit/dual-chat-component-contract.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile routes one ThreadScreen thread at a time and has no desktop pane, embedded IDE webview, or terminal-strip composition. This renderer-local workspace model does not change its existing read, push-presence, or API contracts."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android displays one thread route at a time and does not share Desktop ChatPanel, ThreadRichText, IDE, terminal, notification-click, or layout state. The unrelated oversized tool-summary-card issue remains outside this change."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Focused slots, displayed sessions, IDE binding, and composer registration are transient Desktop renderer state. Existing mark-read and single-thread viewing-lease calls are reused without changing runtime events, WebSocket messages, or old-client semantics."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Primary, secondary, focus, and responsive presentation remain ephemeral renderer workspace state. Conversation/runtime rows, drafts keyed by session, and upgrade compatibility are unchanged; stale available-session reconciliation runs at renderer startup."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/index.ts",
+        "src/preload/index.ts",
+        "README.md",
+        "docs/keybindings.md",
+        "src/renderer/components/onboarding/featureRegistry.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "Targeted Vitest suites for slot reconciliation, routing, close focus, context, forwarding, drafts, unread, notifications, IDE binding, terminal hydration, picker identity, and component contracts",
+      "npm run typecheck",
+      "npm test",
+      "npm run build",
+      "npm run validate:feature-parity -- --base origin/main"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "React Native/iOS and native Android dual-pane hardware checks are not applicable because both native apps present one thread at a time and share no Desktop workspace renderer.",
+      "Live remote-machine focus switching and live Claude, Codex, and OpenCode concurrent turns require credentials/machines available to the test environment; unexercised combinations are recorded in the completion report.",
+      "Desktop release signing is unaffected; any isolated packaged Electron scenario uses a temporary userData directory and no live Switchboard database."
+    ]
+  }
+}

@@ -12,7 +12,7 @@ import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } 
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers'
 import { CSS } from '@dnd-kit/utilities'
 import { useMachineStore } from '../../stores/machine-store'
-import { useAgentStore } from '../../stores/agent-store'
+import { useLayoutStore } from '../../stores/layout-store'
 import { buildMachineList, type MachineNode } from './machineList'
 import { syncedAgoLabel, cachedProjects } from './machineSnapshot'
 import { formatRelativeTime } from './sidebar-helpers'
@@ -223,7 +223,11 @@ export function MachineLayer({
   const lastError = useMachineStore((s) => s.lastError)
   const progress = useMachineStore((s) => s.progress)
   const reconnecting = useMachineStore((s) => s.reconnecting)
-  const activeSessionId = useAgentStore((s) => s.activeSessionId)
+  const activeSessionId = useLayoutStore((s) =>
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId
+      ? s.secondarySessionId
+      : s.primarySessionId,
+  )
   const [addProjectFor, setAddProjectFor] = useState<string | null>(null)
   // Per-remote-project collapse, keyed `${machineId}\0${path}`. Session-local
   // (not persisted) - matches how little we persist for remote view state.

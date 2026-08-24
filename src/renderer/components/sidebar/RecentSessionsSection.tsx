@@ -43,10 +43,11 @@ function StatusIcon({ status }: { status: RecentSessionStatus }) {
   )
 }
 
-export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SESSION_LIMIT, activeSessionId, onSelect }: {
+export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SESSION_LIMIT, activeSessionId, displayedSessionIds = [], onSelect }: {
   items: RecentSessionItem[]
   initialLimit?: RecentSessionLimit
   activeSessionId: string | null
+  displayedSessionIds?: readonly (string | null)[]
   onSelect: (item: RecentSessionItem) => void
 }) {
   const [revealedCount, setRevealedCount] = useState(0)
@@ -64,7 +65,7 @@ export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SES
           <button
             key={`${item.machineId}:${item.session.id}`}
             type="button"
-            className={`sidebar-recent-row ${activeSessionId === item.session.id ? 'active' : ''}`}
+            className={`sidebar-recent-row ${activeSessionId === item.session.id ? 'active' : ''} ${displayedSessionIds.includes(item.session.id) ? 'displayed' : ''}`}
             aria-current={activeSessionId === item.session.id ? 'page' : undefined}
             onClick={() => onSelect(item)}
           >

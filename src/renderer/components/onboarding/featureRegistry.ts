@@ -40,7 +40,7 @@ export type TryItAction =
  * Bump when the tour list changes meaningfully. Auto-open fires on the
  * next launch for any user whose `tour.lastSeenVersion` is older.
  */
-export const TOUR_VERSION = '2026-07-06'
+export const TOUR_VERSION = '2026-08-24'
 
 export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   {
@@ -73,6 +73,12 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
     title: 'Multi-pane terminals & chat',
     description:
       'Split any pane horizontally or vertically - terminals and chats live in the same tmux-style tree. Drag the handle to resize, ⌘W closes the focused pane.',
+  },
+  {
+    id: 'dual-chat',
+    title: 'Compare or delegate beside another chat',
+    description:
+      'Choose Open beside in a chat header or session menu (⌘⇧\\) to keep two agents visible. The highlighted chat owns the IDE, terminals, status, and shortcuts; Copy prompt → other clones a draft while each send remains independent.',
   },
   {
     id: 'file-viewer-context',

@@ -94,6 +94,10 @@ interface DraftStore {
   addImages: (sessionId: string, images: ImageAttachment[]) => void
   removeImage: (sessionId: string, imageId: string) => void
   clearImages: (sessionId: string) => void
+  replaceDraftPayload: (
+    sessionId: string,
+    payload: { text: string; pills: DraftPill[]; images: ImageAttachment[] },
+  ) => void
 }
 
 export const useDraftStore = create<DraftStore>((set, get) => ({
@@ -189,5 +193,23 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
       delete next[sessionId]
       return { imagesBySession: next }
     }),
-}))
 
+  replaceDraftPayload: (sessionId, payload) =>
+    set((state) => {
+      for (const image of state.imagesBySession[sessionId] ?? []) {
+        URL.revokeObjectURL(image.previewUrl)
+      }
+      const drafts = { ...state.drafts }
+      const pillsBySession = { ...state.pillsBySession }
+      const imagesBySession = { ...state.imagesBySession }
+      if (payload.text) drafts[sessionId] = payload.text
+      else delete drafts[sessionId]
+      if (payload.pills.length) pillsBySession[sessionId] = payload.pills
+      else delete pillsBySession[sessionId]
+      if (payload.images.length) imagesBySession[sessionId] = payload.images
+      else delete imagesBySession[sessionId]
+      saveDrafts(drafts)
+      savePills(pillsBySession)
+      return { drafts, pillsBySession, imagesBySession }
+    }),
+}))

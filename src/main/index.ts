@@ -533,6 +533,18 @@ app.whenReady().then(() => {
       ],
     },
     {
+      label: 'Chat',
+      submenu: [
+        {
+          label: 'Open Chat Beside…',
+          accelerator: 'CmdOrCtrl+Shift+\\',
+          click: () => {
+            mainWindow?.webContents.send('app:open-chat-beside')
+          },
+        },
+      ],
+    },
+    {
       label: 'View',
       submenu: [
         {

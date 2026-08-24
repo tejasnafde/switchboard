@@ -58,6 +58,7 @@ import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/typ
 
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
+  onOpenBeside?: (session: SessionSummary, projectPath: string, machineId?: string) => void
   onNewChat?: (projectPath: string, machineId?: string) => void
   /** True while a New Chat create is in flight for that project + machine. */
   isNewChatPending?: (projectPath: string, machineId?: string) => boolean
@@ -99,7 +100,7 @@ function SortableProject({
 
 // ── Main Sidebar ─────────────────────────────────────────────────
 
-export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: SidebarProps) {
+export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPending }: SidebarProps) {
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
   const [scanning, setScanning] = useState<string | null>(null)
@@ -122,7 +123,14 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
   const [sidebarView, setSidebarView] = useState<'threads' | 'saved'>('threads')
   const editRef = useRef<HTMLInputElement>(null)
   const createTriggerRef = useRef<HTMLButtonElement>(null)
-  const activeSessionId = useAgentStore((s) => s.activeSessionId)
+  const activeSessionId = useLayoutStore((s) =>
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId
+      ? s.secondarySessionId
+      : s.primarySessionId,
+  )
+  const primarySessionId = useLayoutStore((s) => s.primarySessionId)
+  const secondarySessionId = useLayoutStore((s) => s.secondarySessionId)
+  const displayedSessionIds = [primarySessionId, secondarySessionId]
   const machineProjects = useMachineStore((s) => s.projects)
   const [recentLimit, setRecentLimit] = useState<RecentSessionLimit>(DEFAULT_RECENT_SESSION_LIMIT)
   const [recentLiveSessions, setRecentLiveSessions] = useState<RecentLiveSession[]>(() =>
@@ -742,10 +750,11 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
             {project.sessions.length > 0 ? (
               project.sessions.map((s) => {
                 const isActive = activeSessionId === s.id
+                const isDisplayed = displayedSessionIds.includes(s.id)
                 return (
                   <div
                     key={s.id}
-                    className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''}`}
+                    className={`sidebar-thread ${isActive ? 'sidebar-thread-active' : ''} ${isDisplayed ? 'sidebar-thread-displayed' : ''}`}
                     onContextMenu={(e) => {
                       e.preventDefault()
                       e.stopPropagation()
@@ -954,6 +963,7 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
             items={recentSessions}
             initialLimit={recentLimit}
             activeSessionId={activeSessionId}
+            displayedSessionIds={displayedSessionIds}
             onSelect={(item) => onSessionSelect?.(
               item.session,
               item.projectPath,
@@ -1182,6 +1192,13 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
           onClose={() => setContextMenu(null)}
           items={[
             {
+              label: 'Open beside',
+              onClick: () => {
+                onOpenBeside?.(contextMenu.session, contextMenu.projectPath)
+                setContextMenu(null)
+              },
+            },
+            {
               label: 'Rename',
               onClick: () => { startRename(contextMenu.session); setContextMenu(null) },
             },
@@ -1218,6 +1235,13 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
           y={remoteMenu.y}
           onClose={() => setRemoteMenu(null)}
           items={[
+            {
+              label: 'Open beside',
+              onClick: () => {
+                onOpenBeside?.(remoteMenu.session, remoteMenu.projectPath, remoteMenu.machineId)
+                setRemoteMenu(null)
+              },
+            },
             {
               label: 'Rename',
               onClick: () => { setRemoteRename({ machineId: remoteMenu.machineId, session: remoteMenu.session }); setRemoteMenu(null) },

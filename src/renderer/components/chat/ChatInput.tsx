@@ -41,6 +41,7 @@ import {
   desktopTurnAttempts,
 } from '../../services/desktopTurnSubmission'
 import { onUserTurnAccepted } from '../../services/session-events'
+import { registerComposer } from '../../services/composerRegistry'
 
 type RuntimeMode = 'plan' | 'sandbox' | 'full-access' | 'accept-edits'
 
@@ -267,6 +268,7 @@ export function ChatInput({
   }, [])
   const footerLayout = composerFooterLayout(footerWidth)
   const [previewImage, setPreviewImage] = useState<ImageAttachment | null>(null)
+
   // Slash command popover state: `null` when closed; trigger info when open
   const [slashQuery, setSlashQuery] = useState<string | null>(null)
   const [slashActiveIdx, setSlashActiveIdx] = useState(0)
@@ -385,6 +387,12 @@ export function ChatInput({
   const slashRangeRef = useRef<{ start: number; end: number } | null>(null)
   const dragDepthRef = useRef(0)
   const richRef = useRef<RichChatTextareaHandle>(null)
+  useEffect(() => {
+    if (!sessionId) return
+    return registerComposer(sessionId, {
+      focus: () => richRef.current?.focus(),
+    })
+  }, [sessionId])
   const filePickerRef = useRef<HTMLInputElement>(null)
   // Track which pill ids we've already inserted into the editor so the
   // sync effect (below) doesn't double-insert when `pills` updates for

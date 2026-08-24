@@ -7,12 +7,19 @@
  * new ?folder=. Hidden for 15 minutes -> kill the server and blank the webview
  * (about:blank releases the guest renderer); cold respawn is ~0.35s.
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentStore } from '../../stores/agent-store'
 import { useMachineStore } from '../../stores/machine-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { useThemeStore } from '../../stores/theme-store'
 import { createRendererLogger } from '../../logger'
+import {
+  commitIdeWorkspaceBinding,
+  getCommittedIdeWorkspaceBinding,
+  nextCommittedIdeBinding,
+  sameIdeWorkspaceTarget,
+  type IdeWorkspaceBinding,
+} from '../../services/ideWorkspaceBinding'
 
 const log = createRendererLogger('ide:pane')
 
@@ -31,19 +38,39 @@ type PaneState =
   | { kind: 'error'; message: string }
 
 export function IdePane(): React.ReactElement {
+  const companionSessionId = useLayoutStore((s) =>
+    s.focusedChatSlot === 'secondary' && s.secondarySessionId
+      ? s.secondarySessionId
+      : s.primarySessionId,
+  )
   const folder = useAgentStore((s) => {
-    const session = s.sessions.find((x) => x.id === s.activeSessionId)
+    const session = s.sessions.find((x) => x.id === companionSessionId)
     return session?.worktreePath ?? session?.projectPath ?? null
   })
   // Machine-bound sessions load the REMOTE workbench through the tunnel's
   // forwarded port - the ConnectionManager owns that lifecycle, not us.
   const sessionMachineId = useAgentStore((s) => {
-    const session = s.sessions.find((x) => x.id === s.activeSessionId)
+    const session = s.sessions.find((x) => x.id === companionSessionId)
     const id = session?.machineId
     return id && id !== 'local' ? id : null
   })
-  const remoteIdePort = useMachineStore((s) => (sessionMachineId ? s.idePorts[sessionMachineId] ?? null : null))
+  const desiredBinding = useMemo<IdeWorkspaceBinding | null>(
+    () => companionSessionId && folder
+      ? { sessionId: companionSessionId, machineId: sessionMachineId ?? 'local', folder }
+      : null,
+    [companionSessionId, folder, sessionMachineId],
+  )
   const visible = useLayoutStore((s) => s.rightPaneMode === 'files')
+  const [navBinding, setNavBinding] = useState<IdeWorkspaceBinding | null>(desiredBinding)
+  const navFolder = navBinding?.folder ?? null
+  const navMachineId = navBinding?.machineId && navBinding.machineId !== 'local'
+    ? navBinding.machineId
+    : null
+  const navSessionLabel = useAgentStore((s) => {
+    const session = s.sessions.find((x) => x.id === navBinding?.sessionId)
+    return session?.title ?? navBinding?.sessionId.slice(0, 8) ?? 'No chat selected'
+  })
+  const remoteIdePort = useMachineStore((s) => (navMachineId ? s.idePorts[navMachineId] ?? null : null))
   const [state, setState] = useState<PaneState>({ kind: 'idle' })
   const [retryNonce, setRetryNonce] = useState(0)
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -64,6 +91,15 @@ export function IdePane(): React.ReactElement {
   // True while we're intentionally restarting the server (recycle), so the
   // 'stopped' status push from that stop() isn't mistaken for a crash.
   const recyclingRef = useRef(false)
+  const desiredBindingRef = useRef<IdeWorkspaceBinding | null>(null)
+  desiredBindingRef.current = desiredBinding
+
+  useEffect(() => {
+    const desired = desiredBindingRef.current
+    if (!desired) return
+    const next = nextCommittedIdeBinding(getCommittedIdeWorkspaceBinding(), desired, false)
+    if (next) commitIdeWorkspaceBinding(next)
+  }, [companionSessionId, folder, sessionMachineId])
 
   // Idle shutdown TTL (ms), read from settings. Re-read when the user saves
   // settings so it applies without a restart.
@@ -85,13 +121,15 @@ export function IdePane(): React.ReactElement {
   // the old ones around, so churn = CPU/RAM pileup). So debounce it and only
   // advance while the pane is visible: fast chat-hopping collapses into a
   // single navigation, and hopping with the IDE hidden doesn't churn at all.
-  const [navFolder, setNavFolder] = useState<string | null>(folder)
   useEffect(() => {
     if (!visible) return
-    if (folder === navFolder) return
-    const t = setTimeout(() => setNavFolder(folder), 500)
+    if (sameIdeWorkspaceTarget(desiredBinding, navBinding)) {
+      if (desiredBinding?.sessionId !== navBinding?.sessionId) setNavBinding(desiredBinding)
+      return
+    }
+    const t = setTimeout(() => setNavBinding(desiredBinding), 500)
     return () => clearTimeout(t)
-  }, [visible, folder, navFolder])
+  }, [visible, desiredBinding, navBinding])
 
   // Focus follows the pane: when the workbench is shown and ready, move focus
   // INTO the webview so VS Code owns the keyboard - cmd+p (quick open), cmd+b
@@ -128,10 +166,10 @@ export function IdePane(): React.ReactElement {
   // code-server's settings.json, which its file watcher applies live.
   const theme = useThemeStore((s) => s.theme)
   useEffect(() => {
-    // sessionMachineId routes this to the backend that actually runs the
+    // navMachineId routes this to the backend that actually runs the
     // workbench - a remote one's settings.json lives on the VM, not here.
-    if (state.kind === 'ready') void window.api.ide.setTheme(theme, sessionMachineId ?? undefined)
-  }, [theme, state.kind, sessionMachineId])
+    if (state.kind === 'ready') void window.api.ide.setTheme(theme, navMachineId ?? undefined)
+  }, [theme, state.kind, navMachineId])
 
   // Boot / re-point the workbench. Runs even while HIDDEN (prewarm): the
   // server spawns and the webview loads the workbench in the background, so
@@ -143,7 +181,7 @@ export function IdePane(): React.ReactElement {
     if (!navFolder) return
     // Remote session: the workbench is served by the machine's code-server
     // through the tunnel. Point at the forwarded port; no local server work.
-    if (sessionMachineId) {
+    if (navMachineId) {
       if (remoteIdePort) setState({ kind: 'ready', port: remoteIdePort, remote: true })
       else setState({ kind: 'booting', label: 'Waiting for the remote IDE tunnel…' })
       return
@@ -186,7 +224,7 @@ export function IdePane(): React.ReactElement {
     return () => {
       cancelled = true
     }
-  }, [visible, navFolder, retryNonce, sessionMachineId, remoteIdePort])
+  }, [visible, navFolder, retryNonce, navMachineId, remoteIdePort])
 
   // Idle shutdown: hidden long enough -> reclaim the server + guest renderer.
   useEffect(() => {
@@ -223,11 +261,17 @@ export function IdePane(): React.ReactElement {
     }) | null
     if (!wv?.loadURL) return
     let cancelled = false
+    const navigationKey = `${navBinding?.machineId ?? 'none'}:${src}`
     const navigate = () => {
-      if (cancelled || lastNavRef.current === src) return
-      lastNavRef.current = src
+      if (cancelled || lastNavRef.current === navigationKey) return
+      lastNavRef.current = navigationKey
       try {
-        void wv.loadURL!(src).catch((err) => log.warn('ide webview navigate failed', err))
+        void wv.loadURL!(src).then(() => {
+          const desired = desiredBindingRef.current
+          if (desired && sameIdeWorkspaceTarget(desired, navBinding)) {
+            commitIdeWorkspaceBinding(desired)
+          }
+        }).catch((err) => log.warn('ide webview navigate failed', err))
       } catch (err) {
         // loadURL throws synchronously if the guest isn't attached yet; clear
         // the marker so the dom-ready firing below retries.
@@ -242,10 +286,29 @@ export function IdePane(): React.ReactElement {
       cancelled = true
       wv.removeEventListener('dom-ready', navigate)
     }
-  }, [src])
+  }, [src, navFolder, navBinding])
 
   return (
-    <div data-ide-pane style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
+    <div data-ide-pane data-session-id={navBinding?.sessionId ?? undefined} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
+      <div style={{
+        height: 28,
+        flexShrink: 0,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '0 9px',
+        borderBottom: '1px solid var(--border)',
+        background: 'var(--bg-secondary)',
+        color: 'var(--text-muted)',
+        fontSize: 10.5,
+        minWidth: 0,
+      }}>
+        <strong style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>IDE</strong>
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={navFolder ?? undefined}>
+          {navSessionLabel}{navFolder ? ` · ${navFolder.split('/').pop()}` : ''}{navMachineId ? ` · ${navMachineId}` : ''}
+        </span>
+      </div>
+      <div style={{ flex: 1, minHeight: 0, position: 'relative', display: 'flex' }}>
       {state.kind !== 'ready' && (
         <div
           style={{
@@ -280,6 +343,7 @@ export function IdePane(): React.ReactElement {
           src is a static bootstrap only; real navigation is driven by loadURL
           above (Electron webview won't re-navigate on attribute change). */}
       <webview ref={setWebviewRef} src="about:blank" partition="persist:ide" style={{ flex: 1, border: 'none', background: 'var(--bg-primary)' }} />
+      </div>
     </div>
   )
 }

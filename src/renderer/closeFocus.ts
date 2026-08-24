@@ -11,6 +11,14 @@ export function classifyCloseFocus(active: ClosestEl | null): CloseFocus {
   if (!active) return 'other'
   if (active.closest('[data-ide-pane]')) return 'editor'
   if (active.closest('[data-terminal-pane]')) return 'terminal'
+  const slot = active.closest('[data-chat-slot]')
+  if (slot) {
+    const side = slot.getAttribute('data-chat-slot')
+    if (side === 'primary' || side === 'left') return 'chat-left'
+    if (side === 'secondary' || side === 'right') return 'chat-right'
+  }
+  // Backward compatibility for single wrappers until every caller uses the
+  // unambiguous slot attribute.
   const panel = active.closest('[data-chat-panel]')
   if (panel) {
     const side = panel.getAttribute('data-chat-panel')

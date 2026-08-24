@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { formatTerminalContext } from '../../src/renderer/services/contextBridge'
+import {
+  formatIdeSelection,
+  formatTerminalContext,
+  sessionIdForContextElement,
+} from '../../src/renderer/services/contextBridge'
+import { nextCommittedIdeBinding, sameIdeWorkspaceTarget } from '../../src/renderer/services/ideWorkspaceBinding'
 
 /**
  * Pure-function tests for the ⌘L context-bridge formatter.
@@ -103,5 +108,51 @@ describe('formatTerminalContext', () => {
     for (const line of selection.split('\n')) {
       expect(out).toContain(line)
     }
+  })
+})
+
+describe('session-aware context routing', () => {
+  it('resolves chat selection ownership from its containing message session', () => {
+    const root = {
+      getAttribute: (name: string) => name === 'data-session-id' ? 'right-session' : null,
+      parentElement: null,
+    }
+    const child = { getAttribute: () => null, parentElement: root }
+    expect(sessionIdForContextElement(child)).toBe('right-session')
+  })
+
+  it('formats an IDE selection relative to the explicitly bound session folder', () => {
+    const formatted = formatIdeSelection({
+      path: '/repo-b/src/query.sql',
+      startLine: 4,
+      endLine: 8,
+      text: 'select * from events',
+    }, {
+      sessionId: 'right-session',
+      machineId: 'remote-b',
+      folder: '/repo-b',
+    })
+    expect(formatted).toMatchObject({ sessionId: 'right-session', label: 'query.sql (4-8)' })
+    expect(formatted?.block).toContain('src/query.sql')
+  })
+
+  it('updates the IDE session binding without navigation when both chats share a folder', () => {
+    const current = { sessionId: 'left', machineId: 'local', folder: '/repo' }
+    const desired = { sessionId: 'right', machineId: 'local', folder: '/repo' }
+    expect(nextCommittedIdeBinding(current, desired, false)).toEqual(desired)
+  })
+
+  it('retains the actually loaded IDE binding until a different folder finishes navigation', () => {
+    const current = { sessionId: 'left', machineId: 'local', folder: '/repo-a' }
+    const desired = { sessionId: 'right', machineId: 'remote-b', folder: '/repo-b' }
+    expect(nextCommittedIdeBinding(current, desired, false)).toEqual(current)
+    expect(nextCommittedIdeBinding(current, desired, true)).toEqual(desired)
+  })
+
+  it('treats machine and folder as one atomic IDE navigation target', () => {
+    expect(sameIdeWorkspaceTarget(
+      { sessionId: 'left', machineId: 'local', folder: '/repo' },
+      { sessionId: 'right', machineId: 'remote', folder: '/repo' },
+    )).toBe(false)
   })
 })

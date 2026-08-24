@@ -20,8 +20,7 @@ import {
   emitSessionRename,
   emitSessionActivity,
   emitUserTurnAccepted,
-  onProviderEvent,
-  claimProviderEvent,
+  onReducedProviderEvent,
 } from '../../services/session-events'
 import { notifyTurnCompleted } from '../../services/notifications'
 import { isAssistantStreamingEnabled } from '../../services/streamingPref'
@@ -61,16 +60,25 @@ import {
   defaultModelSettingKey,
   SETTING_DEFAULT_RUNTIME_MODE,
 } from '@shared/session-defaults'
+import { useLayoutStore } from '../../stores/layout-store'
+import type { ChatSlot } from '../../services/chatWorkspace'
+import { focusComposer } from '../../services/composerRegistry'
+import {
+  cloneDraftPayload,
+  requiresDraftTransferConfirmation,
+  withDraftProvenance,
+} from '../../services/draftTransfer'
 
 interface ChatPanelProps {
   /**
-   * Override the session this panel renders. Defaults to the global
-   * `activeSessionId` so existing single-panel usage keeps working. Pass
-   * an explicit ID when mounting a second panel in dual-chat mode.
+   * Override the session this panel renders. Legacy unslotted callers fall
+   * back to the primary mirror; an explicit slot with no binding stays empty.
    */
   sessionIdOverride?: string | null
+  chatSlot?: ChatSlot
   /** Optional close button for the right-hand panel in dual mode. */
   onClose?: () => void
+  onOpenBeside?: () => void
 }
 
 /**
@@ -102,14 +110,21 @@ function upsertAssistantContent(threadId: string, messageId: string, chunk: Cont
   }
 }
 
-export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
+export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }: ChatPanelProps = {}) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code')
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
 
+  const slotSessionId = useLayoutStore((state) => {
+    if (chatSlot === 'primary') return state.primarySessionId
+    if (chatSlot === 'secondary') return state.secondarySessionId
+    return null
+  })
+  const focusedChatSlot = useLayoutStore((state) => state.focusedChatSlot)
+  const focusChatSlot = useLayoutStore((state) => state.focusChatSlot)
   const activeSession = useAgentStore((s) => {
-    const resolvedId = sessionIdOverride ?? s.activeSessionId
+    const resolvedId = sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId)
     return s.sessions.find((sess) => sess.id === resolvedId)
   })
   // Per-action selectors (stable identities) instead of a bare useAgentStore(),
@@ -154,6 +169,54 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
   const projectPath = activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
   const chatTitle = activeSession?.title ?? 'New conversation'
+  const otherSessionId = useLayoutStore((state) => {
+    if (chatSlot === 'primary') return state.secondarySessionId
+    if (chatSlot === 'secondary') return state.primarySessionId
+    return null
+  })
+  const hasDraftPayload = useDraftStore((state) => Boolean(sessionId && (
+    state.drafts[sessionId]
+    || state.pillsBySession[sessionId]?.length
+    || state.imagesBySession[sessionId]?.length
+  )))
+  const focusSlot = useCallback(() => {
+    if (chatSlot) focusChatSlot(chatSlot)
+  }, [chatSlot, focusChatSlot])
+  const copyPromptToOtherChat = useCallback(() => {
+    if (!sessionId || !otherSessionId || !activeSession) return
+    const draftStore = useDraftStore.getState()
+    const source = {
+      text: draftStore.drafts[sessionId] ?? '',
+      pills: draftStore.pillsBySession[sessionId] ?? [],
+      images: draftStore.imagesBySession[sessionId] ?? [],
+    }
+    if (!source.text && source.pills.length === 0 && source.images.length === 0) return
+    const targetSession = useAgentStore.getState().sessions.find((candidate) => candidate.id === otherSessionId)
+    if (!targetSession) return
+    const targetHasDraft = Boolean(
+      draftStore.drafts[otherSessionId]
+      || draftStore.pillsBySession[otherSessionId]?.length
+      || draftStore.imagesBySession[otherSessionId]?.length,
+    )
+    const crossesBoundary = requiresDraftTransferConfirmation(activeSession, targetSession)
+    if ((targetHasDraft || crossesBoundary) && !window.confirm([
+      targetHasDraft ? 'Replace the other chat’s existing draft?' : '',
+      crossesBoundary ? 'This copies prompt context across a machine or provider profile boundary.' : '',
+    ].filter(Boolean).join('\n\n'))) return
+    const clone = cloneDraftPayload(source, {
+      nextId: () => crypto.randomUUID(),
+      createPreviewUrl: (file) => URL.createObjectURL(file),
+    })
+    draftStore.replaceDraftPayload(otherSessionId, {
+      ...clone,
+      text: withDraftProvenance(
+        clone.text,
+        `${chatTitle} · ${agentLabel(activeSession.type)}`,
+      ),
+    })
+    useLayoutStore.getState().selectChatSession(otherSessionId)
+    setTimeout(() => focusComposer(otherSessionId), 0)
+  }, [activeSession, chatTitle, otherSessionId, sessionId])
   const remoteMachineName = useMachineStore((state) =>
     state.remotes.find((machine) => machine.id === activeSession?.machineId)?.name,
   )
@@ -412,16 +475,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     }
 
     // onProviderEvent drops cross-machine bleed (same threadId on two machines).
-    const removeProvider = onProviderEvent((event) => {
+    const removeProvider = onReducedProviderEvent((event) => {
       const tid = event.threadId
       if (!tid) return
-      // Every mounted panel reduces the WHOLE stream, not just its own session,
-      // because a background session still needs its unread count and status.
-      // With two panes open that means two listeners applying the same event,
-      // which appended each streamed fragment twice once `content` became an
-      // increment. Exactly one listener does the store work.
-      if (!claimProviderEvent(event)) return
-
       prepareRuntimeEventLifecycle(
         event,
         messageLifecycle,
@@ -602,8 +658,8 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
               projectName,
               agentLabel,
               threadId: tid,
-              activeSessionId: store.activeSessionId,
-              onClick: () => store.setActiveSession(tid),
+              displayedSessionIds: useLayoutStore.getState().displayedChatSessionIds(),
+              onClick: () => useLayoutStore.getState().selectChatSession(tid),
             })
           }
           break
@@ -919,8 +975,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     } else {
       setTimeout(() => {
         // Focus the chat input so user can iterate on the plan
-        const ta = document.querySelector('textarea') as HTMLTextAreaElement | null
-        ta?.focus()
+        focusComposer(sessionId)
       }, 50)
     }
   // handleSend is defined below; safe as long as sessionId/deps are right
@@ -1269,7 +1324,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         // Focus is somewhere neutral (body, sidebar, etc). Only the
         // "default" (active-session) panel should claim ⌘F so dual-chat
         // doesn't double-trigger.
-        const isDefault = sessionIdOverride == null
+        const isDefault = chatSlot === 'primary' || (chatSlot == null && sessionIdOverride == null)
         if (!isDefault) return
       }
       e.preventDefault()
@@ -1278,7 +1333,7 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     }
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
-  }, [sessionIdOverride])
+  }, [sessionIdOverride, chatSlot])
 
   const chatSearchMatchInfo = searchOpen
     ? {
@@ -1291,6 +1346,11 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
     <div
       ref={panelRef}
       data-chat-panel="true"
+      data-chat-slot={chatSlot}
+      data-session-id={sessionId ?? undefined}
+      data-focused={chatSlot ? focusedChatSlot === chatSlot : undefined}
+      onFocusCapture={focusSlot}
+      onPointerDown={focusSlot}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -1298,6 +1358,9 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         height: '100%',
         background: 'var(--bg-primary)',
         position: 'relative',
+        boxShadow: chatSlot && focusedChatSlot === chatSlot
+          ? 'inset 0 0 0 1px color-mix(in srgb, var(--accent) 46%, transparent)'
+          : undefined,
       }}
     >
       {searchOpen && (
@@ -1393,6 +1456,31 @@ export function ChatPanel({ sessionIdOverride, onClose }: ChatPanelProps = {}) {
         )}
 
         <span style={{ flex: 1 }} />
+
+        {otherSessionId && (
+          <button
+            type="button"
+            onClick={copyPromptToOtherChat}
+            disabled={!hasDraftPayload}
+            aria-label="Copy prompt to other chat"
+            title="Copy this draft and its attachments to the other chat for comparison"
+            className="chat-header-action"
+          >
+            Copy prompt → other
+          </button>
+        )}
+
+        {onOpenBeside && (
+          <button
+            type="button"
+            onClick={onOpenBeside}
+            aria-label="Open beside"
+            title="Compare or delegate with two chats side by side"
+            className="chat-header-action"
+          >
+            Open beside
+          </button>
+        )}
 
         {/* Right-panel close button (only shown when this is the secondary
             panel in dual-chat mode - passed via `onClose` prop) */}

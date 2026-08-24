@@ -20,7 +20,7 @@ actually shipped:
 | 3 - Context Bridge | ✅ Done | `⌘L` multi-source dispatch (terminal / file-viewer / chat-message) + `⌘K` quick prompt |
 | 4 - Conversation History | ✅ Done | Claude, Codex, OpenCode and read-only Cursor recovery inventory; imported Cursor history continues through Claude with a one-time bounded handoff |
 | 5 - Launch configs | ✅ Done | `.switchboard/launch-config.yaml` hydration, hot reload and per-pane `wait_for` startup orchestration shipped |
-| 6 - Multi-Agent | ✅ Done | All three adapters at parity; side-by-side dual chat panels (`⌘|`) shipped |
+| 6 - Multi-Agent | ✅ Done | All three adapters at parity; focused side-by-side chat workspace (`⌘⇧\\`, alias `⌘|`) with IDE/terminal/context routing shipped |
 | 7 - Polish & UX | ✅ Done | Theme system, design system, command palette, keyboard-first nav, project switcher, status bar, system notifications, feature tour, ⌘F in-pane search all done. (Vim-nav for terminals still open.) |
 | 8 - Persistence | 🟨 Partial | Workspace state + conversation persistence + FTS search done. Reconnect to running PTYs not done. |
 | 9 - Distribution | 🟨 In progress | electron-builder + auto-update shipped. Release CI signs/notarizes when complete credentials exist and preserves an explicit unsigned path when absent. `switchboard` CLI remains deferred. |
