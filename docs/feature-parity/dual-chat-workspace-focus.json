@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "dual-chat-workspace-focus",
-  "summary": "Make desktop dual chat discoverable and route chat, IDE, terminal, context, forwarding, unread, notifications, and keyboard actions through explicit primary, secondary, focused, and displayed session identities.",
+  "summary": "Make desktop dual chat discoverable, route actions through explicit pane identity, and reserve the pane focus border for two simultaneously visible chats.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -48,7 +48,7 @@
   },
   "verification": {
     "automated": [
-      "Targeted Vitest suites for slot reconciliation, routing, close focus, context, forwarding, drafts, unread, notifications, IDE binding, terminal hydration, picker identity, and component contracts",
+      "Targeted Vitest suites for split-only focus presentation, slot reconciliation, routing, close focus, context, forwarding, drafts, unread, notifications, IDE binding, terminal hydration, picker identity, and component contracts",
       "npm run typecheck",
       "npm test",
       "npm run build",

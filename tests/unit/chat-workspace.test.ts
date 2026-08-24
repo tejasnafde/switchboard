@@ -5,6 +5,7 @@ import {
   nextDualChatShortcutAction,
   reconcileChatWorkspace,
   shouldEvictReplacedSession,
+  shouldShowChatFocusIndicator,
   type ChatWorkspaceState,
 } from '../../src/renderer/services/chatWorkspace'
 
@@ -17,6 +18,12 @@ const dual = (overrides: Partial<ChatWorkspaceState> = {}): ChatWorkspaceState =
 })
 
 describe('chat workspace reconciliation', () => {
+  it('shows a pane focus indicator only when two chats are visibly split', () => {
+    expect(shouldShowChatFocusIndicator(false, 'split')).toBe(false)
+    expect(shouldShowChatFocusIndicator(true, 'tabs')).toBe(false)
+    expect(shouldShowChatFocusIndicator(true, 'split')).toBe(true)
+  })
+
   it('opens the first session as primary and focuses it', () => {
     expect(reconcileChatWorkspace(DEFAULT_CHAT_WORKSPACE, { type: 'select', sessionId: 'a' })).toEqual({
       primarySessionId: 'a',

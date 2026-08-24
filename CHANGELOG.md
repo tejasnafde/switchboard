@@ -2,6 +2,17 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.48 - Stabilize Desktop quit and chat focus
+
+### Fixed
+- **Quitting on macOS is now one-way.** Once terminal, provider, mobile, and database teardown begins, Dock reopen events, deep links, and second launches can no longer recreate a window against closed services. The final quit retry is deferred to a fresh event-loop turn and scheduled only once, including when teardown rejects.
+- **The blue chat focus border now means two panes are actually visible.** A single chat no longer receives the dual-pane focus outline, while side-by-side chats retain it and tabbed narrow layouts use their existing selected-tab treatment.
+
+### Notes
+- This is a Desktop-only patch. React Native/iOS, native Android, shared backend/API contracts, stored data, package identity, deep links, provider credentials, and mobile release versions are unchanged.
+- Direct upgrades from Desktop v0.8.35 and v0.8.47 retain the existing database migration path. Verification uses isolated temporary user data and never opens or mutates the running user's profile.
+- macOS releases remain unsigned until production signing credentials are configured. macOS 12 or later is required.
+
 ## 0.8.47 - Certify the v0.8.35 upgrade
 
 ### Fixed

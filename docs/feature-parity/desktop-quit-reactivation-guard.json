@@ -1,0 +1,58 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "desktop-quit-reactivation-guard",
+  "summary": "Make Desktop teardown one-way so macOS reopen, deep links, and second launches cannot recreate a window against services that are already shutting down.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/index.ts",
+        "src/main/quit-coordinator.ts",
+        "tests/unit/app-quit-lifecycle-contract.test.ts",
+        "tests/unit/quit-coordinator.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "React Native/iOS does not run Electron's before-quit, activate, open-url, BrowserWindow, or single-instance lifecycle and shares no changed code with this Desktop process guard."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android has its own Activity/process lifecycle and does not run Electron's quit coordinator or window-reactivation handlers."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The change only orders local Desktop teardown and window activation; IPC channels, WebSocket messages, provider events, and remote-client semantics are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, stored value, path, or migration changes. The existing awaited database close remains in the same exactly-once teardown and direct v0.8.35/v0.8.47 upgrades retain their prior data path."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/release.yml",
+        "electron-builder.yml",
+        "scripts/smoke-test.mjs",
+        "CHANGELOG.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/quit-coordinator.test.ts tests/unit/app-quit-lifecycle-contract.test.ts",
+      "npm run typecheck",
+      "npm test",
+      "npm run build",
+      "npm run validate:feature-parity -- --base origin/main",
+      "SB_PACKAGED_EXECUTABLE=release/mac-arm64/Switchboard.app/Contents/MacOS/Switchboard node e2e/v0835-packaged-upgrade.e2e.mjs"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The original native crash was captured on macOS in Electron's AppKit reopen stack; an automated native crash injection is not available, so regression coverage exercises the lifecycle state machine and every app reactivation wiring path.",
+      "Windows does not receive macOS activate events, but its second-instance path is guarded and release CI packages it; a local Windows installer run is not exercised.",
+      "React Native/iOS and native Android hardware checks are not applicable because their lifecycle implementations are untouched."
+    ]
+  }
+}

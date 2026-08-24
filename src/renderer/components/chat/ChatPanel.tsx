@@ -78,6 +78,7 @@ interface ChatPanelProps {
    */
   sessionIdOverride?: string | null
   chatSlot?: ChatSlot
+  showFocusIndicator?: boolean
   /** Optional close button for the right-hand panel in dual mode. */
   onClose?: () => void
   onOpenBeside?: () => void
@@ -112,7 +113,7 @@ function upsertAssistantContent(threadId: string, messageId: string, chunk: Cont
   }
 }
 
-export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }: ChatPanelProps = {}) {
+export function ChatPanel({ sessionIdOverride, chatSlot, showFocusIndicator = false, onClose, onOpenBeside }: ChatPanelProps = {}) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code')
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
@@ -184,6 +185,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }
   const focusSlot = useCallback(() => {
     if (chatSlot) focusChatSlot(chatSlot)
   }, [chatSlot, focusChatSlot])
+  const isVisiblyFocused = showFocusIndicator && chatSlot === focusedChatSlot
   const copyPromptToOtherChat = useCallback(() => {
     if (!sessionId || !otherSessionId || !activeSession) return
     const draftStore = useDraftStore.getState()
@@ -1393,7 +1395,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }
       data-chat-panel="true"
       data-chat-slot={chatSlot}
       data-session-id={sessionId ?? undefined}
-      data-focused={chatSlot ? focusedChatSlot === chatSlot : undefined}
+      data-focused={showFocusIndicator ? isVisiblyFocused : undefined}
       onFocusCapture={focusSlot}
       onPointerDown={focusSlot}
       style={{
@@ -1403,7 +1405,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, onClose, onOpenBeside }
         height: '100%',
         background: 'var(--bg-primary)',
         position: 'relative',
-        boxShadow: chatSlot && focusedChatSlot === chatSlot
+        boxShadow: isVisiblyFocused
           ? 'inset 0 0 0 1px color-mix(in srgb, var(--accent) 46%, transparent)'
           : undefined,
       }}

@@ -10,9 +10,14 @@ import { join } from 'node:path'
 const repoRoot = process.cwd()
 const packagedExecutable = process.env.SB_PACKAGED_EXECUTABLE
   ?? join(repoRoot, 'release/mac-arm64/Switchboard.app/Contents/MacOS/Switchboard')
+const previousPackagedExecutable = process.env.SB_PREVIOUS_PACKAGED_EXECUTABLE
 
 if (!existsSync(packagedExecutable)) {
   console.error(`Packaged executable missing: ${packagedExecutable}`)
+  process.exit(1)
+}
+if (previousPackagedExecutable && !existsSync(previousPackagedExecutable)) {
+  console.error(`Previous packaged executable missing: ${previousPackagedExecutable}`)
   process.exit(1)
 }
 
@@ -70,9 +75,9 @@ async function closeApp() {
   if (!closed) closing.process().kill('SIGKILL')
 }
 
-async function launch() {
+async function launch(executablePath = packagedExecutable) {
   app = await electron.launch({
-    executablePath: packagedExecutable,
+    executablePath,
     args: [],
     cwd: repoRoot,
     env: isolatedEnv(),
@@ -163,6 +168,12 @@ try {
   await seedWithPublishedInitializer()
   check(existsSync(join(userDataDir, 'data', 'switchboard.db')), 'published v0.8.35 initializer created the fixture')
 
+  if (previousPackagedExecutable) {
+    const previousWindow = await launch(previousPackagedExecutable)
+    await assertFixture(previousWindow, 'predecessor packaged launch')
+    await closeApp()
+  }
+
   let win = await launch()
   await assertFixture(win, 'first packaged launch')
   await closeApp()
@@ -170,7 +181,7 @@ try {
   win = await launch()
   await assertFixture(win, 'second packaged launch')
   await closeApp()
-  console.log('✓ packaged v0.8.35 → v0.8.47 migration and restart rehearsal passed')
+  console.log('✓ packaged v0.8.35 → current migration and restart rehearsal passed')
 } finally {
   await closeApp()
   cleanup()

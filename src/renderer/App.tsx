@@ -47,7 +47,7 @@ import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgent
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composerRegistry'
 import { useDraftStore } from './stores/draft-store'
-import { nextChatPresentation, nextDualChatShortcutAction, shouldEvictReplacedSession, type ChatPresentation } from './services/chatWorkspace'
+import { nextChatPresentation, nextDualChatShortcutAction, shouldEvictReplacedSession, shouldShowChatFocusIndicator, type ChatPresentation } from './services/chatWorkspace'
 
 const log = createRendererLogger('app')
 
@@ -1636,6 +1636,7 @@ function ChatWorkspacePanels({
 
   const dual = secondarySessionId !== null
   const tabbed = dual && chatPresentation === 'tabs'
+  const showFocusIndicator = shouldShowChatFocusIndicator(dual, chatPresentation)
 
   return (
     <div
@@ -1677,6 +1678,7 @@ function ChatWorkspacePanels({
       >
         <ChatPanel
           chatSlot="primary"
+          showFocusIndicator={showFocusIndicator}
           onClose={dual ? () => closeChatSlot('primary') : undefined}
           onOpenBeside={onOpenBeside}
         />
@@ -1702,6 +1704,7 @@ function ChatWorkspacePanels({
       >
         <ChatPanel
           chatSlot="secondary"
+          showFocusIndicator={showFocusIndicator}
           onClose={() => closeChatSlot('secondary')}
           onOpenBeside={onOpenBeside}
         />

@@ -21,6 +21,14 @@ function deferred(): { promise: Promise<void>; resolve: () => void; reject: (e: 
 }
 
 describe('QuitCoordinator', () => {
+  it('exposes teardown as a one-way quitting lifecycle', () => {
+    const coord = new QuitCoordinator(() => new Promise(() => {}), vi.fn())
+
+    expect(coord.isQuitting).toBe(false)
+    coord.handleBeforeQuit()
+    expect(coord.isQuitting).toBe(true)
+  })
+
   it('prevents the first quit and starts teardown', () => {
     const d = deferred()
     const teardown = vi.fn(() => d.promise)
@@ -32,7 +40,7 @@ describe('QuitCoordinator', () => {
     expect(requestQuit).not.toHaveBeenCalled()
   })
 
-  it('re-requests quit after teardown resolves, then lets it pass', async () => {
+  it('re-requests quit after teardown resolves on a fresh turn, then lets it pass', async () => {
     const d = deferred()
     const requestQuit = vi.fn()
     const coord = new QuitCoordinator(() => d.promise, requestQuit)
@@ -40,9 +48,32 @@ describe('QuitCoordinator', () => {
     coord.handleBeforeQuit()
     d.resolve()
     await d.promise
-    await Promise.resolve() // let the .then chain run
+    await Promise.resolve()
+    await new Promise((resolve) => setImmediate(resolve))
     expect(requestQuit).toHaveBeenCalledTimes(1)
     expect(coord.handleBeforeQuit()).toBe(false)
+  })
+
+  it('defers exactly one quit retry to a fresh event-loop turn', async () => {
+    const d = deferred()
+    const requestQuit = vi.fn()
+    const scheduled: Array<() => void> = []
+    const coord = new QuitCoordinator(
+      () => d.promise,
+      requestQuit,
+      (callback) => scheduled.push(callback),
+    )
+
+    coord.handleBeforeQuit()
+    coord.handleBeforeQuit()
+    d.resolve()
+    await d.promise
+    await Promise.resolve()
+
+    expect(requestQuit).not.toHaveBeenCalled()
+    expect(scheduled).toHaveLength(1)
+    scheduled[0]()
+    expect(requestQuit).toHaveBeenCalledTimes(1)
   })
 
   it('runs teardown only once across repeated quit events', async () => {
@@ -88,7 +119,9 @@ describe('QuitCoordinator', () => {
 
     coord.handleBeforeQuit()
     d.reject(new Error('db close failed'))
-    await new Promise((r) => setTimeout(r, 0))
+    await Promise.resolve()
+    await Promise.resolve()
+    await new Promise((resolve) => setImmediate(resolve))
     expect(requestQuit).toHaveBeenCalledTimes(1)
     expect(coord.handleBeforeQuit()).toBe(false)
   })

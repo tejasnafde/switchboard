@@ -7,11 +7,17 @@
 export class QuitCoordinator {
   private drain: Promise<void> | null = null
   private done = false
+  private quitRequestScheduled = false
 
   constructor(
     private readonly teardown: () => Promise<void>,
     private readonly requestQuit: () => void,
+    private readonly schedule: (callback: () => void) => void = (callback) => { setImmediate(callback) },
   ) {}
+
+  get isQuitting(): boolean {
+    return this.drain !== null
+  }
 
   private startDrain(): Promise<void> {
     if (!this.drain) {
@@ -33,7 +39,11 @@ export class QuitCoordinator {
   /** Returns true when the quit event must be prevented (teardown pending). */
   handleBeforeQuit(): boolean {
     if (this.done) return false
-    void this.startDrain().then(() => this.requestQuit())
+    const drain = this.startDrain()
+    if (!this.quitRequestScheduled) {
+      this.quitRequestScheduled = true
+      void drain.then(() => this.schedule(this.requestQuit))
+    }
     return true
   }
 

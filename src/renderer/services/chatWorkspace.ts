@@ -71,6 +71,13 @@ export function shouldEvictReplacedSession(
 
 export type ChatPresentation = 'split' | 'tabs'
 
+export function shouldShowChatFocusIndicator(
+  hasSecondary: boolean,
+  presentation: ChatPresentation,
+): boolean {
+  return hasSecondary && presentation === 'split'
+}
+
 export function nextChatPresentation(
   current: ChatPresentation,
   width: number,

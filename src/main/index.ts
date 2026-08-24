@@ -68,6 +68,20 @@ let mobileEndpoint: MobileEndpoint | null = null
 /** True once the user has asked for restart-and-install; repeats are dropped. */
 let installRequested = false
 
+// PTYs first, and awaited - see shutdownTerminals for why the old
+// synchronous kill still crashed on quit.
+const quitCoordinator = new QuitCoordinator(
+  async () => {
+    await shutdownTerminals()
+    providerRegistry?.stopAll()
+    disposeUsageProbes()
+    void stopAllMachineConnections()
+    mobileEndpoint?.close()
+    closeDb()
+  },
+  () => app.quit(),
+)
+
 // ⌘R / ⌘⇧R go through a confirm dialog instead of the raw reload roles -
 // a stray reload kills terminal panes and in-flight agent turns.
 const menuLog = createMainLogger('app:menu')
@@ -141,6 +155,7 @@ app.setAsDefaultProtocolClient('code-oss')
 app.on('open-url', (event, url) => {
   event.preventDefault()
   ideLog.info('open-url', { url })
+  if (quitCoordinator.isQuitting) return
   const win = mainWindow
   // Same destroyed-window trap as the second-instance handler above.
   if (win && !win.isDestroyed()) {
@@ -166,6 +181,7 @@ if (!gotTheLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
+    if (quitCoordinator.isQuitting) return
     // `mainWindow` stays non-null after the window is destroyed, so the null
     // check alone is not enough: touching a destroyed BrowserWindow throws
     // "Object has been destroyed". That happens for real - a dev process whose
@@ -652,6 +668,7 @@ app.whenReady().then(() => {
   mobileEndpoint.apply()
 
   app.on('activate', () => {
+    if (quitCoordinator.isQuitting) return
     if (BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createWindow()
       // Re-point the renderer half at the new window; the mobile endpoint is
@@ -705,20 +722,6 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
-// PTYs first, and awaited - see shutdownTerminals for why the old
-// synchronous kill still crashed on quit.
-const quitCoordinator = new QuitCoordinator(
-  async () => {
-    await shutdownTerminals()
-    providerRegistry?.stopAll()
-    disposeUsageProbes()
-    void stopAllMachineConnections()
-    mobileEndpoint?.close()
-    closeDb()
-  },
-  () => app.quit(),
-)
 
 app.on('before-quit', (event) => {
   if (quitCoordinator.handleBeforeQuit()) {
