@@ -42,9 +42,11 @@
       "Native Android testDebugUnitTest, lintDebug, assembleDebug, and compileDebugAndroidTestKotlin pass.",
       "Repository TypeScript typecheck and the complete split-runtime repository test gate pass."
     ],
-    "hardware": [],
+    "hardware": [
+      "The production-signed 0.5.5/versionCode 7 APK was upgraded in place to the published 0.5.6/versionCode 8 APK through Switchboard's existing in-app updater on CPH2487. Package-private storage identity, the original install timestamp, the paired Mac, and existing conversation/activity rows survived the replacement, and the app reopened without a Room migration or startup crash."
+    ],
     "notExercised": [
-      "No Android device or emulator was connected, so connectedDebugAndroidTest and device screenshots were not run.",
+      "connectedDebugAndroidTest and focused compact-tool device screenshots were not run against the production APK.",
       "Live Claude, Codex, and OpenCode turns, reconnect/history reload, TalkBack, Switch Access, D-pad/keyboard focus, device font scaling, and portrait/landscape checks were not exercised on hardware."
     ]
   }

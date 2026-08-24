@@ -11,7 +11,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ### Notes
 - Native Android 0.5.6 also includes the capability-gated transactional worktree creation source shipped with desktop/backend 0.8.43.
-- Automated Android unit, lint, assembly, and Android-test compilation gates pass. The production-signed physical-device upgrade matrix, TalkBack traversal, and device screenshots remain recorded as unexercised for this release.
+- Automated Android unit, lint, assembly, and Android-test compilation gates pass. The production-signed 0.5.5-to-0.5.6 in-app upgrade passed on CPH2487 with package-private storage and paired-machine state preserved; focused worktree creation, TalkBack traversal, and compact-tool screenshots remain recorded separately as unexercised.
 
 ## 0.8.43 - Make worktree creation one recoverable operation
 

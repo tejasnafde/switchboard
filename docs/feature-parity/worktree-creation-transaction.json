@@ -35,7 +35,7 @@
     "nativeAndroid": {
       "status": "staged",
       "flag": "worktree_creation_v1",
-      "followUpRelease": "Native Android 0.5.6 production-signed APK after the physical-device upgrade matrix",
+      "followUpRelease": "Native Android 0.5.7 after the on-device worktree creation and reconnect matrix",
       "evidence": [
         "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/NewSessionCoordinator.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/RoomWorktreeCreationStore.kt",
@@ -101,12 +101,14 @@
       "React Native/iOS: npx tsc --noEmit -p tsconfig.json, all 17 Jest tests, and 50 focused shared mobile/capability/transport contract tests passed.",
       "Native Android: :app:testDebugUnitTest and :app:compileDebugAndroidTestKotlin passed under OpenJDK 17, including Room process-death recovery, capability gating, retry/action semantics, and attachment-safe compatibility behavior."
     ],
-    "hardware": [],
+    "hardware": [
+      "Native Android production upgrade on CPH2487: the installed production-signed 0.5.5/versionCode 7 client discovered mobile-v0.5.6 through the existing in-app updater, downloaded the signed APK, invoked Android package replacement, and reopened as 0.5.6/versionCode 8. The package ceDataInode and original firstInstallTime were unchanged, the paired Mac and existing conversation/activity rows remained visible, and no Room migration or startup crash was observed."
+    ],
     "notExercised": [
       "Desktop manual UI creation, explicit failure/recovery UX, app kill/restart, parent-checkout fallback, stable terminal-handle adoption, and post-operation git/database inspection have not yet been exercised by a human.",
       "Creation through a separately running remote machine/backend has not yet been manually exercised.",
       "React Native/iOS worktree creation has not been exercised on iOS hardware.",
-      "Native Android worktree creation has not been exercised on Android hardware; instrumentation migrations were compiled but not run on-device.",
+      "Native Android worktree creation, progress, reconnect, and recovery have not yet been exercised on Android hardware; the production upgrade and Room 4-to-5 startup succeeded, while instrumentation migrations were compiled but not run on-device.",
       "No iOS simulator or Android instrumentation test was run; Android instrumentation sources were compiled only."
     ]
   }
