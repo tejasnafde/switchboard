@@ -2,6 +2,23 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.45 - Make two chats work as one focused workspace
+
+### Added
+- **Dual chat is now discoverable without memorizing a shortcut.** Chat headers and sidebar actions expose Open beside with a session picker that identifies provider, project, worktree, branch, machine, and status. The documented shortcut is consistently shown as `⌘⇧\\` with `⌘|` as its keyboard-layout alias.
+- **The workspace has an explicit primary, secondary, and focused chat model.** A restrained focus treatment shows which chat owns session-scoped commands, while narrow windows and data-science mode preserve both bindings as usable identity tabs instead of squeezing two composers into the chat dock.
+- **Prompts can be copied between chats without coupling their sends.** Text, pills, and attachments are cloned into an independent receiving draft, with confirmation when the destination crosses a machine or provider credential boundary.
+
+### Fixed
+- **Right-panel actions no longer route through the left chat.** IDE and terminal binding, status, quick prompt, interrupt, composer focus, chat/terminal/IDE context capture, and explicit file, fork, forward, approval, plan, question, and diff actions resolve an authoritative owning session.
+- **Visible secondary chats no longer behave like hidden background work.** Both displayed chats avoid local unread badges and redundant native notifications while the window is visible; notification clicks focus an existing slot, and backend read/viewing state follows the documented visible-versus-focused policy.
+- **Forwarding can no longer duplicate or misidentify sessions.** Send to other panel uses the message's source session, preserves the source slot, excludes self-targets, populates rather than sends the receiving draft, and focuses the registered receiving composer.
+- **Slot state now reconciles deterministically.** Duplicate sessions, removal/archive, provider ID rotation, restored stale IDs, close/promotion, sidebar selection, and terminal-only sessions flow through one pure reconciliation seam. Concurrent provider streams share one event reducer and remain isolated between panels.
+
+### Notes
+- This is a Desktop Electron renderer/workspace release. React Native/iOS and native Android remain single-thread presentations and do not share the dual-pane layout; the backend wire contract, stored conversations, migrations, package identities, and mobile release channels are unchanged.
+- The full local gate passed 3,101 tests across 326 files, both TypeScript projects, production renderer/server builds, packaged-main smoke boot, feature-parity validation, and an isolated Electron Playwright dual-chat workflow. Claude's adversarial design and implementation reviews identified shortcut drift and terminal ownership gaps; both were fixed with regression coverage. Real provider credentials, code-server download/navigation, remote machines, and physical mobile hardware were not exercised in this release verification.
+
 ## Native Android 0.5.7 - Discover work VMs from connected Macs
 
 ### Added
