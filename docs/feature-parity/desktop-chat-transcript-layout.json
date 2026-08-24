@@ -1,0 +1,55 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "desktop-chat-transcript-layout",
+  "summary": "Keep dynamically measured Desktop chat turns from overlapping while loaded or live remote histories follow the bottom.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MessageList.tsx",
+        "tests/unit/message-list.test.ts",
+        "e2e/dual-chat-workspace.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "React Native/iOS uses its own native thread list and does not import Desktop MessageList or TanStack Virtual's absolute row positioning."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android uses a Compose thread renderer and does not share Desktop's ResizeObserver-driven transcript virtualizer."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The fix only changes Desktop's local scroll behavior; remote events, stored message shapes, IPC, WebSocket, and provider contracts are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, message content, setting, path, or migration changes; local and remote histories are rendered from the same existing data."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "CHANGELOG.md",
+        "electron-builder.yml",
+        ".github/workflows/release.yml"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/message-list.test.ts",
+      "node e2e/dual-chat-workspace.e2e.mjs",
+      "npm run typecheck",
+      "npm test",
+      "npm run build",
+      "npm run validate:feature-parity -- --base origin/main"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The reported remote transcript is protected by a deterministic local Electron fixture with the same loaded-history, live-event, answered-card, and dynamic-height sequence; the user's live remote session is not opened or mutated during verification.",
+      "Native app hardware is not exercised because neither native renderer shares this Desktop layout implementation."
+    ]
+  }
+}

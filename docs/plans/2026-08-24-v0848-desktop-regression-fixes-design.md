@@ -1,14 +1,15 @@
-# v0.8.48 Desktop regression fixes
+# v0.8.49 Desktop regression fixes
 
 **Date:** 2026-08-24
-**Release target:** Desktop v0.8.48
+**Release target:** Desktop v0.8.49 (v0.8.48 was never published after its Windows release gate timed out)
 
 ## Problem
 
-Desktop v0.8.47 exposes two regressions on macOS:
+Desktop v0.8.47 exposes three regressions on macOS:
 
 1. A blue inset focus border is shown around the only visible chat even though the indicator exists to distinguish two side-by-side chats.
 2. A normal asynchronous quit can leave a windowless, already-drained process alive long enough for macOS reopen or a second launch to reactivate it. Recreating the window and backend during that transition can enter Electron/AppKit's reopen path and crash in `_handleAEReopen:`.
+3. A dynamically measured chat transcript requests smooth scrolling whenever history is loaded or a turn is appended. TanStack Virtual suppresses measurements outside a target buffer during a smooth scroll, so tall turns can retain the 120 px estimate and paint later turns on top of them. Remote history makes the failure especially visible because many tall turns arrive in one load.
 
 The user's installed v0.8.47 application and live database must remain untouched while the patch is built and verified.
 
@@ -26,14 +27,20 @@ This is preferred to removing the border globally because it remains useful in a
 
 The packaged second-instance path and macOS `activate` path must refuse to focus or recreate a window once teardown has started. This makes quitting one-way and prevents re-registering handlers against closed database, mobile, terminal, and provider services. Updater behavior is preserved: `prepare()` drains without scheduling the ordinary retry, then `quitAndInstall()` owns process replacement.
 
+### Dynamic transcript measurement
+
+Keep turn virtualization and ResizeObserver-driven dynamic heights, but use an instant end-aligned scroll when appended messages should follow the bottom. Instant scrolling leaves every mounted row eligible for measurement; the existing scroll lock still prevents following while the user reads older turns. Search-result jumps are already instant and remain unchanged.
+
+This is preferred to disabling virtualization for remote chats, which would make the same transcript behave differently by transport and could mount an unbounded history, and to converting the list to block translation in this patch, which would preserve smooth animation but alter the positioning model and broaden regression risk immediately before release.
+
 ## Product impact
 
-- **Desktop Electron:** renderer focus presentation and main-process app lifecycle change.
-- **React Native/iOS:** not applicable; it has neither Electron activation nor desktop dual-pane rendering.
+- **Desktop Electron:** renderer focus presentation, dynamically measured transcript following, and main-process app lifecycle change.
+- **React Native/iOS:** not applicable; it has neither Electron activation nor the Desktop TanStack-virtual transcript.
 - **Native Android:** not applicable for the same reason.
 - **Shared backend/API:** no message, IPC, or WebSocket contract changes.
 - **Stored data/migrations:** no schema or data changes; direct v0.8.35 and v0.8.47 upgrades retain the existing migration path.
-- **Update/release:** publish a new immutable desktop v0.8.48 release and verify its update metadata and packaged upgrade paths. No mobile runtime release is required for desktop-only code.
+- **Update/release:** publish a new immutable desktop v0.8.49 release and verify its update metadata and packaged upgrade paths. No mobile runtime release is required for desktop-only code.
 
 ## Verification
 
@@ -43,5 +50,6 @@ Test-first regression coverage will prove that:
 - the first quit drains and prevents, repeated events do not duplicate teardown or retry, and the retry is deferred;
 - lifecycle state suppresses activate and second-instance recreation during teardown;
 - updater `prepare()` remains idempotent and does not schedule an ordinary quit retry.
+- dynamically measured transcript rows never enter the virtualizer's measurement-suppressing smooth-scroll mode, and a tall-history browser test proves consecutive row boxes do not overlap.
 
 Then run targeted tests, typecheck, the full root suite, feature-parity validation, the gated build/package smoke checks, and isolated packaged upgrade checks from v0.8.35 and v0.8.47. Packaged checks use temporary user data and never the live profile.

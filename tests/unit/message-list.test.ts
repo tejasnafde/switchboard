@@ -218,6 +218,10 @@ describe('groupIntoTurns', () => {
 })
 
 describe('projectTurnPresentation', () => {
+  it('does not smooth-scroll dynamically measured transcript rows', () => {
+    expect(messageListSource).not.toMatch(/scrollToIndex\([^\n]+behavior:\s*['"]smooth['"]/)
+  })
+
   it('keeps tool activity collapsed and user-controlled while tools run', () => {
     expect(messageListSource).not.toMatch(/<details[^>]*open=\{running\}/)
   })

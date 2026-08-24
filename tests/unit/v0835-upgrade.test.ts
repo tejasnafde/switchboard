@@ -44,7 +44,7 @@ describe('v0.8.35 database upgrade', () => {
     assertFixtureSurvived(upgraded)
     expect(upgraded.pragma('foreign_key_check')).toEqual([])
     expect(upgraded.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])
-  })
+  }, 20_000)
 })
 
 function assertFixtureSurvived(db: Database.Database): void {

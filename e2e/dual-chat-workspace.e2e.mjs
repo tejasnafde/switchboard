@@ -82,8 +82,18 @@ try {
     await window.api.routing.invokeOn('local', 'app:add-project-path', projectBPath)
     await window.api.app.createConversation({ id: 'dual-a', projectPath: projectAPath, agentType: 'claude-code', title: 'Dual A' })
     await window.api.app.createConversation({ id: 'dual-b', projectPath: projectBPath, agentType: 'codex', title: 'Dual B' })
+    await window.api.app.createConversation({ id: 'tall-history', projectPath: projectAPath, agentType: 'claude-code', title: 'Tall History' })
     await window.api.app.saveMessage({ id: 'seed-a', conversationId: 'dual-a', role: 'assistant', content: 'Seed response from A' })
     await window.api.app.saveMessage({ id: 'seed-b', conversationId: 'dual-b', role: 'assistant', content: 'Seed response from B' })
+    const paragraph = Array.from({ length: 18 }, (_, index) => `wrapped line ${index + 1}: a dynamically measured transcript must reserve the full rendered height`).join('\n')
+    for (let index = 0; index < 30; index++) {
+      await window.api.app.saveMessage({
+        id: `tall-${index}`,
+        conversationId: 'tall-history',
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        content: `Tall turn ${index + 1}\n${paragraph}`,
+      })
+    }
     return window.api.app.getProjects()
   }, { projectAPath: projectA, projectBPath: projectB })
   assert(seededProjects.some((project) => project.sessions.some((session) => session.id === 'dual-a')), 'isolated backend catalogues session A')
@@ -96,6 +106,77 @@ try {
   assert(reloadedProjects.some((project) => project.sessions.some((session) => session.id === 'dual-a')), 'session A survives renderer reload')
   assert(reloadedProjects.some((project) => project.sessions.some((session) => session.id === 'dual-b')), 'session B survives renderer reload')
   await win.locator('.sidebar-thread-title', { hasText: 'Dual A' }).waitFor({ timeout: 20_000 })
+
+  // A large remote history arrives in one load. Dynamic row measurement must
+  // finish without leaving tall turns at the 120 px estimate, which paints
+  // later absolutely positioned turns over their content.
+  await selectSidebarSession(win, 'Tall History', 'tall-history')
+  await win.locator('[data-chat-slot="primary"]').getByText('Tall turn 30').waitFor()
+  await win.waitForTimeout(1_000)
+  const transcriptGeometry = await win.locator('[data-chat-slot="primary"] [data-index]').evaluateAll((rows) =>
+    rows
+      .map((row) => {
+        const rect = row.getBoundingClientRect()
+        return { index: Number(row.getAttribute('data-index')), top: rect.top, bottom: rect.bottom }
+      })
+      .sort((a, b) => a.index - b.index),
+  )
+  const overlappingTurns = transcriptGeometry.filter((row, index) => {
+    const next = transcriptGeometry[index + 1]
+    return next && next.top < row.bottom - 0.5
+  })
+  assert(transcriptGeometry.length > 1, 'tall history mounts multiple virtual rows')
+  assert(overlappingTurns.length === 0, 'dynamically measured history rows never overlap')
+
+  const liveParagraph = Array.from({ length: 12 }, (_, index) => `live wrapped line ${index + 1}`).join('\n')
+  for (let index = 0; index < 18; index++) {
+    await emitProviderEvents([
+      {
+        type: 'user.message',
+        threadId: 'tall-history',
+        at: Date.now() + index * 2,
+        origin: `live-origin-${index}`,
+        text: `Live user turn ${index + 1}\n${liveParagraph}`,
+      },
+      {
+        type: 'question.asked',
+        threadId: 'tall-history',
+        requestId: `live-question-${index}`,
+        questions: [{
+          id: `live-question-${index}.0`,
+          header: 'Rendering check',
+          question: `Live question ${index + 1}: choose a layout option`,
+          multiSelect: false,
+          options: Array.from({ length: 4 }, (_, option) => ({
+            label: `Option ${option + 1}`,
+            description: 'This description makes the dynamically measured card taller.',
+          })),
+        }],
+      },
+      {
+        type: 'question.answered',
+        threadId: 'tall-history',
+        requestId: `live-question-${index}`,
+        answers: [['Option 1']],
+      },
+    ])
+    await win.waitForTimeout(30)
+  }
+  await win.locator('[data-chat-slot="primary"]').getByText('Live question 18: choose a layout option').waitFor()
+  const liveGeometry = await win.locator('[data-chat-slot="primary"] [data-index]').evaluateAll((rows) =>
+    rows
+      .map((row) => {
+        const rect = row.getBoundingClientRect()
+        return { index: Number(row.getAttribute('data-index')), top: rect.top, bottom: rect.bottom }
+      })
+      .sort((a, b) => a.index - b.index),
+  )
+  const overlappingLiveTurns = liveGeometry.filter((row, index) => {
+    const next = liveGeometry[index + 1]
+    return next && next.top < row.bottom - 0.5
+  })
+  assert(liveGeometry.length > 1, 'live tall history mounts multiple virtual rows')
+  assert(overlappingLiveTurns.length === 0, 'live dynamically measured rows never overlap while following')
 
   // Load both histories once, then restore A as the primary chat.
   await selectSidebarSession(win, 'Dual A', 'dual-a')

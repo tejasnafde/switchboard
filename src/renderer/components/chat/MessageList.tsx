@@ -148,17 +148,17 @@ export function MessageList({ messages, sessionId, agentType = 'claude-code', on
 
   // Auto-scroll-to-bottom on new messages (only if user hasn't scrolled up).
   // Same guard as above: if a pending search-jump is in flight for this
-  // session, don't auto-scroll-bottom - the smooth animation would fight
-  // the instant scrollToIndex from the pending-scroll effect and "win"
-  // because smooth scrolls keep ticking after layout.
+  // session, don't auto-scroll-bottom and race its centered scroll.
   useEffect(() => {
     if (isScrollLockedRef.current || turns.length === 0) return
     const pending = useAgentStore.getState().pendingScrollToMessage
     if (pending && pending.sessionId === sessionId) return
-    // rAF so the newly-appended row has a chance to mount + measure
-    // before we tell the virtualizer to jump to it.
+    // rAF lets the appended row mount before the jump. Keep this instant:
+    // TanStack Virtual suppresses measurements outside its target buffer
+    // during smooth scrolling, which leaves tall rows at the estimate and
+    // makes independently positioned turns overlap.
     requestAnimationFrame(() => {
-      virtualizer.scrollToIndex(turns.length - 1, { align: 'end', behavior: 'smooth' })
+      virtualizer.scrollToIndex(turns.length - 1, { align: 'end', behavior: 'auto' })
     })
   }, [messages.length])
 
