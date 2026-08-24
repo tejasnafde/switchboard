@@ -130,6 +130,7 @@ export class WsTransport implements Transport {
   private lastSeq = 0
   /** The server process our sequence belongs to; a change means start over. */
   private epoch: string | null = null
+  private capabilities: ReadonlySet<string> | null = null
   /** Live frames that arrived before this connection's replay landed. Held so
    *  the listener never sees a newer event before an older one. */
   private resumeHold: Array<Extract<WsFrame, { k: 'evt' }>> | null = null
@@ -471,6 +472,7 @@ export class WsTransport implements Transport {
   }
 
   private onReady(frame: Extract<WsFrame, { k: 'ready' }>): void {
+    this.capabilities = new Set(frame.capabilities ?? [])
     const epochChanged = this.epoch !== null && this.epoch !== frame.epoch
     this.epoch = frame.epoch
     if (epochChanged || frame.gap) {
@@ -489,6 +491,10 @@ export class WsTransport implements Transport {
     this.resumeHold = null
     held.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0))
     for (const evt of held) this.applyEvent(evt)
+  }
+
+  supportsCapability(capability: string): boolean | undefined {
+    return this.capabilities?.has(capability)
   }
 
   private applyEvent(frame: Extract<WsFrame, { k: 'evt' }>): void {

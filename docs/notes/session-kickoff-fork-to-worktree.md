@@ -1,5 +1,13 @@
 # Session kickoff - `fork-to-worktree` (#5)
 
+> **Implemented and superseded (2026-08-24).** The original kickoff below is
+> retained as historical design input. Fork worktrees now use the backend-owned
+> `WorktreeCreation` saga documented in
+> `docs/plans/2026-08-24-worktree-creation-transaction-design.md`. In particular,
+> `projectPath` remains the owning parent repository, `worktreePath` is the
+> execution CWD, and path strings are compatibility projections rather than
+> identity or cleanup authority.
+
 Drop this doc into a fresh Claude session as the first turn. It's
 self-contained: nothing here assumes prior conversation context.
 
@@ -18,10 +26,9 @@ When forking a conversation, optionally also branch the working tree:
    conversation's branch if it's already on a feature branch).
 2. `git worktree add` it to a path inside `<repo>/.switchboard/worktrees/`
    (or wherever feels right - see "Worktree storage" below).
-3. The forked conversation's `projectPath` points to the worktree, not
-   the original repo. So when the user resumes work in the fork, the
-   agent's cwd is the new working tree, terminal panes default to it,
-   the file pane reads from it.
+3. The forked conversation retains the original repo as `projectPath` and
+   stores the new checkout separately as `worktreePath`. Providers, terminals,
+   and the IDE use `worktreePath` as their CWD.
 4. The branch name is auto-generated from a cheap-model summary of the
    forked-from message (e.g. "fix-redis-timeout").
 
@@ -45,9 +52,8 @@ Read `CLAUDE.md` at repo root. Key surfaces:
 - **Project path scoping**: `projectPath` lives on `conversations`
   rows AND on `AgentSession` in
   `src/renderer/stores/agent-store.ts:24-69`. The terminal store
-  defaults pane cwd to the active session's `projectPath` - so once
-  the fork's projectPath is the worktree, terminals + file pane "just
-  work" without further wiring.
+  adopts backend-provisioned terminal handles and roots them in
+  `worktreePath`. The owning `projectPath` remains stable for sidebar grouping.
 - **`assertCwdReadable`** in `src/main/path-access.ts` runs as
   pre-flight on `START_SESSION`. Make sure newly-created worktrees
   pass it (they should - same physical disk as the parent repo).

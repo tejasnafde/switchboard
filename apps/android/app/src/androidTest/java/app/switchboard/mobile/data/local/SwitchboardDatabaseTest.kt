@@ -96,6 +96,15 @@ class SwitchboardDatabaseTest {
                 updatedAtMs = 12,
             ),
         )
+        database.pendingWorktreeCreationDao().upsert(
+            PendingWorktreeCreationEntity(
+                creationId = "creation-1",
+                connectionId = "lan",
+                projectPath = "/repo",
+                requestJson = "{\"schemaVersion\":1}",
+                updatedAtMs = 13,
+            ),
+        )
 
         val snapshot = database.offlineSnapshotDao().read()
 
@@ -108,6 +117,7 @@ class SwitchboardDatabaseTest {
         assertEquals(42, snapshot.replayStates.single().lastSequence)
         assertEquals("idem-1", snapshot.pendingControlActions.single().idempotencyKey)
         assertEquals("projects", snapshot.browseSnapshots.single().kind)
+        assertEquals("creation-1", snapshot.pendingWorktreeCreations.single().creationId)
     }
 
     @Test
@@ -135,6 +145,20 @@ class SwitchboardDatabaseTest {
         database.connectionDao().delete("lan")
 
         assertTrue(database.browseSnapshotDao().forConnection("lan").isEmpty())
+    }
+
+    @Test
+    fun deletingAConnectionCascadesItsPendingWorktreeCreation() {
+        database.connectionDao().upsert(
+            ConnectionEntity("lan", "Mac", "ws", "ws://mac", null, null, null, null),
+        )
+        database.pendingWorktreeCreationDao().upsert(
+            PendingWorktreeCreationEntity("creation-1", "lan", "/repo", "{}", 1),
+        )
+
+        database.connectionDao().delete("lan")
+
+        assertTrue(database.pendingWorktreeCreationDao().all().isEmpty())
     }
 
     @Test
@@ -367,7 +391,44 @@ class SwitchboardDatabaseTest {
     }
 
     @Test
-    fun migrationOneToFourPreservesDurableStateAndTransformsOutboxWithoutLoss() {
+    fun migrationFourToFiveAddsDurablePendingWorktreeCreationsWithoutChangingConnections() {
+        val name = "worktree-creation-migration-test"
+        migrationHelper.createDatabase(name, 4).apply {
+            execSQL(
+                "INSERT INTO connections (id, label, kind, url, project, zone, instance, port) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf<Any?>("lan", "Mac", "ws", "ws://mac", "/repo", null, null, null),
+            )
+            close()
+        }
+
+        migrationHelper.runMigrationsAndValidate(
+            name,
+            5,
+            true,
+            SwitchboardDatabase.MIGRATION_4_5,
+        ).use { migrated ->
+            migrated.execSQL(
+                "INSERT INTO pending_worktree_creations " +
+                    "(creationId, connectionId, projectPath, requestJson, updatedAtMs) " +
+                    "VALUES (?, ?, ?, ?, ?)",
+                arrayOf<Any?>("creation-1", "lan", "/repo", "{\"schemaVersion\":1}", 10L),
+            )
+            migrated.query(
+                "SELECT requestJson FROM pending_worktree_creations WHERE creationId = 'creation-1'",
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("{\"schemaVersion\":1}", cursor.getString(0))
+            }
+            migrated.query("SELECT project FROM connections WHERE id = 'lan'").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("/repo", cursor.getString(0))
+            }
+        }
+    }
+
+    @Test
+    fun migrationOneToFivePreservesDurableStateAndTransformsOutboxWithoutLoss() {
         val name = "full-chain-migration-test"
         migrationHelper.createDatabase(name, 1).apply {
             execSQL(
@@ -458,11 +519,12 @@ class SwitchboardDatabaseTest {
 
         migrationHelper.runMigrationsAndValidate(
             name,
-            4,
+            5,
             true,
             SwitchboardDatabase.MIGRATION_1_2,
             SwitchboardDatabase.MIGRATION_2_3,
             SwitchboardDatabase.MIGRATION_3_4,
+            SwitchboardDatabase.MIGRATION_4_5,
         ).use { migrated ->
             listOf(
                 "connections",
@@ -484,6 +546,10 @@ class SwitchboardDatabaseTest {
                     assertTrue(cursor.moveToFirst())
                     assertEquals("Unexpected row count for $table", 1, cursor.getInt(0))
                 }
+            }
+            migrated.query("SELECT COUNT(*) FROM pending_worktree_creations").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(0, cursor.getInt(0))
             }
             migrated.query(
                 "SELECT label, kind, url, project FROM connections WHERE id = 'lan'",

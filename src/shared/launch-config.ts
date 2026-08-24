@@ -23,6 +23,16 @@ export interface LaunchConfig {
   rows?: LaunchConfigRow[]
 }
 
+export interface WorktreeSetupConfig {
+  command?: string
+  defaultPolicy: 'ask' | 'run' | 'skip'
+  startupPolicy: 'wait-for-setup' | 'start-immediately'
+}
+
+export interface WorktreeLaunchConfig {
+  setup: WorktreeSetupConfig
+}
+
 /**
  * The full launch-config file. Modern shape: a map of named configs
  * (`default`, `backend`, `monitoring`, …) under `configs:`. New chats
@@ -37,6 +47,7 @@ export interface LaunchConfigFile {
   terminals: LaunchConfigTerminal[]
   rows?: LaunchConfigRow[]
   configs?: Record<string, LaunchConfig>
+  worktree?: WorktreeLaunchConfig
 }
 
 // ─── Parser ────────────────────────────────────────────────────────
@@ -121,6 +132,7 @@ export function parseLaunchConfigFile(input: string): LaunchConfigFile {
   }
 
   const configs: Record<string, LaunchConfig> = {}
+  const worktree = parseWorktreeConfig(doc.worktree)
 
   // 1. Hoist top-level terminals/rows into configs.default (back-compat).
   const topLevel = parseLaunchConfigBody(doc)
@@ -145,6 +157,7 @@ export function parseLaunchConfigFile(input: string): LaunchConfigFile {
     terminals: def?.terminals ?? [],
     rows: def?.rows,
     configs,
+    ...(worktree ? { worktree } : {}),
   }
 }
 
@@ -159,6 +172,15 @@ export function parseLaunchConfigFile(input: string): LaunchConfigFile {
  */
 export function serializeLaunchConfigFile(config: LaunchConfigFile): string {
   const obj: Record<string, unknown> = {}
+
+  if (config.worktree) {
+    const setup: Record<string, string> = {
+      default_policy: config.worktree.setup.defaultPolicy,
+      startup_policy: config.worktree.setup.startupPolicy,
+    }
+    if (config.worktree.setup.command) setup.command = config.worktree.setup.command
+    obj.worktree = { setup }
+  }
 
   const configs = config.configs ?? {}
   const names = Object.keys(configs)
@@ -182,6 +204,37 @@ export function serializeLaunchConfigFile(config: LaunchConfigFile): string {
   }
 
   return yaml.dump(obj, { indent: 2, lineWidth: 120, noRefs: true })
+}
+
+function parseWorktreeConfig(raw: unknown): WorktreeLaunchConfig | undefined {
+  if (raw === undefined) return undefined
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    throw new Error('worktree must be an object')
+  }
+  const setupRaw = (raw as Record<string, unknown>).setup
+  if (typeof setupRaw !== 'object' || setupRaw === null || Array.isArray(setupRaw)) {
+    throw new Error('worktree.setup must be an object')
+  }
+  const setup = setupRaw as Record<string, unknown>
+  const command = setup.command
+  if (command !== undefined && (typeof command !== 'string' || command.trim().length === 0)) {
+    throw new Error('worktree.setup.command must be a non-empty string')
+  }
+  const defaultPolicy = setup.default_policy ?? 'ask'
+  if (defaultPolicy !== 'ask' && defaultPolicy !== 'run' && defaultPolicy !== 'skip') {
+    throw new Error('worktree.setup.default_policy must be ask, run, or skip')
+  }
+  const startupPolicy = setup.startup_policy ?? 'wait-for-setup'
+  if (startupPolicy !== 'wait-for-setup' && startupPolicy !== 'start-immediately') {
+    throw new Error('worktree.setup.startup_policy must be wait-for-setup or start-immediately')
+  }
+  return {
+    setup: {
+      ...(typeof command === 'string' ? { command: command.trim() } : {}),
+      defaultPolicy,
+      startupPolicy,
+    },
+  }
 }
 
 /**

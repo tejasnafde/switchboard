@@ -15,12 +15,18 @@ import { formatFilePathRef, type FilePathRef } from '@shared/filePathRef'
 import { renderPillBody } from './renderPillBody'
 import { parseSlashCommandWrapper, splitSkillMentions } from './slashCommands'
 import { SkillChip } from './SkillChip'
-import { forkAndOpenSession } from '../../services/forkSession'
+import {
+  forkAndOpenSession,
+  releaseForkWorktreeIntent,
+  shouldClearForkWorktreeProgress,
+} from '../../services/forkSession'
 import { parseRotationMarker } from './rotationMarker'
 import { TodoList } from './TodoList'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
 import { useMessageMutable } from '../../services/messageLifecycle'
+import { WorktreeCreationProgress } from '../worktree/WorktreeCreationProgress'
+import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -114,6 +120,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   // briefly at the bottom of the chat - tells the user where their files
   // landed without forcing them to dig into the sidebar's secondary line.
   const [forkToast, setForkToast] = useState<string | null>(null)
+  const [forkWorktreeCreation, setForkWorktreeCreation] = useState<WorktreeCreationSnapshot | null>(null)
 
   // Inline file-pill enhancement: replace `<code>src/foo.ts:42-58</code>`
   // with clickable chips that open the file viewer at that line range.
@@ -264,10 +271,17 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     setForkBusy(withWorktree ? 'worktree' : 'plain')
     setForkError(null)
     try {
-      const res = await forkAndOpenSession(sourceId, upToIndex, message.id, withWorktree)
+      const res = await forkAndOpenSession(
+        sourceId,
+        upToIndex,
+        message.id,
+        withWorktree,
+        setForkWorktreeCreation,
+      )
       if (!res.ok) {
         setForkError(res.error ?? 'Fork failed')
       } else {
+        setForkWorktreeCreation(null)
         setForkMenu(null)
         if (res.worktree) {
           setForkToast(`Forked to ${res.worktree.branch}`)
@@ -280,6 +294,40 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       setForkError(err instanceof Error ? err.message : 'Fork failed')
     } finally {
       setForkBusy(false)
+    }
+  }
+
+  const handleForkWorktreeAction = async (action: WorktreeCreationRecoveryAction) => {
+    const snapshot = forkWorktreeCreation
+    if (!snapshot) return
+    try {
+      const updated = await window.api.worktreeCreation.act({
+        creationId: snapshot.creationId,
+        machineId: snapshot.provenance.machineId,
+        expectedRevision: snapshot.revision,
+        action,
+      })
+      setForkWorktreeCreation(updated)
+      if (updated.status === 'ready') await handleForkRequest(true)
+      if (shouldClearForkWorktreeProgress(updated)) {
+        const sourceId = sessionId ?? useAgentStore.getState().activeSessionId
+        const source = sourceId
+          ? useAgentStore.getState().sessions.find((session) => session.id === sourceId)
+          : undefined
+        const upToIndex = source?.messages?.findIndex((candidate) => candidate.id === message.id) ?? -1
+        if (sourceId && upToIndex >= 0) {
+          releaseForkWorktreeIntent(sourceId, upToIndex, updated.creationId)
+        }
+        setForkWorktreeCreation(null)
+        if (updated.cleanupDisposition === 'retained') {
+          setForkToast(updated.worktreePath
+            ? `Worktree retained at ${updated.worktreePath}; the fork conversation was not started.`
+            : 'Fork artifacts were retained for manual recovery; the conversation was not started.')
+          setTimeout(() => setForkToast(null), 8_000)
+        }
+      }
+    } catch (error) {
+      setForkError(error instanceof Error ? error.message : 'Fork recovery failed')
     }
   }
 
@@ -658,6 +706,15 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
           }}
         >
           {forkToast}
+        </div>,
+        document.body,
+      )}
+      {forkWorktreeCreation && forkWorktreeCreation.status !== 'ready' && createPortal(
+        <div style={{ position: 'fixed', right: 16, bottom: 42, width: 360, zIndex: 1400 }}>
+          <WorktreeCreationProgress
+            snapshot={forkWorktreeCreation}
+            onAction={(action) => { void handleForkWorktreeAction(action) }}
+          />
         </div>,
         document.body,
       )}

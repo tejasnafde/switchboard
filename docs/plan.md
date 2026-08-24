@@ -28,6 +28,9 @@ actually shipped:
 
 ### Recent feature additions beyond the original plan
 
+- **Transactional worktree creation** - one backend-owned recoverable saga for
+  Desktop, Kanban, forks, React Native/iOS, and Android; durable identity,
+  correlated progress, setup/sparse/startup receipts, and idempotent recovery
 - **Plan-mode hard-deny + read-only allow-list** (`decidePermission`)
 - **AskUserQuestion → QuestionCard** (T3-style interactive picker)
 - **ExitPlanMode → PlanCard** (markdown plan with Implement/Iterate buttons)

@@ -102,6 +102,7 @@ export class PtyManager {
   }
 
   async create(opts: TerminalCreateOptions): Promise<void> {
+    if (this.ptys.has(opts.id)) return
     // Dynamic import - node-pty is a native module, keep it lazy
     const pty = await import('node-pty')
 

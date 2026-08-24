@@ -79,6 +79,8 @@ class AuthenticatedWsCoordinator(
     private val pending = linkedMapOf<Long, PendingRequest>()
     private val runtimeEventListeners =
         linkedSetOf<(TransportScope, app.switchboard.mobile.protocol.RuntimeEventPayload) -> Unit>()
+    private val channelEventListeners =
+        linkedMapOf<String, LinkedHashSet<(TransportScope, JsonArray) -> Unit>>()
 
     val phase: ConnectionPhase
         @Synchronized get() = state?.phase ?: ConnectionPhase.Disconnected
@@ -264,6 +266,22 @@ class AuthenticatedWsCoordinator(
         return Cancelable {
             synchronized(this) {
                 runtimeEventListeners -= listener
+            }
+        }
+    }
+
+    @Synchronized
+    fun onChannelEvent(
+        channel: String,
+        listener: (TransportScope, JsonArray) -> Unit,
+    ): Cancelable {
+        channelEventListeners.getOrPut(channel, ::linkedSetOf) += listener
+        return Cancelable {
+            synchronized(this) {
+                channelEventListeners[channel]?.let { listeners ->
+                    listeners -= listener
+                    if (listeners.isEmpty()) channelEventListeners.remove(channel)
+                }
             }
         }
     }
@@ -499,6 +517,17 @@ class AuthenticatedWsCoordinator(
                         transition.state.generation.connectionId,
                         effect.frame,
                     )
+                    val event = effect.frame as? WsFrame.Event
+                    if (event != null) {
+                        val scope = TransportScope(
+                            transition.state.generation.deviceId,
+                            transition.state.generation.connectionId,
+                            transition.state.generation.value,
+                        )
+                        channelEventListeners[event.channel]
+                            ?.toList()
+                            ?.forEach { it(scope, event.args) }
+                    }
                 }
                 is ConnectionEffect.ScheduleRetry -> {
                     scheduleRetry(effect.decision, disconnectCause)

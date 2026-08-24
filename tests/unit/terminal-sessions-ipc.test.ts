@@ -199,6 +199,24 @@ describe('projectManagedRootSessions', () => {
 
     expect(projectManagedRootSessions(rows).map((session) => session.id)).toEqual(['fork'])
   })
+
+  it('marks a retained worktree conversation as recoverable instead of ready', () => {
+    const rows = [makeRow({
+      id: 'retained',
+      worktree_creation_id: 'creation-retained',
+      worktree_creation_status: 'cleanup_required',
+      worktree_creation_recovery_json: JSON.stringify({ disposition: 'retained' }),
+    })]
+
+    expect(projectManagedRootSessions(rows)).toMatchObject([{
+      id: 'retained',
+      worktreeCreationId: 'creation-retained',
+      worktreeRecovery: {
+        status: 'cleanup_required',
+        cleanupDisposition: 'retained',
+      },
+    }])
+  })
 })
 
 // ─── stampAgentTypes ──────────────────────────────────────────────────────────

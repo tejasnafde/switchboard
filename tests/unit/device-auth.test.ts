@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   isChannelAllowed,
+  isFileMutationAllowed,
   isSettingWriteAllowed,
   isPairingCodeUsable,
   isRevoked,
@@ -27,6 +28,28 @@ describe('isChannelAllowed', () => {
     // stolen credential reading conversations and running commands.
     expect(isChannelAllowed(PHONE_SCOPES, 'terminal:create')).toBe(false)
     expect(isChannelAllowed(PHONE_SCOPES, 'terminal:data')).toBe(false)
+    expect(isChannelAllowed(PHONE_SCOPES, AppChannels.SAVE_LAUNCH_CONFIG)).toBe(false)
+  })
+
+  it('keeps chat-only file mutations away from the command-bearing launch config', () => {
+    expect(isFileMutationAllowed(PHONE_SCOPES, '/repo', '.switchboard/launch-config.yaml')).toBe(false)
+    expect(isFileMutationAllowed(PHONE_SCOPES, '/repo', './tmp/../.switchboard/launch-config.yaml')).toBe(false)
+    expect(isFileMutationAllowed(PHONE_SCOPES, '/repo', '/repo/.switchboard/launch-config.yaml')).toBe(false)
+    expect(isFileMutationAllowed(PHONE_SCOPES, '/repo', 'src/index.ts')).toBe(true)
+    expect(isFileMutationAllowed(FULL_SCOPES, '/repo', '.switchboard/launch-config.yaml')).toBe(true)
+  })
+
+  it('protects launch and workspace config through case aliases on default macOS and Windows filesystems', () => {
+    expect(isFileMutationAllowed(
+      PHONE_SCOPES,
+      '/Users/Tejas/Switchboard',
+      '/users/tejas/switchboard/.SwitchBoard/Launch-Config.YAML',
+    )).toBe(false)
+    expect(isFileMutationAllowed(
+      PHONE_SCOPES,
+      'C:\\Users\\Tejas\\Switchboard',
+      'c:\\users\\tejas\\switchboard\\.SWITCHBOARD\\WORKSPACE.yaml',
+    )).toBe(false)
   })
 
   it('keeps a phone away from minting Google credentials on the desktop', () => {

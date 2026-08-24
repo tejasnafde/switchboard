@@ -21,6 +21,11 @@ interface RemoteRpc {
     fun onRuntimeEvent(
         listener: (TransportScope, RuntimeEventPayload) -> Unit,
     ): Cancelable
+
+    fun onChannelEvent(
+        channel: String,
+        listener: (TransportScope, JsonArray) -> Unit,
+    ): Cancelable = Cancelable {}
 }
 
 class CoordinatorRemoteRpc(
@@ -39,4 +44,9 @@ class CoordinatorRemoteRpc(
     override fun onRuntimeEvent(
         listener: (TransportScope, RuntimeEventPayload) -> Unit,
     ): Cancelable = coordinator.onRuntimeEvent(listener)
+
+    override fun onChannelEvent(
+        channel: String,
+        listener: (TransportScope, JsonArray) -> Unit,
+    ): Cancelable = coordinator.onChannelEvent(channel, listener)
 }

@@ -124,6 +124,7 @@ export class ProviderRegistry implements PeerToolHost {
   private readonly atomicTurnSubmission: Pick<AtomicUserTurnSubmission, 'submit'>
   /** Provider startup shared by every client that reaches a thread before its adapter exists. */
   private startingSessions = new Map<string, Promise<ProviderSession>>()
+  private managedSessionStarter: ((opts: SessionStartOpts) => Promise<ProviderSession>) | null = null
   private switchingSessions = new Set<string>()
   /** Turns that have claimed a thread but have not crossed the provider
    * boundary yet. Counted because Claude/Codex may accept more than one queued
@@ -309,6 +310,15 @@ export class ProviderRegistry implements PeerToolHost {
       })
     }
     return out
+  }
+
+  async startManagedSession(opts: SessionStartOpts): Promise<ProviderSession> {
+    if (!this.managedSessionStarter) throw new Error('Provider registry handlers are not ready.')
+    return this.managedSessionStarter(opts)
+  }
+
+  async submitManagedUserTurn(input: UserTurnSubmissionV1): Promise<UserTurnSubmissionResult> {
+    return this.submitAtomicUserTurn(input)
   }
 
   /**
@@ -928,6 +938,8 @@ export class ProviderRegistry implements PeerToolHost {
         this.startingSessions.delete(opts.threadId)
       }
     }
+
+    this.managedSessionStarter = (opts) => startSession(opts)
 
     this.host.handle(ProviderChannels.START_SESSION, startSession)
 

@@ -15,9 +15,16 @@ import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { IncomingMessage } from 'node:http'
 import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, isReplayableEventChannel, type WsFrame } from '@shared/ws-protocol'
-import { isChannelAllowed, isSettingWriteAllowed, FULL_SCOPES, PHONE_SCOPES, type DeviceScope } from '@shared/device-auth'
+import {
+  isChannelAllowed,
+  isFileMutationAllowed,
+  isSettingWriteAllowed,
+  FULL_SCOPES,
+  PHONE_SCOPES,
+  type DeviceScope,
+} from '@shared/device-auth'
 import { EventReplayBuffer } from '@shared/event-replay-buffer'
-import { AppChannels } from '@shared/ipc-channels'
+import { AppChannels, FilesChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 import { hashClientScope, withBackendRequestContext } from './request-context'
@@ -229,6 +236,22 @@ export class WsHost implements BackendHost {
       }
       return
     }
+    if (
+      (frame.k === 'req' || frame.k === 'snd')
+      && state?.scopes
+      && (frame.ch === FilesChannels.WRITE_FILE || frame.ch === FilesChannels.DELETE_FILE)
+      && !isFileMutationAllowed(
+        state.scopes,
+        (frame.args as unknown[] | undefined)?.[0],
+        (frame.args as unknown[] | undefined)?.[1],
+      )
+    ) {
+      log.warn(`denied ${frame.ch} - command-bearing launch config requires terminal scope`)
+      if (frame.k === 'req') {
+        this.reply(socket, { k: 'res', id: frame.id, ok: false, error: 'not permitted: protected launch config' })
+      }
+      return
+    }
     if (frame.k === 'req') {
       const handler = this.handlers.get(frame.ch)
       if (!handler) {
@@ -237,7 +260,7 @@ export class WsHost implements BackendHost {
       }
       try {
         const result = await withBackendRequestContext(
-          { clientScope: state!.clientScope },
+          { clientScope: state!.clientScope, transport: 'remote', deviceScopes: state!.scopes! },
           () => handler(...frame.args),
         )
         this.reply(socket, { k: 'res', id: frame.id, ok: true, result })
@@ -247,7 +270,10 @@ export class WsHost implements BackendHost {
     } else if (frame.k === 'snd') {
       const fns = this.listeners.get(frame.ch)
       if (fns) for (const fn of fns) {
-        withBackendRequestContext({ clientScope: state!.clientScope }, () => fn(...frame.args))
+        withBackendRequestContext(
+          { clientScope: state!.clientScope, transport: 'remote', deviceScopes: state!.scopes! },
+          () => fn(...frame.args),
+        )
       }
     } else if (frame.k === 'hello') {
       this.onHello(socket, frame)

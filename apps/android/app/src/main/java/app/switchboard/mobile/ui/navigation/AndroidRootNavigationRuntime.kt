@@ -6,6 +6,7 @@ import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
 import app.switchboard.mobile.data.remote.BrowseSnapshotStore
 import app.switchboard.mobile.data.remote.RoomBrowseSnapshotStore
+import app.switchboard.mobile.data.remote.NewSessionWorktreeCreationStore
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.thread.ThreadSnapshotStore
 import app.switchboard.mobile.domain.connection.ConnectionRuntimeState
@@ -35,6 +36,7 @@ class AndroidRootNavigationRuntime(
     private val persistCollapsedWorkspaceIds: (String, Set<String>) -> Unit,
     private val snapshots: RoomBrowseSnapshotStore,
     override val threadSnapshots: ThreadSnapshotStore,
+    override val worktreeCreations: NewSessionWorktreeCreationStore,
     private val beginViewingLease: (TransportScope, String) -> Closeable = { _, _ -> Closeable {} },
     private val registerViewingRenewal: (() -> Unit) -> Closeable = { Closeable {} },
 ) : RootNavigationRuntime {

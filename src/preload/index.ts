@@ -7,7 +7,7 @@ import { RoutingTable } from './routing-table'
 import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
-import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, WorktreeInfo } from '@shared/kanban'
+import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent, WorktreeInfo } from '@shared/kanban'
 import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/machines'
 import type {
   TerminalCreateOptions,
@@ -33,6 +33,7 @@ import type { LiveSessionSummary } from '@shared/live-sessions'
 import type { GoogleClientStatus } from '../main/google/client-config'
 import type { UpdateStatus } from '@shared/update-status'
 import { createRendererLogger } from '../renderer/logger'
+import { createWorktreeCreationApi } from './worktree-creation-api'
 
 const log = createRendererLogger('preload:provider')
 
@@ -89,6 +90,8 @@ const remoteTransports = new Map<string, WsTransport>()
 const transport: Transport = router
 
 const api = {
+  worktreeCreation: createWorktreeCreationApi(transport),
+
   // ─── Terminal ────────────────────────────────────────────────────
   terminal: {
     create: (opts: TerminalCreateOptions) =>
@@ -308,6 +311,10 @@ const api = {
       sourceConversationId: string
       upToIndex: number
       forkedAtMessageId?: string
+      creationId?: string
+      conversationId?: string
+      machineId?: string
+      requestedAt?: number
       /** #5: when true, also `git worktree add` a fresh branch and root the
        *  forked conversation at the new checkout. */
       withWorktree?: boolean
@@ -329,7 +336,7 @@ const api = {
           /** Set iff `withWorktree: true` and creation succeeded. */
           worktree?: { path: string; branch: string }
         }
-      | { ok: false; error: string }
+      | { ok: false; error: string; worktreeCreation?: import('@shared/worktree-creation').WorktreeCreationSnapshot }
     > => transport.invoke(AppChannels.FORK_CONVERSATION, args),
   },
 
@@ -512,8 +519,11 @@ const api = {
       transport.invoke(KanbanChannels.UPDATE, id, patch),
     delete: (id: string, opts?: { removeWorktree?: boolean; force?: boolean }): Promise<void> =>
       transport.invoke(KanbanChannels.DELETE, id, opts),
-    createWorktree: (id: string): Promise<KanbanCard | null> =>
-      transport.invoke(KanbanChannels.CREATE_WORKTREE, id),
+    createWorktree: (
+      id: string,
+      intent?: KanbanWorktreeCreationIntent,
+    ): Promise<KanbanCard | null> =>
+      transport.invoke(KanbanChannels.CREATE_WORKTREE, id, intent),
     removeWorktree: (id: string, opts?: { force?: boolean }): Promise<KanbanCard | null> =>
       transport.invoke(KanbanChannels.REMOVE_WORKTREE, id, opts),
     listWorktrees: (projectPath: string): Promise<WorktreeInfo[]> =>

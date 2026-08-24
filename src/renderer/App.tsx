@@ -23,12 +23,23 @@ import { SessionPickerModal } from './components/SessionPickerModal'
 import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
+import { NewChatCheckoutDialog, type NewChatCheckout } from './components/NewChatCheckoutDialog'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { emitSessionCreated, onSessionRename } from './services/session-events'
 import { initSharedReadState } from './services/readState'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
+import {
+  createDesktopNewChatCoordinator,
+  retainedWorktreeCreationKey,
+  retryDesktopWorktreeCreation,
+  shouldDismissDesktopWorktreeSnapshot,
+  type DesktopNewChatCoordinator,
+} from './services/desktopNewChatCreation'
+import { createDesktopNewChatJournal } from './services/desktopNewChatJournal'
+import { WorktreeCreationProgress } from './components/worktree/WorktreeCreationProgress'
+import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
 import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
@@ -36,9 +47,6 @@ import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgent
 import { createRendererLogger } from './logger'
 
 const log = createRendererLogger('app')
-
-const WORKTREE_FALLBACK_TOAST =
-  'Could not create a worktree. This chat runs in the project folder instead.'
 
 /** Map a SessionSummary's provider `source` to the agent-store's `AgentType`. */
 function agentTypeForSource(source: SessionSummary['source']): 'claude-code' | 'codex' | 'opencode' {
@@ -58,6 +66,17 @@ export function App() {
   // Chat column wrapper - the resize target while data scientist mode has
   // the chat docked right (the right pane is flex:1 then, not resizable).
   const dsChatRef = useRef<HTMLDivElement>(null)
+  const newChatCoordinators = useRef(new Map<string, DesktopNewChatCoordinator>())
+  const newChatJournal = useRef(createDesktopNewChatJournal(window.localStorage))
+  const [worktreeCreationSnapshots, setWorktreeCreationSnapshots] = useState<Record<string, WorktreeCreationSnapshot>>({})
+  const newChatCheckoutChoiceRef = useRef<{
+    projectPath: string
+    machineId: string
+    guardKey: string
+    recommendedCheckout: NewChatCheckout
+  } | null>(null)
+  const newChatChoiceOpening = useRef(false)
+  const [newChatCheckoutChoice, setNewChatCheckoutChoice] = useState(newChatCheckoutChoiceRef.current)
 
   const {
     sidebarWidth,
@@ -406,14 +425,105 @@ export function App() {
     return () => { remove() }
   }, [])
 
-  // "+ New Chat" - create a fresh session tied to a project. When the
-  // default workspace mode is "worktree", shell out to `git worktree
-  // add` first and stamp the result on `worktreePath`; `projectPath`
-  // stays the parent repo so the sidebar groups correctly. A failed
-  // worktree create falls back to local mode with a warn + toast.
-  // Ref guards (synchronous); state mirrors it for the sidebar spinner.
+  // "+ New Chat" submits one backend-owned creation intent. Worktree mode
+  // never falls through to the parent checkout: that is a separate recovery
+  // action the user must choose explicitly.
+  const publishAuthoritativeSession = useCallback((session: {
+    id: string
+    type: 'claude-code' | 'codex' | 'opencode'
+    status: 'idle'
+    projectPath: string
+    machineId: string
+    worktreeId?: string
+    worktreePath?: string
+    worktreeBranch?: string
+    managedTerminalIds?: string[]
+    title: string
+    runtimeMode: RuntimeMode
+  }) => {
+    window.api.routing.bind(session.id, session.machineId)
+    if (session.managedTerminalIds?.length && session.worktreePath) {
+      useTerminalStore.getState().adoptManagedTerminals(
+        session.id,
+        session.managedTerminalIds,
+        session.worktreePath,
+      )
+    }
+    addSession(session)
+    setActiveSession(session.id)
+    if (session.machineId === 'local') {
+      emitSessionCreated({
+        id: session.id,
+        projectPath: session.projectPath,
+        title: session.title,
+        startedAt: Date.now(),
+        source: 'switchboard',
+      })
+    } else {
+      useMachineStore.getState().addSnapshotSession(session.machineId, session.projectPath, {
+        id: session.id,
+        title: session.title,
+        agentType: session.type,
+      })
+    }
+  }, [addSession, setActiveSession])
+
+  const makeNewChatCoordinator = useCallback(() => createDesktopNewChatCoordinator({
+    worktrees: {
+      create: window.api.worktreeCreation.create,
+      get: window.api.worktreeCreation.get,
+      onProgress: window.api.worktreeCreation.onProgress,
+    },
+    sessions: { addAuthoritative: publishAuthoritativeSession },
+    parent: {
+      create: async (intent) => {
+        window.api.routing.bind(intent.conversationId, intent.machineId)
+        await window.api.app.createConversation({
+          id: intent.conversationId,
+          projectPath: intent.projectPath,
+          agentType: intent.agentType,
+          title: intent.title,
+        })
+        publishAuthoritativeSession({
+          id: intent.conversationId,
+          type: intent.agentType,
+          status: 'idle',
+          projectPath: intent.projectPath,
+          machineId: intent.machineId,
+          title: intent.title,
+          runtimeMode: intent.runtimeMode,
+        })
+        return { conversationId: intent.conversationId }
+      },
+    },
+    journal: newChatJournal.current,
+    createId: () => crypto.randomUUID(),
+    now: Date.now,
+    onStateChange: (state) => {
+      if (!state.creationId || !state.snapshot) return
+      if (state.snapshot.status === 'ready' || shouldDismissDesktopWorktreeSnapshot(state.snapshot)) {
+        newChatJournal.current.remove(state.creationId)
+        setWorktreeCreationSnapshots((current) => {
+          const next = { ...current }
+          delete next[state.creationId!]
+          return next
+        })
+      } else {
+        setWorktreeCreationSnapshots((current) => ({
+          ...current,
+          [state.creationId!]: state.snapshot!,
+        }))
+      }
+    },
+  }), [publishAuthoritativeSession])
+
   const newChatPending = useRef(new Set<string>())
   const [pendingNewChats, setPendingNewChats] = useState<ReadonlySet<string>>(new Set())
+  const releaseNewChatGuard = useCallback((guardKey: string) => {
+    newChatPending.current.delete(guardKey)
+    setPendingNewChats(new Set(newChatPending.current))
+  }, [])
+
   const handleNewChat = useCallback(
     async (projectPath: string, machineId: string = 'local') => {
       // Worktree creation takes seconds (longer over SSH), so the buttons
@@ -421,83 +531,172 @@ export function App() {
       // conversation rows. Keyed per project + machine so A never blocks B.
       const guardKey = newChatKey(projectPath, machineId)
       if (newChatPending.current.has(guardKey)) return
+      if (newChatCheckoutChoiceRef.current || newChatChoiceOpening.current) return
       newChatPending.current.add(guardKey)
       setPendingNewChats(new Set(newChatPending.current))
+      newChatChoiceOpening.current = true
       try {
-        useLayoutStore.getState().setAppView('chats')
-        const id = `agent_${Date.now()}`
-        const title = 'New conversation'
-
-        // Route every backend call for this chat (worktree, createConversation,
-        // startSession) to its machine before the first one fires.
-        window.api.routing.bind(id, machineId)
-
-        let worktreePath: string | null = null
-        let worktreeBranch: string | null = null
         const mode = await getDefaultSessionEnvMode()
-        if (mode === 'worktree') {
-          const branchSlug = `thread-${Date.now().toString(36)}`
-          // A failed worktree create deliberately falls back to running the
-          // chat in the project folder; the toast keeps that fallback honest.
-          try {
-            const res = await window.api.git.createSessionWorktree({
-              projectPath,
-              branchSlug,
-              machineId,
-            })
-            if (res.ok) {
-              worktreePath = res.path
-              worktreeBranch = res.branch
-            } else {
-              log.warn('worktree create failed:', res.error)
-              setAppToast(WORKTREE_FALLBACK_TOAST)
-            }
-          } catch (err) {
-            log.warn('worktree create failed:', err)
-            setAppToast(WORKTREE_FALLBACK_TOAST)
-          }
-        }
-
-        addSession({
-          id,
-          type: 'claude-code',
-          status: 'idle',
+        const choice = {
           projectPath,
           machineId,
-          worktreePath,
-          worktreeBranch,
-          title,
-        })
-        setActiveSession(id)
-
-        // Persist to DB (best-effort). `projectPath` is the parent repo;
-        // `worktreePath` (if set) is the actual cwd the agent runs in.
-        window.api.app.createConversation({
-          id,
-          projectPath,
-          agentType: 'claude-code',
-          title,
-          worktreePath,
-          worktreeBranch,
-        }).catch((err) => {
-          log.warn('createConversation persist failed:', err)
-        })
-
-        // Local chats show in the workspace tree via the sidebar event; remote
-        // chats live in their machine's tree. Inject the row optimistically - a
-        // rescan (syncMachine) can't see a brand-new empty conversation yet.
-        if (machineId === 'local') {
-          emitSessionCreated({ id, projectPath, title, startedAt: Date.now(), source: 'switchboard' })
-        } else {
-          useMachineStore.getState().addSnapshotSession(machineId, projectPath, { id, title, agentType: 'claude-code' })
+          guardKey,
+          recommendedCheckout: mode === 'worktree' ? 'worktree' as const : 'project' as const,
         }
+        newChatCheckoutChoiceRef.current = choice
+        setNewChatCheckoutChoice(choice)
+      } catch (error) {
+        releaseNewChatGuard(guardKey)
+        setAppToast(error instanceof Error ? error.message : 'Could not prepare the new conversation.')
       } finally {
-        newChatPending.current.delete(guardKey)
-        setPendingNewChats(new Set(newChatPending.current))
+        newChatChoiceOpening.current = false
       }
     },
-    [addSession, setActiveSession],
+    [releaseNewChatGuard],
   )
+
+  const confirmNewChatCheckout = useCallback(async (checkout: NewChatCheckout) => {
+    const choice = newChatCheckoutChoiceRef.current
+    if (!choice) return
+    newChatCheckoutChoiceRef.current = null
+    setNewChatCheckoutChoice(null)
+    const coordinator = makeNewChatCoordinator()
+    try {
+      useLayoutStore.getState().setAppView('chats')
+      const state = await coordinator.start({
+        projectPath: choice.projectPath,
+        machineId: choice.machineId,
+        checkout,
+        agentType: 'claude-code',
+        runtimeMode: useAgentStore.getState().getActiveSession()?.runtimeMode ?? 'sandbox',
+      })
+      if (
+        checkout === 'worktree'
+        && state.creationId
+        && state.status !== 'ready'
+        && (!state.snapshot || !shouldDismissDesktopWorktreeSnapshot(state.snapshot))
+      ) {
+        newChatCoordinators.current.set(state.creationId, coordinator)
+      } else {
+        coordinator.dismiss()
+        coordinator.dispose()
+      }
+      if (state.status === 'failed') setAppToast(state.error ?? 'The worktree conversation was not started.')
+    } catch (error) {
+      const state = coordinator.state()
+      if (
+        checkout === 'worktree'
+        && state.creationId
+        && state.status !== 'ready'
+        && (!state.snapshot || !shouldDismissDesktopWorktreeSnapshot(state.snapshot))
+      ) {
+        newChatCoordinators.current.set(state.creationId, coordinator)
+      } else {
+        coordinator.dismiss()
+        coordinator.dispose()
+      }
+      setAppToast(error instanceof Error ? error.message : 'Could not start the new conversation.')
+    } finally {
+      releaseNewChatGuard(choice.guardKey)
+    }
+  }, [makeNewChatCoordinator, releaseNewChatGuard])
+
+  const cancelNewChatCheckout = useCallback(() => {
+    const choice = newChatCheckoutChoiceRef.current
+    if (!choice) return
+    newChatCheckoutChoiceRef.current = null
+    setNewChatCheckoutChoice(null)
+    releaseNewChatGuard(choice.guardKey)
+  }, [releaseNewChatGuard])
+
+  const handleWorktreeCreationAction = useCallback(async (
+    snapshot: WorktreeCreationSnapshot,
+    action: WorktreeCreationRecoveryAction,
+  ) => {
+    const coordinator = newChatCoordinators.current.get(snapshot.creationId)
+    if (!snapshot) return
+    try {
+      if (action === 'start_in_project') {
+        if (!coordinator) {
+          throw new Error('The original new-chat request is unavailable. Retry or remove the retained worktree.')
+        }
+        await coordinator.startInProject()
+        setWorktreeCreationSnapshots((current) => {
+          const next = { ...current }
+          delete next[snapshot.creationId]
+          return next
+        })
+        coordinator.dispose()
+        newChatCoordinators.current.delete(snapshot.creationId)
+        return
+      }
+      const result = coordinator
+        ? await retryDesktopWorktreeCreation({
+            snapshot,
+            action,
+            reconcile: () => coordinator.reconcile(),
+            act: (request) => window.api.worktreeCreation.act(request),
+          })
+        : await window.api.worktreeCreation.act({
+            creationId: snapshot.creationId,
+            machineId: snapshot.provenance.machineId,
+            expectedRevision: snapshot.revision,
+            action,
+          })
+      if (!('phase' in result)) return
+      const updated = result
+      if (shouldDismissDesktopWorktreeSnapshot(updated)) {
+        coordinator?.dismiss()
+        coordinator?.dispose()
+        newChatCoordinators.current.delete(snapshot.creationId)
+        setWorktreeCreationSnapshots((current) => {
+          const next = { ...current }
+          delete next[snapshot.creationId]
+          return next
+        })
+        return
+      }
+      setWorktreeCreationSnapshots((current) => ({ ...current, [snapshot.creationId]: updated }))
+      if (updated.status === 'ready' && coordinator) {
+        await coordinator.reconcile()
+        coordinator.dispose()
+        newChatCoordinators.current.delete(snapshot.creationId)
+        setWorktreeCreationSnapshots((current) => {
+          const next = { ...current }
+          delete next[snapshot.creationId]
+          return next
+        })
+      }
+    } catch (error) {
+      setAppToast(error instanceof Error ? error.message : 'Could not update worktree creation.')
+    }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    const restored: DesktopNewChatCoordinator[] = []
+    for (const entry of newChatJournal.current.list()) {
+      const coordinator = makeNewChatCoordinator()
+      restored.push(coordinator)
+      newChatCoordinators.current.set(entry.request.creationId, coordinator)
+      void coordinator.restore(entry).then((state) => {
+        if (state.snapshot && (
+          state.snapshot.status === 'ready'
+          || shouldDismissDesktopWorktreeSnapshot(state.snapshot)
+        )) {
+          coordinator.dismiss()
+          coordinator.dispose()
+          newChatCoordinators.current.delete(entry.request.creationId)
+        }
+      }).catch((error) => {
+        if (!disposed) setAppToast(error instanceof Error ? error.message : 'Could not reconcile worktree creation.')
+      })
+    }
+    return () => {
+      disposed = true
+      for (const coordinator of restored) coordinator.dispose()
+    }
+  }, [makeNewChatCoordinator])
 
   const isNewChatPending = useCallback(
     (projectPath: string, machineId: string = 'local') =>
@@ -511,6 +710,17 @@ export function App() {
   const handleSessionSelect = useCallback(
     async (session: SessionSummary, projectPath: string, machineId: string = 'local') => {
       useLayoutStore.getState().setAppView('chats')
+
+      const recoveryKey = retainedWorktreeCreationKey(session, machineId)
+      if (recoveryKey) {
+        try {
+          const snapshot = await window.api.worktreeCreation.get(recoveryKey)
+          setWorktreeCreationSnapshots((current) => ({ ...current, [snapshot.creationId]: snapshot }))
+        } catch (error) {
+          setAppToast(error instanceof Error ? error.message : 'Could not load retained worktree recovery.')
+        }
+        return
+      }
 
       // Callers that don't track the machine (e.g. bookmarks) default to 'local';
       // prefer the machine the store already knows so we don't clobber a remote binding.
@@ -591,14 +801,34 @@ export function App() {
       // so Claude CLI can --resume the conversation. Hydrate the
       // worktree pointer so a session that was created in worktree
       // mode resumes in its worktree, not the parent repo.
+      let creationSnapshot: WorktreeCreationSnapshot | null = null
+      if (session.worktreeCreationId) {
+        try {
+          creationSnapshot = await window.api.worktreeCreation.get({
+            creationId: session.worktreeCreationId,
+            machineId: effectiveMachineId,
+          })
+          if (creationSnapshot.startupReceipt?.terminalIds.length && creationSnapshot.worktreePath) {
+            useTerminalStore.getState().adoptManagedTerminals(
+              session.id,
+              creationSnapshot.startupReceipt.terminalIds,
+              creationSnapshot.worktreePath,
+            )
+          }
+        } catch (error) {
+          log.warn('worktree startup receipt recovery failed', { sessionId: session.id, error })
+        }
+      }
       addSession({
         id: session.id,
         type: resolveSessionOpenAgentType(agentTypeForSource(session.source), loaded?.meta?.agentType),
         status: 'idle',
         projectPath,
         machineId: effectiveMachineId,
+        worktreeId: creationSnapshot?.worktreeId ?? null,
         worktreePath: session.worktreePath ?? null,
         worktreeBranch: session.worktreeBranch ?? null,
+        managedTerminalIds: creationSnapshot?.startupReceipt?.terminalIds,
         resumeSessionId: resolveSessionResumeId(session.source, session.id),
         title: session.title,
       })
@@ -1113,6 +1343,33 @@ export function App() {
       </div>
 
       <StatusBar />
+
+      {newChatCheckoutChoice && (
+        <NewChatCheckoutDialog
+          projectPath={newChatCheckoutChoice.projectPath}
+          machineId={newChatCheckoutChoice.machineId}
+          recommendedCheckout={newChatCheckoutChoice.recommendedCheckout}
+          onChoose={(checkout) => { void confirmNewChatCheckout(checkout) }}
+          onCancel={cancelNewChatCheckout}
+        />
+      )}
+
+      {Object.values(worktreeCreationSnapshots).some((snapshot) => snapshot.status !== 'ready') && (
+        <div style={{
+          position: 'fixed', right: 16, bottom: 42, width: 360, zIndex: 1200,
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          {Object.values(worktreeCreationSnapshots)
+            .filter((snapshot) => snapshot.status !== 'ready')
+            .map((snapshot) => (
+              <WorktreeCreationProgress
+                key={snapshot.creationId}
+                snapshot={snapshot}
+                onAction={(action) => handleWorktreeCreationAction(snapshot, action)}
+              />
+            ))}
+        </div>
+      )}
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />

@@ -18,7 +18,11 @@ const STATUS_PRIORITY: Record<RecentSessionStatus, number> = {
   done: 2,
 }
 
-function recentSessionStatus(live: RecentLiveSession | undefined): RecentSessionStatus | undefined {
+function recentSessionStatus(
+  session: SessionSummary,
+  live: RecentLiveSession | undefined,
+): RecentSessionStatus | undefined {
+  if (session.worktreeRecovery?.cleanupDisposition === 'retained') return 'failed'
   if (live?.messages.some((message) => message.approval?.status === 'pending')) return 'approval'
   if (live?.messages.some((message) => message.question?.status === 'pending')) return 'input'
   if (live?.status === 'running' || live?.status === 'thinking') return 'working'
@@ -54,7 +58,7 @@ export function deriveRecentSessions(_input: {
       if (seen.has(key)) return null
       seen.add(key)
       const live = liveById.get(key)
-      const status = recentSessionStatus(live)
+      const status = recentSessionStatus(session, live)
       return {
         session,
         projectPath: project.path,

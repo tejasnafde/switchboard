@@ -24,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
@@ -53,6 +54,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 import app.switchboard.mobile.data.remote.NewSessionState
+import app.switchboard.mobile.data.remote.NewSessionWorkspace
 import app.switchboard.mobile.domain.remote.NewSessionDecisions
 import app.switchboard.mobile.domain.remote.NewSessionModelOption
 import app.switchboard.mobile.domain.remote.ProviderInstance
@@ -75,8 +77,17 @@ fun NewSessionScreen(
     onRuntimeMode: (RuntimeMode) -> Unit,
     onInstance: (String?) -> Unit,
     onModel: (String?) -> Unit,
+    onWorkspace: (NewSessionWorkspace) -> Unit,
     onFirstMessage: (String) -> Unit,
     onStart: () -> Unit,
+    onReconcileWorktree: () -> Unit,
+    onRetryWorktree: () -> Unit,
+    onRunWorktreeSetup: () -> Unit,
+    onSkipWorktreeSetup: () -> Unit,
+    onRetainWorktree: () -> Unit,
+    onRemoveWorktree: () -> Unit,
+    onStartInProject: () -> Unit,
+    onCancelWorktree: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val voice = rememberVoiceComposer(
@@ -122,6 +133,7 @@ fun NewSessionScreen(
                 .padding(horizontal = 16.dp),
         ) {
             val selectorsEnabled = !state.submitting && !state.launchLocked
+            val worktreePresentation = NewSessionWorktreePresentationPolicy.present(state)
             CompactSelector(
                 field = NewSessionField.PROVIDER,
                 value = NewSessionSelectorPolicy.providerLabel(state.provider),
@@ -157,7 +169,7 @@ fun NewSessionScreen(
             CompactSelector(
                 field = NewSessionField.MODEL,
                 value = NewSessionSelectorPolicy.modelLabel(state.modelOptions, state.selectedModelId),
-                options = listOf(
+                options = listOfNotNull(
                     SelectorOption("Backend default", state.selectedModelId == null) { onModel(null) },
                 ) +
                     state.modelOptions.map { model ->
@@ -181,6 +193,41 @@ fun NewSessionScreen(
                 },
                 enabled = selectorsEnabled,
             )
+
+            CompactSelector(
+                field = NewSessionField.WORKSPACE,
+                value = NewSessionWorktreePresentationPolicy.workspaceLabel(state.workspace),
+                options = listOfNotNull(
+                    SelectorOption(
+                        label = "Parent checkout",
+                        selected = state.workspace == NewSessionWorkspace.ParentCheckout,
+                    ) {
+                        onWorkspace(NewSessionWorkspace.ParentCheckout)
+                    },
+                    if (NewSessionWorktreePresentationPolicy.offersWorktreeChoice(state)) SelectorOption(
+                        label = "New worktree",
+                        selected = state.workspace is NewSessionWorkspace.Worktree,
+                    ) {
+                        onWorkspace(NewSessionWorktreePresentationPolicy.newWorktree())
+                    } else null,
+                ),
+                enabled = selectorsEnabled,
+            )
+
+            worktreePresentation?.let { presentation ->
+                WorktreeCreationStatusCard(
+                    presentation = presentation,
+                    onReconcile = onReconcileWorktree,
+                    onRetry = onRetryWorktree,
+                    onRunSetup = onRunWorktreeSetup,
+                    onSkipSetup = onSkipWorktreeSetup,
+                    onRetain = onRetainWorktree,
+                    onRemove = onRemoveWorktree,
+                    onStartInProject = onStartInProject,
+                    onCancel = onCancelWorktree,
+                    modifier = Modifier.padding(top = 16.dp),
+                )
+            }
 
             SectionLabel(
                 text = "First message",
@@ -217,7 +264,7 @@ fun NewSessionScreen(
                     .fillMaxWidth()
                     .heightIn(min = 32.dp),
             ) {
-                state.error?.let { message ->
+                state.error?.takeIf { worktreePresentation == null }?.let { message ->
                     Text(
                         text = message,
                         color = Red,
@@ -247,28 +294,186 @@ fun NewSessionScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
-                Button(
-                    onClick = onStart,
-                    enabled = !state.submitting && !state.loadingDefaults,
-                    modifier = Modifier
-                        .widthIn(min = 96.dp)
-                        .heightIn(min = 48.dp)
-                        .semantics {
-                            contentDescription = NewSessionAccessibilityPolicy.launchState(state.submitting)
-                            stateDescription = if (state.submitting) "In progress" else "Ready"
-                        },
-                ) {
-                    if (state.submitting) {
-                        CircularProgressIndicator(
-                            strokeWidth = 2.dp,
-                            modifier = Modifier
-                                .size(18.dp)
-                                .clearAndSetSemantics {},
-                        )
-                    } else {
-                        Text("Start")
+                if (worktreePresentation == null) {
+                    Button(
+                        onClick = onStart,
+                        enabled = !state.submitting && !state.loadingDefaults,
+                        modifier = Modifier
+                            .widthIn(min = 96.dp)
+                            .heightIn(min = 48.dp)
+                            .semantics {
+                                contentDescription = NewSessionAccessibilityPolicy.launchState(
+                                    submitting = state.submitting,
+                                    worktree = state.workspace is NewSessionWorkspace.Worktree,
+                                )
+                                stateDescription = if (state.submitting) "In progress" else "Ready"
+                            },
+                    ) {
+                        if (state.submitting) {
+                            CircularProgressIndicator(
+                                strokeWidth = 2.dp,
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clearAndSetSemantics {},
+                            )
+                        } else {
+                            Text(
+                                if (state.workspace is NewSessionWorkspace.Worktree) {
+                                    "Create worktree"
+                                } else {
+                                    "Start"
+                                },
+                            )
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WorktreeCreationStatusCard(
+    presentation: NewSessionWorktreePresentation,
+    onReconcile: () -> Unit,
+    onRetry: () -> Unit,
+    onRunSetup: () -> Unit,
+    onSkipSetup: () -> Unit,
+    onRetain: () -> Unit,
+    onRemove: () -> Unit,
+    onStartInProject: () -> Unit,
+    onCancel: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(16.dp))
+            .padding(16.dp)
+            .semantics {
+                liveRegion = LiveRegionMode.Polite
+                stateDescription = presentation.title
+            },
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (presentation.showProgress) {
+                CircularProgressIndicator(
+                    strokeWidth = 2.dp,
+                    modifier = Modifier
+                        .padding(end = 12.dp)
+                        .size(18.dp)
+                        .clearAndSetSemantics {},
+                )
+            }
+            Text(
+                text = presentation.title,
+                style = MaterialTheme.typography.titleSmall,
+            )
+        }
+        presentation.correlation?.let {
+            Text(
+                text = it,
+                color = TextDim,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+        presentation.detail?.let {
+            Text(
+                text = it,
+                color = Red,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .semantics { error(it) },
+            )
+        }
+        if (presentation.canRunSetup) {
+            Button(
+                onClick = onRunSetup,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text("Run setup")
+            }
+        }
+        if (presentation.canSkipSetup) {
+            OutlinedButton(
+                onClick = onSkipSetup,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text("Skip setup")
+            }
+        }
+        if (presentation.canRetry) {
+            Button(
+                onClick = onRetry,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text("Retry worktree creation")
+            }
+        }
+        if (presentation.canReconcile) {
+            OutlinedButton(
+                onClick = onReconcile,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text("Check status")
+            }
+        }
+        if (presentation.canStartInProject) {
+            OutlinedButton(
+                onClick = onStartInProject,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text("Start in project")
+            }
+        }
+        if (presentation.canRetain) {
+            OutlinedButton(
+                onClick = onRetain,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text("Keep worktree")
+            }
+        }
+        if (presentation.canRemove) {
+            OutlinedButton(
+                onClick = onRemove,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text("Remove worktree")
+            }
+        }
+        if (presentation.canCancel) {
+            OutlinedButton(
+                onClick = onCancel,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 8.dp)
+                    .heightIn(min = 48.dp),
+            ) {
+                Text("Cancel worktree creation")
             }
         }
     }
@@ -338,7 +543,12 @@ private fun CompactSelector(
 object NewSessionAccessibilityPolicy {
     fun choiceState(selected: Boolean): String = if (selected) "Selected" else "Not selected"
 
-    fun launchState(submitting: Boolean): String = if (submitting) "Starting session" else "Start session"
+    fun launchState(submitting: Boolean, worktree: Boolean = false): String = when {
+        worktree && submitting -> "Creating worktree"
+        worktree -> "Create worktree"
+        submitting -> "Starting session"
+        else -> "Start session"
+    }
 }
 
 enum class NewSessionField {
@@ -346,6 +556,7 @@ enum class NewSessionField {
     PROFILE,
     MODEL,
     RUNTIME,
+    WORKSPACE,
 }
 
 object NewSessionSelectorPolicy {
@@ -354,6 +565,7 @@ object NewSessionSelectorPolicy {
         NewSessionField.PROFILE -> "Profile"
         NewSessionField.MODEL -> "Model"
         NewSessionField.RUNTIME -> "Access"
+        NewSessionField.WORKSPACE -> "Workspace"
     }
 
     fun providerLabel(provider: ProviderKind): String = when (provider) {

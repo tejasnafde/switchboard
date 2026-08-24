@@ -19,45 +19,108 @@ import {
   listKanbanCards,
   updateKanbanCard,
   deleteKanbanCard,
-  setKanbanWorktree,
   getKanbanCard,
+  getKanbanWorktreeCreationKey,
   listInUseWorktreePaths,
 } from '../db/database'
 import {
-  createWorktree,
   removeWorktree,
   listWorktrees,
   findStaleWorktrees,
-  rmWorktreeDir,
-  worktreeRootFor,
 } from '../worktree'
 import type { KanbanCardCreate, KanbanCardUpdate } from '@shared/kanban'
+import type { KanbanWorktreeCreationIntent } from '@shared/kanban'
+import type {
+  GetWorktreeCreationRequest,
+  WorktreeCreationActionRequest,
+  WorktreeCreationRequest,
+  WorktreeCreationSnapshot,
+} from '@shared/worktree-creation'
+import {
+  buildExistingCardWorktreeRequest,
+  buildNewCardWorktreeRequest,
+} from '../kanban/worktree-requests'
 
 const log = createMainLogger('kanban')
 
-export function registerKanbanHandlers(host: BackendHost): void {
+export interface KanbanHandlerDependencies {
+  createWorktreeTransaction?: (request: WorktreeCreationRequest) => Promise<WorktreeCreationSnapshot>
+  getWorktreeCreation?: (request: GetWorktreeCreationRequest) => Promise<WorktreeCreationSnapshot>
+  actOnWorktreeCreation?: (request: WorktreeCreationActionRequest) => Promise<WorktreeCreationSnapshot>
+  createCardId?: () => string
+  createCreationId?: () => string
+  now?: () => number
+}
+
+export function registerKanbanHandlers(
+  host: BackendHost,
+  deps: KanbanHandlerDependencies = {},
+): void {
+  const createCardId = deps.createCardId ?? (() => `card_${randomUUID()}`)
+  const createCreationId = deps.createCreationId ?? randomUUID
+  const now = deps.now ?? Date.now
+
+  const removeCardWorktree = async (id: string) => {
+    const card = getKanbanCard(id)
+    if (!card?.worktreePath) return card
+    const creationKey = getKanbanWorktreeCreationKey(id)
+    if (creationKey) {
+      if (!deps.getWorktreeCreation || !deps.actOnWorktreeCreation) {
+        throw new Error('Canonical worktree cleanup is unavailable; no files were removed.')
+      }
+      const snapshot = await deps.getWorktreeCreation(creationKey)
+      const removed = await deps.actOnWorktreeCreation({
+        ...creationKey,
+        expectedRevision: snapshot.revision,
+        action: 'remove',
+      })
+      if (removed.cleanupDisposition !== 'removed') {
+        throw new Error('The worktree could not be removed safely. Commit or remove local changes, then retry.')
+      }
+      return getKanbanCard(id)
+    }
+    throw new Error(
+      'Canonical worktree identity is unavailable. Restart Switchboard to run the legacy catalog migration; no files were removed.',
+    )
+  }
+
+  const attachDurableCreation = async (card: ReturnType<typeof getKanbanCard>) => {
+    if (!card || !deps.getWorktreeCreation) return card
+    const key = getKanbanWorktreeCreationKey(card.id)
+    if (!key) return card
+    try {
+      return { ...card, worktreeCreation: await deps.getWorktreeCreation(key) }
+    } catch {
+      return card
+    }
+  }
+
   host.handle(KanbanChannels.LIST, async (projectPath: string) => {
-    return listKanbanCards(projectPath)
+    return Promise.all(listKanbanCards(projectPath).map(attachDurableCreation))
   })
 
   host.handle(KanbanChannels.CREATE, async (input: KanbanCardCreate) => {
-    const id = `card_${randomUUID()}`
+    const id = input.worktreeCreation?.cardId ?? createCardId()
+    if (input.withWorktree) {
+      if (!deps.createWorktreeTransaction) {
+        throw new Error('Worktree creation transaction is unavailable; the card was not created.')
+      }
+      const request = buildNewCardWorktreeRequest({
+        cardId: id,
+        card: input,
+        createId: createCreationId,
+        now,
+      })
+      const worktreeCreation = await deps.createWorktreeTransaction(request)
+      const card = getKanbanCard(id)
+      if (!card) throw new Error(`Kanban worktree creation ${request.creationId} did not preserve its card.`)
+      log.info(`created card ${id} through worktree transaction ${request.creationId}`)
+      return { ...card, worktreeCreation }
+    }
+
     const card = createKanbanCard(id, input)
     log.info(`created card ${id} (${input.title}) in ${input.projectPath}`)
 
-    if (input.withWorktree) {
-      try {
-        const { path, branch } = await createWorktree(input.projectPath, id, input.title)
-        const updated = setKanbanWorktree(id, path, branch)
-        return updated ?? card
-      } catch (err) {
-        // Card already created - surface the worktree failure but keep
-        // the row, so the user can retry / decide to drop the worktree
-        // requirement instead of losing their description.
-        log.warn(`worktree creation failed for ${id}: ${err instanceof Error ? err.message : String(err)}`)
-        throw err
-      }
-    }
     return card
   })
 
@@ -79,10 +142,7 @@ export function registerKanbanHandlers(host: BackendHost): void {
     if (!card) return
     if (opts?.removeWorktree && card.worktreePath) {
       try {
-        await removeWorktree(card.projectPath, card.worktreePath, {
-          force: opts.force,
-          deleteBranch: card.worktreeBranch,
-        })
+        await removeCardWorktree(id)
       } catch (err) {
         log.warn(`worktree removal failed during card delete (${id}): ${err instanceof Error ? err.message : String(err)}`)
         throw err
@@ -92,22 +152,30 @@ export function registerKanbanHandlers(host: BackendHost): void {
     log.info(`deleted card ${id}`)
   })
 
-  host.handle(KanbanChannels.CREATE_WORKTREE, async (id: string) => {
+  host.handle(KanbanChannels.CREATE_WORKTREE, async (
+    id: string,
+    intent?: KanbanWorktreeCreationIntent,
+  ) => {
     const card = getKanbanCard(id)
     if (!card) throw new Error(`Unknown card: ${id}`)
     if (card.worktreePath) return card // idempotent
-    const { path, branch } = await createWorktree(card.projectPath, id, card.title)
-    return setKanbanWorktree(id, path, branch)
+    if (deps.createWorktreeTransaction) {
+      const request = buildExistingCardWorktreeRequest({
+        card,
+        intent,
+        createId: createCreationId,
+        now,
+      })
+      const worktreeCreation = await deps.createWorktreeTransaction(request)
+      const updated = getKanbanCard(id)
+      if (!updated) throw new Error(`Kanban card ${id} disappeared during worktree creation.`)
+      return { ...updated, worktreeCreation }
+    }
+    throw new Error('Worktree creation transaction is unavailable; the card remains in the backlog.')
   })
 
-  host.handle(KanbanChannels.REMOVE_WORKTREE, async (id: string, opts?: { force?: boolean }) => {
-    const card = getKanbanCard(id)
-    if (!card?.worktreePath) return card
-    await removeWorktree(card.projectPath, card.worktreePath, {
-      force: opts?.force,
-      deleteBranch: card.worktreeBranch,
-    })
-    return setKanbanWorktree(id, null, null)
+  host.handle(KanbanChannels.REMOVE_WORKTREE, async (id: string, _opts?: { force?: boolean }) => {
+    return removeCardWorktree(id)
   })
 
   host.handle(KanbanChannels.LIST_WORKTREES, async (projectPath: string) => {
@@ -121,35 +189,20 @@ export function registerKanbanHandlers(host: BackendHost): void {
     return findStaleWorktrees(projectPath, inUse)
   })
 
-  /**
-   * Stale worktree removal - operates on a path, not a card id. Guards against
-   * arbitrary-path removal by requiring the target to appear in `git worktree list`
-   * for this repo; falls back to a `.switchboard/worktrees/` prefix check for dirs
-   * git has already pruned but are still on disk. Falls through to `rmWorktreeDir`
-   * if `git worktree remove` fails (e.g. the directory is already gone but git's
-   * metadata isn't, or the worktree is corrupt).
-   */
   host.handle(
     KanbanChannels.REMOVE_STALE_WORKTREE,
     async (projectPath: string, worktreePath: string, opts?: { force?: boolean }) => {
       const resolvedTarget = resolve(worktreePath)
       const knownWorktrees = await listWorktrees(projectPath)
       const isRegistered = knownWorktrees.some((wt) => wt.path === resolvedTarget)
-
       if (!isRegistered) {
-        // Fallback for dirs git has already pruned from its registry.
-        const root = worktreeRootFor(projectPath)
-        if (!resolvedTarget.startsWith(root)) {
-          throw new Error(`Refusing to remove worktree not registered with this repo: ${worktreePath}`)
-        }
+        throw new Error(`Refusing to remove worktree not registered with this repo: ${worktreePath}`)
       }
-
-      try {
-        await removeWorktree(projectPath, worktreePath, { force: opts?.force })
-      } catch (err) {
-        log.warn(`stale removeWorktree failed, falling back to rm: ${err instanceof Error ? err.message : String(err)}`)
-        await rmWorktreeDir(worktreePath)
+      const inUse = listInUseWorktreePaths(projectPath)
+      if (inUse.has(resolvedTarget)) {
+        throw new Error('Refusing to remove a worktree that is owned by an active conversation or card.')
       }
+      await removeWorktree(projectPath, resolvedTarget, { force: opts?.force })
       log.info(`removed stale worktree: ${worktreePath}`)
     },
   )

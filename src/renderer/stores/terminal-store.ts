@@ -142,6 +142,7 @@ interface TerminalStore {
 
   // Session lifecycle
   setActiveSession: (sessionId: string | null) => void
+  adoptManagedTerminals: (sessionId: string, terminalIds: string[], cwd: string) => void
   clearSessionLayout: (sessionId: string) => void
 
   // Launch-config tracking - used by the per-chat picker chip
@@ -179,6 +180,39 @@ export const useTerminalStore = create<TerminalStore>((set, get) => ({
   },
 
   getActivePaneId: (sessionId) => activePaneInWindow(get().getLayout(sessionId)),
+
+  adoptManagedTerminals: (sessionId, terminalIds, cwd) => {
+    if (terminalIds.length === 0 || get().getLayout(sessionId).rows.length > 0) return
+
+    const panes: Record<string, PaneState> = {}
+    const windows: Record<string, WindowState> = {}
+    const rowWindows = new Map<number, string[]>()
+    terminalIds.forEach((id, index) => {
+      const match = id.match(/-r(\d+)-p(\d+)$/)
+      const rowIndex = match ? Number(match[1]) : Number.MAX_SAFE_INTEGER
+      const windowId = `managed-window-${id}`
+      panes[id] = {
+        id,
+        label: id.endsWith('-startup') ? 'Startup' : `Terminal ${index + 1}`,
+        status: 'running',
+        sessionId,
+        cwd,
+        stale: false,
+      }
+      windows[windowId] = { id: windowId, paneIds: [id], activePaneId: id }
+      rowWindows.set(rowIndex, [...(rowWindows.get(rowIndex) ?? []), windowId])
+    })
+    const rows = [...rowWindows.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([rowIndex, windowIds]) => ({ id: `managed-row-${sessionId}-${rowIndex}`, windowIds }))
+    const activeWindowId = rows[0]?.windowIds[0] ?? null
+    set((state) => ({
+      layouts: {
+        ...state.layouts,
+        [sessionId]: { rows, windows, panes, activeWindowId },
+      },
+    }))
+  },
 
   // ── Window management ────────────────────────────────────────
 

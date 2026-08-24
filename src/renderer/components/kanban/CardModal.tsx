@@ -14,7 +14,8 @@ import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type CSS
 import { useKanbanStore } from '../../stores/kanban-store'
 import { downscaleImage } from '../../services/imageDownscale'
 import { insertSnippetWithNewlineGuards } from '../../services/insertSnippet'
-import { launchCardChat } from './cardLaunch'
+import { buildKanbanCardCreateSubmission } from './kanbanCreateIntent'
+import { describeKanbanWorktreeCreation } from './kanbanWorktreePresentation'
 import {
   KANBAN_COLUMNS,
   KANBAN_DEFAULT_RUNTIME_MODE,
@@ -165,34 +166,16 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
         return
       }
       if (mode === 'create') {
-        const newCard = await create({
+        await create(buildKanbanCardCreateSubmission({
           projectPath: selectedProjectPath,
           title: title.trim(),
           description,
           tags,
+          status,
           costCapUsd,
           runtimeMode,
           withWorktree,
-        })
-        // Opting into a worktree at create-time signals "I'm starting
-        // this work now" - auto-launch the agent in the background and
-        // promote the card to in_progress so the user doesn't have to
-        // click ▶ separately. Foreground users who just want a row in
-        // the backlog leave `withWorktree` off.
-        if (newCard && withWorktree) {
-          // The new card is already visible on the board while this launch
-          // is in flight - take the same per-card lock the board ▶ uses.
-          if (useKanbanStore.getState().beginCardLaunch(newCard.id)) {
-            try {
-              const result = await launchCardChat(newCard, { openChat: false })
-              if (!result.reused && newCard.status === 'backlog') {
-                void useKanbanStore.getState().move(newCard.id, 'in_progress')
-              }
-            } finally {
-              useKanbanStore.getState().endCardLaunch(newCard.id)
-            }
-          }
-        }
+        }))
       } else if (card) {
         await update(card.id, {
           title: title.trim(),
@@ -233,7 +216,9 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     setWorktreeBusy('attach')
     setError(null)
     try {
-      await attachWorktree(card.id)
+      const updated = await attachWorktree(card.id)
+      const presentation = describeKanbanWorktreeCreation(updated?.worktreeCreation)
+      if (presentation) setError(presentation.detail)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -243,7 +228,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
 
   const handleDetachWorktree = async () => {
     if (!card) return
-    if (!confirm('Detach + delete worktree? Uncommitted work will be lost.')) return
+    if (!confirm('Delete this worktree? Uncommitted files will be lost. The conversation and its history will remain in the project checkout.')) return
     setWorktreeBusy('detach')
     setError(null)
     try {
@@ -397,6 +382,10 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
                     style={dangerBtnStyle}
                   >{worktreeBusy === 'detach' ? 'Detaching…' : 'Detach'}</button>
                 </>
+              ) : card.conversationId ? (
+                <span style={runtimeHintStyle}>
+                  This card already has a conversation. Continue there; attaching a worktree would replace its execution context.
+                </span>
               ) : (
                 <button
                   onClick={() => { void handleAttachWorktree() }}

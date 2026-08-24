@@ -3,6 +3,18 @@
 import type { ConversationRow } from '../db/database'
 import type { SessionSummary, SessionSource } from '@shared/types'
 
+function retainedWorktreeRecovery(conversation: ConversationRow): SessionSummary['worktreeRecovery'] {
+  if (conversation.worktree_creation_status !== 'cleanup_required') return undefined
+  try {
+    const recovery = JSON.parse(conversation.worktree_creation_recovery_json ?? '{}') as { disposition?: unknown }
+    return recovery.disposition === 'retained'
+      ? { status: 'cleanup_required', cleanupDisposition: 'retained' }
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Project the app-owned roots that are allowed in the normal sidebar. */
 export function projectManagedRootSessions(
   dbConversations: ConversationRow[],
@@ -21,6 +33,8 @@ export function projectManagedRootSessions(
       agentType: conversation.agent_type,
       worktreePath: conversation.worktree_path ?? null,
       worktreeBranch: conversation.worktree_branch ?? null,
+      worktreeCreationId: conversation.worktree_creation_id ?? null,
+      worktreeRecovery: retainedWorktreeRecovery(conversation),
     }))
     .sort((a, b) => b.startedAt - a.startedAt)
 }
@@ -67,6 +81,8 @@ export function synthesizeDbOnlySessions(
       agentType: c.agent_type,
       worktreePath: c.worktree_path ?? null,
       worktreeBranch: c.worktree_branch ?? null,
+      worktreeCreationId: c.worktree_creation_id ?? null,
+      worktreeRecovery: retainedWorktreeRecovery(c),
     }))
 }
 
@@ -111,5 +127,6 @@ export function sessionSummaryToConversationRow(
     archived: 0,
     worktree_path: s.worktreePath ?? null,
     worktree_branch: s.worktreeBranch ?? null,
+    worktree_creation_id: s.worktreeCreationId ?? null,
   } as ConversationRow
 }

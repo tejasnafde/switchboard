@@ -70,7 +70,12 @@ import { claudeCandidateDirs } from '../provider/claude-session-migrate'
 import { codexCandidateDirs } from '../provider/codex-session-dirs'
 import { loadConversationHistory } from '../conversations/history'
 import { loadJsonlCached } from '../agent/jsonl-cache'
-import { forkConversation } from '../conversations/fork'
+import {
+  forkConversation,
+  type ForkInput,
+  type ForkResult,
+  type ForkWorktreeCreationResult,
+} from '../conversations/fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
 import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
 import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversationSidebarRole'
@@ -118,7 +123,11 @@ function enrichRecoveryCandidates(candidates: SessionSummary[]): SessionSummary[
   })
 }
 
-export function registerAppHandlers(host: BackendHost): void {
+export interface AppHandlerDependencies {
+  forkConversationWithWorktree?: (input: ForkInput) => Promise<ForkWorktreeCreationResult>
+}
+
+export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependencies = {}): void {
   setLaunchConfigEmitter((channel, ...args) => host.emit(channel, ...args))
 
   host.handle(AppChannels.SCAN_SESSIONS, async (projectPath: string) => {
@@ -600,12 +609,26 @@ export function registerAppHandlers(host: BackendHost): void {
       sourceConversationId: string
       upToIndex: number
       forkedAtMessageId?: string
+      creationId?: string
+      conversationId?: string
+      machineId?: string
+      requestedAt?: number
       // #5: opt the fork into a fresh git worktree branched off HEAD.
       withWorktree?: boolean
     },
   ) => {
     try {
-      const result = await forkConversation(args)
+      const result = args.withWorktree
+        ? await deps.forkConversationWithWorktree?.(args)
+        : await forkConversation(args)
+      if (!result) throw new Error('Fork worktree creation is unavailable.')
+      if ('worktreeCreation' in result) {
+        return {
+          ok: false,
+          error: `Fork worktree creation is ${result.worktreeCreation.phase}/${result.worktreeCreation.status}.`,
+          worktreeCreation: result.worktreeCreation,
+        }
+      }
       log.info(`fork: ${args.sourceConversationId} → ${result.conversation.id} resumable=${result.resumable}`)
       return { ok: true, ...result }
     } catch (err) {

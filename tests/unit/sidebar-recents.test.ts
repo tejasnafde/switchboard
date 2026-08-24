@@ -118,4 +118,29 @@ describe('deriveRecentSessions', () => {
       ['recent', 'done'],
     ])
   })
+
+  it('marks a retained worktree recovery as failed without a live chat session', () => {
+    const recoverable = {
+      id: 'recoverable',
+      source: 'claude-code' as const,
+      title: 'Recover retained worktree',
+      startedAt: 600,
+      messageCount: 0,
+      filePath: '',
+      worktreeCreationId: 'creation-retained',
+      worktreeRecovery: {
+        status: 'cleanup_required' as const,
+        cleanupDisposition: 'retained' as const,
+      },
+    }
+    const result = deriveRecentSessions({
+      localProjects: [{ ...project(), sessions: [...project().sessions, recoverable] }],
+      remoteProjects: {},
+      liveSessions: [],
+    })
+
+    expect(result.find((item) => item.session.id === 'recoverable')).toMatchObject({
+      status: 'failed',
+    })
+  })
 })

@@ -21,14 +21,18 @@ import {
   truncateCodexJsonl,
   assembleClaudeFork,
 } from '../agent/jsonl-truncate'
-import { createForkWorktree, type GitRunner } from '../worktree'
-import { makeBranchSlug } from '@shared/branchSlug'
+import type { GitRunner } from '../worktree'
 import type { ChatMessage } from '@shared/types'
+import type { WorktreeCreationSnapshot } from '@shared/worktree-creation'
 
 const log = createLogger('fork')
 
 export interface ForkInput {
   sourceConversationId: string
+  creationId?: string
+  conversationId?: string
+  machineId?: string
+  requestedAt?: number
   /**
    * 0-based position of the right-clicked message in the renderer's
    * `messages[sourceConversationId]` array. Position-based instead of
@@ -98,6 +102,8 @@ export interface ForkResult {
   worktree?: { path: string; branch: string }
 }
 
+export type ForkWorktreeCreationResult = ForkResult | { worktreeCreation: WorktreeCreationSnapshot }
+
 /**
  * Spawn a new conversation that mirrors the first N messages of `source`
  * and is wired so the underlying agent picks up real context - not just a
@@ -105,6 +111,9 @@ export interface ForkResult {
  * for the full design rationale.
  */
 export async function forkConversation(input: ForkInput): Promise<ForkResult> {
+  if (input.withWorktree) {
+    throw new Error('Worktree forks must be created through the backend worktree transaction.')
+  }
   const source = getConversationById(input.sourceConversationId)
   if (!source) {
     throw new Error(`fork: unknown source conversation ${input.sourceConversationId}`)
@@ -122,35 +131,14 @@ export async function forkConversation(input: ForkInput): Promise<ForkResult> {
   const keptMessages = sourceMessages.slice(0, upToVisibleIndex)
   const title = makeForkTitle(source.title)
 
-  // ── Worktree materialization (#5) ────────────────────────────────
-  // Done up-front so a git failure aborts the fork before any DB writes
-  // or JSONL surgery. The picked message body seeds the slug; on a
-  // successful return, `effectiveProjectPath` becomes the new worktree
-  // and the conversation row gets `worktree_path` / `worktree_branch`
-  // populated alongside `parent_conversation_id`.
-  let effectiveProjectPath = source.project_path
-  let worktreeMeta: { path: string; branch: string } | null = null
-  if (input.withWorktree) {
-    const summarySource = keptMessages[keptMessages.length - 1]?.content ?? title
-    const slug = makeBranchSlug(stripForSlug(summarySource))
-    log.info(`fork: creating worktree for ${source.id} with slug "${slug}"`)
-    const wt = await createForkWorktree(
-      // The source's own cwd, so forking a worktree chat branches off the
-      // branch the user is looking at rather than the repo's HEAD.
-      { repoRoot: source.worktree_path || source.project_path, baseRef: 'HEAD', slug },
-      input.gitRunner,
-    )
-    effectiveProjectPath = wt.path
-    worktreeMeta = wt
-  }
+  const effectiveProjectPath = source.project_path
+  const worktreeMeta = null
 
   // Encode the worktree branch into the conversation title so the
   // sidebar (which just renders `title` verbatim) calls out the new
   // branch without needing parallel knowledge of the worktree columns.
   // Plain forks keep the existing `<source> · fork` shape.
-  const displayTitle = worktreeMeta
-    ? `${stripForkSuffix(source.title)} · ${worktreeMeta.branch}`
-    : title
+  const displayTitle = title
 
   const ctx: ForkContext = {
     source,
@@ -203,23 +191,6 @@ export function resolveNativeForkIndex(
     && Math.abs(message.timestamp - selected.timestamp) <= 60_000
   )
   return legacy >= 0 ? legacy : null
-}
-
-/**
- * Trim a message body down to a slug-friendly summary. Strips fenced
- * code blocks (their contents wreck the slug) and inline code, then
- * keeps the first sentence-ish chunk. The hard cap at 80 chars matches
- * what `slugifyForBranch` would slice anyway, but trimming earlier
- * means the slug reflects the topic of the message rather than
- * arbitrary trailing punctuation.
- */
-function stripForSlug(body: string): string {
-  return body
-    .replace(/```[\s\S]*?```/g, ' ')
-    .replace(/`[^`]+`/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 80)
 }
 
 // ── Claude ────────────────────────────────────────────────────────

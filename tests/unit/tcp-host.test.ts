@@ -9,6 +9,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { createServer, connect, type Server, type Socket } from 'node:net'
 import type { AddressInfo } from 'node:net'
 import { TcpHost } from '../../src/main/backend/tcp-host'
+import { currentBackendRequestContext } from '../../src/main/backend/request-context'
 
 let server: Server | null = null
 let sock: Socket | null = null
@@ -93,7 +94,7 @@ describe('TcpHost auth gate', () => {
     expect(await r.next()).toMatchObject({ ok: true, result: 'authed' })
     expect(await r.next()).toMatchObject({
       k: 'ready',
-      capabilities: ['durable_turn_origin', 'atomic_user_turn_v1'],
+      capabilities: ['durable_turn_origin', 'atomic_user_turn_v1', 'worktree_creation_v1'],
     })
   })
 
@@ -107,6 +108,23 @@ describe('TcpHost auth gate', () => {
 })
 
 describe('TcpHost framing', () => {
+  it('carries the phone scopes into handlers and rejects terminal-scoped channels', async () => {
+    const { host, port } = await boot()
+    let terminalCalled = false
+    host.handle('scope', () => currentBackendRequestContext()?.deviceScopes)
+    host.handle('terminal:create', () => {
+      terminalCalled = true
+      return 'created'
+    })
+    const { socket, r } = await dial(port)
+
+    socket.write(JSON.stringify({ k: 'req', id: 1, ch: 'scope', args: [] }) + '\n')
+    expect(await r.next()).toMatchObject({ id: 1, ok: true, result: ['chat'] })
+    socket.write(JSON.stringify({ k: 'req', id: 2, ch: 'terminal:create', args: [] }) + '\n')
+    expect(await r.next()).toMatchObject({ id: 2, ok: false, error: expect.stringMatching(/not permitted/) })
+    expect(terminalCalled).toBe(false)
+  })
+
   it('round-trips invoke with args and rejects handler errors', async () => {
     const { host, port } = await boot()
     host.handle('add', (a: unknown, b: unknown) => (a as number) + (b as number))
@@ -155,11 +173,11 @@ describe('TcpHost framing', () => {
   it('send reaches a listener and emit pushes to the client', async () => {
     const { host, port } = await boot()
     const got: unknown[] = []
-    host.on('terminal:data', (v: unknown) => got.push(v))
+    host.on('provider:client-event', (v: unknown) => got.push(v))
     const { socket, r } = await dial(port)
-    socket.write(JSON.stringify({ k: 'snd', ch: 'terminal:data', args: ['keystroke'] }) + '\n')
+    socket.write(JSON.stringify({ k: 'snd', ch: 'provider:client-event', args: ['payload'] }) + '\n')
     await new Promise((res) => setTimeout(res, 30))
-    expect(got).toEqual(['keystroke'])
+    expect(got).toEqual(['payload'])
 
     host.emit('provider:event', { type: 'content', threadId: 't1' })
     expect(await r.next()).toMatchObject({ k: 'evt', ch: 'provider:event' })

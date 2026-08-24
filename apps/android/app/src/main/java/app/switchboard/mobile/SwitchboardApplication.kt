@@ -7,6 +7,7 @@ import app.switchboard.mobile.data.connection.NativeConnectionRepository
 import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
 import app.switchboard.mobile.data.remote.RoomBrowseSnapshotStore
+import app.switchboard.mobile.data.remote.RoomWorktreeCreationStore
 import app.switchboard.mobile.data.thread.RoomThreadSnapshotStore
 import app.switchboard.mobile.platform.notification.AndroidNotificationPermissionController
 import app.switchboard.mobile.platform.notification.NotificationRouteInbox
@@ -51,6 +52,8 @@ class SwitchboardApplication : Application() {
         private set
     lateinit var browseSnapshotStore: RoomBrowseSnapshotStore
         private set
+    lateinit var worktreeCreationStore: RoomWorktreeCreationStore
+        private set
     lateinit var threadSnapshotStore: RoomThreadSnapshotStore
         private set
 
@@ -78,6 +81,7 @@ class SwitchboardApplication : Application() {
         notificationRoutes = nativeRuntime.notificationRoutes
         notificationPermissions = nativeRuntime.notificationPermissions
         browseSnapshotStore = nativeRuntime.browseSnapshots
+        worktreeCreationStore = nativeRuntime.worktreeCreations
         threadSnapshotStore = nativeRuntime.threadSnapshots
         startupObservation = nativeRuntime.observeStartup { mutableStartupState.value = it }
         googleStartupObservation = nativeRuntime.observeGoogleStartup { mutableGoogleStartupState.value = it }

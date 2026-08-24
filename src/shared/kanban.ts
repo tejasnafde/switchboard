@@ -15,6 +15,11 @@
  */
 
 import type { RuntimeMode } from './provider-events'
+import type {
+  WorktreeCreationSnapshot,
+  WorktreeInitialAgentIntent,
+  WorktreeSetupPolicy,
+} from './worktree-creation'
 
 export type KanbanStatus = 'backlog' | 'in_progress' | 'needs_input' | 'done'
 
@@ -51,6 +56,8 @@ export interface KanbanCard {
   createdAt: number
   updatedAt: number
   completedAt: number | null
+  /** Additive transaction state for modern clients; absent on legacy/list responses. */
+  worktreeCreation?: WorktreeCreationSnapshot
 }
 
 export interface KanbanCardCreate {
@@ -58,12 +65,29 @@ export interface KanbanCardCreate {
   title: string
   description?: string
   tags?: string[]
+  /** Initial column. Older clients omit this and continue to create backlog cards. */
+  status?: KanbanStatus
   costCapUsd?: number | null
   /** Initial runtime mode for the agent. Defaults to `KANBAN_DEFAULT_RUNTIME_MODE` (`accept-edits`) when omitted. */
   runtimeMode?: RuntimeMode
   /** If true, the main process will create a git worktree under the project's `.switchboard/worktrees/` dir. */
   withWorktree?: boolean
+  /** Stable transaction identity and optional launch intent for modern backends. */
+  worktreeCreation?: KanbanWorktreeCreationIntent
 }
+
+export interface KanbanWorktreeCreationIntent {
+  cardId?: string
+  creationId?: string
+  machineId?: string
+  requestedAt?: number
+  baseRef?: string
+  setupPolicy?: WorktreeSetupPolicy
+  initialAgent?: WorktreeInitialAgentIntent
+}
+
+/** Additive response metadata. Older clients continue reading ordinary card fields. */
+export type KanbanCardWorktreeResult = KanbanCard
 
 export interface KanbanCardUpdate {
   title?: string

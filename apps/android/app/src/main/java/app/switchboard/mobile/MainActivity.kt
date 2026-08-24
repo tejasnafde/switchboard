@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
             activity = switchboardApplication::browseActivity,
             persistCollapsedWorkspaceIds = switchboardApplication::saveCollapsedWorkspaceIds,
             snapshots = switchboardApplication.browseSnapshotStore,
+            worktreeCreations = switchboardApplication.worktreeCreationStore,
             threadSnapshots = switchboardApplication.threadSnapshotStore,
             beginViewingLease = switchboardApplication::beginPushViewing,
             registerViewingRenewal = switchboardApplication::registerViewingLeaseRenewal,

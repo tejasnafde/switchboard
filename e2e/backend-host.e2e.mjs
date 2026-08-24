@@ -13,9 +13,11 @@
  * Requires a display (macOS desktop, or xvfb on Linux).
  */
 import { _electron as electron } from 'playwright'
-import { mkdtempSync, existsSync, rmSync } from 'node:fs'
+import { mkdtempSync, existsSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve, join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { prepareElectronTestRuntime } from './electron-runtime.mjs'
 
 const repoRoot = process.cwd()
 if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
@@ -23,8 +25,14 @@ if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
   process.exit(1)
 }
 
+const electronRuntime = await prepareElectronTestRuntime({ repoRoot })
 const userDataDir = mkdtempSync(join(tmpdir(), 'sb-e2e-'))
-const cleanup = () => rmSync(userDataDir, { recursive: true, force: true })
+const worktreeProject = realpathSync(mkdtempSync(join(tmpdir(), 'sb-worktree-e2e-')))
+const cleanup = () => {
+  rmSync(userDataDir, { recursive: true, force: true })
+  rmSync(worktreeProject, { recursive: true, force: true })
+  electronRuntime.cleanup()
+}
 process.once('exit', cleanup)
 process.once('SIGINT', () => process.exit(130))
 process.once('SIGTERM', () => process.exit(143))
@@ -35,7 +43,7 @@ const check = (cond, msg) => {
 }
 
 const app = await electron.launch({
-  args: ['.'],
+  args: [electronRuntime.appPath],
   cwd: repoRoot,
   env: {
     ...process.env,
@@ -54,6 +62,13 @@ async function closeApp() {
 }
 
 try {
+  execFileSync('git', ['init', '-b', 'main'], { cwd: worktreeProject })
+  execFileSync('git', ['config', 'user.email', 'switchboard-e2e@example.invalid'], { cwd: worktreeProject })
+  execFileSync('git', ['config', 'user.name', 'Switchboard E2E'], { cwd: worktreeProject })
+  writeFileSync(join(worktreeProject, 'README.md'), 'worktree transaction e2e\n')
+  execFileSync('git', ['add', 'README.md'], { cwd: worktreeProject })
+  execFileSync('git', ['commit', '-m', 'fixture'], { cwd: worktreeProject })
+
   const win = await app.firstWindow()
   await win.waitForLoadState('domcontentloaded')
   await win.waitForFunction(() => !!window.api?.files?.listAll, null, { timeout: 20_000 })
@@ -120,6 +135,48 @@ try {
     codex: await window.api.provider.isAvailable('codex'),
   }))
   check(typeof prov.claude === 'boolean' && typeof prov.codex === 'boolean', 'provider:is-available round-trips through the host seam')
+
+  // Worktree transaction - crosses the real preload/IPC/main/SQLite/Git seam.
+  // The duplicate call uses the exact same creationId and payload so it must
+  // return the canonical operation without creating a second worktree/owner.
+  const worktree = await win.evaluate(async (projectPath) => {
+    const project = await window.api.routing.invokeOn('local', 'app:add-project-path', projectPath)
+    const request = {
+      schemaVersion: 1,
+      creationId: 'e2e-worktree-creation-1',
+      repository: { projectPath, machineId: 'local' },
+      checkout: {
+        baseRef: 'HEAD',
+        branch: { namespace: 'sb', seed: 'backend-host-e2e' },
+        location: 'managed-in-repo',
+      },
+      owner: {
+        kind: 'conversation',
+        conversationId: 'e2e-worktree-conversation-1',
+        agentType: 'claude-code',
+        title: 'Worktree E2E',
+      },
+      purpose: 'new-chat',
+      setup: { policy: 'skip' },
+      provenance: { surface: 'automation', machineId: 'local', requestedAt: 1_788_000_000_000 },
+    }
+    const first = await window.api.worktreeCreation.create(request)
+    const duplicate = await window.api.worktreeCreation.create(request)
+    const fetched = await window.api.worktreeCreation.get({ creationId: request.creationId, machineId: 'local' })
+    const conversations = await window.api.app.getConversations(projectPath)
+    return { project, first, duplicate, fetched, conversations }
+  }, worktreeProject)
+  check(worktree.project?.path === worktreeProject, 'worktree owner project is durably registered before creation')
+  if (worktree.first?.status !== 'ready') {
+    console.error('worktree transaction snapshot:', JSON.stringify(worktree.first, null, 2))
+  }
+  check(worktree.first?.status === 'ready' && !!worktree.first?.worktreeId, 'worktree transaction reaches ready through the real host')
+  check(worktree.duplicate?.worktreeId === worktree.first?.worktreeId, 'same creationId returns the canonical worktree')
+  check(worktree.fetched?.revision === worktree.first?.revision, 'durable creation is queryable after completion')
+  check(
+    worktree.conversations.filter((conversation) => conversation.id === 'e2e-worktree-conversation-1').length === 1,
+    'worktree owner conversation is persisted exactly once',
+  )
 
   await win.screenshot({ path: join(tmpdir(), 'sb-e2e-shot.png') }).catch(() => {})
 } catch (err) {

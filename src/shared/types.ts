@@ -311,6 +311,13 @@ export interface SessionSummary {
    */
   worktreePath?: string | null
   worktreeBranch?: string | null
+  /** Durable backend creation journal used to recover startup receipts after renderer reload. */
+  worktreeCreationId?: string | null
+  /** Present only when a retained worktree needs recovery. Such a row is discoverable, not chat-ready. */
+  worktreeRecovery?: {
+    status: 'cleanup_required'
+    cleanupDisposition: 'retained'
+  }
   /** Populated from DB - lets the renderer skip JSONL load for terminal sessions. */
   agentType?: string | null
   /** Native discovery classification. Present only in Import/Recovery. */
@@ -400,4 +407,5 @@ export interface ConversationRow {
    */
   worktree_path?: string | null
   worktree_branch?: string | null
+  worktree_creation_id?: string | null
 }

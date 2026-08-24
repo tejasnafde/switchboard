@@ -22,6 +22,7 @@ import app.switchboard.mobile.data.outbox.OutboxRuntime
 import app.switchboard.mobile.data.outbox.RoomOutboxStore
 import app.switchboard.mobile.data.remote.ReadyClientRegistry
 import app.switchboard.mobile.data.remote.RoomBrowseSnapshotStore
+import app.switchboard.mobile.data.remote.RoomWorktreeCreationStore
 import app.switchboard.mobile.data.remote.ReadyEndpointLookup
 import app.switchboard.mobile.data.thread.RoomThreadSnapshotStore
 import app.switchboard.mobile.domain.push.ExpoPushProjectIdentity
@@ -98,6 +99,7 @@ class NativeAndroidRuntime private constructor(
     val notificationPermissions: AndroidNotificationPermissionController,
     val viewingLeaseRenewals: ViewingLeaseRenewalHooks,
     val browseSnapshots: RoomBrowseSnapshotStore,
+    val worktreeCreations: RoomWorktreeCreationStore,
     val threadSnapshots: RoomThreadSnapshotStore,
     private val pushRegistration: PushRegistrationCoordinator,
     private val pushTokenRuntime: PushTokenRuntime,
@@ -122,7 +124,10 @@ class NativeAndroidRuntime private constructor(
         wakeOutbox = outbox::onFleetChanged,
     )
     private val startupCompositionObservation = startup.observe { state ->
-        if (state is StartupRuntimeState.Ready) threadSnapshots.seed(state.offlineSnapshot)
+        if (state is StartupRuntimeState.Ready) {
+            threadSnapshots.seed(state.offlineSnapshot)
+            worktreeCreations.seed(state.offlineSnapshot.pendingWorktreeCreations)
+        }
         coordinator.onStartupState(state)
     }
     private val googleAccountObservation = startup.observeGoogle { googleAccount.refresh() }
@@ -234,6 +239,11 @@ class NativeAndroidRuntime private constructor(
             )
             val threadSnapshots = RoomThreadSnapshotStore(
                 dao = database.cacheDao(),
+                writes = java.util.concurrent.Executor { command -> scope.launch { command.run() } },
+            )
+            val worktreeCreations = RoomWorktreeCreationStore(
+                initial = emptyList(),
+                dao = database.pendingWorktreeCreationDao(),
                 writes = java.util.concurrent.Executor { command -> scope.launch { command.run() } },
             )
             val transportScheduler = ExecutorTransportScheduler()
@@ -370,6 +380,7 @@ class NativeAndroidRuntime private constructor(
                 notificationPermissions = notificationPermissions,
                 viewingLeaseRenewals = viewingLeaseRenewals,
                 browseSnapshots = browseSnapshots,
+                worktreeCreations = worktreeCreations,
                 threadSnapshots = threadSnapshots,
                 pushRegistration = pushRegistration,
                 pushTokenRuntime = pushTokenRuntime,

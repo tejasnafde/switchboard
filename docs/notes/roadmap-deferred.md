@@ -1,5 +1,11 @@
 # Roadmap - deferred features
 
+> **Worktree update (2026-08-24):** repository-scoped serialization, a real
+> setup hook, cone sparse checkout, correlated progress, canonical ownership,
+> and restart recovery shipped in the backend-owned `WorktreeCreation` saga.
+> See `docs/plans/2026-08-24-worktree-creation-transaction-design.md`; older
+> renderer-side creation notes are historical and must not become a second path.
+
 Features that have a clear product shape but are not in the immediate work
 queue. Captured here so they don't get lost when the next conversation
 boots fresh. Each section ends with a "what unblocks this" note so we

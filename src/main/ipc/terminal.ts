@@ -4,11 +4,25 @@ import { createMainLogger as createLogger } from '../logger'
 import type { TerminalCreateOptions, TerminalResizePayload, TerminalDataPayload } from '@shared/types'
 import { PtyManager } from '../terminal/pty-manager'
 import { OutputCoalescer } from '../terminal/output-coalescer'
+import {
+  FileManagedTerminalCommandLedger,
+  ManagedTerminalRuntime,
+} from '../terminal/managed-terminal-runtime'
+import { userDataDir } from '../runtime'
+import { join } from 'node:path'
 
 const log = createLogger('ipc:terminal')
 
 let ptyManager: PtyManager | null = null
 let outputCoalescer: OutputCoalescer | null = null
+const managedTerminalRuntime = new ManagedTerminalRuntime(
+  () => ptyManager,
+  new FileManagedTerminalCommandLedger(() => join(userDataDir(), 'worktree-terminal-starts')),
+)
+
+export function getManagedTerminalRuntime(): ManagedTerminalRuntime {
+  return managedTerminalRuntime
+}
 
 /**
  * Kill every pty, flush buffered output, and WAIT for node-pty's exit

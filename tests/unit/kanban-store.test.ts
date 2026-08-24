@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useKanbanStore } from '../../src/renderer/stores/kanban-store'
 import type { KanbanCard, KanbanCardUpdate } from '../../src/shared/kanban'
+import type { WorktreeCreationProgressEvent, WorktreeCreationSnapshot } from '../../src/shared/worktree-creation'
 
 function fakeCard(over: Partial<KanbanCard> = {}): KanbanCard {
   return {
@@ -125,5 +126,147 @@ describe('card launch guard', () => {
     expect(useKanbanStore.getState().beginCardLaunch('card_b')).toBe(true)
     useKanbanStore.getState().endCardLaunch('card_a')
     expect(useKanbanStore.getState().launchingCardIds.has('card_b')).toBe(true)
+  })
+})
+
+describe('transactional worktree mutations', () => {
+  it('keeps a failed worktree snapshot on the preserved backlog card', async () => {
+    const failed = {
+      creationId: 'creation-1',
+      revision: 3,
+      phase: 'materializing',
+      status: 'failed',
+      projectPath: '/p',
+      baseRef: 'HEAD',
+      owner: { kind: 'kanban-card', cardId: 'card_a' },
+      purpose: 'kanban',
+      provenance: { surface: 'desktop', machineId: 'local', requestedAt: 1 },
+      warnings: [],
+      error: { code: 'git', phase: 'materializing', message: 'Branch exists.', retryable: true },
+      recoveryActions: ['retry'],
+      updatedAt: 2,
+    } satisfies WorktreeCreationSnapshot
+    const create = vi.fn(async () => ({
+      ...fakeCard({ status: 'backlog' }),
+      worktreeCreation: failed,
+    }))
+    ;(globalThis as { window?: unknown }).window = { api: { kanban: { create } } }
+
+    const result = await useKanbanStore.getState().create({
+      projectPath: '/p',
+      title: 't',
+      withWorktree: true,
+    })
+
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      withWorktree: true,
+      worktreeCreation: expect.objectContaining({
+        cardId: expect.any(String),
+        creationId: expect.any(String),
+        machineId: 'local',
+      }),
+    }))
+    expect(result?.worktreeCreation).toEqual(failed)
+    expect(useKanbanStore.getState().byProject['/p'][0].worktreeCreation).toEqual(failed)
+  })
+
+  it('passes stable attach identity and caches the returned progress snapshot', async () => {
+    const pending = {
+      creationId: 'attach-1',
+      revision: 2,
+      phase: 'materializing',
+      status: 'pending',
+      projectPath: '/p',
+      baseRef: 'HEAD',
+      owner: { kind: 'kanban-card', cardId: 'card_a', expectedRevision: 0 },
+      purpose: 'kanban',
+      provenance: { surface: 'desktop', machineId: 'local', requestedAt: 1 },
+      warnings: [],
+      recoveryActions: [],
+      updatedAt: 2,
+    } satisfies WorktreeCreationSnapshot
+    useKanbanStore.setState({ byProject: { '/p': [fakeCard({ status: 'backlog' })] } })
+    const createWorktree = vi.fn(async () => ({ ...fakeCard(), worktreeCreation: pending }))
+    ;(globalThis as { window?: unknown }).window = { api: { kanban: { createWorktree } } }
+
+    const updated = await useKanbanStore.getState().attachWorktree('card_a')
+
+    expect(createWorktree).toHaveBeenCalledWith('card_a', expect.objectContaining({
+      creationId: expect.any(String),
+      machineId: 'local',
+    }))
+    expect(updated?.worktreeCreation).toEqual(pending)
+    expect(useKanbanStore.getState().byProject['/p'][0].worktreeCreation).toEqual(pending)
+  })
+
+  it('retries a failed creation with the journal revision and keeps the returned snapshot', async () => {
+    const failed = {
+      creationId: 'creation-1', revision: 3, phase: 'materializing', status: 'failed',
+      projectPath: '/p', baseRef: 'HEAD',
+      owner: { kind: 'kanban-card', cardId: 'card_a' }, purpose: 'kanban',
+      provenance: { surface: 'desktop', machineId: 'local', requestedAt: 1 },
+      warnings: [], recoveryActions: ['retry'], updatedAt: 2,
+    } satisfies WorktreeCreationSnapshot
+    const ready = {
+      ...failed,
+      revision: 5,
+      phase: 'ready',
+      status: 'ready',
+      worktreePath: '/p/.switchboard/worktrees/card-a',
+      branch: 'kanban/card-a',
+      recoveryActions: [],
+    } satisfies WorktreeCreationSnapshot
+    useKanbanStore.setState({
+      byProject: { '/p': [fakeCard({ status: 'backlog', worktreeCreation: failed })] },
+    })
+    const act = vi.fn(async () => ready)
+    ;(globalThis as { window?: unknown }).window = { api: { worktreeCreation: { act } } }
+
+    await useKanbanStore.getState().retryWorktree('card_a')
+
+    expect(act).toHaveBeenCalledWith({
+      creationId: 'creation-1', machineId: 'local', expectedRevision: 3, action: 'retry',
+    })
+    expect(useKanbanStore.getState().byProject['/p'][0]).toMatchObject({
+      worktreePath: '/p/.switchboard/worktrees/card-a',
+      worktreeBranch: 'kanban/card-a',
+      worktreeCreation: ready,
+    })
+  })
+
+  it('reconciles journal progress into the cached card by creation id', async () => {
+    const pending = {
+      creationId: 'creation-1', revision: 2, phase: 'materializing', status: 'pending',
+      projectPath: '/p', baseRef: 'HEAD',
+      owner: { kind: 'kanban-card', cardId: 'card_a' }, purpose: 'kanban',
+      provenance: { surface: 'desktop', machineId: 'local', requestedAt: 1 },
+      warnings: [], recoveryActions: [], updatedAt: 2,
+    } satisfies WorktreeCreationSnapshot
+    const failed = {
+      ...pending,
+      revision: 3,
+      status: 'failed',
+      error: { code: 'git', phase: 'materializing', message: 'Branch exists.', retryable: true },
+      recoveryActions: ['retry'],
+      updatedAt: 3,
+    } satisfies WorktreeCreationSnapshot
+    useKanbanStore.setState({
+      byProject: { '/p': [fakeCard({ worktreeCreation: pending })] },
+    })
+    const get = vi.fn(async () => failed)
+    ;(globalThis as { window?: unknown }).window = { api: { worktreeCreation: { get } } }
+    const event = {
+      creationId: 'creation-1',
+      revision: 3,
+      phase: 'materializing',
+      status: 'failed',
+      timestamp: 3,
+      recoveryActions: ['retry'],
+    } satisfies WorktreeCreationProgressEvent
+
+    await useKanbanStore.getState().reconcileWorktreeProgress(event)
+
+    expect(get).toHaveBeenCalledWith({ creationId: 'creation-1', machineId: 'local' })
+    expect(useKanbanStore.getState().byProject['/p'][0].worktreeCreation).toEqual(failed)
   })
 })

@@ -268,6 +268,18 @@ private class FleetLeasedRemoteRpc(
         }
     }
 
+    override fun onChannelEvent(
+        channel: String,
+        listener: (TransportScope, JsonArray) -> Unit,
+    ): Cancelable {
+        val capturedInternal = coordinator.currentScope ?: return Cancelable {}
+        return coordinator.onChannelEvent(channel) { eventScope, args ->
+            if (eventScope == capturedInternal && coordinator.currentScope == capturedInternal) {
+                listener(capturedInternal.toLease(), args)
+            }
+        }
+    }
+
     private fun TransportScope.toLease() = TransportScope(
         deviceId = deviceId,
         connectionId = connectionId,

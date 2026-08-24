@@ -2,6 +2,24 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.43 - Make worktree creation one recoverable operation
+
+### Added
+- **New-chat, Kanban, and fork worktrees now share one backend-owned creation transaction.** A client-generated `creationId` identifies a durable saga from pending through Git materialization, sparse checkout, atomic owner linkage, configured setup, terminal startup, provider launch, and an exactly-once initial prompt. Renderers submit intent and observe correlated phase progress instead of coordinating those resources themselves.
+- **Managed worktrees now have canonical identity, ownership, provenance, and product lineage.** SQLite journals interrupted creations and stores immutable worktree records while retaining the existing conversation/card path and branch columns as compatible projections. Legacy session, fork, and Kanban worktrees are conservatively catalogued without inventing lineage.
+- **Repositories can define an explicit worktree setup hook.** `.switchboard/launch-config.yaml` supports an additive worktree setup command, default setup policy, and startup ordering. Switchboard never guesses a package-manager command, and optional sparse checkout is restricted to validated cone-mode repository-relative directories.
+
+### Fixed
+- **An explicit worktree request can no longer silently start in the parent checkout.** Desktop, React Native/iOS, and native Android retain the same creation identity across reconnects and process restarts, show recoverable backend state, and require a separate explicit parent-checkout action.
+- **Partial Git, database, terminal, and provider failures no longer leave unowned or duplicate resources.** Pre-command failures reconcile branch-only and worktree-only states before compensation; once setup or startup may have mutated the tree it is retained for explicit recovery. Git/link mutations serialize per repository while unrelated repositories and long-running setup continue concurrently.
+- **Stale cleanup can no longer mistake a live session or fork worktree for an orphaned Kanban tree.** Cleanup consults the canonical catalog, active creation reservations, and every compatibility projection, and refuses path-only deletion when immutable ownership cannot be proven.
+- **Remote worktree creation now follows authenticated device scopes.** Chat-only phones may request provider-backed conversations, but cannot mutate repository setup/launch configuration, run startup commands, or spawn terminal layouts. Capability negotiation hides creation on older backends while preserving active recovery state through version skew.
+
+### Notes
+- Desktop/backend v0.8.43 and the automatic React Native/iOS OTA ship together. Native Android 0.5.6 source is complete and capability-gated by `worktree_creation_v1`, but its production APK remains a named follow-up until the production-signed physical-device upgrade matrix is exercised; v0.5.5 remains compatible.
+- The additive database migration preserves old clients' `worktree_path` and `worktree_branch` projections. Existing paths are imported with legacy provenance; missing or reused paths are tolerated and never deleted automatically during migration.
+- Automated gates cover the real Electron preload-to-IPC-to-SQLite-to-Git path, 3,029 root tests across 312 files, both root TypeScript projects, the production bundles and smoke boot, 17 React Native tests plus shared mobile contracts, and the complete Android JVM suite with Android test-source compilation. Hardware and separately hosted remote-machine scenarios remain recorded as unexercised in the parity manifest.
+
 ## 0.8.42 - Ship the stable code-copy release
 
 ### Fixed

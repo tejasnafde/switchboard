@@ -18,6 +18,7 @@ import androidx.room.migration.Migration
         CachedThreadEntity::class,
         CachedFeedRowEntity::class,
         BrowseSnapshotEntity::class,
+        PendingWorktreeCreationEntity::class,
         OutboxEntity::class,
         OutboxAttachmentEntity::class,
         ReplayStateEntity::class,
@@ -25,7 +26,7 @@ import androidx.room.migration.Migration
         MigrationCheckpointEntity::class,
         QuarantinedRecordEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class SwitchboardDatabase : RoomDatabase() {
@@ -38,6 +39,7 @@ abstract class SwitchboardDatabase : RoomDatabase() {
     abstract fun migrationDao(): MigrationDao
     abstract fun offlineSnapshotDao(): OfflineSnapshotDao
     abstract fun browseSnapshotDao(): BrowseSnapshotDao
+    abstract fun pendingWorktreeCreationDao(): PendingWorktreeCreationDao
 
     companion object {
         const val DATABASE_NAME = "switchboard-native.db"
@@ -114,8 +116,35 @@ abstract class SwitchboardDatabase : RoomDatabase() {
                 )
             }
         }
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS `pending_worktree_creations` (
+                        `creationId` TEXT NOT NULL,
+                        `connectionId` TEXT NOT NULL,
+                        `projectPath` TEXT NOT NULL,
+                        `requestJson` TEXT NOT NULL,
+                        `updatedAtMs` INTEGER NOT NULL,
+                        PRIMARY KEY(`creationId`),
+                        FOREIGN KEY(`connectionId`) REFERENCES `connections`(`id`)
+                            ON UPDATE NO ACTION ON DELETE CASCADE
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_pending_worktree_creations_connectionId` " +
+                        "ON `pending_worktree_creations` (`connectionId`)",
+                )
+                db.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                        "`index_pending_worktree_creations_connectionId_projectPath` " +
+                        "ON `pending_worktree_creations` (`connectionId`, `projectPath`)",
+                )
+            }
+        }
         private val EXPLICIT_MIGRATIONS: Array<Migration> =
-            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+            arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
         fun open(context: Context): SwitchboardDatabase = Room.databaseBuilder(
             context.applicationContext,

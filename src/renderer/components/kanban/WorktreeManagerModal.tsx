@@ -4,8 +4,8 @@
  * Lists every worktree git knows about under the current project, plus a
  * "stale" subset that cleanup will target by default. A worktree is stale
  * when (a) git itself marks it prunable, (b) the directory is missing on
- * disk, or (c) no kanban card references it. The user can also force-
- * remove an in-use worktree from here - useful when a card is wedged.
+ * disk, or (c) no durable owner references it. Owned worktrees must be
+ * removed through their conversation/card action so immutable identity is checked.
  *
  * We deliberately don't auto-clean on launch: deleting a worktree drops
  * uncommitted work, so the user always pulls the trigger themselves.
@@ -58,11 +58,12 @@ export function WorktreeManagerModal({ projectPath, onClose }: Props): React.Rea
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
-  const removeOne = async (wt: WorktreeInfo, force: boolean) => {
+  const removeOne = async (wt: WorktreeInfo, _force: boolean) => {
     const api = window.api?.kanban
     if (!api) return
-    if (wt.inUse && !force) {
-      if (!confirm(`Worktree "${wt.path}" is linked to a kanban card. Remove anyway?`)) return
+    if (wt.inUse) {
+      setError('This worktree is owned. Remove it from its conversation or card so cleanup uses canonical identity.')
+      return
     }
     setBusy(wt.path)
     setError(null)
@@ -142,7 +143,8 @@ export function WorktreeManagerModal({ projectPath, onClose }: Props): React.Rea
                 </div>
                 <button
                   onClick={() => void removeOne(wt, false)}
-                  disabled={busy !== null || loading}
+                  disabled={busy !== null || loading || wt.inUse}
+                  title={wt.inUse ? 'Remove this worktree from its owning conversation or card.' : 'Remove orphaned worktree'}
                   style={dangerBtnStyle}
                 >
                   {busy === wt.path ? 'Removing…' : 'Remove'}

@@ -64,6 +64,14 @@ describe('RoutingTable', () => {
     expect(t.resolve('terminal:create', [{ cwd: '/x', machineId: 'm2' }])).toBe('m2')
   })
 
+  it('routes worktree creation by its explicit repository machine identity', () => {
+    const t = new RoutingTable()
+    expect(t.resolve('worktree-creation:create', [{
+      creationId: 'create-1',
+      repository: { projectPath: '/repo', machineId: 'm3' },
+    }])).toBe('m3')
+  })
+
   it('binding to local clears any existing binding', () => {
     const t = new RoutingTable()
     t.bind('thr_1', 'm1')

@@ -68,6 +68,7 @@ export class IapTransport implements Transport {
   private bytesAcked = 0
   private readonly timeoutMs: number
   private readonly backendToken?: string
+  private capabilities: ReadonlySet<string> | null = null
 
   onStateChange: ((state: IapTransportState) => void) | null = null
 
@@ -173,7 +174,13 @@ export class IapTransport implements Transport {
     } else if (frame.k === 'evt') {
       const set = this.listeners.get(frame.ch)
       if (set) for (const fn of set) fn(...frame.args)
+    } else if (frame.k === 'ready') {
+      this.capabilities = new Set(frame.capabilities ?? [])
     }
+  }
+
+  supportsCapability(capability: string): boolean | undefined {
+    return this.capabilities?.has(capability)
   }
 
   private rawSend(bytes: Uint8Array): void {

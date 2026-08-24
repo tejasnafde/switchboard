@@ -9,7 +9,7 @@ import type { KanbanCard } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { useAgentStore, getStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { emitSessionCreated } from '../../services/session-events'
-import { generateTitle } from '@shared/auto-title'
+import type { AgentType, ConversationRow } from '@shared/types'
 
 const launchLog = createRendererLogger('kanban:launch')
 
@@ -116,9 +116,30 @@ export async function launchCardChat(
     window.api.app
       .unarchiveConversation(card.conversationId)
       .catch((err: unknown) => log('unarchive failed', { err: String(err) }))
-    const existing = useAgentStore
+    let existing = useAgentStore
       .getState()
       .sessions.find((s) => s.id === card.conversationId)
+    if (!existing) {
+      const rows = await window.api.app.getConversations(card.projectPath) as ConversationRow[]
+      const row = rows.find((candidate) => candidate.id === card.conversationId)
+      if (!row) {
+        throw new Error('The linked conversation is not available. Refresh the board to recover its creation state.')
+      }
+      const agentType: AgentType = row.agent_type === 'codex' || row.agent_type === 'opencode'
+        ? row.agent_type
+        : 'claude-code'
+      useAgentStore.getState().addSession({
+        id: row.id,
+        type: agentType,
+        status: 'idle',
+        projectPath: row.project_path,
+        title: row.title,
+        runtimeMode: card.runtimeMode,
+        worktreePath: row.worktree_path ?? card.worktreePath,
+        worktreeBranch: row.worktree_branch ?? card.worktreeBranch,
+      })
+      existing = useAgentStore.getState().sessions.find((session) => session.id === row.id)
+    }
     if (existing) {
       log('reuse existing session', { cardId: card.id, sessionId: existing.id })
       useAgentStore.getState().setActiveSession(existing.id)
@@ -188,12 +209,10 @@ export async function launchCardChat(
   })
   useAgentStore.getState().setActiveSession(sessionId)
 
-  // 3. Persist the conversation row + link to the card. Fire-and-forget
-  //    on the IPC; failures are logged but don't block the agent.
+  // 3. Persist identity before starting the provider. Parent-checkout launches
+  //    are not worktree transactions, but they still must not race provider work.
   const api = window.api
-  api.app
-    .createConversation({ id: sessionId, projectPath, agentType: 'claude-code', title })
-    .catch((err: unknown) => log('createConversation failed', { err: String(err) }))
+  await api.app.createConversation({ id: sessionId, projectPath, agentType: 'claude-code', title })
 
   emitSessionCreated({
     id: sessionId,
@@ -203,28 +222,7 @@ export async function launchCardChat(
     source: 'switchboard',
   })
 
-  await api.kanban
-    .update(card.id, { conversationId: sessionId })
-    .catch((err: unknown) => log('card link failed', { err: String(err) }))
-
-  // 4. Persist the user-message row so a reload reproduces the kickoff.
-  const userMsgId = `user_${Date.now()}`
-  api.app
-    .saveMessage({
-      id: userMsgId,
-      conversationId: sessionId,
-      role: 'user',
-      content: firstTurn,
-    })
-    .catch((err: unknown) => log('saveMessage failed', { err: String(err) }))
-
-  // 5. Update the title in DB if we just generated one from the message.
-  const generatedTitle = generateTitle(firstTurn)
-  if (generatedTitle && generatedTitle !== title) {
-    api.app
-      .renameConversation(sessionId, generatedTitle)
-      .catch((err: unknown) => log('renameConversation failed', { err: String(err) }))
-  }
+  await api.kanban.update(card.id, { conversationId: sessionId })
 
   // 6. Spin up the provider. cwd = worktree-or-parent. Failures here
   //    surface as a system message in the chat, not a thrown error,
@@ -245,11 +243,21 @@ export async function launchCardChat(
     return { sessionId, reused: false }
   }
 
-  // 7. Auto-send the first turn - this is the whole point of "▶". The
-  //    user already declared intent by clicking play; no draft step.
-  api.provider
-    .sendTurn(sessionId, firstTurn, runtimeMode)
-    .catch((err: unknown) => log('sendTurn failed', { err: String(err) }))
+  // 7. The backend atomically persists and dispatches this stable-origin turn.
+  //    A lost acknowledgement can be reconciled by replaying the same envelope.
+  const submission = await api.provider.submitUserTurn({
+    version: 1,
+    threadId: sessionId,
+    origin: `kanban:${card.id}:initial-prompt`,
+    providerText: firstTurn,
+    displayBody: firstTurn,
+    runtimeMode,
+    autoTitleText: firstTurn,
+  })
+  if (!submission.accepted) {
+    useAgentStore.getState().updateStatus(sessionId, 'error')
+    throw new Error(submission.reason)
+  }
 
   log('launched', { sessionId, cardId: card.id })
   return { sessionId, reused: false }

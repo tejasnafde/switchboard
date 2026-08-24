@@ -37,9 +37,11 @@ import {
 } from '@dnd-kit/core'
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
+import { describeKanbanWorktreeCreation } from './kanbanWorktreePresentation'
 import { useLayoutStore } from '../../stores/layout-store'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
 import type { RuntimeMode } from '@shared/provider-events'
+import type { WorktreeCreationRecoveryAction } from '@shared/worktree-creation'
 import type { AgentStatus, Project, Workspace } from '@shared/types'
 import { CardModal } from './CardModal'
 import { WorktreeManagerModal } from './WorktreeManagerModal'
@@ -64,7 +66,7 @@ export function KanbanView(): React.ReactElement {
   const setProjectFilter = useLayoutStore((s) => s.setKanbanProjectFilter)
   const setAppView = useLayoutStore((s) => s.setAppView)
 
-  const { byProject, hydrate, move } = useKanbanStore()
+  const { byProject, hydrate, move, reconcileWorktreeProgress } = useKanbanStore()
 
   const [projects, setProjects] = useState<Project[]>([])
   const [workspaces, setWorkspaces] = useState<Workspace[]>([])
@@ -98,6 +100,10 @@ export function KanbanView(): React.ReactElement {
     void load()
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => window.api.worktreeCreation.onProgress((event) => {
+    void reconcileWorktreeProgress(event)
+  }), [reconcileWorktreeProgress])
 
   // Projects in scope of the current workspace filter.
   const scopedProjects = useMemo(() => {
@@ -473,6 +479,7 @@ function CardTilePresentation({
   onStartAndOpen?: () => void
 }): React.ReactElement {
   const launching = useKanbanStore((s) => s.launchingCardIds.has(card.id))
+  const actOnWorktree = useKanbanStore((s) => s.actOnWorktree)
   // Subscribed only when a session is linked, so cardless tiles skip the lookup.
   const liveStatus = useAgentStore((s) =>
     card.conversationId
@@ -487,6 +494,7 @@ function CardTilePresentation({
 
   const overBudget = card.costCapUsd != null && card.costUsedUsd != null && card.costUsedUsd >= card.costCapUsd
   const hasSession = !!card.conversationId
+  const worktreeCreation = describeKanbanWorktreeCreation(card.worktreeCreation)
 
   return (
     <div
@@ -564,6 +572,30 @@ function CardTilePresentation({
         )}
         {showProjectChip && <span style={projectChipStyle}>{projectName}</span>}
         {card.worktreePath && <span title={card.worktreePath} style={badgeStyle}>⎇ worktree</span>}
+        {worktreeCreation && (
+          <span title={worktreeCreation.detail} style={{ display: 'inline-flex', gap: 4 }}>
+            <span style={{
+              ...badgeStyle,
+              color: worktreeCreation.tone === 'error' ? 'var(--red, #d73a49)' : undefined,
+            }}>
+              {worktreeCreation.label}
+            </span>
+            {card.worktreeCreation?.recoveryActions.map((action) => (
+              <button
+                key={action}
+                type="button"
+                style={badgeStyle}
+                onMouseDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void actOnWorktree(card.id, action)
+                }}
+              >
+                {worktreeActionLabel(action)}
+              </button>
+            ))}
+          </span>
+        )}
         <span style={badgeStyle} title="Initial runtime mode (change live mode from the chat panel)">
           {RUNTIME_MODE_BADGE[card.runtimeMode]}
         </span>
@@ -575,6 +607,18 @@ function CardTilePresentation({
       </div>
     </div>
   )
+}
+
+function worktreeActionLabel(action: WorktreeCreationRecoveryAction): string {
+  switch (action) {
+    case 'choose_setup_run': return 'Run setup'
+    case 'choose_setup_skip': return 'Skip setup'
+    case 'retain': return 'Keep'
+    case 'remove': return 'Remove'
+    case 'cancel': return 'Cancel'
+    case 'start_in_project': return 'Use project'
+    default: return 'Retry'
+  }
 }
 
 function Spinner(): React.ReactElement {

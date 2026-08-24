@@ -48,10 +48,14 @@ interface AgentSession {
    * by project.
    */
   worktreePath?: string | null
+  /** Immutable backend catalog identity for a managed worktree. */
+  worktreeId?: string | null
   /** Agent wrote into a different worktree - offer to follow (worktree.drift). */
   driftSuggestion?: { worktreePath: string; branch: string } | null
   /** Branch name in `worktreePath` (e.g. `sb/thread-abc123`). */
   worktreeBranch?: string | null
+  /** Stable PTY handles already created by a backend-owned workspace transaction. */
+  managedTerminalIds?: string[]
   /** Claude CLI session ID for --resume (from imported JSONL sessions) */
   resumeSessionId?: string
   /** Number of unread assistant messages (incremented when not active) */

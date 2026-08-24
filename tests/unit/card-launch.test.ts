@@ -96,10 +96,12 @@ interface MockApi {
     getConversationRuntimeMode: ReturnType<typeof vi.fn>
     setConversationRuntimeMode: ReturnType<typeof vi.fn>
     getConversationModel: ReturnType<typeof vi.fn>
+    getConversations: ReturnType<typeof vi.fn>
   }
   provider: {
     startSession: ReturnType<typeof vi.fn>
     sendTurn: ReturnType<typeof vi.fn>
+    submitUserTurn: ReturnType<typeof vi.fn>
     setRuntimeMode: ReturnType<typeof vi.fn>
     setModel: ReturnType<typeof vi.fn>
   }
@@ -118,10 +120,14 @@ function installApiMock(persistedMode: string | null = null, persistedModel: str
       getConversationRuntimeMode: vi.fn(async () => ({ mode: persistedMode })),
       setConversationRuntimeMode: vi.fn(async () => ({ ok: true })),
       getConversationModel: vi.fn(async () => ({ model: persistedModel })),
+      getConversations: vi.fn(async () => []),
     },
     provider: {
       startSession: vi.fn(async () => ({ ok: true })),
       sendTurn: vi.fn(async () => undefined),
+      submitUserTurn: vi.fn(async () => ({
+        status: 'accepted', accepted: true, duplicate: false, state: 'completed', acceptedAt: 1,
+      })),
       setRuntimeMode: vi.fn(async () => undefined),
       setModel: vi.fn(async () => undefined),
     },
@@ -221,8 +227,11 @@ describe('launchCardChat', () => {
       cwd: '/repo/.switchboard/worktrees/x',
     })
     // First turn auto-sent with title + description.
-    expect(api.provider.sendTurn).toHaveBeenCalledTimes(1)
-    expect(api.provider.sendTurn.mock.calls[0][1]).toBe('Refactor auth\n\nUse OAuth.')
+    expect(api.provider.submitUserTurn).toHaveBeenCalledTimes(1)
+    expect(api.provider.submitUserTurn).toHaveBeenCalledWith(expect.objectContaining({
+      origin: 'kanban:card_x:initial-prompt',
+      providerText: 'Refactor auth\n\nUse OAuth.',
+    }))
     // Card linked to the new conversation.
     expect(api.kanban.update).toHaveBeenCalledWith('card_x', expect.objectContaining({
       conversationId: result.sessionId,
@@ -251,6 +260,39 @@ describe('launchCardChat', () => {
     expect(result.sessionId).toBe('existing_1')
     expect(api.provider.startSession).not.toHaveBeenCalled()
     expect(api.provider.sendTurn).not.toHaveBeenCalled()
+    expect(api.provider.submitUserTurn).not.toHaveBeenCalled()
+  })
+
+  it('hydrates a durable linked conversation instead of creating a second one after renderer restart', async () => {
+    const api = installApiMock()
+    api.app.getConversations.mockResolvedValue([{
+      id: 'backend_conv',
+      project_path: '/repo',
+      agent_type: 'claude-code',
+      session_id: null,
+      title: 'Backend-owned card',
+      created_at: 1,
+      updated_at: 1,
+      worktree_path: '/repo/.switchboard/worktrees/card',
+      worktree_branch: 'kanban/card',
+    }])
+
+    const result = await launchCardChat(card({
+      conversationId: 'backend_conv',
+      worktreePath: '/repo/.switchboard/worktrees/card',
+      worktreeBranch: 'kanban/card',
+    }), { openChat: true })
+
+    expect(result).toEqual({ sessionId: 'backend_conv', reused: true })
+    expect(api.app.createConversation).not.toHaveBeenCalled()
+    expect(api.kanban.update).not.toHaveBeenCalled()
+    expect(api.provider.startSession).not.toHaveBeenCalled()
+    expect(api.provider.submitUserTurn).not.toHaveBeenCalled()
+    expect(useAgentStore.getState().sessions[0]).toMatchObject({
+      id: 'backend_conv',
+      projectPath: '/repo',
+      worktreePath: '/repo/.switchboard/worktrees/card',
+    })
   })
 
   it('unarchives the linked conversation before reusing its session (resume-from-done)', async () => {
@@ -297,7 +339,7 @@ describe('launchCardChat', () => {
     await launchCardChat(c, { openChat: false })
 
     expect(api.provider.startSession.mock.calls[0][0].runtimeMode).toBe('plan')
-    expect(api.provider.sendTurn.mock.calls[0][2]).toBe('plan')
+    expect(api.provider.submitUserTurn.mock.calls[0][0].runtimeMode).toBe('plan')
   })
 
   it('falls back to parent projectPath as cwd when no worktree is set', async () => {
@@ -318,7 +360,7 @@ describe('launchCardChat', () => {
     const result = await launchCardChat(c, { openChat: false })
 
     expect(api.provider.startSession.mock.calls[0][0].runtimeMode).toBe('full-access')
-    expect(api.provider.sendTurn.mock.calls[0][2]).toBe('full-access')
+    expect(api.provider.submitUserTurn.mock.calls[0][0].runtimeMode).toBe('full-access')
     const session = useAgentStore.getState().sessions.find((s) => s.id === result.sessionId)
     expect(session?.runtimeMode).toBe('full-access')
     expect(api.app.setConversationRuntimeMode).toHaveBeenCalledWith(result.sessionId, 'full-access')

@@ -794,6 +794,14 @@ export function Sidebar({ onSessionSelect, onNewChat, isNewChatPending }: Sideba
                           <span className="sidebar-thread-title">
                             {s.title}
                           </span>
+                          {s.worktreeRecovery?.cleanupDisposition === 'retained' && (
+                            <span
+                              title="This worktree was retained and needs recovery before the conversation can start."
+                              style={{ color: 'var(--warning)', fontSize: 10, flex: '0 0 auto' }}
+                            >
+                              Recovery
+                            </span>
+                          )}
                           <UnreadBadge sessionId={s.id} />
                           <span className="sidebar-thread-time">
                             {formatRelativeTime(s.startedAt)}

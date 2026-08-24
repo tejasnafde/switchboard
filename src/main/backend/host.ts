@@ -27,13 +27,13 @@ export class ElectronIpcHost implements BackendHost {
   handle<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => unknown): void {
     ipcMain.removeHandler(channel) // idempotent re-registration (StrictMode / reloads)
     ipcMain.handle(channel, (_event, ...args) =>
-      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE }, () => fn(...(args as A))))
+      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE, transport: 'electron' }, () => fn(...(args as A))))
   }
 
   on<A extends unknown[] = unknown[]>(channel: string, fn: (...args: A) => void): void {
     ipcMain.removeAllListeners(channel)
     ipcMain.on(channel, (_event, ...args) =>
-      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE }, () => fn(...(args as A))))
+      withBackendRequestContext({ clientScope: ELECTRON_CLIENT_SCOPE, transport: 'electron' }, () => fn(...(args as A))))
   }
 
   emit(channel: string, ...args: unknown[]): void {

@@ -195,6 +195,13 @@ export const GitChannels = {
   CREATE_SESSION_WORKTREE: 'git:create-session-worktree',
 } as const
 
+export const WorktreeCreationChannels = {
+  CREATE: 'worktree-creation:create',
+  GET: 'worktree-creation:get',
+  ACT: 'worktree-creation:act',
+  PROGRESS: 'worktree-creation:progress',
+} as const
+
 /**
  * Embedded IDE (code-server in a webview). ENSURE boots the per-app server
  * (first call pays the one-time binary download) and serves `folder`; STATUS

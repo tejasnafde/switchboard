@@ -126,6 +126,29 @@ data class BrowseSnapshotEntity(
 )
 
 @Entity(
+    tableName = "pending_worktree_creations",
+    foreignKeys = [
+        ForeignKey(
+            entity = ConnectionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["connectionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [
+        Index("connectionId"),
+        Index(value = ["connectionId", "projectPath"], unique = true),
+    ],
+)
+data class PendingWorktreeCreationEntity(
+    @androidx.room.PrimaryKey val creationId: String,
+    val connectionId: String,
+    val projectPath: String,
+    val requestJson: String,
+    val updatedAtMs: Long,
+)
+
+@Entity(
     tableName = "cached_feed_rows",
     primaryKeys = ["threadKey", "position"],
     foreignKeys = [
@@ -268,4 +291,5 @@ data class OfflineSnapshot(
     val quarantinedRecords: List<QuarantinedRecordEntity>,
     val draftAttachments: List<ComposerDraftAttachmentEntity> = emptyList(),
     val browseSnapshots: List<BrowseSnapshotEntity> = emptyList(),
+    val pendingWorktreeCreations: List<PendingWorktreeCreationEntity> = emptyList(),
 )

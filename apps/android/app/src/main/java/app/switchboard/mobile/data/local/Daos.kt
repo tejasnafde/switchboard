@@ -295,6 +295,18 @@ interface BrowseSnapshotDao {
 }
 
 @Dao
+interface PendingWorktreeCreationDao {
+    @Upsert
+    fun upsert(row: PendingWorktreeCreationEntity)
+
+    @Query("DELETE FROM pending_worktree_creations WHERE creationId = :creationId")
+    fun delete(creationId: String)
+
+    @Query("SELECT * FROM pending_worktree_creations ORDER BY updatedAtMs, creationId")
+    fun all(): List<PendingWorktreeCreationEntity>
+}
+
+@Dao
 abstract class OfflineSnapshotDao {
     @Query("SELECT * FROM connections ORDER BY id")
     protected abstract fun connections(): List<ConnectionEntity>
@@ -341,6 +353,9 @@ abstract class OfflineSnapshotDao {
     @Query("SELECT * FROM browse_snapshots ORDER BY snapshotKey")
     protected abstract fun browseSnapshots(): List<BrowseSnapshotEntity>
 
+    @Query("SELECT * FROM pending_worktree_creations ORDER BY updatedAtMs, creationId")
+    protected abstract fun pendingWorktreeCreations(): List<PendingWorktreeCreationEntity>
+
     @Transaction
     open fun read(): OfflineSnapshot = OfflineSnapshot(
         connections = connections(),
@@ -358,5 +373,6 @@ abstract class OfflineSnapshotDao {
         quarantinedRecords = quarantinedRecords(),
         draftAttachments = draftAttachments(),
         browseSnapshots = browseSnapshots(),
+        pendingWorktreeCreations = pendingWorktreeCreations(),
     )
 }

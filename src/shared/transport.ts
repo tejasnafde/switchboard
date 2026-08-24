@@ -30,4 +30,6 @@ export interface Transport {
   /** Report whether the device has a network. Retries pause while it does not,
    *  and resume the moment it returns rather than waiting out a backoff. */
   setOnline?(online: boolean): void
+  /** Undefined before the backend handshake; false once a ready frame proves absence. */
+  supportsCapability?(capability: string): boolean | undefined
 }

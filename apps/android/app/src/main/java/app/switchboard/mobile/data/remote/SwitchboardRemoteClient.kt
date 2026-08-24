@@ -26,6 +26,9 @@ import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.StartSession
 import app.switchboard.mobile.domain.remote.StartedSession
 import app.switchboard.mobile.domain.remote.Workspace
+import app.switchboard.mobile.domain.remote.WorktreeCreationRecoveryAction
+import app.switchboard.mobile.domain.remote.WorktreeCreationRequest
+import app.switchboard.mobile.domain.remote.WorktreeCreationSnapshot
 import app.switchboard.mobile.domain.push.PushBackendResult
 import app.switchboard.mobile.platform.protocol.Cancelable
 import app.switchboard.mobile.platform.protocol.RequestSubmission
@@ -70,6 +73,10 @@ object BackendChannels {
     const val PushRegister = "push:register"
     const val PushUnregister = "push:unregister"
     const val PushViewing = "push:viewing"
+    const val WorktreeCreationCreate = "worktree-creation:create"
+    const val WorktreeCreationGet = "worktree-creation:get"
+    const val WorktreeCreationAct = "worktree-creation:act"
+    const val WorktreeCreationProgress = "worktree-creation:progress"
 }
 
 class SwitchboardRemoteClient(
@@ -257,6 +264,45 @@ class SwitchboardRemoteClient(
             callback,
         )
     }
+
+    fun createWorktreeCreation(
+        request: WorktreeCreationRequest,
+        callback: (RemoteResponse<WorktreeCreationSnapshot>) -> Unit,
+    ): RequestSubmission = call(
+        BackendChannels.WorktreeCreationCreate,
+        array(WorktreeCreationWire.encodeRequest(request)),
+        WorktreeCreationWire::decodeSnapshot,
+        callback,
+    )
+
+    fun getWorktreeCreation(
+        creationId: String,
+        callback: (RemoteResponse<WorktreeCreationSnapshot?>) -> Unit,
+    ): RequestSubmission = call(
+        BackendChannels.WorktreeCreationGet,
+        array(WorktreeCreationWire.encodeGet(creationId, connectionId)),
+        { value -> if (value == null || value === JsonNull) null else WorktreeCreationWire.decodeSnapshot(value) },
+        callback,
+    )
+
+    fun actOnWorktreeCreation(
+        creationId: String,
+        expectedRevision: Long,
+        action: WorktreeCreationRecoveryAction,
+        callback: (RemoteResponse<WorktreeCreationSnapshot>) -> Unit,
+    ): RequestSubmission = call(
+        BackendChannels.WorktreeCreationAct,
+        array(WorktreeCreationWire.encodeAction(creationId, connectionId, expectedRevision, action)),
+        WorktreeCreationWire::decodeSnapshot,
+        callback,
+    )
+
+    fun onWorktreeCreationProgress(listener: (String) -> Unit): Cancelable =
+        rpc.onChannelEvent(BackendChannels.WorktreeCreationProgress) { scope, args ->
+            if (scope.connectionId == connectionId && rpc.scope == scope) {
+                WorktreeCreationWire.progressCreationId(args)?.let(listener)
+            }
+        }
 
     fun sendTurn(
         threadId: String,

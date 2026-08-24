@@ -9,6 +9,14 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { Server, Socket } from 'node:net'
 import { BACKEND_CAPABILITIES, encodeFrame, decodeFrame, type WsFrame } from '@shared/ws-protocol'
+import {
+  isChannelAllowed,
+  isFileMutationAllowed,
+  isSettingWriteAllowed,
+  PHONE_SCOPES,
+  type DeviceScope,
+} from '@shared/device-auth'
+import { AppChannels, FilesChannels } from '@shared/ipc-channels'
 import { createMainLogger as createLogger } from '../logger'
 import type { BackendHost } from './host'
 import { hashClientScope, withBackendRequestContext } from './request-context'
@@ -45,6 +53,7 @@ export class TcpHost implements BackendHost {
   constructor(
     server: Server,
     private readonly token?: string,
+    private readonly deviceScopes: readonly DeviceScope[] = PHONE_SCOPES,
   ) {
     server.on('connection', (socket) => {
       socket.setNoDelay(true)
@@ -112,6 +121,39 @@ export class TcpHost implements BackendHost {
       log.warn('dropped unparseable frame')
       return
     }
+    if ((frame.k === 'req' || frame.k === 'snd') && !isChannelAllowed(this.deviceScopes, frame.ch)) {
+      log.warn(`denied ${frame.ch} - outside this device's scopes (${this.deviceScopes.join(',')})`)
+      if (frame.k === 'req') {
+        this.write(client, { k: 'res', id: frame.id, ok: false, error: `not permitted: ${frame.ch}` })
+      }
+      return
+    }
+    if (
+      (frame.k === 'req' || frame.k === 'snd')
+      && frame.ch === AppChannels.SETTINGS_SET
+      && !isSettingWriteAllowed(this.deviceScopes, (frame.args as unknown[] | undefined)?.[0])
+    ) {
+      log.warn(`denied ${frame.ch} - protected settings key, outside this device's scopes`)
+      if (frame.k === 'req') {
+        this.write(client, { k: 'res', id: frame.id, ok: false, error: 'not permitted: protected setting' })
+      }
+      return
+    }
+    if (
+      (frame.k === 'req' || frame.k === 'snd')
+      && (frame.ch === FilesChannels.WRITE_FILE || frame.ch === FilesChannels.DELETE_FILE)
+      && !isFileMutationAllowed(
+        this.deviceScopes,
+        (frame.args as unknown[] | undefined)?.[0],
+        (frame.args as unknown[] | undefined)?.[1],
+      )
+    ) {
+      log.warn(`denied ${frame.ch} - command-bearing launch config requires terminal scope`)
+      if (frame.k === 'req') {
+        this.write(client, { k: 'res', id: frame.id, ok: false, error: 'not permitted: protected launch config' })
+      }
+      return
+    }
     if (frame.k === 'req') {
       const handler = this.handlers.get(frame.ch)
       if (!handler) {
@@ -120,7 +162,7 @@ export class TcpHost implements BackendHost {
       }
       try {
         const result = await withBackendRequestContext(
-          { clientScope: client.clientScope },
+          { clientScope: client.clientScope, transport: 'remote', deviceScopes: this.deviceScopes },
           () => handler(...frame.args),
         )
         this.write(client, { k: 'res', id: frame.id, ok: true, result })
@@ -135,7 +177,10 @@ export class TcpHost implements BackendHost {
     } else if (frame.k === 'snd') {
       const fns = this.listeners.get(frame.ch)
       if (fns) for (const fn of fns) {
-        withBackendRequestContext({ clientScope: client.clientScope }, () => fn(...frame.args))
+        withBackendRequestContext(
+          { clientScope: client.clientScope, transport: 'remote', deviceScopes: this.deviceScopes },
+          () => fn(...frame.args),
+        )
       }
     } else if (frame.k === 'hello') {
       this.writeReady(client)

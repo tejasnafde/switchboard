@@ -45,6 +45,10 @@ import { disposeUsageProbes } from './provider/usage'
 import { getDb, closeDb, getSetting, setSetting, getProjects } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
+import {
+  createDefaultWorktreeCreationRuntime,
+  type WorktreeCreationRuntime,
+} from './worktree-creation/runtime'
 
 const log = createMainLogger('tour')
 import { AppChannels, ProviderInstanceChannels } from '@shared/ipc-channels'
@@ -58,6 +62,7 @@ let detachPush: (() => void) | null = null
 
 let mainWindow: BrowserWindow | null = null
 let providerRegistry: ProviderRegistry | null = null
+let worktreeCreationRuntime: WorktreeCreationRuntime | null = null
 /** Mobile pairing WS endpoint (null when no token is configured). */
 let mobileEndpoint: MobileEndpoint | null = null
 /** True once the user has asked for restart-and-install; repeats are dropped. */
@@ -580,14 +585,32 @@ app.whenReady().then(() => {
 
   registerTerminalHandlers(backendHost)
   registerAgentHandlers(backendHost)
-  registerAppHandlers(backendHost)
+  registerAppHandlers(backendHost, {
+    forkConversationWithWorktree: (input) => {
+      if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
+      return worktreeCreationRuntime.forkConversationWithWorktree(input)
+    },
+  })
   registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
   registerFilesHandlers(backendHost)
   registerGitHandlers(backendHost)
   registerSttHandlers(backendHost)
   registerIdeHandlers(backendHost)
-  registerKanbanHandlers(backendHost)
+  registerKanbanHandlers(backendHost, {
+    createWorktreeTransaction: (request) => {
+      if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
+      return worktreeCreationRuntime.createWorktreeTransaction(request)
+    },
+    getWorktreeCreation: (request) => {
+      if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
+      return worktreeCreationRuntime.getWorktreeCreation(request)
+    },
+    actOnWorktreeCreation: (request) => {
+      if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
+      return worktreeCreationRuntime.actOnWorktreeCreation(request)
+    },
+  })
   registerProviderInstanceHandlers(backendHost)
   // Local-only resolver: hand preload an instance's oauth_dir BASENAME (a path
   // segment, not a secret) so it can forward it to a remote at session start.
@@ -609,6 +632,7 @@ app.whenReady().then(() => {
 
   // Provider registry - new agent bridge (SDK-based)
   providerRegistry = new ProviderRegistry(backendHost)
+  worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(backendHost, () => providerRegistry)
   detachPush = attachPushNotifier(providerRegistry.bus, {
     // OS-level idle, so it is true whatever window is in front. The headless
     // server passes nothing and therefore never suppresses.
@@ -630,14 +654,33 @@ app.whenReady().then(() => {
         : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
       registerAgentHandlers(reactivatedHost)
-      registerAppHandlers(reactivatedHost)
+      registerAppHandlers(reactivatedHost, {
+        forkConversationWithWorktree: (input) => {
+          if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
+          return worktreeCreationRuntime.forkConversationWithWorktree(input)
+        },
+      })
       registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)
       registerFilesHandlers(reactivatedHost)
       registerGitHandlers(reactivatedHost)
       registerSttHandlers(reactivatedHost)
       registerIdeHandlers(reactivatedHost)
-      registerKanbanHandlers(reactivatedHost)
+      registerKanbanHandlers(reactivatedHost, {
+        createWorktreeTransaction: (request) => {
+          if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
+          return worktreeCreationRuntime.createWorktreeTransaction(request)
+        },
+        getWorktreeCreation: (request) => {
+          if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
+          return worktreeCreationRuntime.getWorktreeCreation(request)
+        },
+        actOnWorktreeCreation: (request) => {
+          if (!worktreeCreationRuntime) throw new Error('Worktree creation runtime is not ready.')
+          return worktreeCreationRuntime.actOnWorktreeCreation(request)
+        },
+      })
+      worktreeCreationRuntime?.registerHost(reactivatedHost)
       registerMachineHandlers(reactivatedHost)
       registerAutoUpdater(mainWindow)
 

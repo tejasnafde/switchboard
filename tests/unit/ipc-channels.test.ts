@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { AppChannels, AgentChannels, TerminalChannels } from '@shared/ipc-channels'
+import {
+  AppChannels,
+  AgentChannels,
+  TerminalChannels,
+  WorktreeCreationChannels,
+} from '@shared/ipc-channels'
 
 describe('IPC channel constants', () => {
   it('should have all conversation CRUD channels', () => {
@@ -17,8 +22,18 @@ describe('IPC channel constants', () => {
       ...Object.values(TerminalChannels),
       ...Object.values(AppChannels),
       ...Object.values(AgentChannels),
+      ...Object.values(WorktreeCreationChannels),
     ]
     const unique = new Set(allChannels)
     expect(unique.size).toBe(allChannels.length)
+  })
+
+  it('exposes only the transaction command, query, action, and progress channels', () => {
+    expect(WorktreeCreationChannels).toEqual({
+      CREATE: 'worktree-creation:create',
+      GET: 'worktree-creation:get',
+      ACT: 'worktree-creation:act',
+      PROGRESS: 'worktree-creation:progress',
+    })
   })
 })

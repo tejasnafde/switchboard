@@ -5,7 +5,7 @@
  */
 import { WsTransport } from '@shared/ws-transport'
 import type { Transport } from '@shared/transport'
-import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PushChannels, SttChannels } from '@shared/ipc-channels'
+import { AppChannels, MachineChannels, ProviderChannels, ProviderInstanceChannels, PushChannels, SttChannels, WorktreeCreationChannels } from '@shared/ipc-channels'
 import type { SttTranscribeRequest, SttTranscribeResult } from '@shared/stt'
 import type {
   RuntimeEvent,
@@ -20,6 +20,13 @@ import type {
 import type { ModelOption } from '@shared/models'
 import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
+import type {
+  GetWorktreeCreationRequest,
+  WorktreeCreationActionRequest,
+  WorktreeCreationProgressEvent,
+  WorktreeCreationRequest,
+  WorktreeCreationSnapshot,
+} from '@shared/worktree-creation'
 import {
   SETTING_DEFAULT_INSTANCE_ID,
   defaultModelSettingKey,
@@ -66,6 +73,10 @@ export class SwitchboardClient {
    * work VM reached through Google IAP. Everything below is framing-agnostic.
    */
   constructor(readonly transport: Transport) {}
+
+  supportsCapability(capability: string): boolean | undefined {
+    return this.transport.supportsCapability?.(capability)
+  }
 
   /**
    * LAN / tunnelled backend over WebSocket.
@@ -141,6 +152,22 @@ export class SwitchboardClient {
 
   createConversation(params: CreateConversationParams): Promise<void> {
     return this.transport.invoke(AppChannels.CREATE_CONVERSATION, params)
+  }
+
+  createWorktreeCreation(request: WorktreeCreationRequest): Promise<WorktreeCreationSnapshot> {
+    return this.transport.invoke(WorktreeCreationChannels.CREATE, request)
+  }
+
+  getWorktreeCreation(request: GetWorktreeCreationRequest): Promise<WorktreeCreationSnapshot> {
+    return this.transport.invoke(WorktreeCreationChannels.GET, request)
+  }
+
+  actOnWorktreeCreation(request: WorktreeCreationActionRequest): Promise<WorktreeCreationSnapshot> {
+    return this.transport.invoke(WorktreeCreationChannels.ACT, request)
+  }
+
+  onWorktreeCreationProgress(handler: (event: WorktreeCreationProgressEvent) => void): () => void {
+    return this.transport.on(WorktreeCreationChannels.PROGRESS, handler)
   }
 
   /** Persist the read point and broadcast it, so the Mac's badge clears too. */

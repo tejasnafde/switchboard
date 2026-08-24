@@ -15,6 +15,17 @@ import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.SessionDefaults
 import app.switchboard.mobile.domain.remote.StartSession
 import app.switchboard.mobile.domain.remote.StartedSession
+import app.switchboard.mobile.domain.remote.WorktreeCreationCommand
+import app.switchboard.mobile.domain.remote.WorktreeCreationOwner
+import app.switchboard.mobile.domain.remote.WorktreeCreationPhase
+import app.switchboard.mobile.domain.remote.WorktreeCreationRecoveryAction
+import app.switchboard.mobile.domain.remote.WorktreeCreationRequest
+import app.switchboard.mobile.domain.remote.WorktreeCreationSnapshot
+import app.switchboard.mobile.domain.remote.WorktreeCreationStatus
+import app.switchboard.mobile.domain.remote.WorktreeLaunchAgent
+import app.switchboard.mobile.domain.remote.WorktreeSetupPolicy
+import app.switchboard.mobile.domain.remote.WorktreeStartupReceipt
+import java.io.Closeable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -46,6 +57,65 @@ fun interface NewSessionClock {
     fun nowMs(): Long
 }
 
+fun interface WorktreeCreationIdSource {
+    fun nextCreationId(): String
+}
+
+interface NewSessionWorktreeCreationPort {
+    fun submit(
+        command: WorktreeCreationCommand,
+        callback: (RemoteResponse<WorktreeCreationSnapshot>) -> Unit,
+    )
+
+    fun get(
+        creationId: String,
+        callback: (RemoteResponse<WorktreeCreationSnapshot?>) -> Unit,
+    )
+
+    fun observe(observer: (WorktreeCreationSnapshot) -> Unit): Closeable
+}
+
+interface NewSessionWorktreeCreationStore {
+    fun save(
+        creation: WorktreeCreationRequest,
+        completion: (Result<Unit>) -> Unit,
+    )
+    fun load(connectionId: String, projectPath: String): WorktreeCreationRequest?
+    fun clear(creationId: String)
+}
+
+sealed interface NewSessionWorkspace {
+    data object ParentCheckout : NewSessionWorkspace
+
+    data class Worktree(
+        val baseRef: String,
+        val setupPolicy: WorktreeSetupPolicy,
+    ) : NewSessionWorkspace
+}
+
+private object NoWorktreeCreationPort : NewSessionWorktreeCreationPort {
+    override fun submit(
+        command: WorktreeCreationCommand,
+        callback: (RemoteResponse<WorktreeCreationSnapshot>) -> Unit,
+    ) = Unit
+
+    override fun get(
+        creationId: String,
+        callback: (RemoteResponse<WorktreeCreationSnapshot?>) -> Unit,
+    ) = Unit
+
+    override fun observe(observer: (WorktreeCreationSnapshot) -> Unit): Closeable = Closeable {}
+}
+
+object EmptyNewSessionWorktreeCreationStore : NewSessionWorktreeCreationStore {
+    override fun save(
+        creation: WorktreeCreationRequest,
+        completion: (Result<Unit>) -> Unit,
+    ) = completion(Result.failure(IllegalStateException("Worktree creation storage is unavailable")))
+    override fun load(connectionId: String, projectPath: String): WorktreeCreationRequest? = null
+    override fun clear(creationId: String) = Unit
+}
+
 data class NewSessionState(
     val connectionId: String,
     val projectPath: String,
@@ -61,6 +131,9 @@ data class NewSessionState(
     val loadingDefaults: Boolean = true,
     val submitting: Boolean = false,
     val launchLocked: Boolean = false,
+    val worktreeAvailable: Boolean = false,
+    val workspace: NewSessionWorkspace = NewSessionWorkspace.ParentCheckout,
+    val worktreeRecord: WorktreeCreationSnapshot? = null,
     val error: String? = null,
 )
 
@@ -68,6 +141,10 @@ data class NewSessionStarted(
     val threadId: String,
     val title: String,
     val projectPath: String,
+    val worktreePath: String? = null,
+    val branch: String? = null,
+    val worktreeId: String? = null,
+    val creationId: String? = null,
 )
 
 class NewSessionCoordinator(
@@ -80,9 +157,15 @@ class NewSessionCoordinator(
     private val ids: NewSessionIdSource,
     private val clock: NewSessionClock,
     private val onStarted: (NewSessionStarted) -> Unit,
-) {
+    private val worktrees: NewSessionWorktreeCreationPort = NoWorktreeCreationPort,
+    private val worktreeStore: NewSessionWorktreeCreationStore = EmptyNewSessionWorktreeCreationStore,
+    private val creationIds: WorktreeCreationIdSource = WorktreeCreationIdSource {
+        "worktree-${ids.nextThreadId()}"
+    },
+    private val worktreeAvailable: Boolean = false,
+) : Closeable {
     private val mutableState = MutableStateFlow(
-        NewSessionState(connectionId, projectPath, projectName),
+        NewSessionState(connectionId, projectPath, projectName, worktreeAvailable = worktreeAvailable),
     )
     val state = mutableState.asStateFlow()
 
@@ -92,8 +175,32 @@ class NewSessionCoordinator(
     private var modelTouched = false
     private var requestedDefaultInstanceId: String? = null
     private var launch: Launch? = null
+    private var worktreeRequest: WorktreeCreationRequest? = null
+    private var worktreeBackendKnowledge = WorktreeBackendKnowledge.NotSubmitted
+    private val worktreeObserver = worktrees.observe(::acceptWorktreeSnapshot)
+    private var closed = false
+
+    @Synchronized
+    override fun close() {
+        if (closed) return
+        closed = true
+        worktreeObserver.close()
+    }
 
     fun load() {
+        worktreeStore.load(connectionId, projectPath)?.let { recovered ->
+            worktreeRequest = recovered
+            worktreeBackendKnowledge = WorktreeBackendKnowledge.Unknown
+            mutableState.value = mutableState.value.copy(
+                workspace = NewSessionWorkspace.Worktree(
+                    baseRef = recovered.baseRef,
+                    setupPolicy = recovered.setupPolicy,
+                ),
+                launchLocked = true,
+                submitting = true,
+            )
+            queryWorktree(recovered.creationId)
+        }
         remote.listProviderInstances { response ->
             synchronized(this) {
                 if (!accepts(response)) return@listProviderInstances
@@ -165,8 +272,19 @@ class NewSessionCoordinator(
     }
 
     @Synchronized
+    fun selectWorkspace(workspace: NewSessionWorkspace) {
+        if (mutableState.value.launchLocked) return
+        if (workspace is NewSessionWorkspace.Worktree && !worktreeAvailable) return
+        mutableState.value = mutableState.value.copy(workspace = workspace, error = null)
+    }
+
+    @Synchronized
     fun submit() {
         if (mutableState.value.submitting) return
+        if (mutableState.value.workspace is NewSessionWorkspace.Worktree) {
+            submitWorktreeCreation()
+            return
+        }
         val existing = launch
         if (existing?.stage == LaunchStage.Started) {
             durableFirstMessage(existing)
@@ -186,6 +304,265 @@ class NewSessionCoordinator(
         ).also { launch = it }
         mutableState.value = mutableState.value.copy(submitting = true, error = null)
         if (current.stage == LaunchStage.Created) start(current) else create(current)
+    }
+
+    @Synchronized
+    fun retryWorktreeCreation() {
+        val request = worktreeRequest ?: return
+        val snapshot = mutableState.value.worktreeRecord
+        if (snapshot != null) {
+            actOnWorktree(WorktreeCreationRecoveryAction.Retry)
+        } else when (worktreeBackendKnowledge) {
+            WorktreeBackendKnowledge.NotSubmitted,
+            WorktreeBackendKnowledge.Absent,
+            -> {
+                mutableState.value = mutableState.value.copy(submitting = true, error = null)
+                persistAndSubmitWorktree(request)
+            }
+            WorktreeBackendKnowledge.Unknown,
+            WorktreeBackendKnowledge.Present,
+            -> {
+                mutableState.value = mutableState.value.copy(submitting = true, error = null)
+                queryWorktree(request.creationId)
+            }
+        }
+    }
+
+    @Synchronized
+    fun reconcileWorktreeCreation() {
+        val request = worktreeRequest ?: return
+        mutableState.value = mutableState.value.copy(error = null)
+        queryWorktree(request.creationId)
+    }
+
+    @Synchronized
+    fun useParentCheckout() {
+        val request = worktreeRequest ?: return
+        val snapshot = mutableState.value.worktreeRecord ?: return
+        if (
+            WorktreeCreationRecoveryAction.StartInProject !in snapshot.recoveryActions ||
+            snapshot.status != WorktreeCreationStatus.Failed ||
+            snapshot.phase != WorktreeCreationPhase.Materializing
+        ) {
+            return
+        }
+        val owner = request.owner as? WorktreeCreationOwner.Conversation ?: return
+        val provider = NewSessionDecisions.providers
+            .firstOrNull { it.agentType == request.launchAgent.provider }
+            ?.kind
+            ?: return fail("The saved worktree provider is no longer available.")
+        val runtimeMode = RuntimeMode.entries
+            .firstOrNull { it.wire == request.launchAgent.runtimeMode }
+            ?: return fail("The saved worktree runtime mode is no longer available.")
+        val parentLaunch = Launch(
+            threadId = owner.conversationId,
+            provider = provider,
+            agentType = owner.agentType,
+            runtimeMode = runtimeMode,
+            instanceId = request.launchAgent.instanceId,
+            modelId = request.launchAgent.model,
+            message = request.launchAgent.prompt.orEmpty(),
+            stage = LaunchStage.New,
+        )
+        worktreeStore.clear(request.creationId)
+        worktreeRequest = null
+        worktreeBackendKnowledge = WorktreeBackendKnowledge.NotSubmitted
+        launch = parentLaunch
+        mutableState.value = mutableState.value.copy(
+            provider = provider,
+            runtimeMode = runtimeMode,
+            selectedInstanceId = request.launchAgent.instanceId,
+            selectedModelId = request.launchAgent.model,
+            workspace = NewSessionWorkspace.ParentCheckout,
+            worktreeRecord = null,
+            submitting = true,
+            launchLocked = true,
+            error = null,
+        )
+        create(parentLaunch)
+    }
+
+    @Synchronized
+    fun cancelWorktreeCreation() {
+        actOnWorktree(WorktreeCreationRecoveryAction.Cancel)
+    }
+
+    @Synchronized
+    fun chooseWorktreeSetup(run: Boolean) {
+        actOnWorktree(
+            if (run) {
+                WorktreeCreationRecoveryAction.ChooseSetupRun
+            } else {
+                WorktreeCreationRecoveryAction.ChooseSetupSkip
+            },
+        )
+    }
+
+    @Synchronized
+    fun retainWorktree() {
+        actOnWorktree(WorktreeCreationRecoveryAction.Retain)
+    }
+
+    @Synchronized
+    fun removeWorktree() {
+        actOnWorktree(WorktreeCreationRecoveryAction.Remove)
+    }
+
+    private fun submitWorktreeCreation() {
+        val workspace = mutableState.value.workspace as? NewSessionWorkspace.Worktree ?: return
+        val provider = mutableState.value.provider
+        val agentType = NewSessionDecisions.providers.first { it.kind == provider }.agentType
+        val request = worktreeRequest ?: WorktreeCreationRequest(
+            creationId = creationIds.nextCreationId(),
+            machineId = connectionId,
+            projectPath = projectPath,
+            baseRef = workspace.baseRef,
+            branchSeed = mutableState.value.projectName,
+            owner = WorktreeCreationOwner.Conversation(
+                conversationId = ids.nextThreadId(),
+                agentType = agentType,
+            ),
+            setupPolicy = workspace.setupPolicy,
+            launchAgent = WorktreeLaunchAgent(
+                provider = agentType,
+                runtimeMode = mutableState.value.runtimeMode.wire,
+                model = mutableState.value.selectedModelId,
+                instanceId = mutableState.value.selectedInstanceId,
+                prompt = mutableState.value.firstMessage.trim().ifEmpty { null },
+            ),
+            requestedAt = clock.nowMs(),
+        ).also { worktreeRequest = it }
+        mutableState.value = mutableState.value.copy(
+            submitting = true,
+            launchLocked = true,
+            error = null,
+        )
+        persistAndSubmitWorktree(request)
+    }
+
+    private fun persistAndSubmitWorktree(request: WorktreeCreationRequest) {
+        worktreeStore.save(request) { result ->
+            synchronized(this) {
+                if (worktreeRequest?.creationId != request.creationId) return@save
+                result.fold(
+                    onSuccess = {
+                        worktreeBackendKnowledge = WorktreeBackendKnowledge.Unknown
+                        submitWorktree(WorktreeCreationCommand.Ensure(request))
+                    },
+                    onFailure = { error ->
+                        mutableState.value = mutableState.value.copy(
+                            submitting = false,
+                            error = error.message ?: "Could not save worktree creation for retry",
+                        )
+                    },
+                )
+            }
+        }
+    }
+
+    private fun submitWorktree(command: WorktreeCreationCommand) {
+        worktrees.submit(command) { response ->
+            synchronized(this) {
+                if (!accepts(response)) return@submit
+                when (val outcome = response.outcome) {
+                    is RemoteOutcome.Success -> acceptWorktreeSnapshot(outcome.value)
+                    is RemoteOutcome.Failure -> {
+                        mutableState.value = mutableState.value.copy(
+                            submitting = true,
+                            error = outcome.message,
+                        )
+                        worktreeRequest?.let { queryWorktree(it.creationId) }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun queryWorktree(creationId: String) {
+        worktrees.get(creationId) { response ->
+            synchronized(this) {
+                if (!accepts(response)) return@get
+                when (val outcome = response.outcome) {
+                    is RemoteOutcome.Success -> {
+                        val snapshot = outcome.value
+                        if (snapshot == null) {
+                            worktreeBackendKnowledge = WorktreeBackendKnowledge.Absent
+                            mutableState.value = mutableState.value.copy(
+                                submitting = false,
+                                error = "The backend has no record of this saved creation. Retry to submit it safely.",
+                            )
+                        } else {
+                            acceptWorktreeSnapshot(snapshot)
+                        }
+                    }
+                    is RemoteOutcome.Failure -> mutableState.value = mutableState.value.copy(
+                        submitting = false,
+                        error = outcome.message,
+                    )
+                }
+            }
+        }
+    }
+
+    @Synchronized
+    private fun acceptWorktreeSnapshot(snapshot: WorktreeCreationSnapshot) {
+        if (closed) return
+        val request = worktreeRequest ?: return
+        val current = mutableState.value.worktreeRecord
+        if (snapshot.creationId != request.creationId || (current != null && snapshot.revision <= current.revision)) return
+        worktreeBackendKnowledge = WorktreeBackendKnowledge.Present
+        val authoritativeReady = snapshot.isAuthoritativeReady()
+        mutableState.value = mutableState.value.copy(
+            worktreeRecord = snapshot,
+            submitting = snapshot.status == WorktreeCreationStatus.Pending,
+            error = snapshot.error?.message ?: when {
+                snapshot.status == WorktreeCreationStatus.Failed -> "Worktree creation failed."
+                snapshot.status == WorktreeCreationStatus.Ready && !authoritativeReady ->
+                    "Worktree creation completed without authoritative startup metadata. Retry reconciliation."
+                else -> null
+            },
+        )
+        if (
+            snapshot.status == WorktreeCreationStatus.Cancelled ||
+            (snapshot.status == WorktreeCreationStatus.RolledBack && snapshot.recoveryActions.isEmpty())
+        ) {
+            worktreeStore.clear(snapshot.creationId)
+            return
+        }
+        if (!authoritativeReady) return
+        worktreeStore.clear(snapshot.creationId)
+        mutableState.value = mutableState.value.copy(submitting = false, error = null)
+        val owner = snapshot.owner as WorktreeCreationOwner.Conversation
+        onStarted(
+            NewSessionStarted(
+                threadId = owner.conversationId,
+                title = mutableState.value.projectName,
+                projectPath = snapshot.projectPath,
+                worktreePath = snapshot.worktreePath,
+                branch = snapshot.branch,
+                worktreeId = snapshot.worktreeId,
+                creationId = snapshot.creationId,
+            ),
+        )
+    }
+
+    private fun WorktreeCreationSnapshot.isAuthoritativeReady(): Boolean =
+        status == WorktreeCreationStatus.Ready && owner is WorktreeCreationOwner.Conversation &&
+            worktreeId != null && worktreePath != null && branch != null &&
+            startupReceipt?.status == WorktreeStartupReceipt.Status.Succeeded &&
+            startupReceipt.providerThreadId == owner.conversationId
+
+    private fun actOnWorktree(action: WorktreeCreationRecoveryAction) {
+        val snapshot = mutableState.value.worktreeRecord ?: return
+        if (action !in snapshot.recoveryActions) return
+        mutableState.value = mutableState.value.copy(submitting = true, error = null)
+        submitWorktree(
+            WorktreeCreationCommand.Act(
+                creationId = snapshot.creationId,
+                expectedRevision = snapshot.revision,
+                action = action,
+            ),
+        )
     }
 
     private fun loadDefaults(provider: ProviderKind) {
@@ -336,7 +713,7 @@ class NewSessionCoordinator(
     }
 
     private fun accepts(response: RemoteResponse<*>): Boolean =
-        response.key.connectionId == connectionId && response.key.generation == generation
+        !closed && response.key.connectionId == connectionId && response.key.generation == generation
 
     private data class Launch(
         val threadId: String,
@@ -350,6 +727,8 @@ class NewSessionCoordinator(
     )
 
     private enum class LaunchStage { New, Created, Started }
+
+    private enum class WorktreeBackendKnowledge { NotSubmitted, Unknown, Absent, Present }
 
     companion object {
         const val DEFAULT_RUNTIME_MODE_KEY = "chat.defaultRuntimeMode"

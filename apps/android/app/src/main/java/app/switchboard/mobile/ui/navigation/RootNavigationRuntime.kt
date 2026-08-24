@@ -3,6 +3,8 @@ package app.switchboard.mobile.ui.navigation
 import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.BrowseSnapshotStore
 import app.switchboard.mobile.data.remote.EmptyBrowseSnapshotStore
+import app.switchboard.mobile.data.remote.EmptyNewSessionWorktreeCreationStore
+import app.switchboard.mobile.data.remote.NewSessionWorktreeCreationStore
 import app.switchboard.mobile.data.local.OfflineSnapshot
 import app.switchboard.mobile.data.thread.ThreadSessionRemote
 import app.switchboard.mobile.data.thread.ThreadSnapshotStore
@@ -46,6 +48,8 @@ interface RootNavigationRuntime {
         get() = EmptyQueuedTurns
     val threadSnapshots: ThreadSnapshotStore
         get() = NoOpThreadSnapshotStore
+    val worktreeCreations: NewSessionWorktreeCreationStore
+        get() = EmptyNewSessionWorktreeCreationStore
 
     fun lease(connectionId: String): ReadyClientLease?
 

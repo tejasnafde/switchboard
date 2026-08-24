@@ -133,6 +133,39 @@ Each pane (whether under `terminals:` or a row's `panes:`) accepts:
 No other fields are read. Don't invent keys (e.g. `env`, `color`, `shell`) -
 they're silently ignored.
 
+### Worktree setup
+
+Repository setup for a newly materialized managed worktree is configured at the
+top level. It is deliberately separate from terminal `on_start`: setup prepares
+the checkout before the workspace or agent starts, while `on_start` launches a
+development process inside a terminal.
+
+```yaml
+worktree:
+  setup:
+    command: "npm ci"
+    default_policy: ask
+    startup_policy: wait-for-setup
+
+configs:
+  default:
+    terminals:
+      - label: dev
+        on_start: "npm run dev"
+```
+
+| Field | Values | Meaning |
+|---|---|---|
+| `command` | one explicit shell command | Checked-in setup hook. Switchboard never infers `npm install`, `pnpm install`, or another package-manager command. |
+| `default_policy` | `ask`, `run`, `skip` | Resolution used when a creation request says `inherit`. Defaults to `ask` when the section exists. |
+| `startup_policy` | `wait-for-setup`, `start-immediately` | Whether requested workspace startup waits for setup. Defaults to `wait-for-setup`. |
+
+An explicit `run` request with no configured command records a
+`not_configured` receipt; it does not guess. Once setup starts, Switchboard
+retains the worktree after failure because the command may have modified it.
+Receipts store the policy, outcome, timing, exit code, and a command
+fingerprint—not the command text or environment secrets.
+
 ### cwd resolution
 
 - omitted or `"."` → repo root
@@ -142,9 +175,11 @@ they're silently ignored.
 ### on_start
 
 Runs the command as if the user typed it and pressed enter, once, after the
-shell is ready. Use it for long-running processes (`npm run dev`), watchers
-(`npm test -- --watch`), or a one-shot setup line. It is not a script - it's a
-single command line. Chain with `&&` if you need multiple steps.
+shell is ready. Use it for long-running processes (`npm run dev`) and watchers
+(`npm test -- --watch`). Do not use it as the worktree setup hook; use
+`worktree.setup.command` so creation can order and recover setup correctly. It
+is not a script - it's a single command line. Chain with `&&` if you need
+multiple steps.
 
 ### wait_for
 

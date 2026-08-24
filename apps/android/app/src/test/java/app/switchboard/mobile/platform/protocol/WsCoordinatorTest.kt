@@ -18,6 +18,34 @@ import org.junit.Test
 
 class WsCoordinatorTest {
     @Test
+    fun typedChannelListenersReceiveReplayableNonProviderEventsAndCanUnsubscribe() {
+        val fixture = Fixture()
+        val call = fixture.connectReady()
+        val received = mutableListOf<Pair<TransportScope, JsonArray>>()
+        val subscription = fixture.coordinator.onChannelEvent("worktree-creation:progress") { scope, args ->
+            received += scope to args
+        }
+        val args = JsonArray(
+            listOf(
+                JsonObject(linkedMapOf("creationId" to JsonString("creation-1"))),
+            ),
+        )
+
+        call.listener.onText(
+            WsProtocol.encode(WsFrame.Event("worktree-creation:progress", args, sequence = 1)),
+        )
+
+        assertEquals(args, received.single().second)
+        assertEquals("studio-mac", received.single().first.connectionId)
+
+        subscription.cancel()
+        call.listener.onText(
+            WsProtocol.encode(WsFrame.Event("worktree-creation:progress", args, sequence = 2)),
+        )
+        assertEquals(1, received.size)
+    }
+
+    @Test
     fun socketOpenAuthenticatesButApplicationRequestsWaitForReady() {
         val fixture = Fixture()
         fixture.coordinator.connect(fixture.target())

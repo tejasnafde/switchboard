@@ -91,7 +91,9 @@ A card hitting `costUsedUsd >= costCapUsd` flips a `data-over-budget` attribute 
 16. **No card sort options** within a column (by cost, by priority, by recently active).
 17. **No card templates** for common patterns ("triage bug", "refactor module").
 18. **No "All workspaces" project chip is ambiguous** - the chip shows project basename only; on collisions (two `web` projects in different workspaces) you can't tell them apart. Add a workspace indicator color.
-19. **Worktree creation surfaces no progress** for slow disks - UI sits frozen during create, no spinner state in the tile.
+19. **Worktree creation progress** ✅ Shipped 2026-08-24 - card creation and
+    attachment submit one correlated `creationId`, render phase-based progress,
+    reconcile from the durable backend snapshot, and retain Retry/recovery state.
 20. **No undo** on column moves or deletes.
 
 ---

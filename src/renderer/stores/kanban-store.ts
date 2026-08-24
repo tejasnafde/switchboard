@@ -11,6 +11,23 @@
 
 import { create } from 'zustand'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } from '@shared/kanban'
+import type {
+  WorktreeCreationRecoveryAction,
+  WorktreeCreationProgressEvent,
+  WorktreeCreationSnapshot,
+} from '@shared/worktree-creation'
+
+function withWorktreeSnapshot(
+  card: KanbanCard,
+  snapshot: WorktreeCreationSnapshot,
+): KanbanCard {
+  return {
+    ...card,
+    worktreePath: snapshot.worktreePath ?? card.worktreePath,
+    worktreeBranch: snapshot.branch ?? card.worktreeBranch,
+    worktreeCreation: snapshot,
+  }
+}
 
 interface KanbanStore {
   /** projectPath → cards */
@@ -32,7 +49,10 @@ interface KanbanStore {
   /** Lookup used by the AskUserQuestion → needs_input auto-promote in ChatPanel. */
   findByConversationId: (conversationId: string) => KanbanCard | undefined
   remove: (id: string, opts?: { removeWorktree?: boolean; force?: boolean }) => Promise<void>
-  attachWorktree: (id: string) => Promise<void>
+  attachWorktree: (id: string) => Promise<KanbanCard | null>
+  actOnWorktree: (id: string, action: WorktreeCreationRecoveryAction) => Promise<KanbanCard | null>
+  retryWorktree: (id: string) => Promise<KanbanCard | null>
+  reconcileWorktreeProgress: (event: WorktreeCreationProgressEvent) => Promise<void>
   detachWorktree: (id: string, opts?: { force?: boolean }) => Promise<void>
 }
 
@@ -72,9 +92,87 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
     if (!api) return null
     set({ busy: true })
     try {
-      const card = await api.create(input)
+      const submitted = input.withWorktree
+        ? {
+            ...input,
+            worktreeCreation: {
+              ...input.worktreeCreation,
+              cardId: input.worktreeCreation?.cardId ?? `card_${crypto.randomUUID()}`,
+              creationId: input.worktreeCreation?.creationId ?? crypto.randomUUID(),
+              machineId: input.worktreeCreation?.machineId ?? 'local',
+              requestedAt: input.worktreeCreation?.requestedAt ?? Date.now(),
+            },
+          }
+        : input
+      const intent = submitted.worktreeCreation
+      if (submitted.withWorktree && intent?.cardId && intent.creationId) {
+        const createdAt = Date.now()
+        const optimistic: KanbanCard = {
+          id: intent.cardId,
+          projectPath: input.projectPath,
+          title: input.title,
+          description: input.description ?? '',
+          tags: input.tags ?? [],
+          status: input.worktreeCreation?.initialAgent ? 'in_progress' : input.status ?? 'backlog',
+          costCapUsd: input.costCapUsd ?? null,
+          costUsedUsd: null,
+          runtimeMode: input.runtimeMode ?? 'accept-edits',
+          conversationId: null,
+          worktreePath: null,
+          worktreeBranch: null,
+          createdAt,
+          updatedAt: createdAt,
+          completedAt: null,
+          worktreeCreation: {
+            creationId: intent.creationId,
+            revision: 0,
+            phase: 'pending',
+            status: 'pending',
+            projectPath: input.projectPath,
+            baseRef: intent.baseRef ?? 'HEAD',
+            owner: { kind: 'kanban-card', cardId: intent.cardId, create: {
+              title: input.title,
+              description: input.description ?? '',
+              tags: input.tags ?? [],
+              status: input.worktreeCreation?.initialAgent ? 'in_progress' : input.status ?? 'backlog',
+              runtimeMode: input.runtimeMode ?? 'accept-edits',
+              costCapUsd: input.costCapUsd ?? null,
+            } },
+            purpose: 'kanban',
+            provenance: {
+              surface: 'desktop',
+              machineId: intent.machineId ?? 'local',
+              requestedAt: intent.requestedAt ?? createdAt,
+            },
+            warnings: [],
+            recoveryActions: ['cancel'],
+            updatedAt: createdAt,
+          },
+        }
+        set((state) => ({
+          byProject: {
+            ...state.byProject,
+            [input.projectPath]: [optimistic, ...(state.byProject[input.projectPath] ?? [])],
+          },
+        }))
+      }
+      let card: KanbanCard
+      try {
+        card = await api.create(submitted)
+      } catch (error) {
+        if (intent?.cardId) {
+          set((state) => ({
+            byProject: {
+              ...state.byProject,
+              [input.projectPath]: (state.byProject[input.projectPath] ?? [])
+                .filter((candidate) => candidate.id !== intent.cardId),
+            },
+          }))
+        }
+        throw error
+      }
       set((s) => {
-        const prev = s.byProject[input.projectPath] ?? []
+        const prev = (s.byProject[input.projectPath] ?? []).filter((candidate) => candidate.id !== card.id)
         return { byProject: { ...s.byProject, [input.projectPath]: [card, ...prev] } }
       })
       return card
@@ -146,9 +244,27 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
 
   attachWorktree: async (id) => {
     const api = window.api?.kanban
-    if (!api) return
-    const updated = await api.createWorktree(id)
-    if (!updated) return
+    if (!api) return null
+    const updated = await api.createWorktree(id, {
+      creationId: crypto.randomUUID(),
+      machineId: 'local',
+      requestedAt: Date.now(),
+      initialAgent: (() => {
+        let card: KanbanCard | undefined
+        for (const cards of Object.values(get().byProject)) {
+          card = cards.find((candidate) => candidate.id === id)
+          if (card) break
+        }
+        if (!card) return undefined
+        const prompt = [card.title.trim(), card.description.trim()].filter(Boolean).join('\n\n')
+        return {
+          provider: 'claude-code' as const,
+          runtimeMode: card.runtimeMode,
+          prompt: prompt || 'Start working on this card.',
+        }
+      })(),
+    })
+    if (!updated) return null
     set((s) => {
       const list = s.byProject[updated.projectPath] ?? []
       return {
@@ -158,6 +274,60 @@ export const useKanbanStore = create<KanbanStore>((set, get) => ({
         },
       }
     })
+    return updated
+  },
+
+  actOnWorktree: async (id, action) => {
+    let card: KanbanCard | undefined
+    for (const cards of Object.values(get().byProject)) {
+      card = cards.find((candidate) => candidate.id === id)
+      if (card) break
+    }
+    const snapshot = card?.worktreeCreation
+    if (!card || !snapshot || !snapshot.recoveryActions.includes(action)) return card ?? null
+    const updatedSnapshot = await window.api.worktreeCreation.act({
+      creationId: snapshot.creationId,
+      machineId: snapshot.provenance.machineId,
+      expectedRevision: snapshot.revision,
+      action,
+    })
+    const canonicalCards = await window.api.kanban?.list?.(card.projectPath) ?? [card]
+    const canonicalCard = canonicalCards.find((candidate) => candidate.id === id) ?? card
+    const updated = withWorktreeSnapshot(canonicalCard, updatedSnapshot)
+    set((state) => ({
+      byProject: {
+        ...state.byProject,
+        [card.projectPath]: (state.byProject[card.projectPath] ?? [])
+          .map((candidate) => candidate.id === id ? updated : candidate),
+      },
+    }))
+    return updated
+  },
+
+  retryWorktree: async (id) => get().actOnWorktree(id, 'retry'),
+
+  reconcileWorktreeProgress: async (event) => {
+    let card: KanbanCard | undefined
+    for (const cards of Object.values(get().byProject)) {
+      card = cards.find((candidate) => candidate.worktreeCreation?.creationId === event.creationId)
+      if (card) break
+    }
+    const current = card?.worktreeCreation
+    if (!card || !current || event.revision < current.revision) return
+    const snapshot = await window.api.worktreeCreation.get({
+      creationId: event.creationId,
+      machineId: current.provenance.machineId,
+    })
+    set((state) => ({
+      byProject: {
+        ...state.byProject,
+        [card.projectPath]: (state.byProject[card.projectPath] ?? []).map((candidate) => {
+          if (candidate.id !== card.id) return candidate
+          if ((candidate.worktreeCreation?.revision ?? -1) > snapshot.revision) return candidate
+          return withWorktreeSnapshot(candidate, snapshot)
+        }),
+      },
+    }))
   },
 
   detachWorktree: async (id, opts) => {

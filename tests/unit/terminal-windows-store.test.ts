@@ -30,6 +30,26 @@ describe('terminal window/pane store', () => {
     expect(layout.activeWindowId).toBeNull()
   })
 
+  it('adopts backend-owned terminal handles without inventing replacement pane ids', () => {
+    useTerminalStore.getState().adoptManagedTerminals(
+      SID,
+      ['managed-1', 'managed-2'],
+      '/repo/.switchboard/worktrees/thread',
+    )
+
+    const layout = useTerminalStore.getState().getLayout(SID)
+    expect(useTerminalStore.getState().getAllPaneIds(SID)).toEqual(['managed-1', 'managed-2'])
+    expect(layout.rows).toHaveLength(1)
+    expect(layout.panes['managed-1']).toMatchObject({
+      id: 'managed-1',
+      cwd: '/repo/.switchboard/worktrees/thread',
+      stale: false,
+    })
+
+    useTerminalStore.getState().adoptManagedTerminals(SID, ['managed-1'], '/elsewhere')
+    expect(useTerminalStore.getState().getAllPaneIds(SID)).toEqual(['managed-1', 'managed-2'])
+  })
+
   // ── addWindow (creates a new window with an initial pane) ────
 
   it('addWindow creates a row with one window and one pane', () => {

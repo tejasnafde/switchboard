@@ -50,8 +50,17 @@ export class RoutingTable {
 
   resolve(_channel: string, args: unknown[]): string {
     const first = args[0]
-    if (first && typeof first === 'object' && typeof (first as Record<string, unknown>).machineId === 'string') {
-      return (first as Record<string, string>).machineId
+    if (first && typeof first === 'object') {
+      const input = first as Record<string, unknown>
+      if (typeof input.machineId === 'string') return input.machineId
+      const repository = input.repository
+      if (
+        repository &&
+        typeof repository === 'object' &&
+        typeof (repository as Record<string, unknown>).machineId === 'string'
+      ) {
+        return (repository as Record<string, string>).machineId
+      }
     }
     const key = routingKey(args)
     return key ? (this.bindings.get(key) ?? 'local') : 'local'

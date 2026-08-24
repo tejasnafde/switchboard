@@ -36,6 +36,7 @@ class NewSessionSelectorPolicyTest {
         assertEquals("Profile", NewSessionSelectorPolicy.supportingLabel(NewSessionField.PROFILE))
         assertEquals("Model", NewSessionSelectorPolicy.supportingLabel(NewSessionField.MODEL))
         assertEquals("Access", NewSessionSelectorPolicy.supportingLabel(NewSessionField.RUNTIME))
+        assertEquals("Workspace", NewSessionSelectorPolicy.supportingLabel(NewSessionField.WORKSPACE))
     }
 
     private fun profile(id: String, displayName: String) = ProviderInstance(

@@ -28,6 +28,7 @@ import { ProviderRegistry } from '../main/provider/provider-registry'
 import { disposeUsageProbes } from '../main/provider/usage'
 import { startBridgeHost } from '../main/ide/bridge-host'
 import { createMainLogger as createLogger } from '../main/logger'
+import { createDefaultWorktreeCreationRuntime } from '../main/worktree-creation/runtime'
 
 // esbuild `define` in scripts/build-server.mjs stamps this with the app
 // version at bundle time so a live server can report what it's running.
@@ -120,18 +121,25 @@ if (tcpServer) {
   )
 }
 
-registerAppHandlers(host)
 registerPushHandlers(host)
 registerFilesHandlers(host)
 registerGitHandlers(host)
 registerSttHandlers(host)
-registerKanbanHandlers(host)
 registerProviderInstanceHandlers(host)
 registerTerminalHandlers(host)
 registerAgentHandlers(host)
 host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 
 const registry = new ProviderRegistry(host)
+const worktreeCreationRuntime = createDefaultWorktreeCreationRuntime(host, () => registry)
+registerAppHandlers(host, {
+  forkConversationWithWorktree: (input) => worktreeCreationRuntime.forkConversationWithWorktree(input),
+})
+registerKanbanHandlers(host, {
+  createWorktreeTransaction: (request) => worktreeCreationRuntime.createWorktreeTransaction(request),
+  getWorktreeCreation: (request) => worktreeCreationRuntime.getWorktreeCreation(request),
+  actOnWorktreeCreation: (request) => worktreeCreationRuntime.actOnWorktreeCreation(request),
+})
 // Notify paired phones about approvals, questions, finished turns and errors.
 attachPushNotifier(registry.bus)
 registry.registerIpcHandlers()

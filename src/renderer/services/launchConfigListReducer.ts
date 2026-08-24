@@ -17,13 +17,18 @@
  *
  * Backed by `tests/unit/launch-config-reducer.test.ts`.
  */
-import type { LaunchConfigFile, LaunchConfig } from '../../shared/launch-config'
+import type {
+  LaunchConfigFile,
+  LaunchConfig,
+  WorktreeSetupConfig,
+} from '../../shared/launch-config'
 
 export type LaunchConfigListAction =
   | { type: 'addLaunchConfig'; name: string }
   | { type: 'deleteLaunchConfig'; name: string }
   | { type: 'renameLaunchConfig'; from: string; to: string }
   | { type: 'replaceLaunchConfigBody'; name: string; body: LaunchConfig }
+  | { type: 'replaceWorktreeSetup'; setup: WorktreeSetupConfig }
 
 export type LaunchConfigListResult =
   | { ok: true; config: LaunchConfigFile }
@@ -83,6 +88,15 @@ export function launchConfigListReducer(
       configs[action.name] = action.body
       return { ok: true, config: withLaunchConfigs(config, configs) }
     }
+
+    case 'replaceWorktreeSetup':
+      return {
+        ok: true,
+        config: {
+          ...config,
+          worktree: { setup: action.setup },
+        },
+      }
   }
 }
 

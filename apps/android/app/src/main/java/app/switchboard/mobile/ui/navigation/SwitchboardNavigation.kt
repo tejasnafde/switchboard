@@ -25,6 +25,9 @@ import app.switchboard.mobile.data.remote.NewSessionState
 import app.switchboard.mobile.data.remote.ReadyClientLease
 import app.switchboard.mobile.data.remote.SwitchboardBrowseRemote
 import app.switchboard.mobile.data.remote.SwitchboardNewSessionRemote
+import app.switchboard.mobile.data.remote.SwitchboardNewSessionWorktreeCreationPort
+import app.switchboard.mobile.data.remote.UnavailableNewSessionWorktreeCreationPort
+import app.switchboard.mobile.data.remote.WorktreeCreationIdSource
 import app.switchboard.mobile.data.thread.SwitchboardThreadSessionRemote
 import app.switchboard.mobile.data.thread.CachedThreadStateMapper
 import app.switchboard.mobile.data.thread.ThreadEnqueuePort
@@ -674,8 +677,17 @@ private fun NewSessionRouteHost(
             onRuntimeMode = {},
             onInstance = {},
             onModel = {},
+            onWorkspace = {},
             onFirstMessage = {},
             onStart = { runtime?.retry(route.connectionId) },
+            onReconcileWorktree = {},
+            onRetryWorktree = {},
+            onRunWorktreeSetup = {},
+            onSkipWorktreeSetup = {},
+            onRetainWorktree = {},
+            onRemoveWorktree = {},
+            onStartInProject = {},
+            onCancelWorktree = {},
         )
         return
     }
@@ -693,9 +705,20 @@ private fun NewSessionRouteHost(
             },
             clock = NewSessionClock(System::currentTimeMillis),
             onStarted = onStarted,
+            worktrees = if ("worktree_creation_v1" in lease.capabilities) {
+                SwitchboardNewSessionWorktreeCreationPort(lease.client)
+            } else {
+                UnavailableNewSessionWorktreeCreationPort(route.connectionId, lease.scope.generation)
+            },
+            worktreeStore = runtime.worktreeCreations,
+            creationIds = WorktreeCreationIdSource { java.util.UUID.randomUUID().toString() },
+            worktreeAvailable = "worktree_creation_v1" in lease.capabilities,
         )
     }
     val state by coordinator.state.collectAsState()
+    DisposableEffect(coordinator) {
+        onDispose(coordinator::close)
+    }
     LaunchedEffect(coordinator) { coordinator.load() }
     NewSessionScreen(
         state = state,
@@ -704,8 +727,17 @@ private fun NewSessionRouteHost(
         onRuntimeMode = coordinator::selectRuntimeMode,
         onInstance = coordinator::selectInstance,
         onModel = coordinator::selectModel,
+        onWorkspace = coordinator::selectWorkspace,
         onFirstMessage = coordinator::updateFirstMessage,
         onStart = coordinator::submit,
+        onReconcileWorktree = coordinator::reconcileWorktreeCreation,
+        onRetryWorktree = coordinator::retryWorktreeCreation,
+        onRunWorktreeSetup = { coordinator.chooseWorktreeSetup(run = true) },
+        onSkipWorktreeSetup = { coordinator.chooseWorktreeSetup(run = false) },
+        onRetainWorktree = coordinator::retainWorktree,
+        onRemoveWorktree = coordinator::removeWorktree,
+        onStartInProject = coordinator::useParentCheckout,
+        onCancelWorktree = coordinator::cancelWorktreeCreation,
     )
 }
 

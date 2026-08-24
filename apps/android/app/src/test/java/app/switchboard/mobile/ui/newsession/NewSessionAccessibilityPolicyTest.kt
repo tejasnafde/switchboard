@@ -10,5 +10,13 @@ class NewSessionAccessibilityPolicyTest {
         assertEquals("Not selected", NewSessionAccessibilityPolicy.choiceState(selected = false))
         assertEquals("Starting session", NewSessionAccessibilityPolicy.launchState(submitting = true))
         assertEquals("Start session", NewSessionAccessibilityPolicy.launchState(submitting = false))
+        assertEquals(
+            "Creating worktree",
+            NewSessionAccessibilityPolicy.launchState(submitting = true, worktree = true),
+        )
+        assertEquals(
+            "Create worktree",
+            NewSessionAccessibilityPolicy.launchState(submitting = false, worktree = true),
+        )
     }
 }

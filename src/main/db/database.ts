@@ -13,9 +13,15 @@ import type { ProjectOrganizationItem } from '@shared/types'
 import type { SessionSource } from '@shared/types'
 import { deriveProjectPositions } from './projectOrdering'
 import type { ConversationSidebarRole } from './conversationSidebarRole'
+import type { WorktreeCreationStatus } from '@shared/worktree-creation'
 import { ensureTurnAcceptanceSchema, recoverUndispatchedTurns } from './turn-acceptance'
 import { searchMessagesInDatabase, type SearchResult } from './message-search'
 import { commitConversationProfileSwitch } from './conversation-profile-commit'
+import {
+  ensureWorktreeCreationSchema,
+  getKanbanWorktreeCreationKey as getKanbanWorktreeCreationKeyFromDb,
+  listOwnedWorktreePaths,
+} from './worktree-creation'
 
 const log = createLogger('db')
 
@@ -564,6 +570,7 @@ function migrate(db: Database.Database): void {
 
   ensureTurnAcceptanceSchema(db)
   recoverUndispatchedTurns(db)
+  ensureWorktreeCreationSchema(db)
 
   log.info('database migrated')
 }
@@ -750,9 +757,20 @@ export function createConversation(
   worktreeBranch?: string | null,
 ): boolean {
   const now = Date.now()
+  const catalogued = worktreePath
+    ? getDb().prepare(`
+        SELECT id FROM managed_worktrees
+         WHERE machine_id = 'local' AND project_path = ? AND worktree_path = ?
+           AND lifecycle != 'removed'
+         ORDER BY CASE management_origin WHEN 'legacy' THEN 0 ELSE 1 END, created_at
+         LIMIT 1
+      `).get(projectPath, worktreePath) as { id: string } | undefined
+    : undefined
   const info = getDb().prepare(
-    `INSERT OR IGNORE INTO conversations (id, project_path, agent_type, title, created_at, updated_at, worktree_path, worktree_branch, sidebar_role)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'managed')`
+    `INSERT OR IGNORE INTO conversations (
+       id, project_path, agent_type, title, created_at, updated_at,
+       worktree_path, worktree_branch, worktree_id, sidebar_role
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'managed')`
   ).run(
     id,
     projectPath,
@@ -762,6 +780,7 @@ export function createConversation(
     now,
     worktreePath ?? null,
     worktreeBranch ?? null,
+    catalogued?.id ?? null,
   )
   return info.changes > 0
 }
@@ -886,8 +905,24 @@ const MANAGED_ROOT_PREDICATE = `
 
 export function getManagedRootConversationsForProject(projectPath: string): ConversationRow[] {
   return getDb().prepare(
-    `SELECT c.* FROM conversations c
+    `SELECT c.*,
+            wc.status AS worktree_creation_status,
+            wc.recovery_json AS worktree_creation_recovery_json
+       FROM conversations c
+       LEFT JOIN worktree_creations wc
+         ON wc.creation_id = c.worktree_creation_id
      WHERE c.project_path = ? AND ${MANAGED_ROOT_PREDICATE}
+       AND (
+         c.worktree_creation_id IS NULL
+         OR wc.status = 'ready'
+         OR (
+           wc.status = 'cleanup_required'
+           AND CASE
+             WHEN json_valid(wc.recovery_json)
+             THEN json_extract(wc.recovery_json, '$.disposition')
+           END = 'retained'
+         )
+       )
      ORDER BY c.updated_at DESC`
   ).all(projectPath) as ConversationRow[]
 }
@@ -901,8 +936,24 @@ export function getManagedRootConversationsForProjects(projectPaths: string[]): 
     const chunk = projectPaths.slice(offset, offset + chunkSize)
     const placeholders = chunk.map(() => '?').join(',')
     const rows = database.prepare(
-      `SELECT c.* FROM conversations c
+      `SELECT c.*,
+              wc.status AS worktree_creation_status,
+              wc.recovery_json AS worktree_creation_recovery_json
+         FROM conversations c
+         LEFT JOIN worktree_creations wc
+           ON wc.creation_id = c.worktree_creation_id
        WHERE c.project_path IN (${placeholders}) AND ${MANAGED_ROOT_PREDICATE}
+         AND (
+           c.worktree_creation_id IS NULL
+           OR wc.status = 'ready'
+           OR (
+             wc.status = 'cleanup_required'
+             AND CASE
+               WHEN json_valid(wc.recovery_json)
+               THEN json_extract(wc.recovery_json, '$.disposition')
+             END = 'retained'
+           )
+         )
        ORDER BY c.updated_at DESC`
     ).all(...chunk) as ConversationRow[]
     for (const row of rows) result.get(row.project_path)?.push(row)
@@ -954,6 +1005,10 @@ export interface ConversationRow {
   /** Branch checked out in the fork's worktree (e.g. `fork/fix-redis-timeout`).
    *  Null when `worktree_path` is null. */
   worktree_branch?: string | null
+  worktree_id?: string | null
+  worktree_creation_id?: string | null
+  worktree_creation_status?: WorktreeCreationStatus | null
+  worktree_creation_recovery_json?: string | null
 }
 
 /**
@@ -1885,8 +1940,8 @@ export function createKanbanCard(id: string, input: KanbanCardCreate): KanbanCar
   const runtimeMode = input.runtimeMode ?? KANBAN_DEFAULT_RUNTIME_MODE
   getDb().prepare(`
     INSERT INTO kanban_cards (id, project_path, title, description, tags, status, cost_cap_usd, runtime_mode)
-    VALUES (?, ?, ?, ?, ?, 'backlog', ?, ?)
-  `).run(id, input.projectPath, input.title, input.description ?? '', tagsJson, input.costCapUsd ?? null, runtimeMode)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, input.projectPath, input.title, input.description ?? '', tagsJson, input.status ?? 'backlog', input.costCapUsd ?? null, runtimeMode)
   return getKanbanCard(id)!
 }
 
@@ -1947,10 +2002,11 @@ export function deleteKanbanCard(id: string): void {
 }
 
 export function listInUseWorktreePaths(projectPath: string): Set<string> {
-  const rows = getDb().prepare(
-    'SELECT worktree_path FROM kanban_cards WHERE project_path = ? AND worktree_path IS NOT NULL'
-  ).all(projectPath) as Array<{ worktree_path: string }>
-  return new Set(rows.map((r) => r.worktree_path))
+  return listOwnedWorktreePaths(getDb(), projectPath)
+}
+
+export function getKanbanWorktreeCreationKey(id: string): { machineId: string; creationId: string } | null {
+  return getKanbanWorktreeCreationKeyFromDb(getDb(), id)
 }
 
 // ─── Bookmarks (save-for-later on messages) ─────────────────────

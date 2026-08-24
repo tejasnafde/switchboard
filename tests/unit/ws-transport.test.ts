@@ -383,6 +383,46 @@ describe('WsTransport (fake socket)', () => {
     t.send('ch')
     expect(sock.sent.length).toBe(sentBefore)
   })
+
+  it('keeps capability support unknown until a ready frame proves presence or absence', () => {
+    const { t, sock } = makeOpenTransport()
+    expect(t.supportsCapability('worktree_creation_v1')).toBeUndefined()
+
+    sock.fire('message', {
+      data: JSON.stringify({ k: 'ready', epoch: 'old-backend', seq: 0, replayed: 0, gap: false }),
+    })
+
+    expect(t.supportsCapability('worktree_creation_v1')).toBe(false)
+    t.close()
+  })
+
+  it('retains the last proven capability during reconnect and replaces it on the next ready frame', async () => {
+    vi.useFakeTimers()
+    const { t, sock } = makeOpenTransport()
+    sock.fire('message', {
+      data: JSON.stringify({
+        k: 'ready',
+        epoch: 'new-backend',
+        seq: 0,
+        replayed: 0,
+        gap: false,
+        capabilities: ['worktree_creation_v1'],
+      }),
+    })
+    expect(t.supportsCapability('worktree_creation_v1')).toBe(true)
+
+    sock.fire('close')
+    expect(t.supportsCapability('worktree_creation_v1')).toBe(true)
+    await vi.advanceTimersByTimeAsync(700)
+    const next = FakeSocket.instances.at(-1)!
+    next.fire('open')
+    next.fire('message', {
+      data: JSON.stringify({ k: 'ready', epoch: 'older-backend', seq: 0, replayed: 0, gap: false }),
+    })
+
+    expect(t.supportsCapability('worktree_creation_v1')).toBe(false)
+    t.close()
+  })
 })
 
 describe('auth rejection (4001)', () => {

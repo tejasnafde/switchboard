@@ -11,6 +11,7 @@ import {
   serializeLaunchConfigBody,
   parseLaunchConfigBodyYaml,
   type LaunchConfigFile,
+  type WorktreeSetupConfig,
 } from '@shared/launch-config'
 import { launchConfigListReducer } from '../services/launchConfigListReducer'
 import {
@@ -102,6 +103,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
   const [renameValue, setRenameValue] = useState('')
   const [addingLaunchConfig, setAddingLaunchConfig] = useState(false)
   const [addValue, setAddValue] = useState('')
+  const [setupCommand, setSetupCommand] = useState('')
+  const [setupDefaultPolicy, setSetupDefaultPolicy] = useState<WorktreeSetupConfig['defaultPolicy']>('ask')
+  const [setupStartupPolicy, setSetupStartupPolicy] = useState<WorktreeSetupConfig['startupPolicy']>('wait-for-setup')
 
   const loadArchived = useCallback(async () => {
     setLoadingArchived(true)
@@ -152,6 +156,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
       setBodyDirty(false)
       setConfigSaveState('idle')
       setConfigError(null)
+      setSetupCommand(parsed.worktree?.setup.command ?? '')
+      setSetupDefaultPolicy(parsed.worktree?.setup.defaultPolicy ?? 'ask')
+      setSetupStartupPolicy(parsed.worktree?.setup.startupPolicy ?? 'wait-for-setup')
     }).catch(() => {
       const fresh: LaunchConfigFile = { terminals: [], configs: { default: { terminals: [] } } }
       setLaunchConfigFile(fresh)
@@ -247,6 +254,22 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     await persist(result.config)
     if (selectedLaunchConfig === name) setSelectedLaunchConfig('default')
   }, [launchConfigFile, selectedLaunchConfig, persist])
+
+  const handleSaveWorktreeSetup = useCallback(async () => {
+    const result = launchConfigListReducer(launchConfigFile, {
+      type: 'replaceWorktreeSetup',
+      setup: {
+        ...(setupCommand.trim() ? { command: setupCommand.trim() } : {}),
+        defaultPolicy: setupDefaultPolicy,
+        startupPolicy: setupStartupPolicy,
+      },
+    })
+    if (!result.ok) {
+      setConfigError(result.error)
+      return
+    }
+    await persist(result.config)
+  }, [launchConfigFile, persist, setupCommand, setupDefaultPolicy, setupStartupPolicy])
 
   const launchConfigNames = useMemo(() => {
     const names = Object.keys(launchConfigFile.configs ?? {})
@@ -495,6 +518,57 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                         <option key={p.path} value={p.path}>{p.name}</option>
                       ))}
                     </select>
+
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(180px, 1fr) 150px 170px auto',
+                      gap: '8px',
+                      alignItems: 'end',
+                      marginBottom: '10px',
+                      padding: '10px',
+                      border: '1px solid var(--border)',
+                      borderRadius: '4px',
+                      background: 'var(--bg-tertiary)',
+                    }}>
+                      <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                        Worktree setup command
+                        <input
+                          value={setupCommand}
+                          onChange={(event) => setSetupCommand(event.target.value)}
+                          placeholder="Not configured"
+                          style={{ width: '100%', marginTop: '4px', padding: '5px 7px', border: '1px solid var(--border)', borderRadius: '3px', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}
+                        />
+                      </label>
+                      <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                        Default policy
+                        <select
+                          value={setupDefaultPolicy}
+                          onChange={(event) => setSetupDefaultPolicy(event.target.value as WorktreeSetupConfig['defaultPolicy'])}
+                          style={{ width: '100%', marginTop: '4px', padding: '5px 7px', border: '1px solid var(--border)', borderRadius: '3px', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '11px' }}
+                        >
+                          <option value="ask">Ask</option>
+                          <option value="run">Run</option>
+                          <option value="skip">Skip</option>
+                        </select>
+                      </label>
+                      <label style={{ fontSize: '10px', color: 'var(--text-muted)' }}>
+                        Workspace startup
+                        <select
+                          value={setupStartupPolicy}
+                          onChange={(event) => setSetupStartupPolicy(event.target.value as WorktreeSetupConfig['startupPolicy'])}
+                          style={{ width: '100%', marginTop: '4px', padding: '5px 7px', border: '1px solid var(--border)', borderRadius: '3px', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '11px' }}
+                        >
+                          <option value="wait-for-setup">Wait for setup</option>
+                          <option value="start-immediately">Start immediately</option>
+                        </select>
+                      </label>
+                      <button
+                        onClick={handleSaveWorktreeSetup}
+                        style={{ padding: '6px 12px', border: 'none', borderRadius: '4px', background: 'var(--accent)', color: '#fff', fontSize: '11px', cursor: 'pointer' }}
+                      >
+                        Save setup
+                      </button>
+                    </div>
 
                     <div style={{ display: 'flex', gap: '10px', minHeight: '260px' }}>
                       {/* Left rail: launch config list */}
@@ -836,10 +910,7 @@ function ShortcutRow({ label, keys }: { label: string; keys: string }) {
 }
 
 /**
- * Default workspace mode for new threads. `local` keeps today's
- * behaviour (run in the project root); `worktree` creates a fresh
- * `git worktree` off HEAD per thread so two parallel agent sessions
- * don't fight over the same checkout.
+ * Recommended workspace mode in the per-thread checkout chooser.
  */
 function DefaultEnvModeToggle() {
   const [mode, setMode] = useState<SessionEnvMode | null>(null)
@@ -853,10 +924,11 @@ function DefaultEnvModeToggle() {
   return (
     <div>
       <div style={{ fontSize: '12.5px', color: 'var(--text-primary)', marginBottom: '4px' }}>
-        Default workspace
+        Recommended workspace
       </div>
       <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-        Pick how new threads start. <strong>Local</strong> runs the agent in the project root;
+        Choose which option is highlighted first. You still choose for every new thread.
+        <strong> Local</strong> runs the agent in the project root;
         <strong> New worktree</strong> creates a fresh git worktree off HEAD so parallel threads
         don't trample each other.
       </div>

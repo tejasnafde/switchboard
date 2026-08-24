@@ -10,7 +10,6 @@
  * shape so the renderer never has to wrap calls in try/catch - same
  * convention as the FilesChannels handlers.
  */
-import { userDataDir } from '../runtime'
 import type { BackendHost } from '../backend/host'
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -18,14 +17,28 @@ import { promisify } from 'node:util'
 import { GitChannels } from '@shared/ipc-channels'
 import { listRefs, switchRef, getCurrentBranch, type Ref } from '../git/refs'
 import { watchHead, unwatchHead } from '../git/headWatcher'
-import { createSessionWorktree } from '../worktree'
+import {
+  createLegacySessionWorktree,
+  type LegacySessionWorktreeInput,
+} from '../git/legacy-session-worktree-lease'
 import { createMainLogger } from '../logger'
 
 const execFileP = promisify(execFile)
 
 const log = createMainLogger('ipc:git')
 
-export function registerGitHandlers(host: BackendHost): void {
+export interface GitHandlerDependencies {
+  createLegacySessionWorktree(
+    input: LegacySessionWorktreeInput,
+  ): Promise<{ path: string; branch: string }>
+}
+
+const defaultDependencies: GitHandlerDependencies = { createLegacySessionWorktree }
+
+export function registerGitHandlers(
+  host: BackendHost,
+  dependencies: GitHandlerDependencies = defaultDependencies,
+): void {
   host.handle(
     GitChannels.LIST_REFS,
     async (cwd: string): Promise<{ ok: true; refs: Ref[] } | { ok: false; error: string }> => {
@@ -90,12 +103,7 @@ export function registerGitHandlers(host: BackendHost): void {
     async (args: { projectPath: string; branchSlug: string; baseRef?: string },
     ): Promise<{ ok: true; path: string; branch: string } | { ok: false; error: string }> => {
       try {
-        const out = await createSessionWorktree({
-          projectPath: args.projectPath,
-          branchSlug: args.branchSlug,
-          baseRef: args.baseRef,
-          userDataDir: userDataDir(),
-        })
+        const out = await dependencies.createLegacySessionWorktree(args)
         return { ok: true, ...out }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
