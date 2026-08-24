@@ -19,6 +19,20 @@ describe('Desktop release compatibility gate', () => {
     expect(workflow).toContain('^minimumSystemVersion: 21.0.0$')
   })
 
+  it('creates one draft before parallel publishers and exposes it only after verification', () => {
+    const workflow = readFileSync(resolve('.github/workflows/release.yml'), 'utf8')
+    const prepareAt = workflow.indexOf('prepare_release:')
+    const buildAt = workflow.indexOf('\n  build:')
+    const verifyAt = workflow.indexOf('\n  verify:')
+
+    expect(prepareAt).toBeGreaterThan(-1)
+    expect(prepareAt).toBeLessThan(buildAt)
+    expect(workflow).toContain('gh release create "$TAG" --repo "$REPO" --draft')
+    expect(workflow).toContain('needs: prepare_release')
+    expect(workflow).toContain('gh release edit "$TAG" --repo "$REPO" --draft=false --latest')
+    expect(workflow.indexOf('gh release edit "$TAG" --repo "$REPO" --draft=false --latest')).toBeGreaterThan(verifyAt)
+  })
+
   it('removes run-as-node from the Electron smoke-test environment', () => {
     const smokeTest = readFileSync(resolve('scripts/smoke-test.mjs'), 'utf8')
     expect(smokeTest).toContain('delete electronEnv.ELECTRON_RUN_AS_NODE')

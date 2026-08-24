@@ -1,9 +1,9 @@
 # Release pipeline.
 #
 # Trigger: pushing a tag matching `v*` (e.g. `v0.1.1`). The matrix runs
-# in parallel on macOS arm64 + Windows x64; both jobs publish artifacts
-# to the same GitHub Release (electron-builder merges on tag — do NOT
-# create the Release manually beforehand or the merge fails 422).
+# in parallel on macOS arm64 + Windows x64. A single prepare job creates a
+# hidden draft first, both builders upload into it, and verification publishes
+# the release only after every installer and update manifest is present.
 #
 # We do NOT run on every push — release-only avoids burning CI minutes
 # on every commit while still catching regressions when a tag goes out.
@@ -46,9 +46,33 @@ jobs:
     name: Gate
     uses: ./.github/workflows/ci.yml
 
+  # electron-builder starts several uploads concurrently inside each platform
+  # job. If no Release exists, those uploads can race one another to create it;
+  # GitHub accepts one and rejects the other with 422 already_exists. Creating
+  # one draft here gives every publisher a stable target and keeps incomplete
+  # update feeds invisible to installed clients.
+  prepare_release:
+    name: Prepare draft release
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create one hidden release target
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists; reusing it for this rerun."
+          else
+            gh release create "$TAG" --repo "$REPO" --draft --title "$TAG" --notes "Switchboard $TAG"
+          fi
+
   build:
     name: Build & publish (${{ matrix.os }})
-    needs: gate
+    needs: prepare_release
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -122,11 +146,10 @@ jobs:
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
 
-      # `--publish always` makes electron-builder upload artifacts to
-      # the GitHub Release matching the current tag. The matrix runs
-      # both jobs in parallel; both target the same Release and
-      # electron-builder is safe to call concurrently — it uploads with
-      # name-based dedup. GH_TOKEN is needed to write to the Release.
+      # `--publish always` makes electron-builder upload artifacts to the
+      # prepared GitHub draft matching the current tag. The matrix jobs can
+      # upload to that stable target concurrently with name-based dedup.
+      # GH_TOKEN is needed to write to the Release.
       # Tag push publishes to the Release; a manual dispatch only builds
       # (validation), so it never uploads assets to any Release.
       - name: Build & publish
@@ -235,3 +258,10 @@ jobs:
             fi
             echo "$(basename "$y") declares version ${V}"
           done
+
+      - name: Publish the verified release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: gh release edit "$TAG" --repo "$REPO" --draft=false --latest
