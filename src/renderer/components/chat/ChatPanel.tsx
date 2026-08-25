@@ -41,7 +41,6 @@ import {
 } from '../../services/messageLifecycle'
 import { applyContentText, type ContentChunk } from '@shared/content-stream'
 import {
-  echoMessageId,
   validateUserMessageImages,
   type UserTurnSubmissionV1,
 } from '@shared/provider-events'
@@ -49,10 +48,10 @@ import {
   acceptedDesktopUserMessage,
   desktopComposerFingerprint,
   desktopPreparedTurns,
+  desktopRecoveryResolutionAllowsSend,
   desktopTurnAttempts,
-  pendingDesktopTurnDisposition,
   pendingDesktopUserMessage,
-  resolvedDesktopTurnDeliveryState,
+  shouldRetainPreparedDesktopTurn,
   submitProgrammaticTurn,
   submitDesktopUserTurn,
   type DesktopTurnSubmissionDependencies,
@@ -1053,6 +1052,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       images?: Array<{ file: File; previewUrl: string }>,
       extras?: {
         origin?: string
+        confirmedRecoveryOrigin?: string
         displayBody?: string
         pillsMeta?: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }>
       },
@@ -1207,14 +1207,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       // second (and longer remotely), so withholding all feedback made idle
       // sends look queued or lost.
       const pendingMessage = pendingDesktopUserMessage(turn)
-      const pendingAlreadyExists = useAgentStore.getState().sessions
-        .find((session) => session.id === sessionId)?.messages
-        .some((candidate) => candidate.id === pendingMessage.id)
-      if (pendingAlreadyExists) {
-        updateMessage(sessionId, pendingMessage.id, pendingMessage)
-      } else {
-        appendMessage(sessionId, pendingMessage)
-      }
 
       // Start only after image preparation and validation. A definite startup
       // rejection leaves the composer intact and does not create a false user
@@ -1250,14 +1242,69 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         },
         submit: (submission) => providerApi.submitUserTurn(submission),
       }
+      const confirmedRecoveryOrigin = extras?.confirmedRecoveryOrigin
+      if (confirmedRecoveryOrigin && confirmedRecoveryOrigin !== origin) {
+        let resolution
+        try {
+          resolution = await providerApi.resolveUserTurn({
+            version: 1,
+            threadId: sessionId,
+            origin: confirmedRecoveryOrigin,
+            action: 'abandon',
+          })
+        } catch (error) {
+          return {
+            accepted: false,
+            error: `Could not resolve unconfirmed delivery: ${error instanceof Error ? error.message : String(error)}`,
+            delivery: 'ambiguous',
+            recoveryOrigin: confirmedRecoveryOrigin,
+          }
+        }
+        if (!desktopRecoveryResolutionAllowsSend(resolution.status)) {
+          return {
+            accepted: false,
+            error: 'reason' in resolution ? resolution.reason : 'The earlier delivery is still unresolved.',
+            delivery: 'ambiguous',
+            recoveryOrigin: confirmedRecoveryOrigin,
+          }
+        }
+        if (resolution.status === 'completed') {
+          const recoveredTurn = desktopPreparedTurns.get(sessionId, confirmedRecoveryOrigin)
+          if (recoveredTurn) {
+            const replay = await submitDesktopUserTurn(recoveredTurn, submissionDependencies)
+            if (!replay.accepted) {
+              return {
+                accepted: false,
+                error: replay.error,
+                delivery: replay.delivery === 'pending' || replay.delivery === 'ambiguous'
+                  ? 'ambiguous'
+                  : 'rejected',
+                recoveryOrigin: confirmedRecoveryOrigin,
+              }
+            }
+          }
+        }
+        desktopTurnAttempts.accept(sessionId, confirmedRecoveryOrigin)
+        desktopPreparedTurns.accept(sessionId, confirmedRecoveryOrigin)
+      }
+
+      // Reconcile an explicitly confirmed older delivery before inserting the
+      // new optimistic row. A completed recovery can replay its canonical
+      // echo, and transcript order must remain old turn then new turn.
+      const pendingAlreadyExists = useAgentStore.getState().sessions
+        .find((session) => session.id === sessionId)?.messages
+        .some((candidate) => candidate.id === pendingMessage.id)
+      if (pendingAlreadyExists) {
+        updateMessage(sessionId, pendingMessage.id, pendingMessage)
+      } else {
+        appendMessage(sessionId, pendingMessage)
+      }
+
       let outcome = await submitDesktopUserTurn(turn, submissionDependencies)
-      if (!outcome.accepted && outcome.recoveryOrigin) {
+      if (!outcome.accepted && outcome.recoveryOrigin && outcome.recoveryOrigin !== origin) {
         const recoveryOrigin = outcome.recoveryOrigin
-        const recoveringCurrentTurn = recoveryOrigin === origin
-        const confirmed = window.confirm(
-          recoveringCurrentTurn
-            ? 'Delivery is unconfirmed and the agent may already have received this message. Continue without resending it?'
-            : 'An earlier message has unconfirmed delivery and is blocking this send. Continue without resending the earlier message?',
+        const confirmed = extras?.confirmedRecoveryOrigin === recoveryOrigin || window.confirm(
+          'An earlier message has unconfirmed delivery and is blocking this send. Continue without resending the earlier message?',
         )
         if (confirmed) {
           let resolution
@@ -1269,47 +1316,33 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               action: 'abandon',
             })
           } catch (error) {
-            updateMessage(sessionId, pendingMessage.id, { deliveryState: 'unconfirmed' })
+            useAgentStore.getState().removeMessage(sessionId, pendingMessage.id)
             return {
               accepted: false,
               error: `Could not resolve unconfirmed delivery: ${error instanceof Error ? error.message : String(error)}`,
+              delivery: 'ambiguous',
+              recoveryOrigin,
             }
           }
-          if (resolution.status === 'abandoned' || resolution.status === 'completed') {
+          if (desktopRecoveryResolutionAllowsSend(resolution.status)) {
             // The recovered origin may be this pending row or an older row
             // blocking the new send. Preserve an abandoned attempt without
             // falsely presenting it as accepted; a completed record is
             // authoritative acceptance.
-            updateMessage(sessionId, echoMessageId(recoveryOrigin), {
-              deliveryState: resolvedDesktopTurnDeliveryState(resolution.status),
-            })
-            if (recoveringCurrentTurn) {
-              if (resolution.status === 'abandoned') {
-                desktopTurnAttempts.accept(sessionId, recoveryOrigin)
-                desktopPreparedTurns.accept(sessionId, recoveryOrigin)
-                appendMessage(sessionId, {
-                  id: `turn_abandoned_${recoveryOrigin}`,
-                  role: 'system',
-                  content: 'Unconfirmed message was not resent. Delivery may already have occurred.',
-                  timestamp: Date.now(),
-                })
-                return { accepted: true }
-              }
-              // Replay the completed origin so the backend republishes its
-              // canonical event if the original response and event were lost.
-              outcome = await submitDesktopUserTurn(turn, submissionDependencies)
-            } else {
-              desktopTurnAttempts.accept(sessionId, recoveryOrigin)
-              desktopPreparedTurns.accept(sessionId, recoveryOrigin)
-              outcome = await submitDesktopUserTurn(turn, submissionDependencies)
-            }
+            desktopTurnAttempts.accept(sessionId, recoveryOrigin)
+            desktopPreparedTurns.accept(sessionId, recoveryOrigin)
+            outcome = await submitDesktopUserTurn(turn, submissionDependencies)
           } else {
-            updateMessage(sessionId, pendingMessage.id, { deliveryState: 'unconfirmed' })
-            return { accepted: false, error: resolution.reason }
+            useAgentStore.getState().removeMessage(sessionId, pendingMessage.id)
+            return {
+              accepted: false,
+              error: 'reason' in resolution ? resolution.reason : 'The earlier delivery is still unresolved.',
+              delivery: 'ambiguous',
+              recoveryOrigin,
+            }
           }
         }
       }
-      const disposition = pendingDesktopTurnDisposition(outcome)
       if (outcome.accepted) {
         // The accepted result is itself authoritative. Usually the canonical
         // event has already reconciled this row, but clearing here also covers
@@ -1322,12 +1355,16 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         desktopPreparedTurns.accept(sessionId, origin)
         return { accepted: true }
       }
-      if (disposition === 'remove') {
-        useAgentStore.getState().removeMessage(sessionId, pendingMessage.id)
-      } else {
-        updateMessage(sessionId, pendingMessage.id, { deliveryState: 'unconfirmed' })
+      if (!shouldRetainPreparedDesktopTurn(outcome.delivery)) {
+        desktopTurnAttempts.accept(sessionId, origin)
+        desktopPreparedTurns.accept(sessionId, origin)
       }
-      return { accepted: false, error: outcome.error }
+      useAgentStore.getState().removeMessage(sessionId, pendingMessage.id)
+      return {
+        accepted: false,
+        error: outcome.error,
+        delivery: shouldRetainPreparedDesktopTurn(outcome.delivery) ? 'ambiguous' : 'rejected',
+      }
     },
     // `instanceId`, `model`, `reasoningEffort` matter on the FIRST send
     // after a session restart (e.g. instance chip switch resets
@@ -1618,9 +1655,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
               ? 'thinking\u2026'
               : status === 'idle' && pendingDeliveryState === 'pending'
                 ? 'sending\u2026'
-                : status === 'idle' && pendingDeliveryState === 'unconfirmed'
-                  ? 'unconfirmed'
-                  : status === 'idle' ? 'ready' : status}
+                : status === 'idle' ? 'ready' : status}
           </span>
         )}
       </div>

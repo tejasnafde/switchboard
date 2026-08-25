@@ -52,19 +52,32 @@ export function acceptedDesktopUserMessage(event: RuntimeUserMessageEvent): Chat
   }
 }
 
-export function pendingDesktopTurnDisposition(
-  outcome: DesktopTurnSubmissionOutcome,
-): 'accepted' | 'remove' | 'unconfirmed' {
-  if (outcome.accepted) return 'accepted'
-  return outcome.delivery === 'pending' || outcome.delivery === 'ambiguous'
-    ? 'unconfirmed'
-    : 'remove'
+export type DesktopComposerRecoveryAction =
+  | 'retry-safe'
+  | 'retry'
+  | 'send-with-warning'
+  | 'send-with-discard-warning'
+  | 'send'
+
+export function desktopComposerRecoveryAction(
+  recoveryFingerprint: string,
+  currentFingerprint: string,
+  ambiguous: boolean,
+  restored: boolean = false,
+): DesktopComposerRecoveryAction {
+  if (recoveryFingerprint === currentFingerprint) {
+    return ambiguous ? 'retry-safe' : 'retry'
+  }
+  if (ambiguous) return 'send-with-warning'
+  return restored ? 'send' : 'send-with-discard-warning'
 }
 
-export function resolvedDesktopTurnDeliveryState(
-  status: 'abandoned' | 'completed',
-): ChatMessage['deliveryState'] {
-  return status === 'abandoned' ? 'abandoned' : undefined
+export function desktopRecoveryResolutionAllowsSend(status: string): boolean {
+  return status === 'abandoned' || status === 'completed' || status === 'not_found'
+}
+
+export function shouldRetainPreparedDesktopTurn(delivery: string): boolean {
+  return delivery === 'pending' || delivery === 'ambiguous'
 }
 
 /**
@@ -175,6 +188,7 @@ export const desktopTurnAttempts = createDesktopTurnAttemptRegistry()
 
 export interface DesktopPreparedTurnRegistry {
   prepare(turn: UserTurnSubmissionV1): UserTurnSubmissionV1
+  get(threadId: string, origin: string): UserTurnSubmissionV1 | undefined
   accept(threadId: string, origin: string): void
 }
 
@@ -188,6 +202,9 @@ export function createDesktopPreparedTurnRegistry(): DesktopPreparedTurnRegistry
       if (existing) return existing
       prepared.set(id, turn)
       return turn
+    },
+    get(threadId, origin) {
+      return prepared.get(key(threadId, origin))
     },
     accept(threadId, origin) {
       prepared.delete(key(threadId, origin))

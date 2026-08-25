@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import * as submissionModule from '../../src/renderer/services/desktopTurnSubmission'
 import {
   acceptedDesktopUserMessage,
-  pendingDesktopTurnDisposition,
   pendingDesktopUserMessage,
-  resolvedDesktopTurnDeliveryState,
-  type DesktopTurnSubmissionOutcome,
 } from '../../src/renderer/services/desktopTurnSubmission'
 import type { RuntimeUserMessageEvent, UserTurnSubmissionV1 } from '../../src/shared/provider-events'
 
@@ -56,21 +54,72 @@ describe('Desktop pending user-turn presentation', () => {
     })
   })
 
-  it.each([
-    [{ accepted: true, delivery: 'accepted', result: { status: 'accepted', accepted: true, duplicate: false, state: 'completed', acceptedAt: 1 } }, 'accepted'],
-    [{ accepted: false, delivery: 'rejected', error: 'not started' }, 'remove'],
-    [{ accepted: false, delivery: 'conflict', error: 'origin conflict' }, 'remove'],
-    [{ accepted: false, delivery: 'pending', error: 'still reserved' }, 'unconfirmed'],
-    [{ accepted: false, delivery: 'ambiguous', error: 'transport lost', recoveryOrigin: 'origin-1' }, 'unconfirmed'],
-  ] as Array<[DesktopTurnSubmissionOutcome, 'accepted' | 'remove' | 'unconfirmed']>)(
-    'maps %s without presenting a rejection as sent',
-    (outcome, expected) => {
-      expect(pendingDesktopTurnDisposition(outcome)).toBe(expected)
-    },
-  )
+  it('labels an unchanged ambiguous recovery as a safe retry', () => {
+    const recoveryAction = (submissionModule as unknown as Record<string, unknown>)
+      .desktopComposerRecoveryAction
+    expect(typeof recoveryAction).toBe('function')
 
-  it('distinguishes terminal abandonment from a completed canonical turn', () => {
-    expect(resolvedDesktopTurnDeliveryState('abandoned')).toBe('abandoned')
-    expect(resolvedDesktopTurnDeliveryState('completed')).toBeUndefined()
+    expect((recoveryAction as (
+      recoveryFingerprint: string,
+      currentFingerprint: string,
+      ambiguous: boolean,
+    ) => string)('same', 'same', true)).toBe('retry-safe')
+  })
+
+  it('requires a warning before an edited ambiguous recovery becomes a new send', () => {
+    const candidate = (submissionModule as unknown as Record<string, unknown>)
+      .desktopComposerRecoveryAction
+    expect(typeof candidate).toBe('function')
+    const recoveryAction = candidate as (
+        recoveryFingerprint: string,
+        currentFingerprint: string,
+        ambiguous: boolean,
+    ) => string
+
+    expect(recoveryAction('before', 'after', true)).toBe('send-with-warning')
+    expect(recoveryAction('before', 'after', false)).toBe('send-with-discard-warning')
+  })
+
+  it('labels an unchanged definite failure as a retry', () => {
+    expect(submissionModule.desktopComposerRecoveryAction('same', 'same', false)).toBe('retry')
+  })
+
+  it('warns before a newer draft discards an unrestored definite failure', () => {
+    expect(submissionModule.desktopComposerRecoveryAction('before', 'after', false))
+      .toBe('send-with-discard-warning')
+  })
+
+  it('does not warn when the definite failure was already restored and edited in place', () => {
+    expect(submissionModule.desktopComposerRecoveryAction('before', 'after', false, true))
+      .toBe('send')
+  })
+
+  it('treats a missing durable delivery row as safe to move past', () => {
+    const allowsSend = (submissionModule as unknown as Record<string, unknown>)
+      .desktopRecoveryResolutionAllowsSend
+    expect(typeof allowsSend).toBe('function')
+    expect((allowsSend as (status: string) => boolean)('not_found')).toBe(true)
+    expect((allowsSend as (status: string) => boolean)('pending')).toBe(false)
+  })
+
+  it('retains prepared turns only while delivery is still genuinely ambiguous', () => {
+    const retain = (submissionModule as unknown as Record<string, unknown>)
+      .shouldRetainPreparedDesktopTurn
+    expect(typeof retain).toBe('function')
+    expect((retain as (delivery: string) => boolean)('ambiguous')).toBe(true)
+    expect((retain as (delivery: string) => boolean)('pending')).toBe(true)
+    expect((retain as (delivery: string) => boolean)('rejected')).toBe(false)
+    expect((retain as (delivery: string) => boolean)('conflict')).toBe(false)
+  })
+
+  it('retains a prepared turn for authoritative recovery replay', () => {
+    const registry = submissionModule.createDesktopPreparedTurnRegistry() as unknown as Record<string, unknown>
+    expect(typeof registry.get).toBe('function')
+    ;(registry.prepare as (value: UserTurnSubmissionV1) => UserTurnSubmissionV1)(turn)
+
+    expect((registry.get as (threadId: string, origin: string) => UserTurnSubmissionV1 | undefined)(
+      turn.threadId,
+      turn.origin,
+    )).toEqual(turn)
   })
 })

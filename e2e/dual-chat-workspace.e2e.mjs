@@ -42,7 +42,13 @@ async function selectSidebarSession(win, title, sessionId) {
   if (await projectThread.count() > 0 && await projectThread.first().isVisible()) {
     await projectThread.first().click()
   } else {
-    await win.locator('.sidebar-recent-row', { hasText: title }).first().click()
+    const recent = win.locator('.sidebar-recent-row', { hasText: title }).first()
+    for (let reveal = 0; reveal < 5 && await recent.count() === 0; reveal++) {
+      const showMore = win.locator('.sidebar-recents-more', { hasText: 'Show' }).first()
+      if (await showMore.count() === 0) break
+      await showMore.click()
+    }
+    await recent.click()
   }
   await win.locator(`[data-chat-slot="primary"][data-session-id="${sessionId}"]`).waitFor()
 }
@@ -88,6 +94,13 @@ try {
     await window.api.app.createConversation({ id: 'dual-a', projectPath: projectAPath, agentType: 'claude-code', title: 'Dual A' })
     await window.api.app.createConversation({ id: 'dual-b', projectPath: projectBPath, agentType: 'codex', title: 'Dual B' })
     await window.api.app.createConversation({ id: 'idle-feedback', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Feedback' })
+    await window.api.app.createConversation({ id: 'idle-rollback', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Rollback' })
+    await window.api.app.createConversation({ id: 'idle-collision', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Collision' })
+    await window.api.app.createConversation({ id: 'idle-ambiguous', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Ambiguous' })
+    await window.api.app.createConversation({ id: 'idle-acceptance-race', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Acceptance Race' })
+    await window.api.app.createConversation({ id: 'idle-resolution-failure', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Resolution Failure' })
+    await window.api.app.createConversation({ id: 'idle-resolution-not-found', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Resolution Not Found' })
+    await window.api.app.createConversation({ id: 'idle-edited-ambiguous', projectPath: projectAPath, agentType: 'claude-code', title: 'Idle Edited Ambiguous' })
     await window.api.app.createConversation({ id: 'tall-history', projectPath: projectAPath, agentType: 'claude-code', title: 'Tall History' })
     await window.api.app.saveMessage({ id: 'seed-a', conversationId: 'dual-a', role: 'assistant', content: 'Seed response from A' })
     await window.api.app.saveMessage({ id: 'seed-b', conversationId: 'dual-b', role: 'assistant', content: 'Seed response from B' })
@@ -124,13 +137,131 @@ try {
   // authoritative-result fallback as well as the pending presentation.
   await selectSidebarSession(win, 'Idle Feedback', 'idle-feedback')
   const idlePanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-feedback"]')
-  const providerStubbed = await app.evaluate(({ ipcMain }) => {
+  const providerStubbed = await app.evaluate(({ ipcMain, BrowserWindow }) => {
+    globalThis.__sbIdleRollbackOrigins = []
+    globalThis.__sbIdleAmbiguousOrigins = []
+    globalThis.__sbIdleEditedAmbiguousOrigins = []
+    globalThis.__sbIdleResolutionFailureOrigins = []
+    globalThis.__sbIdleResolutionNotFoundOrigins = []
+    globalThis.__sbIdleEditedRecoveryResolved = false
+    globalThis.__sbIdleEditedRecoveryOrder = []
     ipcMain.removeHandler('provider:start-session')
     ipcMain.handle('provider:start-session', async () => {
       await new Promise((resolve) => setTimeout(resolve, 800))
     })
     ipcMain.removeHandler('provider:submit-user-turn')
-    ipcMain.handle('provider:submit-user-turn', async () => {
+    ipcMain.handle('provider:submit-user-turn', async (_event, turn) => {
+      if (turn.threadId === 'idle-rollback') {
+        globalThis.__sbIdleRollbackOrigins.push(turn.origin)
+        if (globalThis.__sbIdleRollbackOrigins.length === 1) {
+          return {
+            status: 'rejected',
+            accepted: false,
+            duplicate: false,
+            state: 'rejected',
+            retryable: true,
+            reason: 'Fixture rejected the first delivery',
+          }
+        }
+      }
+      if (turn.threadId === 'idle-collision') {
+        return {
+          status: 'rejected',
+          accepted: false,
+          duplicate: false,
+          state: 'rejected',
+          retryable: true,
+          reason: 'Fixture rejected the colliding delivery',
+        }
+      }
+      if (turn.threadId === 'idle-ambiguous') {
+        globalThis.__sbIdleAmbiguousOrigins.push(turn.origin)
+        if (globalThis.__sbIdleAmbiguousOrigins.length === 1) {
+          return {
+            status: 'ambiguous',
+            accepted: false,
+            duplicate: false,
+            state: 'ambiguous',
+            reason: 'Fixture could not confirm delivery',
+          }
+        }
+      }
+      if (turn.threadId === 'idle-acceptance-race') {
+        const main = BrowserWindow.getAllWindows().find((candidate) => candidate.getTitle() === 'Switchboard')
+        setTimeout(() => main?.webContents.send('provider:event', {
+          type: 'user.message',
+          threadId: turn.threadId,
+          origin: turn.origin,
+          text: turn.providerText,
+          at: Date.now(),
+        }), 0)
+        return {
+          status: 'ambiguous',
+          accepted: false,
+          duplicate: false,
+          state: 'ambiguous',
+          reason: 'Fixture races acceptance against the ambiguous response',
+        }
+      }
+      if (turn.threadId === 'idle-resolution-failure') {
+        globalThis.__sbIdleResolutionFailureOrigins.push(turn.origin)
+        if (globalThis.__sbIdleResolutionFailureOrigins.length === 1) {
+          return {
+            status: 'ambiguous',
+            accepted: false,
+            duplicate: false,
+            state: 'ambiguous',
+            reason: 'Fixture leaves the original delivery ambiguous',
+          }
+        }
+      }
+      if (turn.threadId === 'idle-resolution-not-found') {
+        globalThis.__sbIdleResolutionNotFoundOrigins.push(turn.origin)
+        if (globalThis.__sbIdleResolutionNotFoundOrigins.length === 1) {
+          return {
+            status: 'ambiguous',
+            accepted: false,
+            duplicate: false,
+            state: 'ambiguous',
+            reason: 'Fixture has no durable row for the first delivery',
+          }
+        }
+      }
+      if (turn.threadId === 'idle-edited-ambiguous') {
+        globalThis.__sbIdleEditedAmbiguousOrigins.push(turn.origin)
+        globalThis.__sbIdleEditedRecoveryOrder.push(`submit:${turn.origin}`)
+        if (globalThis.__sbIdleEditedAmbiguousOrigins.length === 1) {
+          return {
+            status: 'ambiguous',
+            accepted: false,
+            duplicate: false,
+            state: 'ambiguous',
+            reason: 'Fixture could not confirm edited delivery',
+          }
+        }
+        if (globalThis.__sbIdleEditedRecoveryResolved
+          && turn.origin === globalThis.__sbIdleEditedAmbiguousOrigins[0]) {
+          const main = BrowserWindow.getAllWindows().find((candidate) => candidate.getTitle() === 'Switchboard')
+          main?.webContents.send('provider:event', {
+            type: 'user.message',
+            threadId: turn.threadId,
+            origin: turn.origin,
+            text: 'Ambiguous message before edit',
+            at: Date.now(),
+          })
+        }
+        if (!globalThis.__sbIdleEditedRecoveryResolved) {
+          return {
+            status: 'rejected',
+            accepted: false,
+            duplicate: false,
+            state: 'rejected',
+            retryable: true,
+            reason: 'Earlier ambiguous delivery blocks this turn',
+            blockingOrigin: globalThis.__sbIdleEditedAmbiguousOrigins[0],
+          }
+        }
+      }
       return {
         status: 'accepted',
         accepted: true,
@@ -138,6 +269,19 @@ try {
         state: 'completed',
         acceptedAt: Date.now(),
       }
+    })
+    ipcMain.removeHandler('provider:resolve-user-turn')
+    ipcMain.handle('provider:resolve-user-turn', async (_event, resolution) => {
+      if (resolution.threadId === 'idle-resolution-failure') {
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        return { status: 'pending', reason: 'Fixture could not resolve the earlier delivery' }
+      }
+      if (resolution.threadId === 'idle-resolution-not-found') {
+        return { status: 'not_found', reason: 'No matching turn delivery was found' }
+      }
+      globalThis.__sbIdleEditedRecoveryResolved = true
+      globalThis.__sbIdleEditedRecoveryOrder.push(`resolve:${resolution.origin}`)
+      return { status: 'completed', changed: false }
     })
     return true
   })
@@ -148,12 +292,224 @@ try {
   const idleSending = idlePanel.getByText('Sending…', { exact: true }).first()
   await idleSending.waitFor({ timeout: 700 })
   assert(
-    (await idleComposer.textContent())?.includes('Cold idle feedback check'),
-    'cold idle send keeps the exact draft until acceptance',
+    !(await idleComposer.textContent())?.includes('Cold idle feedback check'),
+    'cold idle send clears the composer before provider acceptance',
   )
   await idleSending.waitFor({ state: 'detached', timeout: 2_000 })
   assert(!(await idleComposer.textContent())?.includes('Cold idle feedback check'), 'accepted idle send clears the draft')
   assert(await idlePanel.getByText('Cold idle feedback check').count() === 1, 'accepted idle send keeps one reconciled bubble')
+
+  await selectSidebarSession(win, 'Idle Rollback', 'idle-rollback')
+  const rollbackPanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-rollback"]')
+  const rollbackComposer = rollbackPanel.getByLabel('Chat message')
+  await rollbackComposer.fill('Restore this failed idle send')
+  await rollbackComposer.press('Enter')
+  assert(
+    !(await rollbackComposer.textContent())?.includes('Restore this failed idle send'),
+    'failed idle send clears the composer while delivery is pending',
+  )
+  await rollbackPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
+  assert(
+    (await rollbackComposer.textContent())?.includes('Restore this failed idle send'),
+    'definite delivery failure restores the exact draft',
+  )
+  assert(
+    await rollbackPanel.locator('.chat-composer button', { hasText: 'Retry' }).count() === 1,
+    'restored failed delivery exposes a Retry action',
+  )
+  assert(
+    await rollbackPanel.locator('[data-message-list-scroll]').getByText('Restore this failed idle send').count() === 0,
+    'failed optimistic bubble is removed from the transcript',
+  )
+  await rollbackPanel.locator('.chat-composer button', { hasText: 'Retry' }).click()
+  await rollbackPanel.locator('[data-composer-send-error]').waitFor({ state: 'detached', timeout: 2_000 })
+  assert(
+    await rollbackPanel.locator('[data-message-list-scroll]').getByText('Restore this failed idle send').count() === 1,
+    'retry commits one accepted bubble',
+  )
+  const rollbackOrigins = await app.evaluate(() => globalThis.__sbIdleRollbackOrigins)
+  assert(
+    rollbackOrigins.length === 2 && rollbackOrigins[0] === rollbackOrigins[1],
+    'unchanged retry reuses the original delivery id',
+  )
+
+  await selectSidebarSession(win, 'Idle Collision', 'idle-collision')
+  const collisionPanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-collision"]')
+  const collisionComposer = collisionPanel.getByLabel('Chat message')
+  await collisionComposer.fill('Failed message waiting for rollback')
+  await collisionComposer.press('Enter')
+  await collisionPanel.getByText('Sending…', { exact: true }).first().waitFor({ timeout: 700 })
+  await collisionComposer.fill('New draft typed while sending')
+  await collisionPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
+  assert(
+    (await collisionComposer.textContent())?.includes('New draft typed while sending'),
+    'delivery rollback never overwrites a newer draft',
+  )
+  assert(
+    !(await collisionComposer.textContent())?.includes('Failed message waiting for rollback'),
+    'detached failed payload stays outside the newer composer',
+  )
+  assert(
+    await collisionPanel.locator('[data-composer-recovery] button', { hasText: 'Restore' }).count() === 1,
+    'colliding rollback exposes an explicit Restore action',
+  )
+  let discardWarningCount = 0
+  const acceptDiscardWarning = async (dialog) => {
+    discardWarningCount += 1
+    await dialog.accept()
+  }
+  win.on('dialog', acceptDiscardWarning)
+  await collisionComposer.press('Enter')
+  await collisionPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
+  win.off('dialog', acceptDiscardWarning)
+  assert(discardWarningCount === 1, 'newer draft requires confirmation before discarding a failed payload')
+  await collisionComposer.fill('Corrected auto-restored failure')
+  let unexpectedRestoredWarning = false
+  const dismissUnexpectedRestoredWarning = async (dialog) => {
+    unexpectedRestoredWarning = true
+    await dialog.dismiss()
+  }
+  win.on('dialog', dismissUnexpectedRestoredWarning)
+  await collisionComposer.press('Enter')
+  await win.waitForTimeout(250)
+  win.off('dialog', dismissUnexpectedRestoredWarning)
+  assert(!unexpectedRestoredWarning, 'editing an auto-restored definite failure sends without a false discard warning')
+
+  await selectSidebarSession(win, 'Idle Acceptance Race', 'idle-acceptance-race')
+  const racePanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-acceptance-race"]')
+  const raceComposer = racePanel.getByLabel('Chat message')
+  await raceComposer.fill('Acceptance event racing recovery state')
+  await raceComposer.press('Enter')
+  await racePanel.getByText('Acceptance event racing recovery state').waitFor({ timeout: 2_000 })
+  await racePanel.locator('[data-composer-send-error]').waitFor({ state: 'detached', timeout: 2_000 })
+  assert(
+    !(await raceComposer.textContent())?.includes('Acceptance event racing recovery state'),
+    'canonical acceptance clears recovery even when it races the ambiguous response',
+  )
+
+  await selectSidebarSession(win, 'Idle Resolution Failure', 'idle-resolution-failure')
+  const resolutionFailurePanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-resolution-failure"]')
+  const resolutionFailureComposer = resolutionFailurePanel.getByLabel('Chat message')
+  await resolutionFailureComposer.fill('Original ambiguous payload')
+  await resolutionFailureComposer.press('Enter')
+  await resolutionFailurePanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
+  await resolutionFailureComposer.fill('Edited payload blocked by recovery')
+  const acceptResolutionWarning = async (dialog) => dialog.accept()
+  win.on('dialog', acceptResolutionWarning)
+  await resolutionFailureComposer.press('Enter')
+  await resolutionFailureComposer.fill('Newest draft typed while resolving')
+  await resolutionFailurePanel.getByText('Fixture could not resolve the earlier delivery').waitFor({ timeout: 2_000 })
+  win.off('dialog', acceptResolutionWarning)
+  assert(
+    (await resolutionFailureComposer.textContent())?.includes('Newest draft typed while resolving'),
+    'failed ambiguity resolution preserves text typed during the round trip',
+  )
+  const restoreBlockedPayload = async (dialog) => dialog.accept()
+  win.on('dialog', restoreBlockedPayload)
+  await resolutionFailurePanel.locator('[data-composer-recovery] button', { hasText: 'Restore' }).click()
+  win.off('dialog', restoreBlockedPayload)
+  assert(
+    (await resolutionFailureComposer.textContent())?.includes('Edited payload blocked by recovery'),
+    'failed ambiguity resolution keeps the detached submitted payload recoverable',
+  )
+
+  await selectSidebarSession(win, 'Idle Resolution Not Found', 'idle-resolution-not-found')
+  const notFoundPanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-resolution-not-found"]')
+  const notFoundComposer = notFoundPanel.getByLabel('Chat message')
+  await notFoundComposer.fill('Ambiguous request with no durable row')
+  await notFoundComposer.press('Enter')
+  await notFoundPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
+  await notFoundComposer.fill('Edited request after missing row')
+  const acceptNotFoundWarning = async (dialog) => dialog.accept()
+  win.on('dialog', acceptNotFoundWarning)
+  await notFoundComposer.press('Enter')
+  await notFoundPanel.getByText('Edited request after missing row').waitFor({ timeout: 2_000 })
+  win.off('dialog', acceptNotFoundWarning)
+  await notFoundPanel.locator('[data-composer-send-error]').waitFor({ state: 'detached', timeout: 2_000 })
+  assert(
+    (await app.evaluate(() => globalThis.__sbIdleResolutionNotFoundOrigins)).length === 2,
+    'missing durable recovery row allows the edited turn to proceed once',
+  )
+
+  await selectSidebarSession(win, 'Idle Ambiguous', 'idle-ambiguous')
+  const ambiguousPanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-ambiguous"]')
+  const ambiguousComposer = ambiguousPanel.getByLabel('Chat message')
+  await ambiguousComposer.fill('Ambiguous message awaiting confirmation')
+  await ambiguousComposer.press('Enter')
+  await ambiguousPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
+  assert(
+    await ambiguousPanel.locator('.chat-composer button', { hasText: 'Retry safely' }).count() === 1,
+    'ambiguous rollback exposes a safe idempotent retry',
+  )
+  const [ambiguousOrigin] = await app.evaluate(() => globalThis.__sbIdleAmbiguousOrigins)
+  await selectSidebarSession(win, 'Idle Feedback', 'idle-feedback')
+  await emitProviderEvents([{
+    type: 'user.message',
+    threadId: 'idle-ambiguous',
+    origin: ambiguousOrigin,
+    text: 'Ambiguous message awaiting confirmation',
+    at: Date.now(),
+  }])
+  await selectSidebarSession(win, 'Idle Ambiguous', 'idle-ambiguous')
+  await ambiguousPanel.locator('[data-composer-send-error]').waitFor({ state: 'detached', timeout: 2_000 })
+  assert(
+    !(await ambiguousComposer.textContent())?.includes('Ambiguous message awaiting confirmation'),
+    'late canonical acceptance clears an unchanged restored draft while hidden',
+  )
+  let unexpectedRecoveryDialog = false
+  const dismissUnexpectedRecoveryDialog = async (dialog) => {
+    unexpectedRecoveryDialog = true
+    await dialog.dismiss()
+  }
+  win.on('dialog', dismissUnexpectedRecoveryDialog)
+  await ambiguousComposer.fill('Message after late acceptance')
+  await ambiguousComposer.press('Enter')
+  await win.waitForTimeout(250)
+  win.off('dialog', dismissUnexpectedRecoveryDialog)
+  assert(!unexpectedRecoveryDialog, 'late acceptance clears stale recovery state before the next send')
+
+  await selectSidebarSession(win, 'Idle Edited Ambiguous', 'idle-edited-ambiguous')
+  const editedPanel = win.locator('[data-chat-slot="primary"][data-session-id="idle-edited-ambiguous"]')
+  const editedComposer = editedPanel.getByLabel('Chat message')
+  await editedComposer.fill('Ambiguous message before edit')
+  await editedComposer.press('Enter')
+  await editedPanel.locator('[data-composer-send-error]').waitFor({ timeout: 2_000 })
+  await editedComposer.fill('Edited message after ambiguity')
+  let editedWarningCount = 0
+  const acceptEditedWarning = async (dialog) => {
+    editedWarningCount += 1
+    await dialog.accept()
+  }
+  win.on('dialog', acceptEditedWarning)
+  await editedComposer.press('Enter')
+  await editedPanel.locator('[data-message-list-scroll]').getByText('Edited message after ambiguity').waitFor({ timeout: 3_000 })
+  win.off('dialog', acceptEditedWarning)
+  assert(editedWarningCount === 1, 'edited ambiguous delivery requires exactly one warning')
+  const editedOrigins = await app.evaluate(() => globalThis.__sbIdleEditedAmbiguousOrigins)
+  assert(
+    editedOrigins.length === 3
+      && editedOrigins[0] === editedOrigins[1]
+      && editedOrigins[1] !== editedOrigins[2],
+    'edited ambiguous delivery creates exactly one new delivery id',
+  )
+  const editedRecoveryOrder = await app.evaluate(() => globalThis.__sbIdleEditedRecoveryOrder)
+  assert(
+    editedRecoveryOrder.length === 4
+      && editedRecoveryOrder[0].startsWith('submit:')
+      && editedRecoveryOrder[1] === `resolve:${editedOrigins[0]}`
+      && editedRecoveryOrder[2] === `submit:${editedOrigins[0]}`
+      && editedRecoveryOrder[3] === `submit:${editedOrigins[2]}`,
+    'edited ambiguity resolves the prior delivery before submitting the new id',
+  )
+  const editedTranscript = await editedPanel.locator('[data-message-id]').evaluateAll((rows) =>
+    rows.map((row) => row.textContent ?? ''),
+  )
+  const recoveredIndex = editedTranscript.findIndex((text) => text.includes('Ambiguous message before edit'))
+  const editedIndex = editedTranscript.findIndex((text) => text.includes('Edited message after ambiguity'))
+  assert(
+    recoveredIndex >= 0 && editedIndex > recoveredIndex,
+    'completed recovery renders before the newly submitted edited turn',
+  )
 
   // A large remote history arrives in one load. Dynamic row measurement must
   // finish without leaving tall turns at the 120 px estimate, which paints

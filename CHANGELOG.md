@@ -2,6 +2,19 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.51 - Make optimistic sends feel immediate
+
+### Fixed
+- **Sending no longer leaves the same message in two places.** Desktop clears the composer as soon as an idle or active send begins while retaining the optimistic transcript bubble and working feedback.
+- **Failed sends roll back into the composer instead of becoming transcript debris.** Text, pills, images, and retry identity restore together with the concrete delivery error; the failed optimistic bubble is removed.
+- **Retries remain duplicate-safe.** An unchanged ambiguous message exposes `Retry safely` and reuses its original delivery ID. Editing it creates one new ID after a single warning and resolves the older uncertain delivery before submission.
+- **New drafts and late acknowledgements cannot race recovery.** A newer draft is never overwritten, detached failures expose an explicit Restore action, and canonical acceptance clears matching recovery even while its chat is hidden.
+
+### Notes
+- This patch changes Desktop composer presentation only. The shared atomic API and stored data are unchanged; React Native/iOS and native Android retain their existing durable outbox implementations and versions.
+- Direct upgrades use the existing migration path. Verification uses disposable profiles and never opens or mutates the running v0.8.35 profile.
+- macOS releases remain unsigned until production signing credentials are configured. macOS 12 or later is required.
+
 ## 0.8.50 - Repair rich chats and acknowledge idle sends
 
 ### Fixed

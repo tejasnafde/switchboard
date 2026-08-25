@@ -578,16 +578,10 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             marginTop: '2px',
             paddingRight: isUser ? '2px' : 0,
             fontSize: '10px',
-            color: message.deliveryState === 'unconfirmed'
-              ? 'var(--warning)'
-              : 'var(--text-muted)',
+            color: 'var(--text-muted)',
           }}
         >
-          {message.deliveryState === 'pending'
-            ? 'Sending\u2026'
-            : message.deliveryState === 'unconfirmed'
-              ? 'Delivery unconfirmed'
-              : 'Delivery unresolved · not resent'}
+          Sending\u2026
         </div>
       )}
 

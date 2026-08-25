@@ -2871,6 +2871,36 @@ mark.sb-search-mark.active {
   outline-offset: 2px;
 }
 
+.composer-recovery-action {
+  min-height: 30px;
+  margin-top: 6px;
+  padding: 5px 10px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition-property: background-color, transform;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
+}
+
+.composer-recovery-action:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.composer-recovery-action:active {
+  transform: scale(0.96);
+}
+
+.composer-recovery-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .google-mint-action--primary {
   border-color: var(--accent);
   background: var(--accent);

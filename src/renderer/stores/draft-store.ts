@@ -35,6 +35,49 @@ export interface DraftPill {
   content: string
 }
 
+export interface DraftPayload {
+  text: string
+  pills: DraftPill[]
+  images: ImageAttachment[]
+}
+
+export function draftPayloadEquals(left: DraftPayload, right: DraftPayload): boolean {
+  if (left.text !== right.text || left.pills.length !== right.pills.length
+    || left.images.length !== right.images.length) return false
+
+  for (let index = 0; index < left.pills.length; index += 1) {
+    const a = left.pills[index]
+    const b = right.pills[index]
+    if (a.id !== b.id || a.kind !== b.kind || a.label !== b.label || a.content !== b.content) {
+      return false
+    }
+  }
+
+  for (let index = 0; index < left.images.length; index += 1) {
+    const a = left.images[index]
+    const b = right.images[index]
+    if (a.id !== b.id
+      || a.file.name !== b.file.name
+      || a.file.size !== b.file.size
+      || a.file.type !== b.file.type
+      || a.file.lastModified !== b.file.lastModified) return false
+  }
+
+  return true
+}
+
+export function discardDetachedDraftPayload(
+  payload: DraftPayload,
+  retainedPayloads: DraftPayload[] = [],
+): void {
+  const retainedUrls = new Set(
+    retainedPayloads.flatMap((retained) => retained.images.map((image) => image.previewUrl)),
+  )
+  for (const image of payload.images) {
+    if (!retainedUrls.has(image.previewUrl)) URL.revokeObjectURL(image.previewUrl)
+  }
+}
+
 function loadDrafts(): Record<string, string> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
@@ -96,8 +139,10 @@ interface DraftStore {
   clearImages: (sessionId: string) => void
   replaceDraftPayload: (
     sessionId: string,
-    payload: { text: string; pills: DraftPill[]; images: ImageAttachment[] },
+    payload: DraftPayload,
   ) => void
+  detachDraftPayload: (sessionId: string) => DraftPayload | undefined
+  restoreDraftPayloadIfEmpty: (sessionId: string, payload: DraftPayload) => boolean
 }
 
 export const useDraftStore = create<DraftStore>((set, get) => ({
@@ -197,7 +242,9 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
   replaceDraftPayload: (sessionId, payload) =>
     set((state) => {
       for (const image of state.imagesBySession[sessionId] ?? []) {
-        URL.revokeObjectURL(image.previewUrl)
+        if (!payload.images.some((replacement) => replacement.previewUrl === image.previewUrl)) {
+          URL.revokeObjectURL(image.previewUrl)
+        }
       }
       const drafts = { ...state.drafts }
       const pillsBySession = { ...state.pillsBySession }
@@ -212,4 +259,47 @@ export const useDraftStore = create<DraftStore>((set, get) => ({
       savePills(pillsBySession)
       return { drafts, pillsBySession, imagesBySession }
     }),
+
+  detachDraftPayload: (sessionId) => {
+    let detached: DraftPayload | undefined
+    set((state) => {
+      const text = state.drafts[sessionId] ?? ''
+      const pills = state.pillsBySession[sessionId] ?? []
+      const images = state.imagesBySession[sessionId] ?? []
+      if (!text && pills.length === 0 && images.length === 0) return state
+
+      detached = { text, pills, images }
+      const drafts = { ...state.drafts }
+      const pillsBySession = { ...state.pillsBySession }
+      const imagesBySession = { ...state.imagesBySession }
+      delete drafts[sessionId]
+      delete pillsBySession[sessionId]
+      delete imagesBySession[sessionId]
+      saveDrafts(drafts)
+      savePills(pillsBySession)
+      return { drafts, pillsBySession, imagesBySession }
+    })
+    return detached
+  },
+
+  restoreDraftPayloadIfEmpty: (sessionId, payload) => {
+    let restored = false
+    set((state) => {
+      if (state.drafts[sessionId]
+        || state.pillsBySession[sessionId]?.length
+        || state.imagesBySession[sessionId]?.length) return state
+
+      restored = true
+      const drafts = { ...state.drafts }
+      const pillsBySession = { ...state.pillsBySession }
+      const imagesBySession = { ...state.imagesBySession }
+      if (payload.text) drafts[sessionId] = payload.text
+      if (payload.pills.length) pillsBySession[sessionId] = payload.pills
+      if (payload.images.length) imagesBySession[sessionId] = payload.images
+      saveDrafts(drafts)
+      savePills(pillsBySession)
+      return { drafts, pillsBySession, imagesBySession }
+    })
+    return restored
+  },
 }))

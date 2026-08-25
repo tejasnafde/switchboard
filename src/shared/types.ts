@@ -269,7 +269,7 @@ export interface ChatMessage {
    * canonical backend echo. Pending messages are never persisted through the
    * ordinary transcript path; the accepted echo clears this field in place.
    */
-  deliveryState?: 'pending' | 'unconfirmed' | 'abandoned'
+  deliveryState?: 'pending'
 }
 
 export interface AgentMessagePayload {

@@ -41,7 +41,7 @@ describe('Desktop release compatibility gate', () => {
 
   it('writes the Darwin 21 kernel floor understood by v0.8.35 electron-updater', async () => {
     const event = {
-      file: '/release/Switchboard-0.8.50-arm64-mac.zip',
+      file: '/release/Switchboard-0.8.51-arm64-mac.zip',
       updateInfo: { sha512: 'precomputed-by-builder' },
       packager: { platform: { nodeName: 'darwin' } },
     }
@@ -51,7 +51,7 @@ describe('Desktop release compatibility gate', () => {
 
   it('does not attach the macOS floor to Windows metadata', async () => {
     const event = {
-      file: 'C:/release/Switchboard-Setup-0.8.50.exe',
+      file: 'C:/release/Switchboard-Setup-0.8.51.exe',
       updateInfo: {},
       packager: { platform: { nodeName: 'win32' } },
     }
