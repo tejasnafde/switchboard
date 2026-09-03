@@ -894,7 +894,13 @@ export class ProviderRegistry implements PeerToolHost {
       if (remoteProviderConfig) enrichedOpts.resolvedOauthDir = remoteProviderConfig
       log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${enrichedOpts.resolvedOauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
 
-      let latestSessionId = opts.resumeSessionId
+      // Only a *synchronous* session event fired during this startSession call
+      // (Codex resume/fresh-thread confirmation) should override the id the
+      // adapter itself resolved. Seeding this from opts.resumeSessionId - the
+      // raw, unvalidated hint - clobbered Claude's resolved resume id (root
+      // thread + typed-segment lookup) whenever no such event fired, which is
+      // every Claude startSession: Claude only emits 'session' later, mid-turn.
+      let latestSessionId: string | undefined
       const providerInstanceId = resolvedInstanceId ?? null
       const executionEpoch = ++this.nextSessionEpoch
       allocatedEpoch = executionEpoch

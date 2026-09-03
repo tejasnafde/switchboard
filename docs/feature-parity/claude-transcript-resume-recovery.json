@@ -1,0 +1,54 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "claude-transcript-resume-recovery",
+  "summary": "Recover Claude Code resume placement when the held session id's transcript is missing or recorded under a different OAuth profile, resolve fork/alias thread ids to their root before walking thread_sessions, and stop ProviderRegistry.startSession from clobbering the adapter's resolved resume id with the client's raw hint.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/claude-resume-placement.test.ts",
+        "tests/unit/claude-resume-root-resolution.test.ts",
+        "tests/unit/provider-registry-claude-resume-clobber.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "iOS is a thin remote client: it sends resumeSessionId as a hint on startSession (apps/mobile/src/screens/ThreadScreen.tsx, apps/mobile/src/lib/api.ts) but holds no local resume-placement or root-thread-resolution logic. The fix lives entirely in the shared backend code this client already calls unmodified."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android is also a thin remote client: it sends resumeSessionId as a hint (ThreadSessionCoordinator.kt, SwitchboardRemoteClient.kt) but performs no local resume-placement or root-thread-resolution. The fix lives entirely in the shared backend code this client already calls unmodified."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/provider-registry-claude-resume-clobber.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or migration change. The fix reads existing thread_sessions rows through the already-existing resolveResumeSegment / listSessionIdsForThread / resolveRootThreadId helpers (added by the prior conversation-fork-reliability migration); none of those are modified here."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Backward-compatible bug fix with no change to package identity, version, update channel, or signing configuration."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/claude-resume-placement.test.ts: 8 cases covering resolveResumePlacement's sibling fallback on source-missing and its transient-retry handling of a sibling io-error",
+      "tests/unit/claude-resume-root-resolution.test.ts: resolveClaudeResumeId resolves a fork/alias thread id to its root before calling listSessionIdsForThread and resolveResumeSegment, so a sibling transcript recorded under the true root is found",
+      "tests/unit/provider-registry-claude-resume-clobber.test.ts: ProviderRegistry.startSession returns and retains the DB-resolved provider session id instead of the raw, unvalidated resumeSessionId hint"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Whether this fix behaves correctly on the standalone server's resume path was not exercised: src/server/index.ts constructs its own ProviderRegistry over the same claude-adapter.ts/provider-registry.ts modules, but no server-specific integration test drives startSession/resume through it.",
+      "A live resume-after-long-idle smoke test against a real Claude CLI session with an actual OAuth profile switch was not performed; only unit-level fakes were exercised. This resume-logic area has required multiple prior real-world fixes despite green unit tests each time."
+    ]
+  }
+}

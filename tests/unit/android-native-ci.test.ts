@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs'
+import { load as parseYaml } from 'js-yaml'
 import { describe, expect, test } from 'vitest'
 
 const workflowPath = '.github/workflows/android-native-ci.yml'
@@ -31,6 +32,61 @@ describe('native Android non-publishing CI', () => {
     const workflow = readFileSync(workflowPath, 'utf8')
 
     expect(workflow).not.toMatch(/gh release|eas build|eas update|--publish/i)
+  })
+
+  describe('instrumented job', () => {
+    const loadInstrumentedJob = () => {
+      const workflow = parseYaml(readFileSync(workflowPath, 'utf8')) as any
+      const job = workflow.jobs?.instrumented
+      expect(job, 'jobs.instrumented must exist').toBeDefined()
+      expect(Array.isArray(job.steps)).toBe(true)
+      return job
+    }
+
+    test('is non-blocking pending demonstrated stability', () => {
+      const job = loadInstrumentedJob()
+
+      expect(job['continue-on-error']).toBe(true)
+    })
+
+    test('scopes the emulator run to ThreadScreenRegressionTest only', () => {
+      const job = loadInstrumentedJob()
+      const runStep = job.steps.find(
+        (step: any) => typeof step.uses === 'string' && step.uses.startsWith('reactivecircus/android-emulator-runner'),
+      )
+
+      expect(runStep, 'expected a reactivecircus/android-emulator-runner step').toBeDefined()
+      expect(typeof runStep.with?.script).toBe('string')
+      expect(runStep.with.script).toContain('connectedDebugAndroidTest')
+      expect(runStep.with.script).toContain(
+        '-Pandroid.testInstrumentationRunnerArguments.class=app.switchboard.mobile.ui.thread.ThreadScreenRegressionTest',
+      )
+    })
+
+    test('uploads connected test reports on both success and failure', () => {
+      const job = loadInstrumentedJob()
+      const uploadStep = job.steps.find(
+        (step: any) => typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact'),
+      )
+
+      expect(uploadStep, 'expected an actions/upload-artifact step').toBeDefined()
+      expect(uploadStep.if).toBe('always()')
+      expect(uploadStep.with?.path).toContain('androidTests/connected')
+      expect(uploadStep.with?.path).toContain('androidTest-results/connected')
+    })
+
+    test('runs after the emulator step, not before it', () => {
+      const job = loadInstrumentedJob()
+      const runIndex = job.steps.findIndex(
+        (step: any) => typeof step.uses === 'string' && step.uses.startsWith('reactivecircus/android-emulator-runner'),
+      )
+      const uploadIndex = job.steps.findIndex(
+        (step: any) => typeof step.uses === 'string' && step.uses.startsWith('actions/upload-artifact'),
+      )
+
+      expect(runIndex).toBeGreaterThanOrEqual(0)
+      expect(uploadIndex).toBeGreaterThan(runIndex)
+    })
   })
 })
 

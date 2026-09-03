@@ -240,6 +240,8 @@ data class RuntimeEventPayload(
     val threadId: String,
     val kind: RuntimeEventKind,
     val raw: JsonObject,
+    /** Transport sequence. Null on unsequenced transports, like the IAP TCP host. */
+    val sequence: Long? = null,
 ) {
     companion object {
         private val knownTypes = setOf(

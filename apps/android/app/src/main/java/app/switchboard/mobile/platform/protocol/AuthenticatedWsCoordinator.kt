@@ -77,6 +77,8 @@ class AuthenticatedWsCoordinator(
     private var nextRequestId = 1L
     private var destroyed = false
     private val pending = linkedMapOf<Long, PendingRequest>()
+    private val deferred = ThreadLocal<ArrayDeque<() -> Unit>>()
+    private val draining = ThreadLocal<Boolean>()
     private val runtimeEventListeners =
         linkedSetOf<(TransportScope, app.switchboard.mobile.protocol.RuntimeEventPayload) -> Unit>()
     private val channelEventListeners =
@@ -102,8 +104,13 @@ class AuthenticatedWsCoordinator(
         require(handshakeTimeoutMs > 0) { "handshakeTimeoutMs must be positive" }
     }
 
-    @Synchronized
     fun connect(newTarget: LineTarget) {
+        connectLocked(newTarget)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun connectLocked(newTarget: LineTarget) {
         if (destroyed) return
         cancelRetry()
         cancelProbe()
@@ -138,8 +145,13 @@ class AuthenticatedWsCoordinator(
         }
     }
 
-    @Synchronized
     fun setNetworkAvailable(available: Boolean) {
+        setNetworkAvailableLocked(available)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun setNetworkAvailableLocked(available: Boolean) {
         if (destroyed || networkAvailable == available) return
         networkAvailable = available
         if (!available) {
@@ -174,8 +186,13 @@ class AuthenticatedWsCoordinator(
         dialCurrentGeneration()
     }
 
-    @Synchronized
     fun probe(timeoutMs: Long = DEFAULT_PROBE_TIMEOUT_MS) {
+        probeLocked(timeoutMs)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun probeLocked(timeoutMs: Long) {
         if (destroyed || timeoutMs <= 0) return
         val generation = state?.generation ?: return
         val connection = socket ?: return
@@ -197,36 +214,58 @@ class AuthenticatedWsCoordinator(
                     reconnectAfterFailedProbe(generation, connection)
                 }
             }
+            drainDeferred()
         }
     }
 
-    @Synchronized
     fun invoke(
         expectedScope: TransportScope,
         channel: String,
         args: JsonArray,
         callback: (RpcOutcome) -> Unit,
     ): RequestSubmission {
-        if (currentScope != expectedScope) {
-            callback(RpcOutcome.Failure(RpcFailure.ConnectionReplaced))
-            return RequestSubmission.Rejected(RpcFailure.ConnectionReplaced)
-        }
-        return invoke(channel, args, callback)
+        val result = invokeLocked(expectedScope, channel, args, callback)
+        drainDeferred()
+        return result
     }
 
     @Synchronized
+    private fun invokeLocked(
+        expectedScope: TransportScope,
+        channel: String,
+        args: JsonArray,
+        callback: (RpcOutcome) -> Unit,
+    ): RequestSubmission {
+        if (currentScope != expectedScope) {
+            defer { callback(RpcOutcome.Failure(RpcFailure.ConnectionReplaced)) }
+            return RequestSubmission.Rejected(RpcFailure.ConnectionReplaced)
+        }
+        return invokeLocked(channel, args, callback)
+    }
+
     fun invoke(
+        channel: String,
+        args: JsonArray,
+        callback: (RpcOutcome) -> Unit,
+    ): RequestSubmission {
+        val result = invokeLocked(channel, args, callback)
+        drainDeferred()
+        return result
+    }
+
+    @Synchronized
+    private fun invokeLocked(
         channel: String,
         args: JsonArray,
         callback: (RpcOutcome) -> Unit,
     ): RequestSubmission {
         val currentState = state
         if (destroyed || currentState?.outboxEligible != true) {
-            callback(RpcOutcome.Failure(RpcFailure.NotReady))
+            defer { callback(RpcOutcome.Failure(RpcFailure.NotReady)) }
             return RequestSubmission.Rejected(RpcFailure.NotReady)
         }
         if (pending.size >= maxPendingRequests) {
-            callback(RpcOutcome.Failure(RpcFailure.CapacityExceeded))
+            defer { callback(RpcOutcome.Failure(RpcFailure.CapacityExceeded)) }
             return RequestSubmission.Rejected(RpcFailure.CapacityExceeded)
         }
 
@@ -286,8 +325,13 @@ class AuthenticatedWsCoordinator(
         }
     }
 
-    @Synchronized
     fun disconnect() {
+        disconnectLocked()
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun disconnectLocked() {
         if (destroyed) return
         cancelRetry()
         cancelProbe()
@@ -312,8 +356,13 @@ class AuthenticatedWsCoordinator(
         previousSocket?.close()
     }
 
-    @Synchronized
     fun destroy() {
+        destroyLocked()
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun destroyLocked() {
         if (destroyed) return
         destroyed = true
         cancelRetry()
@@ -327,6 +376,7 @@ class AuthenticatedWsCoordinator(
             ConnectionStateMachine.reduce(it, ConnectionEvent.ServiceDestroyed).state
         }
         runtimeEventListeners.clear()
+        channelEventListeners.clear()
         target = null
         previousSocket?.close()
     }
@@ -367,8 +417,16 @@ class AuthenticatedWsCoordinator(
             }
         }
 
-    @Synchronized
     private fun opened(
+        generation: ConnectionGeneration,
+        connection: LineConnection,
+    ) {
+        openedLocked(generation, connection)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun openedLocked(
         generation: ConnectionGeneration,
         connection: LineConnection,
     ) {
@@ -389,8 +447,16 @@ class AuthenticatedWsCoordinator(
         }
     }
 
-    @Synchronized
     private fun received(
+        generation: ConnectionGeneration,
+        wire: String,
+    ) {
+        receivedLocked(generation, wire)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun receivedLocked(
         generation: ConnectionGeneration,
         wire: String,
     ) {
@@ -399,7 +465,8 @@ class AuthenticatedWsCoordinator(
         cancelProbe()
         val frame = WsProtocol.decode(wire)
         if (frame == null) {
-            observer.onProtocolError(currentState.generation.connectionId, wire)
+            val connectionId = currentState.generation.connectionId
+            defer { observer.onProtocolError(connectionId, wire) }
             return
         }
         val wasReady = currentState.outboxEligible
@@ -425,8 +492,16 @@ class AuthenticatedWsCoordinator(
         }
     }
 
-    @Synchronized
     private fun closed(
+        generation: ConnectionGeneration,
+        cause: DisconnectCause,
+    ) {
+        closedLocked(generation, cause)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun closedLocked(
         generation: ConnectionGeneration,
         cause: DisconnectCause,
     ) {
@@ -445,15 +520,24 @@ class AuthenticatedWsCoordinator(
         )
     }
 
-    @Synchronized
     private fun failed(
+        generation: ConnectionGeneration,
+        error: Throwable,
+    ) {
+        failedLocked(generation, error)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun failedLocked(
         generation: ConnectionGeneration,
         error: Throwable,
     ) {
         val currentState = state ?: return
         if (destroyed || currentState.generation != generation) return
         val failedSocket = socket
-        observer.onTransportFailure(currentState.generation.connectionId, error)
+        val connectionId = currentState.generation.connectionId
+        defer { observer.onTransportFailure(connectionId, error) }
         val cause = if (error is NonRetryableTransportFailure) {
             DisconnectCause.UserRequested
         } else {
@@ -463,15 +547,23 @@ class AuthenticatedWsCoordinator(
         failedSocket?.close()
     }
 
-    @Synchronized
     private fun timeout(
+        requestId: Long,
+        generation: ConnectionGeneration,
+    ) {
+        timeoutLocked(requestId, generation)
+        drainDeferred()
+    }
+
+    @Synchronized
+    private fun timeoutLocked(
         requestId: Long,
         generation: ConnectionGeneration,
     ) {
         val request = pending[requestId] ?: return
         if (request.generation != generation || state?.generation != generation) return
         pending.remove(requestId)
-        request.callback(RpcOutcome.Failure(RpcFailure.Timeout))
+        defer { request.callback(RpcOutcome.Failure(RpcFailure.Timeout)) }
     }
 
     private fun applyTransition(
@@ -499,34 +591,29 @@ class AuthenticatedWsCoordinator(
                         transition.state.generation.connectionId,
                         transition.state.generation.value,
                     )
-                    observer.onRuntimeEvent(
-                        transition.state.generation.connectionId,
-                        effect.event,
-                    )
-                    runtimeEventListeners.toList().forEach { it(scope, effect.event) }
+                    val delivered = effect.event.copy(sequence = effect.sequence)
+                    val connectionId = transition.state.generation.connectionId
+                    defer {
+                        observer.onRuntimeEvent(connectionId, delivered)
+                        runtimeListeners().forEach { it(scope, delivered) }
+                    }
                 }
                 is ConnectionEffect.ReplayGap -> {
-                    observer.onReplayGap(
-                        transition.state.generation.connectionId,
-                        effect.previous,
-                        effect.current,
-                    )
+                    val connectionId = transition.state.generation.connectionId
+                    defer { observer.onReplayGap(connectionId, effect.previous, effect.current) }
                 }
                 is ConnectionEffect.DeliverFrame -> {
-                    observer.onUnhandledFrame(
-                        transition.state.generation.connectionId,
-                        effect.frame,
+                    val connectionId = transition.state.generation.connectionId
+                    val frame = effect.frame
+                    val event = frame as? WsFrame.Event
+                    val scope = TransportScope(
+                        transition.state.generation.deviceId,
+                        connectionId,
+                        transition.state.generation.value,
                     )
-                    val event = effect.frame as? WsFrame.Event
-                    if (event != null) {
-                        val scope = TransportScope(
-                            transition.state.generation.deviceId,
-                            transition.state.generation.connectionId,
-                            transition.state.generation.value,
-                        )
-                        channelEventListeners[event.channel]
-                            ?.toList()
-                            ?.forEach { it(scope, event.args) }
+                    defer {
+                        observer.onUnhandledFrame(connectionId, frame)
+                        if (event != null) channelListeners(event.channel).forEach { it(scope, event.args) }
                     }
                 }
                 is ConnectionEffect.ScheduleRetry -> {
@@ -593,7 +680,7 @@ class AuthenticatedWsCoordinator(
             is WsFrame.Response.Success -> RpcOutcome.Success(response.result)
             is WsFrame.Response.Failure -> RpcOutcome.Failure(RpcFailure.Remote(response.error))
         }
-        request.callback(outcome)
+        defer { request.callback(outcome) }
     }
 
     private fun scheduleRetry(
@@ -627,6 +714,7 @@ class AuthenticatedWsCoordinator(
                     dialCurrentGeneration()
                 }
             }
+            drainDeferred()
         }
     }
 
@@ -658,10 +746,8 @@ class AuthenticatedWsCoordinator(
                     return@synchronized
                 }
                 socket = null
-                observer.onTransportFailure(
-                    currentState.generation.connectionId,
-                    HandshakeTimeoutFailure(),
-                )
+                val connectionId = currentState.generation.connectionId
+                defer { observer.onTransportFailure(connectionId, HandshakeTimeoutFailure()) }
                 applyTransition(
                     ConnectionStateMachine.reduce(
                         currentState,
@@ -674,6 +760,7 @@ class AuthenticatedWsCoordinator(
                 )
                 connection.close()
             }
+            drainDeferred()
         }
     }
 
@@ -698,16 +785,61 @@ class AuthenticatedWsCoordinator(
     ) {
         val request = pending.remove(requestId) ?: return
         request.timeout?.cancel()
-        request.callback(RpcOutcome.Failure(failure))
+        defer { request.callback(RpcOutcome.Failure(failure)) }
     }
 
     private fun drainPending(failure: RpcFailure) {
         val requests = pending.values.toList()
         pending.clear()
-        requests.forEach {
-            it.timeout?.cancel()
-            it.callback(RpcOutcome.Failure(failure))
+        requests.forEach { request ->
+            request.timeout?.cancel()
+            defer { request.callback(RpcOutcome.Failure(failure)) }
         }
+    }
+
+    /**
+     * Read when the delivery runs, not when it was queued. A listener cancelled
+     * between the two, or retired by destroy(), must not still be called: its
+     * owner may already have torn down the state the callback writes to.
+     */
+    private fun runtimeListeners():
+        List<(TransportScope, app.switchboard.mobile.protocol.RuntimeEventPayload) -> Unit> =
+        synchronized(this) { runtimeEventListeners.toList() }
+
+    private fun channelListeners(channel: String): List<(TransportScope, JsonArray) -> Unit> =
+        synchronized(this) { channelEventListeners[channel]?.toList().orEmpty() }
+
+    private fun defer(block: () -> Unit) {
+        val queue = deferred.get() ?: ArrayDeque<() -> Unit>().also(deferred::set)
+        queue.addLast(block)
+    }
+
+    /**
+     * Runs this thread's queued callbacks and listener deliveries unlocked.
+     * Invoking app code under this monitor deadlocks against threads that take
+     * a session coordinator's lock first. Thread-local queues keep each thread's
+     * deliveries in order and stop one thread running another's callbacks while
+     * it holds unrelated locks.
+     */
+    private fun drainDeferred() {
+        if (Thread.holdsLock(this) || draining.get() == true) return
+        val queue = deferred.get() ?: return
+        if (queue.isEmpty()) return
+        draining.set(true)
+        var thrown: Throwable? = null
+        try {
+            while (true) {
+                val next = queue.removeFirstOrNull() ?: break
+                try {
+                    next()
+                } catch (t: Throwable) {
+                    if (thrown == null) thrown = t else thrown.addSuppressed(t)
+                }
+            }
+        } finally {
+            draining.set(false)
+        }
+        thrown?.let { throw it }
     }
 
     private companion object {

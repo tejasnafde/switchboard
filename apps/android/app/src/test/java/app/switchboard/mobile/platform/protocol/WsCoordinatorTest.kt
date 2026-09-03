@@ -596,6 +596,126 @@ class WsCoordinatorTest {
         ),
     )
 
+    /** Regression: ANR dumps showed callbacks running under this monitor, which deadlocked. */
+    @Test
+    fun responseAndDisconnectCallbacksRunWithoutTheTransportMonitorHeld() {
+        val fixture = Fixture()
+        val call = fixture.connectReady()
+        val heldOnResponse = mutableListOf<Boolean>()
+        val heldOnDisconnect = mutableListOf<Boolean>()
+
+        val answered = fixture.coordinator.invoke("one", JsonArray(emptyList())) {
+            heldOnResponse += Thread.holdsLock(fixture.coordinator)
+        } as RequestSubmission.Accepted
+        call.listener.onText(
+            WsProtocol.encode(WsFrame.Response.Success(answered.requestId, JsonString("ok"))),
+        )
+        assertEquals(listOf(false), heldOnResponse)
+
+        fixture.coordinator.invoke("two", JsonArray(emptyList())) {
+            heldOnDisconnect += Thread.holdsLock(fixture.coordinator)
+        }
+        fixture.coordinator.disconnect()
+        assertEquals(listOf(false), heldOnDisconnect)
+    }
+
+    @Test
+    fun rejectionCallbacksAlsoRunWithoutTheTransportMonitorHeld() {
+        val fixture = Fixture()
+        val held = mutableListOf<Boolean>()
+
+        // Rejected before the socket is ready.
+        fixture.coordinator.invoke("one", JsonArray(emptyList())) {
+            held += Thread.holdsLock(fixture.coordinator)
+        }
+        assertEquals(listOf(false), held)
+    }
+
+    @Test
+    fun runtimeEventListenersRunWithoutTheTransportMonitorHeld() {
+        val fixture = Fixture()
+        val held = mutableListOf<Boolean>()
+        fixture.coordinator.onRuntimeEvent { _, _ ->
+            held += Thread.holdsLock(fixture.coordinator)
+        }
+        val call = fixture.connectReady()
+
+        call.listener.onText(
+            WsProtocol.encode(
+                WsFrame.Event("provider:event", JsonArray(listOf(runtimeEvent("content"))), 1),
+            ),
+        )
+        assertEquals(listOf(false), held)
+    }
+
+    @Test
+    fun aThrowingCallbackDoesNotStrandItsSiblings() {
+        val fixture = Fixture()
+        fixture.connectReady()
+        val secondRan = mutableListOf<Boolean>()
+
+        fixture.coordinator.invoke("one", JsonArray(emptyList())) { error("boom") }
+        fixture.coordinator.invoke("two", JsonArray(emptyList())) { secondRan += true }
+        val thrown = runCatching { fixture.coordinator.disconnect() }.exceptionOrNull()
+
+        assertTrue(thrown is IllegalStateException)
+        assertEquals(listOf(true), secondRan)
+    }
+
+    @Test
+    fun probeTimeoutDeliversPendingFailuresInsteadOfStrandingThem() {
+        val fixture = Fixture()
+        fixture.connectReady()
+        val outcomes = mutableListOf<RpcOutcome>()
+        fixture.coordinator.invoke("one", JsonArray(emptyList()), outcomes::add)
+
+        fixture.coordinator.probe()
+        fixture.scheduler.runTaskWithDelay(3_000)
+
+        assertEquals(1, outcomes.size)
+        assertTrue(outcomes.single() is RpcOutcome.Failure)
+    }
+
+    @Test
+    fun channelEventListenersRunWithoutTheTransportMonitorHeld() {
+        val fixture = Fixture()
+        val held = mutableListOf<Boolean>()
+        fixture.coordinator.onChannelEvent("device:presence") { _, _ ->
+            held += Thread.holdsLock(fixture.coordinator)
+        }
+        val call = fixture.connectReady()
+
+        call.listener.onText(
+            WsProtocol.encode(
+                WsFrame.Event("device:presence", JsonArray(listOf(JsonString("online"))), 1),
+            ),
+        )
+        assertEquals(listOf(false), held)
+    }
+
+    /**
+     * Deliveries are queued under the monitor and run after it is released, so the
+     * listener set has to be read at dispatch. Snapshotting it at queue time called
+     * listeners their owner had already retired.
+     */
+    @Test
+    fun aRuntimeListenerRetiredDuringDeliveryDoesNotReceiveTheInFlightEvent() {
+        val fixture = Fixture()
+        val call = fixture.connectReady()
+        val received = mutableListOf<RuntimeEventPayload>()
+        val subscription = fixture.coordinator.onRuntimeEvent { _, event -> received += event }
+        fixture.observer.beforeRuntimeEvent = { subscription.cancel() }
+
+        call.listener.onText(
+            WsProtocol.encode(
+                WsFrame.Event("provider:event", JsonArray(listOf(runtimeEvent("content"))), 1),
+            ),
+        )
+
+        assertEquals(1, fixture.observer.runtimeEvents.size)
+        assertEquals(emptyList<RuntimeEventPayload>(), received)
+    }
+
     private class Fixture(maxPending: Int = 32) {
         val operationLog = mutableListOf<String>()
         val dialer = FakeDialer()
@@ -744,7 +864,11 @@ class WsCoordinatorTest {
         val protocolErrors = mutableListOf<String>()
         val transportFailures = mutableListOf<Throwable>()
 
+        /** Runs inside the queued delivery, just before listeners are dispatched. */
+        var beforeRuntimeEvent: () -> Unit = {}
+
         override fun onRuntimeEvent(connectionId: String, event: RuntimeEventPayload) {
+            beforeRuntimeEvent()
             runtimeEvents += event
         }
 

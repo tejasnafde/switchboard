@@ -14,7 +14,7 @@ import { homedir } from 'os'
 import { join, sep } from 'path'
 import { promisify } from 'util'
 import { createMainLogger as createLogger } from '../../logger'
-import { recordThreadSession, listSessionIdsForThread, resolveResumeSegment } from '../../db/database'
+import { recordThreadSession, listSessionIdsForThread, resolveResumeSegment, resolveRootThreadId } from '../../db/database'
 
 /**
  * Claude Code CLI only accepts UUID session ids (or exact titles) for
@@ -52,10 +52,56 @@ export function selectClaudeResumeId(
   return undefined
 }
 
-function resolveClaudeResumeId(threadId: string, hint?: string): string | undefined {
+/**
+ * Consecutive turns a sibling's io-error is tolerated before this helper
+ * gives up on it. Small and fixed rather than configurable - this exists
+ * purely to stop a *persistent* alternate error (e.g. a permanently full
+ * disk) from being retried forever; any bound that isn't "immediately" or
+ * "forever" satisfies that.
+ */
+const MAX_ALTERNATE_IO_RETRIES = 3
+
+/** Falls back to a sibling session id when the held one has no transcript. */
+export function resolveResumePlacement(
+  currentId: string,
+  preflight: (id: string) => MigrateResult,
+  resolveAlternate: () => string | undefined,
+  alternateIoErrorStreak = 0,
+): { sessionId: string; placed: MigrateResult; alternateIoErrorStreak: number } {
+  const placed = preflight(currentId)
+  if (placed.ok || placed.reason !== 'source-missing') {
+    return { sessionId: currentId, placed, alternateIoErrorStreak: 0 }
+  }
+  const alternate = resolveAlternate()
+  if (!alternate || alternate === currentId) {
+    return { sessionId: currentId, placed, alternateIoErrorStreak: 0 }
+  }
+  const retry = preflight(alternate)
+  if (retry.ok) return { sessionId: alternate, placed: retry, alternateIoErrorStreak: 0 }
+  // A sibling io-error can be transient (ENOSPC clears, a lock releases), so
+  // report it and keep the resume id alive for a few turns - without ever
+  // adopting the still-unverified alternate, which would both mask the real
+  // "source-missing" diagnosis and leave a bad id parked in session state.
+  // Once the budget is spent, fall back to the original diagnosis so the
+  // caller can give up for good instead of retrying forever.
+  if (retry.reason === 'io-error' && alternateIoErrorStreak + 1 < MAX_ALTERNATE_IO_RETRIES) {
+    return { sessionId: currentId, placed: retry, alternateIoErrorStreak: alternateIoErrorStreak + 1 }
+  }
+  return { sessionId: currentId, placed, alternateIoErrorStreak: 0 }
+}
+
+/**
+ * `threadId` may be a fork/alias - a rotated Claude UUID the renderer handed
+ * back as the thread to resume (see `resolveSessionSelectTarget` in App.tsx).
+ * Resolve to the root before walking `thread_sessions`, or a family member
+ * recorded under the true root goes missing: `listSessionIdsForThread` only
+ * walks down from exactly the id it's given.
+ */
+export function resolveClaudeResumeId(threadId: string, hint?: string): string | undefined {
   try {
-    const typedId = resolveResumeSegment(threadId, 'claude-code')?.provider_session_id
-    const ids = listSessionIdsForThread(threadId)
+    const rootId = resolveRootThreadId(threadId)
+    const typedId = resolveResumeSegment(rootId, 'claude-code')?.provider_session_id
+    const ids = listSessionIdsForThread(rootId)
     return selectClaudeResumeId(typedId, hint, ids, (id) =>
       claudeCandidateDirs().some((dir) => listClaudeSessionCopies(dir, id).length > 0)
     )
@@ -263,6 +309,7 @@ import {
   claudeCandidateDirs,
   listClaudeSessionCopies,
 } from '../claude-session-migrate'
+import type { MigrateResult } from '../claude-session-migrate'
 import { shapeQuestionAnswers } from './question-answers'
 import { TurnWatchdog, StderrTail, countToolBrackets } from '../turn-watchdog'
 import { buildPeerToolServer } from './claude-peer-tools'
@@ -477,6 +524,8 @@ interface ActiveSession {
   watchdog: TurnWatchdog
   /** Rolling tail of the claude subprocess's stderr, attached to stall/error messages. */
   stderrTail: StderrTail
+  /** Consecutive turns `resolveResumePlacement` has tolerated a sibling io-error for; see MAX_ALTERNATE_IO_RETRIES. */
+  resumeAlternateIoErrorStreak: number
 }
 
 export class ClaudeAdapter implements ProviderAdapter {
@@ -581,6 +630,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       candidateOauthDirs: opts.candidateOauthDirs ?? [defaultClaudeDir()],
       watchdog,
       stderrTail,
+      resumeAlternateIoErrorStreak: 0,
     }
 
     this.sessions.set(opts.threadId, active)
@@ -839,12 +889,24 @@ export class ClaudeAdapter implements ProviderAdapter {
     // Resume pre-flight. Runs before each query rather than once per session,
     // because cwd and profile both change without a restart.
     if (active.session.sessionId) {
-      const placed = ensureClaudeSessionResumable({
-        sessionId: active.session.sessionId,
+      const preflight = (sessionId: string) => ensureClaudeSessionResumable({
+        sessionId,
         cwd: active.session.cwd,
         toDir: active.instanceOauthDir ?? defaultClaudeDir(),
         candidates: active.candidateOauthDirs,
       })
+      const placement = resolveResumePlacement(
+        active.session.sessionId,
+        preflight,
+        () => resolveClaudeResumeId(threadId),
+        active.resumeAlternateIoErrorStreak,
+      )
+      active.resumeAlternateIoErrorStreak = placement.alternateIoErrorStreak
+      if (placement.sessionId !== active.session.sessionId) {
+        log.info(`resume recovered for ${threadId}: ${active.session.sessionId} -> ${placement.sessionId}`)
+        active.session.sessionId = placement.sessionId
+      }
+      const placed = placement.placed
       if (!placed.ok) {
         log.warn(`resume pre-flight failed for ${threadId}: ${placed.reason}`)
         active.onEvent({
@@ -857,9 +919,7 @@ export class ClaudeAdapter implements ProviderAdapter {
               : `(Couldn't move session history into place: ${placed.detail}. Retrying may fix it.)`,
           streamKind: 'reasoning',
         })
-        // Only drop the resume id when the transcript is genuinely gone. An
-        // io-error is transient (ENOSPC, TCC) and clearing it is permanent: the
-        // SDK's fresh UUID gets recorded and becomes the resume target.
+        // io-error is transient (ENOSPC, TCC); clearing the id is permanent.
         if (placed.reason === 'source-missing') active.session.sessionId = undefined
       }
     }

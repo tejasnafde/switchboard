@@ -2,6 +2,31 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.52 - Stop Claude resume from losing or clobbering its session id
+
+### Fixed
+- **Resuming a forked or aliased thread no longer misses its own history.** A thread id that is actually a rotated Claude UUID handed back by the renderer is now resolved to its root before looking up the typed resume segment and session family, so a sibling transcript recorded under the true root is found instead of silently ignored.
+- **`ProviderRegistry.startSession` no longer overwrites Claude's resolved resume id with the client's raw hint.** The resume id it retains is now seeded only by a synchronous session event fired during that call (Codex resume/fresh-thread confirmation); previously it started from the unvalidated `resumeSessionId` hint, which clobbered the adapter's DB-resolved id on every Claude session start.
+- **A missing transcript now tries a sibling session before giving up.** When the held resume id's transcript can't be found, Switchboard looks up a sibling id and retries placement through the existing cross-profile transcript migration; a sibling I/O error (a momentarily full disk, a lock) is retried for a few turns instead of being treated as a permanent loss, without ever adopting an unverified sibling id.
+
+### Notes
+- This is a shared backend/Desktop fix. React Native/iOS and native Android are thin remote clients that only send `resumeSessionId` as a hint and hold no local resume-placement logic, so they are unaffected and keep their existing versions.
+- No schema or migration change: the fix reads existing `thread_sessions` rows through helpers already added by the prior conversation-fork-reliability migration.
+- Automated verification: the new `claude-resume-placement`, `claude-resume-root-resolution`, and `provider-registry-claude-resume-clobber` unit suites (16 cases, run and passing) and the full feature-parity validator pass. The standalone server's own resume path and a live resume-after-long-idle run against a real Claude CLI session with an actual OAuth profile switch were not exercised.
+
+## Native Android 0.5.10 - Harden the WS coordinator and event feed
+
+### Fixed
+- **A loading state can no longer deadlock the connection.** `AuthenticatedWsCoordinator`'s `connect`/`setNetworkAvailable`/`probe`/`invoke`/`disconnect`/`destroy` entry points now run their locked state transition and then drain queued listener/callback deliveries unlocked, so app code invoked from a callback can no longer re-enter the coordinator while it still holds its own lock.
+- **A destroyed connection can no longer deliver events to a stale listener.** `destroy()` now clears channel event listeners in addition to runtime event listeners, and both listener lists are read under lock at delivery time rather than at registration time.
+- **Duplicate or dropped feed rows from unsequenced events are fixed.** Denial, error, and raw-notice feed items now carry a per-arrival id when the transport gives no sequence number, so repeated identical events (e.g. repeated plan-mode denials) land as distinct rows instead of colliding; sequenced transport events continue to upsert by sequence, and the runtime event's sequence number now actually reaches the thread reducer instead of being dropped as `null`.
+- **Large file diffs can no longer blow up alignment cost on one lopsided side.** A new 3,000-line per-side cap complements the existing 90,000-cell product cap, so a diff with one very large and one very small side falls back to the bounded presentation instead of allocating a huge one-sided table.
+- **CI gained a scoped, non-blocking instrumented UI check.** A new `instrumented` job runs `ThreadScreenRegressionTest` on an emulator (API 30, KVM) and always uploads its test reports; it is marked `continue-on-error: true` for this first rollout and is not required to pass.
+
+### Notes
+- This is a native-Android-only patch. No Desktop, React Native/iOS, or shared backend/wire-format file changed; the server already emitted the per-frame sequence number this client was previously discarding.
+- Automated verification: the new `ThreadStoreReducerTest`, `WsCoordinatorTest`, and `FileDiffPresentationTest` Kotlin unit tests, and the `android-native-ci` workflow-YAML test (14 cases, run and passing) that asserts the new instrumented job's structure. The Gradle/Kotlin unit and lint suites and the new emulator-based instrumented job itself were not executed in this environment (no Gradle/emulator available here); no physical or emulated Android hardware was used. `BrowseScreenVisualTest`, `DeepLinkNavigationTest`, `NewSessionWorktreeScreenTest`, and `SwitchboardDatabaseTest` remain unexercised by any CI run — only `ThreadScreenRegressionTest` is wired into the new job.
+
 ## 0.8.51 - Make optimistic sends feel immediate
 
 ### Fixed

@@ -1001,7 +1001,7 @@ class ThreadSessionCoordinator(
                 else -> Unit
             }
             val previousInstanceId = attachedInstanceId
-            reduce(ThreadAction.Runtime(ScopedThreadEvent(eventScope, null, event)))
+            reduce(ThreadAction.Runtime(ScopedThreadEvent(eventScope, payload.sequence, event)))
             val providerEvent = known?.payload as?
                 app.switchboard.mobile.domain.thread.ThreadEventPayload.SessionProvider
             if (providerEvent != null) {

@@ -26,17 +26,25 @@ object FileDiffPresenter {
     const val MAX_VISIBLE_ROWS = 160
     private const val CONTEXT_LINES = 2
     private const val MAX_ALIGNMENT_CELLS = 90_000
+
+    // Per-side bound: the cell product is zero when one side is empty.
+    private const val MAX_ALIGNMENT_LINES = 3_000
     private const val MAX_LINE_CHARS = 320
 
     fun present(oldContent: String, newContent: String): CompactFileDiff {
         val oldLines = oldContent.toDiffLines()
         val newLines = newContent.toDiffLines()
-        return if (oldLines.size.toLong() * newLines.size.toLong() <= MAX_ALIGNMENT_CELLS) {
+        return if (alignable(oldLines.size, newLines.size)) {
             exact(oldLines, newLines)
         } else {
             boundedFallback(oldLines, newLines)
         }
     }
+
+    internal fun alignable(oldSize: Int, newSize: Int): Boolean =
+        oldSize <= MAX_ALIGNMENT_LINES &&
+            newSize <= MAX_ALIGNMENT_LINES &&
+            oldSize.toLong() * newSize.toLong() <= MAX_ALIGNMENT_CELLS
 
     private fun exact(oldLines: List<String>, newLines: List<String>): CompactFileDiff {
         val table = Array(oldLines.size + 1) { IntArray(newLines.size + 1) }

@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-crash-concurrency-hardening",
+  "summary": "Fix native Android crash/loading-state symptoms: sequence-aware feed dedup instead of dropped/duplicated events, a lock-reentrancy refactor in AuthenticatedWsCoordinator to remove a deadlock class, and a per-side line cap on file-diff alignment to bound worst-case cost.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No src/main, src/preload, or src/renderer file changed. The affected WS coordinator, thread-feed reducer, and diff aligner are native-Android-only implementations; the desktop client's analogous socket/reducer/diff code is untouched by this diff."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No apps/mobile file changed. React Native has its own separate socket coordinator, outbox/thread store, and diff renderer, none of which are touched here."
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/WsProtocol.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/platform/protocol/AuthenticatedWsCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/FileDiffPresentation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/platform/protocol/WsCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/FileDiffPresentationTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The server already emits a per-frame sequence number (Android's RoomResumeCursorStore already consumes it for resume cursors); this change only makes RuntimeEventPayload and the reducer carry a field the client was already receiving and discarding, not a new wire field. No src/shared or src/server file changed."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "ThreadStoreReducer's eventId/upsert change is in-memory feed-state reconciliation for the current session only; it does not touch ThreadSnapshotStore or any persisted schema, and no migration was added."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/android-native-ci.yml",
+        "tests/unit/android-native-ci.test.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "ThreadStoreReducerTest.kt covers arrival-counter event ids so unsequenced duplicate events (e.g. repeated plan-mode denials) land as distinct feed rows instead of colliding",
+      "WsCoordinatorTest.kt covers the connect/setNetworkAvailable/probe/invoke/disconnect/destroy split into '...Locked' methods plus deferred-callback draining, to exercise the deadlock-avoidance refactor without a live socket",
+      "FileDiffPresentationTest.kt covers the new MAX_ALIGNMENT_LINES=3_000 per-side bound alongside the existing MAX_ALIGNMENT_CELLS cap",
+      "tests/unit/android-native-ci.test.ts parses the workflow YAML and asserts the new `instrumented` job's actual step structure: it scopes connectedDebugAndroidTest to ThreadScreenRegressionTest only via -Pandroid.testInstrumentationRunnerArguments.class, sets continue-on-error: true on the job, and always uploads a connected-test-reports artifact after the run step"
+    ],
+    "hardware": [
+      "The new `instrumented` GitHub Actions job (reactivecircus/android-emulator-runner, API 30, KVM) has not been run against this change; it requires a Linux runner with KVM (or a physical device) and cannot execute on this machine. It is scoped to ThreadScreenRegressionTest only and marked continue-on-error: true for this first release, so a flaky or broken emulator lane will surface failure via the uploaded connected-test-reports artifact and a non-green (but non-blocking) check, not by failing the PR gate; it can be promoted to blocking once it has demonstrated stability across enough runs. This is a CI-workflow rollout property, not a runtime feature flag - there is no app-side flag to add for it.",
+      "BrowseScreenVisualTest, DeepLinkNavigationTest, NewSessionWorktreeScreenTest, and SwitchboardDatabaseTest under apps/android/app/src/androidTest remain unexercised by this or any prior CI run; only ThreadScreenRegressionTest is invoked by the new instrumented job."
+    ],
+    "notExercised": [
+      "Whether the AuthenticatedWsCoordinator lock-reentrancy refactor actually eliminates the reported loading-state deadlock under real concurrent socket/observer traffic against a live backend was not exercised here; the unit tests cover the locking logic deterministically, but this bug class previously passed unit tests while still deadlocking in production.",
+      "End-to-end confirmation that sequence-aware dedup fixes the duplicate/missing-event symptom over a real desktop/server WebSocket round-trip was not performed; only the pure reducer/eventId logic has test coverage."
+    ]
+  }
+}

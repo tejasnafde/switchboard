@@ -272,8 +272,11 @@ object ThreadStoreReducer {
                 }
             }
             is ThreadEventPayload.ToolDenied -> withJournal.copy(
-                feed = withJournal.feed + FeedItem.Denial(
-                    eventId(scoped, "denial"), event.toolName, event.reason, event.mode,
+                feed = upsert(
+                    withJournal.feed,
+                    FeedItem.Denial(
+                        eventId(scoped, "denial", withJournal.eventJournal.size), event.toolName, event.reason, event.mode,
+                    ),
                 ),
             )
             is ThreadEventPayload.RequestOpened -> withJournal.copy(
@@ -304,7 +307,10 @@ object ThreadStoreReducer {
                 ),
             )
             is ThreadEventPayload.Error -> withJournal.copy(
-                feed = withJournal.feed + FeedItem.Error(eventId(scoped, "error"), event.message, event.turnId),
+                feed = upsert(
+                    withJournal.feed,
+                    FeedItem.Error(eventId(scoped, "error", withJournal.eventJournal.size), event.message, event.turnId),
+                ),
                 status = "error",
             )
             is ThreadEventPayload.Status -> withJournal.copy(
@@ -447,8 +453,9 @@ object ThreadStoreReducer {
             is ThreadRuntimeEvent.Known -> error("Known event cannot be a raw notice")
         }
         return thread.copy(
-            feed = thread.feed + FeedItem.RawNotice(
-                eventId(scoped, "raw"), event.type, text, event.raw,
+            feed = upsert(
+                thread.feed,
+                FeedItem.RawNotice(eventId(scoped, "raw", thread.eventJournal.size), event.type, text, event.raw),
             ),
         )
     }
@@ -474,7 +481,13 @@ object ThreadStoreReducer {
     private fun appendReplacing(feed: List<FeedItem>, item: FeedItem): List<FeedItem> =
         feed.filterNot { it.id == item.id } + item
 
-    private fun eventId(scoped: ScopedThreadEvent, prefix: String): String =
+    /**
+     * Sequenced transports (WsHost) yield stable ids, so a replayed frame
+     * upserts instead of duplicating. Unsequenced transports (TcpHost over IAP
+     * stamps no seq) get a per-arrival id: byte-identical events, like repeated
+     * plan-mode denials, must stay distinct rows.
+     */
+    private fun eventId(scoped: ScopedThreadEvent, prefix: String, arrival: Int): String =
         scoped.sequence?.let { "$prefix:seq:$it" }
-            ?: "$prefix:${scoped.event.type}:${scoped.event.raw.hashCode()}"
+            ?: "$prefix:${scoped.event.type}:${scoped.event.raw.hashCode()}:$arrival"
 }

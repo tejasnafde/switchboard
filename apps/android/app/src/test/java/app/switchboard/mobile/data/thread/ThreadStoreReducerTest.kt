@@ -374,6 +374,75 @@ class ThreadStoreReducerTest {
 
     private fun reduce(state: ThreadStoreState, action: ThreadAction) = ThreadStoreReducer.reduce(state, action)
 
+    @Test
+    fun replayedErrorAndNoticeEventsDoNotDuplicateFeedIds() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val failure = event("error", "message" to s("boom"), "turnId" to s("turn-1"))
+        val unknown = event("totally.new.event", "payload" to s("x"))
+
+        state = ingest(state, "mac-a", 1, 1, failure)
+        state = ingest(state, "mac-a", 1, 1, failure)
+        state = ingest(state, "mac-a", 1, 2, unknown)
+        state = ingest(state, "mac-a", 1, 2, unknown)
+
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(feed.size, feed.map { it.id }.toSet().size)
+        assertEquals(1, feed.filterIsInstance<FeedItem.Error>().size)
+        assertEquals(1, feed.filterIsInstance<FeedItem.RawNotice>().size)
+    }
+
+    @Test
+    fun identicalErrorsAtDifferentSequencesStayDistinct() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val failure = event("error", "message" to s("boom"), "turnId" to s("turn-1"))
+
+        state = ingest(state, "mac-a", 1, 1, failure)
+        state = ingest(state, "mac-a", 1, 2, failure)
+
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(2, feed.filterIsInstance<FeedItem.Error>().size)
+        assertEquals(feed.size, feed.map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun unsequencedIdenticalDenialsStayDistinctRows() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val denial = event(
+            "tool.denied",
+            "toolName" to s("Bash"),
+            "reason" to s("Plan mode blocks Bash"),
+            "mode" to s("plan"),
+        )
+
+        state = ingestUnsequenced(state, "mac-a", 1, denial)
+        state = ingestUnsequenced(state, "mac-a", 1, denial)
+
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(2, feed.filterIsInstance<FeedItem.Denial>().size)
+        assertEquals(feed.size, feed.map { it.id }.toSet().size)
+    }
+
+    @Test
+    fun unsequencedIdenticalErrorsStayDistinctRows() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        val failure = event("error", "message" to s("boom"), "turnId" to s("turn-1"))
+
+        state = ingestUnsequenced(state, "mac-a", 1, failure)
+        state = ingestUnsequenced(state, "mac-a", 1, failure)
+
+        val feed = state.thread("mac-a", "thread-1")!!.feed
+        assertEquals(2, feed.filterIsInstance<FeedItem.Error>().size)
+        assertEquals(feed.size, feed.map { it.id }.toSet().size)
+    }
+
+    private fun ingestUnsequenced(state: ThreadStoreState, connectionId: String, generation: Long, raw: JsonObject) =
+        reduce(
+            state,
+            ThreadAction.Runtime(
+                ScopedThreadEvent(ThreadEventScope(connectionId, generation), null, ThreadEventDecoder.decode(raw)),
+            ),
+        )
+
     private fun ingest(state: ThreadStoreState, connectionId: String, generation: Long, sequence: Long, raw: JsonObject) =
         reduce(state, ThreadAction.Runtime(scoped(ThreadEventScope(connectionId, generation), sequence, raw)))
 
