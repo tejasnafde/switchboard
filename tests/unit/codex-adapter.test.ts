@@ -26,6 +26,10 @@ let typedResumeSessionId: string | null = null
 let threadResumeError: string | null = null
 let turnSteerErrors: string[] = []
 let turnStartGate: Promise<void> | null = null
+// How many `model/list` replies to answer with an EMPTY catalog before serving
+// the real one. Simulates a still-booting app-server: the reply arrives, it
+// just has nothing in it yet.
+let emptyModelListReplies = 0
 
 type MockChild = EventEmitter & {
   stdout: PassThrough
@@ -101,12 +105,14 @@ function makeChild(): MockChild {
         })
       }
       if (message.method === 'model/list') {
+        const empty = emptyModelListReplies > 0
+        if (empty) emptyModelListReplies -= 1
         queueMicrotask(() => {
           stdout.write(JSON.stringify({
             jsonrpc: '2.0',
             id: message.id,
             result: {
-              data: [
+              data: empty ? [] : [
                 { id: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', hidden: false, isDefault: true },
                 { id: 'gpt-5-mini', displayName: 'GPT-5 mini', hidden: false, isDefault: false },
               ],
@@ -451,6 +457,7 @@ describe('CodexAdapter', () => {
     threadResumeError = null
     turnSteerErrors = []
     turnStartGate = null
+    emptyModelListReplies = 0
     vi.clearAllMocks()
   })
 
@@ -735,6 +742,47 @@ describe('CodexAdapter', () => {
     }))
   })
 
+  it('retries model/list after an empty reply instead of pinning the session to the static catalog', async () => {
+    // `if (active.models) return active.models` treated `[]` as a cache hit, so
+    // one `model/list` that raced a still-booting app-server left this session
+    // on shared/models.ts forever - which on a remote means the catalog of
+    // whatever codex version we transcribed at release time, not the one the
+    // repaired CLI actually supports.
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    emptyModelListReplies = 1
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, vi.fn())
+
+    await expect(adapter.listModels?.('thread-1')).resolves.toEqual([])
+    await expect(adapter.listModels?.('thread-1')).resolves.toEqual([
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', tier: 'max' },
+      { id: 'gpt-5-mini', label: 'GPT-5 mini', tier: 'fast' },
+    ])
+    const listCalls = writes.map((line) => JSON.parse(line)).filter((m) => m.method === 'model/list')
+    expect(listCalls).toHaveLength(2)
+  })
+
+  it('serves a populated catalog from cache without re-asking codex', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+    }, vi.fn())
+
+    await adapter.listModels?.('thread-1')
+    await adapter.listModels?.('thread-1')
+    const listCalls = writes.map((line) => JSON.parse(line)).filter((m) => m.method === 'model/list')
+    expect(listCalls).toHaveLength(1)
+  })
+
   it('uses a model selected after session startup on the next Codex turn', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
@@ -751,6 +799,27 @@ describe('CodexAdapter', () => {
     const frames = writes.map((line) => JSON.parse(line))
     expect(frames.find((message) => message.method === 'thread/start')?.params.model).toBe('gpt-5.6-sol')
     expect(frames.find((message) => message.method === 'turn/start')?.params.model).toBe('gpt-5.6-sol')
+  })
+
+  it('stops sending a selected model once the live catalog no longer offers it', async () => {
+    // A persisted or static-default selection must not ride every turn
+    // forever once the live catalog (see model-catalog.ts's makeChild mock:
+    // gpt-5.6-sol / gpt-5-mini only) has moved on without it.
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      model: 'gpt-4-ancient',
+    }, vi.fn())
+    await adapter.listModels?.('thread-1')
+    await adapter.sendTurn('thread-1', 'hello')
+
+    const frames = writes.map((line) => JSON.parse(line))
+    expect(frames.find((message) => message.method === 'thread/start')?.params.model).toBeUndefined()
+    expect(frames.find((message) => message.method === 'turn/start')?.params.model).toBeUndefined()
   })
 
   it('maps Switchboard approval decisions to Codex accept/decline values', async () => {

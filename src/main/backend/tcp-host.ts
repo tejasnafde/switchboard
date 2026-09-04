@@ -221,4 +221,16 @@ export class TcpHost implements BackendHost {
       if (client.authed && !client.socket.destroyed) client.socket.write(line)
     }
   }
+
+  /**
+   * Destroy every connected client socket. Unlike a WebSocket server, a raw
+   * `net.Server` exposes no client set of its own, so without this an
+   * IAP-tunnelled phone that never sends a FIN would hold the listener's
+   * process open through shutdown with nothing tracking it. Call when the
+   * listener itself is going down.
+   */
+  dispose(): void {
+    for (const client of this.clients) client.socket.destroy()
+    this.clients.clear()
+  }
 }

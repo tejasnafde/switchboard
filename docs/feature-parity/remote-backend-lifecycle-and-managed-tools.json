@@ -1,0 +1,108 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "remote-backend-lifecycle-and-managed-tools",
+  "summary": "Make the remote backend's port ownership, shutdown, stale-process recovery, managed Claude/Codex provisioning and live model discovery deterministic, so a wedged server (or one held open by a connected client) cannot hold the port indefinitely, a ready server never claims a tool version it never installed, and a repaired CLI's real catalog reaches every client - without ever sending a model that catalog has since dropped - without a desktop release. Model reconciliation is alias-aware: a live Claude catalog is a list of ALIAS rows (`sonnet`, `opus[1m]`), not the set of ids the CLI accepts, so exact-id matching would silently clear a selection the provider had just honoured.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/machines/remoteBootstrap.ts",
+        "src/main/machines/managedToolPlan.ts",
+        "src/main/machines/provisioner.ts",
+        "src/main/machines/provisionSetup.ts",
+        "src/main/machines/connectDeps.ts",
+        "src/main/provider/managed-bin.ts",
+        "src/main/provider/model-catalog.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "tests/unit/remote-bootstrap-cleanup.test.ts",
+        "tests/unit/connect-deps.test.ts",
+        "tests/unit/managed-bin-path.test.ts",
+        "tests/unit/managed-tool-plan.test.ts",
+        "tests/unit/remote-model-catalog-refresh.test.ts",
+        "tests/unit/provisioner.test.ts",
+        "tests/unit/provision-setup.test.ts",
+        "tests/unit/codex-adapter.test.ts",
+        "tests/unit/claude-adapter-instance-env.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/server/index.ts",
+        "src/server/lifecycle.ts",
+        "src/server/pidfile.ts",
+        "src/main/backend/tcp-host.ts",
+        "src/main/machines/remoteProbe.ts",
+        "src/main/machines/provisionCommands.ts",
+        "src/shared/models.ts",
+        "tests/unit/server-pidfile-ownership.test.ts",
+        "tests/unit/tcp-host.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "This feature's remote-side artifacts - the server pidfile and the pinned-tools version marker - are flat, idempotently-overwritten text files with no versioned schema; there is no data model to migrate and no client-side database or storage schema changed. tests/unit/managed-tool-plan.test.ts, tests/unit/server-pidfile-ownership.test.ts, and tests/unit/provisioner.test.ts exercise process-lifecycle and provisioning-decision logic already covered under the desktop and sharedBackendApi surfaces above; they were mislabeled here as storage/migration evidence and that label is corrected rather than repeated."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/machines/provisionPlan.ts",
+        "src/main/machines/provisioner.ts",
+        "src/main/machines/provisionSetup.ts",
+        "tests/unit/provisioner.test.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run --pool=forks --poolOptions.forks.singleFork=true --maxWorkers=1 on the focused remote/provider lane: server-pidfile-ownership, remote-bootstrap-cleanup, managed-bin-path, managed-tool-plan, remote-model-catalog-refresh, connect-deps, provision-plan, provision-setup, provisioner, codex-adapter, tcp-host, headless-server, ws-host-auth, plus every claude-adapter-* suite (19 files, last counted at 298 tests passing plus 1 explicitly skipped on darwin, before two follow-up passes added further coverage to remote-bootstrap-cleanup.test.ts and connect-deps.test.ts below - the full lane was not re-run for either change, only the files each one directly touches; see the next two bullets and notExercised)",
+      "npx vitest run tests/unit/remote-bootstrap-cleanup.test.ts tests/unit/ui-ellipsis-literal.test.ts tests/unit/connect-deps.test.ts tests/unit/remote-model-catalog-refresh.test.ts tests/unit/claude-adapter-infer-tier.test.ts --maxWorkers=1 - all five files pass in full (72 passed, 3 skipped on darwin where /proc does not exist)",
+      "bash -n syntax validation of the ACTUAL generated fragments (buildStaleProcessKill's real output and the full REMOTE_COMMAND), not a hand-written paraphrase",
+      "a real bash execution of buildStaleProcessKill's own output (TERM -> bounded wait -> KILL) against a SIGTERM-ignoring child, Linux-only (skipped on darwin, where /proc does not exist) - remote-bootstrap-cleanup.test.ts. Extended to also model code-server's real launcher exec (`bin/code-server` execs into `lib/node`, confirmed against coder/code-server's own ci/build/code-server.sh): one Linux-only case backgrounds a process shaped like the POST-exec cmdline and asserts the actual generated fragment reaps it via the `$D/code-server/` prefix match, and a second asserts a genuinely unrelated process holding the recorded pid survives. A first version of the reap case baked the literal shell variable reference `$D` into the child's own argv, which a `bash -c '...'` child never expands (D is not exported to it) - so it could never have matched the guard's expanded pattern and would have reported a false REAPED-looking non-result regardless of whether the guard code was correct. Fixed to bake the same real, JS-computed temp-root string into both the child's argv and (via a real `D=` assignment) the guard's own expansion, and to guarantee cleanup of the TERM-ignoring background loop via a `trap ... EXIT` instead of a end-of-script kill line that `set -e` could skip. Both Linux-only cases, plus the pre-fix broken version and the pre-existing-bug (old launcher-path match) version for comparison, were then actually run inside a `bash:5` Docker container (not just bash -n or read as static shape): the fixed reap case prints REAPED with no leaked process, the survives case prints SURVIVED with no leaked process, and both the broken pre-fix test and the old launcher-path match reproduce the field bug (SURVIVED) as expected - this is now genuine Linux-process evidence, not shape-only reasoning, though still against a modeled cmdline rather than a real downloaded code-server binary (see notExercised)",
+      "connect-deps.test.ts's REMOTE_COMMAND describe block, covering pidfile-kill/recycled-pid-guard/bridge-token-export-ordering, was removed by an earlier refactor that moved most of that contract into remote-bootstrap-cleanup.test.ts, but its comment overclaimed full coverage: two checks - the token-minting command text (`/proc/sys/kernel/random/uuid` with the `/dev/urandom` + `tr -dc 'a-f0-9'` fallback) and the bridge port being exported but never `-L`-tunneled - had no replacement anywhere. Restored as two focused tests in connect-deps.test.ts (not remote-bootstrap-cleanup.test.ts, to keep this connectDeps.ts-specific concern, its REMOTE_BRIDGE_PORT constant, out of the builder-fragment file). No production code changed - remoteBootstrap.ts already had this exact behavior; only the missing test coverage was added back",
+      "src/shared/models.ts's CLAUDE_MODELS provenance comment corrected from the stale 'Claude Code binary (2.1.220)' to '(2.1.260)', matching the CLI version this manifest already documents as verified below (the `@anthropic-ai/claude-agent-sdk` 0.3.260 upgrade's bundled-CLI `strings` scan) - the model id list itself was already correct for 2.1.260 and unchanged; only the stamp text was stale",
+      "npx tsc --noEmit -p tsconfig.main.json, plus an ad hoc config extending it with src/server/** included (src/server is not wired into either shipped tsconfig) - both clean",
+      "npx eslint over every changed source file - clean",
+      "Live authenticated evidence, Claude Agent SDK 0.3.260 on roster-dev (OAuth team plan), reported by the orchestrating session rather than re-run here: `supportedModels()` returned the values `default`, `opus[1m]`, `claude-fable-5[1m]`, `sonnet`, `haiku`; an EXPLICIT `claude-sonnet-5` turn completed successfully on that same session; native resume passed. That pair - an id absent from the live list which the live CLI nonetheless accepted - is the whole proof that the live catalog is an alias list, not an allowlist, and that reconcileSelectedModel()'s exact-id test was wrong. No credentials, tokens, or transcript content were read or recorded; fable was never invoked.",
+      "reconcileSelectedModel() rewritten from exact-id equality to a four-rule covers() check, narrowest first: (1) the row IS the selection, verbatim including any suffix; (2) the row's own `resolvedModel` names the selection (SDK 0.3.260's ModelInfo field - \"Canonical wire model id this row's `value` resolves to (e.g. 'sonnet' -> 'claude-sonnet-5'). Lets hosts match a persisted explicit id against the alias row that covers it\"); (3) the two differ only by a trailing bracketed capability suffix; (4) a bare family alias (fable|opus|sonnet|haiku) covers the full ids of THAT family that shared/models.ts actually ships, and vice versa. A kept selection is returned VERBATIM and is never rewritten to the row that covered it - `sonnet` and `claude-sonnet-5` are different requests and the user picked one of them.",
+      "Rule 4 is gated on the shipped CLAUDE_MODELS ids rather than on the family name, so an alias row is not a licence for any string shaped like its family: `claude-sonnet-3-legacy` and `claude-opus-3` are still dropped against a catalog containing `sonnet`/`opus[1m]`. Cross-family vouching is refused in both directions, `default` supports no inference at all (it names no family), and Codex ids - no Claude family name, no bracket suffix - can match none of rules 2-4, so Codex's exact-match semantics are unchanged and its stale-id drop still fires.",
+      "Bracket-suffix semantics confirmed against the CLI bundled with the SDK (strings scan of node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude): the binary's own wording is \"append [1m] to the model name for 1M\", and it carries real rows `opus[1m]`/\"Opus 1M\", `sonnet[1m]`/\"Sonnet 1M\", `claude-sonnet-5[1m]`/\"Sonnet 5 (1M context)\", `claude-opus-4-8[1m]`, `claude-opus-4-7[1m]`, `fable[1m]`. The suffix is a modifier appended to a model NAME, which is what makes rule 3 sound: a listed `x[1m]` row is evidence that `x` is itself a model this account has.",
+      "`ModelInfo.resolvedModel` is populated unconditionally by that same CLI - its catalog row builder returns `{value, resolvedModel, displayName, description, ...}` with resolvedModel computed from the row's value (`default` resolving via the account default) - so rule 2 is expected to be the rule that actually fires in the field. The claude-adapter now carries the field through into the catalog (`...(m.resolvedModel ? { resolvedModel: m.resolvedModel } : {})`) and ModelOption gained an optional `resolvedModel`. The roster-dev report captured only the `value` column, so no live row carrying the field was transcribed.",
+      "The UI catalog deliberately does NOT normalize or dedupe live alias rows: listModels() keeps `m.value` verbatim, so the picker offers exactly the ids the CLI named (`opus[1m]` stays `opus[1m]`). Rewriting an alias row to a canonical full id would put a model id in the picker that the provider never offered, and deduping would collapse genuinely distinct rows (`sonnet` and `sonnet[1m]` are different context windows). A persisted id the live list does not literally contain therefore renders in the trigger as its own raw id, which is honest, rather than being relabelled as the alias row covering it.",
+      "No new renderer event was added. A silent backend fallback already reaches the UI: `context` events carry the effective model, which ChatPanel writes to the session's `resolvedModel` and the picker falls back to. `model.variants` was left alone - it is the OpenCode-ACP variant-chip channel, not a Claude current-selection channel - and the Claude adapter still never calls reconcileSelectedModel at all (see notExercised), so this change removes drops rather than introducing any.",
+      "Tool enablement on SDK 0.3.260, proved from package source rather than a probe. In sdk.mjs's argv builder the `tools` option is destructured as `tools:K` and emitted only under `if(K!==void 0)`: omitted -> NO `--tools` flag at all (the CLI's default built-in set), `[]` -> `--tools \"\"` (all built-ins disabled), `{type:'preset',preset:'claude_code'}` -> `--tools default`. `allowedTools` is destructured with a `[]` default and emitted only `if(Be.length>0)`; its own type doc says \"List of tool names that are auto-allowed without prompting... To restrict which tools are available, use the `tools` option instead.\" claude-adapter.ts's queryOptions sets NEITHER, so the remote session had the full built-in tool set available, gated by our `canUseTool` (which makes the SDK push `--permission-prompt-tool stdio`). There is no tool-enablement regression and no production code was changed for it.",
+      "npx vitest run --maxWorkers=1 on the focused catalog/adapter/provider lane: remote-model-catalog-refresh, claude-adapter-infer-tier, claude-adapter-instance-env, claude-adapter-plan-mode, claude-adapter-rate-limit, claude-adapter-stop-session, claude-adapter-streaming, codex-adapter, codex-adapter-instance-env, provider-adapter-tool-filter, provider-types, opencode-model-grouping, update-row-model - 13 files, 157 tests, all passing. remote-model-catalog-refresh.test.ts grew from 19 to 24 tests; the 5 new alias cases were written FAIL-FIRST and 4 of them failed against the exact-id implementation (`claude-sonnet-5`, the shipped-static-id sweep, the bracket-suffix cases, and the resolvedModel case) before the covers() rewrite. `npx tsc --noEmit -p tsconfig.main.json` clean; `node scripts/validate-feature-parity.mjs` clean."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No remote VM was provisioned or connected: every remote-shell assertion (the /proc cmdline full-path identity guard, the managed-CLI PATH export, npm installing @openai/codex@0.153.2) is verified as generated-string shape plus bash syntax/real-bash-escalation, not against a live Linux host. The Linux-only real-escalation test is skipped entirely on this darwin machine.",
+      "The code-server IDE-process guard matches the installation-owned `$D/code-server/` prefix instead of the launcher path, because `bin/code-server` execs into `lib/node` and stops matching the old pattern - that exec behavior was confirmed by reading coder/code-server's own published ci/build/code-server.sh, and both the reap and the survive case were run for real inside a Linux Docker container against a bash process shaped to match the post-exec cmdline (see verification.automated). What remains unverified: neither an actual downloaded code-server release binary nor a real exec of its own launcher script was run - only a modeled cmdline standing in for it. If a future code-server release changes bin/code-server's exec target (e.g. drops the bare `lib/node` invocation for something no longer prefixed by the install dir), this guard would need re-checking against the real binary.",
+      "The idempotent-shutdown / force-exit-watchdog / client-termination logic in src/server/index.ts (the SIGINT/SIGTERM handler itself) has no integration test that spawns the real script and sends OS signals to a process holding live ws/tcp client sockets - only its constituent primitives (BindLifecycle.onShutdown idempotency, TcpHost.dispose(), the wss.clients-termination pattern already proven in mobile-server.ts) are unit-tested. Validate on a VM with an actual paired phone connection before relying on the watchdog bound in production.",
+      "The Claude 'ready server leaves an install/upgrade unconverged rather than faking it' fix is exercised only at the provisioner-orchestration level (mocked exec). It has not been run against a real remote where claudeSymlinkScript would genuinely fail with nothing on disk to link.",
+      "@openai/codex 0.153.2 was pinned from npm registry metadata but never launched: its `codex app-server` JSON-RPC surface and its model/list catalog were not exercised against the adapter on a real remote. The new reconcileSelectedModel() drop-stale-model behavior is proven against the adapter's mocked app-server only. Validate both on a VM before shipping the pin.",
+      "shared/models.ts's static CODEX_MODELS list (and its '0.144.1' stamp comment) was deliberately left untouched even though REMOTE_CODEX_VERSION now pins 0.153.2: there is no live catalog evidence for 0.153.2 to update it from, and guessing would reintroduce exactly the kind of unverified static-catalog drift reconcileSelectedModel() exists to blunt. Update it only once a live 0.153.2 model/list has actually been read.",
+      "The server-side pidfile and bind-failure changes live in the uploaded bundle, so a remote already running an older server keeps the module-load pidfile behaviour until the version marker mismatches and provisioning re-uploads. Not reproduced against a live 41h-old process.",
+      "The iOS and Android slices required no new client code - both already request provider:list-models over the unchanged wire contract and render whatever the backend returns, so they inherit the corrected live catalog. That inheritance was verified by reading the existing consumers, not by launching either app; no device or simulator run was performed.",
+      "@anthropic-ai/claude-agent-sdk was upgraded from ^0.2.141 to ^0.3.260 (bundled CLI 2.1.141 -> 2.1.260). The earlier note here said no authenticated live session had been started against 0.3.260; that is now superseded - roster-dev ran an authenticated OAuth team-plan session in which supportedModels() answered, an explicit claude-sonnet-5 turn completed, and native resume passed (see verification.automated). What that session did NOT exercise: no tool call was made, so the SDK 0.3.260 tool path - our canUseTool permission callback, the tool.started/tool.completed event mapping, and the MCP peer-tool server - has still never run end to end against the new SDK on a live remote. Tool AVAILABILITY is proved from sdk.mjs source (the `if(K!==void 0)` gate on `--tools`); tool INVOCATION is not.",
+      "reconcileSelectedModel() has exactly one caller today - codex-adapter's sendTurn. The Claude adapter never reconciles: it puts `active.session.model` on the query as-is. So no live Claude session was silently downgraded by the exact-id bug in the field; what was fixed is the shared helper that shared/models.ts's own Claude ids would have failed the moment anything wired it into the Claude path (against roster-dev's real catalog, every one of claude-sonnet-5/opus-5/fable-5/haiku-4-5 would have been cleared). The alias rules are therefore proven by unit test against a transcribed live catalog, not by a live Claude turn that went through them.",
+      "The alias-coverage rules were not replayed against a live CLI: no turn was sent with a selection that rule 3 or rule 4 kept alive (e.g. `opus` against an `opus[1m]`-only catalog). Rule 4's `SHIPPED_CLAUDE_IDS` gate also means a real id this build does not ship - the bundled CLI's own strings include `claude-opus-4-6`, which shared/models.ts does not list - would be dropped unless the covering row supplies `resolvedModel`. Since the CLI stamps resolvedModel on every row that gate should rarely be reached in the field, but it has not been observed reaching it.",
+      "No remote probe was run for this change and no production remote state was touched. The tool-enablement question was answered from the installed package's own source and type docs plus a strings scan of the bundled CLI binary, both local and offline, which is stronger evidence than a probe would have produced; a probe would only have shown whether one particular turn chose to call a tool."
+    ]
+  }
+}

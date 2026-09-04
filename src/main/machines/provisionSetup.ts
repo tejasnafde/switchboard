@@ -8,7 +8,25 @@ import { JUPYTER_EXTENSION_IDS, BRIDGE_EXTENSION_DIRNAME } from '../ide/code-ser
 // Fork that ships the linux prebuilds upstream node-pty omits. Bump + validate
 // on a VM if our node-pty API surface outgrows what the fork tracks.
 const REMOTE_NODE_PTY = 'npm:@homebridge/node-pty-prebuilt-multiarch@^0.12.0'
-export const REMOTE_CODEX_VERSION = '0.144.1'
+
+/**
+ * Pinned `@openai/codex`, resolved from the npm registry's `latest` dist-tag at
+ * the time of the bump and then FROZEN here. Deliberately not a range and
+ * deliberately not re-resolved per connect: `npm install @openai/codex@latest`
+ * on every session makes the remote's toolchain depend on when you happened to
+ * reconnect, so two machines provisioned a day apart disagree and a bad
+ * upstream release lands on every remote at once with no way to hold it back.
+ * The pin is the reproducibility boundary; `managedToolsMarker` keys off it, so
+ * bumping this line is what re-provisions tools on an otherwise-untouched
+ * remote.
+ *
+ * Registry `latest` on 2026-09-04 was 0.153.2 (previous pin: 0.144.1). The
+ * Claude side is NOT pinned here - it rides the app's own
+ * `@anthropic-ai/claude-agent-sdk` dependency, because the uploaded bundle is
+ * compiled against that exact SDK and the CLI we link is the one that SDK
+ * ships. See provisionDeps.depVersion.
+ */
+export const REMOTE_CODEX_VERSION = '0.153.2'
 
 export interface RemotePackageJson {
   name: string
@@ -22,6 +40,11 @@ export function remotePackageJson(
   appVersion: string,
   betterSqliteVersion: string,
   claudeSdkVersion: string,
+  /** Defaults to the frozen pin; callers that thread an override (see
+   *  ProvisionInputs.codexVersion) must pass it here too, or the uploaded
+   *  package.json and the managed-tool repair step would chase two different
+   *  Codex versions on the same connect. */
+  codexVersion: string = REMOTE_CODEX_VERSION,
 ): RemotePackageJson {
   return {
     name: 'switchboard-server',
@@ -34,7 +57,7 @@ export function remotePackageJson(
       // Externalized from the bundle, so it must install on the VM; npm pulls
       // the matching platform CLI via its optionalDependencies.
       '@anthropic-ai/claude-agent-sdk': claudeSdkVersion,
-      '@openai/codex': REMOTE_CODEX_VERSION,
+      '@openai/codex': codexVersion,
     },
   }
 }
@@ -144,20 +167,46 @@ export function claudeSymlinkScript(): string {
     'if [ -f "$GLIBC" ]; then BIN="$GLIBC"; elif [ -f "$MUSL" ]; then BIN="$MUSL"; else echo "no bundled claude CLI for linux-$ARCH" >&2; exit 1; fi',
     'chmod +x "$BIN" 2>/dev/null || true',
     'mkdir -p "$HOME/.local/bin"',
-    'ln -sf "$BIN" "$HOME/.local/bin/claude"',
+    // -n so an existing symlink is replaced rather than followed into its
+    // target directory (`ln -sf x link-to-dir` writes INSIDE the dir).
+    'ln -sfn "$BIN" "$HOME/.local/bin/claude"',
+    // Prove the link resolves to something runnable. Without this the step
+    // "succeeded" while leaving a dangling link, and the provider then silently
+    // fell through to whatever `claude` happened to be earlier on PATH.
+    'test -x "$HOME/.local/bin/claude"',
   ].join('\n')
 }
 
-/** Ensure Codex exists even when the server marker predates Codex support. */
-export function codexEnsureScript(): string {
+/**
+ * Ensure the managed Codex CLI is installed AT THE PIN and linked onto PATH.
+ *
+ * The old version of this checked `test -x "$BIN"` and stopped. Presence is not
+ * currency: a remote provisioned when the pin was 0.144.1 kept 0.144.1 through
+ * every later connect, including its stale model catalog. So compare the
+ * installed package version and reinstall on a mismatch.
+ */
+export function codexEnsureScript(version: string = REMOTE_CODEX_VERSION): string {
   return [
     `D=${REMOTE_SERVER_DIR}`,
     'BIN="$D/node_modules/.bin/codex"',
-    `if [ -x "$BIN" ]; then :; else cd "$D" && npm install --omit=dev --no-audit --no-fund @openai/codex@${REMOTE_CODEX_VERSION}; fi`,
+    'PKG="$D/node_modules/@openai/codex/package.json"',
+    'V=""',
+    `if [ -f "$PKG" ]; then V="$(node -p "require('$PKG').version" 2>/dev/null || true)"; fi`,
+    `if [ -x "$BIN" ] && [ "$V" = "${version}" ]; then :; else cd "$D" && npm install --omit=dev --no-audit --no-fund @openai/codex@${version}; fi`,
     'test -x "$BIN"',
     'mkdir -p "$HOME/.local/bin"',
-    'ln -sf "$BIN" "$HOME/.local/bin/codex"',
+    'ln -sfn "$BIN" "$HOME/.local/bin/codex"',
+    'test -x "$HOME/.local/bin/codex"',
   ].join('\n')
+}
+
+/**
+ * Record which pinned tool versions provisioning completed. Written LAST, like
+ * the server marker, so an interrupted tool repair re-runs on the next connect
+ * instead of probing as done.
+ */
+export function managedToolsMarkerScript(marker: string): string {
+  return `cd ${REMOTE_SERVER_DIR} && printf %s ${marker} > tools-version`
 }
 
 // Marker written as its own final step so a half-finished install never

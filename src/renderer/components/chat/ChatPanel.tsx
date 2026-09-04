@@ -1652,9 +1652,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         {hasSession && (
           <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
             {status === 'running'
-              ? 'thinking\u2026'
+              ? 'thinking…'
               : status === 'idle' && pendingDeliveryState === 'pending'
-                ? 'sending\u2026'
+                ? 'sending…'
                 : status === 'idle' ? 'ready' : status}
           </span>
         )}
@@ -1693,8 +1693,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             <span style={{ animation: 'pulse 1.4s ease-in-out infinite', animationDelay: '0.4s', width: '4px', height: '4px', borderRadius: '50%', background: 'var(--accent)' }} />
           </span>
           <span>{pendingDeliveryState === 'pending' && status === 'idle'
-            ? 'Sending\u2026'
-            : status === 'thinking' ? 'Thinking\u2026' : 'Working\u2026'}</span>
+            ? 'Sending…'
+            : status === 'thinking' ? 'Thinking…' : 'Working…'}</span>
         </div>
       )}
 
@@ -1719,7 +1719,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             : !hasSession
               ? 'Click "+ New Chat" or select a session to start...'
               : status === 'running' || status === 'thinking'
-                ? 'Queue a follow-up\u2026 will send after current turn.'
+                ? 'Queue a follow-up… will send after current turn.'
                 : 'Message the agent...'
         }
         agentType={agentType}

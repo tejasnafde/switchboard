@@ -3,7 +3,7 @@
  * and CLAUDE_CONFIG_DIR override on top of the base SDK env.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { buildClaudeQueryEnv } from '../../src/main/provider/adapters/claude-adapter'
+import { buildClaudeQueryEnv, claudeResolutionFallbackDirs } from '../../src/main/provider/adapters/claude-adapter'
 
 vi.mock('child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('child_process')>()),
@@ -43,5 +43,25 @@ describe('buildClaudeQueryEnv', () => {
     const base = { ANTHROPIC_API_KEY: 'shell-key' }
     buildClaudeQueryEnv(base, { ANTHROPIC_API_KEY: 'instance-key' }, '/tmp/x')
     expect(base).toEqual({ ANTHROPIC_API_KEY: 'shell-key' })
+  })
+})
+
+describe('claudeResolutionFallbackDirs', () => {
+  it('ranks the native local install above an npm-global shim, after the two system dirs', () => {
+    // Regression: a refactor onto preferManagedExecutable appended
+    // `.claude/local` LAST (behind `.npm-global/bin`), inverting the original
+    // precedence - an npm-global shim would win over the native installer's
+    // own copy.
+    const dirs = claudeResolutionFallbackDirs('/home/u')
+    const localAt = dirs.indexOf('/home/u/.claude/local')
+    const npmGlobalAt = dirs.indexOf('/home/u/.npm-global/bin')
+    expect(localAt).toBeGreaterThan(-1)
+    expect(npmGlobalAt).toBeGreaterThan(-1)
+    expect(localAt).toBeLessThan(npmGlobalAt)
+  })
+
+  it('keeps the two homebrew/local system dirs ahead of anything under HOME', () => {
+    const dirs = claudeResolutionFallbackDirs('/home/u')
+    expect(dirs.slice(0, 2)).toEqual(['/opt/homebrew/bin', '/usr/local/bin'])
   })
 })

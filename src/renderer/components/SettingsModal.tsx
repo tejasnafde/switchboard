@@ -449,28 +449,28 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* Keyboard shortcuts info */}
               <SettingsSection title="Keyboard Shortcuts">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 16px', fontSize: '12px' }}>
-                  <ShortcutRow label="Toggle sidebar" keys={'\u2318B'} />
-                  <ShortcutRow label="Toggle terminal" keys={'\u2318J'} />
-                  <ShortcutRow label="Command palette" keys={'\u2318\u21E7P'} />
-                  <ShortcutRow label="Search across chats" keys={'\u2318\u21E7F'} />
-                  <ShortcutRow label="Open settings" keys={'\u2318,'} />
+                  <ShortcutRow label="Toggle sidebar" keys={'⌘B'} />
+                  <ShortcutRow label="Toggle terminal" keys={'⌘J'} />
+                  <ShortcutRow label="Command palette" keys={'⌘⇧P'} />
+                  <ShortcutRow label="Search across chats" keys={'⌘⇧F'} />
+                  <ShortcutRow label="Open settings" keys={'⌘,'} />
                   <ShortcutRow label="Send message" keys="Enter" />
                   <ShortcutRow label="New line in message" keys="Shift+Enter" />
-                  <ShortcutRow label="Stop agent (when running)" keys={'\u2318\u232B'} />
-                  <ShortcutRow label="Quick prompt (Spotlight-style)" keys={'\u2318K'} />
-                  <ShortcutRow label="Send terminal selection to chat" keys={'\u2318L'} />
-                  <ShortcutRow label="Toggle dual-chat panel" keys={'\u2318\u21E7\\'} />
+                  <ShortcutRow label="Stop agent (when running)" keys={'⌘⌫'} />
+                  <ShortcutRow label="Quick prompt (Spotlight-style)" keys={'⌘K'} />
+                  <ShortcutRow label="Send terminal selection to chat" keys={'⌘L'} />
+                  <ShortcutRow label="Toggle dual-chat panel" keys={'⌘⇧\\'} />
 
                   {/* Terminals */}
-                  <ShortcutRow label="New window (right)" keys={'\u2318T'} />
-                  <ShortcutRow label="New window (below)" keys={'\u2318\u21E7T'} />
-                  <ShortcutRow label="New tab in active window" keys={'\u2318\\'} />
-                  <ShortcutRow label="Close active tab" keys={'\u2318W'} />
-                  <ShortcutRow label="Close active window" keys={'\u2318\u21E7W'} />
-                  <ShortcutRow label="Next tab" keys={'\u2318\u21E7]'} />
-                  <ShortcutRow label="Prev tab" keys={'\u2318\u21E7['} />
-                  <ShortcutRow label="Focus window N" keys={'\u23181…9'} />
-                  <ShortcutRow label="Navigate windows" keys={'\u2318\u2325\u2190\u2191\u2193\u2192'} />
+                  <ShortcutRow label="New window (right)" keys={'⌘T'} />
+                  <ShortcutRow label="New window (below)" keys={'⌘⇧T'} />
+                  <ShortcutRow label="New tab in active window" keys={'⌘\\'} />
+                  <ShortcutRow label="Close active tab" keys={'⌘W'} />
+                  <ShortcutRow label="Close active window" keys={'⌘⇧W'} />
+                  <ShortcutRow label="Next tab" keys={'⌘⇧]'} />
+                  <ShortcutRow label="Prev tab" keys={'⌘⇧['} />
+                  <ShortcutRow label="Focus window N" keys={'⌘1…9'} />
+                  <ShortcutRow label="Navigate windows" keys={'⌘⌥←↑↓→'} />
                 </div>
               </SettingsSection>
             </div>
@@ -618,7 +618,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                                     setRenamingLaunchConfig(name)
                                     setRenameValue(name)
                                   }}
-                                  title={name === 'default' ? 'default \u2014 implicit fallback (cannot rename / delete)' : 'Double-click to rename'}
+                                  title={name === 'default' ? 'default — implicit fallback (cannot rename / delete)' : 'Double-click to rename'}
                                   style={{
                                     flex: 1,
                                     textAlign: 'left',
@@ -738,9 +738,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                           <span style={{ color: configError ? 'var(--error)' : 'var(--text-muted)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={configError ?? undefined}>
                             {configError
                               ? configError
-                              : configSaveState === 'saving' ? 'Saving\u2026'
+                              : configSaveState === 'saving' ? 'Saving…'
                               : configSaveState === 'saved' ? 'Saved'
-                              : bodyDirty ? `Editing "${selectedLaunchConfig}" \u2014 unsaved`
+                              : bodyDirty ? `Editing "${selectedLaunchConfig}" — unsaved`
                               : `Editing "${selectedLaunchConfig}"`}
                           </span>
                           <button

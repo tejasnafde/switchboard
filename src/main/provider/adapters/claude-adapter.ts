@@ -9,7 +9,7 @@
  */
 
 import { execSync, execFile } from 'child_process'
-import { existsSync } from 'fs'
+import { accessSync, constants, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
 import { promisify } from 'util'
@@ -206,18 +206,43 @@ async function probeClaudeLogin(
   }
 }
 
-/** Build a clean env for Claude CLI/SDK (Electron strips PATH) */
+/**
+ * Directories to try after Switchboard's managed bin dir. Order is the
+ * precedence order, and the managed dir always precedes all of them - see
+ * managed-bin.ts for why that has to be deterministic rather than
+ * profile-dependent.
+ */
+function claudeFallbackDirs(home: string): string[] {
+  return ['/opt/homebrew/bin', '/usr/local/bin', `${home}/.npm-global/bin`]
+}
+
+/**
+ * Fallback resolution order for the `claude` BINARY, after Switchboard's
+ * managed dir. `${home}/.claude/local` - the native installer's own copy -
+ * must outrank `${home}/.npm-global/bin`: an npm-global install is more
+ * likely to be a stale shim, and this is the actual candidate order
+ * `resolveClaudeBin` searches. Kept separate from `claudeFallbackDirs`, which
+ * only feeds PATH construction (`buildClaudeCliEnv`) and has never included
+ * `.claude/local` there.
+ */
+export function claudeResolutionFallbackDirs(home: string): string[] {
+  return ['/opt/homebrew/bin', '/usr/local/bin', `${home}/.claude/local`, `${home}/.npm-global/bin`]
+}
+
+/**
+ * Build a clean env for Claude CLI/SDK (Electron strips PATH; the remote
+ * backend's non-interactive ssh PATH omits ~/.local/bin entirely).
+ *
+ * Switchboard's managed bin dir goes FIRST. Provisioning links the SDK's
+ * bundled CLI there, and on a remote that link is the only `claude` we know is
+ * the right build - anything found ahead of it is a shadow we would otherwise
+ * adopt silently.
+ */
 export function buildClaudeCliEnv(): Record<string, string> {
   const raw = { ...process.env }
   delete raw.ELECTRON_RUN_AS_NODE
   const home = raw.HOME || ''
-  const extra = [
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    `${home}/.npm-global/bin`,
-    `${home}/.local/bin`,
-  ].join(':')
-  raw.PATH = `${extra}:${raw.PATH || '/usr/bin:/bin'}`
+  raw.PATH = managedPath(raw, claudeFallbackDirs(home))
   // Strip undefined values - SDK expects Record<string, string>
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(raw)) {
@@ -226,32 +251,67 @@ export function buildClaudeCliEnv(): Record<string, string> {
   return env
 }
 
-/** Find the claude binary - cached after first lookup */
-let cachedClaudeBin: string | undefined
-export function findClaudeBin(): string | undefined {
-  if (cachedClaudeBin) return cachedClaudeBin
-  const home = process.env.HOME || ''
-  const candidates = [
-    '/opt/homebrew/bin/claude',
-    '/usr/local/bin/claude',
-    `${home}/.claude/local/claude`,
-    `${home}/.npm-global/bin/claude`,
-  ]
-  for (const p of candidates) {
-    try { execSync(`test -x "${p}"`, { timeout: 2000 }); cachedClaudeBin = p; return p } catch {}
-  }
+function isExecutableFile(path: string): boolean {
   try {
-    const which = execSync('which claude 2>/dev/null', { encoding: 'utf-8', timeout: 5000 }).trim().split('\n')[0]
-    if (which) { cachedClaudeBin = which; return which }
+    accessSync(path, constants.X_OK)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Resolve the `claude` binary, preferring Switchboard's managed bin dir.
+ *
+ * Two things this must not do. It must not skip the managed dir (the old
+ * candidate list omitted it, and the `which` fallback ran WITHOUT the
+ * managed-first PATH, so on a remote the tool provisioning had just installed
+ * was invisible). And it must not adopt a path that is merely present:
+ * `accessSync(X_OK)` rejects a dangling managed symlink so resolution falls
+ * through to a real binary instead of failing at spawn time.
+ */
+function resolveClaudeBin(): string | null {
+  const home = process.env.HOME || ''
+  const managed = preferManagedExecutable('claude', {
+    fallbackDirs: claudeResolutionFallbackDirs(home),
+    isExecutable: isExecutableFile,
+  })
+  if (managed) return managed.path
+  try {
+    // With the managed-first PATH, so `which` agrees with the env we spawn under.
+    const which = execSync('which claude 2>/dev/null', {
+      encoding: 'utf-8',
+      timeout: 5000,
+      env: buildClaudeCliEnv(),
+    }).trim().split('\n')[0]
+    if (which) return which
   } catch { /* no global claude - fall through to the SDK-bundled binary */ }
-  // Remote VMs have no global `claude`; the SDK ships its CLI as a per-platform
-  // package. Resolve it ourselves and prefer the glibc variant - node's
-  // detect-libc misfires to musl on some builds (e.g. a node whose process
-  // report omits glibcVersionRuntime), so the SDK's own self-resolution picks
-  // the wrong binary. Passing this as pathToClaudeCodeExecutable skips that.
-  const sdkBin = findSdkClaudeBin()
-  if (sdkBin) { cachedClaudeBin = sdkBin; return sdkBin }
-  return undefined
+  // Remote VMs may have no linked `claude` at all; the SDK ships its CLI as a
+  // per-platform package. Resolve it ourselves and prefer the glibc variant -
+  // node's detect-libc misfires to musl on some builds (e.g. a node whose
+  // process report omits glibcVersionRuntime), so the SDK's own self-resolution
+  // picks the wrong binary. Passing this as pathToClaudeCodeExecutable skips that.
+  return findSdkClaudeBin() ?? null
+}
+
+/**
+ * Cached, but revalidating: a miss is never cached and a repointed executable
+ * invalidates the hit. The remote backend outlives the provisioning pass that
+ * installs these tools, so a `claude` linked after boot has to become visible
+ * without restarting a process that may have been up for days.
+ */
+const claudeExecutable = createExecutableCache({
+  resolve: resolveClaudeBin,
+  identify: executableIdentity,
+})
+
+export function findClaudeBin(): string | undefined {
+  return claudeExecutable.refresh()?.path ?? undefined
+}
+
+/** Identity of the CLI a session is talking to; keys the model catalog. */
+export function claudeExecutableIdentity(): string | null {
+  return claudeExecutable.current()?.identity ?? null
 }
 
 /** Locate the SDK's bundled `claude` binary for this platform/arch (glibc-first on linux). */
@@ -301,6 +361,13 @@ export {
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect } from '../policy'
 import { notebookManager } from '../../notebooks/manager'
 import { applyEnvOverlay } from '../env-overlay'
+import {
+  createExecutableCache,
+  executableIdentity,
+  managedPath,
+  preferManagedExecutable,
+} from '../managed-bin'
+import { commitCatalog, shouldRefreshCatalog, type CatalogCache } from '../model-catalog'
 import {
   ensureClaudeSessionResumable,
   locateResumeTranscript,
@@ -510,10 +577,11 @@ interface ActiveSession {
   skills: ProviderSkill[]
   /**
    * Models the SDK reports as available - fetched from the live query's
-   * `supportedModels()` in `listModels()` and cached here so callers get
-   * the last-known list even while no query is running.
+   * `supportedModels()` in `listModels()` and cached here so callers get the
+   * last-known list even while no query is running. Keyed on the resolved CLI's
+   * identity and never populated with an empty list; see model-catalog.ts.
    */
-  models: Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>
+  models: CatalogCache | null
   /** Per-instance env overlay resolved by the registry, merged on top of `buildClaudeCliEnv()`. */
   instanceEnv: Record<string, string>
   /** Per-instance CLAUDE_CONFIG_DIR (set when auth_mode='oauth_dir'). */
@@ -622,7 +690,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       partialMessageText: new Map(),
       draining: false,
       skills: [],
-      models: [],
+      models: null,
       turnStartedAt: null,
       lastKnownModel: null,
       instanceEnv: opts.resolvedEnv ?? {},
@@ -1113,26 +1181,33 @@ export class ClaudeAdapter implements ProviderAdapter {
   async listModels(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>> {
     const active = this.sessions.get(threadId)
     if (!active) return []
-    // Prefer the live SDK source-of-truth - `supportedModels()` reflects the
-    // account's actual model availability. If the query hasn't started yet,
-    // fall back to whatever we cached from a previous call (or empty).
-    if (active.query) {
+    // The live SDK list is the source of truth - `supportedModels()` reflects
+    // the account's actual availability, including models newer than the static
+    // catalog in shared/models.ts. On a remote whose CLI provisioning repaired
+    // or upgraded under this (long-lived) process, `identity` changes and the
+    // cached list is re-fetched rather than served indefinitely.
+    const identity = claudeExecutableIdentity()
+    if (active.query && shouldRefreshCatalog(active.models, identity)) {
       try {
         const models = await active.query.supportedModels()
+        // `value` verbatim: a live row is an alias (`sonnet`, `opus[1m]`),
+        // and rewriting it to a full id would name a model the CLI did not.
+        // `resolvedModel` is the CLI's OWN mapping when it supplies one -
+        // reconcileSelectedModel uses it to recognise a persisted explicit id.
         const mapped = models.map((m) => ({
           id: m.value,
           label: m.displayName,
           tier: inferTier(m.value),
+          ...(m.resolvedModel ? { resolvedModel: m.resolvedModel } : {}),
         }))
-        if (mapped.length > 0) {
-          active.models = mapped
-          return mapped
-        }
+        // Empty is never committed, so a probe that raced session startup does
+        // not pin this session to the static catalog for its whole life.
+        active.models = commitCatalog(active.models, mapped, identity)
       } catch (err) {
         log.warn(`supportedModels() failed, using cached: ${err}`)
       }
     }
-    return active.models
+    return active.models?.models ?? []
   }
 
   async setModel(threadId: string, model: string): Promise<void> {

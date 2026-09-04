@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ui-unicode-labels",
+  "summary": "Fix user-visible rendering bugs where a literal backslash-uXXXX escape sequence sat somewhere JS/JSX never interprets it as an escape, so it rendered the literal N-character text (e.g. \"\\u2026\") instead of the intended glyph. Confirmed two such places by compiling representative JSX through TypeScript and inspecting the actual runtime string: (1) src/renderer/components/chat/MessageBubble.tsx's queued-message status was bare JSX text (`Sending\\u2026`, no surrounding quotes at all); (2) plain double-quoted JSX attribute values (`title=\"...\\u2318...\"`, NOT wrapped in `{}`) are - per this project's TypeScript/JSX toolchain, verified empirically, not assumed - also NOT parsed as JS string literals and also render the escape text literally; ChatInput.tsx's stop-button tooltip and TerminalStrip.tsx's three window-control tooltips used exactly this plain-attribute form and so were real bugs too, not merely source-form cleanup as an earlier pass of this manifest claimed. Occurrences inside a `{}` JS expression container (e.g. `{cond ? 'a\\u2026' : 'b'}`, or SettingsModal's `keys={'\\u2318B'}`) ARE real JS string literals and were already correctly interpreted at runtime; replacing those escapes with literal glyphs was source-form cleanup only. All occurrences across ChatInput.tsx, TerminalStrip.tsx, MessageBubble.tsx, ChatPanel.tsx, ApprovalCard.tsx, SettingsModal.tsx, and Sidebar.tsx are now literal Unicode glyphs (⌘, ⇧, ⌫, ⌥, …, —, ▶, ▼, ←, ↑, →, ↓, ·). Separately: TerminalStrip.tsx's third window-control tooltip read 'New tab in active window (⌘C)', which was simply the wrong shortcut - grepping the file found no keydown/metaKey handler at all, and the button's onClick (`newPaneInActiveWindow` → `addPaneToActiveWindow`) is the exact action App.tsx's global `⌘\\` handler performs. Corrected the label to `(⌘\\)`, written as `title={'...⌘\\\\)'}` (a real JS string literal, matching the same backslash-escaping SettingsModal already uses for the identical shortcut) rather than a plain attribute, both because a plain attribute's un-interpreted backslash is one more footgun to reason about and because a `\\uXXXX`-style escape workaround would have tripped the very regression guard this fix relies on.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/ApprovalCard.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/terminal/TerminalStrip.tsx",
+        "src/renderer/components/SettingsModal.tsx",
+        "src/renderer/components/sidebar/Sidebar.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "iOS React Native UI uses native symbols and system glyphs; keyboard shortcuts use localized HID values, not desktop-style text labels. No literal \\uXXXX escape sequences rendered as text."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Android native UI renders Material Design icons and localized keyboard nomenclature from the system; does not display desktop-style keyboard shortcut text labels with Unicode sequences. No literal \\uXXXX escape sequences rendered as text."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Backend API does not render UI text or keyboard shortcuts; responses are structured data (JSON) without Unicode character display concerns. No change to wire contracts or data serialization."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No user-facing data stored or migrated; Unicode label changes are source-code-only, affecting only rendered UI strings. No persisted data, migrations, or schema changes required."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "tests/unit/ui-ellipsis-literal.test.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/ui-ellipsis-literal.test.ts --maxWorkers=1 - 14 passing tests: auto-title ellipsis truncation (3), the per-file and 7-file-sweep quoted-string checks for a literal \\uXXXX inside a JSX attribute/expression (this regex is purely textual - it matches any quote-delimited span in source regardless of whether that span is a real JS string literal or a plain JSX attribute, which is why it already caught the plain-attribute occurrences even before their runtime semantics were understood) (6), a detector for a literal \\uXXXX sitting in bare JSX text between `>` and `<` with no quote character present at all, proven via 3 self-contained fixtures plus a 4th sweeping the 7 real source files (4), and the U+2026 code-point check (1)",
+      "TypeScript compile-and-eval probe (ts.transpileModule to React.createElement calls, then evaluated against a stub React.createElement returning its props): confirmed that a plain double-quoted JSX attribute value containing `\\u2318` compiles to a runtime string containing the six literal characters backslash-u-2-3-1-8 (char codes 5c 75 32 33 31 38), i.e. is NOT interpreted as a Unicode escape - the same failure mode as bare JSX text, just one syntactic level up. This is what corrected the earlier 'quoted attribute, already fine' claim for ChatInput.tsx and TerminalStrip.tsx.",
+      "grep over src/renderer/components/terminal/TerminalStrip.tsx for keydown/metaKey/keyboard-event handling: none exist. Cross-checked the button's onClick (`newPaneInActiveWindow`) against src/renderer/App.tsx's global keydown switch and confirmed the `e.key === '\\\\' && !e.shiftKey` branch performs the identical action (`addPaneToActiveWindow`) - i.e. the real shortcut is ⌘\\, not ⌘C. Tooltip corrected accordingly.",
+      "Same TypeScript compile-and-eval probe applied to the fix: `title={'New tab in active window (⌘\\\\)'}` produces a runtime string containing exactly one literal backslash character before the closing parenthesis - confirmed correct rendering, and confirmed the regex-based escape guard above does not flag `\\\\` (it only matches `\\u` followed by 4 hex digits)."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No device testing: iOS and Android clients do not render desktop-style keyboard shortcut text labels, so this change has no impact on native apps. Inheritance verification by code inspection confirms both platforms ignore or override these strings with native UI.",
+      "No backend integration testing: server never emits keyboard shortcut labels; client renders these strings from static source code only.",
+      "No user-facing testing in a live running app: both the original bug and the ⌘\\ tooltip fix were confirmed via a TypeScript compile-and-eval probe of representative JSX snippets, not by rendering the actual component tree in Electron/DevTools or a browser. The probe reproduces React's own JSX-to-createElement compilation, but a live-app screenshot of the fixed tooltip was not taken.",
+      "The other plain-JSX-attribute occurrences discovered by this same reasoning (SettingsModal.tsx's non-`{}` attributes, if any use this form) were not individually re-audited beyond the 7-file regex sweep above; the sweep is textual and quote-scoped, not AST-aware, so it cannot distinguish a plain attribute from a real JS string literal - it only guarantees no `\\uXXXX` survives in either form, which is what matters for the bug class, but it does not by itself prove which specific occurrences were bugs versus cleanup (that determination was made file-by-file from the diffs, not from the test)."
+    ]
+  }
+}

@@ -208,3 +208,22 @@ describe('TcpHost framing', () => {
     expect(await r.next()).toMatchObject({ k: 'evt', ch: 'provider:event' })
   })
 })
+
+describe('TcpHost.dispose', () => {
+  it('destroys every connected client, so a listener shutdown is not held open by an IAP-tunnelled phone', async () => {
+    // A raw net.Server tracks no client set of its own (unlike WebSocketServer's
+    // `.clients`) - without this, a phone that never sends a FIN would keep the
+    // process that owns this listener alive through shutdown.
+    const { host, port } = await boot()
+    const { socket: a } = await dial(port)
+    const { socket: b } = await dial(port)
+    const aClosed = new Promise<void>((res) => a.on('close', () => res()))
+    const bClosed = new Promise<void>((res) => b.on('close', () => res()))
+
+    host.dispose()
+
+    await Promise.all([aClosed, bClosed])
+    expect(a.destroyed).toBe(true)
+    expect(b.destroyed).toBe(true)
+  })
+})

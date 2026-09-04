@@ -19,7 +19,7 @@ export function generateTitle(firstMessage: string, maxLength = 50): string {
   const truncated = cleaned.slice(0, maxLength)
   const lastSpace = truncated.lastIndexOf(' ')
   if (lastSpace > maxLength * 0.5) {
-    return truncated.slice(0, lastSpace) + '\u2026'
+    return truncated.slice(0, lastSpace) + '…'
   }
-  return truncated + '\u2026'
+  return truncated + '…'
 }

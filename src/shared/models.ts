@@ -1,13 +1,22 @@
 import type { AgentType } from './types'
 
 export interface ModelOption {
+  /** Exactly what the provider named, alias and capability suffix included. */
   id: string
   label: string
   tier: 'fast' | 'balanced' | 'max'
+  /**
+   * Canonical wire id an alias row resolves to, when the provider says so
+   * (Claude Agent SDK >= 0.3.260 `ModelInfo.resolvedModel`, e.g. `sonnet` ->
+   * `claude-sonnet-5`). Only ever the provider's own answer - never inferred -
+   * and read by `reconcileSelectedModel` to match a persisted explicit id
+   * against the alias row covering it.
+   */
+  resolvedModel?: string
 }
 
 /** Pre-session list; `model.variants` replaces it once a session starts.
- *  Ids from the Claude Code binary (2.1.220). */
+ *  Ids from the Claude Code binary (2.1.260). */
 export const CLAUDE_MODELS: ModelOption[] = [
   { id: 'claude-fable-5', label: 'Claude Fable 5', tier: 'max' },
   { id: 'claude-opus-5', label: 'Claude Opus 5', tier: 'max' },

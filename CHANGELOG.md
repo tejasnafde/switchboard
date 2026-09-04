@@ -2,6 +2,25 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.53 - Repair remote reconnects, refresh managed tools, and stop dropping live models
+
+### Fixed
+- **A wedged remote server can no longer hold its port forever.** The pidfile that the remote bootstrap kills before relaunching is now claimed only once the backend is actually listening and released only while it still owns the file, closing the race that let a relaunch overwrite the real owner's pid, kill a corpse on retry, and leave the true holder running unbounded (one instance was observed surviving 41 hours at 99% CPU this way). Shutdown now terminates every open WebSocket and raw TCP client before closing the listeners, is bounded by a force-exit watchdog, and no longer double-runs on a repeated SIGTERM.
+- **A missing or outdated managed CLI on an already-provisioned ("ready") remote is now repaired instead of left alone.** Managed Claude/Codex tool health is decided from the probed executables and their installed versions, independent of the connect plan's ready/install verdict, so a dangling `claude` symlink or a Codex install stuck at an old pinned version gets relinked or reinstalled on the next connect rather than persisting indefinitely.
+- **The managed CLI bin directory now wins PATH resolution everywhere it matters** (spawn, `which`, and `PATH` construction agree), a dangling managed symlink falls through to a real binary instead of failing at spawn time, and the resolved binary is revalidated rather than cached forever - a CLI a remote repairs or upgrades after the backend has been running for days becomes visible without a process restart. This also fixes a Codex-specific bug where "CLI not found" latched permanently, so installing Codex after the backend started still required a restart.
+- **Persisted or default Claude/Codex model selections no longer disappear just because they don't literally match a live catalog row.** `reconcileSelectedModel()` now knows a live row can be an alias (`sonnet`, `opus[1m]`) rather than the exact id the CLI accepts, and keeps a selection when the row names it directly, when the CLI's own `resolvedModel` maps to it, when they differ only by a `[1m]`-style capability suffix, or when a bare family alias covers one of this build's shipped ids - instead of clearing it on any id mismatch. The Codex adapter now reconciles the active model against the live catalog on every turn, not only at session start.
+- **Claude and Codex model catalogs can no longer get stuck empty or stale for a whole session.** A `supportedModels()`/`model/list` response that races provider startup is no longer cached as the final answer, and the cache is keyed to the resolved CLI's identity so a remote whose CLI was just repaired or upgraded is re-queried instead of serving the previous binary's list indefinitely.
+- **Queued-send and status text now render as `…` instead of the six literal characters `\u2026`.** Several JSX locations - bare text nodes and plain (non-`{}`) attribute strings - never interpret `\uXXXX` escapes; `Sending…`, `thinking…`, `Approving…`/`Denying…`, and tooltips across ChatInput, TerminalStrip, SettingsModal, and Sidebar are now literal Unicode glyphs.
+- **The terminal toolbar's third button now shows its actual shortcut.** It read "New tab in active window (⌘C)"; the button performs the same action as the app's global `⌘\` handler, and the tooltip now says `⌘\`.
+
+### Changed
+- **`@anthropic-ai/claude-agent-sdk` upgraded from ^0.2.141 to ^0.3.260** (bundled CLI 2.1.141 → 2.1.260), which supplies the `resolvedModel` field the alias-aware catalog reconciliation above relies on and adds support for newer model ids.
+- **The remote-managed `@openai/codex` pin moved from 0.144.1 to 0.153.2.**
+
+### Notes
+- This is a Desktop/Electron and shared remote-backend release; no mobile code, wire contract, or mobile release version changed. React Native/iOS and native Android are thin remote clients that already request `provider:list-models` over the unchanged contract, so they inherit the corrected catalog behavior without any client-side change.
+- See `docs/feature-parity/remote-backend-lifecycle-and-managed-tools.json` and `docs/feature-parity/ui-unicode-labels.json` for full verification detail, including what was and was not exercised against a live remote VM.
+
 ## 0.8.52 - Stop Claude resume from losing or clobbering its session id
 
 ### Fixed

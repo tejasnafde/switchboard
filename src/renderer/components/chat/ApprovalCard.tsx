@@ -165,7 +165,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                   style={withDisabled(noteMode === 'approve' ? btnStyles.primary : btnStyles.danger, submitting !== null)}
                 >
                   {submitting
-                    ? submitting === 'approve' ? 'Approving\u2026' : 'Denying\u2026'
+                    ? submitting === 'approve' ? 'Approving…' : 'Denying…'
                     : noteMode === 'approve' ? 'Approve with note' : 'Deny with note'}
                 </button>
               </div>
@@ -177,7 +177,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 disabled={submitting !== null}
                 style={withDisabled(btnStyles.primary, submitting !== null)}
               >
-                {submitting === 'approve' ? 'Approving\u2026' : (<><CheckIcon /> Approve</>)}
+                {submitting === 'approve' ? 'Approving…' : (<><CheckIcon /> Approve</>)}
               </button>
               <button
                 onClick={() => setNoteMode('approve')}
@@ -185,7 +185,7 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 style={withDisabled(btnStyles.secondary, submitting !== null)}
                 title="Approve and add extra instructions"
               >
-                {'Yes, and\u2026'}
+                {'Yes, and…'}
               </button>
               <span style={{ flex: 1 }} />
               <button
@@ -194,14 +194,14 @@ export function ApprovalCard({ message, onDecide }: ApprovalCardProps) {
                 style={withDisabled(btnStyles.secondary, submitting !== null)}
                 title="Deny and tell agent what to do instead"
               >
-                {'No, do\u2026'}
+                {'No, do…'}
               </button>
               <button
                 onClick={() => commit('deny')}
                 disabled={submitting !== null}
                 style={withDisabled(btnStyles.danger, submitting !== null)}
               >
-                {submitting === 'deny' ? 'Denying\u2026' : <><XIcon /> Deny</>}
+                {submitting === 'deny' ? 'Denying…' : <><XIcon /> Deny</>}
               </button>
             </div>
           )}

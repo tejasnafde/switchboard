@@ -8,7 +8,7 @@
 import { homedir, networkInterfaces } from 'node:os'
 import { randomBytes } from 'node:crypto'
 import { join, dirname } from 'node:path'
-import { writeFileSync, unlinkSync, readFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { WebSocketServer } from 'ws'
 import { MAX_FRAME_BYTES, WsHost } from '../main/backend/ws-host'
@@ -29,6 +29,8 @@ import { disposeUsageProbes } from '../main/provider/usage'
 import { startBridgeHost } from '../main/ide/bridge-host'
 import { createMainLogger as createLogger } from '../main/logger'
 import { createDefaultWorktreeCreationRuntime } from '../main/worktree-creation/runtime'
+import { createBindLifecycle } from './lifecycle'
+import { nodePidFileIo } from './pidfile'
 
 // esbuild `define` in scripts/build-server.mjs stamps this with the app
 // version at bundle time so a live server can report what it's running.
@@ -48,20 +50,32 @@ const log = createLogger('server')
  *  path and so cannot be imported here. */
 const SERVER_HOME = join(homedir(), '.switchboard-server')
 const PID_FILE = join(SERVER_HOME, 'server.pid')
-try {
-  // The dir exists on a provisioned VM (the uploader creates it) but not on a
-  // machine running the bundle straight from a checkout, where the write used
-  // to ENOENT. connectDeps kills stale servers by this pidfile, so a missing
-  // one silently loses that protection.
-  mkdirSync(dirname(PID_FILE), { recursive: true })
-  writeFileSync(PID_FILE, String(process.pid))
-} catch (err) {
-  log.warn('failed to write pid file', err)
-}
 
 const port = Number(process.env.PORT ?? 8765)
 const bindHost = process.env.HOST ?? '127.0.0.1'
 const isLoopback = bindHost === '127.0.0.1' || bindHost === 'localhost'
+
+/**
+ * PID ownership is claimed on `listening` and released only while we still own
+ * it - never at module load. Writing it here, before the bind could fail, is
+ * what let a relaunch that immediately EADDRINUSE'd overwrite the pid of the
+ * process actually holding the port; the bootstrap then killed a corpse on
+ * every retry and the real server ran for 41h at 99% CPU. A bind failure now
+ * exits nonzero promptly instead of logging and lingering. See
+ * src/server/lifecycle.ts.
+ */
+const bindLifecycle = createBindLifecycle({
+  pidFile: PID_FILE,
+  pid: process.pid,
+  io: nodePidFileIo,
+  exit: (code) => process.exit(code),
+  address: `${bindHost}:${port}`,
+  log: {
+    info: (m) => log.info(m),
+    warn: (m) => log.warn(m),
+    error: (m) => log.error(m),
+  },
+})
 
 /**
  * A token generated per launch (`SWITCHBOARD_TOKEN=$(openssl rand -hex 12)`)
@@ -157,6 +171,9 @@ if (Number.isInteger(bridgePort) && bridgePort > 1024 && bridgePort < 65536 && b
 }
 
 wss.on('listening', () => {
+  // Claim the pidfile only now: we demonstrably hold the port, so the pid the
+  // bootstrap's stale-server kill reads is the pid that actually owns it.
+  bindLifecycle.onListening()
   log.info(`switchboard backend listening on ${bindHost}:${port} (v${__SERVER_VERSION__})`)
   void printPairingInfo()
 })
@@ -204,20 +221,66 @@ async function printPairingInfo(): Promise<void> {
   if (addresses.length > 1) console.log(`  other addresses: ${addresses.slice(1).join(', ')}`)
   console.log(`  token: ${token}\n`)
 }
-wss.on('error', (err) => log.error('server error', err))
+// A pre-listen failure (EADDRINUSE, EACCES) is fatal and exits nonzero without
+// touching the pidfile; a post-listen socket fault is logged and survived.
+wss.on('error', (err) => bindLifecycle.onError(err))
+
+/**
+ * Upper bound on graceful teardown. `wss.close(cb)` never invokes `cb` while
+ * any client is still connected (ws's own behaviour, not a bug here), and a
+ * phone or LAN client that never disconnects would otherwise keep this
+ * process alive - untracked by the pidfile's owner-only contract - forever.
+ * Terminating every client below is the real fix; this is the backstop for
+ * whatever that misses (a hung provider teardown, a socket that resists
+ * `.terminate()`).
+ */
+const SHUTDOWN_FORCE_EXIT_MS = 5_000
+
+let shuttingDown = false
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
+    // Idempotent: a second SIGTERM (some process managers send it again if
+    // the first is not acknowledged quickly) must not re-run teardown - that
+    // would double-close sockets already being closed and race two exits.
+    if (shuttingDown) return
+    shuttingDown = true
     log.info(`${sig} - shutting down`)
-    try {
-      // Only remove the pidfile if it still points at us - a takeover may have
-      // already replaced it with a newer server's pid we must not clobber.
-      if (readFileSync(PID_FILE, 'utf8').trim() === String(process.pid)) unlinkSync(PID_FILE)
-    } catch (err) {
-      log.warn('failed to remove pid file', err)
+
+    const finish = (code: number) => {
+      clearTimeout(forceExitTimer)
+      // Ownership-checked, and only now that shutdown is actually completing
+      // (or has been forced) - not at signal receipt, where a still-listening
+      // process releasing its own pidfile would let a racing bootstrap start
+      // a second server that immediately EADDRINUSEs against us. See
+      // src/server/lifecycle.ts.
+      bindLifecycle.onShutdown(sig)
+      process.exit(code)
     }
+    // Not unref'd: its entire purpose is to guarantee an exit even if
+    // something below never resolves, so it must not depend on the event
+    // loop otherwise going idle.
+    const forceExitTimer = setTimeout(() => {
+      log.error(`shutdown did not complete within ${SHUTDOWN_FORCE_EXIT_MS}ms - forcing exit`)
+      finish(1)
+    }, SHUTDOWN_FORCE_EXIT_MS)
+
     // process.exit skips the probe's own `finally`, so kill any survivor here.
     disposeUsageProbes()
-    void registry.stopAll().finally(() => wss.close(() => process.exit(0)))
+
+    // `wss.close()` alone stops accepting new connections but, per `ws`,
+    // never fires its callback while `wss.clients` is non-empty - a paired
+    // phone or LAN client that never disconnects would hold this process
+    // open indefinitely. Terminate every open socket first so close always
+    // completes promptly.
+    for (const client of wss.clients) client.terminate()
+    tcpHost?.dispose()
+
+    void registry.stopAll().finally(() => {
+      wss.close(() => {
+        if (tcpServer) tcpServer.close(() => finish(0))
+        else finish(0)
+      })
+    })
   })
 }

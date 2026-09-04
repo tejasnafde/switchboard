@@ -581,7 +581,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             color: 'var(--text-muted)',
           }}
         >
-          Sending\u2026
+          Sending…
         </div>
       )}
 

@@ -13,6 +13,7 @@ import { encodeFrame, decodeFrame } from '@shared/ws-protocol'
 import { createMainLogger } from '../logger'
 import { appVersion } from '../runtime'
 import { REMOTE_SERVER_DIR } from './provisionCommands'
+import { buildRemoteBootstrapCommand } from './remoteBootstrap'
 import { summarizeSshError } from './sshError'
 import { childProcessEnv } from '../shell-env'
 import type { TunnelProcess } from './connectionManager'
@@ -37,37 +38,22 @@ export const REMOTE_BRIDGE_PORT = 8767
 // literals in sync.
 export const SERVER_VERSION_CHANNEL = 'server:version'
 
-// Kill any lingering server (pidfile written by the server on boot) before
-// launching - a stale process holding the port would EADDRINUSE the new one
-// while ssh's -L forward keeps reaching the old, possibly out-of-protocol server.
-// Guard the kill on the pid actually being our server (its /proc cmdline names
-// index.cjs) so a crashed server whose pid got recycled to an unrelated process
-// is never signalled.
-// The bootstrap also (re)starts the remote code-server when installed -
-// nohup'd, own pidfile, same stale-pid guard. Missing binary = skipped;
-// the tunnel still works.
-//
-// SB_BRIDGE_PORT/SB_BRIDGE_TOKEN are exported BEFORE both launches so the
-// code-server tree (its extension hosts inherit the env, which is how
-// resources/sb-bridge/extension.js finds the socket) and the backend that
-// hosts the bridge agree on one token. Minting it here, in the single shell
-// that starts both, is what keeps them in sync - a token generated
-// independently on either side could never match. Without this the remote
-// workbench runs bridge-less: every in-workbench keybinding (cmd+shift+E back
-// to the terminal, cmd+l, cmd+k) is swallowed by the guest with nothing to
-// forward it to the desktop.
-export const REMOTE_COMMAND =
-  `D=${REMOTE_SERVER_DIR}; P="$(cat "$D/server.pid" 2>/dev/null)"; ` +
-  `if [ -n "$P" ] && grep -qsa index.cjs "/proc/$P/cmdline"; then kill "$P" 2>/dev/null; sleep 1; fi; ` +
-  `IP="$(cat "$D/ide.pid" 2>/dev/null)"; ` +
-  `if [ -n "$IP" ] && grep -qsa switchboard-server/code-server "/proc/$IP/cmdline"; then kill "$IP" 2>/dev/null; sleep 1; fi; ` +
-  `SB_BRIDGE_PORT=${REMOTE_BRIDGE_PORT}; export SB_BRIDGE_PORT; ` +
-  `SB_BRIDGE_TOKEN="$(cat /proc/sys/kernel/random/uuid 2>/dev/null || ` +
-  `od -An -tx1 -N16 /dev/urandom | tr -dc 'a-f0-9')"; export SB_BRIDGE_TOKEN; ` +
-  `if [ -x "$D/code-server/bin/code-server" ]; then ` +
-  `nohup "$D/code-server/bin/code-server" --auth none --bind-addr 127.0.0.1:${REMOTE_IDE_PORT} ` +
-  `--extensions-dir "$D/ide-extensions" --user-data-dir "$D/ide-data" > "$D/ide.log" 2>&1 & echo $! > "$D/ide.pid"; fi; ` +
-  `SWITCHBOARD_REMOTE=1 PORT=${REMOTE_PORT} node $D/index.cjs`
+/**
+ * The remote bootstrap: reap a lingering server (by the pidfile the server
+ * writes once it is listening), restart the managed code-server, put the
+ * managed CLI bin dir on PATH, then exec the backend.
+ *
+ * The reaping and PATH rules live in remoteBootstrap.ts, where they are
+ * unit-tested; see that file for why the kill escalates TERM -> KILL under a
+ * bound, why every signal is identity-guarded against a recycled pid, and why
+ * `pkill` is off the table.
+ */
+export const REMOTE_COMMAND = buildRemoteBootstrapCommand({
+  serverDir: REMOTE_SERVER_DIR,
+  port: REMOTE_PORT,
+  idePort: REMOTE_IDE_PORT,
+  bridgePort: REMOTE_BRIDGE_PORT,
+})
 
 export function allocatePort(): Promise<number> {
   return new Promise((resolve, reject) => {

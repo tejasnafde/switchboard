@@ -4,7 +4,8 @@ import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { provisionRemote } from '../../src/main/machines/provisioner'
-import { bridgeMarker } from '../../src/main/machines/provisionSetup'
+import { bridgeMarker, REMOTE_CODEX_VERSION } from '../../src/main/machines/provisionSetup'
+import { managedToolsMarker } from '../../src/main/machines/managedToolPlan'
 import { execProc } from '../../src/main/machines/provisionDeps'
 import { _resetShellEnvCacheForTests } from '../../src/main/shell-env'
 import type { Machine } from '@shared/machines'
@@ -38,13 +39,103 @@ function runner(probe: Record<string, unknown>) {
 const full = { node: 'v20', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16' }
 
 describe('provisionRemote', () => {
-  it('ready: probes and runs idempotent IDE/Codex ensures, with no server upload', async () => {
+  it('ready: probes and runs idempotent IDE/tool ensures, with no server upload', async () => {
     const r = runner(full)
     const res = await provisionRemote(machine, inputs, r)
     expect(res.action).toBe('ready')
-    // probe + idempotent remote-IDE and Codex ensures (fast no-ops when installed)
+    // probe + remote-IDE ensure + codex ensure. The `full` fixture reports no
+    // managed executables at all, so claude's action is `install` - which a
+    // ready server (no npm install this connect) cannot actually satisfy by
+    // relinking, so that step - and the tools marker - are skipped rather than
+    // falsely claimed. See the "leaves claude unconverged" test below.
     expect(r.exec).toHaveBeenCalledTimes(3)
     expect(decode(r.calls[1].args[r.calls[1].args.length - 1])).toContain('code-server')
+    expect(res.tools?.satisfied).toBe(false)
+  })
+
+  it('leaves claude unconverged (never fakes a version we did not install) when it is missing on a server that probes ready', async () => {
+    // A `ready` server never runs npm install this connect, so a genuinely
+    // missing @anthropic-ai/claude-agent-sdk cannot be fixed by relinking
+    // whatever happens to already be on disk. Attempting it and then writing
+    // the tools marker as if it worked would claim a pinned version we never
+    // actually installed - the exact silent-convergence bug managedToolPlan.ts
+    // exists to prevent.
+    const r = runner({ ...full, codexBin: '/home/u/.local/bin/codex', codexVersion: REMOTE_CODEX_VERSION })
+    const res = await provisionRemote(machine, inputs, r)
+    expect(res.action).toBe('ready')
+    expect(res.tools?.claude.action).toBe('install')
+    expect(res.tools?.satisfied).toBe(false)
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((script) => script.includes('ln -sfn "$BIN" "$HOME/.local/bin/claude"'))).toBe(false)
+    expect(remotes.some((script) => script.includes('> tools-version'))).toBe(false)
+  })
+
+  it('still relinks a genuinely repairable claude (correct version, dangling link) on a ready server', async () => {
+    // The case this whole path exists for must keep working: a matching SDK
+    // version already on disk, just missing its ~/.local/bin symlink.
+    const r = runner({
+      ...full,
+      claudeVersion: inputs.claudeSdkVersion,
+      claudeBin: null,
+      codexBin: '/home/u/.local/bin/codex',
+      codexVersion: REMOTE_CODEX_VERSION,
+    })
+    const res = await provisionRemote(machine, inputs, r)
+    expect(res.tools?.claude.action).toBe('repair')
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((script) => script.includes('ln -sfn "$BIN" "$HOME/.local/bin/claude"'))).toBe(true)
+    expect(remotes.some((script) => script.includes('> tools-version'))).toBe(true)
+  })
+
+  it('skips the whole tool block when the probe proves both CLIs are current', async () => {
+    const marker = managedToolsMarker({
+      claudeSdkVersion: inputs.claudeSdkVersion,
+      codexVersion: REMOTE_CODEX_VERSION,
+    })
+    const r = runner({
+      ...full,
+      claudeBin: '/home/u/.local/bin/claude',
+      claudeVersion: inputs.claudeSdkVersion,
+      codexBin: '/home/u/.local/bin/codex',
+      codexVersion: REMOTE_CODEX_VERSION,
+      tools: marker,
+    })
+    const res = await provisionRemote(machine, inputs, r)
+    expect(res.tools?.satisfied).toBe(true)
+    // probe + remote-IDE ensure only.
+    expect(r.exec).toHaveBeenCalledTimes(2)
+  })
+
+  it('upgrades a codex CLI pinned to an older version even on a ready server', async () => {
+    const r = runner({
+      ...full,
+      claudeBin: '/home/u/.local/bin/claude',
+      claudeVersion: inputs.claudeSdkVersion,
+      codexBin: '/home/u/.local/bin/codex',
+      codexVersion: '0.144.1',
+      tools: managedToolsMarker({ claudeSdkVersion: inputs.claudeSdkVersion, codexVersion: '0.144.1' }),
+    })
+    const res = await provisionRemote(machine, inputs, r)
+    expect(res.tools?.codex.action).toBe('upgrade')
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((script) => script.includes(`@openai/codex@${REMOTE_CODEX_VERSION}`))).toBe(true)
+    // Claude was already current, so its link step is not re-run. (Match the
+    // symlink command, not the bare path - the probe script names it too.)
+    expect(remotes.some((script) => script.includes('ln -sfn "$BIN" "$HOME/.local/bin/claude"'))).toBe(false)
+  })
+
+  it('does not write the tools marker when a tool step failed', async () => {
+    // A partial repair must re-run on the next connect rather than probe done.
+    const r = runner({ ...full })
+    r.exec.mockImplementation(async (_cmd: string, args: string[]) => {
+      const remote = decode(args[args.length - 1])
+      if (remote.includes('node -e')) return { code: 0, stdout: JSON.stringify(full), stderr: '' }
+      if (remote.includes('@openai/codex@')) return { code: 1, stdout: '', stderr: 'npm ERR! network' }
+      return { code: 0, stdout: '', stderr: '' }
+    })
+    await provisionRemote(machine, inputs, r)
+    const remotes = r.exec.mock.calls.map(([, args]) => decode(args[args.length - 1]))
+    expect(remotes.some((script) => script.includes('> tools-version'))).toBe(false)
   })
 
   it('ensures Codex is installed for an already-provisioned remote server', async () => {
@@ -73,11 +164,25 @@ describe('provisionRemote', () => {
     expect(remotes[3]).toMatch(/cat > .*index\.cjs/)
     expect(remotes[4]).toMatch(/cat > .*package\.json/)
     expect(remotes[5]).toMatch(/npm install/)
-    expect(remotes[6]).toMatch(/ln -sf .*\.local\/bin\/claude/)
+    expect(remotes[6]).toMatch(/ln -sfn .*\.local\/bin\/claude/)
     expect(remotes[7]).toContain('.local/bin/codex')
-    expect(remotes[8]).toMatch(/printf %s 0\.4\.16 > version/)
+    expect(remotes[8]).toContain('> tools-version')
+    expect(remotes[9]).toMatch(/printf %s 0\.4\.16 > version/)
     expect(r.calls[3].stdin).toEqual({ file: '/fake/out/server/index.cjs' })
     expect(r.calls[4].stdin).toContain('better-sqlite3')
+  })
+
+  it('threads a codexVersion override into the uploaded package.json, not just the ensure script', async () => {
+    // remotePackageJson used to always pin REMOTE_CODEX_VERSION regardless of
+    // what the caller asked for, so an override reached codexEnsureScript but
+    // not the package.json npm actually installs from - two different
+    // versions chased on the same connect.
+    const r = runner({ ...full, server: null })
+    await provisionRemote(machine, { ...inputs, codexVersion: '0.150.0' }, r)
+    const packageJsonCall = r.calls.find((c) => (c.stdin && typeof c.stdin === 'string') ? c.stdin.includes('"name": "switchboard-server"') : false)
+    expect(packageJsonCall?.stdin).toContain('"@openai/codex": "0.150.0"')
+    const remotes = r.calls.map((c) => decode(c.args[c.args.length - 1]))
+    expect(remotes.some((s) => s.includes('@openai/codex@0.150.0'))).toBe(true)
   })
 
   it('writes the version marker as the very last step so a half-finished install never probes ready', async () => {
@@ -94,7 +199,9 @@ describe('provisionRemote', () => {
     r.exec.mockImplementation(async (_cmd: string, args: string[]) => {
       const remote = decode(args[args.length - 1])
       if (remote.includes('node -e')) return { code: 0, stdout: JSON.stringify({ ...full, server: null }), stderr: '' }
-      if (remote.includes('ln -sf')) return { code: 1, stdout: '', stderr: 'no bundled claude CLI for linux-x64' }
+      if (remote.includes('ln -sfn "$BIN" "$HOME/.local/bin/claude"')) {
+        return { code: 1, stdout: '', stderr: 'no bundled claude CLI for linux-x64' }
+      }
       return { code: 0, stdout: '', stderr: '' }
     })
     const res = await provisionRemote(machine, inputs, r, (msg) => logs.push(msg))
@@ -160,6 +267,7 @@ describe('provisionRemote', () => {
       'npm install (this can take a minute)',
       'link claude CLI onto PATH',
       'ensure Codex CLI',
+      'write managed tools marker',
       'write version marker',
     ])
   })
@@ -168,7 +276,15 @@ describe('provisionRemote', () => {
     const steps: string[] = []
     const r = runner(full)
     await provisionRemote(machine, inputs, r, undefined, (label) => steps.push(label))
-    expect(steps).toEqual(['checking remote', 'ensure remote IDE (one-time download)', 'ensure Codex CLI'])
+    // Codex is genuinely repairable via its own version-pinned install script
+    // even on a ready server, so it still runs. Claude is not (see the
+    // "leaves claude unconverged" test) - its link step and the tools marker
+    // (which would otherwise falsely claim it) are both skipped.
+    expect(steps).toEqual([
+      'checking remote',
+      'ensure remote IDE (one-time download)',
+      'ensure Codex CLI',
+    ])
   })
 
   it('accepts node versions at or above the minimum', async () => {

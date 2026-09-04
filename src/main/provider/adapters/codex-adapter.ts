@@ -20,6 +20,13 @@ import type {
 import { decidePermission, denialMessage } from '../policy'
 import { parseCodexTodoItems, parseCodexTodoMarkdown } from './codex-todo'
 import { applyEnvOverlay } from '../env-overlay'
+import {
+  createExecutableCache,
+  executableIdentity,
+  managedPath,
+  preferManagedExecutable,
+} from '../managed-bin'
+import { commitCatalog, reconcileSelectedModel, shouldRefreshCatalog, type CatalogCache } from '../model-catalog'
 import type { ProviderSkill } from '@shared/types'
 import { withTimeout } from '@shared/promise-timeout'
 import { conversationSessionHints, resolveResumeSegment } from '../../db/database'
@@ -200,7 +207,8 @@ interface ActiveSession {
   threadId: string | null
   /** Cached `skills/list` response. Populated on first listSkills() call. */
   skills: ProviderSkill[] | null
-  models: Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null
+  /** Live `model/list`, keyed on the resolved CLI's identity. Never empty. */
+  models: CatalogCache | null
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
   /** Active codex turn id (from turn/start response or turn/started); null
@@ -475,25 +483,40 @@ export function parseCodexSkills(input: unknown): ProviderSkill[] {
   })
 }
 
-export function findCodexPath(): string | null {
-  const env = buildCodexCliEnv()
-  const home = process.env.HOME || ''
-  const candidates = [
-    '/opt/homebrew/bin/codex',
-    '/usr/local/bin/codex',
-    `${home}/.local/bin/codex`,
-    `${home}/.npm-global/bin/codex`,
-  ]
+/** Tried after the managed bin dir, in this order. */
+function codexFallbackDirs(home: string): string[] {
+  return ['/opt/homebrew/bin', '/usr/local/bin', `${home}/.npm-global/bin`]
+}
 
-  for (const p of candidates) {
-    try {
-      accessSync(p, constants.X_OK)
-      return p
-    } catch { /* not found */ }
+function isExecutableFile(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK)
+    return true
+  } catch {
+    return false
   }
+}
+
+/**
+ * Resolve `codex`, preferring Switchboard's managed bin dir over every other
+ * location. On a remote that link points at the pinned `@openai/codex` we
+ * installed; a `codex` found earlier on PATH is some other build, and adopting
+ * it silently is how a session ends up speaking to a CLI whose app-server
+ * protocol and model catalog we never validated.
+ *
+ * X_OK, not existence: a dangling managed symlink must fall through to a real
+ * binary rather than become a spawn ENOENT.
+ */
+export function findCodexPath(): string | null {
+  const home = process.env.HOME || ''
+  const found = preferManagedExecutable('codex', {
+    fallbackDirs: codexFallbackDirs(home),
+    isExecutable: isExecutableFile,
+  })
+  if (found) return found.path
 
   const whichOut = spawnSync('which', ['codex'], {
-    env,
+    env: buildCodexCliEnv(),
     timeout: 5000,
     encoding: 'utf-8',
   })
@@ -503,20 +526,16 @@ export function findCodexPath(): string | null {
 }
 
 /**
- * Finder-launched Electron apps miss shell-profile PATH additions. Build a
- * CLI-friendly env so codex can be discovered/spawned in packaged builds.
+ * Finder-launched Electron apps miss shell-profile PATH additions, and the
+ * remote backend's non-interactive ssh PATH omits ~/.local/bin altogether.
+ * Build a CLI-friendly env with the managed bin dir FIRST so discovery and
+ * spawn agree on which codex wins.
  */
 export function buildCodexCliEnv(): Record<string, string> {
   const raw = { ...process.env }
   delete raw.ELECTRON_RUN_AS_NODE
   const home = raw.HOME || ''
-  const extra = [
-    '/opt/homebrew/bin',
-    '/usr/local/bin',
-    `${home}/.local/bin`,
-    `${home}/.npm-global/bin`,
-  ].join(':')
-  raw.PATH = `${extra}:${raw.PATH || '/usr/bin:/bin'}`
+  raw.PATH = managedPath(raw, codexFallbackDirs(home))
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(raw)) {
     if (v !== undefined) env[k] = v
@@ -524,27 +543,34 @@ export function buildCodexCliEnv(): Record<string, string> {
   return env
 }
 
-let cachedCodexPath: string | null | undefined
+/**
+ * Revalidating resolution cache.
+ *
+ * The previous `let cachedCodexPath: string | null | undefined` latched a MISS
+ * forever: a remote backend that booted before provisioning installed codex
+ * reported the provider permanently unavailable, and the only cure was
+ * restarting a process that might have been up for days. A hit is also
+ * revalidated, so an upgraded CLI is picked up in place.
+ */
+const codexExecutable = createExecutableCache({
+  resolve: findCodexPath,
+  identify: executableIdentity,
+})
 
 export class CodexAdapter implements ProviderAdapter {
   readonly provider = 'codex' as const
   private sessions = new Map<string, ActiveSession>()
 
   async isAvailable(): Promise<boolean> {
-    if (cachedCodexPath === undefined) {
-      cachedCodexPath = findCodexPath()
-    }
-    return cachedCodexPath !== null
+    return codexExecutable.refresh() !== null
   }
 
   async startSession(
     opts: SessionStartOpts,
     onEvent: (event: RuntimeEvent) => void,
   ): Promise<ProviderSession> {
-    if (cachedCodexPath === undefined) {
-      cachedCodexPath = findCodexPath()
-    }
-    if (!cachedCodexPath) {
+    const executable = codexExecutable.refresh()
+    if (!executable) {
       throw new Error('Codex CLI not found. Install with: npm install -g @openai/codex')
     }
 
@@ -590,7 +616,7 @@ export class CodexAdapter implements ProviderAdapter {
     }
 
     // Spawn codex app-server
-    const child = spawn(cachedCodexPath, ['app-server'], {
+    const child = spawn(executable.path, ['app-server'], {
       cwd: opts.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: codexEnv,
@@ -755,6 +781,17 @@ export class CodexAdapter implements ProviderAdapter {
       active.session.runtimeMode = runtimeMode
     }
 
+    // A model chosen before the live catalog existed - a persisted picker
+    // value, or the static list's default - must not go on being sent once
+    // codex's own catalog no longer offers it (see model-catalog.ts). Checked
+    // on every turn rather than once, since `active.models` only gets a live
+    // catalog after the renderer's first listModels() call.
+    const reconciledModel = reconcileSelectedModel(active.session.model, active.models)
+    if (active.session.model && !reconciledModel) {
+      log.warn(`codex model ${active.session.model} is no longer in the live catalog for ${threadId} - clearing it so the CLI default takes over`)
+    }
+    active.session.model = reconciledModel
+
     // Build current Codex app-server v2 user input blocks.
     const content: Array<Record<string, unknown>> = []
     if (message) {
@@ -912,14 +949,20 @@ export class CodexAdapter implements ProviderAdapter {
   async listModels(threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }>> {
     const active = this.sessions.get(threadId)
     if (!active?.child) return []
-    if (active.models) return active.models
+    // `if (active.models)` used to guard this: `[]` is truthy, so ONE
+    // `model/list` that raced a still-booting app-server cached an empty
+    // catalog and clients fell back to the static list in shared/models.ts for
+    // the session's whole life. shouldRefreshCatalog treats empty as a miss,
+    // and re-fetches when the resolved CLI's identity changed under us.
+    const identity = codexExecutable.current()?.identity ?? null
+    if (!shouldRefreshCatalog(active.models, identity)) return active.models?.models ?? []
     try {
       const result = await this.sendRpc(active, 'model/list', { limit: 100, includeHidden: false })
-      active.models = parseCodexModels(result)
-      return active.models
+      active.models = commitCatalog(active.models, parseCodexModels(result), identity)
+      return active.models?.models ?? []
     } catch (err) {
       log.warn(`model/list failed: ${err instanceof Error ? err.message : String(err)}`)
-      return []
+      return active.models?.models ?? []
     }
   }
 

@@ -13,8 +13,12 @@ describe('parseProbeOutput', () => {
   const line = JSON.stringify({ node: 'v20.11.0', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16' })
 
   it('parses the probe JSON line', () => {
+    // The managed-tool fields (claudeBin/claudeVersion/codexBin/codexVersion/
+    // tools) default to null here because this fixture predates them; they are
+    // covered in managed-tool-plan.test.ts.
     expect(parseProbeOutput(line)).toEqual({
       node: 'v20.11.0', platform: 'linux', arch: 'x64', abi: '115', server: '0.4.16', bridge: null,
+      claudeBin: null, claudeVersion: null, codexBin: null, codexVersion: null, tools: null,
     })
   })
 
@@ -24,10 +28,12 @@ describe('parseProbeOutput', () => {
   })
 
   it('returns all-null when node is absent (empty / garbage output)', () => {
-    expect(parseProbeOutput('')).toEqual({ node: null, platform: null, arch: null, abi: null, server: null, bridge: null })
-    expect(parseProbeOutput('bash: node: command not found')).toEqual({
+    const allNull = {
       node: null, platform: null, arch: null, abi: null, server: null, bridge: null,
-    })
+      claudeBin: null, claudeVersion: null, codexBin: null, codexVersion: null, tools: null,
+    }
+    expect(parseProbeOutput('')).toEqual(allNull)
+    expect(parseProbeOutput('bash: node: command not found')).toEqual(allNull)
   })
 
   it('reads the sb-bridge payload marker, which gates re-shipping the extension', () => {

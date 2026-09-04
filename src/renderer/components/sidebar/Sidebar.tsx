@@ -619,7 +619,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
   // Compute the workspace-grouped tree, then apply the (debounced) filter.
   // The filter expansion sets are merged with the persisted collapse sets:
   // when filtering, matching ancestors auto-expand without clobbering the
-  // user's saved collapse state \u2014 clearing the filter restores it.
+  // user's saved collapse state — clearing the filter restores it.
   const groups: WorkspaceGroup[] = useMemo(
     () => groupProjectsByWorkspace(projects, workspaces),
     [projects, workspaces]
@@ -690,7 +690,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
                 aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${project.name}`}
                 aria-expanded={!isCollapsed}
               >
-                <span className="sidebar-chevron">{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+                <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
                 <ProjectFavicon projectPath={project.path} />
               </button>
               <input
@@ -712,7 +712,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
               onClick={() => !isDragging && toggleCollapse(project.path)}
               aria-expanded={!isCollapsed}
             >
-              <span className="sidebar-chevron">{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+              <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
               <ProjectFavicon projectPath={project.path} />
               <span className="sidebar-project-name">{project.name}</span>
               <GroupUnreadBadge
@@ -841,7 +841,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
                 disabled={scanning === project.path}
                 className="sidebar-scan-btn"
               >
-                {scanning === project.path ? 'Scanning\u2026' : 'Import conversations'}
+                {scanning === project.path ? 'Scanning…' : 'Import conversations'}
               </button>
             )}
           </div>
@@ -950,7 +950,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
           ))}
         </div>
       )}
-      {/* Filter input \u2014 debounced 100ms, fuzzy substring on session titles */}
+      {/* Filter input — debounced 100ms, fuzzy substring on session titles */}
       {sidebarView === 'threads' && projects.length > 0 && (
         <SidebarFilter onChange={setFilterQuery} />
       )}
@@ -1019,7 +1019,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
                         }
                       }}
                     >
-                      <span className="sidebar-chevron">{wsCollapsed ? '\u25B6' : '\u25BC'}</span>
+                      <span className="sidebar-chevron">{wsCollapsed ? '▶' : '▼'}</span>
                       <span className="sidebar-workspace-name">
                         {workspace?.name ?? 'Ungrouped'}
                       </span>
@@ -1031,7 +1031,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
                         className="sidebar-workspace-count"
                         title={`${group.projects.length} project${group.projects.length === 1 ? '' : 's'}, ${sessionTotal} thread${sessionTotal === 1 ? '' : 's'}`}
                       >
-                        {group.projects.length}{'\u00B7'}{sessionTotal}
+                        {group.projects.length}{'·'}{sessionTotal}
                       </span>
                     </button>
                     {workspace && (

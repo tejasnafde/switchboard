@@ -100,7 +100,7 @@ describe('claudeSymlinkScript', () => {
 
   it('links the SDK-bundled claude CLI into ~/.local/bin', () => {
     expect(script).toContain('mkdir -p "$HOME/.local/bin"')
-    expect(script).toContain('ln -sf "$BIN" "$HOME/.local/bin/claude"')
+    expect(script).toContain('ln -sfn "$BIN" "$HOME/.local/bin/claude"')
   })
 
   it('resolves the SDK platform package under the server node_modules', () => {
@@ -135,7 +135,7 @@ describe('codexEnsureScript', () => {
 
   it('links Codex into the runtime user PATH', () => {
     expect(script).toContain('mkdir -p "$HOME/.local/bin"')
-    expect(script).toContain('ln -sf "$BIN" "$HOME/.local/bin/codex"')
+    expect(script).toContain('ln -sfn "$BIN" "$HOME/.local/bin/codex"')
   })
 })
 

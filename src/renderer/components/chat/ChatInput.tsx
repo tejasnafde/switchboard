@@ -1391,7 +1391,7 @@ export function ChatInput({
         {isRunning && onInterrupt && (
           <button
             onClick={onInterrupt}
-            title="Stop the current turn (\u2318\u232B)"
+            title="Stop the current turn (⌘⌫)"
             style={{
               padding: '10px 12px',
               borderRadius: 'var(--radius)',

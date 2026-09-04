@@ -8,9 +8,9 @@
  *  - version mismatch / an error response (old server, no handler for the
  *    channel) - both must count as unhealthy, not pass the probe
  *
- * Also covers REMOTE_COMMAND: it must kill a lingering server (tracked via
- * pidfile) before launching a fresh one, so a process left over from an
- * ungraceful tunnel drop can't keep holding the port.
+ * REMOTE_COMMAND's shape - the bounded stale-server reap and the managed-CLI
+ * PATH export it now composes from machines/remoteBootstrap.ts - is covered in
+ * tests/unit/remote-bootstrap-cleanup.test.ts.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -259,37 +259,15 @@ describe('spawnTunnel', () => {
   })
 })
 
-describe('REMOTE_COMMAND', () => {
-  it('kills a lingering server tracked by pidfile before launching a fresh one', () => {
-    expect(REMOTE_COMMAND).toContain('server.pid')
-    expect(REMOTE_COMMAND).toMatch(/kill\s+"\$P"/)
-    expect(REMOTE_COMMAND).toContain('node $D/index.cjs')
-  })
-
-  it('only kills the pid when it is actually our server (guards against a recycled pid)', () => {
-    expect(REMOTE_COMMAND).toContain('/proc/$P/cmdline')
-    expect(REMOTE_COMMAND).toContain('grep -qsa index.cjs')
-  })
-
-  // Without a token shared by BOTH remote processes the workbench bridge can
-  // never authenticate, and every in-workbench keybinding (cmd+shift+E back to
-  // the terminal, cmd+l, cmd+k) dies silently inside the guest.
-  it('exports one freshly minted bridge token before launching either process', () => {
-    const tokenAt = REMOTE_COMMAND.indexOf('export SB_BRIDGE_TOKEN')
-    const portAt = REMOTE_COMMAND.indexOf('export SB_BRIDGE_PORT')
-    const codeServerAt = REMOTE_COMMAND.indexOf('nohup "$D/code-server/bin/code-server"')
-    const nodeAt = REMOTE_COMMAND.indexOf('node $D/index.cjs')
-
-    expect(tokenAt).toBeGreaterThan(-1)
-    expect(portAt).toBeGreaterThan(-1)
-    // Exported before both launches, so code-server's extension hosts and the
-    // backend that hosts the bridge inherit the same values.
-    expect(tokenAt).toBeLessThan(codeServerAt)
-    expect(tokenAt).toBeLessThan(nodeAt)
-    expect(portAt).toBeLessThan(codeServerAt)
-    expect(portAt).toBeLessThan(nodeAt)
-  })
-
+// REMOTE_COMMAND now composes machines/remoteBootstrap.ts, and most of its
+// contract (bounded TERM->KILL escalation, per-process identity guards, no
+// pkill, the managed-CLI PATH export, bridge-token export ordering) is
+// asserted in tests/unit/remote-bootstrap-cleanup.test.ts alongside the
+// builders - not repeated here, to avoid two copies of the same string
+// assertions drifting. The two checks below are connectDeps.ts's own concern
+// (its REMOTE_BRIDGE_PORT constant and the token-minting command text) and
+// were dropped by a prior refactor with no replacement; restored here.
+describe('REMOTE_COMMAND bridge token/port', () => {
   it('mints the token from the kernel, with a urandom fallback', () => {
     expect(REMOTE_COMMAND).toContain('/proc/sys/kernel/random/uuid')
     expect(REMOTE_COMMAND).toContain('/dev/urandom')
@@ -297,7 +275,7 @@ describe('REMOTE_COMMAND', () => {
     expect(REMOTE_COMMAND).toContain("tr -dc 'a-f0-9'")
   })
 
-  it('binds the bridge to the documented loopback port', () => {
+  it('binds the bridge to the documented loopback port and never tunnels it', () => {
     expect(REMOTE_COMMAND).toContain(`SB_BRIDGE_PORT=${REMOTE_BRIDGE_PORT}`)
     // Never tunneled - intents ride the existing backend socket instead.
     expect(REMOTE_COMMAND).not.toContain(`-L ${REMOTE_BRIDGE_PORT}`)
