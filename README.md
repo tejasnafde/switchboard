@@ -13,8 +13,10 @@ Cursor and additional providers are planned. The provider layer is designed to
 grow, and contributions are welcome.
 
 > Status: pre-1.0. macOS Apple Silicon and Windows x64 builds are published
-> through GitHub Releases with auto-update. Builds are currently unsigned. See
-> [Install](#install) before downloading.
+> through GitHub Releases with auto-update. **Builds are unsigned. On macOS,
+> Gatekeeper blocks the first launch - run
+> `xattr -d com.apple.quarantine /Applications/Switchboard.app` after install,
+> or right-click the app and choose Open.** See [Install](#install).
 
 ## Why Switchboard?
 
@@ -208,7 +210,7 @@ process.
   history, and `.switchboard/workspace.yaml` terminal templates are all part of
   the application.
 - **Built and tested.** The build is gated by typechecking and a suite of more
-  than 1,200 tests.
+  than 1,900 tests.
 
 For the technical details:
 
