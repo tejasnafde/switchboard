@@ -2,7 +2,7 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
-## 0.8.54 - Isolate Codex and Claude credential homes deterministically
+## 0.8.55 - Isolate Codex and Claude credential homes deterministically
 
 ### Fixed
 - **Codex and Claude sessions, probes, and terminals can no longer resolve credentials from the wrong profile.** Credential-home resolution (`CODEX_HOME` and, symmetrically, `CLAUDE_CONFIG_DIR`) is now a single canonical seam shared by every consumer - session spawn, Settings Test, Usage, Terminal-tab Login, `oauth_dir`/env CRUD validation, and Settings display - so an ambient or leftover env value can never leak into a session, terminal, or probe, and Codex and Claude behave identically.
@@ -20,6 +20,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - IPC wire is additive-only: `ProviderInstanceWire`/`ProviderInstance` gained `effectiveOauthDir` and `effectiveOauthDirSource`, and `TerminalCreateOptions` gained `loginInstance`. Older mobile/Android clients continue to work unchanged.
 - See `docs/feature-parity/codex-credential-isolation.json` for full verification detail, including what was and was not exercised (no real `codex login`/`claude login`, keychain write, or packaged/Finder-launched build in this pass).
 - macOS releases remain unsigned until production signing credentials are configured. macOS 12 or later is required.
+- This product change was first tagged `v0.8.54`, but that tag's commit carries a pre-existing `.github/workflows/release.yml` YAML defect (an under-indented notes block that silently truncated the workflow, so no release run was ever queued for the tag push). The tag is kept as-is for auditability; the fix landed on `main` as a separate whitespace-only workflow repair, and this release is cut as `v0.8.55` - product-identical to `v0.8.54` plus that repair - so the tag-triggered release workflow can actually run.
 
 ## 0.8.53 - Repair remote reconnects, refresh managed tools, and stop dropping live models
 
