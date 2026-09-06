@@ -62,7 +62,15 @@ async function loadModule() {
   return import('../../src/main/shell-env')
 }
 
-describe('shell-env async warmup (behavior 5)', () => {
+// The probe this file pins is POSIX-only by design: `unsupportedShell()` in
+// `src/main/shell-env.ts` returns true unconditionally on win32 (no `/bin/sh`,
+// no login-shell concept to probe), so `warmShellEnv`/`loadShellEnv`
+// short-circuit to a cached `null` there regardless of the mocked child
+// process below. Skip on win32 rather than assert against that stub, same as
+// the `describePosix` split in pty-manager.test.ts.
+const describePosix = process.platform === 'win32' ? describe.skip : describe
+
+describePosix('shell-env async warmup (behavior 5)', () => {
   const savedShell = process.env.SHELL
 
   beforeEach(async () => {

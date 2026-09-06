@@ -170,7 +170,10 @@ describe('remote codex login probe - async, bounded, cached, deduped (behavior 4
 })
 
 describe('remote codex login command quoting (behavior 6)', () => {
-  it('POSIX-quotes a config dir that contains shell metacharacters', async () => {
+  // Proves the quoting safe by actually running it through a POSIX shell,
+  // which doesn't exist on win32; the quoter itself is exercised on every
+  // platform via remote-gate.test.ts's format assertions.
+  it.skipIf(process.platform === 'win32')('POSIX-quotes a config dir that contains shell metacharacters', async () => {
     delete process.env.OPENAI_API_KEY
     probe.exitCode = 1
     probe.stdout = ''

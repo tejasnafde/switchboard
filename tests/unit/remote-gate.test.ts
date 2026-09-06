@@ -97,7 +97,11 @@ describe('remote Codex auth', () => {
     const dir = tmpDir()
     const missing = await checkRemoteProviderAuth('codex', dir)
     expect(missing).toMatchObject({ loggedIn: false, configDir: dir })
-    expect(missing.loginCommand).toMatch(/^CODEX_HOME=".+" codex login --device-auth$/)
+    // Double-quoted on a shell-safe path (POSIX tmpdirs); shellQuoteDir falls
+    // back to single-quoting on win32's os.tmpdir(), whose backslashes aren't
+    // shell-safe to leave inside double quotes - both are the quoter's
+    // documented, correct behavior for the character set it was given.
+    expect(missing.loginCommand).toMatch(/^CODEX_HOME=(".+"|'.+') codex login --device-auth$/)
     expect(await remoteProviderLoginPrompt('codex', dir)).toContain('codex login --device-auth')
 
     writeFileSync(join(dir, 'auth.json'), '{"tokens":{}}')
