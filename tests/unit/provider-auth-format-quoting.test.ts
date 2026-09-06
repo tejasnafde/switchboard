@@ -46,7 +46,14 @@ const HOSTILE = [
   '/tmp/oauth\\backslash',
 ]
 
-describe('oauthLoginCommand - POSIX-safe quoting (behavior 6)', () => {
+// Every case in this file proves quoting safety by actually running the
+// generated command through a real POSIX shell (shellValueOf/execFileSync
+// '/bin/sh'), which doesn't exist on win32 - skip the whole file there, same
+// as the other real-shell tests already skipped on win32 elsewhere
+// (connect-deps.test.ts, provisioner.test.ts, remote-gate-async-login-probe.test.ts).
+const describePosix = process.platform === 'win32' ? describe.skip : describe
+
+describePosix('oauthLoginCommand - POSIX-safe quoting (behavior 6)', () => {
   const created: string[] = []
 
   afterEach(() => {
@@ -90,7 +97,7 @@ describe('oauthLoginCommand - POSIX-safe quoting (behavior 6)', () => {
   })
 })
 
-describe('oauthCreateDirCommand - POSIX-safe quoting (behavior 6)', () => {
+describePosix('oauthCreateDirCommand - POSIX-safe quoting (behavior 6)', () => {
   it('quotes a hostile directory so mkdir receives one literal argument', () => {
     const dir = '/tmp/oauth $(echo INJECTED) dir'
     const cmd = oauthCreateDirCommand(dir)

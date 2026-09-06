@@ -81,7 +81,12 @@ describe('resolveInstanceEnv - codex ambient CODEX_HOME (behaviors 1 & 3)', () =
     expect(env.CODEX_HOME).toBe(join(homedir(), '.codex'))
   })
 
-  it('regression: two oauth_dir instances plus a third ambient-home instance never collapse onto one CODEX_HOME', async () => {
+  // canonicalizeOauthPath runs every home through node:path's normalize(),
+  // which is platform-native by design; this fixture asserts an exact
+  // POSIX-literal string round-trip, which only holds on a POSIX host - skip
+  // on win32 rather than assert a separator style no real Windows install
+  // would produce either (see oauth-path.ts).
+  it.skipIf(process.platform === 'win32')('regression: two oauth_dir instances plus a third ambient-home instance never collapse onto one CODEX_HOME', async () => {
     process.env.CODEX_HOME = '/tmp/third-ambient-home'
     const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
 

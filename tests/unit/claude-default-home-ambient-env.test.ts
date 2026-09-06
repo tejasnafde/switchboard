@@ -86,7 +86,12 @@ describe('resolveInstanceEnv - claude ambient CLAUDE_CONFIG_DIR (behavior 1)', (
     expect(resolveInstanceEnv(row({})).CLAUDE_CONFIG_DIR).toBe(CANONICAL_CLAUDE)
   })
 
-  it('an explicit oauth_dir still wins over the ambient value', async () => {
+  // canonicalizeOauthPath runs every home through node:path's normalize(),
+  // which is platform-native by design; these fixtures assert an exact
+  // POSIX-literal string round-trip, which only holds on a POSIX host - skip
+  // on win32 rather than assert a separator style no real Windows install
+  // would produce either (see oauth-path.ts).
+  it.skipIf(process.platform === 'win32')('an explicit oauth_dir still wins over the ambient value', async () => {
     process.env.CLAUDE_CONFIG_DIR = '/tmp/some-ambient-claude-home'
     const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
     const env = resolveInstanceEnv(row({
@@ -135,7 +140,8 @@ describe('resolveInstanceEnv - credential-home precedence (behavior 3)', () => {
     else process.env.CODEX_HOME = savedCodex
   })
 
-  it('an env-overlay CLAUDE_CONFIG_DIR beats the default but loses to oauth_dir', async () => {
+  // Same POSIX-literal-fixture caveat as above.
+  it.skipIf(process.platform === 'win32')('an env-overlay CLAUDE_CONFIG_DIR beats the default but loses to oauth_dir', async () => {
     process.env.CLAUDE_CONFIG_DIR = '/tmp/ambient'
     const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
 
@@ -162,7 +168,8 @@ describe('resolveInstanceEnv - credential-home precedence (behavior 3)', () => {
       .toBe(join(homedir(), '.codex-legacy'))
   })
 
-  it('applies the identical precedence to codex', async () => {
+  // Same POSIX-literal-fixture caveat as above.
+  it.skipIf(process.platform === 'win32')('applies the identical precedence to codex', async () => {
     process.env.CODEX_HOME = '/tmp/ambient-codex'
     const { resolveInstanceEnv } = await import('../../src/main/provider/instance-env')
     const codexRow = (o: Partial<ProviderInstanceRow>) => row({ agentType: 'codex', ...o })

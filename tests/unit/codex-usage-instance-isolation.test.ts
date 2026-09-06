@@ -121,7 +121,12 @@ describe('fetchInstanceUsage - Codex multi-instance isolation (item 1)', () => {
     else process.env.CODEX_HOME = savedCodexHome
   })
 
-  it('resolves distinct CODEX_HOME per instance through the real usage-probe path, and cache keys do not collapse', async () => {
+  // canonicalizeOauthPath runs every home through node:path's normalize(),
+  // which is platform-native by design; this fixture asserts an exact
+  // POSIX-literal string round-trip, which only holds on a POSIX host - skip
+  // on win32 rather than assert a separator style no real Windows install
+  // would produce either (see oauth-path.ts).
+  it.skipIf(process.platform === 'win32')('resolves distinct CODEX_HOME per instance through the real usage-probe path, and cache keys do not collapse', async () => {
     process.env.CODEX_HOME = '/tmp/ambient-leftover-codex-home'
     rows.set('codex-work', codexRow({
       id: 'codex-work', displayName: 'Work', authMode: 'oauth_dir', oauthDir: '/tmp/codex-work',

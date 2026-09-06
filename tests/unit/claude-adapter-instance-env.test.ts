@@ -28,12 +28,18 @@ describe('buildClaudeQueryEnv', () => {
     expect(env.ANTHROPIC_API_KEY).toBe('shell-key')
   })
 
-  it('sets CLAUDE_CONFIG_DIR when oauthDir is provided', () => {
+  // canonicalizeOauthPath (src/main/provider/oauth-path.ts) runs every
+  // CLAUDE_CONFIG_DIR/CODEX_HOME through node:path's normalize(), which is
+  // platform-native by design (a real Windows profile is typed with `\`).
+  // These fixtures use POSIX literal strings to stay readable, so on win32
+  // they come back re-separated with `\` - skip there rather than assert a
+  // separator style no real Windows install would produce either.
+  it.skipIf(process.platform === 'win32')('sets CLAUDE_CONFIG_DIR when oauthDir is provided', () => {
     const env = buildClaudeQueryEnv({ PATH: '/usr/bin' }, {}, '/tmp/claude-work')
     expect(env.CLAUDE_CONFIG_DIR).toBe('/tmp/claude-work')
   })
 
-  it('leaves CLAUDE_CONFIG_DIR untouched when oauthDir is null/empty', () => {
+  it.skipIf(process.platform === 'win32')('leaves CLAUDE_CONFIG_DIR untouched when oauthDir is null/empty', () => {
     const base = { CLAUDE_CONFIG_DIR: '/from/base' }
     expect(buildClaudeQueryEnv(base, {}, null).CLAUDE_CONFIG_DIR).toBe('/from/base')
     expect(buildClaudeQueryEnv(base, {}, '').CLAUDE_CONFIG_DIR).toBe('/from/base')

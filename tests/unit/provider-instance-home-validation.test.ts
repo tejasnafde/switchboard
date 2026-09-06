@@ -358,7 +358,14 @@ describe('unchanged legacy Claude rows keep saving, same as Codex (behavior 8 sy
  * "`{}` clears, `null` keeps" contract. Only the home is identity.
  */
 describe('overlay credential home survives an unrelated save (behavior 9)', () => {
-  it('keeps a legacy CODEX_HOME when a rename sends an empty env map', async () => {
+  // canonicalizeOauthPath runs every home through node:path's normalize(),
+  // which is platform-native by design; the `effectiveOauthDir` assertions
+  // below assert an exact POSIX-literal string round-trip, which only holds
+  // on a POSIX host - skip on win32 rather than assert a separator style no
+  // real Windows install would produce either (see oauth-path.ts). The raw
+  // `.env.CODEX_HOME`/`.env.CLAUDE_CONFIG_DIR` assertions this test also
+  // makes are unaffected (they read the uncanonicalized stored value).
+  it.skipIf(process.platform === 'win32')('keeps a legacy CODEX_HOME when a rename sends an empty env map', async () => {
     const { upsertProviderInstance, getProviderInstanceFull } = await db()
     envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work' }, { display_name: 'Old Name' })
 
@@ -373,7 +380,8 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     expect(saved.effectiveOauthDirSource).toBe('env')
   })
 
-  it('keeps a legacy CLAUDE_CONFIG_DIR the same way', async () => {
+  // Same POSIX-literal-fixture caveat as above.
+  it.skipIf(process.platform === 'win32')('keeps a legacy CLAUDE_CONFIG_DIR the same way', async () => {
     const { upsertProviderInstance, getProviderInstanceFull } = await db()
     envRow('claude-legacy', 'claude-code', { CLAUDE_CONFIG_DIR: '/tmp/claude-work' })
 
@@ -421,7 +429,8 @@ describe('overlay credential home survives an unrelated save (behavior 9)', () =
     })).toThrow(/credential home/i)
   })
 
-  it('still repoints the home when the save names the key explicitly', async () => {
+  // Same POSIX-literal-fixture caveat as above.
+  it.skipIf(process.platform === 'win32')('still repoints the home when the save names the key explicitly', async () => {
     const { upsertProviderInstance, getProviderInstanceFull } = await db()
     envRow('codex-legacy', 'codex', { CODEX_HOME: '/tmp/codex-work' })
 

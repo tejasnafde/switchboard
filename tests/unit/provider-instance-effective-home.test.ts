@@ -227,7 +227,12 @@ describe('resolveEffectiveOauthDir - the decrypting resolver behind the IPC laye
     })
   })
 
-  it('lets oauth_dir win over an overlay home, exactly as a spawn would', async () => {
+  // canonicalizeOauthPath runs every home through node:path's normalize(),
+  // which is platform-native by design; this fixture asserts an exact
+  // POSIX-literal string round-trip, which only holds on a POSIX host - skip
+  // on win32 rather than assert a separator style no real Windows install
+  // would produce either (see oauth-path.ts).
+  it.skipIf(process.platform === 'win32')('lets oauth_dir win over an overlay home, exactly as a spawn would', async () => {
     seedRow({
       id: 'codex-both', agent_type: 'codex', auth_mode: 'oauth_dir', oauth_dir: '/tmp/explicit',
       env_encrypted: encrypted({ CODEX_HOME: '/tmp/overlay' }),
