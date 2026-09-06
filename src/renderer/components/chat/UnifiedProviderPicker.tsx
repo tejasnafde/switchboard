@@ -38,8 +38,15 @@ import {
 import { providerInstanceInitials } from '@shared/providerInstanceInitials'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useAgentStore } from '../../stores/agent-store'
-import { getOrCreateTerminal } from '../../services/terminal-registry'
+import { createTerminalAsync } from '../../services/terminal-registry'
 import { emitSessionCreated } from '../../services/session-events'
+import { terminalLoginAgentType } from '../../shared/terminalLogin'
+import { shouldShowInstanceRail } from '../../shared/instanceRailVisibility'
+import {
+  resolveVisibleLoginInstanceId,
+  nextTermInstanceId,
+} from '../../shared/terminalLoginAccount'
+import { startTerminalSession } from '../../shared/terminalLoginStart'
 
 interface UnifiedProviderPickerProps {
   agentType: AgentType
@@ -94,6 +101,19 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   // Terminal tab state
   const [termCommand, setTermCommand] = useState('claude')
   const [termInstanceId, setTermInstanceId] = useState<string | undefined>(undefined)
+  const [termStarting, setTermStarting] = useState(false)
+  const [termError, setTermError] = useState<string | null>(null)
+
+  // Key the picked account to the CLI binary's login kind - a Codex
+  // instance id must never survive a switch to Claude (or to a custom
+  // command), which would otherwise get sent as identity for the wrong
+  // kind (see terminal-login-env.ts's wrong-kind rejection).
+  const loginAgentType = terminalLoginAgentType(termCommand)
+  const prevLoginAgentTypeRef = useRef(loginAgentType)
+  useEffect(() => {
+    setTermInstanceId((current) => nextTermInstanceId(prevLoginAgentTypeRef.current, loginAgentType, current))
+    prevLoginAgentTypeRef.current = loginAgentType
+  }, [loginAgentType])
 
   const allInstances = useProviderInstanceStore((s) => s.instances)
   const loaded = useProviderInstanceStore((s) => s.loaded)
@@ -167,7 +187,12 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
 
   const accent = effectiveInstance?.accentColor ?? 'var(--accent)'
   const initials = effectiveInstance ? providerInstanceInitials(effectiveInstance.displayName) : '··'
-  const showInstanceBadge = instances.length >= 2
+  // Computed from the RAW requested instanceId (not `effectiveInstance.id`,
+  // which is already post-fallback and so always a member of `instances`) -
+  // this is what lets both the badge and the rail stay visible when that id
+  // no longer names an enabled instance (deleted/disabled elsewhere).
+  const showRail = shouldShowInstanceRail(instances, instanceId)
+  const showInstanceBadge = showRail
 
   // Trigger label: "Claude · Sonnet 4.5". An unpinned session shows the model
   // the backend resolved to, falling back to "Default" only before the first
@@ -262,6 +287,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           }}
           instances={instances}
           effectiveInstanceId={effectiveInstance?.id}
+          showRail={showRail}
           onInstanceChange={(id) => {
             onInstanceChange(id)
           }}
@@ -277,25 +303,44 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           setTermCommand={setTermCommand}
           termInstanceId={termInstanceId}
           setTermInstanceId={setTermInstanceId}
+          termStarting={termStarting}
+          termError={termError}
           onTermStart={() => {
             const active = useAgentStore.getState().getActiveSession()
             const projectPath = active?.projectPath ?? '.'
             const machineId = active?.machineId
-            const paneId = `term_${Date.now()}`
-            const sessionId = `agent_${Date.now()}`
-            const inst = allInstances.find((i) => i.id === termInstanceId)
-            const env: Record<string, string> = {}
-            if (inst?.oauthDir) env['CLAUDE_CONFIG_DIR'] = inst.oauthDir
-            getOrCreateTerminal(paneId, projectPath, termCommand, undefined, env, machineId)
-            useAgentStore.getState().addSession({
-              id: sessionId, type: 'terminal', status: 'idle',
-              projectPath, terminalPaneId: paneId, machineId,
-              title: termCommand, instanceId: termInstanceId,
+            // Identity only - main resolves the instance's real env
+            // (CODEX_HOME / CLAUDE_CONFIG_DIR) across the IPC boundary.
+            // Building that env here directly missed Codex entirely and
+            // let a Codex login terminal silently fall back to whatever
+            // ambient/default CODEX_HOME happened to be set.
+            const loginInstance = loginAgentType
+              ? { agentType: loginAgentType, instanceId: termInstanceId }
+              : undefined
+            setTermError(null)
+            setTermStarting(true)
+            // Awaits terminal:create BEFORE creating any session/store/
+            // conversation artifact - a rejected create (missing/disabled/
+            // wrong-kind instance) must never leave a dead session with no
+            // working PTY behind it, and must never surface as an
+            // unhandled promise rejection.
+            startTerminalSession(
+              {
+                createTerminal: createTerminalAsync,
+                addSession: (session) => useAgentStore.getState().addSession(session),
+                setActiveSession: (id) => useAgentStore.getState().setActiveSession(id),
+                createConversation: (params) => window.api.app.createConversation(params),
+                emitSessionCreated,
+              },
+              { projectPath, machineId, command: termCommand, loginInstance, instanceId: termInstanceId },
+            ).then((result) => {
+              setTermStarting(false)
+              if (result.ok) {
+                setOpen(false)
+              } else {
+                setTermError(result.error ?? 'Failed to start terminal session.')
+              }
             })
-            useAgentStore.getState().setActiveSession(sessionId)
-            window.api.app.createConversation({ id: sessionId, projectPath, agentType: 'terminal', title: termCommand }).catch(() => {})
-            emitSessionCreated({ id: sessionId, projectPath, title: termCommand, startedAt: Date.now(), source: 'switchboard', agentType: 'terminal' })
-            setOpen(false)
           }}
         />,
         document.body,
@@ -311,6 +356,7 @@ interface PopoverProps {
   onAgentTypeChange: (t: AgentType) => void
   instances: ProviderInstance[]
   effectiveInstanceId: string | undefined
+  showRail: boolean
   onInstanceChange: (id: string | undefined) => void
   model: string
   models: ModelOption[]
@@ -322,6 +368,8 @@ interface PopoverProps {
   setTermCommand: (c: string) => void
   termInstanceId: string | undefined
   setTermInstanceId: (id: string | undefined) => void
+  termStarting: boolean
+  termError: string | null
   onTermStart: () => void
 }
 
@@ -330,9 +378,10 @@ const UnifiedPickerPopover = (() => {
   return function Inner(props: PopoverProps & { ref?: React.Ref<HTMLDivElement> }) {
     const {
       anchorRect, agentType, canChangeAgent, onAgentTypeChange,
-      instances, effectiveInstanceId, onInstanceChange,
+      instances, effectiveInstanceId, showRail, onInstanceChange,
       model, models, onModelChange,
-      allInstances, termCommand, setTermCommand, termInstanceId, setTermInstanceId, onTermStart,
+      allInstances, termCommand, setTermCommand, termInstanceId, setTermInstanceId,
+      termStarting, termError, onTermStart,
     } = props
     const [query, setQuery] = useState('')
     const [showCustom, setShowCustom] = useState(false)
@@ -394,8 +443,6 @@ const UnifiedPickerPopover = (() => {
       Math.max(8, anchorRect.left),
       window.innerWidth - POPOVER_WIDTH - 8,
     )
-
-    const showRail = instances.length >= 2
 
     return (
       <div
@@ -468,6 +515,8 @@ const UnifiedPickerPopover = (() => {
             setTermCommand={setTermCommand}
             termInstanceId={termInstanceId}
             setTermInstanceId={setTermInstanceId}
+            termStarting={termStarting}
+            termError={termError}
             onStart={onTermStart}
           />
         )}
@@ -646,6 +695,8 @@ function TerminalTabBody({
   setTermCommand,
   termInstanceId,
   setTermInstanceId,
+  termStarting,
+  termError,
   onStart,
 }: {
   allInstances: ProviderInstance[]
@@ -653,11 +704,25 @@ function TerminalTabBody({
   setTermCommand: (c: string) => void
   termInstanceId: string | undefined
   setTermInstanceId: (id: string | undefined) => void
+  termStarting: boolean
+  termError: string | null
   onStart: () => void
 }) {
-  // claude-code instances carry CLAUDE_CONFIG_DIR via oauthDir.
-  const claudeInstances = allInstances.filter((i) => i.agentType === 'claude-code' && i.enabled)
-  const isCustom = termCommand !== 'claude' && termCommand !== 'codex'
+  // Instances for whichever CLI binary is selected - main resolves the
+  // picked instance's oauthDir (CLAUDE_CONFIG_DIR / CODEX_HOME) at spawn.
+  const loginAgentType = terminalLoginAgentType(termCommand)
+  const loginInstances = loginAgentType
+    ? allInstances.filter((i) => i.agentType === loginAgentType && i.enabled)
+    : []
+  const isCustom = loginAgentType === null
+  // Mirrors main's resolveProviderInstance fallback order (canonical
+  // default, then oldest enabled) so the highlighted row is always the
+  // exact instance main will resolve when no explicit pick has been made -
+  // never a different account than the one whose credential home is
+  // actually in use.
+  const visibleInstanceId = loginAgentType
+    ? resolveVisibleLoginInstanceId(loginInstances, loginAgentType, termInstanceId)
+    : undefined
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
@@ -706,14 +771,14 @@ function TerminalTabBody({
         </div>
       </div>
 
-      {/* Account - only shown for claude binary */}
-      {termCommand === 'claude' && claudeInstances.length > 0 && (
+      {/* Account - shown for claude/codex binaries, not a custom command */}
+      {loginAgentType && loginInstances.length > 0 && (
         <div style={{ padding: '8px 8px 6px', borderBottom: '1px solid var(--border)', overflowY: 'auto', maxHeight: 140 }}>
           <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.7px', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
             Account
           </div>
-          {claudeInstances.map((inst) => {
-            const active = (termInstanceId ?? claudeInstances[0]?.id) === inst.id
+          {loginInstances.map((inst) => {
+            const active = visibleInstanceId === inst.id
             return (
               <button
                 key={inst.id}
@@ -758,11 +823,31 @@ function TerminalTabBody({
         </div>
       </div>
 
+      {/* Start-failure error - the terminal:create IPC call rejected (e.g. a
+          missing/disabled/wrong-kind login instance) before any PTY spawned.
+          Surfaced here instead of silently dropping an unhandled rejection. */}
+      {termError && (
+        <div style={{ padding: '0 8px 8px' }}>
+          <div style={{
+            padding: '7px 10px',
+            background: 'rgba(248,81,73,0.08)',
+            border: '1px solid rgba(248,81,73,0.25)',
+            borderRadius: 'var(--radius)',
+            fontSize: '11px',
+            color: 'var(--danger, #f85149)',
+            lineHeight: 1.5,
+          }}>
+            {termError}
+          </div>
+        </div>
+      )}
+
       {/* Start button */}
       <div style={{ padding: '8px', display: 'flex', justifyContent: 'flex-end' }}>
         <button
           type="button"
           onClick={onStart}
+          disabled={termStarting}
           style={{
             padding: '6px 14px',
             borderRadius: 'var(--radius)',
@@ -771,11 +856,12 @@ function TerminalTabBody({
             color: '#000',
             fontWeight: 600,
             fontSize: '12px',
-            cursor: 'pointer',
+            cursor: termStarting ? 'default' : 'pointer',
+            opacity: termStarting ? 0.6 : 1,
             transition: 'opacity 120ms',
           }}
         >
-          Start Terminal Session
+          {termStarting ? 'Starting…' : 'Start Terminal Session'}
         </button>
       </div>
     </div>

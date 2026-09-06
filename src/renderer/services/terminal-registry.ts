@@ -95,13 +95,15 @@ function getXtermTheme(): Record<string, string> {
   }
 }
 
-export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: string, waitFor?: string, env?: Record<string, string>, machineId?: string): TerminalInstance {
-  const existing = registry.get(id)
-  if (existing) return existing
-
-  // Route the PTY (and subsequent write/resize/kill, keyed by id) to its machine.
-  if (machineId && machineId !== 'local') window.api.routing.bind(id, machineId)
-
+/**
+ * Builds and wires an xterm `Terminal` + addons for `id` and registers it.
+ * Shared by `getOrCreateTerminal` (fire-and-forget: registers immediately,
+ * dispatches `terminal:create` without awaiting it) and `createTerminalAsync`
+ * (awaits `terminal:create` first, only builds/registers on success). Does
+ * NOT itself touch the registry map or routing table or dispatch the IPC
+ * create call - callers own that ordering.
+ */
+function buildTerminalInstance(id: string, machineId?: string): TerminalInstance {
   const terminal = new Terminal({
     fontSize: 13,
     fontFamily: "'JetBrains Mono', 'Fira Code', 'SF Mono', Menlo, monospace",
@@ -188,7 +190,7 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
     return true
   })
 
-  const instance: TerminalInstance = {
+  return {
     terminal,
     fitAddon,
     searchAddon,
@@ -198,12 +200,68 @@ export function getOrCreateTerminal(id: string, cwd?: string, initialCommand?: s
     cleanupFns,
     machineId,
   }
+}
 
+export function getOrCreateTerminal(
+  id: string,
+  cwd?: string,
+  initialCommand?: string,
+  waitFor?: string,
+  env?: Record<string, string>,
+  machineId?: string,
+  loginInstance?: { agentType: 'claude-code' | 'codex'; instanceId?: string },
+): TerminalInstance {
+  const existing = registry.get(id)
+  if (existing) return existing
+
+  // Route the PTY (and subsequent write/resize/kill, keyed by id) to its machine.
+  if (machineId && machineId !== 'local') window.api.routing.bind(id, machineId)
+
+  const instance = buildTerminalInstance(id, machineId)
   registry.set(id, instance)
 
-  // Create PTY in main process
-  window.api.terminal.create({ id, cols: 80, rows: 24, cwd, initialCommand, waitFor, env, machineId })
+  // Create PTY in main process. Fire-and-forget: this is the path every
+  // other terminal (ChatPanel panes, useTerminal, etc.) creates through, and
+  // that behavior must not change here - only the dedicated login flow
+  // (createTerminalAsync below) awaits the create call.
+  window.api.terminal.create({ id, cols: 80, rows: 24, cwd, initialCommand, waitFor, env, machineId, loginInstance })
 
+  return instance
+}
+
+/**
+ * Awaited sibling of `getOrCreateTerminal`, used only by the Terminal-tab
+ * "Start Terminal Session" login flow (via startTerminalSession in
+ * terminalLoginStart.ts). Resolving `loginInstance` to a real credential
+ * env happens in main BEFORE the PTY spawns (see terminal-login-env.ts) -
+ * a missing/disabled/wrong-kind instance rejects the `terminal:create` call
+ * rather than opening an unscoped shell. That rejection must not leave a
+ * half-built xterm instance, registry entry, or routing-table bind behind,
+ * so - unlike `getOrCreateTerminal` - nothing is built or registered until
+ * `terminal:create` actually resolves.
+ */
+export async function createTerminalAsync(
+  id: string,
+  cwd: string | undefined,
+  initialCommand: string,
+  machineId: string | undefined,
+  loginInstance: { agentType: 'claude-code' | 'codex'; instanceId?: string } | undefined,
+): Promise<TerminalInstance> {
+  const existing = registry.get(id)
+  if (existing) return existing
+
+  const didBindRouting = Boolean(machineId && machineId !== 'local')
+  if (didBindRouting) window.api.routing.bind(id, machineId!)
+
+  try {
+    await window.api.terminal.create({ id, cols: 80, rows: 24, cwd, initialCommand, machineId, loginInstance })
+  } catch (err) {
+    if (didBindRouting) window.api.routing?.unbind?.(id)
+    throw err
+  }
+
+  const instance = buildTerminalInstance(id, machineId)
+  registry.set(id, instance)
   return instance
 }
 

@@ -13,8 +13,11 @@ import {
   getConversationRuntimeMode,
   getSetting,
 } from '../db/database'
+import { getProviderInstanceFull } from '../db/providerInstances'
 import {
+  defaultInstanceSettingKey,
   defaultModelSettingKey,
+  resolveMachineInstanceId,
   resolveSessionDefaults,
   SETTING_DEFAULT_INSTANCE_ID,
   SETTING_DEFAULT_RUNTIME_MODE,
@@ -24,11 +27,17 @@ import {
 import type { AgentType } from '@shared/types'
 
 function machineDefaults(agentType: AgentType): SessionDefaults {
+  const scoped = getSetting(defaultInstanceSettingKey(agentType)) ?? undefined
+  const legacy = getSetting(SETTING_DEFAULT_INSTANCE_ID) ?? undefined
+  // The legacy key predates per-agent scoping - only honor it while it still
+  // names an instance of the agent kind being started, so a Codex pick made
+  // through it can never be handed to a Claude/OpenCode session.
+  const legacyAgentType = legacy ? getProviderInstanceFull(legacy)?.agentType ?? null : null
   return {
     runtimeMode: getSetting(SETTING_DEFAULT_RUNTIME_MODE) ?? undefined,
     // Per agent: one global key would hand an OpenCode model to Claude.
     model: getSetting(defaultModelSettingKey(agentType)) ?? undefined,
-    instanceId: getSetting(SETTING_DEFAULT_INSTANCE_ID) ?? undefined,
+    instanceId: resolveMachineInstanceId({ agentType, scoped, legacy, legacyAgentType }),
   }
 }
 

@@ -18,6 +18,37 @@ export function defaultModelSettingKey(agentType: string): string {
   return `chat.defaultModel.${agentType}`
 }
 
+/**
+ * Per agent, analogous to `defaultModelSettingKey`. `SETTING_DEFAULT_INSTANCE_ID`
+ * predates per-agent scoping: it was one machine-wide key, so picking a
+ * Codex profile as "the" default and then starting a fresh Claude/OpenCode
+ * session handed that Codex id to `resolveProviderInstance` for the wrong
+ * agent kind - which now throws instead of silently substituting, so the
+ * new session failed to start at all rather than merely picking wrong.
+ */
+export function defaultInstanceSettingKey(agentType: string): string {
+  return `chat.defaultProviderInstanceId.${agentType}`
+}
+
+/**
+ * The machine-default instance id for one agent kind, honoring the
+ * still-unscoped legacy key ONLY when the id it names still belongs to the
+ * agent asking. Without the ownership check, a Claude session started after
+ * a Codex pick (legacy key set, no scoped key yet) would inherit the Codex
+ * id and fail closed for a wrong-kind id it never actually chose.
+ */
+export function resolveMachineInstanceId(params: {
+  agentType: string
+  scoped: string | undefined
+  legacy: string | undefined
+  legacyAgentType: string | null | undefined
+}): string | undefined {
+  const { agentType, scoped, legacy, legacyAgentType } = params
+  if (scoped) return scoped
+  if (legacy && legacyAgentType === agentType) return legacy
+  return undefined
+}
+
 const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'full-access']
 
 /** An unknown mode must never widen permissions. */

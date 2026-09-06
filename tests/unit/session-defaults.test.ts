@@ -13,7 +13,11 @@
  * beat the machine default, or reopening a chat rewrites what the user set on it.
  */
 import { describe, it, expect } from 'vitest'
-import { resolveSessionDefaults } from '../../src/shared/session-defaults'
+import {
+  resolveSessionDefaults,
+  defaultInstanceSettingKey,
+  resolveMachineInstanceId,
+} from '../../src/shared/session-defaults'
 
 describe('resolveSessionDefaults', () => {
   it('uses the request when the client stated one', () => {
@@ -80,5 +84,58 @@ describe('resolveSessionDefaults', () => {
       machine: {},
     })
     expect(resolved.runtimeMode).toBe('plan')
+  })
+})
+
+describe('defaultInstanceSettingKey', () => {
+  it('is scoped per agent, like defaultModelSettingKey', () => {
+    expect(defaultInstanceSettingKey('codex')).toBe('chat.defaultProviderInstanceId.codex')
+    expect(defaultInstanceSettingKey('claude-code')).toBe('chat.defaultProviderInstanceId.claude-code')
+  })
+})
+
+describe('resolveMachineInstanceId', () => {
+  it('prefers the scoped key when set', () => {
+    const resolved = resolveMachineInstanceId({
+      agentType: 'claude-code',
+      scoped: 'claude-work',
+      legacy: 'codex-personal',
+      legacyAgentType: 'codex',
+    })
+    expect(resolved).toBe('claude-work')
+  })
+
+  it('falls back to the legacy global key when it still belongs to this agent', () => {
+    // Back-compat: a machine that picked a Codex default before per-agent
+    // scoping existed has no scoped key yet, only the old global one.
+    const resolved = resolveMachineInstanceId({
+      agentType: 'codex',
+      scoped: undefined,
+      legacy: 'codex-personal',
+      legacyAgentType: 'codex',
+    })
+    expect(resolved).toBe('codex-personal')
+  })
+
+  it('never hands the legacy key to a different agent kind', () => {
+    // The bug: a Codex pick made through the old unscoped key must not leak
+    // into a Claude or OpenCode session that never chose it.
+    const resolved = resolveMachineInstanceId({
+      agentType: 'claude-code',
+      scoped: undefined,
+      legacy: 'codex-personal',
+      legacyAgentType: 'codex',
+    })
+    expect(resolved).toBeUndefined()
+  })
+
+  it('is undefined when nothing is set anywhere', () => {
+    const resolved = resolveMachineInstanceId({
+      agentType: 'opencode',
+      scoped: undefined,
+      legacy: undefined,
+      legacyAgentType: undefined,
+    })
+    expect(resolved).toBeUndefined()
   })
 })

@@ -13,13 +13,54 @@ function slugify(value: string): string {
     .replace(/^-+|-+$/g, '')
 }
 
-function shellQuote(value: string): string {
-  return `"${value.replace(/(["\\`])/g, '\\$1')}"`
+/**
+ * Characters that need no quoting at all in a POSIX shell word. Deliberately
+ * conservative: `$`, backtick, quotes, whitespace, `\`, `~`, `*`, `?`, `[`,
+ * `!`, `#`, `&`, `;`, `|`, `<`, `>`, `(`, `)`, `{`, `}` are all absent.
+ */
+const SHELL_SAFE = /^[A-Za-z0-9._/@%+:,=-]+$/
+
+/**
+ * POSIX single-quoting: inside `'...'` every byte is literal, so the only
+ * thing to escape is the closing quote itself (`'` -> `'\''`). Unlike the
+ * double-quoted form this replaced, it leaves NOTHING for the shell to
+ * expand - `$(...)`, `${...}`, `$VAR` and backticks in a user-typed
+ * oauth_dir are data, not code.
+ */
+function singleQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`
 }
 
-function commandPath(value: string): string {
-  if (value.startsWith('~/')) return `$HOME/${value.slice(2)}`
-  return value
+/**
+ * Quote a directory for a copyable shell command.
+ *
+ * A leading `~/` is expanded to `$HOME` because the tilde is OURS - it comes
+ * from the `~/.claude` / `~/.codex` defaults this module generates and from
+ * `suggestedOauthDir`, and the command is meant to be pasted on a machine
+ * whose home may differ. Nothing else is ever left expandable: the remainder
+ * after `~/`, and any other path, is emitted only when it is entirely
+ * shell-safe, and single-quoted otherwise.
+ *
+ * Plain double quotes on a safe path keep the common command readable
+ * (`CODEX_HOME="$HOME/.codex-work" codex login`) - with no metacharacter in
+ * the string there is nothing for them to fail to protect.
+ */
+function shellQuotePath(value: string): string {
+  if (value === '~' || value === '~/') return '"$HOME"'
+  if (value.startsWith('~/')) {
+    const rest = value.slice(2)
+    return SHELL_SAFE.test(rest) ? `"$HOME/${rest}"` : `"$HOME"/${singleQuote(rest)}`
+  }
+  return SHELL_SAFE.test(value) ? `"${value}"` : singleQuote(value)
+}
+
+/**
+ * Public form for callers outside this module that build their own command
+ * around a directory (see provider/remote-gate.ts), so there is exactly one
+ * quoting implementation to get right.
+ */
+export function shellQuoteDir(value: string): string {
+  return shellQuotePath(value.trim())
 }
 
 export function oauthEnvName(agentType: AgentType): string | null {
@@ -40,7 +81,7 @@ export function oauthLoginCommand(agentType: AgentType, oauthDir: string): strin
   const dir = oauthDir.trim()
   if (!envName || !dir) return ''
   const cli = agentType === 'claude-code' ? 'claude auth login' : 'codex login'
-  return `${envName}=${shellQuote(commandPath(dir))} ${cli}`
+  return `${envName}=${shellQuotePath(dir)} ${cli}`
 }
 
 /**
@@ -52,12 +93,12 @@ export function oauthInteractiveLoginCommand(agentType: AgentType, oauthDir: str
   const dir = oauthDir.trim()
   if (!envName || !dir) return ''
   const cli = agentType === 'claude-code' ? 'claude' : 'codex'
-  return `${envName}=${shellQuote(commandPath(dir))} ${cli}`
+  return `${envName}=${shellQuotePath(dir)} ${cli}`
 }
 
 export function oauthCreateDirCommand(oauthDir: string): string {
   const dir = oauthDir.trim()
-  return dir ? `mkdir -p ${shellQuote(commandPath(dir))}` : ''
+  return dir ? `mkdir -p ${shellQuotePath(dir)}` : ''
 }
 
 export function formatClaudeAuthStatus(stdout: string, oauthDir?: string | null): FormattedAuthStatus {

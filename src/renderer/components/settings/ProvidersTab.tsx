@@ -16,6 +16,10 @@ import {
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { ProviderUsagePanel } from './ProviderUsagePanel'
 import type { ProviderInstanceUpsertInput } from '../../../preload'
+import {
+  credentialHomeDisplay,
+  defaultAuthModeForNewInstance,
+} from '../../shared/providerInstanceDisplay'
 
 const AGENT_KINDS: Array<'claude-code' | 'codex' | 'opencode'> = ['claude-code', 'codex', 'opencode']
 
@@ -264,6 +268,19 @@ function ProviderInstanceCard({
               ? instance.envKeys.map((k) => `${k} ●●●`).join(' · ')
               : 'No env overrides (uses shell / process env)'}
         </div>
+        {(instance.agentType === 'codex' || instance.agentType === 'claude-code') && (() => {
+          const home = credentialHomeDisplay(instance.effectiveOauthDir, instance.effectiveOauthDirSource)
+          return (
+            <div style={{ fontSize: '10px', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Credential home: <code style={{ fontFamily: 'var(--font-mono)' }}>{home.text}</code>
+              {home.warning && (
+                <span style={{ color: 'var(--warning, #d29922)', marginLeft: '6px' }}>
+                  ⚠ {home.warning}
+                </span>
+              )}
+            </div>
+          )
+        })()}
         {probe && (
           <div
             style={{
@@ -368,12 +385,21 @@ function ProviderInstanceDialog({
     instance?.accentColor ?? DEFAULT_ACCENT_PALETTE[0],
   )
   const [authMode, setAuthMode] = useState<'env' | 'oauth_dir'>(
-    instance?.authMode ?? 'env',
+    instance?.authMode ?? defaultAuthModeForNewInstance(kind),
   )
   const [oauthDir, setOauthDir] = useState(instance?.oauthDir ?? '')
+  // Prefill only while the user hasn't typed their own path - never
+  // auto-repoint an existing row's dir, and stop reacting the moment the
+  // user edits the field themselves.
+  const [oauthDirTouched, setOauthDirTouched] = useState(false)
   // Env: existing keys are surfaced (values empty - main never re-sends).
-  // User types new values to overwrite; leaving blank keeps the existing
-  // encrypted blob for that key untouched (we send only filled-in keys).
+  // Only filled-in rows are sent, so a key left blank is DROPPED from the
+  // stored overlay. The one exception is the structural credential home
+  // (CODEX_HOME/CLAUDE_CONFIG_DIR): main carries that forward across a save
+  // that omits it, because it is the profile's account identity and losing it
+  // would silently move the profile onto the shared default account. See
+  // `envToStore` in main/db/providerInstances.ts - the invariant lives there,
+  // not here, so it holds for every caller.
   const [envRows, setEnvRows] = useState<{ key: string; value: string }[]>(() => {
     if (instance && instance.envKeys.length > 0) {
       return instance.envKeys.map((k) => ({ key: k, value: '' }))
@@ -391,6 +417,19 @@ function ProviderInstanceDialog({
   const loginCommand = oauthLoginCommand(kind, effectiveOauthDir)
   const createCommand = oauthCreateDirCommand(effectiveOauthDir)
   const oauthEnv = oauthEnvName(kind)
+
+  // New Codex instances default to oauth_dir mode (set above) and get a
+  // unique-enough slug-based home prefilled from the display name as soon
+  // as one is typed - Save still blocks on a blank/duplicate dir via the
+  // backend, this only spares the common case of forgetting to set one.
+  // Never runs for an existing row: editing must never auto-repoint a
+  // saved instance's credential home.
+  useEffect(() => {
+    if (instance) return
+    if (oauthDirTouched) return
+    if (authMode !== 'oauth_dir') return
+    setOauthDir(suggestedOauthDir(kind, displayName))
+  }, [instance, oauthDirTouched, authMode, kind, displayName])
 
   async function copyText(text: string, label: string) {
     if (!text) return
@@ -532,7 +571,10 @@ function ProviderInstanceDialog({
             <input
               type="text"
               value={oauthDir}
-              onChange={(e) => setOauthDir(e.target.value)}
+              onChange={(e) => {
+                setOauthDirTouched(true)
+                setOauthDir(e.target.value)
+              }}
               placeholder={suggestedDir}
               style={inputStyle}
             />

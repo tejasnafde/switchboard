@@ -57,6 +57,7 @@ import { ProfilePicker } from '../components/ProfilePicker'
 import { SlashMenu } from '../components/SlashMenu'
 import { allCommands, detectSlash, filterCommands, type SlashCommand } from '../lib/slash'
 import { profilesFor } from '../lib/profiles'
+import { rotateWithinAgent } from '../lib/profileRotation'
 import { buildTurn } from '../lib/turnSubmit'
 import { resolvedAmbiguousBubbleAction } from '../lib/outboxModel'
 import { keyboardAvoidance } from '../lib/keyboardAvoidance'
@@ -322,31 +323,24 @@ export default function ThreadScreen({ route, navigation }: Props) {
       void (async () => {
         try {
           if (nextProvider === provider && nextInstanceId) {
-            let result = await client.switchInstance(threadId, {
-              targetInstanceId: nextInstanceId,
-              expectedCurrentInstanceId: instanceId ?? null,
+            const rotation = await rotateWithinAgent(threadId, instanceId, nextInstanceId, {
+              switchInstance: (id, input) => client.switchInstance(id, input),
+              setConversationProviderInstanceId: (id, inst) =>
+                client.setConversationProviderInstanceId(id, inst),
+              confirmStartFresh: (message) =>
+                new Promise<boolean>((resolve) => {
+                  Alert.alert(
+                    'Profile histories differ',
+                    `${message}\n\nThe current profile is still active. You can stay there or start the selected profile fresh with the visible conversation carried into your next turn.`,
+                    [
+                      { text: 'Stay here', style: 'cancel', onPress: () => resolve(false) },
+                      { text: 'Start fresh', onPress: () => resolve(true) },
+                    ],
+                    { cancelable: false },
+                  )
+                }),
             })
-            if (!result.ok && result.code === 'context-conflict') {
-              const conflictMessage = result.message
-              const startFresh = await new Promise<boolean>((resolve) => {
-                Alert.alert(
-                  'Profile histories differ',
-                  `${conflictMessage}\n\nThe current profile is still active. You can stay there or start the selected profile fresh with the visible conversation carried into your next turn.`,
-                  [
-                    { text: 'Stay here', style: 'cancel', onPress: () => resolve(false) },
-                    { text: 'Start fresh', onPress: () => resolve(true) },
-                  ],
-                  { cancelable: false },
-                )
-              })
-              if (!startFresh) return
-              result = await client.switchInstance(threadId, {
-                targetInstanceId: nextInstanceId,
-                expectedCurrentInstanceId: instanceId ?? null,
-                onContextConflict: 'start-fresh',
-              })
-            }
-            if (!result.ok) throw new Error(result.message)
+            if (!rotation.applied) return
           } else {
             await client.stopSession(threadId)
             await client.startSession({

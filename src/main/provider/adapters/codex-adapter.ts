@@ -27,6 +27,8 @@ import {
   preferManagedExecutable,
 } from '../managed-bin'
 import { commitCatalog, reconcileSelectedModel, shouldRefreshCatalog, type CatalogCache } from '../model-catalog'
+import { applyCodexHome, canonicalCodexHome } from '../codex-home'
+import { peekShellEnv } from '../../shell-env'
 import type { ProviderSkill } from '@shared/types'
 import { withTimeout } from '@shared/promise-timeout'
 import { conversationSessionHints, resolveResumeSegment } from '../../db/database'
@@ -510,7 +512,7 @@ function isExecutableFile(path: string): boolean {
 export function findCodexPath(): string | null {
   const home = process.env.HOME || ''
   const found = preferManagedExecutable('codex', {
-    fallbackDirs: codexFallbackDirs(home),
+    fallbackDirs: [...codexFallbackDirs(home), ...loginShellPathDirs()],
     isExecutable: isExecutableFile,
   })
   if (found) return found.path
@@ -535,12 +537,37 @@ export function buildCodexCliEnv(): Record<string, string> {
   const raw = { ...process.env }
   delete raw.ELECTRON_RUN_AS_NODE
   const home = raw.HOME || ''
-  raw.PATH = managedPath(raw, codexFallbackDirs(home))
+  raw.PATH = managedPath(raw, [...codexFallbackDirs(home), ...loginShellPathDirs()])
   const env: Record<string, string> = {}
   for (const [k, v] of Object.entries(raw)) {
     if (v !== undefined) env[k] = v
   }
+  // Ambient CODEX_HOME is the launching shell's, not this instance's. Replace
+  // it with the canonical default up front so the only way a session gets a
+  // non-default credential dir is its own oauth_dir/env overlay.
+  env.CODEX_HOME = canonicalCodexHome()
   return env
+}
+
+/**
+ * PATH entries from the user's login shell, which a Finder-launched Electron
+ * app never inherits.
+ *
+ * `peekShellEnv`, never the blocking `loadShellEnv`: this runs on session
+ * start, the Settings "Test" probe and the usage probe, and starting an
+ * interactive login shell there froze the whole app behind the user's dotfile
+ * chain. Cold, it returns nothing and schedules the process-wide warmup - the
+ * managed bin dir and the fallback dirs still resolve the common installs
+ * immediately, and `codexExecutable` revalidates, so a shell-only codex is
+ * picked up on a later lookup once the warmup lands.
+ *
+ * Only its PATH is ever taken, never its CODEX_HOME, which would put the
+ * launching shell's account back in charge of the session.
+ */
+function loginShellPathDirs(): string[] {
+  const shellPath = peekShellEnv()?.PATH
+  if (!shellPath) return []
+  return shellPath.split(':').filter(Boolean)
 }
 
 /**
@@ -608,12 +635,12 @@ export class CodexAdapter implements ProviderAdapter {
     this.sessions.set(opts.threadId, active)
 
     // CODEX_HOME points at a per-instance dir when auth_mode='oauth_dir',
-    // letting each instance be `codex login`'d under a separate account.
+    // letting each instance be `codex login`'d under a separate account, and
+    // at the canonical ~/.codex otherwise - shared with the Test/usage probes
+    // via applyCodexHome so no path can resolve a different account.
     const codexEnv = buildCodexCliEnv()
     applyEnvOverlay(codexEnv, opts.resolvedEnv)
-    if (opts.resolvedOauthDir && opts.resolvedOauthDir.length > 0) {
-      codexEnv.CODEX_HOME = opts.resolvedOauthDir
-    }
+    applyCodexHome(codexEnv, opts.resolvedOauthDir)
 
     // Spawn codex app-server
     const child = spawn(executable.path, ['app-server'], {

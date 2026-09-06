@@ -25,3 +25,18 @@ export function profilesFor(instances: ProviderInstance[], kind: ProviderKind): 
     .filter((i) => i.agentType === agentType && i.enabled)
     .sort((a, b) => (a.id === def ? 0 : 1) - (b.id === def ? 0 : 1) || a.displayName.localeCompare(b.displayName))
 }
+
+/**
+ * Back-compat check for `SwitchboardClient.getSessionDefaults`'s machine-
+ * default prefill: the pre-scoping global default key names an instance id
+ * with no agent kind of its own, so it must only be honored for the agent
+ * that instance actually belongs to - never for whichever agent asks next.
+ */
+export function legacyInstanceBelongsToAgent(
+  instances: ProviderInstance[],
+  legacyInstanceId: string | undefined,
+  agentType: AgentType,
+): boolean {
+  if (!legacyInstanceId) return false
+  return instances.some((i) => i.id === legacyInstanceId && i.agentType === agentType)
+}

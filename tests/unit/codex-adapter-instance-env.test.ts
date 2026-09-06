@@ -4,6 +4,8 @@
  */
 
 import { EventEmitter } from 'events'
+import { homedir } from 'os'
+import { join } from 'path'
 import { PassThrough } from 'stream'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
@@ -53,6 +55,28 @@ vi.mock('electron', () => ({
   app: { getPath: vi.fn(() => '/tmp/switchboard-vitest') },
 }))
 
+// Without these, adapter.startSession's resume-lookup path
+// (resolveResumeSegment/conversationSessionHints) calls the REAL
+// db/database.ts, which opens and migrates the actual on-disk
+// ~/.switchboard/data/switchboard.db - not a fixture. This file's mocks were
+// missing them even though every other codex-adapter-exercising test file
+// added since (e.g. codex-default-home-ambient-env.test.ts) includes them.
+vi.mock('../../src/main/db/database', () => ({
+  recordThreadSession: vi.fn(),
+  listSessionIdsForThread: vi.fn(() => []),
+  resolveResumeSegment: vi.fn(() => null),
+  resolveRootThreadId: (id: string) => id,
+  conversationSessionHints: vi.fn(() => []),
+}))
+
+vi.mock('../../src/main/projects/session-scanner', () => ({
+  scanCodexSessionCopies: vi.fn(() => []),
+}))
+
+vi.mock('../../src/main/provider/codex-session-dirs', () => ({
+  codexCandidateDirs: () => [],
+}))
+
 describe('CodexAdapter - provider-instance env overlay', () => {
   beforeEach(() => {
     spawnCalls.length = 0
@@ -93,11 +117,18 @@ describe('CodexAdapter - provider-instance env overlay', () => {
     expect(env.CODEX_HOME).toBe('/tmp/codex-work')
   })
 
-  it('does not override CODEX_HOME when oauthDir is empty/null', async () => {
+  // Was: "does not override CODEX_HOME when oauthDir is empty/null", asserting
+  // the ambient process CODEX_HOME reached the spawn env untouched. That is the
+  // profile-isolation bug, not a contract: the ambient value belongs to the
+  // launching shell (or to whichever profile last exported it), so honoring it
+  // made every no-oauth_dir session run under someone else's account. The
+  // test's real intent - a null oauthDir must not pin a PER-INSTANCE dir - is
+  // preserved by asserting the canonical default home instead.
+  it('pins the canonical default home, ignoring ambient CODEX_HOME, when oauthDir is empty/null', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
 
-    process.env.CODEX_HOME = '/users/me/.codex'
+    process.env.CODEX_HOME = '/users/me/.codex-ambient-leftover'
     await adapter.startSession({
       threadId: 't3',
       provider: 'codex',
@@ -106,7 +137,7 @@ describe('CodexAdapter - provider-instance env overlay', () => {
     }, vi.fn())
 
     const env = spawnCalls[0].opts.env!
-    expect(env.CODEX_HOME).toBe('/users/me/.codex')
+    expect(env.CODEX_HOME).toBe(join(homedir(), '.codex'))
     delete process.env.CODEX_HOME
   })
 

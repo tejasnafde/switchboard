@@ -215,6 +215,88 @@ describe('encryptEnv / decryptEnv', () => {
   })
 })
 
+describe('expandTilde (behavior 2 - normalizes absolute paths too)', () => {
+  it('collapses redundant `..`/`//` segments in a non-tilde absolute path', async () => {
+    const { expandTilde } = await loadModule()
+    // No leading `~`, so today's implementation returns the path verbatim -
+    // a redundant absolute path (as users paste from Finder "Copy as Pathname"
+    // or a shell with a trailing slash) is stored un-normalized.
+    expect(expandTilde('/tmp/codex-home/../codex-home2//sub')).toBe('/tmp/codex-home2/sub')
+  })
+})
+
+// Item 4 (wire canonicalization): the wire row's `oauthDir` is deliberately
+// the literal the user typed (see rowToWire's comment), so a messy literal
+// (`..`, `//`, an un-expanded `~`) must not be the ONLY thing Settings has to
+// show as "the credential home in use" - that string can differ from the
+// canonical absolute directory every consumer (resolveInstanceEnv, the
+// oauth_dir uniqueness check, the spawn env) actually resolves it to.
+// `effectiveOauthDir` is the backend-authoritative canonical directory,
+// computed with the exact same `canonicalizeOauthPath` used everywhere else,
+// so Settings can display the real directory without recomputing (and
+// potentially drifting from) that logic client-side.
+describe('listProviderInstances - wire canonicalization (item 4)', () => {
+  it('exposes effectiveOauthDir as the canonical directory, distinct from the literal oauthDir', async () => {
+    const { upsertProviderInstance, listProviderInstances, expandTilde } = await loadModule()
+    const messyLiteral = '~/.codex-work/../.codex-work2'
+    upsertProviderInstance({
+      agentType: 'codex',
+      displayName: 'Messy Path',
+      authMode: 'oauth_dir',
+      oauthDir: messyLiteral,
+    })
+    const wire = listProviderInstances().find((i) => i.displayName === 'Messy Path')
+    expect(wire?.oauthDir).toBe(messyLiteral)
+    expect(wire?.effectiveOauthDir).toBe(expandTilde(messyLiteral))
+    expect(wire?.effectiveOauthDir).not.toBe(messyLiteral)
+  })
+
+  it('exposes the canonical ~/.codex default as effectiveOauthDir when a codex row has no oauth_dir', async () => {
+    const { listProviderInstances, expandTilde } = await loadModule()
+    const wire = listProviderInstances().find((i) => i.id === 'codex-default')
+    expect(wire?.oauthDir).toBeNull()
+    expect(wire?.effectiveOauthDir).toBe(expandTilde('~/.codex'))
+  })
+})
+
+describe('upsertProviderInstance - oauth_dir validation (behavior 4)', () => {
+  it('rejects an empty/blank oauth_dir path when authMode is oauth_dir', async () => {
+    const { upsertProviderInstance } = await loadModule()
+    expect(() => upsertProviderInstance({
+      agentType: 'codex',
+      displayName: 'Empty Path',
+      authMode: 'oauth_dir',
+      oauthDir: '   ',
+    })).toThrow(/oauth.?dir|path/i)
+  })
+
+  it('rejects a duplicate effective oauth_dir among enabled codex rows', async () => {
+    const { upsertProviderInstance } = await loadModule()
+    upsertProviderInstance({
+      agentType: 'codex',
+      displayName: 'Work',
+      authMode: 'oauth_dir',
+      oauthDir: '/tmp/codex-shared',
+    })
+    expect(() => upsertProviderInstance({
+      agentType: 'codex',
+      displayName: 'Duplicate',
+      authMode: 'oauth_dir',
+      oauthDir: '/tmp/codex-shared',
+    })).toThrow(/duplicate|already (used|in use)/i)
+  })
+
+  it('reserves the canonical ~/.codex dir to the default row', async () => {
+    const { upsertProviderInstance } = await loadModule()
+    expect(() => upsertProviderInstance({
+      agentType: 'codex',
+      displayName: 'Impersonator',
+      authMode: 'oauth_dir',
+      oauthDir: '~/.codex',
+    })).toThrow(/reserved|default/i)
+  })
+})
+
 describe('upsertProviderInstance', () => {
   it('rejects unknown agentType', async () => {
     const { upsertProviderInstance } = await loadModule()
@@ -274,10 +356,14 @@ describe('resolveProviderInstance', () => {
     expect(resolveProviderInstance('codex', null)?.id).toBe('codex-default')
   })
 
-  it('falls back to default when id belongs to a different kind', async () => {
+  // Behavior 5: an EXPLICITLY requested instance id that turns out to be the
+  // wrong kind must fail loudly, not silently substitute the default profile
+  // (a Codex credential handed a Claude-scoped instance id must never run
+  // Claude turns against someone else's Claude account).
+  it('behavior 5: throws when an explicitly requested id belongs to a different kind', async () => {
     const { upsertProviderInstance, resolveProviderInstance } = await loadModule()
     const codexInst = upsertProviderInstance({ agentType: 'codex', displayName: 'Codex Work' })
-    expect(resolveProviderInstance('claude-code', codexInst.id)?.id).toBe('claude-code-default')
+    expect(() => resolveProviderInstance('claude-code', codexInst.id)).toThrow(/wrong kind|not found|invalid instance/i)
   })
 
   it('falls back to any enabled instance if the seed default is gone', async () => {
@@ -287,14 +373,29 @@ describe('resolveProviderInstance', () => {
     expect(resolveProviderInstance('opencode', null)?.id).toBe(other.id)
   })
 
-  it('skips a disabled instance and falls back to default', async () => {
+  it('behavior 5: throws when an explicitly requested instance is disabled', async () => {
     const { upsertProviderInstance, resolveProviderInstance } = await loadModule()
     const inst = upsertProviderInstance({
       agentType: 'codex',
       displayName: 'Disabled',
       enabled: false,
     })
-    expect(resolveProviderInstance('codex', inst.id)?.id).toBe('codex-default')
+    expect(() => resolveProviderInstance('codex', inst.id)).toThrow(/disabled|not found|invalid instance/i)
+  })
+
+  it('behavior 5: throws when an explicitly requested id does not exist at all', async () => {
+    const { resolveProviderInstance } = await loadModule()
+    expect(() => resolveProviderInstance('codex', 'no-such-instance-id')).toThrow(/not found|invalid instance/i)
+  })
+
+  // Implicit resolution (no id given at all) is unaffected by behavior 5 -
+  // it may still choose a valid default. Re-asserted here so a fix that
+  // makes resolveProviderInstance throw does not also break the plain
+  // "nothing requested yet" path these two already covered above.
+  it('behavior 5: implicit (no id) resolution still falls back to default, unaffected', async () => {
+    const { resolveProviderInstance } = await loadModule()
+    expect(() => resolveProviderInstance('codex', null)).not.toThrow()
+    expect(resolveProviderInstance('codex', undefined)?.id).toBe('codex-default')
   })
 })
 

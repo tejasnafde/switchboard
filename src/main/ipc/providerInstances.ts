@@ -19,13 +19,16 @@ import {
   upsertProviderInstance,
   deleteProviderInstance,
   getProviderInstanceFull,
+  resolveEffectiveOauthDir,
   type ProviderInstanceUpsertInput,
+  type ProviderInstanceWire,
 } from '../db/providerInstances'
 import { findClaudeBin } from '../provider/adapters/claude-adapter'
 import { findCodexPath } from '../provider/adapters/codex-adapter'
 import { findOpencodePath, buildOpencodeEnv } from '../provider/adapters/opencode/env'
 import { applyEnvOverlay } from '../provider/env-overlay'
 import { resolveInstanceEnv } from '../provider/instance-env'
+import { resolveOauthDirForCreate } from '../provider/oauth-path'
 import { fetchInstanceUsage, invalidateUsage } from '../provider/usage'
 
 const log = createLogger('ipc:provider-instances')
@@ -33,7 +36,7 @@ const log = createLogger('ipc:provider-instances')
 export function registerProviderInstanceHandlers(host: BackendHost): void {
   host.handle(ProviderInstanceChannels.LIST, () => {
     try {
-      return listProviderInstances()
+      return withResolvedEffectiveHomes(listProviderInstances())
     } catch (err) {
       log.warn(`list failed: ${err instanceof Error ? err.message : String(err)}`)
       return []
@@ -45,7 +48,7 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
     const saved = upsertProviderInstance(input)
     // An edited oauth dir or env overlay points at a different credential.
     invalidateUsage(saved.id)
-    return saved
+    return withResolvedEffectiveHomes([saved])[0]
   })
 
   host.handle(ProviderInstanceChannels.DELETE, (id: string) => {
@@ -69,21 +72,76 @@ export function registerProviderInstanceHandlers(host: BackendHost): void {
   log.info('IPC handlers registered')
 }
 
-function expandHomePath(path: string): string {
-  if (path === '~') return homedir()
-  if (path.startsWith('~/')) return `${homedir()}${path.slice(1)}`
-  return path
+/**
+ * Memoized `id:updatedAt` -> resolved home. The DB layer leaves a row
+ * `unresolved` when only its encrypted overlay knows the answer; resolving it
+ * decrypts, which on macOS means the keychain. LIST runs often (every Settings
+ * open, every instance save), so the answer is cached per ROW VERSION - a save
+ * bumps `updatedAt` and invalidates it on its own.
+ */
+const resolvedHomeMemo = new Map<string, {
+  effectiveOauthDir: string | null
+  effectiveOauthDirSource: ProviderInstanceWire['effectiveOauthDirSource']
+}>()
+
+/**
+ * Replace every `unresolved` effective home with the real one.
+ *
+ * Main is the authoritative layer for this: it is the only place that may
+ * decrypt an instance's env overlay, and the overlay is where a legacy
+ * env-mode profile keeps its CODEX_HOME / CLAUDE_CONFIG_DIR. Without this the
+ * renderer would show such a profile sitting on the canonical default while
+ * every session it starts runs somewhere else.
+ *
+ * A row that still cannot be read (no keychain, wrong host) stays
+ * `unresolved` with a null directory - visibly unknown, never a guess.
+ */
+export function withResolvedEffectiveHomes(rows: ProviderInstanceWire[]): ProviderInstanceWire[] {
+  return rows.map((row) => {
+    if (row.effectiveOauthDirSource !== 'unresolved') return row
+    const key = `${row.id}:${row.updatedAt}`
+    const memo = resolvedHomeMemo.get(key)
+    if (memo) return { ...row, ...memo }
+    try {
+      const resolved = resolveEffectiveOauthDir(row.id)
+      if (!resolved) return row
+      resolvedHomeMemo.set(key, resolved)
+      return { ...row, ...resolved }
+    } catch (err) {
+      log.warn(`could not resolve effective home for ${row.id}: ${err instanceof Error ? err.message : String(err)}`)
+      return row
+    }
+  })
 }
 
-function createOauthDir(dir: string): { ok: boolean; path?: string; error?: string } {
-  const trimmed = dir.trim()
-  if (!trimmed) return { ok: false, error: 'OAuth directory path is required.' }
-  const expanded = expandHomePath(trimmed)
+/**
+ * Create a credential directory for the Settings → Providers "Create" button.
+ *
+ * Exported so the contract is testable without the renderer: the path arrives
+ * as free text over IPC, so the confinement decision (see
+ * `resolveOauthDirForCreate`) has to live behind the handler, not in front of
+ * it in the UI. Two things it deliberately does NOT do:
+ *
+ *   - It never chmods a directory that already exists. `mkdir` applies `mode`
+ *     only to the directories it creates, so pointing the button at an
+ *     existing dir is a no-op rather than a silent permission change to
+ *     something the user has other plans for.
+ *   - It never echoes anything but the path back. The error text goes to the
+ *     renderer, and env values / tokens have no business in it.
+ *
+ * 0700 because the directory is about to hold OAuth tokens: default umask
+ * would leave them group/world-readable on a shared machine.
+ */
+export function createOauthDir(dir: string): { ok: boolean; path?: string; error?: string } {
+  const resolved = resolveOauthDirForCreate(dir ?? '', homedir())
+  if (!resolved.ok) return { ok: false, error: resolved.error }
   try {
-    mkdirSync(expanded, { recursive: true })
-    return { ok: true, path: expanded }
+    mkdirSync(resolved.path, { recursive: true, mode: 0o700 })
+    return { ok: true, path: resolved.path }
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    const message = err instanceof Error ? err.message : String(err)
+    log.warn(`create oauth dir failed: ${message}`)
+    return { ok: false, error: `Could not create ${resolved.path}: ${message}` }
   }
 }
 
@@ -148,15 +206,19 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
       if (!bin) return { ok: false, message: 'claude binary not found - install Claude Code and ensure it is on PATH' }
       const out = await runProbe(bin, ['auth', 'status'], env, 7000)
       if (out.error) return { ok: false, message: `claude error: ${out.error.message}` }
+      // The home the probe REALLY ran under, not the oauth_dir column: a
+      // legacy env-mode profile keeps its home in the overlay, and telling
+      // that user to log in to `~/.claude` would leave the profile that just
+      // failed exactly as logged-out as before.
+      const configDir = env.CLAUDE_CONFIG_DIR || '~/.claude'
       if (out.status !== 0) {
         const stderr = out.stderr?.trim() || out.stdout?.trim() || `exit ${out.status}`
-        const command = oauthLoginCommand('claude-code', instance.oauthDir || '~/.claude')
         return {
           ok: false,
-          message: `${stderr}. Run: ${command}`,
+          message: `${stderr}. Run: ${oauthLoginCommand('claude-code', configDir)}`,
         }
       }
-      return formatClaudeAuthStatus(out.stdout, instance.oauthDir)
+      return formatClaudeAuthStatus(out.stdout, configDir)
     }
     if (instance.agentType === 'codex') {
       const codexBin = findCodexPath()
@@ -166,8 +228,10 @@ async function testInstance(id: string): Promise<{ ok: boolean; message: string 
       // `codex login status` exits 0 when logged in; non-zero means not logged in.
       if (out.status !== 0) {
         const stderr = out.stderr?.trim() || out.stdout?.trim() || `exit ${out.status}`
-        const command = oauthLoginCommand('codex', instance.oauthDir || '~/.codex')
-        return { ok: false, message: `Not logged in for CODEX_HOME=${env.CODEX_HOME ?? '<default>'}: ${stderr}. Run: ${command}` }
+        // Same rule as Claude above: name the home that was tested.
+        const configDir = env.CODEX_HOME || '~/.codex'
+        const command = oauthLoginCommand('codex', configDir)
+        return { ok: false, message: `Not logged in for CODEX_HOME=${configDir}: ${stderr}. Run: ${command}` }
       }
       return { ok: true, message: out.stdout.trim() || 'Logged in to Codex.' }
     }

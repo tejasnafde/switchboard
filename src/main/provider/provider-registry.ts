@@ -741,7 +741,7 @@ export class ProviderRegistry implements PeerToolHost {
       remoteConfigDir?: string,
     ) => {
       if (!process.env.SWITCHBOARD_REMOTE) return { loggedIn: true }
-      return checkRemoteProviderAuth(agentType, remoteProviderConfigDir(agentType, remoteConfigDir))
+      return await checkRemoteProviderAuth(agentType, remoteProviderConfigDir(agentType, remoteConfigDir))
     })
 
     const stopSession = async (threadId: string): Promise<StoppedSessionSnapshot | null> => {
@@ -842,7 +842,7 @@ export class ProviderRegistry implements PeerToolHost {
         if (opts.provider === 'claude' || opts.provider === 'codex') {
           const remoteAgentType = opts.provider === 'claude' ? 'claude-code' : 'codex'
           remoteProviderConfig = remoteProviderConfigDir(remoteAgentType, opts.remoteConfigDir)
-          const prompt = remoteProviderLoginPrompt(remoteAgentType, remoteProviderConfig)
+          const prompt = await remoteProviderLoginPrompt(remoteAgentType, remoteProviderConfig)
           if (prompt) throw new Error(prompt)
         }
       }

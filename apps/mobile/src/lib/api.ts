@@ -20,7 +20,7 @@ import type {
   UserTurnResolutionResult,
 } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
-import type { Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
+import type { AgentType, Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
 import type {
   ForkConversationOutcome,
@@ -36,10 +36,12 @@ import type {
 } from '@shared/worktree-creation'
 import {
   SETTING_DEFAULT_INSTANCE_ID,
+  defaultInstanceSettingKey,
   defaultModelSettingKey,
   SETTING_DEFAULT_RUNTIME_MODE,
   type SessionDefaults,
 } from '@shared/session-defaults'
+import { legacyInstanceBelongsToAgent } from './profiles'
 
 export interface StartSessionOpts {
   threadId: string
@@ -147,17 +149,33 @@ export class SwitchboardClient {
    * opens the way the desktop has it rather than on the phone's own guesses.
    * Missing keys are normal on a backend nobody has configured; the caller
    * keeps its own fallbacks for those.
+   *
+   * `instanceId` is scoped per agent (see `defaultInstanceSettingKey`); the
+   * pre-scoping global key is read only as a fallback, and only honored once
+   * `listInstances` confirms it still names an instance of the requested
+   * agent kind - otherwise a Codex pick made before scoping existed would
+   * prefill a brand-new Claude/OpenCode session with it.
    */
   async getSessionDefaults(agentType: string): Promise<SessionDefaults> {
-    const [runtimeMode, model, instanceId] = await Promise.all([
+    const [runtimeMode, model, scopedInstanceId] = await Promise.all([
       this.getSetting(SETTING_DEFAULT_RUNTIME_MODE),
       this.getSetting(defaultModelSettingKey(agentType)),
-      this.getSetting(SETTING_DEFAULT_INSTANCE_ID),
+      this.getSetting(defaultInstanceSettingKey(agentType)),
     ])
+    let instanceId = scopedInstanceId ?? undefined
+    if (!instanceId) {
+      const legacyInstanceId = await this.getSetting(SETTING_DEFAULT_INSTANCE_ID)
+      if (legacyInstanceId) {
+        const instances = await this.listInstances().catch(() => [] as ProviderInstance[])
+        if (legacyInstanceBelongsToAgent(instances, legacyInstanceId, agentType as AgentType)) {
+          instanceId = legacyInstanceId
+        }
+      }
+    }
     return {
       runtimeMode: runtimeMode ?? undefined,
       model: model ?? undefined,
-      instanceId: instanceId ?? undefined,
+      instanceId,
     }
   }
 
@@ -355,6 +373,16 @@ export class SwitchboardClient {
    */
   listInstances(): Promise<ProviderInstance[]> {
     return this.transport.invoke(ProviderInstanceChannels.LIST)
+  }
+
+  /**
+   * DB-only profile repoint for a conversation with no live backend session
+   * yet - the same `context-unavailable` case the desktop's ChatPanel
+   * handles by calling this instead of `switchInstance` (which requires a
+   * live session to rotate). Never starts or stops anything.
+   */
+  setConversationProviderInstanceId(conversationId: string, instanceId: string): Promise<{ ok: boolean }> {
+    return this.transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_INSTANCE_ID, conversationId, instanceId)
   }
 
   onEvent(handler: (event: RuntimeEvent) => void): () => void {

@@ -10,6 +10,7 @@ import {
 } from '../terminal/managed-terminal-runtime'
 import { userDataDir } from '../runtime'
 import { join } from 'node:path'
+import { withResolvedLoginEnv } from './terminal-login-env'
 
 const log = createLogger('ipc:terminal')
 
@@ -68,7 +69,11 @@ export function registerTerminalHandlers(host: BackendHost): void {
     // live, so late writes/resizes below no-op rather than throw.
     try {
       if (!ptyManager) throw new Error('terminal backend is shutting down')
-      await ptyManager.create(opts)
+      // Resolve login identity (if any) to a real env BEFORE spawning - a
+      // missing/invalid instance must reject the create rather than open
+      // an unscoped shell.
+      const resolvedOpts = withResolvedLoginEnv(opts)
+      await ptyManager.create(resolvedOpts)
       log.info('created', opts.id)
       return { id: opts.id }
     } catch (err) {

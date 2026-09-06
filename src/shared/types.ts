@@ -15,6 +15,17 @@ export interface TerminalCreateOptions {
   waitFor?: string
   /** Routes PTY creation to this machine's backend (default local). */
   machineId?: string
+  /**
+   * Identity for a login/account-scoped terminal (e.g. the "Start Terminal
+   * Session" login flow). The renderer sends only identity across the IPC
+   * boundary - main resolves the instance and merges its real env
+   * (CODEX_HOME / CLAUDE_CONFIG_DIR, etc.) before spawning, so the renderer
+   * never builds raw provider env or sees decrypted secrets.
+   */
+  loginInstance?: {
+    agentType: 'claude-code' | 'codex'
+    instanceId?: string
+  }
 }
 
 export interface TerminalResizePayload {
@@ -106,6 +117,25 @@ export interface ProviderSkill {
 }
 
 /**
+ * Where `effectiveOauthDir` on a `ProviderInstance` came from - see
+ * `ProviderInstanceWire` in main/db/providerInstances.ts, the source of
+ * truth for this contract. Settings must brand the display by this field,
+ * not infer isolation from whether `oauthDir` happens to be set: a legacy
+ * `env`-sourced row has no `oauthDir` at all but is still isolated.
+ *
+ *   'oauth_dir'  - the row's own oauth_dir column - normal, isolated.
+ *   'env'        - a CODEX_HOME/CLAUDE_CONFIG_DIR in the row's env overlay -
+ *                  a legacy env-mode profile, still isolated, still honored
+ *                  at spawn, but must be labeled distinctly from oauth_dir.
+ *   'default'    - the CLI's canonical `~/.claude` / `~/.codex` - shared
+ *                  ambient home, must carry an isolation warning.
+ *   'unresolved' - only the encrypted overlay could answer and it was not
+ *                  decrypted (or could not be). Must render as "cannot
+ *                  verify", never as a guessed directory.
+ */
+export type EffectiveOauthDirSource = 'oauth_dir' | 'env' | 'default' | 'unresolved'
+
+/**
  * A named credential set for an agent kind. Multiple instances per kind
  * are supported (e.g. `claude-work`, `claude-personal`). The renderer
  * receives this redacted shape - secret values stay in main, never
@@ -120,6 +150,13 @@ export interface ProviderInstance {
   authMode: 'env' | 'oauth_dir'
   envKeys: string[]
   oauthDir: string | null
+  /** Backend-authoritative canonical directory this instance's credential
+   *  home actually resolves to - see ProviderInstanceWire in
+   *  main/db/providerInstances.ts. Settings must display this, not `oauthDir`,
+   *  as "the directory in use". */
+  effectiveOauthDir: string | null
+  /** Where `effectiveOauthDir` came from - see `EffectiveOauthDirSource`. */
+  effectiveOauthDirSource: EffectiveOauthDirSource
   enabled: boolean
   createdAt: number
   updatedAt: number

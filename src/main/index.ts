@@ -37,7 +37,7 @@ import { registerSttHandlers } from './ipc/stt'
 import { registerIdeHandlers } from './ipc/ide'
 import { registerKanbanHandlers } from './ipc/kanban'
 import { registerProviderInstanceHandlers } from './ipc/providerInstances'
-import { resolveProviderInstance } from './db/providerInstances'
+import { tryResolveProviderInstance } from './db/providerInstances'
 import { registerAutoUpdater, quitAndInstall, reportInstallStatus } from './updater'
 import { QuitCoordinator } from './quit-coordinator'
 import { ProviderRegistry } from './provider/provider-registry'
@@ -45,6 +45,7 @@ import { disposeUsageProbes } from './provider/usage'
 import { getDb, closeDb, getSetting, setSetting, getProjects } from './db/database'
 import { registerFaviconProtocol } from './protocol/sb-favicon'
 import { getLogDir, getLogFilePath, createMainLogger } from './logger'
+import { warmShellEnv } from './shell-env'
 import {
   createDefaultWorktreeCreationRuntime,
   type WorktreeCreationRuntime,
@@ -461,6 +462,13 @@ if (process.argv.includes('--smoke-test')) {
 app.whenReady().then(() => {
   if (process.argv.includes('--smoke-test')) return
 
+  // Start the login-shell PATH probe now, off the critical path. A
+  // Finder-launched app needs it to see CLIs installed only on the user's
+  // profile PATH; every consumer reads it through the non-blocking
+  // `peekShellEnv`, so kicking it here just means the answer is usually
+  // already there by the first provider lookup instead of one lookup later.
+  void warmShellEnv()
+
   // Send external links / OAuth opens from the embedded code-server <webview>
   // to the system browser. Electron silently blocks window.open in a <webview>
   // when allowpopups isn't honored, so the primary path overrides window.open
@@ -643,7 +651,10 @@ app.whenReady().then(() => {
   backendHost.handle(
     ProviderInstanceChannels.RESOLVE_OAUTH_DIR,
     (agentType: AgentType, instanceId: string | undefined) => {
-      const dir = resolveProviderInstance(agentType, instanceId)?.oauthDir
+      // Lenient: this only reads a dir NAME for the remote to mirror, and the
+      // renderer may still be holding an id the user just deleted or disabled.
+      // A turn never starts from here, so null beats rejecting the call.
+      const dir = tryResolveProviderInstance(agentType, instanceId)?.oauthDir
       return dir ? basename(dir) : null
     },
   )

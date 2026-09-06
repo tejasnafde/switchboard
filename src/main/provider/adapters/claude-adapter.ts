@@ -134,7 +134,13 @@ type PermissionResult = import('@anthropic-ai/claude-agent-sdk').PermissionResul
 
 /**
  * Build the env passed to the Claude SDK query, applying the per-instance
- * overlay and CLAUDE_CONFIG_DIR override. Exported for tests.
+ * overlay and then resolving CLAUDE_CONFIG_DIR. Exported for tests.
+ *
+ * Shares `applyClaudeHome` with `resolveInstanceEnv`, so a session, the
+ * Settings "Test" probe and the usage probe cannot resolve different
+ * accounts for one instance. Precedence (see credential-home.ts): the
+ * instance's oauth_dir, else its own overlay value, else the canonical
+ * `~/.claude` that `buildClaudeCliEnv` already put in `base`.
  */
 export function buildClaudeQueryEnv(
   base: Record<string, string>,
@@ -143,9 +149,7 @@ export function buildClaudeQueryEnv(
 ): Record<string, string> {
   const env = { ...base }
   applyEnvOverlay(env, instanceEnv)
-  if (instanceOauthDir && instanceOauthDir.length > 0) {
-    env.CLAUDE_CONFIG_DIR = instanceOauthDir
-  }
+  applyClaudeHome(env, instanceOauthDir)
   return env
 }
 
@@ -248,6 +252,11 @@ export function buildClaudeCliEnv(): Record<string, string> {
   for (const [k, v] of Object.entries(raw)) {
     if (v !== undefined) env[k] = v
   }
+  // Ambient CLAUDE_CONFIG_DIR is the launching shell's, not this instance's.
+  // Replace it with the canonical default up front, exactly as
+  // buildCodexCliEnv does for CODEX_HOME, so the only way a session reaches a
+  // non-default credential dir is its own oauth_dir/env overlay.
+  env.CLAUDE_CONFIG_DIR = canonicalClaudeHome()
   return env
 }
 
@@ -361,6 +370,7 @@ export {
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect } from '../policy'
 import { notebookManager } from '../../notebooks/manager'
 import { applyEnvOverlay } from '../env-overlay'
+import { applyClaudeHome, canonicalClaudeHome } from '../claude-home'
 import {
   createExecutableCache,
   executableIdentity,

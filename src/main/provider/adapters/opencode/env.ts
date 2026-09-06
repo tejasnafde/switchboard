@@ -13,7 +13,7 @@ import { readFileSync, existsSync } from 'fs'
 import { homedir } from 'os'
 import { createMainLogger as createLogger } from '../../../logger'
 import { getSetting } from '../../../db/database'
-import { _resetShellEnvCacheForTests, loadShellEnv } from '../../../shell-env'
+import { _resetShellEnvCacheForTests, peekShellEnv } from '../../../shell-env'
 
 const log = createLogger('provider:opencode:env')
 
@@ -71,7 +71,11 @@ export function findOpencodePath(): string | null {
  *   shell-env  <  process.env  <  settings-DB keys
  */
 export function buildOpencodeEnv(extra?: Record<string, string>): Record<string, string> {
-  const shellEnv = loadShellEnv()
+  // Non-blocking: this builds the env for the Settings "Test" probe and for
+  // opencode spawns, both on the main event loop. Cold, the shell PATH is
+  // simply absent for that first call (process.env still applies) and the
+  // warmup it schedules serves every later one.
+  const shellEnv = peekShellEnv()
   const merged: Record<string, string> = shellEnv
     ? { ...shellEnv, ...(process.env as Record<string, string>) }
     : { ...(process.env as Record<string, string>) }

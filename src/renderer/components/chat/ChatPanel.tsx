@@ -60,7 +60,7 @@ import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type AgentStatus, type ChatMessage } from '@shared/types'
 import {
-  SETTING_DEFAULT_INSTANCE_ID,
+  defaultInstanceSettingKey,
   defaultModelSettingKey,
   SETTING_DEFAULT_RUNTIME_MODE,
 } from '@shared/session-defaults'
@@ -425,9 +425,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     }
     storeSetInstanceId(sessionId, nextInstanceId)
     // Machine default too, so a phone-started session picks the profile the
-    // user actually works with rather than `<agent-type>-default`.
+    // user actually works with rather than `<agent-type>-default`. Scoped to
+    // this agent - the unscoped key used to hand a Codex pick to the next
+    // Claude/OpenCode session that started with no instance of its own.
     window.api.settings
-      ?.set?.(SETTING_DEFAULT_INSTANCE_ID, nextInstanceId)
+      ?.set?.(defaultInstanceSettingKey(agentType), nextInstanceId)
       .catch((err: unknown) => log.warn('could not save the default profile', err))
     // Record a rotation marker in the chat stream - only when there's
     // actually a prior conversation to attribute (skip on freshly-opened

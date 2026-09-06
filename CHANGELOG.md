@@ -2,6 +2,25 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.54 - Isolate Codex and Claude credential homes deterministically
+
+### Fixed
+- **Codex and Claude sessions, probes, and terminals can no longer resolve credentials from the wrong profile.** Credential-home resolution (`CODEX_HOME` and, symmetrically, `CLAUDE_CONFIG_DIR`) is now a single canonical seam shared by every consumer - session spawn, Settings Test, Usage, Terminal-tab Login, `oauth_dir`/env CRUD validation, and Settings display - so an ambient or leftover env value can never leak into a session, terminal, or probe, and Codex and Claude behave identically.
+- **A stale legacy profile stays repairable in Settings without forcing a relocation.** An unchanged, already-enabled legacy row sitting on the reserved default credential home is exempt from re-validation on a cosmetic edit or disable; moving a row onto the reserved directory, or creating a new one there, still fails. Because env values never cross IPC, a cosmetic save now carries the row's stored `CODEX_HOME`/`CLAUDE_CONFIG_DIR` forward when the incoming map omits the key, validates the home it will actually store rather than the one the caller sent, and refuses the save outright when the stored overlay can't be decrypted - a rename can no longer silently move a legacy profile onto the shared default account.
+- **Settings now shows a trustworthy credential home for every provider row**, keyed off where it actually resolves from (`oauth_dir`, a legacy env overlay, the shared canonical default with an explicit isolation warning, or "cannot verify" for an unresolved row) instead of the raw stored value.
+- **Per-profile Usage, Test, and Terminal-tab Login now resolve the same isolated home the session itself uses**, for both Codex and Claude, instead of risking a shared/ambient directory.
+- **The Terminal-tab Login flow sends only instance identity across IPC**; main resolves environment for both Claude and Codex, and a bad id now rejects cleanly (routing-table unbind, no half-built terminal) instead of opening an unscoped shell.
+- **`CREATE_OAUTH_DIR` is hardened against symlink escape** (lexical `..` collapse plus a real-symlink-escape check via `realpathSync`) and creates directories at `0700`.
+- **Packaged/Finder-launched Codex discovery now also searches the user's login-shell `PATH`** (parity with the OpenCode adapter) via a non-blocking shell-env probe that never blocks the event loop; remote Codex auth also checks a keyring-only login via `codex login status`.
+- **A Codex/Claude pick made through the pre-scoping global default key can no longer prefill the wrong provider kind's session.** The machine-default instance id is now scoped per agent (`chat.defaultProviderInstanceId.<agentType>`), while still honoring the legacy key when it still names an instance of the requesting kind. Requesting an explicit instance id that is missing, disabled, or the wrong agent kind now throws instead of silently substituting the default.
+- **Mobile (React Native/iOS) profile rotation now agrees with desktop**: a stale or credentials-unavailable profile recovers the same way on both surfaces.
+
+### Notes
+- Rollout is unconditional - no feature flag gates any of this. Storage is unchanged: `provider_instances.oauth_dir` keeps storing the user's literal value (no migration, no auto-repoint of existing rows); only reads canonicalize it, and upsert validation applies identically to Codex (`~/.codex`) and Claude (`~/.claude`).
+- IPC wire is additive-only: `ProviderInstanceWire`/`ProviderInstance` gained `effectiveOauthDir` and `effectiveOauthDirSource`, and `TerminalCreateOptions` gained `loginInstance`. Older mobile/Android clients continue to work unchanged.
+- See `docs/feature-parity/codex-credential-isolation.json` for full verification detail, including what was and was not exercised (no real `codex login`/`claude login`, keychain write, or packaged/Finder-launched build in this pass).
+- macOS releases remain unsigned until production signing credentials are configured. macOS 12 or later is required.
+
 ## 0.8.53 - Repair remote reconnects, refresh managed tools, and stop dropping live models
 
 ### Fixed
