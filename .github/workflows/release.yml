@@ -69,9 +69,9 @@ jobs:
           else
             gh release create "$TAG" --repo "$REPO" --draft --title "$TAG" --notes "Switchboard $TAG
 
-**Builds are unsigned.**
-macOS: after install, run \`xattr -d com.apple.quarantine /Applications/Switchboard.app\`, or right-click the app and choose Open.
-Windows: if SmartScreen warns, choose More info, then Run anyway."
+          **Builds are unsigned.**
+          macOS: after install, run \`xattr -d com.apple.quarantine /Applications/Switchboard.app\`, or right-click the app and choose Open.
+          Windows: if SmartScreen warns, choose More info, then Run anyway."
           fi
 
   build:
