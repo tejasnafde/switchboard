@@ -133,6 +133,24 @@ review, and a project workspace that can run locally or over SSH.
 | A fast, native terminal for managing CLI agents | cmux | You want the agent conversation, diffs, files, terminals, and project history in one application. |
 | An IDE with built-in agent features | Cursor | You want a workspace centered on agents and live processes. Cursor support is planned, but not available yet. |
 
+## See it in action
+
+**Send file and terminal context into a chat**
+
+https://github.com/user-attachments/assets/e2b6d0df-89ad-41f7-bfba-e4fb62ab2b5e
+
+**Work on remote machines over SSH**
+
+https://github.com/user-attachments/assets/16249b98-98df-477d-b5da-3c3e8af92b20
+
+**First launch**
+
+https://github.com/user-attachments/assets/75bc0e76-67ba-4d28-aceb-3c8e1db34b14
+
+**Kanban board with worktree-backed cards** (experimental)
+
+https://github.com/user-attachments/assets/2e3be3b8-27ba-43c9-95fc-798597cb4ea4
+
 ## Install
 
 Download the latest build from the [Releases page](https://github.com/tejasnafde/switchboard/releases/latest).
