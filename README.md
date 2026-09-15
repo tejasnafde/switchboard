@@ -4,8 +4,6 @@
 
 [Product site](https://switchboard.tn07.dev/) | [Latest release](https://github.com/tejasnafde/switchboard/releases/latest)
 
-https://github.com/user-attachments/assets/2cc1312e-4f2a-4b29-b232-b5797f650dff
-
 Switchboard keeps coding agents, real terminals, files, git worktrees, and
 remote machines in one desktop workspace. Send terminal output, file ranges,
 and chat messages to an agent without leaving the project.
@@ -132,16 +130,6 @@ review, and a project workspace that can run locally or over SSH.
 | An AI-native terminal or saved terminal layouts | Warp | You want rendered provider chats, terminal-to-agent context, git worktree cards, and provider-independent history. |
 | A fast, native terminal for managing CLI agents | cmux | You want the agent conversation, diffs, files, terminals, and project history in one application. |
 | An IDE with built-in agent features | Cursor | You want a workspace centered on agents and live processes. Cursor support is planned, but not available yet. |
-
-## See it in action
-
-**Switch agents per chat**
-
-https://github.com/user-attachments/assets/aa42e86a-e986-46e2-9e58-5efd2547a048
-
-**Resume and search conversations**
-
-https://github.com/user-attachments/assets/86c50159-f723-40d6-9315-0836ac48f302
 
 ## Install
 
