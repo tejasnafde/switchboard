@@ -4,6 +4,8 @@
 
 [Product site](https://switchboard.tn07.dev/) | [Latest release](https://github.com/tejasnafde/switchboard/releases/latest)
 
+![Switchboard: an agent chat with terminal and file pills beside two terminal panes](docs/images/hero.png)
+
 Switchboard keeps coding agents, real terminals, files, git worktrees, and
 remote machines in one desktop workspace. Send terminal output, file ranges,
 and chat messages to an agent without leaving the project.
