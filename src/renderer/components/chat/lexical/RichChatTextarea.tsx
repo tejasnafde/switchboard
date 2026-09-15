@@ -82,7 +82,13 @@ export interface RichChatTextareaHandle {
 
 interface RichChatTextareaProps {
   value: string
-  onChange: (value: string) => void
+  /**
+   * `caret` is the offset AFTER this change. It rides along because the
+   * host's own caret state is one update behind inside its change handler
+   * (both callbacks fire from the same Lexical update), which made a lone
+   * `/` in an empty composer miss the slash-menu trigger.
+   */
+  onChange: (value: string, caret: number | null) => void
   onCaretChange?: (caret: number | null) => void
   onEnter?: () => void
   onPasteFiles?: (files: File[]) => void
@@ -180,44 +186,57 @@ function caretOffsetFromSelection(editor: LexicalEditor): number | null {
     const targetNode = anchor.getNode()
     let acc = 0
     let found = false
-    const visit = (node: LexicalNode): void => {
+    const children = (node: LexicalNode): LexicalNode[] | null => {
+      const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[] }
+      return typeof anyNode.getChildren === 'function' ? anyNode.getChildren() : null
+    }
+    // Same traversal order and the same per-node lengths as
+    // serializeEditorToBody, so the offset indexes into the body string.
+    const lengthOf = (node: LexicalNode): number => {
+      if (node.getType() === 'linebreak') return 1
+      if ($isPillNode(node)) return node.getTextContent().length
+      const kids = children(node)
+      if (!kids) return node.getTextContent().length
+      let n = 0
+      for (const kid of kids) n += lengthOf(kid)
+      return n
+    }
+    // Depth-first walk that stops at the anchor node. The previous version
+    // only compared the anchor against the root's direct children, so a text
+    // node inside a paragraph (the normal case while typing) was never found
+    // and the caret read null; the one case that did resolve, a click on the
+    // empty paragraph, returned 0 and then poisoned the next keystroke's
+    // slash-menu detection.
+    const walk = (node: LexicalNode): void => {
       if (found) return
       if (node === targetNode) {
-        // For text nodes, anchor.offset is char offset within the node.
-        // For element nodes (e.g. paragraph when caret is between
-        // children), anchor.offset is the child index - sum lengths of
-        // children before that index.
         if (node.getType() === 'text') {
           acc += anchor.offset
-          found = true
-          return
-        }
-        const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[] }
-        if (typeof anyNode.getChildren === 'function') {
-          const kids = anyNode.getChildren()
-          for (let i = 0; i < anchor.offset && i < kids.length; i++) {
-            visitForLength(kids[i])
-          }
-          found = true
-          return
+        } else {
+          // Element anchor: offset is a child index, so count the children
+          // before it.
+          const kids = children(node) ?? []
+          for (let i = 0; i < anchor.offset && i < kids.length; i++) acc += lengthOf(kids[i])
         }
         found = true
         return
       }
-      visitForLength(node)
-    }
-    const visitForLength = (node: LexicalNode): void => {
-      if (node.getType() === 'linebreak') { acc += 1; return }
-      if ($isPillNode(node)) { acc += node.getTextContent().length; return }
-      const anyNode = node as LexicalNode & { getChildren?: () => LexicalNode[] }
-      if (typeof anyNode.getChildren === 'function') {
-        for (const child of anyNode.getChildren()) visitForLength(child)
-      } else {
+      if (node.getType() === 'linebreak' || $isPillNode(node)) {
+        acc += lengthOf(node)
+        return
+      }
+      const kids = children(node)
+      if (!kids) {
         acc += node.getTextContent().length
+        return
+      }
+      for (const kid of kids) {
+        walk(kid)
+        if (found) return
       }
     }
     for (const child of $getRoot().getChildren()) {
-      visit(child)
+      walk(child)
       if (found) break
     }
     caret = found ? acc : null
@@ -512,11 +531,11 @@ export const RichChatTextarea = forwardRef<RichChatTextareaHandle, RichChatTexta
     const handleChange = useCallback(
       (editorState: EditorState, editor: LexicalEditor) => {
         const body = serializeEditorToBody(editor)
+        const caret = caretOffsetFromSelection(editor)
         if (body !== valueRef.current) {
           valueRef.current = body
-          onChange(body)
+          onChange(body, caret)
         }
-        const caret = caretOffsetFromSelection(editor)
         onCaretChange?.(caret)
       },
       [onChange, onCaretChange],

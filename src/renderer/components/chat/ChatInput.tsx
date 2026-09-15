@@ -961,14 +961,15 @@ export function ChatInput({
   // Stable identity matters: this callback is a prop on RichChatTextarea,
   // and unstable props would make the editor's plugins re-register every
   // render - that's exactly what caused the original infinite-update loop.
-  const handleEditorChange = useCallback((next: string) => {
+  const handleEditorChange = useCallback((next: string, caretNow: number | null = null) => {
     setSendError(null)
     setValue(next)
     if (sessionId) setDraft(sessionId, next)
-    // Caret may not have been reported yet for this change - fall back to
-    // end-of-string for slash detection. The follow-up onCaretChange will
-    // correct the trigger range if needed.
-    const cur = caret ?? next.length
+    // Prefer the caret reported WITH this change: the `caret` state is one
+    // Lexical update behind here, so after a click into an empty composer it
+    // still reads 0 and a lone `/` never opened the menu. Fall back to
+    // end-of-string when the editor could not resolve a selection.
+    const cur = caretNow ?? caret ?? next.length
     const trigger = detectSlashTrigger(next, cur)
     if (trigger) {
       setSlashQuery(trigger.query)

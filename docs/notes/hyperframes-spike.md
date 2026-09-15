@@ -1,8 +1,13 @@
 # HyperFrames spike - onboarding videos
 
-**Status:** ✅ Go - spike ran and passed all criteria. Ten clips now live in
-`videos/dist/` and served via the `sb-tour://` custom protocol in the
-Feature Tour modal. See decision log below.
+**Status:** SUPERSEDED on 2026-09-15. The HyperFrames clips were hand-drawn
+HTML replicas of the UI. Within four months they showed a removed file
+viewer, a runtime-mode bar that never existed, a `workspace.yaml` schema
+that was renamed, and em dashes throughout. Every tour clip is now recorded
+from the real app by `videos/capture-tour.mjs` (Playwright + the scripted
+`SB_DEMO_ADAPTER`), so a UI change shows up in the clip on the next
+re-record instead of drifting silently. `videos/scenes/` was deleted. The
+rest of this note is kept as the record of the original decision.
 
 ## Goal
 

@@ -17,7 +17,9 @@ process.on('unhandledRejection', (reason) => {
 
 import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
 import { join, basename } from 'path'
-import { registerTerminalHandlers, shutdownTerminals } from './ipc/terminal'
+import { registerTerminalHandlers, shutdownTerminals, livePtyCount } from './ipc/terminal'
+import { registerDiagnosticsHandlers } from './ipc/diagnostics'
+import { configureAnalytics, attachAnalyticsCrashHooks, trackAppLaunched, registerAnalyticsHandlers } from './analytics'
 import { registerAgentHandlers } from './ipc/agent'
 import { registerPushHandlers } from './ipc/push'
 import { attachPushNotifier } from './push/registry'
@@ -515,6 +517,16 @@ app.whenReady().then(() => {
     return
   }
   registerTourProtocol()
+  // Anonymous usage counts (Settings > General > Privacy to turn off). The
+  // DB is open, so the enabled flag and install id can be read.
+  configureAnalytics({
+    environment: app.isPackaged ? 'production' : 'development',
+    appVersion: app.getVersion(),
+    arch: process.arch,
+    translated: app.runningUnderARM64Translation,
+  })
+  attachAnalyticsCrashHooks(app)
+  trackAppLaunched()
   // Pull the known-projects list at request time (not registration time)
   // so newly added projects become servable without an app restart.
   registerFaviconProtocol(() => getProjects().map((p) => p.path))
@@ -659,6 +671,11 @@ app.whenReady().then(() => {
     },
   )
   registerMachineHandlers(backendHost)
+  registerAnalyticsHandlers(backendHost)
+  registerDiagnosticsHandlers(backendHost, {
+    livePtys: () => livePtyCount(),
+    liveSessions: () => providerRegistry?.listSessions().length ?? null,
+  })
   // Auto-update - silent check on launch when packaged. No-op in dev
   // because electron-updater requires a real built app to know what
   // version to compare against. See `src/main/updater.ts`.
@@ -712,6 +729,11 @@ app.whenReady().then(() => {
       })
       worktreeCreationRuntime?.registerHost(reactivatedHost)
       registerMachineHandlers(reactivatedHost)
+      registerAnalyticsHandlers(reactivatedHost)
+      registerDiagnosticsHandlers(reactivatedHost, {
+        livePtys: () => livePtyCount(),
+        liveSessions: () => providerRegistry?.listSessions().length ?? null,
+      })
       registerAutoUpdater(mainWindow)
 
       providerRegistry = new ProviderRegistry(reactivatedHost)

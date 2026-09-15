@@ -23,10 +23,10 @@ describe('buildSpawnArgs', () => {
     expect(args[args.indexOf('--user-data-dir') + 1]).toBe(opts.userDataDir)
   })
 
-  it('contains only the four documented flags', () => {
+  it('contains only the five documented flags', () => {
     const args = buildSpawnArgs(opts)
     const flags = args.filter((a) => a.startsWith('--'))
-    expect(flags.sort()).toEqual(['--auth', '--bind-addr', '--extensions-dir', '--user-data-dir'])
-    expect(args).toHaveLength(8)
+    expect(flags.sort()).toEqual(['--auth', '--bind-addr', '--disable-update-check', '--extensions-dir', '--user-data-dir'])
+    expect(args).toHaveLength(9)
   })
 })

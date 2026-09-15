@@ -6,8 +6,10 @@ import type { BackendHost } from '../backend/host'
 import { ProviderChannels } from '@shared/ipc-channels'
 import { applyContentText } from '@shared/content-stream'
 import { createMainLogger as createLogger } from '../logger'
+import { trackAnalyticsEvent } from '../analytics'
 import { ClaudeAdapter } from './adapters/claude-adapter'
 import { CodexAdapter } from './adapters/codex-adapter'
+import { demoAdapters } from './adapters/demo-adapter'
 import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
@@ -162,11 +164,16 @@ export class ProviderRegistry implements PeerToolHost {
     activeRegistry = this
     this.host = host
     this.opencodeAcp = new OpencodeAcpAdapter()
-    this.adapters = adapters ?? new Map<ProviderKind, ProviderAdapter>([
-      ['claude', new ClaudeAdapter()],
-      ['codex', new CodexAdapter()],
-      ['opencode', this.opencodeAcp],
-    ])
+    // SB_DEMO_ADAPTER=1 swaps in the scripted adapter so the tour recorder
+    // (videos/capture-tour.mjs) can capture agent-driven scenes without
+    // credentials. Never set by a normal launch.
+    this.adapters = adapters ?? (process.env.SB_DEMO_ADAPTER === '1'
+      ? demoAdapters()
+      : new Map<ProviderKind, ProviderAdapter>([
+        ['claude', new ClaudeAdapter()],
+        ['codex', new CodexAdapter()],
+        ['opencode', this.opencodeAcp],
+      ]))
     const turnStore = new SqliteTurnAcceptanceStore(() => getDb())
     this.atomicTurnSubmission = atomicTurnSubmission ?? new AtomicUserTurnSubmission({
       store: turnStore,
@@ -942,6 +949,7 @@ export class ProviderRegistry implements PeerToolHost {
         remoteConfigDir: credentialSnapshot?.remoteConfigDir ?? opts.remoteConfigDir,
       })
       await this.attachNotebooks(opts.threadId, session.cwd)
+      trackAnalyticsEvent('session_started', { provider: opts.provider })
       resolveStart(session)
       return session
       } catch (err) {

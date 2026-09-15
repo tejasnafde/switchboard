@@ -85,6 +85,10 @@ export function buildSpawnArgs(opts: SpawnArgOpts): string[] {
     opts.extensionsDir,
     '--user-data-dir',
     opts.userDataDir,
+    // Switchboard owns the binary (binary.ts pins CODE_SERVER_VERSION), so
+    // code-server's own "vX has been released" toast is noise the user
+    // cannot act on.
+    '--disable-update-check',
   ]
 }
 

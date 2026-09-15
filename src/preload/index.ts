@@ -4,7 +4,7 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent, WorktreeInfo } from '@shared/kanban'
@@ -32,6 +32,7 @@ import type { PartialClientConfig } from '@shared/google-oauth'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import type { GoogleClientStatus } from '../main/google/client-config'
 import type { UpdateStatus } from '@shared/update-status'
+import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../renderer/logger'
 import { createWorktreeCreationApi } from './worktree-creation-api'
 
@@ -285,6 +286,11 @@ const api = {
     quitAndInstall: () => {
       transport.send('app:quit-and-install')
     },
+    /** Settings > About > Diagnostics: host snapshot (no env, no home paths but the logs dir). */
+    getDiagnostics: (): Promise<DiagnosticsSnapshot> =>
+      transport.invoke(AppChannels.GET_DIAGNOSTICS),
+    openLogsFolder: (): Promise<{ ok: boolean; error?: string }> =>
+      transport.invoke(AppChannels.OPEN_LOGS_FOLDER),
 
     // ─── Workspaces (sidebar grouping above projects) ──────────
     workspaces: {
@@ -514,6 +520,17 @@ const api = {
       opts?: { force?: boolean },
     ): Promise<void> =>
       transport.invoke(KanbanChannels.REMOVE_STALE_WORKTREE, projectPath, worktreePath, opts),
+  },
+
+  // ─── Anonymous usage counts ────────────────────────────────────
+  analytics: {
+    /**
+     * Report a renderer-side event. Main whitelists the names
+     * (`RENDERER_ANALYTICS_EVENTS`: tour_completed / tour_skipped) and
+     * drops everything else; resolves false when it did.
+     */
+    track: (event: 'tour_completed' | 'tour_skipped', properties: Record<string, string> = {}): Promise<boolean> =>
+      transport.invoke(AnalyticsChannels.TRACK, event, properties),
   },
 
   settings: {

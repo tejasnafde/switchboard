@@ -6,7 +6,7 @@
  * to IPC; everything else goes to the remote backend.
  */
 import type { Transport } from '@shared/transport'
-import { AppChannels, MachineChannels } from '@shared/ipc-channels'
+import { AppChannels, MachineChannels, AnalyticsChannels } from '@shared/ipc-channels'
 
 const LOCAL_CHANNELS = new Set<string>([
   AppChannels.OPEN_FOLDER,
@@ -15,6 +15,10 @@ const LOCAL_CHANNELS = new Set<string>([
   AppChannels.SET_VIBRANCY,
   AppChannels.CHECK_FOR_UPDATES,
   AppChannels.GET_UPDATE_STATUS,
+  // Diagnostics and usage counts describe THIS desktop, not the remote VM.
+  AppChannels.GET_DIAGNOSTICS,
+  AppChannels.OPEN_LOGS_FOLDER,
+  AnalyticsChannels.TRACK,
   // Desktop-only, handled by bare ipcMain listeners in main/index.ts - no
   // AppChannels entry because they're not part of the ProviderAdapter-facing API.
   'app:close-window',

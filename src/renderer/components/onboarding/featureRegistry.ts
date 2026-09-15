@@ -2,9 +2,8 @@
  * Onboarding tour registry.
  *
  * Single source of truth for the "what's new" / first-run feature tour.
- * Each entry corresponds to:
- *   - one HTML scene at `videos/scenes/<id>/index.html`  (hand-authored)
- *   - one MP4 at `videos/dist/<id>.mp4`                   (rendered by HyperFrames)
+ * Each entry corresponds to one MP4 at `videos/dist/<id>.mp4`, recorded from
+ * the real app by `videos/capture-tour.mjs` (the scene id there must match).
  *
  * The renderer streams MP4s via the `sb-tour://<id>.mp4` custom protocol
  * registered in main (see ipc/app.ts). Missing MP4s degrade gracefully
@@ -40,7 +39,7 @@ export type TryItAction =
  * Bump when the tour list changes meaningfully. Auto-open fires on the
  * next launch for any user whose `tour.lastSeenVersion` is older.
  */
-export const TOUR_VERSION = '2026-08-24'
+export const TOUR_VERSION = '2026-09-15'
 
 export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
   {
@@ -50,77 +49,77 @@ export const FEATURE_TOUR_STEPS: FeatureTourStep[] = [
       'Terminals, AI agents, and project context in one window. Add a folder from the sidebar to get started - everything else flows from there.',
   },
   {
-    id: 'kanban-view',
-    title: 'Two modes: Chats & Board',
+    id: 'chats-and-board',
+    title: 'Two views: Chats and Board',
     description:
-      'Toggle the whole app between engineering view (chats + terminals + files) and PM view (a workspace-scoped kanban board). Click the segmented toggle in the title bar, or hit ⌘⇧K. Cards on the board double as chats - click ▶ to start a conversation rooted at the card’s worktree.',
+      'Flip between the engineering view (chats, terminals, IDE) and a workspace-scoped kanban board with the Chats / Board toggle in the title bar, or ⌘⇧K. Cards double as chats: press ▶ to start a conversation rooted at the card\u2019s worktree.',
   },
   {
     id: 'slash-menu',
-    title: 'Slash commands & agent skills',
+    title: 'Slash commands and agent skills',
     description:
-      'Type `/` in any chat to switch runtime mode, archive, clear, or invoke an agent-defined skill. Claude SDK commands and Codex skills appear inline alongside Switchboard built-ins.',
+      'Type `/` in any chat to switch runtime mode, archive, clear, or invoke an agent-defined skill. Claude Code commands and Codex skills appear inline next to Switchboard built-ins.',
     tryIt: { kind: 'focus-chat-with-slash' },
   },
   {
-    id: 'plan-mode',
-    title: 'Plan mode & runtime modes',
+    id: 'runtime-modes',
+    title: 'Runtime modes',
     description:
-      'Plan mode locks the agent to read-only tools. Sandbox prompts before writes. Accept-edits and Full-access skip the prompts. Block events render as a red denial pill in chat.',
+      'Pick a mode per chat from the composer. Plan Only locks the agent to read-only tools and renders every blocked write as a red denial pill. Sandbox asks before each tool. Accept Edits and Full Access skip the prompts.',
   },
   {
     id: 'panes',
-    title: 'Multi-pane terminals & chat',
+    title: 'Terminals beside every chat',
     description:
-      'Split any pane horizontally or vertically - terminals and chats live in the same tmux-style tree. Drag the handle to resize, ⌘W closes the focused pane.',
+      'Each chat owns a tmux-style terminal strip. ⌘T opens a window, ⌘⇧T a new row, ⌘\\ a tab; drag the handles to resize and ⌘W closes the focused pane. Panes start in the project folder.',
   },
   {
     id: 'dual-chat',
-    title: 'Compare or delegate beside another chat',
+    title: 'Two chats side by side',
     description:
-      'Choose Open beside in a chat header or session menu (⌘⇧\\) to keep two agents visible. The highlighted chat owns the IDE, terminals, status, and shortcuts; Copy prompt → other clones a draft while each send remains independent.',
+      'Open beside (⌘⇧\\) puts a second chat next to the first to compare agents or delegate. The highlighted chat owns the IDE, terminals and shortcuts; Copy prompt → other clones a draft while each send stays independent.',
   },
   {
-    id: 'file-viewer-context',
-    title: 'File viewer & context bridge',
+    id: 'ide',
+    title: 'Embedded IDE and context bridge',
     description:
-      '⌘⇧E flips the right pane to a file tree + viewer with Shiki highlighting and markdown preview. ⌘P fuzzy-finds any file, ⌘L pipes terminal/file selections straight into the chat draft.',
+      '⌘⇧E flips the right pane to a full VS Code workbench served locally. Click any file pill in a message to open it at that line; ⌘L inside the editor or a terminal sends the selection to the chat draft as context.',
   },
   {
-    id: 'terminal-templates',
-    title: 'Named launch configs',
+    id: 'diff-review',
+    title: 'Review every edit in chat',
     description:
-      'Save the current terminal layout as a named launch config and apply it to any new chat - the last-applied config stays pinned per chat. Launch configs live in launch-config.yaml so they sync across machines via git.',
+      'After each turn, the files the agent changed appear as diff cards in the conversation. Keep or reject per hunk; the working tree updates on the spot.',
   },
   {
     id: 'launch-config',
-    title: 'Workspace config',
+    title: 'Named launch configs',
     description:
-      'Drop a .switchboard/launch-config.yaml into any project to declare terminals and startup commands, so a workspace boots the same way every time.',
+      'Declare terminals and startup commands in .switchboard/launch-config.yaml under named configs. Switch the config for any chat from the terminal strip; edits to the file reload live and the file travels with the repo.',
   },
   {
     id: 'switch-agent',
     title: 'Switch agents per chat',
     description:
-      'Pick Claude Code, Codex, or OpenCode for any chat from the agent dropdown - the status bar and model picker update to match. Switching starts a fresh context with the new agent.',
+      'Pick Claude Code, Codex, or OpenCode for any chat, along with a named credential profile and model. The status bar and model list follow. Switching hands the new agent a bounded summary of the conversation so far.',
   },
   {
     id: 'resume-search',
-    title: 'Session resume & full-text search',
+    title: 'Session resume and full-text search',
     description:
-      'Past sessions live in the sidebar - click to resume any thread. ⌘⇧F searches every message across every project; click a result to jump straight to it.',
+      'Past sessions live in the sidebar - click to resume any thread. ⌘⇧F searches every message across every project; pick a result to jump straight to it.',
     tryIt: { kind: 'open-search' },
   },
   {
     id: 'remote-machines',
     title: 'Remote machines (experimental)',
     description:
-      'Run agents and terminals on another computer over SSH. Add a machine from the sidebar - Switchboard uses your existing SSH config, installs a small helper on first connect, and tunnels everything. Chats and terminals started under that machine run there; your local files stay untouched.',
+      'Run agents and terminals on another computer over SSH. Add a machine from the sidebar - Switchboard uses your existing SSH config, installs a small helper on first connect, and tunnels everything. Chats and terminals started under that machine run there.',
   },
   {
     id: 'workspaces',
     title: 'Sidebar workspaces',
     description:
-      'Group projects under named, color-tagged workspaces - Work, Personal, side quests. Filter the whole tree by chat title with the new search input. Collapse state persists across launches.',
+      'Group projects under named, color-tagged workspaces - Work, Personal, side quests. Filter the whole tree by chat title from the search box. Collapse state persists across launches.',
   },
 ]

@@ -25,6 +25,11 @@ export function getManagedTerminalRuntime(): ManagedTerminalRuntime {
   return managedTerminalRuntime
 }
 
+/** Live pty count for diagnostics; null before the first host registered. */
+export function livePtyCount(): number | null {
+  return ptyManager?.count() ?? null
+}
+
 /**
  * Kill every pty, flush buffered output, and WAIT for node-pty's exit
  * callbacks to land. MUST complete before quit continues: a callback that

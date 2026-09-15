@@ -29,6 +29,10 @@ import {
   isAssistantStreamingEnabled,
   setAssistantStreamingEnabled,
 } from '../services/streamingPref'
+import { isAnalyticsEnabled, setAnalyticsEnabled } from '../services/analyticsPref'
+import { formatDiagnosticsReport, formatMb, sortProcessesByMemory } from '@shared/diagnostics-report'
+import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
+import { createRendererLogger } from '../logger'
 import { ProvidersTab } from './settings/ProvidersTab'
 import { MobilePairingTab } from './settings/MobilePairingTab'
 import {
@@ -40,6 +44,8 @@ import {
   resolveLoadedRecentSessionLimit,
   type RecentSessionLimit,
 } from './sidebar/recentSessionLimit'
+
+const log = createRendererLogger('component:settings')
 
 interface SettingsModalProps {
   open: boolean
@@ -446,6 +452,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                 <StreamAssistantToggle />
               </SettingsSection>
 
+              {/* Privacy - anonymous usage counts, default on */}
+              <SettingsSection title="Privacy">
+                <AnalyticsToggle />
+              </SettingsSection>
+
               {/* Keyboard shortcuts info */}
               <SettingsSection title="Keyboard Shortcuts">
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: '6px 16px', fontSize: '12px' }}>
@@ -618,7 +629,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                                     setRenamingLaunchConfig(name)
                                     setRenameValue(name)
                                   }}
-                                  title={name === 'default' ? 'default — implicit fallback (cannot rename / delete)' : 'Double-click to rename'}
+                                  title={name === 'default' ? 'default - implicit fallback (cannot rename / delete)' : 'Double-click to rename'}
                                   style={{
                                     flex: 1,
                                     textAlign: 'left',
@@ -740,7 +751,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                               ? configError
                               : configSaveState === 'saving' ? 'Saving…'
                               : configSaveState === 'saved' ? 'Saved'
-                              : bodyDirty ? `Editing "${selectedLaunchConfig}" — unsaved`
+                              : bodyDirty ? `Editing "${selectedLaunchConfig}" - unsaved`
                               : `Editing "${selectedLaunchConfig}"`}
                           </span>
                           <button
@@ -855,6 +866,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               </SettingsSection>
               <SettingsSection title="Updates">
                 <UpdateCheckRow />
+              </SettingsSection>
+              <SettingsSection title="Diagnostics">
+                <DiagnosticsSection />
               </SettingsSection>
             </div>
           )}
@@ -1095,6 +1109,160 @@ function StreamAssistantToggle() {
         </div>
       </span>
     </label>
+  )
+}
+
+/**
+ * Toggle: anonymous usage counts (main/analytics.ts). Default on; the
+ * main process reads the same setting before every event, so flipping
+ * it here stops the next event without a restart.
+ */
+function AnalyticsToggle() {
+  const [enabled, setEnabled] = useState<boolean | null>(null)
+  useEffect(() => {
+    isAnalyticsEnabled().then(setEnabled)
+  }, [])
+  const toggle = async () => {
+    const next = !enabled
+    setEnabled(next)
+    await setAnalyticsEnabled(next)
+  }
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '8px 0',
+        cursor: 'pointer',
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={enabled === true}
+        onChange={toggle}
+        disabled={enabled === null}
+        style={{ cursor: 'pointer' }}
+      />
+      <span>
+        <div style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>
+          Share anonymous usage counts
+        </div>
+        <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+          Sends launch, session, tour and crash counts with the app version, platform, chip and a
+          random install id, never a path, name or message; one click here turns it off.
+        </div>
+      </span>
+    </label>
+  )
+}
+
+/**
+ * About > Diagnostics. Loads one snapshot on mount, shows the facts that
+ * explain a slow machine, and copies the full plain-text report.
+ */
+const DIAGNOSTICS_TOP_PROCESSES = 6
+
+function DiagnosticsSection() {
+  const [snapshot, setSnapshot] = useState<DiagnosticsSnapshot | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [feedback, setFeedback] = useState<string | null>(null)
+
+  useEffect(() => {
+    window.api.app.getDiagnostics().then(setSnapshot).catch((err) => {
+      log.warn('getDiagnostics failed', err)
+      setError(err instanceof Error ? err.message : String(err))
+    })
+  }, [])
+
+  const flash = (text: string) => {
+    setFeedback(text)
+    setTimeout(() => setFeedback(null), 4000)
+  }
+
+  const copy = async () => {
+    if (!snapshot) return
+    try {
+      await navigator.clipboard.writeText(formatDiagnosticsReport(snapshot))
+      flash('Copied.')
+    } catch (err) {
+      log.warn('clipboard write failed', err)
+      flash('Copy failed.')
+    }
+  }
+
+  const openLogs = async () => {
+    try {
+      const r = await window.api.app.openLogsFolder()
+      if (!r.ok) flash(r.error ?? 'Could not open the logs folder.')
+    } catch (err) {
+      log.warn('openLogsFolder failed', err)
+      flash('Could not open the logs folder.')
+    }
+  }
+
+  const buttonStyle: React.CSSProperties = {
+    padding: '5px 12px',
+    background: 'var(--bg-tertiary)',
+    border: '1px solid var(--border)',
+    borderRadius: '5px',
+    color: 'var(--text-primary)',
+    fontSize: '12px',
+    cursor: 'pointer',
+  }
+
+  if (error) {
+    return <div style={{ fontSize: '12px', color: 'var(--error)' }}>Diagnostics unavailable: {error}</div>
+  }
+  if (!snapshot) {
+    return <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Collecting…</div>
+  }
+
+  const top = sortProcessesByMemory(snapshot.processes).slice(0, DIAGNOSTICS_TOP_PROCESSES)
+  const appMb = snapshot.processes.reduce((sum, p) => sum + p.memoryMb, 0)
+  const facts: Array<[string, string]> = [
+    ['Chip', `${snapshot.arch}${snapshot.translated ? ' (running translated - install the native build)' : ''}`],
+    ['OS', `${snapshot.platform} ${snapshot.osVersion}`],
+    ['Electron', `${snapshot.versions.electron} (Chrome ${snapshot.versions.chrome}, Node ${snapshot.versions.node})`],
+    ['Memory', `${formatMb(snapshot.memory.freeMb)} free of ${formatMb(snapshot.memory.totalMb)}; Switchboard uses ${formatMb(appMb)}`],
+    ['Live', `${snapshot.livePtys ?? '?'} terminals, ${snapshot.liveSessions ?? '?'} agent sessions`],
+  ]
+
+  return (
+    <div style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '4px 12px', lineHeight: 1.6 }}>
+        {facts.map(([label, value]) => (
+          <div key={label} style={{ display: 'contents' }}>
+            <span style={{ color: 'var(--text-muted)' }}>{label}</span>
+            <span style={{ color: snapshot.translated && label === 'Chip' ? 'var(--warning)' : 'var(--text-primary)' }}>{value}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: '10px', color: 'var(--text-muted)', fontSize: '11px' }}>Largest processes</div>
+      <div style={{
+        fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+        fontSize: '11px',
+        marginTop: '4px',
+        display: 'grid',
+        gridTemplateColumns: 'auto auto auto 1fr',
+        gap: '2px 14px',
+        color: 'var(--text-primary)',
+      }}>
+        {top.map((p) => (
+          <div key={p.pid} style={{ display: 'contents' }}>
+            <span>{p.type}</span>
+            <span style={{ textAlign: 'right' }}>{p.cpuPercent.toFixed(1)}%</span>
+            <span style={{ textAlign: 'right' }}>{formatMb(p.memoryMb)}</span>
+            <span style={{ color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name ?? ''}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
+        <button type="button" onClick={copy} style={buttonStyle}>Copy report</button>
+        <button type="button" onClick={openLogs} style={buttonStyle}>Open logs folder</button>
+        {feedback && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{feedback}</span>}
+      </div>
+    </div>
   )
 }
 

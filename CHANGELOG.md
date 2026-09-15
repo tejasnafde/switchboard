@@ -2,6 +2,19 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.56 - Real-app feature tour, diagnostics panel, anonymous usage counts
+
+### Changed
+- **Every feature-tour clip is now recorded from the real app.** The twelve shipped clips were HyperFrames HTML replicas drawn by hand in April; by September they showed a file viewer that no longer exists, a runtime-mode bar that never existed, a `workspace.yaml` schema that had been renamed, a missing `dual-chat` clip, and an orphaned `workspace-config.mp4` that no step referenced. `videos/capture-tour.mjs` (Playwright driving the built bundle against a seeded fixture) replaces them with thirteen scenes: `welcome`, `chats-and-board`, `slash-menu`, `runtime-modes`, `panes`, `dual-chat`, `ide`, `diff-review`, `launch-config`, `switch-agent`, `resume-search`, `remote-machines`, `workspaces`. `file-viewer-context` and `terminal-templates` are gone (superseded by `ide` and `launch-config`). `TOUR_VERSION` bumped so existing users see the new tour once.
+- **Scripted demo adapter behind `SB_DEMO_ADAPTER=1`.** Every provider becomes `adapters/demo-adapter.ts`, which streams canned replies, denies a Write in plan mode, and performs one real edit in the session cwd so the registry's git checkpoint emits a genuine `file.edited`. That is what lets the plan-mode denial and the diff card be recorded deterministically with no credentials. Never set by a normal launch; the registry logs a warning when it is.
+- **Settings > About > Diagnostics.** Chip, arch, Rosetta flag, OS, Electron/Chrome/Node versions, memory, GPU feature status and every helper process with CPU and memory, plus "Copy report" and "Open logs folder". Built so a user on a slow machine can paste one block instead of describing the lag.
+- **Anonymous usage counts, default on, one click off** (Settings > General > Privacy, and a one-time first-launch notice). Five events - `app_launched`, `session_started`, `tour_completed`, `tour_skipped`, `crash_reported` - with closed-list properties and a random install id; never a path, hostname, username or message. Posted to the existing `analytics.tn07.dev` Worker, which gained a `desktop` surface and a no-Origin path for desktop clients. Development builds never send.
+
+### Fixed
+- **A lone `/` in an empty composer did not open the slash menu.** `RichChatTextarea` reported the change before the caret, so `ChatInput`'s trigger detection ran with the caret from one keystroke earlier; after a click into an empty editor that was 0 and the menu appeared only on the second character. The caret now rides along with the change. Found because the tour recorder waited for the menu and timed out.
+- **The embedded IDE no longer shows code-server's own "vX has been released" toast.** Switchboard pins and downloads the binary itself, so the notice was noise the user could not act on; `--disable-update-check` is now part of the spawn args.
+- Five em dashes in Settings and sidebar copy replaced with hyphens.
+
 ## 0.8.55 - Isolate Codex and Claude credential homes deterministically
 
 ### Fixed

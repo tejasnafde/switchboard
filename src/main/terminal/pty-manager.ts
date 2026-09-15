@@ -192,6 +192,11 @@ export class PtyManager {
     this.ptys.get(id)?.pty.resize(cols, rows)
   }
 
+  /** Number of live ptys - Settings > About > Diagnostics. */
+  count(): number {
+    return this.ptys.size
+  }
+
   kill(id: string): void {
     const managed = this.ptys.get(id)
     if (!managed) return

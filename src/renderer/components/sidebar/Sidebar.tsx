@@ -619,7 +619,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
   // Compute the workspace-grouped tree, then apply the (debounced) filter.
   // The filter expansion sets are merged with the persisted collapse sets:
   // when filtering, matching ancestors auto-expand without clobbering the
-  // user's saved collapse state — clearing the filter restores it.
+  // user's saved collapse state - clearing the filter restores it.
   const groups: WorkspaceGroup[] = useMemo(
     () => groupProjectsByWorkspace(projects, workspaces),
     [projects, workspaces]
@@ -950,7 +950,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, isNewChatPen
           ))}
         </div>
       )}
-      {/* Filter input — debounced 100ms, fuzzy substring on session titles */}
+      {/* Filter input - debounced 100ms, fuzzy substring on session titles */}
       {sidebarView === 'threads' && projects.length > 0 && (
         <SidebarFilter onChange={setFilterQuery} />
       )}

@@ -47,6 +47,7 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
   const goNext = useCallback(() => {
     if (isLast) {
       void window.api.settings.set('tour.lastSeenVersion', TOUR_VERSION)
+      void window.api.analytics.track('tour_completed')
       onClose()
     } else {
       setIdx((i) => Math.min(i + 1, total - 1))
@@ -57,6 +58,7 @@ export function FeatureTourModal({ open, onClose, startAt = 0, onTryIt }: Featur
 
   const skip = useCallback(() => {
     void window.api.settings.set('tour.lastSeenVersion', TOUR_VERSION)
+    void window.api.analytics.track('tour_skipped')
     onClose()
   }, [onClose])
 

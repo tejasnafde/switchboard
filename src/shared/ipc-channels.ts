@@ -51,6 +51,10 @@ export const AppChannels = {
   CHECK_FOR_UPDATES: 'app:check-for-updates',
   GET_UPDATE_STATUS: 'app:get-update-status',
   RELAUNCH: 'app:relaunch',
+  /** Settings > About > Diagnostics: one JSON snapshot of the host (see shared/diagnostics-report.ts). */
+  GET_DIAGNOSTICS: 'app:get-diagnostics',
+  /** Reveal the main-process log directory in Finder / Explorer. */
+  OPEN_LOGS_FOLDER: 'app:open-logs-folder',
   /** main → renderer push: status changes from electron-updater. */
   UPDATE_STATUS: 'app:update-status',
   // Workspaces (sidebar outer grouping above projects)
@@ -313,4 +317,13 @@ export const ProviderChannels = {
   /** Proactive remote-auth preflight - args[0] is a threadId purely so the
    *  preload RoutingTable routes the call to the session's machine. */
   CHECK_REMOTE_AUTH: 'provider:check-remote-auth',
+} as const
+
+/**
+ * Anonymous usage counts (main/analytics.ts). The renderer may only report
+ * the event names in `RENDERER_ANALYTICS_EVENTS`; everything else is
+ * tracked by the main process itself.
+ */
+export const AnalyticsChannels = {
+  TRACK: 'analytics:track',
 } as const

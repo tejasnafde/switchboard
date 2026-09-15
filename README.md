@@ -175,6 +175,14 @@ Download `Switchboard Setup X.Y.Z.exe`. SmartScreen may show "Windows protected
 your PC" on first launch. Choose **More info**, then **Run anyway**. A portable
 `.zip` build is also available.
 
+## Privacy
+
+Your chats, code and terminal output stay on your machines. The desktop app
+sends five anonymous counts (launch, session started, tour completed or
+skipped, crash) with the app version, OS, chip and a random install id, and
+nothing else. Turn them off in **Settings > General > Privacy**; development
+builds never send. Full text at [tn07.dev/privacy](https://tn07.dev/privacy).
+
 ## Develop
 
 ```bash
