@@ -6,6 +6,8 @@
 
 ![Switchboard: an agent chat with terminal and file pills beside two terminal panes](docs/images/hero.png)
 
+https://github.com/user-attachments/assets/75bc0e76-67ba-4d28-aceb-3c8e1db34b14
+
 Switchboard keeps coding agents, real terminals, files, git worktrees, and
 remote machines in one desktop workspace. Send terminal output, file ranges,
 and chat messages to an agent without leaving the project.
@@ -142,10 +144,6 @@ https://github.com/user-attachments/assets/e2b6d0df-89ad-41f7-bfba-e4fb62ab2b5e
 **Work on remote machines over SSH**
 
 https://github.com/user-attachments/assets/16249b98-98df-477d-b5da-3c3e8af92b20
-
-**First launch**
-
-https://github.com/user-attachments/assets/75bc0e76-67ba-4d28-aceb-3c8e1db34b14
 
 **Kanban board with worktree-backed cards** (experimental)
 
