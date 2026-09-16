@@ -137,17 +137,21 @@ review, and a project workspace that can run locally or over SSH.
 
 ## See it in action
 
-**Send file and terminal context into a chat**
+**Open any file from the chat in a real VS Code workbench**
 
-https://github.com/user-attachments/assets/e2b6d0df-89ad-41f7-bfba-e4fb62ab2b5e
+https://github.com/user-attachments/assets/50fc2f7f-7913-4941-a4a5-2e9acf50639f
 
-**Work on remote machines over SSH**
+**Review every edit the agent makes, hunk by hunk**
 
-https://github.com/user-attachments/assets/16249b98-98df-477d-b5da-3c3e8af92b20
+https://github.com/user-attachments/assets/c84603bb-1918-4288-bdd3-4d10d83a8ffa
 
-**Kanban board with worktree-backed cards** (experimental)
+**Flip between chats and a worktree-backed board** (experimental)
 
-https://github.com/user-attachments/assets/2e3be3b8-27ba-43c9-95fc-798597cb4ea4
+https://github.com/user-attachments/assets/e10797e1-c693-4149-9d08-00a096a9ebb7
+
+**Hand the same conversation to a different agent**
+
+https://github.com/user-attachments/assets/69252158-50c2-41ff-be7c-377ac2b84ce0
 
 ## Install
 

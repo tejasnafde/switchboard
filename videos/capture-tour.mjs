@@ -338,13 +338,22 @@ async function waitForTurn(win, timeout = 25_000) {
 
 const scenes = {
   async welcome(win) {
-    await pause(win, 1400)
+    // Slide 1 has to prove the three regions are ONE window and all live. The
+    // first cut glided the cursor over a static window and read as a
+    // screenshot, so this streams a reply in the chat while a terminal prints
+    // beside it. The turn is deliberately not awaited.
+    await pause(win, 1200)
     await selectConversation(win)
-    await pause(win, 900)
-    await glide(win, { x: 160, y: 300 }, { x: 640, y: 380 }, 40)
-    await pause(win, 600)
-    await glide(win, { x: 640, y: 380 }, { x: 1080, y: 420 }, 40)
-    await pause(win, 2600)
+    await pause(win, 1000)
+    await composer(win)
+    await win.keyboard.type('What do the tests cover?', { delay: 40 })
+    await win.keyboard.press('Enter')
+    await pause(win, 800)
+    const terminal = win.locator('[data-terminal-pane]').first()
+    await terminal.click({ position: { x: 80, y: 90 } })
+    await win.keyboard.type('npm test', { delay: 60 })
+    await win.keyboard.press('Enter')
+    await pause(win, 3400)
   },
 
   async 'chats-and-board'(win) {
