@@ -2,6 +2,15 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.57 - Re-record the tour's welcome slide
+
+### Fixed
+- **The tour's first slide read as a screenshot.** 0.8.56 bumped `TOUR_VERSION`, so the tour auto-opens once for every existing user, and step 1 was a clip that glided the cursor across a static window. It now sends a turn and drives a terminal at the same time, so the assistant reply streams while TAP output prints beside it, and all three regions of the window are visibly live. Tour clips are packaged through `extraResources`, so replacing one needs a release even when no code changes.
+
+### Changed
+- README "See it in action" embeds four recordings of the current app (embedded workbench, in-chat diff review, the chats/board toggle, an agent switch) in place of three older clips. Remote machines no longer has a README clip; the feature and its tour step are unchanged.
+- The test-suite count in `CLAUDE.md` said ~1953 tests across 196 files. It is 3570 across 375.
+
 ## 0.8.56 - Real-app feature tour, diagnostics panel, anonymous usage counts
 
 ### Changed
