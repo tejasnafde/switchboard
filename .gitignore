@@ -58,3 +58,7 @@ coverage/
 mockups/
 .expo/
 apps/mobile/node_modules/
+
+# Local scratch: drafts and promo mockups, not part of the app
+docs/articles/
+promo-mocks/
