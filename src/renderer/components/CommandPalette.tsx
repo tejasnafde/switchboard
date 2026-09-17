@@ -3,6 +3,7 @@ import { Command } from 'cmdk'
 import { useLayoutStore } from '../stores/layout-store'
 import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
+import { sessionExecutionRootPath } from '../services/executionRoot'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
 
 interface CommandPaletteProps {
@@ -121,13 +122,13 @@ function buildCommands(opts: {
     { id: 'term.new-tab', group: 'Terminal', label: 'New Terminal Tab', shortcut: '⌘\\',
       run: withFocusedSession((sid) => {
         const ids = terms().getAllPaneIds(sid)
-        const cwd = agents().sessions.find((s) => s.id === sid)?.projectPath
+        const cwd = sessionExecutionRootPath(sid)
         terms().addPaneToActiveWindow(sid, { label: `Terminal ${ids.length + 1}`, cwd })
       }) },
     { id: 'term.new-window-right', group: 'Terminal', label: 'New Terminal Window (right)', shortcut: '⌘T',
       run: withFocusedSession((sid) => {
         const ids = terms().getAllWindowIds(sid)
-        const cwd = agents().sessions.find((s) => s.id === sid)?.projectPath
+        const cwd = sessionExecutionRootPath(sid)
         const label = `Terminal ${ids.length + 1}`
         if (ids.length === 0) terms().addWindow(sid, { label, cwd })
         else terms().splitActiveWindow(sid, 'row', { label, cwd })
@@ -135,7 +136,7 @@ function buildCommands(opts: {
     { id: 'term.new-window-below', group: 'Terminal', label: 'New Terminal Window (below)', shortcut: '⌘⇧T',
       run: withFocusedSession((sid) => {
         const ids = terms().getAllWindowIds(sid)
-        const cwd = agents().sessions.find((s) => s.id === sid)?.projectPath
+        const cwd = sessionExecutionRootPath(sid)
         const label = `Terminal ${ids.length + 1}`
         if (ids.length === 0) terms().addWindow(sid, { label, cwd })
         else terms().splitActiveWindow(sid, 'column', { label, cwd })

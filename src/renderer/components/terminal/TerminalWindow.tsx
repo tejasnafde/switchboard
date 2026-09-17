@@ -3,6 +3,7 @@ import { useTerminalStore } from '../../stores/terminal-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { TerminalPane } from './TerminalPane'
 import { destroyTerminal, focusTerminal } from '../../services/terminal-registry'
+import { sessionExecutionRootPath } from '../../services/executionRoot'
 import type { WindowState, PaneState } from '../../stores/terminal-store'
 
 interface TerminalWindowProps {
@@ -54,7 +55,7 @@ export function TerminalWindow({ sessionId, window, panes, isActiveWindow, onFoc
 
   const handleNewPane = useCallback(() => {
     const count = window.paneIds.length + 1
-    const cwd = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.projectPath
+    const cwd = sessionExecutionRootPath(sessionId)
     const newId = addPaneToWindow(sessionId, window.id, { label: `Terminal ${count}`, cwd })
     if (newId) setTimeout(() => focusTerminal(newId), 80)
   }, [sessionId, window.id, window.paneIds.length, addPaneToWindow])
