@@ -60,6 +60,13 @@ describe('DiagnosticsSection first frame', () => {
     expect(html).toContain('Diagnostics')
   })
 
+  it('styles hover and focus through a class, not an inline handler', () => {
+    // Pins the fix for the imperative `style.background` mutation that
+    // `layout-store.ts` carries a standing warning about.
+    expect(html).toContain('class="sb-disclosure-header"')
+    expect(html).toContain('class="sb-disclosure-reveal"')
+  })
+
   it('shows a placeholder gist until the snapshot arrives', () => {
     expect(html).toContain('Collecting...')
   })

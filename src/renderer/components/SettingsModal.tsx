@@ -35,6 +35,7 @@ import {
   formatDiagnosticsReport,
   formatMb,
   sortProcessesByMemory,
+  diagnosticsAppFootprintMb,
   diagnosticsGist,
   diagnosticsDefaultExpanded,
   DIAGNOSTICS_EXPANDED_SETTING_KEY,
@@ -1271,13 +1272,19 @@ export function DiagnosticsSection() {
   const [storedPreference, setStoredPreference] = useState<string | null>(null)
   /** Once the user has an opinion this session, stop re-deriving the default. */
   const userToggled = useRef(false)
+  const headerRef = useRef<HTMLButtonElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
   const bodyId = 'sb-diagnostics-body'
 
   useEffect(() => {
-    window.api.app.getDiagnostics().then(setSnapshot).catch((err) => {
-      log.warn('getDiagnostics failed', err)
-      setError(err instanceof Error ? err.message : String(err))
-    })
+    let cancelled = false
+    window.api.app.getDiagnostics()
+      .then((value) => { if (!cancelled) setSnapshot(value) })
+      .catch((err) => {
+        log.warn('getDiagnostics failed', err)
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -1298,6 +1305,13 @@ export function DiagnosticsSection() {
   const toggle = () => {
     userToggled.current = true
     const next = !expanded
+    // Collapsing marks the body `inert`, and the spec then blurs whatever was
+    // focused inside it straight to the document root. A keyboard user would
+    // lose their place with no indication of where focus went, so bring it
+    // back to the control they just operated.
+    if (!next && bodyRef.current?.contains(document.activeElement)) {
+      headerRef.current?.focus()
+    }
     setExpanded(next)
     window.api.settings.set(DIAGNOSTICS_EXPANDED_SETTING_KEY, String(next))
       .catch((err) => log.warn('diagnostics preference write failed', err))
@@ -1348,7 +1362,9 @@ export function DiagnosticsSection() {
   return (
     <div style={{ marginBottom: '20px' }}>
       <button
+        ref={headerRef}
         type="button"
+        className="sb-disclosure-header"
         onClick={toggle}
         aria-expanded={expanded}
         aria-controls={bodyId}
@@ -1359,7 +1375,6 @@ export function DiagnosticsSection() {
           width: 'calc(100% + 16px)',
           margin: '0 -8px',
           padding: '6px 8px',
-          background: 'transparent',
           border: 'none',
           borderRadius: 'var(--radius)',
           cursor: 'pointer',
@@ -1367,8 +1382,6 @@ export function DiagnosticsSection() {
           font: 'inherit',
           color: 'var(--text-primary)',
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)' }}
-        onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
       >
         <svg
           className="sb-disclosure-chevron"
@@ -1398,7 +1411,9 @@ export function DiagnosticsSection() {
         <span style={{
           marginLeft: 'auto',
           fontSize: '11px',
-          color: snapshot?.translated ? 'var(--warning)' : 'var(--text-muted)',
+          color: error
+            ? 'var(--error)'
+            : snapshot?.translated ? 'var(--warning)' : 'var(--text-muted)',
           fontVariantNumeric: 'tabular-nums',
           whiteSpace: 'nowrap',
           overflow: 'hidden',
@@ -1411,6 +1426,7 @@ export function DiagnosticsSection() {
       {/* `0fr` to `1fr` animates to the content's own height, so a longer
           process list cannot outgrow a hardcoded max-height. */}
       <div
+        ref={bodyRef}
         id={bodyId}
         className="sb-disclosure-reveal"
         inert={!expanded}
@@ -1455,7 +1471,7 @@ export function DiagnosticsBody({
   }
 
   const top = sortProcessesByMemory(snapshot.processes).slice(0, DIAGNOSTICS_TOP_PROCESSES)
-  const appMb = snapshot.processes.reduce((sum, p) => sum + p.memoryMb, 0)
+  const appMb = diagnosticsAppFootprintMb(snapshot.processes)
   const facts: Array<[string, string]> = [
     ['Chip', `${snapshot.arch}${snapshot.translated ? ' (running translated - install the native build)' : ''}`],
     ['OS', `${snapshot.platform} ${snapshot.osVersion}`],

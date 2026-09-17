@@ -122,8 +122,12 @@ export const DIAGNOSTICS_EXPANDED_SETTING_KEY = 'about.diagnosticsExpanded'
  * dropped rather than printed as "? terminals", because a question mark reads
  * as a fault. Zero is different from unknown and is still shown.
  */
+export function diagnosticsAppFootprintMb(processes: DiagnosticsProcess[]): number {
+  return processes.reduce((sum, p) => sum + p.memoryMb, 0)
+}
+
 export function diagnosticsGist(d: DiagnosticsSnapshot): string {
-  const appMb = d.processes.reduce((sum, p) => sum + p.memoryMb, 0)
+  const appMb = diagnosticsAppFootprintMb(d.processes)
   const segments = [d.translated ? `${d.arch} translated` : d.arch]
   if (d.livePtys !== null) {
     segments.push(`${d.livePtys} ${d.livePtys === 1 ? 'terminal' : 'terminals'}`)
@@ -136,20 +140,26 @@ export function diagnosticsGist(d: DiagnosticsSnapshot): string {
  * Whether the section starts open.
  *
  * A translated build - an x64 app on Apple silicon, or on Windows on ARM - is
- * slow for a reason the user can fix by installing the native build. That is
- * the only diagnostic here that is a call to action rather than a fact, so it
- * overrides the stored preference. Everything else respects what the user
- * chose last time.
+ * slow for a reason the user can fix by installing the native build, and it
+ * is the only diagnostic here that is a call to action rather than a fact. So
+ * it opens the section for a user who has never answered.
  *
- * `stored` is the raw settings string, which is null before it loads and can
- * be anything at all if it was hand-edited, so it is parsed strictly.
+ * It does NOT override a deliberate close, and the ordering here is the whole
+ * decision. Forcing it open on every visit would re-open a section the UI had
+ * just animated shut and told the user it remembered, which makes the saved
+ * preference silently inert for exactly the population that sees the warning
+ * most. The call to action survives the close anyway: `diagnosticsGist` keeps
+ * `arm64 translated` on the COLLAPSED row, in the warning colour.
+ *
+ * `stored` is the raw settings string. It is null before it loads and can be
+ * anything at all if it was hand-edited, so it is parsed strictly and any
+ * other value counts as "never answered".
  */
 export function diagnosticsDefaultExpanded(
   d: DiagnosticsSnapshot | null,
   stored: string | null,
 ): boolean {
-  if (d?.translated) return true
   if (stored === 'true') return true
   if (stored === 'false') return false
-  return false
+  return Boolean(d?.translated)
 }

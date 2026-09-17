@@ -17,6 +17,7 @@ import { describe, it, expect } from 'vitest'
 import {
   diagnosticsGist,
   diagnosticsDefaultExpanded,
+  diagnosticsAppFootprintMb,
   DIAGNOSTICS_EXPANDED_SETTING_KEY,
 } from '../../src/shared/diagnostics-report'
 import type { DiagnosticsSnapshot } from '../../src/shared/diagnostics-report'
@@ -95,12 +96,24 @@ describe('diagnosticsDefaultExpanded', () => {
     expect(diagnosticsDefaultExpanded(snapshot(), 'false')).toBe(false)
   })
 
-  it('forces open on a translated build even when the user closed it', () => {
-    expect(diagnosticsDefaultExpanded(snapshot({ translated: true }), 'false')).toBe(true)
+  it('opens itself on a translated build the user has never answered for', () => {
+    expect(diagnosticsDefaultExpanded(snapshot({ translated: true }), null)).toBe(true)
   })
 
-  it('forces open on a translated build before the preference has loaded', () => {
-    expect(diagnosticsDefaultExpanded(snapshot({ translated: true }), null)).toBe(true)
+  // The amber `arm64 translated` gist stays on the COLLAPSED row, so the
+  // call to action is still visible after a deliberate close. Re-opening the
+  // section on every visit would discard a preference the UI just told the
+  // user it saved, which is a worse trade than one less nag.
+  it('respects a deliberate close on a translated build, because the gist still warns', () => {
+    expect(diagnosticsDefaultExpanded(snapshot({ translated: true }), 'false')).toBe(false)
+  })
+
+  it('an explicit open still wins on a translated build', () => {
+    expect(diagnosticsDefaultExpanded(snapshot({ translated: true }), 'true')).toBe(true)
+  })
+
+  it('treats an unparseable stored value on a translated build as no answer', () => {
+    expect(diagnosticsDefaultExpanded(snapshot({ translated: true }), 'maybe')).toBe(true)
   })
 
   it('stays collapsed while the snapshot is still loading', () => {
@@ -114,5 +127,15 @@ describe('diagnosticsDefaultExpanded', () => {
 
   it('uses a namespaced settings key', () => {
     expect(DIAGNOSTICS_EXPANDED_SETTING_KEY).toBe('about.diagnosticsExpanded')
+  })
+})
+
+describe('diagnosticsAppFootprintMb', () => {
+  it('sums every process, and is the ONE formula the gist and the body share', () => {
+    expect(diagnosticsAppFootprintMb(snapshot().processes)).toBe(259)
+  })
+
+  it('is zero for no processes rather than NaN', () => {
+    expect(diagnosticsAppFootprintMb([])).toBe(0)
   })
 })
