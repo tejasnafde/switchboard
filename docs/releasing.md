@@ -46,6 +46,8 @@ through a pull request like everything else, and the tag is applied to `main`
 afterwards so it never points at a commit that only exists on a branch.
 
 ```bash
+set -euo pipefail                        # or the tag can outlive a failed step
+
 git switch -c release/v0.8.59
 npm version patch --no-git-tag-version   # or minor / major
 git commit -am 'v0.8.59'
@@ -66,6 +68,12 @@ then lands on the previous `main` commit and `release.yml` builds the wrong
 tree, which is the worst possible failure here because the result is a
 plausible-looking signed installer of the wrong code. `gh pr checks --watch`
 followed by a plain `gh pr merge` blocks until the merge is real.
+
+`set -euo pipefail` covers the same failure from the other side. The block
+above is meant to be pasted as a whole, and without `errexit` a non-zero exit
+from `gh pr checks --watch` (which is what a red check returns) or from
+`gh pr merge` does not stop the `git tag` two lines later. The tag would
+again land on the previous `main` commit.
 
 That is the whole procedure. Everything the operator used to verify by hand
 is a job in `release.yml`, so a green run means it was checked:
