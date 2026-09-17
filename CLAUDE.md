@@ -39,6 +39,12 @@ Nothing merges to main or ships in a release without, in order:
 Applies to every batch including "small" fixes. Releases additionally
 require green CI on main first (see docs/releasing.md).
 
+If the batch goes through a pull request, CodeRabbit reviews it automatically
+(config in `.coderabbit.yaml`, no workflow). It is a second opinion, not a
+replacement for step 2: it sees only the PR diff and it does not block the
+merge button. Read its findings, then fix or dismiss each one. Work merged
+from a local branch without a PR never gets reviewed by it.
+
 ## Build gate (2026-04-20)
 
 `npm run build` fails the entire build if typecheck or tests fail. The `prebuild` npm lifecycle hook chains `typecheck && test` before `electron-vite build`. This caught real regressions on the first run - see CHANGELOG.md.

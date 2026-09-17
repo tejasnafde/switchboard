@@ -39,10 +39,25 @@ post-upgrade data checks separately from automated results.
 
 ## TL;DR
 
+`main` is protected and admins are NOT exempt, so the old
+`npm version patch && git push --follow-tags` no longer works: it pushes the
+version-bump commit straight to `main` and GitHub rejects it. The bump goes
+through a pull request like everything else, and the tag is applied to `main`
+afterwards so it never points at a commit that only exists on a branch.
+
 ```bash
-npm version patch          # or minor / major
-git push --follow-tags
+git switch -c release/v0.8.59
+npm version patch --no-git-tag-version   # or minor / major
+git commit -am 'v0.8.59'
+gh pr create --fill --title 'v0.8.59'
+gh pr merge --merge --auto               # NOT --squash: see below
+
+git switch main && git pull
+git tag v0.8.59 && git push origin v0.8.59
 ```
+
+Merge, do not squash. A squash rewrites the commit, so a tag cut from the
+branch would point at an object that is not an ancestor of `main`.
 
 That is the whole procedure. Everything the operator used to verify by hand
 is a job in `release.yml`, so a green run means it was checked:

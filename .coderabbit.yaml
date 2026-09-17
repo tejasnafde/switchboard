@@ -1,0 +1,53 @@
+# CodeRabbit is a GitHub App, not a workflow: it reviews pull requests and has
+# no entry in .github/workflows. Install once at
+# https://github.com/apps/coderabbitai and grant it this repo. Free forever on
+# public repos.
+#
+# It reads the repo's own rules from CLAUDE.md rather than restating them here,
+# so a rule change lands in one place. See knowledge_base.code_guidelines.
+# Public repo, so the free open-source plan applies once the 14-day paid
+# trial that every new install starts with expires. No card is on file.
+enable_free_tier: true
+language: en-US
+
+reviews:
+  # `chill` comments on real problems only. `assertive` nitpicks whitespace.
+  profile: chill
+  # Do not block the merge button. The gate is ci.yml + the shipping checklist.
+  request_changes_workflow: false
+  poem: false
+  in_progress_fortune: false
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - '!**/package-lock.json'
+    - '!**/*.snap'
+    - '!videos/dist/**'
+    - '!docs/images/**'
+  path_instructions:
+    - path: '**'
+      instructions: >-
+        Flag any em dash (U+2014) as a review blocker. This repo bans them in
+        code, comments, UI copy, log strings, commit messages and docs.
+        Use ` - `, a comma, or two sentences.
+    - path: 'src/main/**/*.ts'
+      instructions: >-
+        Every catch block that does not re-throw must log through the scoped
+        logger from src/main/logger.ts. An empty catch is a bug. Bare console.*
+        is not allowed.
+    - path: 'src/shared/**/*.ts'
+      instructions: >-
+        This is the transport-agnostic contract layer. Importing `electron` or
+        `react` here is a defect: it is consumed by the preload, the Electron
+        host, the headless server and the Expo mobile app.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - CLAUDE.md
+      - docs/**/*.md
