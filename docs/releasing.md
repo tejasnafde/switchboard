@@ -50,7 +50,8 @@ git switch -c release/v0.8.59
 npm version patch --no-git-tag-version   # or minor / major
 git commit -am 'v0.8.59'
 gh pr create --fill --title 'v0.8.59'
-gh pr merge --merge --auto               # NOT --squash: see below
+gh pr checks --watch                     # blocks until the required checks settle
+gh pr merge --merge                      # NOT --squash, NOT --auto: see below
 
 git switch main && git pull
 git tag v0.8.59 && git push origin v0.8.59
@@ -58,6 +59,13 @@ git tag v0.8.59 && git push origin v0.8.59
 
 Merge, do not squash. A squash rewrites the commit, so a tag cut from the
 branch would point at an object that is not an ancestor of `main`.
+
+Do not add `--auto`. `gh pr merge --auto` only ENABLES auto-merge and returns
+at once, so the `git pull` below it can run before the merge happens. The tag
+then lands on the previous `main` commit and `release.yml` builds the wrong
+tree, which is the worst possible failure here because the result is a
+plausible-looking signed installer of the wrong code. `gh pr checks --watch`
+followed by a plain `gh pr merge` blocks until the merge is real.
 
 That is the whole procedure. Everything the operator used to verify by hand
 is a job in `release.yml`, so a green run means it was checked:
