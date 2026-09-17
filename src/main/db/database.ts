@@ -247,6 +247,15 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'sidebar_role')) {
       db.exec("ALTER TABLE conversations ADD COLUMN sidebar_role TEXT")
     }
+    // Migration (2026-09-17 - execution-root relocation): optimistic
+    // concurrency token for the conversation's execution root. Bumped in the
+    // same statement that moves `worktree_path`, so a client holding an old
+    // revision cannot drag the root back after a newer move committed.
+    // Nullable with no backfill: a row written before this column existed has
+    // never been relocated, and null reads as 0.
+    if (!cols.some((c) => c.name === 'execution_root_revision')) {
+      db.exec('ALTER TABLE conversations ADD COLUMN execution_root_revision INTEGER')
+    }
   } catch { /* ignore */ }
 
   // Migration (v0.1.20): track which launch config a session hydrated
@@ -855,9 +864,70 @@ export function setConversationWorktree(
   worktreePath: string | null,
   worktreeBranch: string | null,
 ): void {
+  // `resolveRootThreadId` for the reason recorded in CLAUDE.md: Claude
+  // rotates a chat's session id mid-conversation, the sidebar then hands that
+  // rotated id back as `session.id`, and a raw `WHERE id = ?` updates zero
+  // rows in silence. This setter shipped without the fallback and so could
+  // persist nothing at all after a rotation.
   getDb().prepare(
     `UPDATE conversations SET worktree_path = ?, worktree_branch = ?, updated_at = ? WHERE id = ?`
-  ).run(worktreePath, worktreeBranch, Date.now(), id)
+  ).run(worktreePath, worktreeBranch, Date.now(), resolveRootThreadId(id))
+}
+
+export interface StoredExecutionRoot {
+  projectPath: string | null
+  worktreePath: string | null
+  worktreeBranch: string | null
+  /** 0 for a row that has never been relocated, including a pre-migration row. */
+  revision: number
+}
+
+/** The committed execution root for a conversation, or null if there is no row. */
+export function getConversationExecutionRoot(id: string): StoredExecutionRoot | null {
+  const row = getDb().prepare(
+    'SELECT worktree_path, worktree_branch, execution_root_revision, project_path FROM conversations WHERE id = ?'
+  ).get(resolveRootThreadId(id)) as {
+    worktree_path: string | null
+    worktree_branch: string | null
+    execution_root_revision: number | null
+    project_path: string | null
+  } | undefined
+  if (!row) return null
+  return {
+    projectPath: row.project_path ?? null,
+    worktreePath: row.worktree_path ?? null,
+    worktreeBranch: row.worktree_branch ?? null,
+    revision: row.execution_root_revision ?? 0,
+  }
+}
+
+/**
+ * Move the durable execution root and bump its revision in ONE statement.
+ *
+ * Splitting these would make the revision decorative: a reader that saw the
+ * new path against the old revision would still admit a second client holding
+ * that old revision, which is exactly the race the token exists to stop.
+ *
+ * `COALESCE` rather than a backfill, so a database written before the column
+ * existed needs no migration pass. Returns the new revision, or null when the
+ * conversation does not exist - callers must not treat a missing row as a
+ * successful relocation.
+ */
+export function commitConversationExecutionRoot(
+  id: string,
+  worktreePath: string | null,
+  worktreeBranch: string | null,
+): number | null {
+  const rootId = resolveRootThreadId(id)
+  const info = getDb().prepare(
+    `UPDATE conversations
+        SET worktree_path = ?, worktree_branch = ?,
+            execution_root_revision = COALESCE(execution_root_revision, 0) + 1,
+            updated_at = ?
+      WHERE id = ?`
+  ).run(worktreePath, worktreeBranch, Date.now(), rootId)
+  if (info.changes === 0) return null
+  return getConversationExecutionRoot(rootId)?.revision ?? null
 }
 
 export function updateConversationSessionId(id: string, sessionId: string): void {
