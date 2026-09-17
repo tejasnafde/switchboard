@@ -2,6 +2,15 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.58 - Search and pagination in Settings > Archived
+
+### Added
+- **The Archived tab has a search box and a pager**, 10 rows per page. It used to render every archived conversation in one unbounded list, so a long archive was a wall to scroll. Search matches the title and the project path, which are the two things the row shows; whitespace splits the query into terms that must all match, so "auth acme" finds an auth chat in acme-console, and a single term stays a plain substring test. The pager sits ABOVE the rows on purpose: a full page is taller than the modal, so underneath them it lands below the fold. Filtering and paging are pure in `settings/archivedList.ts`, because the interesting part is the clamping - the page count shrinks under the caller both when typing narrows the list and when unarchiving the last row of the last page removes that page, and either would otherwise render a valid page number as an empty list.
+
+### Fixed
+- **Two silent catches in the Archived tab.** A failed `getArchivedConversations` call and a genuinely empty archive rendered identically, and a failed unarchive rolled back without a word. Both log now.
+- **The unarchive rollback put the row back in the wrong place.** It appended, so the row landed last in a list the backend orders by `updated_at DESC`. With paging it would also have reappeared on a different page than the one it was clicked on. It re-sorts on the same key instead.
+
 ## 0.8.57 - Re-record the tour's welcome slide
 
 ### Fixed
