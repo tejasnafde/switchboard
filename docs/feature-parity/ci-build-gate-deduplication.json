@@ -43,7 +43,7 @@
     "notExercised": [
       "The wall-clock saving is predicted from run 35192152144 step timings, where electron-vite started 81 seconds into the 93-second ubuntu Build step and roughly 95 seconds into the 108-second windows step. The post-change timing is not yet measured across several runs.",
       "release.yml keeps its own duplicate gate deliberately and was not changed, so no tag has been cut through the new pull-request-then-tag release procedure in docs/releasing.md.",
-      "CodeRabbit had not yet posted a review when this manifest was written, so the path_instructions in .coderabbit.yaml, including the em dash rule, are unverified against a real pull request."
+      "CodeRabbit reviewed pull request 78 and read .coderabbit.yaml with the CHILL profile, and its one finding was valid and fixed. The em dash path_instruction is still unverified, because no em dash appeared in this diff for it to catch."
     ]
   }
 }
