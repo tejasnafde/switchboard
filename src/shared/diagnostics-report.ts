@@ -100,3 +100,56 @@ export function formatDiagnosticsReport(d: DiagnosticsSnapshot): string {
   }
   return lines.join('\n')
 }
+
+// ─── About > Diagnostics disclosure ──────────────────────────────
+//
+// The section is collapsed by default. These two decisions are what keep that
+// from hiding something the user needed, and they are pure so they can be
+// tested without rendering the Settings modal.
+
+/** Settings key holding the user's last open/closed choice. */
+export const DIAGNOSTICS_EXPANDED_SETTING_KEY = 'about.diagnosticsExpanded'
+
+/**
+ * One line shown on the collapsed row.
+ *
+ * A disclosure that previews nothing is a blind door: the user has to open it
+ * to learn whether it was worth opening. This answers the three questions the
+ * section is usually opened for - which chip, how busy, how heavy - so most
+ * visits need no click at all.
+ *
+ * `livePtys` is null when the host cannot count cheaply. That segment is then
+ * dropped rather than printed as "? terminals", because a question mark reads
+ * as a fault. Zero is different from unknown and is still shown.
+ */
+export function diagnosticsGist(d: DiagnosticsSnapshot): string {
+  const appMb = d.processes.reduce((sum, p) => sum + p.memoryMb, 0)
+  const segments = [d.translated ? `${d.arch} translated` : d.arch]
+  if (d.livePtys !== null) {
+    segments.push(`${d.livePtys} ${d.livePtys === 1 ? 'terminal' : 'terminals'}`)
+  }
+  segments.push(formatMb(appMb))
+  return segments.join(' · ')
+}
+
+/**
+ * Whether the section starts open.
+ *
+ * A translated build - an x64 app on Apple silicon, or on Windows on ARM - is
+ * slow for a reason the user can fix by installing the native build. That is
+ * the only diagnostic here that is a call to action rather than a fact, so it
+ * overrides the stored preference. Everything else respects what the user
+ * chose last time.
+ *
+ * `stored` is the raw settings string, which is null before it loads and can
+ * be anything at all if it was hand-edited, so it is parsed strictly.
+ */
+export function diagnosticsDefaultExpanded(
+  d: DiagnosticsSnapshot | null,
+  stored: string | null,
+): boolean {
+  if (d?.translated) return true
+  if (stored === 'true') return true
+  if (stored === 'false') return false
+  return false
+}

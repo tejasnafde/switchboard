@@ -3067,3 +3067,15 @@ mark.sb-search-mark.active {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ─── Disclosure motion ─────────────────────────────────────────── */
+/* The Settings > About > Diagnostics disclosure animates through inline
+   styles, which cannot carry a media query. These two rules are the only
+   place the preference can be honoured, so the transition is opt-out here
+   rather than at the call site. */
+@media (prefers-reduced-motion: reduce) {
+  .sb-disclosure-reveal,
+  .sb-disclosure-chevron {
+    transition: none;
+  }
+}
