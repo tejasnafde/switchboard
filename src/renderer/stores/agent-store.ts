@@ -63,6 +63,13 @@ interface AgentSession {
   driftSuggestion?: { worktreePath: string; branch: string } | null
   /** Branch name in `worktreePath` (e.g. `sb/thread-abc123`). */
   worktreeBranch?: string | null
+  /**
+   * Optimistic-concurrency token for the execution root, from the backend.
+   * A relocation result or event carrying a LOWER revision than this is a
+   * superseded move and must be ignored, or two clients repaint each other's
+   * branch chip backwards forever.
+   */
+  executionRootRevision?: number
   /** Stable PTY handles already created by a backend-owned workspace transaction. */
   managedTerminalIds?: string[]
   /** Claude CLI session ID for --resume (from imported JSONL sessions) */
@@ -201,6 +208,14 @@ interface AgentStore {
     sessionId: string,
     worktreePath: string | null,
     worktreeBranch: string | null,
+  ) => void
+  /**
+   * Apply a root COMMITTED by the backend. Ignores a revision at or below the
+   * one already held, which is what lets several clients converge.
+   */
+  applyExecutionRoot: (
+    sessionId: string,
+    root: { path: string; branch: string | null; revision: number },
   ) => void
   requestScrollToMessage: (sessionId: string, messageId: string, query?: string) => void
   /** Bookmarks know only the timestamp at save time, so the click path uses
@@ -494,6 +509,25 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         // Following a worktree also resolves any pending drift suggestion.
         s.id === sessionId ? { ...s, worktreePath, worktreeBranch, driftSuggestion: null } : s,
       ),
+    })),
+
+  applyExecutionRoot: (sessionId, root) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s
+        if ((s.executionRootRevision ?? 0) >= root.revision) return s
+        // The backend stores a move back to the parent checkout as a null
+        // pointer, and the renderer must too: `worktreePath` set to the
+        // project path would render a worktree chip for the main checkout.
+        const isParent = root.path === s.projectPath
+        return {
+          ...s,
+          worktreePath: isParent ? null : root.path,
+          worktreeBranch: isParent ? null : root.branch,
+          executionRootRevision: root.revision,
+          driftSuggestion: null,
+        }
+      }),
     })),
 
   setDriftSuggestion: (sessionId, suggestion) =>

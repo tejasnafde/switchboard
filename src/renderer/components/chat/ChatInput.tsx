@@ -19,6 +19,8 @@ import {
 } from '@shared/models'
 import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
+import { describeRelocationOutcome } from '../../services/executionRootRelocation'
+import type { RelocationReason } from '@shared/execution-root-relocation'
 import { UnifiedProviderPicker } from './UnifiedProviderPicker'
 import { useSkillStore } from '../../stores/skill-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
@@ -845,14 +847,43 @@ export function ChatInput({
   // The ONE pointer swap: chip, IDE pane, terminals, and diff review all
   // derive from it. Shared by the branch picker and the drift Follow button
   // so future swap side effects cannot diverge between the two.
-  const swapWorktreePointer = (newCwd: string, branch: string) => {
+  /**
+   * The ONE relocation entry point: the drift Follow button and the branch
+   * picker both come through here.
+   *
+   * This used to write the pointer and the store directly, which is why
+   * Follow moved the branch chip and left the agent running in the old
+   * directory. It is now a request to the backend that OWNS the path, and the
+   * store is updated only from what that backend actually committed.
+   */
+  const swapWorktreePointer = (newCwd: string, branch: string, reason: RelocationReason = 'branch-picker') => {
     if (!sessionId) return
-    useAgentStore.getState().setWorktree(sessionId, newCwd, branch)
-    const conversationId = useAgentStore.getState().sessions.find((x) => x.id === sessionId)?.conversationId
-      ?? sessionId
-    window.api.app
-      .setConversationWorktree(conversationId, newCwd, branch)
-      .catch((err: unknown) => log.warn('persist worktree failed:', err))
+    const session = useAgentStore.getState().sessions.find((x) => x.id === sessionId)
+    const request = {
+      threadId: session?.conversationId ?? sessionId,
+      expectedRevision: session?.executionRootRevision ?? 0,
+      targetPath: newCwd,
+      targetBranch: branch,
+      machineId: session?.machineId ?? 'local',
+      reason,
+    }
+    void window.api.provider
+      .relocateExecutionRoot(request)
+      .then((result) => {
+        const view = describeRelocationOutcome(result)
+        if (view.applyRoot) useAgentStore.getState().applyExecutionRoot(sessionId, view.applyRoot)
+        if (view.clearSuggestion && !view.applyRoot) {
+          useAgentStore.getState().setDriftSuggestion(sessionId, null)
+        }
+        if (!view.notice) return
+        useAgentStore.getState().appendMessage(sessionId, {
+          id: `wt_relocate_${Date.now()}`,
+          role: 'system',
+          content: view.notice,
+          timestamp: Date.now(),
+        })
+      })
+      .catch((err: unknown) => log.warn('relocate execution root failed:', err))
   }
 
   const { repoRoot, driftSuggestion, orphanedPath, orphanedBranch } = useMemo(() => {
@@ -892,7 +923,7 @@ export function ChatInput({
   }, [sessionId, orphanedPath, orphanedBranch])
 
   const followDrift = () => {
-    if (driftSuggestion) swapWorktreePointer(driftSuggestion.worktreePath, driftSuggestion.branch)
+    if (driftSuggestion) swapWorktreePointer(driftSuggestion.worktreePath, driftSuggestion.branch, 'drift-follow')
   }
 
   // Lazy-load the file list the first time the user opens `@`. Cached on

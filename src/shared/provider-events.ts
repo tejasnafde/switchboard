@@ -109,6 +109,29 @@ export interface RuntimeWorktreeDriftEvent {
 }
 
 /**
+ * The conversation's execution root COMMITTED to a new directory.
+ *
+ * Distinct from `worktree.drift`, which is only a suggestion. This event is
+ * published after the provider is already running at `to.path` and the
+ * database row has been updated, so every client can converge without asking.
+ *
+ * `revision` is what makes convergence safe with more than one client
+ * attached: a client that receives an older revision than it already holds is
+ * looking at a superseded move and must ignore it, rather than repainting the
+ * branch chip backwards.
+ */
+export interface RuntimeExecutionRootChangedEvent {
+  type: 'session.execution-root-changed'
+  threadId: string
+  machineId: string
+  from: { path: string; branch: string | null }
+  to: { path: string; branch: string | null }
+  revision: number
+  reason: import('./execution-root-relocation').RelocationReason
+  continuity: import('./execution-root-relocation').RelocationContinuity
+}
+
+/**
  * A turn was refused because the model billed to extra usage and that pool is
  * unavailable. Separate from `error` so the renderer can remember the
  * (instance, model) pair and warn before the next send.
@@ -214,6 +237,7 @@ export type RuntimeEvent = (
   | RuntimeQuestionAnsweredEvent
   | RuntimeFileEditedEvent
   | RuntimeWorktreeDriftEvent
+  | RuntimeExecutionRootChangedEvent
   | RuntimeSpendBlockedEvent
   | RuntimeThreadReadEvent
   | RuntimePeerMessageEvent
