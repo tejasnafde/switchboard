@@ -1270,6 +1270,13 @@ export function DiagnosticsSection() {
   const [feedback, setFeedback] = useState<string | null>(null)
   const [expanded, setExpanded] = useState(false)
   const [storedPreference, setStoredPreference] = useState<string | null>(null)
+  /**
+   * `storedPreference` is null both before the read finishes and when there is
+   * no preference, so the default cannot be derived until this is true. A
+   * translated build whose snapshot arrived first would otherwise open, then
+   * shut again when the persisted "false" landed.
+   */
+  const [preferenceLoaded, setPreferenceLoaded] = useState(false)
   /** Once the user has an opinion this session, stop re-deriving the default. */
   const userToggled = useRef(false)
   const headerRef = useRef<HTMLButtonElement>(null)
@@ -1290,17 +1297,26 @@ export function DiagnosticsSection() {
   useEffect(() => {
     let cancelled = false
     window.api.settings.get(DIAGNOSTICS_EXPANDED_SETTING_KEY)
-      .then((value) => { if (!cancelled) setStoredPreference(typeof value === 'string' ? value : null) })
-      .catch((err) => log.warn('diagnostics preference read failed', err))
+      .then((value) => {
+        if (cancelled) return
+        setStoredPreference(typeof value === 'string' ? value : null)
+        setPreferenceLoaded(true)
+      })
+      .catch((err) => {
+        log.warn('diagnostics preference read failed', err)
+        // A failed read is an answer too: "no preference". Without this the
+        // section would never derive a default at all.
+        if (!cancelled) setPreferenceLoaded(true)
+      })
     return () => { cancelled = true }
   }, [])
 
   // The default depends on two async loads, so it is derived rather than set
   // once - the snapshot can arrive after the preference and flip `translated`.
   useEffect(() => {
-    if (userToggled.current) return
+    if (userToggled.current || !preferenceLoaded) return
     setExpanded(diagnosticsDefaultExpanded(snapshot, storedPreference))
-  }, [snapshot, storedPreference])
+  }, [snapshot, storedPreference, preferenceLoaded])
 
   const toggle = () => {
     userToggled.current = true
