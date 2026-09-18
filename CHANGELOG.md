@@ -2,6 +2,26 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.60 - Follow moves the agent
+
+### Fixed
+- **"Follow" now relocates the conversation's real execution root, not just the branch chip.** It used to write `worktree_path` and update the store while the live provider kept running in the directory it was spawned in. The screen and the process then disagreed: the next tool call came from the old checkout, the drift watcher saw it, and the app offered to follow again, forever. Relocation is now a backend transaction with one commit boundary - a successful provider start at the target. Before it nothing durable changes; after it the provider, the registry, the database row, the drift baseline, the notebooks and every connected client move together. Verified live on both providers: after the move the agent's own shell reports the worktree as its `pwd`, writes land there and not in the checkout, and the native session id is byte-identical across the move, so the conversation is carried rather than restarted.
+- **New terminals opened in the parent checkout after following a worktree.** Five creation entry points read `session.projectPath` directly. All seven now resolve through one helper, guarded by a test that fails on a new entry point that forgets rather than on the five known ones.
+- **`setConversationWorktree` never resolved through `resolveRootThreadId`.** After Claude rotated a chat's session id mid-conversation and the sidebar handed that rotated id back, the UPDATE matched zero rows and the worktree pointer was silently not saved at all. This is the third instance of the trap `CLAUDE.md` records.
+- **Healing a deleted worktree left the provider inside it.** The orphan-heal path still used the legacy direct setter, which is verbatim the bug this work exists to fix, and worse here because the directory no longer exists. It goes through the transaction now.
+- **Two ways a stale drift check reported the follow-back loop.** Command evidence is deferred on purpose, so a Follow can land before it is judged - and it was then judged against the new home, making every path in the checkout the user had just left look like drift. Separately, the drift check shells out to git and realpath, so it yields, and a relocation committing in that window meant the result was published against a root the thread no longer had. Both are dropped now.
+- **A move back to the parent checkout was stored as a worktree pointer at the checkout.** On macOS `/var` is a symlink to `/private/var`, so a realpath'd target never equalled the raw `project_path` column and the chip kept showing a worktree the user had left. The registry realpaths once, and the renderer takes `isWorktree` from the backend rather than comparing paths it cannot realpath.
+
+### Added
+- **`execution_root_revision` on `conversations`**, bumped in the same statement that moves the pointer. Splitting them would make the token decorative: a reader seeing the new path against the old revision would still admit a client holding that old revision. It is the optimistic-concurrency token that lets several clients converge, and it is carried through session hydration - without that, a conversation relocated once failed every later relocation as stale, forever, after a restart.
+- **`session.execution-root-changed`**, published after the provider is already running at the new root. Revision-guarded, so a client that was asleep cannot repaint the branch chip backwards.
+- Remote drift suggestions are no longer dropped. They were skipped because following meant writing a remote absolute path into local routing; the renderer now hands the path back to the machine that produced it and never interprets it.
+
+### Changed
+- OpenCode is refused with `continuity-unsupported` rather than silently restarted empty, because its ACP adapter never captures `loadSession`. A caller can opt into a cold restart explicitly.
+- A Follow clicked mid-turn queues and commits at the turn boundary instead of killing the turn.
+- React Native/iOS and native Android are unchanged and staged behind `execution_root_relocation_v1`; neither gained a Follow action. Existing terminal panes are not relocated either - new terminals use the new root, open shells stay where they are.
+
 ## 0.8.58 - Search and pagination in Settings > Archived
 
 ### Added
