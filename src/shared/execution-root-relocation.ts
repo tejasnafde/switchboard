@@ -221,8 +221,12 @@ export function classifyRelocationPreconditions(
 
   if (!state.threadIsLive) return { verdict: 'proceed-detached' }
 
-  if (state.turnActive || state.preparingTurn) return { verdict: 'queue' }
-
+  // Continuity is a provider CAPABILITY, not a timing condition, so it is
+  // refused before the turn check. Queued first, it would be answered with
+  // `ok: queued`, then rejected at the turn boundary where the failure only
+  // reaches a log - and a drift suggestion almost always arrives during a
+  // turn, so that is the common path for a provider that cannot carry its
+  // thread, not a corner of it.
   if (!CONTINUITY_CAPABLE_PROVIDERS.has(state.provider) && !request.acceptContinuityLoss) {
     return {
       verdict: 'reject',
@@ -230,6 +234,8 @@ export function classifyRelocationPreconditions(
       message: 'This provider cannot carry the conversation into another directory. Restarting it here would lose the thread.',
     }
   }
+
+  if (state.turnActive || state.preparingTurn) return { verdict: 'queue' }
 
   return { verdict: 'proceed' }
 }

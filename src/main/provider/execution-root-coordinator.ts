@@ -144,6 +144,14 @@ export class ExecutionRootCoordinator {
     const result = await this.relocate(pending.request)
     if (!result.ok) {
       log.warn(`queued relocation for ${threadId} failed: ${result.code} ${result.message}`)
+      // The client was told `queued` and is still showing the suggestion. A
+      // log entry is not an answer: without this the Follow silently never
+      // happens and the user never learns why.
+      this.host.publish({
+        type: 'error',
+        threadId,
+        message: `Could not follow the worktree: ${result.message}`,
+      })
     }
   }
 

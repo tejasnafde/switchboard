@@ -873,6 +873,13 @@ export function App() {
       if (targetId !== session.id) {
         const live = useAgentStore.getState().sessions.find((s) => s.id === targetId)
         window.api.routing.bind(targetId, live?.machineId ?? effectiveMachineId)
+        // A session adopted at startup was created without a revision, and
+        // this branch returns before the hydration below. Leaving it at 0
+        // makes the next Follow fail as stale on any conversation that has
+        // been relocated before. The setter only ever raises it.
+        if (loaded?.meta?.executionRootRevision) {
+          useAgentStore.getState().syncExecutionRootRevision(targetId, loaded.meta.executionRootRevision)
+        }
         placeAndEvict(targetId)
         return
       }

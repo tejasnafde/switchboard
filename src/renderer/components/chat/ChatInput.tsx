@@ -881,14 +881,23 @@ export function ChatInput({
       .then((result) => {
         const view = describeRelocationOutcome(result)
         if (view.applyRoot) useAgentStore.getState().applyExecutionRoot(sessionId, view.applyRoot)
+        // Our revision was wrong and the refusal carried the right one.
+        // Adopting it is what lets a retry succeed instead of failing
+        // identically forever against the same stale number.
+        if (view.syncRevision !== null) {
+          useAgentStore.getState().syncExecutionRootRevision(sessionId, view.syncRevision)
+        }
         if (view.clearSuggestion && !view.applyRoot) {
           useAgentStore.getState().setDriftSuggestion(sessionId, null)
         }
-        if (!view.notice) return
+        const notice = view.applyRoot ? successNotice ?? view.notice : view.notice
+        if (!notice) return
         useAgentStore.getState().appendMessage(sessionId, {
-          id: `wt_relocate_${Date.now()}`,
+          // A caller-supplied id is deterministic, so `appendMessage`'s dedupe
+          // absorbs a repeated heal instead of stacking identical notices.
+          id: noticeId ?? `wt_relocate_${Date.now()}`,
           role: 'system',
-          content: view.notice,
+          content: notice,
           timestamp: Date.now(),
         })
       })

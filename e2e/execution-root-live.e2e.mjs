@@ -26,7 +26,7 @@
 import { _electron as electron } from 'playwright'
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
-import { tmpdir } from 'node:os'
+import { tmpdir, homedir } from 'node:os'
 import { join } from 'node:path'
 import { prepareElectronTestRuntime } from './electron-runtime.mjs'
 
@@ -42,9 +42,10 @@ if (!existsSync(join(repoRoot, 'out/main/index.js'))) {
 }
 
 // Credential homes, so this never depends on whatever the desktop app is
-// currently pointed at.
-const CLAUDE_CONFIG_DIR = '/Users/tejas/.claude-tech-team'
-const CODEX_HOME = '/Users/tejas/.codex-default'
+// currently pointed at. Overridable, because the profile names below are one
+// developer's and a hardcoded /Users path helps nobody else run this.
+const CLAUDE_CONFIG_DIR = process.env.SB_LIVE_CLAUDE_HOME ?? join(homedir(), '.claude-tech-team')
+const CODEX_HOME = process.env.SB_LIVE_CODEX_HOME ?? join(homedir(), '.codex-default')
 
 let failures = 0
 const check = (cond, msg) => {

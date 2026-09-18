@@ -14,8 +14,8 @@
  * tested in renderer-execution-root.test.ts.
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFileSync, readdirSync } from 'node:fs'
+import { resolve, join, relative } from 'node:path'
 
 const REPO_ROOT = resolve(__dirname, '../..')
 
@@ -57,5 +57,40 @@ describe('terminal cwd entry points', () => {
   it('keeps the helper as the only place the fallback is written', () => {
     const helper = source('src/renderer/services/executionRoot.ts')
     expect(helper).toContain('resolveExecutionRoot')
+  })
+})
+
+/**
+ * The list above is maintained by hand, so on its own it proves nothing about
+ * a SIXTH entry point added somewhere else. This walks the renderer instead
+ * and finds every call that opens a terminal, then requires each calling file
+ * to be one we already guard.
+ *
+ * It fails loudly on a new call site rather than silently passing, which is
+ * the whole point of the guard.
+ */
+const TERMINAL_OPENING_CALLS = /\b(addWindow|addPaneToWindow|addPaneToActiveWindow|splitActiveWindow)\s*\(/
+
+function rendererSources(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) rendererSources(full, out)
+    else if (/\.tsx?$/.test(entry.name)) out.push(full)
+  }
+  return out
+}
+
+describe('discovery', () => {
+  it('finds no terminal-creation call outside the guarded files', () => {
+    const guarded = new Set([
+      ...TERMINAL_CWD_ENTRY_POINTS,
+      // Owns the store methods themselves, so it is not a caller.
+      'src/renderer/stores/terminal-store.ts',
+    ])
+    const offenders = rendererSources(resolve(REPO_ROOT, 'src/renderer'))
+      .filter((file) => TERMINAL_OPENING_CALLS.test(readFileSync(file, 'utf8')))
+      .map((file) => relative(REPO_ROOT, file).replaceAll('\\', '/'))
+      .filter((file) => !guarded.has(file))
+    expect(offenders).toEqual([])
   })
 })

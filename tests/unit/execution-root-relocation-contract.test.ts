@@ -106,6 +106,28 @@ describe('classifyRelocationPreconditions', () => {
     }))).toMatchObject({ verdict: 'reject', code: 'stale-revision' })
   })
 
+  // Regression for a queued-then-rejected path: an OpenCode Follow arriving
+  // mid-turn was answered `ok: queued`, then refused at the turn boundary
+  // where the failure only reached a log. The user saw a Follow that never
+  // happened and never learned why.
+  it('refuses an unsupported provider DURING a turn, rather than queuing it', () => {
+    expect(classifyRelocationPreconditions(state({ provider: 'opencode', turnActive: true })))
+      .toMatchObject({ verdict: 'reject', code: 'continuity-unsupported' })
+  })
+
+  it('still queues a capable provider during a turn', () => {
+    expect(classifyRelocationPreconditions(state({ provider: 'codex', turnActive: true })))
+      .toEqual({ verdict: 'queue' })
+  })
+
+  it('queues an unsupported provider that accepted the continuity loss', () => {
+    expect(classifyRelocationPreconditions(state({
+      provider: 'opencode',
+      turnActive: true,
+      request: { ...state().request, acceptContinuityLoss: true },
+    }))).toEqual({ verdict: 'queue' })
+  })
+
   it('reports an unsupported provider rather than silently dropping context', () => {
     expect(classifyRelocationPreconditions(state({ provider: 'opencode' })))
       .toMatchObject({ verdict: 'reject', code: 'continuity-unsupported' })

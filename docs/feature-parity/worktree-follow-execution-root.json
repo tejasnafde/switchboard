@@ -89,7 +89,7 @@
       "e2e/execution-root-live.e2e.mjs relocates a LIVE agent on both providers, against real credential homes registered as oauth_dir provider instances. Per provider: a turn runs in the project checkout, the thread is relocated to a real worktree, then a second turn runs `pwd > where.txt` with the agent's own shell tool. The file lands in the WORKTREE and not in the checkout, its contents equal the worktree path, and the native session id is byte-identical before and after - so the provider was restarted in the new directory with its conversation intact, not started fresh."
     ],
     "hardware": [
-      "Live agent relocation on this Mac, both providers, against real subscription credentials: Claude via /Users/tejas/.claude-tech-team and Codex via /Users/tejas/.codex-default. Each ran two real billed turns. Both preserved their native session id across the move and executed the post-move shell command inside the worktree."
+      "Live agent relocation on this Mac, both providers, against real subscription credentials: Claude via $HOME/.claude-tech-team and Codex via $HOME/.codex-default. Each ran two real billed turns. Both preserved their native session id across the move and executed the post-move shell command inside the worktree."
     ],
     "notExercised": [
       "Remote relocation over an SSH-tunnelled backend has not been exercised. The renderer no longer drops remote drift suggestions, and the request routes on threadId, but no remote session has been followed.",
