@@ -29,8 +29,12 @@ import {
 
 const log = createMainLogger('provider:execution-root')
 
-/** Opaque to this module: only the host knows what restarting a provider needs. */
-export type ProviderHandle = { readonly __brand: unique symbol }
+/**
+ * Whatever the host needs to start the provider again. Deliberately opaque:
+ * this module passes it back and never looks inside, so only the host has to
+ * agree with itself about the shape.
+ */
+export type ProviderHandle = object
 
 export type TargetResolution =
   | { ok: true; path: string; branch: string | null }

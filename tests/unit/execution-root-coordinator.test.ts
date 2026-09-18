@@ -17,7 +17,6 @@ import type { RelocateExecutionRootRequest } from '../../src/shared/execution-ro
 import {
   ExecutionRootCoordinator,
   type ExecutionRootHost,
-  type ProviderHandle,
 } from '../../src/main/provider/execution-root-coordinator'
 
 const PROJECT = '/repo/app'
@@ -72,7 +71,7 @@ function makeHost(): ExecutionRootHost {
     detachProvider: async () => {
       calls.push('detach')
       if (detachThrows) throw new Error('adapter would not stop')
-      return { threadId: 't1' } as unknown as ProviderHandle
+      return { threadId: 't1' }
     },
     attachProvider: async (_handle, path, mode) => {
       calls.push(`attach:${path}`)

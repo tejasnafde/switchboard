@@ -933,7 +933,7 @@ export class ProviderRegistry implements PeerToolHost {
         try {
           const snapshot = await stopSession(threadId)
           if (!snapshot) throw new Error('The provider session disappeared during relocation')
-          return { snapshot, sourcePath, gate, threadId } as unknown as ProviderHandle
+          return { snapshot, sourcePath, gate, threadId }
         } catch (err) {
           // Every exit from here that is not a handle must drop the gate, or
           // this thread's events are staged for the life of the process and
@@ -943,7 +943,7 @@ export class ProviderRegistry implements PeerToolHost {
         }
       },
       attachProvider: async (opaque, path, mode) => {
-        const handle = opaque as unknown as RelocationHandle
+        const handle = opaque as RelocationHandle
         const restoring = mode === 'restore'
         const opts: SessionStartOpts = {
           threadId: handle.threadId,
