@@ -589,6 +589,14 @@ export class ProviderRegistry implements PeerToolHost {
       if (!cwd) return
       const event = await run(this.driftWatcher, cwd)
       if (!event) return
+      // The check shells out to git and realpath, so it yields. A relocation
+      // can commit in that window, and publishing now would suggest following
+      // back to where the user just left. The result was computed against a
+      // root this thread no longer has, so it is not evidence of anything.
+      if (this.sessionCwd.get(threadId) !== cwd) {
+        log.info(`dropping drift result for ${threadId} - the root moved while it was being checked`)
+        return
+      }
       log.info('worktree drift detected', { threadId, worktree: event.worktreePath, branch: event.branch })
       this.bus.publish(event)
     } catch (err) {
