@@ -1290,7 +1290,7 @@ export function DiagnosticsSection() {
   useEffect(() => {
     let cancelled = false
     window.api.settings.get(DIAGNOSTICS_EXPANDED_SETTING_KEY)
-      .then((value) => { if (!cancelled) setStoredPreference((value as string | null) ?? null) })
+      .then((value) => { if (!cancelled) setStoredPreference(typeof value === 'string' ? value : null) })
       .catch((err) => log.warn('diagnostics preference read failed', err))
     return () => { cancelled = true }
   }, [])
