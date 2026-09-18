@@ -1,0 +1,97 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "worktree-follow-execution-root",
+  "summary": "Make Follow relocate the conversation's real execution root through one backend-owned transaction: the provider, the durable pointer, the drift baseline, dependent surfaces and every client move together, or nothing does.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/services/executionRoot.ts",
+        "src/renderer/services/executionRootRelocation.ts",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/components/terminal/TerminalStrip.tsx",
+        "src/renderer/components/terminal/TerminalWindow.tsx",
+        "src/renderer/components/CommandPalette.tsx",
+        "src/renderer/App.tsx",
+        "src/renderer/hooks/useTerminalLifecycle.ts",
+        "src/preload/index.ts",
+        "tests/unit/renderer-execution-root.test.ts",
+        "tests/unit/terminal-cwd-execution-root.test.ts",
+        "tests/unit/relocation-outcome.test.ts",
+        "tests/unit/apply-execution-root.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "execution_root_relocation_v1",
+      "followUpRelease": "React Native/iOS Follow action after the shared contract lands on main",
+      "evidence": [
+        "src/shared/execution-root.ts",
+        "src/shared/execution-root-relocation.ts",
+        "tests/unit/execution-root.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "execution_root_relocation_v1",
+      "followUpRelease": "Native Android Follow action after the shared contract lands on main",
+      "evidence": [
+        "src/shared/execution-root.ts",
+        "src/shared/execution-root-relocation.ts",
+        "tests/unit/execution-root-relocation-contract.test.ts"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/execution-root.ts",
+        "src/shared/execution-root-relocation.ts",
+        "src/shared/provider-events.ts",
+        "src/shared/ipc-channels.ts",
+        "src/main/provider/execution-root-coordinator.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/execution-root.test.ts",
+        "tests/unit/execution-root-relocation-contract.test.ts",
+        "tests/unit/execution-root-coordinator.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "tests/unit/execution-root-db.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "docs/plans/2026-08-24-execution-root-relocation-design.md",
+        "src/shared/provider-events.ts",
+        "src/shared/ipc-channels.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed for main and renderer; eslint --max-warnings=0 passed on every changed TypeScript file, which is what the pre-commit hook runs on staged files.",
+      "npm test passed 384 files / 3,724 tests with 3 skipped. Every commit on this branch went through the repository pre-commit gate, which runs the same suite.",
+      "tests/unit/execution-root-coordinator.test.ts drives the transaction against a fake host and pins the paths a live registry makes hard to reach: rollback after a failed target start, a failed rollback reported separately, a rollback when the conversation row vanished before the commit, the revision changing during async validation, a second relocation refused while one holds the thread, and queue/supersede/drop behaviour around a turn boundary.",
+      "tests/unit/execution-root.test.ts pins machine-aware and Windows-safe containment and rebasing, including that /repo/app-old is not inside /repo/app.",
+      "tests/unit/execution-root-db.test.ts pins that the revision is bumped in the same statement as the pointer, and that both accessors resolve a rotated Claude session id to the root conversation.",
+      "tests/unit/terminal-cwd-execution-root.test.ts is a source guard over all seven terminal-creation entry points, so a NEW entry point that reads projectPath fails the suite."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Nothing here has been exercised in the running app. No human has clicked Follow against a real worktree, and no provider has actually been stopped and restarted at a new cwd by this code path.",
+      "Claude and Codex continuity is reasoned from their existing resume preflights, not observed: Claude re-runs ensureClaudeSessionResumable against its session cwd before every query, and Codex re-sends the cwd on every turn/start. Neither has been confirmed against a live session after a relocation.",
+      "The OpenCode continuity-unsupported refusal has not been exercised against a live OpenCode server.",
+      "Remote relocation over an SSH-tunnelled backend has not been exercised. The renderer no longer drops remote drift suggestions, and the request routes on threadId, but no remote session has been followed.",
+      "EXISTING terminal panes are NOT yet reconciled. New terminals open in the followed worktree, but a shell already open stays where it is; the shell integration markers and the pane-move rules are outstanding. No pane is written to, so nothing regresses.",
+      "Drift evidence is not yet revision-aware, and command classification still treats any absolute path in a shell command as evidence. A drift check that started before a relocation can still publish against the old root, and reading a file in another worktree can still be read as movement.",
+      "React Native/iOS and native Android have no Follow action. Android still renders drift as a passive notice and mobile still ignores the event; both are unchanged, so nothing unflagged ships there."
+    ]
+  }
+}
