@@ -2,6 +2,18 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.59 - Diagnostics folds away
+
+### Changed
+- **Settings > About > Diagnostics is collapsed by default.** The page is opened to read a version number far more often than to debug a slow machine, but eleven lines of host trivia sat above the fold permanently. The collapsed row carries a gist - `arm64 - 12 terminals - 259 MiB` - so it previews its own contents instead of being a blind door, and most visits now need no click at all. The snapshot still loads on mount rather than on expand: collecting on click would put a visible "Collecting..." delay on an interaction that should feel instant, and it costs one IPC call either way. The open state persists under `about.diagnosticsExpanded`; an absent key means "no preference" and resolves to collapsed, so older databases need no backfill.
+- **A translated build opens the section for a user who has never answered, and then respects a deliberate close.** An x64 app under Apple silicon translation is slow for a reason the user can fix, and it is the only diagnostic here that is a call to action rather than a fact. It is not re-opened on every visit: the Settings modal unmounts when closed, so forcing it open on each mount discarded a preference the UI had just animated shut and told the user it saved - inert for exactly the population that sees the warning most. The call to action survives the close, because the gist keeps `arm64 translated` on the collapsed row in the warning colour.
+
+### Fixed
+- **A click before the snapshot resolved could suppress the translated override for the whole session.** The "user has an opinion" flag was set by any click, including one that landed before `translated` was even known. Preference precedence replaces the override, so an explicit answer wins and an unanswered user still gets the warning.
+- **Collapsing the panel lost keyboard focus.** The body is marked `inert` while closed, and the spec then blurs whatever was focused inside it straight to the document root. Focus returns to the header.
+- **Hover was an inline `style.background` write** while the JSX prop kept rendering the same literal - the DOM-versus-React divergence `layout-store.ts` carries a standing warning about. Hover and a themed `:focus-visible` ring moved to `.sb-disclosure-header`; the button had no focus ring at all before, unlike every sibling header.
+- The gist and the Memory row were the same `reduce` written twice with no test comparing them, and a failed collection rendered "unavailable" in the same grey as a healthy machine. One shared `diagnosticsAppFootprintMb`, and the error colour now matches the expanded body.
+
 ## 0.8.58 - Search and pagination in Settings > Archived
 
 ### Added
