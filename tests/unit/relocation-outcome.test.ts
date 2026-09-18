@@ -80,7 +80,44 @@ describe('queued behind a running turn', () => {
   })
 })
 
+describe('the stale-revision self-heal', () => {
+  // The bug this exists for: reopen a conversation that has been relocated
+  // once, and the client starts at revision 0 against a DB revision of 1.
+  // Every Follow is then refused as stale, identically, forever. The refusal
+  // carries the right number, so adopting it makes the retry work.
+  it('adopts the revision the refusal reported', () => {
+    const view = describeRelocationOutcome({
+      ok: false, code: 'stale-revision', message: 'moved', root,
+    })
+    expect(view.syncRevision).toBe(3)
+  })
+
+  it('does not move anything while adopting it', () => {
+    const view = describeRelocationOutcome({
+      ok: false, code: 'stale-revision', message: 'moved', root,
+    })
+    expect(view.applyRoot).toBeNull()
+    expect(view.clearSuggestion).toBe(false)
+  })
+
+  it('is not set for any other outcome', () => {
+    for (const code of ['busy', 'target-missing', 'rollback-failed', 'source-stop-failed']) {
+      expect(describeRelocationOutcome(fail(code)).syncRevision).toBeNull()
+    }
+    expect(describeRelocationOutcome(ok('relocated')).syncRevision).toBeNull()
+    expect(describeRelocationOutcome(ok('queued')).syncRevision).toBeNull()
+  })
+})
+
 describe('failures', () => {
+  it('reports a failed stop as final, with nothing moved', () => {
+    const view = describeRelocationOutcome(fail('source-stop-failed'))
+    expect(view.isError).toBe(true)
+    expect(view.retryable).toBe(false)
+    expect(view.applyRoot).toBeNull()
+    expect(view.notice).toContain('nothing moved')
+  })
+
   it('explains a stale revision as something to retry', () => {
     const view = describeRelocationOutcome(fail('stale-revision'))
     expect(view.isError).toBe(true)

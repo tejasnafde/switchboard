@@ -50,8 +50,15 @@ export interface RelocationSessionState {
 }
 
 export interface ExecutionRootHost {
-  /** The committed root, or null when the thread is unknown to this backend. */
-  currentRoot(threadId: string): ExecutionRoot | null
+  /**
+   * The committed root, or null when the thread is unknown to this backend.
+   *
+   * `machineId` comes from the REQUEST, and is passed on every call rather
+   * than stashed: this host serves concurrent relocations for different
+   * threads, and a single shared field would let one request's machine
+   * identity be read by another that happened to be mid-await.
+   */
+  currentRoot(threadId: string, machineId: string): ExecutionRoot | null
   sessionState(threadId: string): RelocationSessionState | null
   /**
    * Verify the target ON THE OWNING MACHINE and resolve its real branch.
@@ -60,8 +67,16 @@ export interface ExecutionRootHost {
   resolveTarget(currentRoot: ExecutionRoot, targetPath: string): Promise<TargetResolution>
   /** Drain and stop the provider, returning everything needed to start it again. */
   detachProvider(threadId: string): Promise<ProviderHandle>
-  /** Start the provider at `path`, preserving its native thread where it can. */
-  attachProvider(handle: ProviderHandle, path: string): Promise<AttachResult>
+  /**
+   * Start the provider at `path`, preserving its native thread where it can.
+   *
+   * `mode` is explicit because the host must behave differently on a rollback
+   * (discard events staged by the failed target, publish provider identity)
+   * and inferring it by comparing `path` to the source was a string compare
+   * that a trailing separator or a realpath could silently get wrong - which
+   * would have left the restored session's output staged forever.
+   */
+  attachProvider(handle: ProviderHandle, path: string, mode: 'target' | 'restore'): Promise<AttachResult>
   /** Persist the pointer and bump the revision atomically. Null when no row matched. */
   commitRoot(threadId: string, path: string, branch: string | null): number | null
   /**
@@ -113,7 +128,7 @@ export class ExecutionRootCoordinator {
     const pending = this.queued.get(threadId)
     if (!pending) return
     this.queued.delete(threadId)
-    const current = this.host.currentRoot(threadId)
+    const current = this.host.currentRoot(threadId, pending.request.machineId)
     if (!current || current.revision !== pending.request.expectedRevision) {
       log.info('dropping queued relocation - the root moved while it waited', {
         threadId,
@@ -129,7 +144,7 @@ export class ExecutionRootCoordinator {
   }
 
   async relocate(request: RelocateExecutionRootRequest): Promise<RelocateExecutionRootResult> {
-    const currentRoot = this.host.currentRoot(request.threadId)
+    const currentRoot = this.host.currentRoot(request.threadId, request.machineId)
     if (!currentRoot) {
       return this.fail('unknown-thread', 'This conversation is not known to this backend.', unknownRoot(request))
     }
@@ -174,7 +189,7 @@ export class ExecutionRootCoordinator {
     // or a queued relocation on another thread of the same conversation, may
     // have committed in the meantime. Re-check before anything is stopped:
     // this is the last point where abandoning is free.
-    const rootNow = this.host.currentRoot(request.threadId)
+    const rootNow = this.host.currentRoot(request.threadId, request.machineId)
     if (!rootNow) {
       return this.fail('unknown-thread', 'The conversation disappeared during validation.', rootAtAdmission)
     }
@@ -188,9 +203,20 @@ export class ExecutionRootCoordinator {
 
     if (detached) return this.commitDetached(request, rootNow, target)
 
-    const handle = await this.host.detachProvider(request.threadId)
+    let handle: ProviderHandle
+    try {
+      handle = await this.host.detachProvider(request.threadId)
+    } catch (err) {
+      // Nothing has moved and there is nothing to roll back: the durable
+      // pointer and the runtime are both untouched. Reported separately from
+      // a failed START, because the adapter may be half torn down and a
+      // retry is not obviously safe.
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`could not stop ${request.threadId} for relocation`, err)
+      return this.fail('source-stop-failed', message, rootNow)
+    }
 
-    const attached = await this.host.attachProvider(handle, target.path)
+    const attached = await this.host.attachProvider(handle, target.path, 'target')
     if (!attached.ok) {
       return this.rollback(request, rootNow, handle, attached.code, attached.message)
     }
@@ -275,7 +301,7 @@ export class ExecutionRootCoordinator {
     message: string,
   ): Promise<RelocateExecutionRootResult> {
     try {
-      const restored = await this.host.attachProvider(handle, from.path)
+      const restored = await this.host.attachProvider(handle, from.path, 'restore')
       if (!restored.ok) throw new Error(restored.message)
     } catch (err) {
       log.error(`could not restore ${request.threadId} to ${from.path}`, err)

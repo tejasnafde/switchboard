@@ -848,6 +848,7 @@ export function App() {
           rootThreadId?: string
           worktreePath?: string | null
           worktreeBranch?: string | null
+          executionRootRevision?: number
           worktreeId?: string | null
           providerInstanceId?: string | null
           runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'full-access' | null
@@ -907,6 +908,7 @@ export function App() {
         worktreeId: loaded?.meta?.worktreeId ?? creationSnapshot?.worktreeId ?? null,
         worktreePath: loaded?.meta?.worktreePath ?? session.worktreePath ?? null,
         worktreeBranch: loaded?.meta?.worktreeBranch ?? session.worktreeBranch ?? null,
+        executionRootRevision: loaded?.meta?.executionRootRevision ?? 0,
         managedTerminalIds: creationSnapshot?.startupReceipt?.terminalIds,
         resumeSessionId: loaded?.meta?.forkMetadata?.resumeMode === 'transcript-handoff'
           ? undefined

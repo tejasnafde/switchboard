@@ -7,6 +7,7 @@ import {
   isPathWithinRoot,
   rebaseWithinRoot,
   describeExecutionRoot,
+  samePath,
 } from '../../src/shared/execution-root'
 
 describe('resolveExecutionRoot', () => {
@@ -181,5 +182,24 @@ describe('describeExecutionRoot', () => {
       worktreePath: '/repo/app/.switchboard/worktrees/feat',
       worktreeBranch: 'sb/feat',
     }))).toBe('app · sb/feat')
+  })
+})
+
+describe('samePath', () => {
+  it('ignores a trailing separator', () => {
+    expect(samePath('/repo/app', '/repo/app/')).toBe(true)
+  })
+
+  it('ignores separator style on windows paths', () => {
+    expect(samePath('C:\\repo\\app', 'C:/repo/app')).toBe(true)
+  })
+
+  it('ignores case on windows paths only', () => {
+    expect(samePath('C:\\repo\\App', 'C:\\repo\\app')).toBe(true)
+    expect(samePath('/repo/App', '/repo/app')).toBe(false)
+  })
+
+  it('does not match a sibling that shares a prefix', () => {
+    expect(samePath('/repo/app', '/repo/app-old')).toBe(false)
   })
 })

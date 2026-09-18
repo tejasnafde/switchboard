@@ -414,6 +414,8 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       rootThreadId: string
       worktreePath: string | null
       worktreeBranch: string | null
+      /** Optimistic-concurrency token for the execution root. 0 = never moved. */
+      executionRootRevision: number
       worktreeId: string | null
       providerInstanceId: string | null
       runtimeMode: string | null
@@ -440,6 +442,10 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       rootThreadId,
       worktreePath: row.worktree_path ?? null,
       worktreeBranch: row.worktree_branch ?? null,
+      // Without this the renderer starts every session at revision 0, and a
+      // conversation that has EVER been relocated then fails every further
+      // relocation with `stale-revision` until the window is restarted.
+      executionRootRevision: row.execution_root_revision ?? 0,
       worktreeId: row.worktree_id ?? null,
       providerInstanceId: row.provider_instance_id ?? null,
       runtimeMode: row.runtime_mode ?? null,

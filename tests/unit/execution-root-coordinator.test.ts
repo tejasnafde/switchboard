@@ -33,6 +33,7 @@ interface FakeState {
   provider: string
 }
 
+let machineIdsSeen: string[]
 let state: FakeState
 let host: ExecutionRootHost
 let calls: string[]
@@ -42,10 +43,17 @@ let restoreFails: boolean
 let resolveTargetResult: Awaited<ReturnType<ExecutionRootHost['resolveTarget']>>
 /** Runs after resolveTarget, to simulate the root moving under us. */
 let duringValidation: (() => void) | null
+let detachThrows: boolean
+/** Every (path, mode) pair attachProvider was called with. */
+let attachModes: Array<{ path: string; mode: string }>
 
 function makeHost(): ExecutionRootHost {
   return {
-    currentRoot: (threadId) => (threadId === 't1' ? state.root : null),
+    currentRoot: (threadId, machineId) => {
+      if (threadId !== 't1') return null
+      machineIdsSeen.push(machineId)
+      return { ...state.root, machineId }
+    },
     sessionState: (threadId) => threadId === 't1'
       ? {
         threadIsLive: state.threadIsLive,
@@ -63,14 +71,16 @@ function makeHost(): ExecutionRootHost {
     },
     detachProvider: async () => {
       calls.push('detach')
+      if (detachThrows) throw new Error('adapter would not stop')
       return { threadId: 't1' } as unknown as ProviderHandle
     },
-    attachProvider: async (_handle, path) => {
+    attachProvider: async (_handle, path, mode) => {
       calls.push(`attach:${path}`)
-      if (path === TARGET && attachFails) {
+      attachModes.push({ path, mode })
+      if (mode === 'target' && attachFails) {
         return { ok: false as const, code: 'target-start-failed' as const, message: 'boom' }
       }
-      if (path !== TARGET && restoreFails) throw new Error('restore exploded')
+      if (mode === 'restore' && restoreFails) throw new Error('restore exploded')
       return { ok: true as const, continuity: 'preserved' as const }
     },
     commitRoot: (_threadId, path, branch) => {
@@ -116,6 +126,9 @@ beforeEach(() => {
   attachFails = false
   restoreFails = false
   duringValidation = null
+  detachThrows = false
+  attachModes = []
+  machineIdsSeen = []
   resolveTargetResult = { ok: true, path: TARGET, branch: 'sb/feat' }
   host = makeHost()
 })
@@ -358,5 +371,44 @@ describe('the published event', () => {
     expect(published).toHaveBeenCalledWith(expect.objectContaining({
       to: { path: TARGET, branch: 'actually/this-one' },
     }))
+  })
+})
+
+describe('review hardening', () => {
+  it('tells the host which machine the REQUEST claimed, on every lookup', async () => {
+    await new ExecutionRootCoordinator(host).relocate(request({ machineId: 'local' }))
+    expect(machineIdsSeen.length).toBeGreaterThan(1)
+    expect(new Set(machineIdsSeen)).toEqual(new Set(['local']))
+  })
+
+  it('marks a rollback explicitly, instead of leaving the host to compare paths', async () => {
+    attachFails = true
+    await new ExecutionRootCoordinator(host).relocate(request())
+    expect(attachModes).toEqual([
+      { path: TARGET, mode: 'target' },
+      { path: PROJECT, mode: 'restore' },
+    ])
+  })
+
+  it('reports a failed stop as its own outcome, with nothing to roll back', async () => {
+    detachThrows = true
+    const result = await new ExecutionRootCoordinator(host).relocate(request())
+    expect(result).toMatchObject({ ok: false, code: 'source-stop-failed' })
+    expect(result.ok === false && result.rolledBack).toBeFalsy()
+    expect(calls).toEqual(['resolveTarget', 'detach'])
+  })
+
+  it('does not commit or publish when the source could not be stopped', async () => {
+    detachThrows = true
+    await new ExecutionRootCoordinator(host).relocate(request())
+    expect(calls.some((c) => c.startsWith('commit:'))).toBe(false)
+    expect(calls.some((c) => c.startsWith('publish:'))).toBe(false)
+  })
+
+  it('releases the thread after a failed stop, so a retry is possible', async () => {
+    detachThrows = true
+    const coordinator = new ExecutionRootCoordinator(host)
+    await coordinator.relocate(request())
+    expect(coordinator.isRelocating('t1')).toBe(false)
   })
 })

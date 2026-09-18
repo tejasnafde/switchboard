@@ -69,6 +69,12 @@ export type RelocationFailureCode =
   | 'continuity-unsupported'
   /** The thread is not known to the backend. */
   | 'unknown-thread'
+  /**
+   * The source provider could not be stopped, so the move never started.
+   * Distinct from a failed start: there is nothing to roll back, and the
+   * adapter may be in an unknown state, so a retry is not obviously safe.
+   */
+  | 'source-stop-failed'
   /** The provider failed to start at the target. The source was restored. */
   | 'target-start-failed'
   /** The provider failed to start AND could not be restored. Needs the user. */

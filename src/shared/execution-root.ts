@@ -107,6 +107,20 @@ export function isPathWithinRoot(root: string, candidate: string): boolean {
   return canonicalCandidate.startsWith(boundary)
 }
 
+/**
+ * Do two strings name the same directory on one machine?
+ *
+ * Exported because `===` was being used for this in three places and is wrong
+ * in all of them: a trailing separator, a mixed separator style, or a
+ * case difference on Windows all make the same directory compare unequal.
+ * It does NOT resolve symlinks - that needs the filesystem, so a caller that
+ * cares must realpath both sides before asking.
+ */
+export function samePath(a: string, b: string): boolean {
+  const windows = isWindowsStyle(a) || isWindowsStyle(b)
+  return comparable(a, windows) === comparable(b, windows)
+}
+
 export interface RebasedPath {
   /** The same logical location inside `toRoot`. */
   path: string
@@ -154,7 +168,7 @@ export function resolveExecutionRoot(input: ExecutionRootInput): ExecutionRoot {
   const worktreeRaw = input.worktreePath?.trim() ?? ''
   const worktreePath = worktreeRaw ? normalizeRootPath(worktreeRaw) : ''
   const machineId = input.machineId?.trim() || LOCAL_MACHINE_ID
-  const isWorktree = Boolean(worktreePath) && !sameLocation(worktreePath, projectPath, machineId)
+  const isWorktree = Boolean(worktreePath) && !sameLocation(worktreePath, projectPath)
   const revision = Number.isSafeInteger(input.executionRootRevision) && (input.executionRootRevision as number) >= 0
     ? (input.executionRootRevision as number)
     : 0
@@ -168,10 +182,8 @@ export function resolveExecutionRoot(input: ExecutionRootInput): ExecutionRoot {
   }
 }
 
-function sameLocation(a: string, b: string, machineId: string): boolean {
-  const windows = isWindowsStyle(a) || isWindowsStyle(b)
-  void machineId
-  return comparable(a, windows) === comparable(b, windows)
+function sameLocation(a: string, b: string): boolean {
+  return samePath(a, b)
 }
 
 /**
@@ -183,7 +195,7 @@ function sameLocation(a: string, b: string, machineId: string): boolean {
  */
 export function sameExecutionRoot(a: ExecutionRoot, b: ExecutionRoot): boolean {
   if (a.machineId !== b.machineId) return false
-  return sameLocation(a.path, b.path, a.machineId)
+  return sameLocation(a.path, b.path)
 }
 
 function basename(path: string): string {

@@ -73,3 +73,23 @@ describe('applyExecutionRoot', () => {
     expect(useAgentStore.getState().sessions.find((s) => s.id === 's2')?.worktreePath).toBeUndefined()
   })
 })
+
+describe('syncExecutionRootRevision', () => {
+  it('adopts a higher revision without touching the pointer', () => {
+    useAgentStore.getState().syncExecutionRootRevision('s1', 4)
+    expect(session()).toMatchObject({ executionRootRevision: 4 })
+    expect(session()?.worktreePath).toBeUndefined()
+  })
+
+  it('leaves a drift suggestion alone, so the retry still has a target', () => {
+    useAgentStore.getState().setDriftSuggestion('s1', { worktreePath: '/wt/a', branch: 'sb/a' })
+    useAgentStore.getState().syncExecutionRootRevision('s1', 2)
+    expect(session()?.driftSuggestion).toEqual({ worktreePath: '/wt/a', branch: 'sb/a' })
+  })
+
+  it('never moves the revision backwards', () => {
+    useAgentStore.getState().syncExecutionRootRevision('s1', 5)
+    useAgentStore.getState().syncExecutionRootRevision('s1', 2)
+    expect(session()?.executionRootRevision).toBe(5)
+  })
+})

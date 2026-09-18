@@ -20,7 +20,7 @@ import {
   type ProviderHandle,
   type TargetResolution,
 } from './execution-root-coordinator'
-import { resolveExecutionRoot, type ExecutionRoot, LOCAL_MACHINE_ID } from '@shared/execution-root'
+import { resolveExecutionRoot, samePath, type ExecutionRoot, LOCAL_MACHINE_ID } from '@shared/execution-root'
 import type { RelocateExecutionRootRequest } from '@shared/execution-root-relocation'
 import { ExecFileGitWorktreeAdapter } from '../worktree-creation/git-adapter'
 import { getCurrentBranch } from '../git/refs'
@@ -850,17 +850,16 @@ export class ProviderRegistry implements PeerToolHost {
     // a rollback without the coordinator having to know either exists.
     type RelocationHandle = {
       snapshot: StoppedSessionSnapshot
+      /** Where the provider was. Logging and diagnostics only - never a decision. */
       sourcePath: string
       gate: ProviderEventGate
       threadId: string
     }
 
     const gitWorktrees = new ExecFileGitWorktreeAdapter()
-    /** Identity the current request claims, for a backend with no name of its own. */
-    let pendingMachineId: string | undefined
 
     const executionRootHost: ExecutionRootHost = {
-      currentRoot: (threadId) => this.readExecutionRoot(threadId, pendingMachineId),
+      currentRoot: (threadId, machineId) => this.readExecutionRoot(threadId, machineId),
       sessionState: (threadId) => {
         const descriptor = this.sessionDescriptors.get(threadId)
         return {
@@ -909,16 +908,21 @@ export class ProviderRegistry implements PeerToolHost {
         const sourcePath = descriptor?.cwd ?? this.sessionCwd.get(threadId) ?? ''
         const gate: ProviderEventGate = { state: 'staging', events: [] }
         this.relocationGates.set(threadId, gate)
-        const snapshot = await stopSession(threadId)
-        if (!snapshot) {
+        try {
+          const snapshot = await stopSession(threadId)
+          if (!snapshot) throw new Error('The provider session disappeared during relocation')
+          return { snapshot, sourcePath, gate, threadId } as unknown as ProviderHandle
+        } catch (err) {
+          // Every exit from here that is not a handle must drop the gate, or
+          // this thread's events are staged for the life of the process and
+          // the chat looks dead while the provider is fine.
           this.relocationGates.delete(threadId)
-          throw new Error('The provider session disappeared during relocation')
+          throw err
         }
-        return { snapshot, sourcePath, gate, threadId } as unknown as ProviderHandle
       },
-      attachProvider: async (opaque, path) => {
+      attachProvider: async (opaque, path, mode) => {
         const handle = opaque as unknown as RelocationHandle
-        const restoring = path === handle.sourcePath
+        const restoring = mode === 'restore'
         const opts: SessionStartOpts = {
           threadId: handle.threadId,
           provider: handle.snapshot.descriptor.provider,
@@ -965,7 +969,7 @@ export class ProviderRegistry implements PeerToolHost {
         // A relocation back to the parent checkout is stored as a NULL
         // pointer, not as the project path repeated, so every existing reader
         // of `worktree_path` keeps its current meaning.
-        const pointer = projectPath && path === projectPath ? null : path
+        const pointer = projectPath && samePath(path, projectPath) ? null : path
         return commitConversationExecutionRoot(conversationId, pointer, pointer ? branch : null)
       },
       commitRuntime: (threadId, path) => {
@@ -993,12 +997,7 @@ export class ProviderRegistry implements PeerToolHost {
       ProviderChannels.RELOCATE_EXECUTION_ROOT,
       async (request: RelocateExecutionRootRequest) => {
         if (!this.executionRoot) throw new Error('Execution-root coordinator is not ready')
-        pendingMachineId = request.machineId
-        try {
-          return await this.executionRoot.relocate(request)
-        } finally {
-          pendingMachineId = undefined
-        }
+        return await this.executionRoot.relocate(request)
       },
     )
 

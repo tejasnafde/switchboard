@@ -217,6 +217,14 @@ interface AgentStore {
     sessionId: string,
     root: { path: string; branch: string | null; revision: number },
   ) => void
+  /**
+   * Adopt a revision the backend reported, without moving the root.
+   *
+   * Used when a relocation is refused as stale: our number was wrong and the
+   * refusal carried the right one, so the retry can succeed instead of
+   * failing identically forever.
+   */
+  syncExecutionRootRevision: (sessionId: string, revision: number) => void
   requestScrollToMessage: (sessionId: string, messageId: string, query?: string) => void
   /** Bookmarks know only the timestamp at save time, so the click path uses
    *  this variant - MessageList resolves it to the message id on its end. */
@@ -528,6 +536,15 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
           driftSuggestion: null,
         }
       }),
+    })),
+
+  syncExecutionRootRevision: (sessionId, revision) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId && (s.executionRootRevision ?? 0) < revision
+          ? { ...s, executionRootRevision: revision }
+          : s,
+      ),
     })),
 
   setDriftSuggestion: (sessionId, suggestion) =>

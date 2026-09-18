@@ -1078,6 +1078,9 @@ export interface ConversationRow {
   /** Branch checked out in the fork's worktree (e.g. `fork/fix-redis-timeout`).
    *  Null when `worktree_path` is null. */
   worktree_branch?: string | null
+  /** Optimistic-concurrency token for the execution root. Null on a row that
+   *  predates the column, which reads as 0: it has never been relocated. */
+  execution_root_revision?: number | null
   worktree_id?: string | null
   worktree_creation_id?: string | null
   worktree_creation_status?: WorktreeCreationStatus | null

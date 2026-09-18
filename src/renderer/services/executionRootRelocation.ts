@@ -24,6 +24,15 @@ export interface RelocationOutcomeView {
   retryable: boolean
   /** Offer a deliberate restart that loses the thread. */
   offerRestart: boolean
+  /**
+   * Adopt this revision without moving anything.
+   *
+   * Set only for `stale-revision`, where our view is KNOWN wrong and the
+   * backend has just told us the right number. Without it the client retries
+   * with the same stale value and fails identically forever, which is exactly
+   * what happened to any conversation reopened after a relocation.
+   */
+  syncRevision: number | null
 }
 
 const NOTICES: Partial<Record<string, string>> = {
@@ -37,6 +46,8 @@ const NOTICES: Partial<Record<string, string>> = {
     'This agent cannot carry the conversation into another directory. Restarting it there would lose the thread.',
   'rollback-failed':
     'The move failed and the agent could not be restarted where it was. Restart the chat to continue.',
+  'source-stop-failed':
+    'The agent could not be stopped, so nothing moved. Stop the chat and try again.',
 }
 
 export function describeRelocationOutcome(
@@ -53,6 +64,7 @@ export function describeRelocationOutcome(
         isError: false,
         retryable: false,
         offerRestart: false,
+        syncRevision: null,
       }
     }
     return {
@@ -68,6 +80,7 @@ export function describeRelocationOutcome(
       isError: false,
       retryable: false,
       offerRestart: false,
+      syncRevision: null,
     }
   }
 
@@ -85,5 +98,6 @@ export function describeRelocationOutcome(
     isError: true,
     retryable: result.code === 'busy' || result.code === 'stale-revision',
     offerRestart: result.code === 'continuity-unsupported',
+    syncRevision: result.code === 'stale-revision' ? result.root.revision : null,
   }
 }
