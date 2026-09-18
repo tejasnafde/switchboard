@@ -28,6 +28,7 @@ import { NewChatCheckoutDialog, type NewChatCheckout } from './components/NewCha
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
+import { sessionExecutionRootPath } from './services/executionRoot'
 import { emitSessionCreated, onSessionRename } from './services/session-events'
 import { initSharedReadState } from './services/readState'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
@@ -847,6 +848,7 @@ export function App() {
           rootThreadId?: string
           worktreePath?: string | null
           worktreeBranch?: string | null
+          executionRootRevision?: number
           worktreeId?: string | null
           providerInstanceId?: string | null
           runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'full-access' | null
@@ -871,6 +873,13 @@ export function App() {
       if (targetId !== session.id) {
         const live = useAgentStore.getState().sessions.find((s) => s.id === targetId)
         window.api.routing.bind(targetId, live?.machineId ?? effectiveMachineId)
+        // A session adopted at startup was created without a revision, and
+        // this branch returns before the hydration below. Leaving it at 0
+        // makes the next Follow fail as stale on any conversation that has
+        // been relocated before. The setter only ever raises it.
+        if (loaded?.meta?.executionRootRevision) {
+          useAgentStore.getState().syncExecutionRootRevision(targetId, loaded.meta.executionRootRevision)
+        }
         placeAndEvict(targetId)
         return
       }
@@ -906,6 +915,7 @@ export function App() {
         worktreeId: loaded?.meta?.worktreeId ?? creationSnapshot?.worktreeId ?? null,
         worktreePath: loaded?.meta?.worktreePath ?? session.worktreePath ?? null,
         worktreeBranch: loaded?.meta?.worktreeBranch ?? session.worktreeBranch ?? null,
+        executionRootRevision: loaded?.meta?.executionRootRevision ?? 0,
         managedTerminalIds: creationSnapshot?.startupReceipt?.terminalIds,
         resumeSessionId: loaded?.meta?.forkMetadata?.resumeMode === 'transcript-handoff'
           ? undefined
@@ -1097,7 +1107,7 @@ export function App() {
           const st = useTerminalStore.getState()
           const ids = st.getAllWindowIds(sid)
           const label = `Terminal ${ids.length + 1}`
-          const cwd = agentState.sessions.find((s) => s.id === sid)?.projectPath
+          const cwd = sessionExecutionRootPath(sid)
           const direction: 'column' | 'row' = e.shiftKey ? 'column' : 'row'
           const ref = ids.length === 0
             ? st.addWindow(sid, { label, cwd })
@@ -1157,7 +1167,7 @@ export function App() {
             e.preventDefault()
             const st = useTerminalStore.getState()
             const ids = st.getAllPaneIds(sid)
-            const cwd = useAgentStore.getState().sessions.find((s) => s.id === sid)?.projectPath
+            const cwd = sessionExecutionRootPath(sid)
             const pid = st.addPaneToActiveWindow(sid, { label: `Terminal ${ids.length + 1}`, cwd })
             if (!useLayoutStore.getState().terminalVisible) toggleTerminal()
             if (pid) setTimeout(() => focusTerminal(pid), 80)

@@ -63,6 +63,13 @@ interface AgentSession {
   driftSuggestion?: { worktreePath: string; branch: string } | null
   /** Branch name in `worktreePath` (e.g. `sb/thread-abc123`). */
   worktreeBranch?: string | null
+  /**
+   * Optimistic-concurrency token for the execution root, from the backend.
+   * A relocation result or event carrying a LOWER revision than this is a
+   * superseded move and must be ignored, or two clients repaint each other's
+   * branch chip backwards forever.
+   */
+  executionRootRevision?: number
   /** Stable PTY handles already created by a backend-owned workspace transaction. */
   managedTerminalIds?: string[]
   /** Claude CLI session ID for --resume (from imported JSONL sessions) */
@@ -202,6 +209,22 @@ interface AgentStore {
     worktreePath: string | null,
     worktreeBranch: string | null,
   ) => void
+  /**
+   * Apply a root COMMITTED by the backend. Ignores a revision at or below the
+   * one already held, which is what lets several clients converge.
+   */
+  applyExecutionRoot: (
+    sessionId: string,
+    root: { path: string; branch: string | null; revision: number; isWorktree: boolean },
+  ) => void
+  /**
+   * Adopt a revision the backend reported, without moving the root.
+   *
+   * Used when a relocation is refused as stale: our number was wrong and the
+   * refusal carried the right one, so the retry can succeed instead of
+   * failing identically forever.
+   */
+  syncExecutionRootRevision: (sessionId: string, revision: number) => void
   requestScrollToMessage: (sessionId: string, messageId: string, query?: string) => void
   /** Bookmarks know only the timestamp at save time, so the click path uses
    *  this variant - MessageList resolves it to the message id on its end. */
@@ -493,6 +516,34 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       sessions: state.sessions.map((s) =>
         // Following a worktree also resolves any pending drift suggestion.
         s.id === sessionId ? { ...s, worktreePath, worktreeBranch, driftSuggestion: null } : s,
+      ),
+    })),
+
+  applyExecutionRoot: (sessionId, root) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) => {
+        if (s.id !== sessionId) return s
+        if ((s.executionRootRevision ?? 0) >= root.revision) return s
+        // `isWorktree` comes from the backend rather than being recomputed
+        // here. The renderer cannot realpath, and on macOS a project under
+        // /var compares unequal to its own /private/var realpath - so a move
+        // back to the checkout would render a worktree chip for the checkout.
+        return {
+          ...s,
+          worktreePath: root.isWorktree ? root.path : null,
+          worktreeBranch: root.isWorktree ? root.branch : null,
+          executionRootRevision: root.revision,
+          driftSuggestion: null,
+        }
+      }),
+    })),
+
+  syncExecutionRootRevision: (sessionId, revision) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId && (s.executionRootRevision ?? 0) < revision
+          ? { ...s, executionRootRevision: revision }
+          : s,
       ),
     })),
 

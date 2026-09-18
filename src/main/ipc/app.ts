@@ -414,6 +414,8 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       rootThreadId: string
       worktreePath: string | null
       worktreeBranch: string | null
+      /** Optimistic-concurrency token for the execution root. 0 = never moved. */
+      executionRootRevision: number
       worktreeId: string | null
       providerInstanceId: string | null
       runtimeMode: string | null
@@ -440,6 +442,14 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       rootThreadId,
       worktreePath: row.worktree_path ?? null,
       worktreeBranch: row.worktree_branch ?? null,
+      // From the ROOT row, like `agentType` above and for the same reason.
+      // The revision is written through `resolveRootThreadId`, so it lives
+      // only on the root conversation. After Claude rotates a session id the
+      // sidebar hands that rotated id back and this handler is reached with
+      // the CHILD row, whose revision is null - the renderer would hydrate 0
+      // while the backend holds N, and every relocation would then fail with
+      // `stale-revision`, which is the exact failure this field prevents.
+      executionRootRevision: rootRow?.execution_root_revision ?? row.execution_root_revision ?? 0,
       worktreeId: row.worktree_id ?? null,
       providerInstanceId: row.provider_instance_id ?? null,
       runtimeMode: row.runtime_mode ?? null,

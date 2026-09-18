@@ -7,6 +7,7 @@ import { recordLaunchConfigUsage } from '../services/launchConfigUsage'
 import { getRecentOutputPaneLabels } from '../services/terminal-registry'
 import { launchConfigListReducer } from '../services/launchConfigListReducer'
 import { useLayoutStore } from '../stores/layout-store'
+import { executionRootForSession } from '../services/executionRoot'
 
 export function terminalHydrationTargets(
   displayedSessionIds: readonly string[],
@@ -60,7 +61,7 @@ export function useTerminalLifecycle() {
       hydratedSessionsRef.current.add(sessionId)
       const session = useAgentStore.getState().sessions.find((candidate) => candidate.id === sessionId)
       if (!session) continue
-      spawnTerminalsForSession(sessionId, session.worktreePath ?? session.projectPath)
+      spawnTerminalsForSession(sessionId, executionRootForSession(session)?.path)
     }
   }, [primarySessionId, secondarySessionId])
 
@@ -77,7 +78,7 @@ export function useTerminalLifecycle() {
         // fall back to default if the user just deleted it from YAML.
         const currentLaunchConfig = useTerminalStore.getState().getSessionLaunchConfigName(sessionId)
         useTerminalStore.getState().clearSessionLayout(sessionId)
-        spawnTerminalsForSession(sessionId, session.worktreePath ?? projectPath, true, currentLaunchConfig)
+        spawnTerminalsForSession(sessionId, executionRootForSession(session)?.path ?? projectPath, true, currentLaunchConfig)
       }
     })
     return cleanup
