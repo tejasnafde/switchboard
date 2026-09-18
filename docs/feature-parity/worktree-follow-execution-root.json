@@ -22,7 +22,8 @@
         "tests/unit/terminal-cwd-execution-root.test.ts",
         "tests/unit/relocation-outcome.test.ts",
         "tests/unit/apply-execution-root.test.ts",
-        "e2e/drift.e2e.mjs"
+        "e2e/drift.e2e.mjs",
+        "e2e/execution-root-live.e2e.mjs"
       ]
     },
     "reactNativeIos": {
@@ -84,19 +85,21 @@
       "tests/unit/execution-root-db.test.ts pins that the revision is bumped in the same statement as the pointer, and that both accessors resolve a rotated Claude session id to the root conversation.",
       "tests/unit/terminal-cwd-execution-root.test.ts is a source guard over all seven terminal-creation entry points, so a NEW entry point that reads projectPath fails the suite.",
       "An adversarial review of the branch found seven issues; six were real and all six are fixed: the renderer never hydrated execution_root_revision (so every reopened conversation failed relocation forever), a shared pendingMachineId variable let concurrent relocations corrupt each other's machine identity, attachProvider inferred rollback from a string path compare, commitRoot compared paths with ===, detachProvider leaked its event gate when the stop threw, and orphan-heal still used the legacy direct DB setter. The seventh, the UPDATE-then-SELECT in commitConversationExecutionRoot, was confirmed safe under synchronous better-sqlite3.",
-      "e2e/drift.e2e.mjs runs the real packaged path under Playwright/Electron with an isolated user-data-dir and a real git repo plus worktree: a drift event, a Follow click that relocates through the backend transaction, the branch chip following, then a deleted worktree healing back to the checkout. It asserts the durable outcome, not just the UI: the worktree pointer is null again and the execution-root revision reached 2. Temp directories were cleaned after every run."
+      "e2e/drift.e2e.mjs runs the real packaged path under Playwright/Electron with an isolated user-data-dir and a real git repo plus worktree: a drift event, a Follow click that relocates through the backend transaction, the branch chip following, then a deleted worktree healing back to the checkout. It asserts the durable outcome, not just the UI: the worktree pointer is null again and the execution-root revision reached 2. Temp directories were cleaned after every run.",
+      "e2e/execution-root-live.e2e.mjs relocates a LIVE agent on both providers, against real credential homes registered as oauth_dir provider instances. Per provider: a turn runs in the project checkout, the thread is relocated to a real worktree, then a second turn runs `pwd > where.txt` with the agent's own shell tool. The file lands in the WORKTREE and not in the checkout, its contents equal the worktree path, and the native session id is byte-identical before and after - so the provider was restarted in the new directory with its conversation intact, not started fresh."
     ],
-    "hardware": [],
+    "hardware": [
+      "Live agent relocation on this Mac, both providers, against real subscription credentials: Claude via /Users/tejas/.claude-tech-team and Codex via /Users/tejas/.codex-default. Each ran two real billed turns. Both preserved their native session id across the move and executed the post-move shell command inside the worktree."
+    ],
     "notExercised": [
-      "No live provider has been relocated. The e2e exercises the transaction on a thread with no attached adapter, so it proves validation, the durable commit, the revision, the event and the renderer convergence, but NOT the stop/restart of a real Claude or Codex process at a new cwd. That still needs a live-agent run.",
-      "Claude and Codex continuity is reasoned from their existing resume preflights, not observed: Claude re-runs ensureClaudeSessionResumable against its session cwd before every query, and Codex re-sends the cwd on every turn/start. Neither has been confirmed against a live session after a relocation.",
-      "The OpenCode continuity-unsupported refusal has not been exercised against a live OpenCode server.",
       "Remote relocation over an SSH-tunnelled backend has not been exercised. The renderer no longer drops remote drift suggestions, and the request routes on threadId, but no remote session has been followed.",
       "EXISTING terminal panes are NOT yet reconciled. New terminals open in the followed worktree, but a shell already open stays where it is; the shell integration markers and the pane-move rules are outstanding. No pane is written to, so nothing regresses.",
       "React Native/iOS and native Android have no Follow action. Android still renders drift as a passive notice and mobile still ignores the event; both are unchanged, so nothing unflagged ships there.",
       "The review noted that the coordinator's fake host cannot reach the registry's real ExecutionRootHost, where five of the six defects lived. Those fixes are covered by contract-level tests (explicit rollback mode, source-stop-failed, per-request machine id, samePath) but not by an integration test against the real registry.",
       "Drift command classification is unchanged: a bare absolute path anywhere in a shell command still counts as evidence, so merely reading or diffing a file in another worktree can still be read as movement. That is pre-existing behaviour with its own test coverage, and it is a false positive rather than a wrong move, so it was left alone.",
-      "The heal appends a system notice that MessageList does not render while the chat has no turns, because a lone system message groups into no turn. Pre-existing grouping behaviour; the e2e asserts the durable outcome instead."
+      "The heal appends a system notice that MessageList does not render while the chat has no turns, because a lone system message groups into no turn. Pre-existing grouping behaviour; the e2e asserts the durable outcome instead.",
+      "OpenCode was not exercised. It is refused with continuity-unsupported by construction because the ACP adapter never captures loadSession, and that refusal has unit coverage but no live run.",
+      "The live probe relocates through the IPC directly rather than by clicking Follow. The click path is covered by e2e/drift.e2e.mjs, but no single run does both a real agent and a real click."
     ]
   }
 }
