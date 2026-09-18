@@ -31,7 +31,15 @@ import {
   setAssistantStreamingEnabled,
 } from '../services/streamingPref'
 import { isAnalyticsEnabled, setAnalyticsEnabled } from '../services/analyticsPref'
-import { formatDiagnosticsReport, formatMb, sortProcessesByMemory } from '@shared/diagnostics-report'
+import {
+  formatDiagnosticsReport,
+  formatMb,
+  sortProcessesByMemory,
+  diagnosticsAppFootprintMb,
+  diagnosticsGist,
+  diagnosticsDefaultExpanded,
+  DIAGNOSTICS_EXPANDED_SETTING_KEY,
+} from '@shared/diagnostics-report'
 import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../logger'
 import { ProvidersTab } from './settings/ProvidersTab'
@@ -935,9 +943,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               <SettingsSection title="Updates">
                 <UpdateCheckRow />
               </SettingsSection>
-              <SettingsSection title="Diagnostics">
-                <DiagnosticsSection />
-              </SettingsSection>
+              <DiagnosticsSection />
             </div>
           )}
         </div>
@@ -1239,22 +1245,93 @@ function AnalyticsToggle() {
 }
 
 /**
- * About > Diagnostics. Loads one snapshot on mount, shows the facts that
- * explain a slow machine, and copies the full plain-text report.
+ * About > Diagnostics, behind a disclosure.
+ *
+ * Collapsed by default: this page is opened to read a version number far more
+ * often than to debug a slow machine. Three things keep the fold honest.
+ *
+ *   - The collapsed row carries a GIST (chip, live terminals, footprint), so
+ *     it previews its own contents instead of being a blind door.
+ *   - The snapshot still loads on MOUNT, not on expand. Collecting on click
+ *     would put a visible "Collecting..." delay on an interaction that should
+ *     feel instant, and it costs one call either way.
+ *   - A translated build forces the section open. That is the one diagnostic
+ *     here that is a call to action rather than a fact: an x64 build on Apple
+ *     silicon is slow for a reason the user can fix.
+ *
+ * `diagnosticsGist` and `diagnosticsDefaultExpanded` hold those rules and are
+ * unit-tested in `tests/unit/diagnostics-disclosure.test.ts`.
  */
 const DIAGNOSTICS_TOP_PROCESSES = 6
 
-function DiagnosticsSection() {
+export function DiagnosticsSection() {
   const [snapshot, setSnapshot] = useState<DiagnosticsSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [storedPreference, setStoredPreference] = useState<string | null>(null)
+  /**
+   * `storedPreference` is null both before the read finishes and when there is
+   * no preference, so the default cannot be derived until this is true. A
+   * translated build whose snapshot arrived first would otherwise open, then
+   * shut again when the persisted "false" landed.
+   */
+  const [preferenceLoaded, setPreferenceLoaded] = useState(false)
+  /** Once the user has an opinion this session, stop re-deriving the default. */
+  const userToggled = useRef(false)
+  const headerRef = useRef<HTMLButtonElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const bodyId = 'sb-diagnostics-body'
 
   useEffect(() => {
-    window.api.app.getDiagnostics().then(setSnapshot).catch((err) => {
-      log.warn('getDiagnostics failed', err)
-      setError(err instanceof Error ? err.message : String(err))
-    })
+    let cancelled = false
+    window.api.app.getDiagnostics()
+      .then((value) => { if (!cancelled) setSnapshot(value) })
+      .catch((err) => {
+        log.warn('getDiagnostics failed', err)
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    window.api.settings.get(DIAGNOSTICS_EXPANDED_SETTING_KEY)
+      .then((value) => {
+        if (cancelled) return
+        setStoredPreference(typeof value === 'string' ? value : null)
+        setPreferenceLoaded(true)
+      })
+      .catch((err) => {
+        log.warn('diagnostics preference read failed', err)
+        // A failed read is an answer too: "no preference". Without this the
+        // section would never derive a default at all.
+        if (!cancelled) setPreferenceLoaded(true)
+      })
+    return () => { cancelled = true }
+  }, [])
+
+  // The default depends on two async loads, so it is derived rather than set
+  // once - the snapshot can arrive after the preference and flip `translated`.
+  useEffect(() => {
+    if (userToggled.current || !preferenceLoaded) return
+    setExpanded(diagnosticsDefaultExpanded(snapshot, storedPreference))
+  }, [snapshot, storedPreference, preferenceLoaded])
+
+  const toggle = () => {
+    userToggled.current = true
+    const next = !expanded
+    // Collapsing marks the body `inert`, and the spec then blurs whatever was
+    // focused inside it straight to the document root. A keyboard user would
+    // lose their place with no indication of where focus went, so bring it
+    // back to the control they just operated.
+    if (!next && bodyRef.current?.contains(document.activeElement)) {
+      headerRef.current?.focus()
+    }
+    setExpanded(next)
+    window.api.settings.set(DIAGNOSTICS_EXPANDED_SETTING_KEY, String(next))
+      .catch((err) => log.warn('diagnostics preference write failed', err))
+  }
 
   const flash = (text: string) => {
     setFeedback(text)
@@ -1292,15 +1369,125 @@ function DiagnosticsSection() {
     cursor: 'pointer',
   }
 
+  const gist = error
+    ? 'unavailable'
+    : snapshot
+      ? diagnosticsGist(snapshot)
+      : 'Collecting...'
+
+  return (
+    <div style={{ marginBottom: '20px' }}>
+      <button
+        ref={headerRef}
+        type="button"
+        className="sb-disclosure-header"
+        onClick={toggle}
+        aria-expanded={expanded}
+        aria-controls={bodyId}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          width: 'calc(100% + 16px)',
+          margin: '0 -8px',
+          padding: '6px 8px',
+          border: 'none',
+          borderRadius: 'var(--radius)',
+          cursor: 'pointer',
+          textAlign: 'left',
+          font: 'inherit',
+          color: 'var(--text-primary)',
+        }}
+      >
+        <svg
+          className="sb-disclosure-chevron"
+          viewBox="0 0 12 12"
+          width="12"
+          height="12"
+          fill="none"
+          aria-hidden="true"
+          style={{
+            flex: 'none',
+            color: 'var(--text-muted)',
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 160ms cubic-bezier(0.2, 0.7, 0.3, 1)',
+          }}
+        >
+          <path d="M4.5 2.5 L8 6 L4.5 9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span style={{
+          fontSize: '11px',
+          fontWeight: 600,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px',
+        }}>
+          Diagnostics
+        </span>
+        <span style={{
+          marginLeft: 'auto',
+          fontSize: '11px',
+          color: error
+            ? 'var(--error)'
+            : snapshot?.translated ? 'var(--warning)' : 'var(--text-muted)',
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}>
+          {gist}
+        </span>
+      </button>
+
+      {/* `0fr` to `1fr` animates to the content's own height, so a longer
+          process list cannot outgrow a hardcoded max-height. */}
+      <div
+        ref={bodyRef}
+        id={bodyId}
+        className="sb-disclosure-reveal"
+        inert={!expanded}
+        style={{
+          display: 'grid',
+          gridTemplateRows: expanded ? '1fr' : '0fr',
+          transition: 'grid-template-rows 200ms cubic-bezier(0.2, 0.7, 0.3, 1)',
+        }}
+      >
+        <div style={{ overflow: 'hidden' }}>
+          <div style={{ paddingTop: '10px' }}>
+            <DiagnosticsBody
+              snapshot={snapshot}
+              error={error}
+              feedback={feedback}
+              buttonStyle={buttonStyle}
+              onCopy={copy}
+              onOpenLogs={openLogs}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function DiagnosticsBody({
+  snapshot, error, feedback, buttonStyle, onCopy, onOpenLogs,
+}: {
+  snapshot: DiagnosticsSnapshot | null
+  error: string | null
+  feedback: string | null
+  buttonStyle: React.CSSProperties
+  onCopy: () => void
+  onOpenLogs: () => void
+}) {
   if (error) {
     return <div style={{ fontSize: '12px', color: 'var(--error)' }}>Diagnostics unavailable: {error}</div>
   }
   if (!snapshot) {
-    return <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Collecting…</div>
+    return <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Collecting...</div>
   }
 
   const top = sortProcessesByMemory(snapshot.processes).slice(0, DIAGNOSTICS_TOP_PROCESSES)
-  const appMb = snapshot.processes.reduce((sum, p) => sum + p.memoryMb, 0)
+  const appMb = diagnosticsAppFootprintMb(snapshot.processes)
   const facts: Array<[string, string]> = [
     ['Chip', `${snapshot.arch}${snapshot.translated ? ' (running translated - install the native build)' : ''}`],
     ['OS', `${snapshot.platform} ${snapshot.osVersion}`],
@@ -1339,8 +1526,8 @@ function DiagnosticsSection() {
         ))}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
-        <button type="button" onClick={copy} style={buttonStyle}>Copy report</button>
-        <button type="button" onClick={openLogs} style={buttonStyle}>Open logs folder</button>
+        <button type="button" onClick={onCopy} style={buttonStyle}>Copy report</button>
+        <button type="button" onClick={onOpenLogs} style={buttonStyle}>Open logs folder</button>
         {feedback && <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{feedback}</span>}
       </div>
     </div>
