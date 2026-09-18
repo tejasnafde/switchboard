@@ -32,7 +32,9 @@ describe('a successful move', () => {
   const view = describeRelocationOutcome(ok('relocated'))
 
   it('applies the committed root, revision included', () => {
-    expect(view.applyRoot).toEqual({ path: '/wt/feat', branch: 'sb/feat', revision: 3 })
+    expect(view.applyRoot).toEqual({
+      path: '/wt/feat', branch: 'sb/feat', revision: 3, isWorktree: true,
+    })
   })
 
   it('clears the drift suggestion so it cannot be offered again', () => {

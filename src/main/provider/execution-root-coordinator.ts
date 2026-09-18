@@ -270,7 +270,7 @@ export class ExecutionRootCoordinator {
       threadId: request.threadId,
       machineId: from.machineId,
       from: { path: from.path, branch: from.branch },
-      to: { path: to.path, branch: to.branch },
+      to: { path: to.path, branch: to.branch, isWorktree: to.isWorktree },
       revision,
       reason: request.reason,
       continuity,

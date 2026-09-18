@@ -14,7 +14,7 @@ import type { RelocateExecutionRootResult } from '@shared/execution-root-relocat
 
 export interface RelocationOutcomeView {
   /** Apply to the session store. Null means nothing moved. */
-  applyRoot: { path: string; branch: string | null; revision: number } | null
+  applyRoot: { path: string; branch: string | null; revision: number; isWorktree: boolean } | null
   /** Drop the drift suggestion. False while a queued move is still pending. */
   clearSuggestion: boolean
   /** One short line, or null when the branch chip already tells the story. */
@@ -72,6 +72,7 @@ export function describeRelocationOutcome(
         path: result.root.path,
         branch: result.root.branch,
         revision: result.root.revision,
+        isWorktree: result.root.isWorktree,
       },
       clearSuggestion: true,
       // The branch chip and the terminal defaults have already changed. A

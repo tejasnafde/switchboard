@@ -25,6 +25,7 @@ import type { RelocateExecutionRootRequest } from '@shared/execution-root-reloca
 import { ExecFileGitWorktreeAdapter } from '../worktree-creation/git-adapter'
 import { getCurrentBranch } from '../git/refs'
 import { access } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -74,6 +75,15 @@ import {
 } from '@shared/provider-events'
 
 const log = createLogger('provider:registry')
+
+/** Realpath, or the input when the path does not exist (a deleted worktree). */
+function realpathSyncOr(p: string): string {
+  try {
+    return realpathSync(p)
+  } catch {
+    return p
+  }
+}
 
 /** `claude` is spelled `claude-code` everywhere the DB is involved. */
 function agentTypeForProvider(provider: ProviderKind): Exclude<AgentType, 'terminal'> {
@@ -631,7 +641,11 @@ export class ProviderRegistry implements PeerToolHost {
     const stored = getConversationExecutionRoot(threadId)
     if (!stored?.projectPath) return null
     return resolveExecutionRoot({
-      projectPath: stored.projectPath,
+      // Realpath, because `resolveTarget` realpaths the target and the two
+      // are compared. On macOS `/var` is a symlink to `/private/var`, so a
+      // project under a temp dir compares unequal to itself and a move back
+      // to the checkout is stored as a worktree pointer at the checkout.
+      projectPath: realpathSyncOr(stored.projectPath),
       worktreePath: stored.worktreePath,
       worktreeBranch: stored.worktreeBranch,
       machineId: process.env.SWITCHBOARD_MACHINE_ID || claimedMachineId || LOCAL_MACHINE_ID,
@@ -973,7 +987,8 @@ export class ProviderRegistry implements PeerToolHost {
       },
       commitRoot: (threadId, path, branch) => {
         const conversationId = resolveRootThreadId(threadId)
-        const projectPath = getConversationById(conversationId)?.project_path ?? null
+        const raw = getConversationById(conversationId)?.project_path ?? null
+        const projectPath = raw ? realpathSyncOr(raw) : null
         // A relocation back to the parent checkout is stored as a NULL
         // pointer, not as the project path repeated, so every existing reader
         // of `worktree_path` keeps its current meaning.

@@ -356,7 +356,7 @@ describe('the published event', () => {
       threadId: 't1',
       machineId: 'local',
       from: { path: PROJECT, branch: null },
-      to: { path: TARGET, branch: 'sb/feat' },
+      to: { path: TARGET, branch: 'sb/feat', isWorktree: true },
       revision: 3,
       reason: 'branch-picker',
       continuity: 'preserved',
@@ -369,7 +369,7 @@ describe('the published event', () => {
     resolveTargetResult = { ok: true, path: TARGET, branch: 'actually/this-one' }
     await new ExecutionRootCoordinator(host).relocate(request({ targetBranch: 'client/guess' }))
     expect(published).toHaveBeenCalledWith(expect.objectContaining({
-      to: { path: TARGET, branch: 'actually/this-one' },
+      to: { path: TARGET, branch: 'actually/this-one', isWorktree: true },
     }))
   })
 })

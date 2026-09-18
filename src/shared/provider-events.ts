@@ -125,7 +125,7 @@ export interface RuntimeExecutionRootChangedEvent {
   threadId: string
   machineId: string
   from: { path: string; branch: string | null }
-  to: { path: string; branch: string | null }
+  to: { path: string; branch: string | null; isWorktree: boolean }
   revision: number
   reason: import('./execution-root-relocation').RelocationReason
   continuity: import('./execution-root-relocation').RelocationContinuity

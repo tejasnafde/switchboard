@@ -826,6 +826,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           path: event.to.path,
           branch: event.to.branch,
           revision: event.revision,
+          isWorktree: event.to.isWorktree,
         })
         break
       }

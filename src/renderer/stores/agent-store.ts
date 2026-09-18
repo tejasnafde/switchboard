@@ -215,7 +215,7 @@ interface AgentStore {
    */
   applyExecutionRoot: (
     sessionId: string,
-    root: { path: string; branch: string | null; revision: number },
+    root: { path: string; branch: string | null; revision: number; isWorktree: boolean },
   ) => void
   /**
    * Adopt a revision the backend reported, without moving the root.
@@ -524,14 +524,14 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       sessions: state.sessions.map((s) => {
         if (s.id !== sessionId) return s
         if ((s.executionRootRevision ?? 0) >= root.revision) return s
-        // The backend stores a move back to the parent checkout as a null
-        // pointer, and the renderer must too: `worktreePath` set to the
-        // project path would render a worktree chip for the main checkout.
-        const isParent = root.path === s.projectPath
+        // `isWorktree` comes from the backend rather than being recomputed
+        // here. The renderer cannot realpath, and on macOS a project under
+        // /var compares unequal to its own /private/var realpath - so a move
+        // back to the checkout would render a worktree chip for the checkout.
         return {
           ...s,
-          worktreePath: isParent ? null : root.path,
-          worktreeBranch: isParent ? null : root.branch,
+          worktreePath: root.isWorktree ? root.path : null,
+          worktreeBranch: root.isWorktree ? root.branch : null,
           executionRootRevision: root.revision,
           driftSuggestion: null,
         }
