@@ -41,7 +41,8 @@ post-upgrade data checks separately from automated results.
 
 ```bash
 git switch -c chore/release-<version>
-npm version patch          # or minor / major
+npm version patch --no-git-tag-version    # or minor / major
+git commit -am "chore(release): cut v<version>"
 git push -u origin chore/release-<version>
 gh pr create --base main --title "chore(release): cut v<version>"
 # merge once the four required checks are green, then:
@@ -56,10 +57,12 @@ predates that protection, which is why the history up to `v0.8.58` is linear.
 
 Two things follow, and both cost a release cycle to learn:
 
-- **Tag AFTER the merge, never before.** `npm version` creates the tag locally
-  and `--follow-tags` pushes it even when the branch push is rejected. That
-  leaves a tag pointing at a commit that is not on `main`, and `release.yml`
-  fires on the tag and builds it. If it happens: cancel the run, then
+- **Tag AFTER the merge, never before.** That is what `--no-git-tag-version` is
+  for above: plain `npm version` creates the tag locally, `--follow-tags`
+  pushes it even when the branch push is rejected, and the later `git tag`
+  then fails because the name is already taken by the unmerged commit. A tag
+  that points off `main` is not cosmetic either - `release.yml` fires on it
+  and builds it. If it happens: cancel the run, then
   `git push origin :refs/tags/<tag>` before anything publishes.
 - **The version bump alone must pass `Cross-surface feature policy`**, which is
   one of the four required checks. `package.json` is a product file, so a bump

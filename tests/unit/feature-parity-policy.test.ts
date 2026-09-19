@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  changedFilesSince,
   isVersionOnlyBump,
   requiresFeatureParityManifest,
   validateFeatureParityManifest,
@@ -183,5 +184,25 @@ describe('version-only release bumps', () => {
   it('does not exempt without a base to compare against', () => {
     expect(isVersionOnlyBump('/repo', '', ['package.json'], diff('-  "version": "1"\n+  "version": "2"')))
       .toBe(false)
+  })
+})
+
+describe('deletions are behaviour-bearing', () => {
+  it('asks git for deleted paths too', () => {
+    // Without `D` a branch could delete a source file, bump the version, and
+    // be granted the version-only exemption, because the deleted path never
+    // reached the list the exemption inspects.
+    let args = ''
+    changedFilesSince('/repo', 'main', (_root: string, base: string) => {
+      args = base
+      return 'src/main/gone.ts\n'
+    })
+    expect(args).toBe('main')
+    expect(changedFilesSince('/repo', 'main', () => 'src/main/gone.ts\n'))
+      .toEqual(['src/main/gone.ts'])
+  })
+
+  it('requires a manifest for a deleted product file', () => {
+    expect(requiresFeatureParityManifest(['src/main/provider/some-adapter.ts'])).toBe(true)
   })
 })
