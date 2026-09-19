@@ -111,5 +111,11 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: npm test --prefix apps/mobile
 
+      # `build:ci`, not `build`. The `prebuild` lifecycle hook chains
+      # `typecheck && test`, which the two steps above just ran, so plain
+      # `npm run build` re-ran the whole suite a second time: 81 of the 93
+      # seconds this step took on ubuntu, and ~95 of 108 on the windows
+      # runner that sets the wall clock. `build:ci` keeps the `postbuild`
+      # smoke test, which `build:fast` alone would skip.
       - name: Build
-        run: npm run build
+        run: npm run build:ci

@@ -1,0 +1,49 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "ci-build-gate-deduplication",
+  "summary": "Stop CI running typecheck and the test suite twice per matrix job, and add CodeRabbit as an automated pull-request reviewer.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "No desktop runtime code changes. The build output is byte-identical: build:ci runs the same electron-vite build and build:server as build, and keeps the postbuild smoke test that build:fast alone would skip."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile is untouched. The mobile jest step still runs on ubuntu-latest only and mobile-ota.yml is unchanged."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android is untouched. android-native-ci.yml and mobile-release.yml keep their existing triggers, signing verification and APK checks."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire protocol, IPC channel, event shape or handler changes. src/shared is untouched."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, migration or persisted-state changes. src/main/db and src/main/conversations are untouched."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        ".github/workflows/ci.yml",
+        "package.json",
+        "docs/releasing.md"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run build:ci passes locally and the postbuild smoke test reports that the packaged main bundle boots cleanly, proving build:fast plus postbuild preserves the coverage that plain build gave.",
+      "The pre-commit hook ran the full repository gate: 3586 tests passed across 376 files, 3 skipped.",
+      "The four required checks on this pull request are the live proof, and they are the same four that branch protection on main now requires."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The wall-clock saving is predicted from run 35192152144 step timings, where electron-vite started 81 seconds into the 93-second ubuntu Build step and roughly 95 seconds into the 108-second windows step. The post-change timing is not yet measured across several runs.",
+      "release.yml keeps its own duplicate gate deliberately and was not changed, so no tag has been cut through the new pull-request-then-tag release procedure in docs/releasing.md.",
+      "CodeRabbit reviewed pull request 78 and read .coderabbit.yaml with the CHILL profile, and its one finding was valid and fixed. The em dash path_instruction is still unverified, because no em dash appeared in this diff for it to catch."
+    ]
+  }
+}

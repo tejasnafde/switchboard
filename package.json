@@ -11,6 +11,7 @@
     "build": "electron-vite build && npm run build:server",
     "postbuild": "node scripts/smoke-test.mjs",
     "build:fast": "electron-vite build && npm run build:server",
+    "build:ci": "npm run build:fast && npm run postbuild",
     "preview": "unset ELECTRON_RUN_AS_NODE && electron-vite preview",
     "typecheck:main": "tsc --noEmit -p tsconfig.main.json",
     "typecheck:renderer": "tsc --noEmit -p tsconfig.renderer.json",

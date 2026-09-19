@@ -39,7 +39,15 @@ post-upgrade data checks separately from automated results.
 
 ## TL;DR
 
+`main` is protected and admins are NOT exempt, so the old
+`npm version patch && git push --follow-tags` no longer works: it pushes the
+version-bump commit straight to `main` and GitHub rejects it. The bump goes
+through a pull request like everything else, and the tag is applied to `main`
+afterwards so it never points at a commit that only exists on a branch.
+
 ```bash
+set -euo pipefail                          # or the tag outlives a failed step
+
 git switch -c chore/release-<version>
 npm version patch --no-git-tag-version    # or minor / major
 git commit -am "chore(release): cut v<version>"
@@ -71,6 +79,12 @@ Two things follow, and both cost a release cycle to learn:
   exempts it, but only when every changed file is `package.json` or
   `package-lock.json` AND every edited line is a `"version":` line. A release
   branch carrying anything else fails the check, by design - split it.
+
+`set -euo pipefail` is there because the block is meant to be pasted whole.
+Without `errexit` a non-zero exit from any line, and a red required check is
+exactly that, does not stop the `git tag` at the bottom. The tag then lands on
+the previous `main` commit, which is the same failure the first bullet above
+describes reaching by a different route. CodeRabbit found this on PR 78.
 
 Write the CHANGELOG entry on the FEATURE branch, not the release branch, so the
 release PR stays a pure bump and keeps the exemption.
