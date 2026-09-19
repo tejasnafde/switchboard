@@ -14,6 +14,18 @@ import { OpencodeAcpAdapter } from './adapters/opencode-acp-adapter'
 import { assertCwdReadable } from '../path-access'
 import { RuntimeEventBus } from './event-bus'
 import { DriftWatcher, parseWorktreeList, type WorktreeRef } from './worktree-drift'
+import {
+  ExecutionRootCoordinator,
+  type ExecutionRootHost,
+  type ProviderHandle,
+  type TargetResolution,
+} from './execution-root-coordinator'
+import { resolveExecutionRoot, samePath, type ExecutionRoot, LOCAL_MACHINE_ID } from '@shared/execution-root'
+import type { RelocateExecutionRootRequest } from '@shared/execution-root-relocation'
+import { ExecFileGitWorktreeAdapter } from '../worktree-creation/git-adapter'
+import { getCurrentBranch } from '../git/refs'
+import { access } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { realpathOrAncestor } from '../ipc/files'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -21,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb } from '../db/database'
+import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -63,6 +75,15 @@ import {
 } from '@shared/provider-events'
 
 const log = createLogger('provider:registry')
+
+/** Realpath, or the input when the path does not exist (a deleted worktree). */
+function realpathSyncOr(p: string): string {
+  try {
+    return realpathSync(p)
+  } catch {
+    return p
+  }
+}
 
 /** `claude` is spelled `claude-code` everywhere the DB is involved. */
 function agentTypeForProvider(provider: ProviderKind): Exclude<AgentType, 'terminal'> {
@@ -113,6 +134,17 @@ export class ProviderRegistry implements PeerToolHost {
    *  cached, refs realpath-normalized once at fill). Drift state lives in
    *  the watcher, turn-scoped. */
   private worktreeCache = new Map<string, { at: number; refs: WorktreeRef[]; inflight?: Promise<WorktreeRef[]> }>()
+  /**
+   * Relocation transaction. Constructed in `registerHandlers`, because it
+   * needs the same local `startSession`/`stopSession` closures the profile
+   * switch uses - those ARE the drain and rollback boundary, and a second
+   * implementation of them would be a second set of bugs.
+   */
+  private executionRoot: ExecutionRootCoordinator | null = null
+
+  /** Provider events staged while a relocation is mid-flight, per thread. */
+  private relocationGates = new Map<string, ProviderEventGate>()
+
   private driftWatcher = new DriftWatcher(
     (folder, fresh) => this.listWorktrees(folder, fresh),
     (p) => realpathOrAncestor(p)
@@ -527,6 +559,9 @@ export class ProviderRegistry implements PeerToolHost {
         watcher.onToolStarted(event.threadId, cwd, event.toolName, event.input), event.threadId)
     }
     if (event.type === 'turn.completed') {
+      // A Follow clicked mid-turn waited for exactly this moment. Killing the
+      // turn to satisfy the click would have been worse than the wait.
+      void this.executionRoot?.onTurnBoundary(event.threadId)
       void this.driftHook((watcher, cwd) => watcher.onTurnCompleted(event.threadId, cwd), event.threadId)
     }
   }
@@ -564,6 +599,14 @@ export class ProviderRegistry implements PeerToolHost {
       if (!cwd) return
       const event = await run(this.driftWatcher, cwd)
       if (!event) return
+      // The check shells out to git and realpath, so it yields. A relocation
+      // can commit in that window, and publishing now would suggest following
+      // back to where the user just left. The result was computed against a
+      // root this thread no longer has, so it is not evidence of anything.
+      if (this.sessionCwd.get(threadId) !== cwd) {
+        log.info(`dropping drift result for ${threadId} - the root moved while it was being checked`)
+        return
+      }
       log.info('worktree drift detected', { threadId, worktree: event.worktreePath, branch: event.branch })
       this.bus.publish(event)
     } catch (err) {
@@ -582,6 +625,32 @@ export class ProviderRegistry implements PeerToolHost {
     // off the old cwd.
     notebookManager.detach(threadId)
     void this.attachNotebooks(threadId, cwd)
+  }
+
+  /**
+   * The committed execution root for a thread, as this backend sees it.
+   *
+   * `machineId` is taken from `SWITCHBOARD_MACHINE_ID` when the backend was
+   * told its own identity, and otherwise echoes what the caller claimed. A
+   * backend that does not know its own name cannot meaningfully refuse a
+   * request for being on the wrong machine, and the preload routing table has
+   * already sent the call to the machine that owns the thread. The check is
+   * enforced where the identity is actually known.
+   */
+  private readExecutionRoot(threadId: string, claimedMachineId?: string): ExecutionRoot | null {
+    const stored = getConversationExecutionRoot(threadId)
+    if (!stored?.projectPath) return null
+    return resolveExecutionRoot({
+      // Realpath, because `resolveTarget` realpaths the target and the two
+      // are compared. On macOS `/var` is a symlink to `/private/var`, so a
+      // project under a temp dir compares unequal to itself and a move back
+      // to the checkout is stored as a worktree pointer at the checkout.
+      projectPath: realpathSyncOr(stored.projectPath),
+      worktreePath: stored.worktreePath,
+      worktreeBranch: stored.worktreeBranch,
+      machineId: process.env.SWITCHBOARD_MACHINE_ID || claimedMachineId || LOCAL_MACHINE_ID,
+      executionRootRevision: stored.revision,
+    })
   }
 
   /** Notebook mirrors are rooted at the git toplevel because checkpoint diff
@@ -653,10 +722,18 @@ export class ProviderRegistry implements PeerToolHost {
     if (this.switchingSessions.has(threadId)) {
       return rejectedAtomicTurn('Session queue full while a profile switch is in progress')
     }
+    // A queued relocation commits at the next turn boundary, so accepting a
+    // new turn here would start it in the directory the user is leaving.
+    if (this.executionRoot?.hasQueued(threadId) || this.executionRoot?.isRelocating(threadId)) {
+      return rejectedAtomicTurn('Session queue full while the working directory is moving')
+    }
     const starting = this.startingSessions.get(threadId)
     if (starting) await starting
     if (this.switchingSessions.has(threadId)) {
       return rejectedAtomicTurn('Session queue full while a profile switch is in progress')
+    }
+    if (this.executionRoot?.hasQueued(threadId) || this.executionRoot?.isRelocating(threadId)) {
+      return rejectedAtomicTurn('Session queue full while the working directory is moving')
     }
     const adapter = this.sessionAdapters.get(threadId)
     if (!adapter) return rejectedAtomicTurn(`No session: ${threadId}`)
@@ -782,6 +859,170 @@ export class ProviderRegistry implements PeerToolHost {
         },
       }
     }
+
+    // ── Execution-root relocation ──────────────────────────────────
+    //
+    // Built here so it can reuse the SAME `stopSession`/`startSession`
+    // closures the profile switch uses. Those are the adapter drain boundary
+    // and the rollback path; reimplementing them for relocation would be
+    // reimplementing their bugs too.
+    //
+    // A relocation handle carries the stopped snapshot, the source path and
+    // the staged-event gate, so `attachProvider` can tell a forward move from
+    // a rollback without the coordinator having to know either exists.
+    type RelocationHandle = {
+      snapshot: StoppedSessionSnapshot
+      /** Where the provider was. Logging and diagnostics only - never a decision. */
+      sourcePath: string
+      gate: ProviderEventGate
+      threadId: string
+    }
+
+    const gitWorktrees = new ExecFileGitWorktreeAdapter()
+
+    const executionRootHost: ExecutionRootHost = {
+      currentRoot: (threadId, machineId) => this.readExecutionRoot(threadId, machineId),
+      sessionState: (threadId) => {
+        const descriptor = this.sessionDescriptors.get(threadId)
+        return {
+          threadIsLive: this.sessionAdapters.has(threadId),
+          starting: this.startingSessions.has(threadId),
+          switchingProfile: this.switchingSessions.has(threadId),
+          preparingTurn: this.preparingTurns.has(threadId),
+          turnActive: this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running',
+          provider: descriptor?.provider ?? 'unknown',
+        }
+      },
+      resolveTarget: async (currentRoot, targetPath): Promise<TargetResolution> => {
+        try {
+          await access(targetPath)
+        } catch {
+          return { ok: false, code: 'target-missing', message: `${targetPath} no longer exists.` }
+        }
+        try {
+          // Repository identity by normalized `--git-common-dir`, not by
+          // string containment: a worktree lives outside its parent checkout
+          // as often as inside it, so a prefix test answers the wrong
+          // question in both directions.
+          const [here, there] = await Promise.all([
+            gitWorktrees.resolveRepository(currentRoot.projectPath),
+            gitWorktrees.resolveRepository(targetPath),
+          ])
+          if (here.repositoryId !== there.repositoryId) {
+            return {
+              ok: false,
+              code: 'different-repository',
+              message: 'That directory belongs to a different repository.',
+            }
+          }
+        } catch (err) {
+          log.warn(`relocation target ${targetPath} is not a usable git worktree`, err)
+          return { ok: false, code: 'different-repository', message: 'That directory is not a worktree of this repository.' }
+        }
+        // The branch comes from git, never from the client. A renderer label
+        // can be stale by the time the transaction runs.
+        const branch = await getCurrentBranch(targetPath).catch(() => null)
+        const resolved = await realpathOrAncestor(targetPath)
+        return { ok: true, path: resolved, branch }
+      },
+      detachProvider: async (threadId): Promise<ProviderHandle> => {
+        const descriptor = this.sessionDescriptors.get(threadId)
+        const sourcePath = descriptor?.cwd ?? this.sessionCwd.get(threadId) ?? ''
+        const gate: ProviderEventGate = { state: 'staging', events: [] }
+        this.relocationGates.set(threadId, gate)
+        try {
+          const snapshot = await stopSession(threadId)
+          if (!snapshot) throw new Error('The provider session disappeared during relocation')
+          return { snapshot, sourcePath, gate, threadId }
+        } catch (err) {
+          // Every exit from here that is not a handle must drop the gate, or
+          // this thread's events are staged for the life of the process and
+          // the chat looks dead while the provider is fine.
+          this.relocationGates.delete(threadId)
+          throw err
+        }
+      },
+      attachProvider: async (opaque, path, mode) => {
+        const handle = opaque as RelocationHandle
+        const restoring = mode === 'restore'
+        const opts: SessionStartOpts = {
+          threadId: handle.threadId,
+          provider: handle.snapshot.descriptor.provider,
+          cwd: path,
+          model: handle.snapshot.descriptor.model,
+          runtimeMode: handle.snapshot.descriptor.runtimeMode,
+          // The native thread id is what makes this a move rather than a
+          // restart. Claude re-runs its own resume preflight against the new
+          // cwd on the next query, and Codex re-sends the cwd on every turn.
+          resumeSessionId: handle.snapshot.descriptor.sessionId,
+          instanceId: handle.snapshot.credentials.instanceId,
+          remoteConfigDir: handle.snapshot.credentials.remoteConfigDir,
+        }
+        try {
+          if (restoring) {
+            // A rollback must not replay events the target produced before it
+            // failed: they describe a directory the user is not in.
+            handle.gate.state = 'discarded'
+            handle.gate.events.length = 0
+            this.relocationGates.delete(handle.threadId)
+            await startSession(opts, true, undefined, handle.snapshot.credentials)
+            return { ok: true, continuity: 'preserved' }
+          }
+          await startSession(opts, false, handle.gate, handle.snapshot.credentials)
+          return {
+            ok: true,
+            continuity: handle.snapshot.descriptor.sessionId ? 'preserved' : 'not-needed',
+          }
+        } catch (err) {
+          if (!restoring) {
+            handle.gate.state = 'discarded'
+            handle.gate.events.length = 0
+            this.relocationGates.delete(handle.threadId)
+            await stopSession(handle.threadId).catch(() => null)
+          }
+          const message = err instanceof Error ? err.message : String(err)
+          if (restoring) throw new Error(message)
+          return { ok: false, code: 'target-start-failed', message }
+        }
+      },
+      commitRoot: (threadId, path, branch) => {
+        const conversationId = resolveRootThreadId(threadId)
+        const raw = getConversationById(conversationId)?.project_path ?? null
+        const projectPath = raw ? realpathSyncOr(raw) : null
+        // A relocation back to the parent checkout is stored as a NULL
+        // pointer, not as the project path repeated, so every existing reader
+        // of `worktree_path` keeps its current meaning.
+        const pointer = projectPath && samePath(path, projectPath) ? null : path
+        return commitConversationExecutionRoot(conversationId, pointer, pointer ? branch : null)
+      },
+      commitRuntime: (threadId, path) => {
+        this.updateSessionCwd(threadId, path)
+        const gate = this.relocationGates.get(threadId)
+        if (!gate) return
+        this.relocationGates.delete(threadId)
+        const descriptor = this.sessionDescriptors.get(threadId)
+        const agentType = agentTypeForProvider(descriptor?.provider ?? 'claude')
+        const instanceId = this.sessionCredentials.get(threadId)?.instanceId ?? null
+        gate.state = 'flushing'
+        // One at a time, like the profile switch: a staged event can itself
+        // trigger a publish, and draining the array in place keeps ordering.
+        while (gate.events.length > 0) {
+          const event = gate.events.shift()
+          if (event) this.publishAdapterEvent(event, agentType, instanceId)
+        }
+        gate.state = 'committed'
+      },
+      publish: (event) => { this.bus.publish(event) },
+    }
+    this.executionRoot = new ExecutionRootCoordinator(executionRootHost)
+
+    this.host.handle(
+      ProviderChannels.RELOCATE_EXECUTION_ROOT,
+      async (request: RelocateExecutionRootRequest) => {
+        if (!this.executionRoot) throw new Error('Execution-root coordinator is not ready')
+        return await this.executionRoot.relocate(request)
+      },
+    )
 
     const startSession = async (
       initialOpts: SessionStartOpts,
@@ -983,7 +1224,10 @@ export class ProviderRegistry implements PeerToolHost {
       if (!descriptor || !this.sessionAdapters.has(threadId)) {
         return failure('context-unavailable', 'This thread is not attached to a live provider session')
       }
-      if (this.switchingSessions.has(threadId) || this.startingSessions.has(threadId) || this.preparingTurns.has(threadId) || this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running') {
+      // A relocation shares this flow's snapshot, gate and rollback path, so
+      // the two must exclude each other in BOTH directions. The coordinator
+      // already refuses to start while a switch holds the thread.
+      if (this.switchingSessions.has(threadId) || this.startingSessions.has(threadId) || this.preparingTurns.has(threadId) || this.hasOutstandingTurn(threadId) || this.sessionStatus.get(threadId) === 'running' || this.executionRoot?.isRelocating(threadId) || this.executionRoot?.hasQueued(threadId)) {
         return failure('busy', 'Stop the current turn before switching profile')
       }
       if (input.expectedCurrentInstanceId !== currentInstanceId) {
@@ -1336,7 +1580,12 @@ export class ProviderRegistry implements PeerToolHost {
       }
     })
 
-    this.host.handle(ProviderChannels.STOP_SESSION, stopSession)
+    // A user stop is deliberate: a relocation waiting for a turn that will
+    // never arrive must not fire against the next session on this thread.
+    this.host.handle(ProviderChannels.STOP_SESSION, async (threadId: string) => {
+      this.executionRoot?.onSessionStopped(threadId)
+      return await stopSession(threadId)
+    })
 
     log.info('IPC handlers registered')
   }

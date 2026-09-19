@@ -5,10 +5,12 @@ import { TerminalWindow } from './TerminalWindow'
 import { PaneResizeHandle } from './PaneResizeHandle'
 import { focusTerminal } from '../../services/terminal-registry'
 import { LaunchConfigPicker } from './LaunchConfigPicker'
+import { sessionExecutionRootPath } from '../../services/executionRoot'
 
+/** Where a new pane opens. The session's CURRENT root, so a followed
+ *  worktree is picked up instead of the parent checkout. */
 function getSessionCwd(sessionId: string | null): string | undefined {
-  if (!sessionId) return undefined
-  return useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.projectPath
+  return sessionExecutionRootPath(sessionId)
 }
 
 /**

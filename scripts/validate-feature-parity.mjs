@@ -188,14 +188,65 @@ function listJsonFiles(directory) {
   })
 }
 
-function changedFilesSince(repoRoot, base) {
-  return execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMR', `${base}...HEAD`], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  })
+export function changedFilesSince(repoRoot, base, runGit = defaultNameOnly) {
+  return runGit(repoRoot, base)
     .split(/\r?\n/)
     .map((path) => path.trim())
     .filter(Boolean)
+}
+
+const VERSION_BUMP_FILES = new Set(['package.json', 'package-lock.json'])
+
+/**
+ * `D` is in the filter because a deletion is a behaviour change. Without it a
+ * branch could delete a source file, bump the version, and be granted the
+ * version-only exemption, because the deleted path never reached the list the
+ * exemption inspects.
+ */
+function defaultNameOnly(repoRoot, base) {
+  return execFileSync('git', ['diff', '--name-only', '--diff-filter=ACMRD', `${base}...HEAD`], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+}
+
+function defaultGitDiff(repoRoot, base, changedFiles) {
+  return execFileSync('git', ['diff', '-U0', `${base}...HEAD`, '--', ...changedFiles], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  })
+}
+
+/**
+ * Is this diff nothing but `npm version`?
+ *
+ * A release commit touches `package.json`, which is a product file, so the
+ * policy would demand a feature-parity manifest for a commit that changes no
+ * behaviour on any surface. Since `main` requires this check to pass, that
+ * deadlocks releases: the bump cannot be pushed directly and cannot be merged.
+ *
+ * The exemption is deliberately narrow. Every changed file must be one of the
+ * two manifest files, AND every added or removed line in them must be a
+ * `"version":` line. A release that smuggles in a dependency change, a script
+ * change or anything else fails the check exactly as before.
+ */
+export function isVersionOnlyBump(repoRoot, base, changedFiles, runGitDiff = defaultGitDiff) {
+  if (changedFiles.length === 0) return false
+  if (!changedFiles.every((path) => VERSION_BUMP_FILES.has(path))) return false
+  if (!base) return false
+  let diff
+  try {
+    diff = runGitDiff(repoRoot, base, changedFiles)
+  } catch {
+    // No git, or an unreachable base: fall back to requiring the manifest
+    // rather than granting an exemption we could not verify.
+    return false
+  }
+  const edits = diff
+    .split(/\r?\n/)
+    .filter((line) => /^[+-]/.test(line) && !/^(\+\+\+|---)/.test(line))
+  if (edits.length === 0) return false
+  return edits.every((line) => /^[+-]\s*"version":\s*"[^"]+",?\s*$/.test(line))
 }
 
 function parseArgs(args) {
@@ -216,7 +267,9 @@ export function runFeatureParityValidation({ repoRoot, all = false, base = '', f
     : changedFiles.filter((path) => MANIFEST_PATTERN.test(path)).map((path) => join(repoRoot, path))
   const failures = []
 
-  if (!all && requiresFeatureParityManifest(changedFiles) && manifestFiles.length === 0) {
+  const versionOnly = !all && isVersionOnlyBump(repoRoot, base, changedFiles)
+
+  if (!all && !versionOnly && requiresFeatureParityManifest(changedFiles) && manifestFiles.length === 0) {
     failures.push(
       `Behavior-bearing changes require a changed ${MANIFEST_DIRECTORY}/<feature>.json manifest.`,
     )

@@ -46,36 +46,50 @@ through a pull request like everything else, and the tag is applied to `main`
 afterwards so it never points at a commit that only exists on a branch.
 
 ```bash
-set -euo pipefail                        # or the tag can outlive a failed step
+set -euo pipefail                          # or the tag outlives a failed step
 
-git switch -c release/v0.8.59
-npm version patch --no-git-tag-version   # or minor / major
-git commit -am 'v0.8.59'
-gh pr create --fill --title 'v0.8.59'
-gh pr checks --watch                     # blocks until the required checks settle
-gh pr merge --merge                      # NOT --squash, NOT --auto: see below
-
-git switch main && git pull
-git tag v0.8.59 && git push origin v0.8.59
+git switch -c chore/release-<version>
+npm version patch --no-git-tag-version    # or minor / major
+git commit -am "chore(release): cut v<version>"
+git push -u origin chore/release-<version>
+gh pr create --base main --title "chore(release): cut v<version>"
+# merge once the four required checks are green, then:
+git switch main && git pull --ff-only
+git tag v<version> && git push origin v<version>
 ```
 
-Merge, do not squash. A squash rewrites the commit, so a tag cut from the
-branch would point at an object that is not an ancestor of `main`.
+**`main` is protected with `enforce_admins: true`**, so the old
+`npm version patch && git push --follow-tags` no longer works: the push is
+rejected with `protected branch hook declined`. Every release before 0.8.59
+predates that protection, which is why the history up to `v0.8.58` is linear.
 
-Do not add `--auto`. `gh pr merge --auto` only ENABLES auto-merge and returns
-at once, so the `git pull` below it can run before the merge happens. The tag
-then lands on the previous `main` commit and `release.yml` builds the wrong
-tree, which is the worst possible failure here because the result is a
-plausible-looking signed installer of the wrong code. `gh pr checks --watch`
-followed by a plain `gh pr merge` blocks until the merge is real.
+Two things follow, and both cost a release cycle to learn:
 
-`set -euo pipefail` covers the same failure from the other side. The block
-above is meant to be pasted as a whole, and without `errexit` a non-zero exit
-from `gh pr checks --watch` (which is what a red check returns) or from
-`gh pr merge` does not stop the `git tag` two lines later. The tag would
-again land on the previous `main` commit.
+- **Tag AFTER the merge, never before.** That is what `--no-git-tag-version` is
+  for above: plain `npm version` creates the tag locally, `--follow-tags`
+  pushes it even when the branch push is rejected, and the later `git tag`
+  then fails because the name is already taken by the unmerged commit. A tag
+  that points off `main` is not cosmetic either - `release.yml` fires on it
+  and builds it. If it happens: cancel the run, then
+  `git push origin :refs/tags/<tag>` before anything publishes.
+- **The version bump alone must pass `Cross-surface feature policy`**, which is
+  one of the four required checks. `package.json` is a product file, so a bump
+  would normally demand a feature-parity manifest for a commit that changes no
+  behaviour. `isVersionOnlyBump` in `scripts/validate-feature-parity.mjs`
+  exempts it, but only when every changed file is `package.json` or
+  `package-lock.json` AND every edited line is a `"version":` line. A release
+  branch carrying anything else fails the check, by design - split it.
 
-That is the whole procedure. Everything the operator used to verify by hand
+`set -euo pipefail` is there because the block is meant to be pasted whole.
+Without `errexit` a non-zero exit from any line, and a red required check is
+exactly that, does not stop the `git tag` at the bottom. The tag then lands on
+the previous `main` commit, which is the same failure the first bullet above
+describes reaching by a different route. CodeRabbit found this on PR 78.
+
+Write the CHANGELOG entry on the FEATURE branch, not the release branch, so the
+release PR stays a pure bump and keeps the exemption.
+
+The rest of the procedure is unchanged. Everything the operator used to verify by hand
 is a job in `release.yml`, so a green run means it was checked:
 
 | Job | Enforces |

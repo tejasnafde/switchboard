@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "about-diagnostics-disclosure",
+  "summary": "Collapse Settings > About > Diagnostics behind a disclosure that previews its own contents, remembers the user's choice, and opens itself on a translated build the user has never answered for, while the amber gist keeps that warning visible after a deliberate close.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/SettingsModal.tsx",
+        "tests/unit/diagnostics-section-render.test.ts",
+        "tests/unit/diagnostics-disclosure.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client has no About or diagnostics surface. `getDiagnostics` is an Electron-only IPC handler reading Electron process metrics and GPU feature status, and apps/mobile never calls it: there is no occurrence of getDiagnostics or a diagnostics screen anywhere under apps/mobile/src."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client has no About or diagnostics surface. Its ui package contains no settings-about screen that renders host process metrics, and nothing in apps/android calls the diagnostics contract."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/diagnostics-report.ts",
+        "tests/unit/diagnostics-disclosure.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema change and no migration. The open/closed preference is one row in the existing key-value `settings` table under `about.diagnosticsExpanded`. An absent key already means 'no preference' and resolves to collapsed, so an older database and an older client both behave correctly with no backfill, and a newer database is readable by an older client that simply ignores the key."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer presentation change only. No package identity, signing, deep-link scheme, update channel, IPC channel, or wire-protocol change; the diagnostics IPC contract and its payload are untouched."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed for both the main and renderer projects; eslint --max-warnings=0 passed on both changed TypeScript files, which is what the pre-commit hook runs on staged files.",
+      "npm test passed 378 files / 3,616 tests with 3 skipped on this branch, including 19 disclosure-policy tests and 11 first-frame render tests.",
+      "tests/unit/diagnostics-disclosure.test.ts pins the gist text, the singular/plural and unknown-count terminal cases, the shared footprint formula, and the preference precedence: a translated build opens for an unanswered user, and a deliberate close is respected.",
+      "tests/unit/diagnostics-section-render.test.ts renders the real component with renderToStaticMarkup and asserts the first frame is collapsed (aria-expanded=false, grid-template-rows:0fr, body inert, no process rows) and that hover and focus are class-driven rather than imperative.",
+      "An adversarial review of the branch diff was run and its two substantive findings were fixed: a pre-snapshot click could suppress the translated override for the session, and the persisted collapse choice was discarded on every reopen for a translated build. Both are resolved by the preference precedence change. Focus restoration on collapse, the class-based hover and focus ring, the shared footprint formula, the error colour on the collapsed gist, and an unmount guard on the diagnostics read were also applied."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The collapse and expand animation, the chevron rotation, and the hover and focus rings have not been watched by a human in the running app.",
+      "The translated/Rosetta path has not been exercised on an x64 build running under Apple silicon translation; it is covered by unit tests only, because this host runs the native arm64 build.",
+      "Persistence across an app restart, and the settings read and write themselves, are not covered by an effect-running test: the unit harness is node-environment with no jsdom, so renderToStaticMarkup runs no effects. Only the key name and the pure precedence rule are pinned.",
+      "Focus restoration on collapse is implemented but not asserted by a test, for the same harness reason.",
+      "Behaviour under prefers-reduced-motion has not been verified visually.",
+      "tests/unit/tcp-host.test.ts timed out once at its 5s limit during an early full-suite run and passed in isolation and on every later run; it is a real-socket test and load-sensitive, and it is unrelated to this change."
+    ]
+  }
+}

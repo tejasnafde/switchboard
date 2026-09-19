@@ -259,6 +259,11 @@ export class DriftWatcher {
   onSessionMoved(threadId: string): void {
     this.notified.delete(threadId)
     this.homeCache.delete(threadId)
+    // Stashed command paths were gathered against the OLD home. Judging them
+    // against the new one reports drift back where the user just came from,
+    // which is the follow-back loop. They describe a root that no longer
+    // exists for this thread, so they are evidence of nothing.
+    this.pending.delete(threadId)
   }
 
   private async flushPending(threadId: string, sessionFolder: string): Promise<RuntimeWorktreeDriftEvent | null> {

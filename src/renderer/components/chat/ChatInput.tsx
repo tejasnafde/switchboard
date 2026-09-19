@@ -19,6 +19,8 @@ import {
 } from '@shared/models'
 import { defaultInstanceId, type AgentType, type ProviderSkill } from '@shared/types'
 import { useAgentStore } from '../../stores/agent-store'
+import { describeRelocationOutcome } from '../../services/executionRootRelocation'
+import type { RelocationReason } from '@shared/execution-root-relocation'
 import { UnifiedProviderPicker } from './UnifiedProviderPicker'
 import { useSkillStore } from '../../stores/skill-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
@@ -842,18 +844,69 @@ export function ChatInput({
   // at-menu file listing AND the BranchPicker, so a worktree session's branch
   // switch can't flip HEAD in the shared parent repo.
   const sessionsForRepo = useAgentStore((s) => s.sessions)
-  // The ONE pointer swap: chip, IDE pane, terminals, and diff review all
-  // derive from it. Shared by the branch picker and the drift Follow button
-  // so future swap side effects cannot diverge between the two.
-  const swapWorktreePointer = (newCwd: string, branch: string) => {
+  // Held in a ref so the memoized orphan-heal callback can reach it without
+  // depending on the whole relocation closure.
+  const swapWorktreePointerRef = useRef<
+    ((cwd: string, branch: string, reason?: RelocationReason, successNotice?: string, noticeId?: string) => void) | null
+  >(null)
+
+  /**
+   * The ONE relocation entry point: the drift Follow button and the branch
+   * picker both come through here.
+   *
+   * This used to write the pointer and the store directly, which is why
+   * Follow moved the branch chip and left the agent running in the old
+   * directory. It is now a request to the backend that OWNS the path, and the
+   * store is updated only from what that backend actually committed.
+   */
+  const swapWorktreePointer = (
+    newCwd: string,
+    branch: string,
+    reason: RelocationReason = 'branch-picker',
+    successNotice?: string,
+    noticeId?: string,
+  ) => {
     if (!sessionId) return
-    useAgentStore.getState().setWorktree(sessionId, newCwd, branch)
-    const conversationId = useAgentStore.getState().sessions.find((x) => x.id === sessionId)?.conversationId
-      ?? sessionId
-    window.api.app
-      .setConversationWorktree(conversationId, newCwd, branch)
-      .catch((err: unknown) => log.warn('persist worktree failed:', err))
+    const session = useAgentStore.getState().sessions.find((x) => x.id === sessionId)
+    const request = {
+      threadId: session?.conversationId ?? sessionId,
+      expectedRevision: session?.executionRootRevision ?? 0,
+      targetPath: newCwd,
+      targetBranch: branch,
+      machineId: session?.machineId ?? 'local',
+      reason,
+    }
+    void window.api.provider
+      .relocateExecutionRoot(request)
+      .then((result) => {
+        const view = describeRelocationOutcome(result)
+        if (view.applyRoot) useAgentStore.getState().applyExecutionRoot(sessionId, view.applyRoot)
+        // Our revision was wrong and the refusal carried the right one.
+        // Adopting it is what lets a retry succeed instead of failing
+        // identically forever against the same stale number.
+        if (view.syncRevision !== null) {
+          useAgentStore.getState().syncExecutionRootRevision(sessionId, view.syncRevision)
+        }
+        if (view.clearSuggestion && !view.applyRoot) {
+          useAgentStore.getState().setDriftSuggestion(sessionId, null)
+        }
+        const notice = view.applyRoot ? successNotice ?? view.notice : view.notice
+        if (!notice) return
+        useAgentStore.getState().appendMessage(sessionId, {
+          // A caller-supplied id is deterministic, so `appendMessage`'s dedupe
+          // absorbs a repeated heal instead of stacking identical notices.
+          id: noticeId ?? `wt_relocate_${Date.now()}`,
+          role: 'system',
+          content: notice,
+          timestamp: Date.now(),
+        })
+      })
+      .catch((err: unknown) => log.warn('relocate execution root failed:', err))
   }
+
+  swapWorktreePointerRef.current = swapWorktreePointer
+
+  swapWorktreePointerRef.current = swapWorktreePointer
 
   const { repoRoot, driftSuggestion, orphanedPath, orphanedBranch } = useMemo(() => {
     const s = sessionsForRepo.find((sess) => sess.id === sessionId)
@@ -872,27 +925,42 @@ export function ChatInput({
   // The session's worktree was deleted out from under it (agents clean up
   // after merges): reset the pointer to the main clone so the chip, IDE
   // pane, terminals, and diff review all recover, and say so in the chat.
+  /** Orphaned paths a heal has already been started for, so the repeat calls
+   *  this gets (two panes on one session, two mount effects in dev) fire one
+   *  relocation rather than one per call. */
+  const healingRef = useRef<Set<string>>(new Set())
+
+  /**
+   * The recorded worktree is gone. Move back to the parent checkout.
+   *
+   * This used to write the store and the legacy DB setter directly, which
+   * reintroduced the exact bug this feature exists to fix: a provider left
+   * running inside the DELETED directory while the chip said otherwise. It
+   * also skipped the revision bump, so a relocation already in flight could
+   * commit over a pointer that had changed without the revision moving.
+   */
   const healOrphanedWorktree = useCallback(() => {
     if (!sessionId || !orphanedPath) return
-    useAgentStore.getState().setWorktree(sessionId, null, null)
-    const conversationId = useAgentStore.getState().sessions.find((x) => x.id === sessionId)?.conversationId
-      ?? sessionId
-    window.api.app
-      .setConversationWorktree(conversationId, null, null)
-      .catch((err: unknown) => log.warn('persist worktree reset failed:', err))
-    useAgentStore.getState().appendMessage(sessionId, {
-      // Deterministic, so `appendMessage`'s id dedupe absorbs the repeat calls
-      // this gets: two panes on one session, and two mount effects in dev.
-      id: `wt_orphan_${orphanedPath}`,
-      role: 'system',
-      content: `Worktree ${orphanedBranch ?? orphanedPath} no longer exists - switched back to the main checkout.`,
-      timestamp: Date.now(),
-    })
-    log.info('healed orphaned worktree pointer', orphanedPath)
+    if (healingRef.current.has(orphanedPath)) return
+    healingRef.current.add(orphanedPath)
+    const projectPath = useAgentStore.getState().sessions.find((x) => x.id === sessionId)?.projectPath
+    if (!projectPath) {
+      log.warn('cannot heal an orphaned worktree without a project path', orphanedPath)
+      return
+    }
+    // The branch is advisory here; the backend resolves the real one from git.
+    swapWorktreePointerRef.current?.(
+      projectPath,
+      '',
+      'orphan-heal',
+      `Worktree ${orphanedBranch ?? orphanedPath} no longer exists - switched back to the main checkout.`,
+      `wt_orphan_${orphanedPath}`,
+    )
+    log.info('healing orphaned worktree pointer', orphanedPath)
   }, [sessionId, orphanedPath, orphanedBranch])
 
   const followDrift = () => {
-    if (driftSuggestion) swapWorktreePointer(driftSuggestion.worktreePath, driftSuggestion.branch)
+    if (driftSuggestion) swapWorktreePointer(driftSuggestion.worktreePath, driftSuggestion.branch, 'drift-follow')
   }
 
   // Lazy-load the file list the first time the user opens `@`. Cached on

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
+  changedFilesSince,
+  isVersionOnlyBump,
   requiresFeatureParityManifest,
   validateFeatureParityManifest,
 } from '../../scripts/validate-feature-parity.mjs'
@@ -141,5 +143,66 @@ describe('feature parity policy', () => {
     expect(requiresFeatureParityManifest(['tests/unit/mobile-images.test.ts', 'docs/notes.md'])).toBe(
       false,
     )
+  })
+})
+
+/**
+ * A release commit touches `package.json`, which is a product file, so the
+ * policy would demand a feature-parity manifest for a commit that changes no
+ * behaviour on any surface. `main` requires this check to pass, so that
+ * deadlocked releases: the bump could be neither pushed directly nor merged.
+ *
+ * The exemption has to stay narrow, which is what these pin.
+ */
+describe('version-only release bumps', () => {
+  const diff = (body: string) => () => body
+
+  it('exempts a bump that changes only the version lines', () => {
+    expect(isVersionOnlyBump('/repo', 'main', ['package.json', 'package-lock.json'], diff(
+      '--- a/package.json\n+++ b/package.json\n-  "version": "0.8.58",\n+  "version": "0.8.59",',
+    ))).toBe(true)
+  })
+
+  it('does not exempt a bump that also changes a dependency', () => {
+    expect(isVersionOnlyBump('/repo', 'main', ['package.json'], diff(
+      '-  "version": "0.8.58",\n+  "version": "0.8.59",\n-    "ws": "8.18.0",\n+    "ws": "8.19.0",',
+    ))).toBe(false)
+  })
+
+  it('does not exempt when any other file changed', () => {
+    expect(isVersionOnlyBump('/repo', 'main', ['package.json', 'src/main/index.ts'], diff(
+      '-  "version": "0.8.58",\n+  "version": "0.8.59",',
+    ))).toBe(false)
+  })
+
+  it('does not exempt an empty or unreadable diff', () => {
+    expect(isVersionOnlyBump('/repo', 'main', ['package.json'], diff(''))).toBe(false)
+    expect(isVersionOnlyBump('/repo', 'main', ['package.json'], () => { throw new Error('no git') }))
+      .toBe(false)
+  })
+
+  it('does not exempt without a base to compare against', () => {
+    expect(isVersionOnlyBump('/repo', '', ['package.json'], diff('-  "version": "1"\n+  "version": "2"')))
+      .toBe(false)
+  })
+})
+
+describe('deletions are behaviour-bearing', () => {
+  it('asks git for deleted paths too', () => {
+    // Without `D` a branch could delete a source file, bump the version, and
+    // be granted the version-only exemption, because the deleted path never
+    // reached the list the exemption inspects.
+    let args = ''
+    changedFilesSince('/repo', 'main', (_root: string, base: string) => {
+      args = base
+      return 'src/main/gone.ts\n'
+    })
+    expect(args).toBe('main')
+    expect(changedFilesSince('/repo', 'main', () => 'src/main/gone.ts\n'))
+      .toEqual(['src/main/gone.ts'])
+  })
+
+  it('requires a manifest for a deleted product file', () => {
+    expect(requiresFeatureParityManifest(['src/main/provider/some-adapter.ts'])).toBe(true)
   })
 })

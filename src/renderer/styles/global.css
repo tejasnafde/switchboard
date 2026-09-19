@@ -3067,3 +3067,31 @@ mark.sb-search-mark.active {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ─── Settings disclosure ───────────────────────────────────────── */
+/* Hover and focus live here rather than in inline handlers. Mutating
+   `el.style.background` on mouseenter while the JSX prop keeps rendering the
+   same literal leaves the DOM diverged from what React believes it wrote -
+   the hazard `layout-store.ts` carries a standing warning about. */
+.sb-disclosure-header {
+  background: transparent;
+}
+.sb-disclosure-header:hover {
+  background: var(--bg-hover);
+}
+.sb-disclosure-header:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ─── Disclosure motion ─────────────────────────────────────────── */
+/* The Settings > About > Diagnostics disclosure animates through inline
+   styles, which cannot carry a media query. These two rules are the only
+   place the preference can be honoured, so the transition is opt-out here
+   rather than at the call site. */
+@media (prefers-reduced-motion: reduce) {
+  .sb-disclosure-reveal,
+  .sb-disclosure-chevron {
+    transition: none;
+  }
+}

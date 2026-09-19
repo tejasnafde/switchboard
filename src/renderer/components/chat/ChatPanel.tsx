@@ -817,13 +817,30 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           }
           break
         }
-        case 'worktree.drift': {
+        case 'session.execution-root-changed': {
+        // The backend COMMITTED a move: the provider is already running
+        // there. Unlike `worktree.drift` this is not a suggestion, and unlike
+        // the old pointer write it is revision-guarded, so a late event from
+        // a client that was asleep cannot drag the chip backwards.
+        useAgentStore.getState().applyExecutionRoot(tid, {
+          path: event.to.path,
+          branch: event.to.branch,
+          revision: event.revision,
+          isWorktree: event.to.isWorktree,
+        })
+        break
+      }
+      case 'worktree.drift': {
           // Suggestion only - swapping the pointer is the user's call (three
-          // agents in three worktrees would ping-pong an auto-swap). Remote
-          // sessions are skipped: the pointer swap would write a remote path
-          // into local routing. Already-followed worktrees are skipped too
-          // (per-turn re-arm would otherwise re-suggest where you are).
-          if (event.machineId && event.machineId !== 'local') break
+          // agents in three worktrees would ping-pong an auto-swap).
+          // Already-followed worktrees are skipped (per-turn re-arm would
+          // otherwise re-suggest where you are).
+          //
+          // Remote sessions used to be dropped here, because following meant
+          // writing a remote absolute path into local routing. Relocation is
+          // now a request to the backend that OWNS the path: this renderer
+          // holds the suggestion, hands it straight back to the same machine,
+          // and never interprets it. So remote drift is followable now.
           const drifted = useAgentStore.getState().sessions.find((s) => s.id === tid)
           if (drifted?.worktreePath === event.worktreePath) break
           useAgentStore.getState().setDriftSuggestion(tid, {

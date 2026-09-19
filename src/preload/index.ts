@@ -670,6 +670,16 @@ const api = {
       return transport.invoke(ProviderChannels.SWITCH_INSTANCE, threadId, request)
     },
 
+    /**
+     * Move the conversation's execution root. The BACKEND that owns the path
+     * runs the transaction; the routing table sends this to the machine the
+     * thread is bound to, so no absolute path is ever interpreted here.
+     */
+    relocateExecutionRoot: (
+      request: import('@shared/execution-root-relocation').RelocateExecutionRootRequest,
+    ): Promise<import('@shared/execution-root-relocation').RelocateExecutionRootResult> =>
+      transport.invoke(ProviderChannels.RELOCATE_EXECUTION_ROOT, request),
+
     isAvailable: (provider: 'claude' | 'codex') =>
       transport.invoke(ProviderChannels.IS_AVAILABLE, provider),
 
