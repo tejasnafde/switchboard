@@ -40,11 +40,42 @@ post-upgrade data checks separately from automated results.
 ## TL;DR
 
 ```bash
-npm version patch          # or minor / major
-git push --follow-tags
+git switch -c chore/release-<version>
+npm version patch --no-git-tag-version    # or minor / major
+git commit -am "chore(release): cut v<version>"
+git push -u origin chore/release-<version>
+gh pr create --base main --title "chore(release): cut v<version>"
+# merge once the four required checks are green, then:
+git switch main && git pull --ff-only
+git tag v<version> && git push origin v<version>
 ```
 
-That is the whole procedure. Everything the operator used to verify by hand
+**`main` is protected with `enforce_admins: true`**, so the old
+`npm version patch && git push --follow-tags` no longer works: the push is
+rejected with `protected branch hook declined`. Every release before 0.8.59
+predates that protection, which is why the history up to `v0.8.58` is linear.
+
+Two things follow, and both cost a release cycle to learn:
+
+- **Tag AFTER the merge, never before.** That is what `--no-git-tag-version` is
+  for above: plain `npm version` creates the tag locally, `--follow-tags`
+  pushes it even when the branch push is rejected, and the later `git tag`
+  then fails because the name is already taken by the unmerged commit. A tag
+  that points off `main` is not cosmetic either - `release.yml` fires on it
+  and builds it. If it happens: cancel the run, then
+  `git push origin :refs/tags/<tag>` before anything publishes.
+- **The version bump alone must pass `Cross-surface feature policy`**, which is
+  one of the four required checks. `package.json` is a product file, so a bump
+  would normally demand a feature-parity manifest for a commit that changes no
+  behaviour. `isVersionOnlyBump` in `scripts/validate-feature-parity.mjs`
+  exempts it, but only when every changed file is `package.json` or
+  `package-lock.json` AND every edited line is a `"version":` line. A release
+  branch carrying anything else fails the check, by design - split it.
+
+Write the CHANGELOG entry on the FEATURE branch, not the release branch, so the
+release PR stays a pure bump and keeps the exemption.
+
+The rest of the procedure is unchanged. Everything the operator used to verify by hand
 is a job in `release.yml`, so a green run means it was checked:
 
 | Job | Enforces |
