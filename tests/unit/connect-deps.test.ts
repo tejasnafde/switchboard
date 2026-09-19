@@ -214,7 +214,12 @@ describe('spawnTunnel', () => {
       const proc = spawnTunnel('gcloud', ['--version'])
       const exited = await Promise.race([
         new Promise<boolean>((resolve) => proc.onExit(() => resolve(true))),
-        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1000)),
+        // Was 1000ms. This spawns a REAL login shell to resolve PATH, and one
+        // second is the cold-start budget of an idle machine, not of a box
+        // running the rest of this suite in parallel. It flaked on CI and
+        // locally; the assertion is "it exits at all", so a generous ceiling
+        // costs nothing when it passes.
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 8_000)),
       ])
 
       expect(exited).toBe(true)
@@ -226,7 +231,9 @@ describe('spawnTunnel', () => {
       _resetShellEnvCacheForTests()
       rmSync(root, { recursive: true, force: true })
     }
-  })
+    // Above vitest's 5s default, so the 8s race above is the thing that
+    // decides the result rather than the runner killing the test first.
+  }, 20_000)
 
   // Real child processes: their exit events are plain IO, so the fake timers
   // installed by beforeEach are irrelevant here - but switch back anyway so a

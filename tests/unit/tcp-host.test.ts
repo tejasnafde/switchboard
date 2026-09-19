@@ -225,5 +225,8 @@ describe('TcpHost.dispose', () => {
     await Promise.all([aClosed, bClosed])
     expect(a.destroyed).toBe(true)
     expect(b.destroyed).toBe(true)
-  })
+    // Real sockets on a real listener: the close handshake is at the mercy of
+    // whatever else the suite is doing. This timed out at exactly 5019ms on
+    // macOS CI against vitest's 5s default, which blocked a release.
+  }, 20_000)
 })
