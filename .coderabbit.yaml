@@ -3,7 +3,7 @@
 # https://github.com/apps/coderabbitai and grant it this repo. Free forever on
 # public repos.
 #
-# It reads the repo's own rules from CLAUDE.md rather than restating them here,
+# It reads the repo's own rules from AGENTS.md rather than restating them here,
 # so a rule change lands in one place. See knowledge_base.code_guidelines.
 # Public repo, so the free open-source plan applies once the 14-day paid
 # trial that every new install starts with expires. No card is on file.
@@ -49,5 +49,5 @@ knowledge_base:
   code_guidelines:
     enabled: true
     filePatterns:
-      - CLAUDE.md
+      - AGENTS.md
       - docs/**/*.md
