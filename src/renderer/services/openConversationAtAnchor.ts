@@ -14,7 +14,7 @@ interface LoadedConversation {
     worktreeBranch?: string | null
     worktreeId?: string | null
     providerInstanceId?: string | null
-    runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'full-access' | null
+    runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access' | null
     model?: string | null
     reasoningEffort?: 'low' | 'medium' | 'high' | null
     forkMetadata?: ForkLineageMetadata | null

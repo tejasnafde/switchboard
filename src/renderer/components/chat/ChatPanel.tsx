@@ -14,6 +14,8 @@ import { ChatInput, type ChatSendResult } from './ChatInput'
 import { chatIdentity } from './chatIdentity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ForkLineageBanner } from './ForkLineageBanner'
+import { CompactionOfferBanner } from './CompactionOfferBanner'
+import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
 import {
@@ -163,6 +165,22 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
   const messages = activeSession?.messages ?? []
   const status = activeSession?.status ?? 'idle'
+
+  // Compaction nudge. A one-minute tick is what lets the banner appear on a
+  // pane the user left alone for over an hour, since nothing else re-renders it.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const [compactionDismissedFor, setCompactionDismissedFor] = useState<string | null>(null)
+  const offerCompaction = activeSession?.id !== compactionDismissedFor && shouldOfferCompaction({
+    provider: activeSession?.type,
+    usedTokens: activeSession?.tokenUsage?.usedTokens,
+    lastMessageAt: messages.length ? messages[messages.length - 1].timestamp : undefined,
+    busy: status === 'running' || status === 'thinking',
+    now,
+  })
   const pendingDeliveryState = useMemo(() => {
     for (let index = messages.length - 1; index >= 0; index--) {
       const message = messages[index]
@@ -171,13 +189,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     return undefined
   }, [messages])
   const hasSession = activeSession !== undefined
-  // Fallback token estimate only when the adapter hasn't reported real usage.
-  // Memoized so it isn't an O(n) sum over all messages on every render (which,
-  // because ChatPanel re-renders per token, was O(n^2) across a turn).
-  const estimatedTokens = useMemo(
-    () => Math.round(messages.reduce((acc, m) => acc + (m.content?.length ?? 0), 0) / 4),
-    [messages],
-  )
   const sessionId = activeSession?.id ?? null
   const projectPath = activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
@@ -1669,7 +1680,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
         {/* Status text */}
         {hasSession && (
-          <span style={{ color: 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
+          <span style={{ color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
             {status === 'running'
               ? 'thinking…'
               : status === 'idle' && pendingDeliveryState === 'pending'
@@ -1681,6 +1692,14 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
       {activeSession?.forkMetadata && (
         <ForkLineageBanner metadata={activeSession.forkMetadata} />
+      )}
+
+      {offerCompaction && activeSession && (
+        <CompactionOfferBanner
+          usedTokens={activeSession.tokenUsage?.usedTokens ?? 0}
+          onCompact={() => { void handleSend('/compact') }}
+          onDismiss={() => setCompactionDismissedFor(activeSession.id)}
+        />
       )}
 
       {/* Messages */}
@@ -1758,10 +1777,10 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         onModelChange={handleModelChange}
         reasoningEffort={reasoningEffort}
         onReasoningEffortChange={handleReasoningEffortChange}
-        contextUsage={hasSession ? {
-          // Rough approximation: ~4 chars per token. Real data arrives via turn.completed events.
-          usedTokens: activeSession?.tokenUsage?.usedTokens || estimatedTokens,
-          maxTokens: activeSession?.tokenUsage?.maxTokens ?? 200000,
+        contextUsage={hasSession && activeSession?.tokenUsage ? {
+          // Hidden until the first context_window event: the char estimate read "0" for every fresh chat.
+          usedTokens: activeSession.tokenUsage.usedTokens,
+          maxTokens: activeSession.tokenUsage.maxTokens ?? 200000,
         } : undefined}
         isRunning={status === 'running' || status === 'thinking'}
         onInterrupt={async () => {

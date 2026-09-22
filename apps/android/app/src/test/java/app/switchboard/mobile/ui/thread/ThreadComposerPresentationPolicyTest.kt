@@ -38,7 +38,7 @@ class ThreadComposerPresentationPolicyTest {
         assertEquals(
             ThreadSettingsAffordance(
                 label = "Claude Sonnet",
-                supportingLabel = "Sandbox",
+                supportingLabel = "Supervised",
             ),
             ThreadComposerPresentationPolicy.settingsAffordance(
                 modelLabel = " Claude Sonnet ",

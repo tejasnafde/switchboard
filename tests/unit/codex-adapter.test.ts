@@ -539,6 +539,7 @@ describe('CodexAdapter', () => {
     })
     expect(threadStart.params).not.toHaveProperty('input')
     expect(threadStart.params).not.toHaveProperty('message')
+    expect(threadStart.params).not.toHaveProperty('approvalsReviewer')
 
     expect(turnStart).toMatchObject({
       method: 'turn/start',
@@ -553,6 +554,25 @@ describe('CodexAdapter', () => {
     })
     expect(turnStart.params).not.toHaveProperty('message')
     expect(turnStart.params).not.toHaveProperty('reasoningEffort')
+  })
+
+  it('routes approvals to codex auto_review in auto mode', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      runtimeMode: 'auto',
+    }, vi.fn())
+    await adapter.sendTurn('thread-1', 'hello codex')
+
+    const messages = writes.map((line) => JSON.parse(line))
+    const threadStart = messages.find((message) => message.method === 'thread/start')
+    const turnStart = messages.find((message) => message.method === 'turn/start')
+    expect(threadStart.params).toMatchObject({ approvalPolicy: 'on-request', sandbox: 'workspace-write', approvalsReviewer: 'auto_review' })
+    expect(turnStart.params).toMatchObject({ sandboxPolicy: { type: 'workspaceWrite' }, approvalsReviewer: 'auto_review' })
   })
 
   it('loads a persisted codex thread with thread/resume before sending another turn', async () => {

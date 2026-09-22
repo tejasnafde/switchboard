@@ -36,6 +36,7 @@ export const BUILT_IN_COMMANDS: SlashCommand[] = [
   { name: 'plan', description: 'Plan mode - read-only', action: { kind: 'mode', mode: 'plan' }, source: 'switchboard' },
   { name: 'sandbox', description: 'Sandbox mode - approvals required', action: { kind: 'mode', mode: 'sandbox' }, source: 'switchboard' },
   { name: 'edits', description: 'Accept edits automatically', action: { kind: 'mode', mode: 'accept-edits' }, source: 'switchboard' },
+  { name: 'auto', description: 'Auto - the agent approves routine actions', action: { kind: 'mode', mode: 'auto' }, source: 'switchboard' },
   { name: 'full', description: 'Full access - no prompts', action: { kind: 'mode', mode: 'full-access' }, source: 'switchboard' },
   { name: 'image', description: 'Attach an image', action: { kind: 'attach' }, source: 'switchboard' },
   { name: 'stop', description: 'Interrupt the current turn', action: { kind: 'stop' }, source: 'switchboard' },

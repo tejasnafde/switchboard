@@ -13,6 +13,14 @@ import {
  */
 
 describe('decidePermission (shared)', () => {
+  describe('auto mode', () => {
+    it('prompts for everything that reaches it, like sandbox', () => {
+      for (const t of ['Write', 'Edit', 'Bash', 'Read', 'mcp__switchboard__send_agent_message']) {
+        expect(decidePermission('auto', t)).toBe('prompt')
+      }
+    })
+  })
+
   describe('plan mode', () => {
     it('allows Claude read-only tools', () => {
       for (const t of ['Read', 'Glob', 'Grep', 'NotebookRead', 'WebFetch', 'WebSearch', 'TodoWrite']) {

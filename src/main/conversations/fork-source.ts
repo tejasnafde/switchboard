@@ -4,7 +4,7 @@ import type { AgentType } from '../../shared/types'
 import type { ConversationRow } from '../db/database'
 
 const FORK_PROVIDERS = new Set<AgentType>(['claude-code', 'codex', 'opencode'])
-const RUNTIME_MODES = new Set<RuntimeMode>(['plan', 'sandbox', 'accept-edits', 'full-access'])
+const RUNTIME_MODES = new Set<RuntimeMode>(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'])
 const REASONING_EFFORTS = new Set<ReasoningEffort>(['low', 'medium', 'high'])
 
 export interface ForkSourceExecution {

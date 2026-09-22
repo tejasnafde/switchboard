@@ -28,6 +28,7 @@ const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; h
   { value: 'plan', label: 'Plan', hint: 'Read-only - agent proposes but does not edit' },
   { value: 'sandbox', label: 'Sandbox', hint: 'Edits require approval' },
   { value: 'accept-edits', label: 'Accept edits', hint: 'Auto-approves edits (default)' },
+  { value: 'auto', label: 'Auto', hint: 'The agent approves routine actions; OpenCode still asks' },
   { value: 'full-access', label: 'Full access', hint: 'Auto-approves edits and shell commands' },
 ]
 

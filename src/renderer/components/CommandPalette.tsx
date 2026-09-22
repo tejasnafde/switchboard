@@ -115,6 +115,8 @@ function buildCommands(opts: {
       run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'sandbox') }) },
     { id: 'chat.accept-edits', group: 'Chat', label: 'Runtime mode: Accept Edits',
       run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'accept-edits') }) },
+    { id: 'chat.auto-mode', group: 'Chat', label: 'Runtime mode: Auto (agent approves routine actions)',
+      run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'auto') }) },
     { id: 'chat.full-access', group: 'Chat', label: 'Runtime mode: Full Access',
       run: withFocusedSession((sid) => { agents().setRuntimeMode(sid, 'full-access') }) },
 

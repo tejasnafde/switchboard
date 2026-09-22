@@ -91,7 +91,9 @@ export function decidePermission(mode: RuntimeMode, toolName: string): Permissio
     return 'deny'
   }
 
-  // sandbox (default) - always prompt
+  // sandbox and auto - always prompt. In auto the provider's own reviewer
+  // (Claude's classifier, Codex's auto_review) settles routine calls before
+  // they reach us; what still arrives is what it declined to decide.
   return 'prompt'
 }
 
@@ -101,7 +103,7 @@ export function decidePermission(mode: RuntimeMode, toolName: string): Permissio
  */
 export function denialMessage(mode: RuntimeMode, _toolName: string): string {
   if (mode === 'plan') {
-    return 'Plan mode - tool execution is blocked. Use ExitPlanMode to propose your plan, or switch to Sandbox/Accept-Edits to execute.'
+    return 'Plan mode - tool execution is blocked. Use ExitPlanMode to propose your plan, or switch to Supervised, Auto-accept edits or Auto to execute.'
   }
   return 'Denied by permission policy'
 }

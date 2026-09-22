@@ -50,6 +50,7 @@ const RUNTIME_MODE_TO_CODEX_POLICY: Record<RuntimeMode, string> = {
   'plan': 'untrusted',
   'sandbox': 'on-request',
   'accept-edits': 'on-request',
+  'auto': 'on-request',
   'full-access': 'never',
 }
 
@@ -57,6 +58,7 @@ const RUNTIME_MODE_TO_CODEX_THREAD_SANDBOX: Record<RuntimeMode, string> = {
   'plan': 'read-only',
   'sandbox': 'read-only',
   'accept-edits': 'workspace-write',
+  'auto': 'workspace-write',
   'full-access': 'danger-full-access',
 }
 
@@ -64,7 +66,14 @@ const RUNTIME_MODE_TO_CODEX_TURN_SANDBOX: Record<RuntimeMode, { type: string }> 
   'plan': { type: 'readOnly' },
   'sandbox': { type: 'readOnly' },
   'accept-edits': { type: 'workspaceWrite' },
+  'auto': { type: 'workspaceWrite' },
   'full-access': { type: 'dangerFullAccess' },
+}
+
+/** Auto routes approval requests to Codex's own risk-reviewing subagent
+ *  instead of the user. Every other mode leaves the default (`user`). */
+function codexReviewer(mode: RuntimeMode) {
+  return mode === 'auto' ? { approvalsReviewer: 'auto_review' as const } : {}
 }
 
 const SWITCHBOARD_CLIENT_INFO = {
@@ -725,6 +734,7 @@ export class CodexAdapter implements ProviderAdapter {
             cwd: session.cwd,
             approvalPolicy,
             sandbox,
+            ...codexReviewer(session.runtimeMode),
             ...(session.model ? { model: session.model } : {}),
           })
           const result = resumed as { thread?: { id?: string } } | null
@@ -892,6 +902,7 @@ export class CodexAdapter implements ProviderAdapter {
           cwd: active.session.cwd,
           approvalPolicy,
           sandbox,
+          ...codexReviewer(active.session.runtimeMode),
           ...(active.session.model ? { model: active.session.model } : {}),
         })
         const r = result as { thread?: { id?: string }; threadId?: string } | null | undefined
@@ -910,6 +921,7 @@ export class CodexAdapter implements ProviderAdapter {
         input: content,
         approvalPolicy,
         sandboxPolicy,
+        ...codexReviewer(active.session.runtimeMode),
         cwd: active.session.cwd,
         ...(active.session.model ? { model: active.session.model } : {}),
         ...(reasoningEffort ? { effort: reasoningEffort } : {}),

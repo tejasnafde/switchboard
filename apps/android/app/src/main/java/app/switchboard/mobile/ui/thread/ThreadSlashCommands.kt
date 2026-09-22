@@ -45,6 +45,12 @@ object ThreadSlashPolicy {
             ThreadSlashSource.Switchboard,
         ),
         ThreadSlashCommand(
+            "auto",
+            "Auto - the agent approves routine actions",
+            ThreadSlashAction.SetMode(RuntimeMode.Auto),
+            ThreadSlashSource.Switchboard,
+        ),
+        ThreadSlashCommand(
             "full",
             "Full access - no prompts",
             ThreadSlashAction.SetMode(RuntimeMode.FullAccess),

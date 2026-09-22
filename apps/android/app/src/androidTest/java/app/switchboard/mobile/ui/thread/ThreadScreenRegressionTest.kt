@@ -103,7 +103,8 @@ class ThreadScreenRegressionTest {
         }
 
         compose.onNodeWithContentDescription("Agent settings").performClick()
-        compose.onNodeWithTag(ThreadTestTags.ARCHIVE_ACTION).performClick()
+        // The settings page scrolls; with five runtime modes the action sits below the fold.
+        compose.onNodeWithTag(ThreadTestTags.ARCHIVE_ACTION).performScrollTo().performClick()
         compose.onNodeWithText("Archive this conversation?").assertIsDisplayed()
         compose.runOnIdle { assertEquals(0, archiveRequests) }
 

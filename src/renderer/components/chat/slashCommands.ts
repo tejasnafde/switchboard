@@ -13,7 +13,7 @@
 
 import type { AgentStatus, ProviderSkill } from '@shared/types'
 
-type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
+type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
 
 /**
  * Context passed to every slash-command action. Keeping this in one place
@@ -104,6 +104,11 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     name: 'edits',
     description: 'Switch to Accept-Edits mode (auto-approve file writes)',
     run: (ctx) => ctx.setRuntimeMode('accept-edits'),
+  },
+  {
+    name: 'auto',
+    description: 'Switch to Auto mode (the agent approves routine actions; OpenCode still asks)',
+    run: (ctx) => ctx.setRuntimeMode('auto'),
   },
   {
     name: 'full',

@@ -54,6 +54,7 @@ const RUNTIME_MODE_BADGE: Record<RuntimeMode, string> = {
   plan: 'plan',
   sandbox: 'sandbox',
   'accept-edits': 'accept',
+  auto: 'auto',
   'full-access': 'full',
 }
 

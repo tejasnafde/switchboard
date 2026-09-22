@@ -238,7 +238,7 @@ type UnknownRecord = Record<string, unknown>
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/
 const AGENT_TYPE_VALUES: ReadonlySet<string> = new Set(['claude-code', 'codex', 'opencode', 'terminal'])
 const PROVIDERS: ReadonlySet<string> = new Set(['claude-code', 'codex', 'opencode'])
-const RUNTIME_MODES: ReadonlySet<string> = new Set(['plan', 'sandbox', 'accept-edits', 'full-access'])
+const RUNTIME_MODES: ReadonlySet<string> = new Set(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'])
 
 function record(value: unknown): UnknownRecord | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)

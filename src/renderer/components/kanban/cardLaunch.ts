@@ -5,6 +5,7 @@
  * "▶ + open" path, and the auto-kickoff on `withWorktree=true` create.
  */
 import { createRendererLogger } from '../../logger'
+import { isRuntimeMode } from '@shared/session-defaults'
 import type { KanbanCard } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { useAgentStore, getStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
@@ -12,10 +13,6 @@ import { emitSessionCreated } from '../../services/session-events'
 import type { AgentType, ConversationRow } from '@shared/types'
 
 const launchLog = createRendererLogger('kanban:launch')
-
-const VALID_MODES: ReadonlySet<RuntimeMode> = new Set([
-  'plan', 'sandbox', 'accept-edits', 'full-access',
-])
 
 /**
  * Resolve the runtime mode for a card-launched chat. Order of precedence:
@@ -43,12 +40,12 @@ export async function resolveCardRuntimeMode(
     try {
       const res = await window.api?.app?.getConversationRuntimeMode?.(conversationId)
       const persisted = res?.mode
-      if (persisted && VALID_MODES.has(persisted as RuntimeMode)) {
+      if (isRuntimeMode(persisted)) {
         return persisted as RuntimeMode
       }
     } catch { /* fall through */ }
   }
-  if (cardRuntimeMode && VALID_MODES.has(cardRuntimeMode)) return cardRuntimeMode
+  if (isRuntimeMode(cardRuntimeMode)) return cardRuntimeMode
   return getStoreDefaultRuntimeMode() ?? KANBAN_DEFAULT_RUNTIME_MODE
 }
 
