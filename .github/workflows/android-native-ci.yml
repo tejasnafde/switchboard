@@ -46,6 +46,10 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The default also requests the legacy `tools` package, which
+          # cmdline-tools 16 (runner image 2026-09-07+) no longer ships.
+          packages: platform-tools
 
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
