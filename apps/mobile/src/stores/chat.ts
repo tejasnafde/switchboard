@@ -47,6 +47,9 @@ export interface ThreadState {
   maxTokens?: number | null
   costUsd?: number
   lastTurnDurationMs?: number
+  /** When the agent last finished a turn. `updatedAt` is bumped by every
+   *  event, read receipts included, so it cannot stand in for this. */
+  lastTurnAt?: number
   unread: number
   /** Last time any event touched this thread. Drives cache eviction. */
   updatedAt?: number
@@ -387,6 +390,7 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
             maxTokens: event.maxTokens ?? t.maxTokens,
             costUsd: event.costUsd ?? t.costUsd,
             lastTurnDurationMs: event.durationMs,
+            lastTurnAt: Date.now(),
           }
         }
         case 'status':

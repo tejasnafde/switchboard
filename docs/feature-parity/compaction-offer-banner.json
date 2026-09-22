@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "compaction-offer-banner",
+  "summary": "Offer /compact on a Claude chat that is both token-heavy (100k+) and stale (70+ minutes idle), and hide the context meter until the backend reports real usage.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/compaction-offer.ts",
+        "src/renderer/components/chat/CompactionOfferBanner.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/StatusBar.tsx",
+        "tests/unit/compaction-offer.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/stores/chat.ts",
+        "src/shared/compaction-offer.ts",
+        "tests/unit/compaction-offer.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "compaction_offer_v1",
+      "followUpRelease": "Native Android after ThreadPresentation gains the offer row and RoomThreadSnapshotStore records lastTurnAt; the shared thresholds live in src/shared/compaction-offer.ts and the RN implementation is the reference",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No new channel or event. Compact is an ordinary sendTurn of the text /compact, which the Claude SDK parses as its own slash command. The adapter already reports the compacting status and re-reads usage afterwards (src/main/provider/adapters/claude-adapter.ts, compact_result handling)."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Dismissal is in-memory per pane and per session id; nothing is persisted."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only change in the desktop bundle. No wire, protocol, or capability change, so mixed desktop/server versions behave as before."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/compaction-offer.test.ts",
+      "npm run typecheck",
+      "npm test",
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The banner has not been observed against a live Claude session with 100k+ tokens and 70 minutes idle; the threshold logic is unit-tested and the /compact send path is the existing slash passthrough.",
+      "The React Native banner has not been rendered on a device; the shared decision is unit-tested and the send path is the existing outbox with a text override."
+    ]
+  }
+}

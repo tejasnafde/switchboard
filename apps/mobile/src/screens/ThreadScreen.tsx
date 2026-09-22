@@ -26,6 +26,7 @@ import { useFocusEffect } from '@react-navigation/native'
 import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
+import { shouldOfferCompaction } from '@shared/compaction-offer'
 import type { ProviderInstance, ProviderSkill } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
@@ -450,19 +451,23 @@ export default function ThreadScreen({ route, navigation }: Props) {
     if (thread.status === 'idle') void drain()
   }, [thread.status])
 
-  const send = () => {
-    const text = draft.trim()
+  // `textOverride` is for one-tap actions like the Compact banner: it sends
+  // that text alone and leaves the user's draft and attachments untouched.
+  const send = (textOverride?: string) => {
+    const text = (textOverride ?? draft).trim()
     // An image with no caption is a legitimate turn.
     if (!text && attachments.length === 0) return
-    const images = attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
+    const images = textOverride ? [] : attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
     const editingId = useOutboxStore.getState().editingId
     const editingMessage = editingId
       ? queuedMessages.find((message) => message.messageId === editingId)
       : undefined
-    setDraft('')
-    setVoiceNote(null)
-    setAttachments([])
-    usePrefsStore.getState().rememberDraft(key, '')
+    if (!textOverride) {
+      setDraft('')
+      setVoiceNote(null)
+      setAttachments([])
+      usePrefsStore.getState().rememberDraft(key, '')
+    }
 
     // Every send goes through the outbox, including one made while connected.
     // A backend check here would only cover the cases we can SEE are broken,
@@ -816,6 +821,28 @@ export default function ThreadScreen({ route, navigation }: Props) {
 
   const contextPct =
     thread.usedTokens != null && thread.maxTokens ? Math.min(1, thread.usedTokens / thread.maxTokens) : null
+  const [compactionDismissed, setCompactionDismissed] = useState(false)
+  // Same 60s tick as the desktop pane: nothing else re-renders an idle thread.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  // Seeded history has no lastTurnAt yet, so the last user bubble's time stands in.
+  const lastUserAt = useMemo(() => {
+    for (let i = thread.items.length - 1; i >= 0; i--) {
+      const item = thread.items[i]
+      if (item.kind === 'user') return item.at
+    }
+    return undefined
+  }, [thread.items])
+  const offerCompaction = !compactionDismissed && shouldOfferCompaction({
+    provider: thread.provider,
+    usedTokens: thread.usedTokens,
+    lastMessageAt: thread.lastTurnAt ?? lastUserAt,
+    busy: isRunning,
+    now,
+  })
 
   return (
     <AnimatedKeyboardAvoidingView
@@ -838,6 +865,20 @@ export default function ThreadScreen({ route, navigation }: Props) {
             </View>
           )}
           {thread.costUsd != null && <Text style={styles.costText}>${thread.costUsd.toFixed(2)}</Text>}
+        </View>
+      )}
+
+      {offerCompaction && thread.usedTokens != null && (
+        <View style={[styles.forkBanner, styles.compactBanner]} accessibilityRole="summary" testID="compaction-offer-banner">
+          <Text style={[styles.forkBannerText, styles.compactBannerText]} numberOfLines={1}>
+            Resume with less context · {formatTokens(thread.usedTokens)} tokens from earlier
+          </Text>
+          <Pressable onPress={() => send('/compact')} accessibilityRole="button" hitSlop={8}>
+            <Text style={styles.compactAction}>Compact</Text>
+          </Pressable>
+          <Pressable onPress={() => setCompactionDismissed(true)} accessibilityRole="button" accessibilityLabel="Keep full history" hitSlop={8}>
+            <Text style={styles.forkBannerText}>×</Text>
+          </Pressable>
         </View>
       )}
 
@@ -990,7 +1031,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
             canSend={canSend}
             isRunning={isRunning}
             dictation={dictation}
-            onSend={send}
+            onSend={() => send()}
             onStopTurn={stop}
           />
         </View>
@@ -1320,6 +1361,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 15,
   },
+  compactBanner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  compactBannerText: { flex: 1 },
+  compactAction: { color: colors.accent, fontSize: 11, lineHeight: 15 },
   feedContent: {
     paddingVertical: 10,
     flexGrow: 1,
