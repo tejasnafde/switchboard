@@ -903,6 +903,7 @@ private fun RuntimeMode.supportingDescription(): String = when (this) {
     RuntimeMode.Plan -> "Read-only planning and questions"
     RuntimeMode.Sandbox -> "Run commands in the workspace sandbox"
     RuntimeMode.AcceptEdits -> "Allow file edits while protecting broader access"
+    RuntimeMode.Auto -> "The agent approves routine actions; OpenCode still asks"
     RuntimeMode.FullAccess -> "Allow commands and file access without prompts"
 }
 

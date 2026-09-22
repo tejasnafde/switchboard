@@ -2030,7 +2030,7 @@ interface KanbanRow {
 
 /** Coerce a stored runtime-mode string back into the typed union; legacy/unknown → default. */
 function normalizeRuntimeMode(raw: string | null | undefined): RuntimeMode {
-  if (raw === 'plan' || raw === 'sandbox' || raw === 'accept-edits' || raw === 'full-access') {
+  if (raw === 'plan' || raw === 'sandbox' || raw === 'accept-edits' || raw === 'auto' || raw === 'full-access') {
     return raw
   }
   return KANBAN_DEFAULT_RUNTIME_MODE

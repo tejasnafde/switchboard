@@ -52,7 +52,7 @@ import {
 import { onUserTurnAccepted } from '../../services/session-events'
 import { registerComposer } from '../../services/composerRegistry'
 
-type RuntimeMode = 'plan' | 'sandbox' | 'full-access' | 'accept-edits'
+type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
 
 export type ChatSendResult =
   | { accepted: true }
@@ -1642,10 +1642,11 @@ export function ChatInput({
               outline: 'none',
             }}
           >
-            <option value="sandbox">{footerLayout.shortModeLabels ? 'Sandbox' : 'Sandbox (ask every tool)'}</option>
-            <option value="accept-edits">{footerLayout.shortModeLabels ? 'Accept Edits' : 'Accept Edits (auto-approve file changes)'}</option>
-            <option value="full-access">{footerLayout.shortModeLabels ? 'Full Access' : 'Full Access (skip all prompts)'}</option>
-            <option value="plan">{footerLayout.shortModeLabels ? 'Plan Only' : 'Plan Only (no execution)'}</option>
+            <option value="sandbox">{footerLayout.shortModeLabels ? 'Supervised' : 'Supervised (ask before commands and file changes)'}</option>
+            <option value="accept-edits">{footerLayout.shortModeLabels ? 'Auto-accept edits' : 'Auto-accept edits (ask before other actions)'}</option>
+            <option value="auto">{footerLayout.shortModeLabels ? 'Auto' : 'Auto (agent approves routine actions; OpenCode still asks)'}</option>
+            <option value="full-access">{footerLayout.shortModeLabels ? 'Full access' : 'Full access (no prompts)'}</option>
+            <option value="plan">{footerLayout.shortModeLabels ? 'Plan' : 'Plan (no execution)'}</option>
           </select>
         )}
 

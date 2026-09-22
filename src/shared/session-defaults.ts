@@ -49,7 +49,7 @@ export function resolveMachineInstanceId(params: {
   return undefined
 }
 
-const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'full-access']
+const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'auto', 'full-access']
 
 /** An unknown mode must never widen permissions. */
 export const FALLBACK_RUNTIME_MODE: RuntimeMode = 'sandbox'

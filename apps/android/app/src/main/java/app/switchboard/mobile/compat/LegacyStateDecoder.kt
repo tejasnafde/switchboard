@@ -6,7 +6,7 @@ object LegacyStateDecoder {
     private const val CHAT_CACHE_KEY = "sb-chat-cache"
     private const val OUTBOX_PREFIX = "sb-outbox:"
     private const val DEFAULT_RUNTIME_MODE = "sandbox"
-    private val runtimeModes = setOf("plan", "sandbox", "accept-edits", "full-access")
+    private val runtimeModes = setOf("plan", "sandbox", "accept-edits", "auto", "full-access")
 
     fun decode(rows: Map<String, String>): LegacyDecodeReport {
         val sourceRows = LinkedHashMap(rows)

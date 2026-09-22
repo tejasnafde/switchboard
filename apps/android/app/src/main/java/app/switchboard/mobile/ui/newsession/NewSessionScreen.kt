@@ -578,6 +578,7 @@ object NewSessionSelectorPolicy {
         RuntimeMode.Plan -> "Plan"
         RuntimeMode.Sandbox -> "Sandbox"
         RuntimeMode.AcceptEdits -> "Accept edits"
+        RuntimeMode.Auto -> "Auto"
         RuntimeMode.FullAccess -> "Full access"
     }
 

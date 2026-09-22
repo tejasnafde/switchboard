@@ -61,8 +61,8 @@ describe('provider types', () => {
   })
 
   it('RuntimeMode covers all modes', () => {
-    const modes: RuntimeMode[] = ['plan', 'sandbox', 'full-access']
-    expect(modes).toHaveLength(3)
+    const modes: RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'auto', 'full-access']
+    expect(modes).toHaveLength(5)
   })
 
   it('ApprovalDecision is approve or deny', () => {

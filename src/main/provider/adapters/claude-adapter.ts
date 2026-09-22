@@ -355,6 +355,7 @@ const RUNTIME_MODE_TO_PERMISSION: Record<RuntimeMode, PermissionMode> = {
   'plan': 'plan',
   'sandbox': 'default',
   'accept-edits': 'acceptEdits',
+  'auto': 'auto',
   'full-access': 'bypassPermissions',
 }
 

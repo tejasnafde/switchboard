@@ -16,7 +16,7 @@ import type {
 
 const log = createRendererLogger('store:agent')
 
-export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
+export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
 
 /**
  * Module-level "last chosen" runtime mode used as the default seed when a

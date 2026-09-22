@@ -7,7 +7,6 @@
     "desktop": {
       "status": "implemented",
       "evidence": [
-        "src/shared/compaction-offer.ts",
         "src/renderer/components/chat/CompactionOfferBanner.tsx",
         "src/renderer/components/chat/ChatPanel.tsx",
         "src/renderer/components/StatusBar.tsx",
@@ -18,9 +17,7 @@
       "status": "implemented",
       "evidence": [
         "apps/mobile/src/screens/ThreadScreen.tsx",
-        "apps/mobile/src/stores/chat.ts",
-        "src/shared/compaction-offer.ts",
-        "tests/unit/compaction-offer.test.ts"
+        "apps/mobile/src/stores/chat.ts"
       ]
     },
     "nativeAndroid": {
@@ -32,8 +29,12 @@
       ]
     },
     "sharedBackendApi": {
-      "status": "not_applicable",
-      "reason": "No new channel or event. Compact is an ordinary sendTurn of the text /compact, which the Claude SDK parses as its own slash command. The adapter already reports the compacting status and re-reads usage afterwards (src/main/provider/adapters/claude-adapter.ts, compact_result handling)."
+      "status": "implemented",
+      "evidence": [
+        "src/shared/compaction-offer.ts",
+        "tests/unit/compaction-offer.test.ts",
+        "src/main/provider/adapters/claude-adapter.ts"
+      ]
     },
     "storageDataMigration": {
       "status": "not_applicable",

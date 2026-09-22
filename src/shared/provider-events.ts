@@ -23,7 +23,7 @@ export type ProviderSessionStatus =
 
 export type ApprovalDecision = 'approve' | 'deny'
 
-export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
+export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
 
 export type ProviderKind = 'claude' | 'codex' | 'opencode'
 
@@ -309,7 +309,7 @@ export function validateUserTurnSubmission(input: unknown): UserTurnSubmissionV1
   if (value.displayBody !== undefined && typeof value.displayBody !== 'string') {
     throw new Error('User turn display body must be text')
   }
-  if (value.runtimeMode !== undefined && !(['plan', 'sandbox', 'accept-edits', 'full-access'] as unknown[]).includes(value.runtimeMode)) {
+  if (value.runtimeMode !== undefined && !(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'] as unknown[]).includes(value.runtimeMode)) {
     throw new Error('User turn runtime mode is invalid')
   }
   if (value.autoTitleText !== undefined && typeof value.autoTitleText !== 'string') {

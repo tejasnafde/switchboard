@@ -14,7 +14,7 @@ import type { AgentType, ConversationRow } from '@shared/types'
 const launchLog = createRendererLogger('kanban:launch')
 
 const VALID_MODES: ReadonlySet<RuntimeMode> = new Set([
-  'plan', 'sandbox', 'accept-edits', 'full-access',
+  'plan', 'sandbox', 'accept-edits', 'auto', 'full-access',
 ])
 
 /**

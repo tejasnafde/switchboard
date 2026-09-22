@@ -283,7 +283,7 @@ export interface ChatMessage {
   denial?: {
     toolName: string
     reason: string
-    mode: 'plan' | 'sandbox' | 'accept-edits' | 'full-access'
+    mode: 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
   }
   /**
    * Wall-clock duration of the assistant turn that produced this message,

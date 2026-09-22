@@ -8,6 +8,7 @@ enum class RuntimeMode(val wire: String) {
     Plan("plan"),
     Sandbox("sandbox"),
     AcceptEdits("accept-edits"),
+    Auto("auto"),
     FullAccess("full-access"),
 }
 

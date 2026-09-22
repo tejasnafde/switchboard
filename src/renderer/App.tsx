@@ -324,7 +324,7 @@ export function App() {
     void (async () => {
       try {
         const stored = await window.api?.settings?.get?.(SETTING_DEFAULT_RUNTIME_MODE)
-        if (stored === 'plan' || stored === 'sandbox' || stored === 'accept-edits' || stored === 'full-access') {
+        if (stored === 'plan' || stored === 'sandbox' || stored === 'accept-edits' || stored === 'auto' || stored === 'full-access') {
           setStoreDefaultRuntimeMode(stored as RuntimeMode)
         }
       } catch { /* settings unavailable in tests / first boot */ }
@@ -851,7 +851,7 @@ export function App() {
           executionRootRevision?: number
           worktreeId?: string | null
           providerInstanceId?: string | null
-          runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'full-access' | null
+          runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access' | null
           model?: string | null
           reasoningEffort?: 'low' | 'medium' | 'high' | null
           launchConfigName?: string | null
@@ -966,7 +966,7 @@ export function App() {
       ])
       if (runtimeModeResult.status === 'fulfilled') {
         const persisted = runtimeModeResult.value?.mode
-        if (persisted === 'plan' || persisted === 'sandbox' || persisted === 'accept-edits' || persisted === 'full-access') {
+        if (persisted === 'plan' || persisted === 'sandbox' || persisted === 'accept-edits' || persisted === 'auto' || persisted === 'full-access') {
           useAgentStore.getState().setRuntimeMode(session.id, persisted)
         }
       } else {

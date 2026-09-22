@@ -1,0 +1,87 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "auto-runtime-mode",
+  "summary": "Add a fifth runtime mode, auto, where the provider's own reviewer approves routine actions (Claude permissionMode auto, Codex approvalsReviewer auto_review) and anything it declines still reaches the user's approval card. OpenCode has no reviewer and behaves as Supervised. Composer labels follow t3code: Supervised, Auto-accept edits, Auto, Full access, Plan.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/slashCommands.ts",
+        "src/renderer/components/CommandPalette.tsx",
+        "src/renderer/components/kanban/CardModal.tsx",
+        "src/renderer/components/kanban/KanbanView.tsx",
+        "src/renderer/App.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/services/desktopNewChatJournal.ts",
+        "src/renderer/services/openConversationAtAnchor.ts",
+        "src/renderer/components/kanban/cardLaunch.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/ModePicker.tsx",
+        "apps/mobile/src/lib/slash.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/compat/LegacyStateDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadComposerPresentationPolicy.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSlashCommands.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/shared/session-defaults.ts",
+        "src/shared/types.ts",
+        "src/shared/worktree-creation.ts",
+        "src/main/conversations/fork-source.ts",
+        "src/main/provider/policy.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "tests/unit/provider-policy.test.ts",
+        "tests/unit/codex-adapter.test.ts",
+        "tests/unit/provider-types.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts",
+        "tests/unit/kanban-db-runtime-mode.test.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/provider-policy.test.ts tests/unit/codex-adapter.test.ts tests/unit/provider-types.test.ts",
+      "npm run typecheck",
+      "npm test",
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json",
+      "cd apps/mobile && npm test -- --runInBand",
+      "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew testDebugUnitTest"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live Claude session has run in auto mode. The mapping to the SDK's permissionMode auto is type-checked against @anthropic-ai/claude-agent-sdk 0.3.260; the assumption that the classifier settles a call before canUseTool sees it, so decidePermission's prompt only covers what the classifier declined, is from the SDK's type docs and not from an observed session.",
+      "No live Codex session has run with approvalsReviewer auto_review. The field exists on thread/start, thread/resume and turn/start in codex-cli 0.144.1 and the remote pin 0.153.2; the unit test asserts it is sent.",
+      "Mixed versions: an older phone receiving auto from a newer backend shows no selected chip (React Native) or falls back to the Sandbox label (Android, SwitchboardNavigation.kt toRuntimeMode). The backend stays authoritative, so the mislabel is cosmetic. Not exercised with separately packaged builds."
+    ]
+  }
+}

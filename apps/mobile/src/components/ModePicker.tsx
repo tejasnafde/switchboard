@@ -1,4 +1,4 @@
-/** Runtime mode control (Plan / Sandbox / Edits / Full).
+/** Runtime mode control (Plan / Sandbox / Edits / Auto / Full).
  *
  * Defaults to a compact dropdown trigger, because in the thread composer a chip
  * per mode ate the whole row. The new-session form has the full width of a
@@ -13,6 +13,7 @@ const MODES: { mode: RuntimeMode; label: string }[] = [
   { mode: 'plan', label: 'Plan' },
   { mode: 'sandbox', label: 'Sandbox' },
   { mode: 'accept-edits', label: 'Edits' },
+  { mode: 'auto', label: 'Auto' },
   { mode: 'full-access', label: 'Full' },
 ]
 

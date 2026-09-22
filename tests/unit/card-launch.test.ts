@@ -168,6 +168,12 @@ describe('resolveCardRuntimeMode', () => {
     expect(mode).toBe('full-access')
   })
 
+  it('keeps a persisted auto mode', async () => {
+    installApiMock('auto')
+    const mode = await resolveCardRuntimeMode('plan', 'conv_123')
+    expect(mode).toBe('auto')
+  })
+
   it('falls back to per-card mode when DB has nothing', async () => {
     installApiMock(null)
     setStoreDefaultRuntimeMode('sandbox')

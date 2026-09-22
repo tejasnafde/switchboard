@@ -17,6 +17,7 @@ function isIntent(value: unknown): value is DesktopNewChatIntent {
     && (input.runtimeMode === 'plan'
       || input.runtimeMode === 'sandbox'
       || input.runtimeMode === 'accept-edits'
+      || input.runtimeMode === 'auto'
       || input.runtimeMode === 'full-access')
 }
 
