@@ -2,6 +2,20 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.60 - Auto mode, a compaction nudge, and a quieter status bar
+
+### Added
+- **Auto runtime mode.** A fifth mode between Auto-accept edits and Full access. Claude runs with the SDK's `permissionMode: 'auto'`, where a classifier settles routine tool calls and only what it declines reaches the approval card. Codex gets `approvalsReviewer: 'auto_review'` on `thread/start`, `thread/resume` and `turn/start`, so its own risk-reviewing subagent answers instead of the user. OpenCode has no reviewer and behaves as Supervised; the option label says so. Wire values are unchanged and both `runtime_mode` columns are plain text, so nothing migrates, and an older client reading `auto` falls back to Supervised, the stricter mode. Available from the composer, `/auto`, the command palette, kanban cards, the phone's mode picker and slash menu, and native Android.
+- **"Resume with less context" banner.** A Claude chat that holds 100k+ tokens, is idle, and whose last turn ended 70+ minutes ago offers a one-click `/compact`, on desktop and on the phone. The adapter already reported the SDK's compacting status and re-read usage afterwards; the banner only puts a button on that path. Both surfaces tick once a minute so a pane nobody touched can show it. On the phone the idle clock is `lastTurnAt`, recorded on `turn.completed`, because `updatedAt` is bumped by every event including the read receipt sent on open, which would have reset the clock the moment the banner became visible. Native Android is staged behind `compaction_offer_v1`.
+
+### Changed
+- **Composer mode labels follow t3code**: Supervised, Auto-accept edits, Auto, Full access, Plan. The plan-mode denial copy names the new labels.
+- **The bottom status bar no longer shows the agent dot, status word or provider instance.** The chat header already shows `thinking / ready / error / exited`, and the composer picker already shows the instance badge when more than one exists. The header now renders `error` in red. The bar keeps project name, session cost and terminal count.
+- **The context meter is hidden until the backend reports real usage.** It used to render a chars-divided-by-four estimate, which read "0" on every fresh chat.
+
+### Fixed
+- Three hand-copied runtime-mode lists were found by review and would have silently coerced `auto` back to a default: `normalizeRuntimeMode` when reading kanban cards from the database, `VALID_MODES` in kanban card launch, and the `provider-types` test that asserted the wrong count. Each has a regression test now.
+
 ## 0.8.59 - Follow moves the agent, and Diagnostics folds away
 
 ### Fixed
