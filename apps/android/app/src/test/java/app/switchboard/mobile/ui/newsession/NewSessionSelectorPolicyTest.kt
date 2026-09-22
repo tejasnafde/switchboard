@@ -14,8 +14,8 @@ class NewSessionSelectorPolicyTest {
         assertEquals("Claude", NewSessionSelectorPolicy.providerLabel(ProviderKind.Claude))
         assertEquals("Codex", NewSessionSelectorPolicy.providerLabel(ProviderKind.Codex))
         assertEquals("OpenCode", NewSessionSelectorPolicy.providerLabel(ProviderKind.OpenCode))
-        assertEquals("Sandbox", NewSessionSelectorPolicy.runtimeLabel(RuntimeMode.Sandbox))
-        assertEquals("Accept edits", NewSessionSelectorPolicy.runtimeLabel(RuntimeMode.AcceptEdits))
+        assertEquals("Supervised", NewSessionSelectorPolicy.runtimeLabel(RuntimeMode.Sandbox))
+        assertEquals("Auto-accept edits", NewSessionSelectorPolicy.runtimeLabel(RuntimeMode.AcceptEdits))
     }
 
     @Test

@@ -576,8 +576,8 @@ object NewSessionSelectorPolicy {
 
     fun runtimeLabel(mode: RuntimeMode): String = when (mode) {
         RuntimeMode.Plan -> "Plan"
-        RuntimeMode.Sandbox -> "Sandbox"
-        RuntimeMode.AcceptEdits -> "Accept edits"
+        RuntimeMode.Sandbox -> "Supervised"
+        RuntimeMode.AcceptEdits -> "Auto-accept edits"
         RuntimeMode.Auto -> "Auto"
         RuntimeMode.FullAccess -> "Full access"
     }

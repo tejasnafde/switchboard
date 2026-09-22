@@ -458,7 +458,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
     // An image with no caption is a legitimate turn.
     if (!text && attachments.length === 0) return
     const images = textOverride ? [] : attachments.map((a) => ({ url: a.url, mimeType: a.mimeType }))
-    const editingId = useOutboxStore.getState().editingId
+    // An override (Compact) is its own turn; it must not complete a pending edit.
+    const editingId = textOverride ? undefined : useOutboxStore.getState().editingId
     const editingMessage = editingId
       ? queuedMessages.find((message) => message.messageId === editingId)
       : undefined
@@ -837,7 +838,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
     return undefined
   }, [thread.items])
   const offerCompaction = !compactionDismissed && shouldOfferCompaction({
-    provider: thread.provider,
+    provider: effectiveProvider,
     usedTokens: thread.usedTokens,
     lastMessageAt: thread.lastTurnAt ?? lastUserAt,
     busy: isRunning,
