@@ -7,6 +7,7 @@ import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } fro
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { applyKanbanArchiveSideEffect } from '@shared/kanbanArchive'
 import type { RuntimeMode } from '@shared/provider-events'
+import { isRuntimeMode } from '@shared/session-defaults'
 import { AGENT_TYPES, defaultInstanceId } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ProjectOrganizationItem } from '@shared/types'
@@ -2030,10 +2031,7 @@ interface KanbanRow {
 
 /** Coerce a stored runtime-mode string back into the typed union; legacy/unknown → default. */
 function normalizeRuntimeMode(raw: string | null | undefined): RuntimeMode {
-  if (raw === 'plan' || raw === 'sandbox' || raw === 'accept-edits' || raw === 'auto' || raw === 'full-access') {
-    return raw
-  }
-  return KANBAN_DEFAULT_RUNTIME_MODE
+  return isRuntimeMode(raw) ? raw : KANBAN_DEFAULT_RUNTIME_MODE
 }
 
 function rowToCard(r: KanbanRow): KanbanCard {

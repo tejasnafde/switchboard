@@ -44,7 +44,7 @@ import { WorktreeCreationProgress } from './components/worktree/WorktreeCreation
 import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
 import { newChatKey } from './services/newChatGuard'
 import type { SessionSummary, ChatMessage } from '@shared/types'
-import { SETTING_DEFAULT_RUNTIME_MODE } from '@shared/session-defaults'
+import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
 import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composerRegistry'
@@ -324,8 +324,8 @@ export function App() {
     void (async () => {
       try {
         const stored = await window.api?.settings?.get?.(SETTING_DEFAULT_RUNTIME_MODE)
-        if (stored === 'plan' || stored === 'sandbox' || stored === 'accept-edits' || stored === 'auto' || stored === 'full-access') {
-          setStoreDefaultRuntimeMode(stored as RuntimeMode)
+        if (isRuntimeMode(stored)) {
+          setStoreDefaultRuntimeMode(stored)
         }
       } catch { /* settings unavailable in tests / first boot */ }
     })()
@@ -966,7 +966,7 @@ export function App() {
       ])
       if (runtimeModeResult.status === 'fulfilled') {
         const persisted = runtimeModeResult.value?.mode
-        if (persisted === 'plan' || persisted === 'sandbox' || persisted === 'accept-edits' || persisted === 'auto' || persisted === 'full-access') {
+        if (isRuntimeMode(persisted)) {
           useAgentStore.getState().setRuntimeMode(session.id, persisted)
         }
       } else {

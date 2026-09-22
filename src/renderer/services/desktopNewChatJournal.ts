@@ -1,4 +1,5 @@
 import { parseWorktreeCreationRequest } from '../../shared/worktree-creation'
+import { isRuntimeMode } from '../../shared/session-defaults'
 import type {
   DesktopNewChatIntent,
   DesktopNewChatJournal,
@@ -14,11 +15,7 @@ function isIntent(value: unknown): value is DesktopNewChatIntent {
     && typeof input.machineId === 'string'
     && input.checkout === 'worktree'
     && (input.agentType === 'claude-code' || input.agentType === 'codex' || input.agentType === 'opencode')
-    && (input.runtimeMode === 'plan'
-      || input.runtimeMode === 'sandbox'
-      || input.runtimeMode === 'accept-edits'
-      || input.runtimeMode === 'auto'
-      || input.runtimeMode === 'full-access')
+    && isRuntimeMode(input.runtimeMode)
 }
 
 export function createDesktopNewChatJournal(storage: Pick<Storage, 'getItem' | 'setItem'>):
