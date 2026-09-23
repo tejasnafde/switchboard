@@ -19,6 +19,14 @@ import {
 
 const log = createRendererLogger('store:layout')
 
+/**
+ * Fire-and-forget settings write. The promise is not awaited, so a rejection
+ * must be caught here: a surrounding try/catch never sees it.
+ */
+function persistSetting(key: string, value: string): void {
+  window.api?.settings?.set(key, value)?.catch?.((err: unknown) => log.warn('settings write failed', { key, err }))
+}
+
 const SIDEBAR_MIN = 140
 const SIDEBAR_DEFAULT = 220
 const TERMINAL_MIN = 200
@@ -185,7 +193,7 @@ function applyChatWorkspaceEvent(event: ChatWorkspaceEvent): void {
 
 function persistList(key: string, list: string[]): void {
   try {
-    void window.api?.settings?.set(key, JSON.stringify(list))
+    persistSetting(key, JSON.stringify(list))
   } catch (err) {
     log.debug(`failed to persist setting ${key} - settings unavailable in tests / early boot`, err)
   }
@@ -224,7 +232,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   rightPaneMode: 'terminal',
   setRightPaneMode: (mode) => {
     try {
-      void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, mode)
+      persistSetting(RIGHT_PANE_MODE_KEY, mode)
     } catch (err) {
       log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
     }
@@ -236,7 +244,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     const cur = get().rightPaneMode
     const next: RightPaneMode = cur === 'terminal' ? 'files' : 'terminal'
     try {
-      void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, next)
+      persistSetting(RIGHT_PANE_MODE_KEY, next)
     } catch (err) {
       log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
     }
@@ -247,7 +255,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   toggleDataScienceMode: () => {
     const next = !get().dataScienceMode
     try {
-      void window.api?.settings?.set(DATA_SCIENCE_MODE_KEY, String(next))
+      persistSetting(DATA_SCIENCE_MODE_KEY, String(next))
     } catch (err) {
       log.debug(`failed to persist ${DATA_SCIENCE_MODE_KEY}`, err)
     }
@@ -255,7 +263,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     // keeps whatever right-pane mode the user last had.
     if (next) {
       try {
-        void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files')
+        persistSetting(RIGHT_PANE_MODE_KEY, 'files')
       } catch (err) {
         log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
       }
@@ -268,7 +276,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   appView: 'chats',
   setAppView: (v) => {
     try {
-      void window.api?.settings?.set(APP_VIEW_KEY, v)
+      persistSetting(APP_VIEW_KEY, v)
     } catch (err) {
       log.debug(`failed to persist ${APP_VIEW_KEY}`, err)
     }
@@ -277,7 +285,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   toggleAppView: () => {
     const next: AppView = get().appView === 'chats' ? 'kanban' : 'chats'
     try {
-      void window.api?.settings?.set(APP_VIEW_KEY, next)
+      persistSetting(APP_VIEW_KEY, next)
     } catch (err) {
       log.debug(`failed to persist ${APP_VIEW_KEY}`, err)
     }
@@ -287,7 +295,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   kanbanProjectFilter: null,
   setKanbanWorkspaceFilter: (id) => {
     try {
-      void window.api?.settings?.set(KANBAN_WS_FILTER_KEY, id ?? '')
+      persistSetting(KANBAN_WS_FILTER_KEY, id ?? '')
     } catch (err) {
       log.debug(`failed to persist ${KANBAN_WS_FILTER_KEY}`, err)
     }
@@ -298,7 +306,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   },
   setKanbanProjectFilter: (path) => {
     try {
-      void window.api?.settings?.set(KANBAN_PROJECT_FILTER_KEY, path ?? '')
+      persistSetting(KANBAN_PROJECT_FILTER_KEY, path ?? '')
     } catch (err) {
       log.debug(`failed to persist ${KANBAN_PROJECT_FILTER_KEY}`, err)
     }
@@ -312,7 +320,7 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     // focuses the pane.
     set({ rightPaneMode: 'files' })
     try {
-      void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files')
+      persistSetting(RIGHT_PANE_MODE_KEY, 'files')
     } catch (err) {
       log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
     }
