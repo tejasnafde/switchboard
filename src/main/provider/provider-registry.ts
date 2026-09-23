@@ -726,7 +726,7 @@ export class ProviderRegistry implements PeerToolHost {
       return rejectedAtomicTurn('This chat is moving to its worktree right now. Send again in a moment.')
     }
     if (this.executionRoot?.hasQueued(threadId)) {
-      return rejectedAtomicTurn('This chat is moving to its worktree after the current turn. Send again once the turn ends.')
+      return rejectedAtomicTurn('This chat is moving to its worktree after the current turn. Send again once the move completes.')
     }
     const starting = this.startingSessions.get(threadId)
     if (starting) await starting
@@ -737,7 +737,7 @@ export class ProviderRegistry implements PeerToolHost {
       return rejectedAtomicTurn('This chat is moving to its worktree right now. Send again in a moment.')
     }
     if (this.executionRoot?.hasQueued(threadId)) {
-      return rejectedAtomicTurn('This chat is moving to its worktree after the current turn. Send again once the turn ends.')
+      return rejectedAtomicTurn('This chat is moving to its worktree after the current turn. Send again once the move completes.')
     }
     const adapter = this.sessionAdapters.get(threadId)
     if (!adapter) return rejectedAtomicTurn(`No session: ${threadId}`)
