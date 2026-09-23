@@ -1175,7 +1175,7 @@ export function ChatInput({
           setSendToActiveIdx((i) => (i + delta + sendToMatches.length) % sendToMatches.length)
           return
         }
-        if (e.key === 'Enter' || e.key === 'Tab') {
+        if ((e.key === 'Enter' && !e.altKey) || e.key === 'Tab') {
           e.preventDefault()
           runSendToPick(sendToMatches[sendToActiveIdx] ?? sendToMatches[0])
           return
@@ -1210,7 +1210,7 @@ export function ChatInput({
         }
         // Swallow Enter/Tab so they don't fire Send / move focus; commit
         // the highlighted row instead.
-        if (e.key === 'Enter' || e.key === 'Tab') {
+        if ((e.key === 'Enter' && !e.altKey) || e.key === 'Tab') {
           e.preventDefault()
           e.stopPropagation()
           const pick = atMatches[atActiveIdx] ?? atMatches[0]
@@ -1233,7 +1233,7 @@ export function ChatInput({
         setSlashActiveIdx((i) => (i - 1 + Math.max(matches.length, 1)) % Math.max(matches.length, 1))
         return
       }
-      if (e.key === 'Enter' || e.key === 'Tab') {
+      if ((e.key === 'Enter' && !e.altKey) || e.key === 'Tab') {
         e.preventDefault()
         e.stopPropagation()
         if (matches.length > 0) runSlashCommand(matches[slashActiveIdx] ?? matches[0])
