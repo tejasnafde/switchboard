@@ -2,6 +2,21 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.61 - New chats start as drafts
+
+### Changed
+- **A new chat is a draft until you send.** The sidebar's pencil and the new cmd+shift+O open an empty chat pane with the normal composer. Nothing is created on open: no conversation row, no provider process, no worktree. The first send creates the conversation and any worktree, and that message moves into the new chat through its ordinary send path. Abandoned clicks used to leave "New conversation" rows and worktrees behind; they leave nothing now.
+- **cmd+shift+O always asks for the project.** The project you are in is on top, labelled current and already highlighted, so Enter keeps it and one arrow key picks another. Connected remote machines' projects are listed too. The sidebar header's "New thread" button opens the same picker instead of silently using the first project.
+- **The checkout choice moved from a modal into the composer.** A Workspace chip picks Project checkout or New worktree, and a new worktree gets a base-branch chip. The branch picker returns once the chat exists. The draft copies the provider, model, instance, reasoning effort and runtime mode of the chat you came from.
+- Draft text persists under a stable per-project id in the existing draft store, so a relaunch keeps it and a second new chat for the same project reopens the same draft instead of stacking empty ones.
+
+### Fixed
+- If a new worktree cannot be created (for example the folder is not a git repository), the draft comes back with its text and the error, and no conversation row is left behind. The recovery card still offers Retry and Start in project.
+- The hand-off from draft to conversation is keyed by a conversation id the draft mints up front, not by project path. A path the backend canonicalises (a macOS `/var` symlink, for one) would otherwise have lost the first message.
+
+### Removed
+- The New worktree / Project checkout modal, the per-project "new chat pending" spinner and its guard. Opening a draft is instant, so there is nothing left to wait for.
+
 ## 0.8.60 - Auto mode, a compaction nudge, and a quieter status bar
 
 ### Added

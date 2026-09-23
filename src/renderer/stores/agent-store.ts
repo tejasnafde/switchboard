@@ -10,6 +10,7 @@ import { createRendererLogger } from '../logger'
 import { mergeLiveSessions, toAgentStatus, toAgentType } from './liveSessionMerge'
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { isRuntimeMode } from '@shared/session-defaults'
+import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
 import type {
   ForkLineageMetadata,
 } from '@shared/conversation-fork'
@@ -128,6 +129,8 @@ interface AgentSession {
    * session id.
    */
   tokenUsage?: { usedTokens: number; maxTokens: number | null }
+  /** Present only on an unsent new chat (see shared/new-chat-draft). */
+  draft?: DraftChatOptions
 }
 
 interface AgentStore {
@@ -196,6 +199,7 @@ interface AgentStore {
    * restart for the new credentials to take effect.
    */
   setInstanceId: (sessionId: string, instanceId: string | undefined) => void
+  setDraftOptions: (sessionId: string, patch: Partial<DraftChatOptions>) => void
   /**
    * Switch the worktree pointer mid-session. Called when the branch
    * picker's `swap-cwd` action fires. Does NOT restart the running
@@ -259,9 +263,11 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     // until the whole Electron app exits. Fire-and-forget: if the main
     // process has already cleaned the session up (e.g. on shutdown) the
     // IPC handler is a no-op.
-    window.api.provider?.stopSession?.(id).catch((err: unknown) => {
-      log.warn(`stopSession(${id}) failed:`, err)
-    })
+    if (!isDraftSessionId(id)) {
+      window.api.provider?.stopSession?.(id).catch((err: unknown) => {
+        log.warn(`stopSession(${id}) failed:`, err)
+      })
+    }
     // Drop the routing-table entry so a stale id can't keep routing to its old machine.
     window.api.routing?.unbind?.(id)
     removeRuntimeChatSession(id)
@@ -497,6 +503,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         s.id === sessionId
           ? { ...s, type, model: undefined, resolvedModel: undefined, instanceId: undefined, resumeSessionId: undefined }
           : s
+      ),
+    })),
+
+  setDraftOptions: (sessionId, patch) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId && s.draft ? { ...s, draft: { ...s.draft, ...patch } } : s,
       ),
     })),
 

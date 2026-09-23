@@ -39,6 +39,7 @@ import { detectAtTrigger, filterAtMatches } from './atMention'
 import { detectSendToTrigger, sendToPickerItems } from './sendToCommand'
 import { fuzzyScore } from '../../services/fuzzyScore'
 import { AtMentionMenu } from './AtMentionMenu'
+import { DraftWorkspaceChips } from './DraftWorkspaceChips'
 import { BranchPickerTrigger } from './BranchPicker'
 import { composerFooterLayout } from './composerFooterLayout'
 import { RichChatTextarea, type RichChatTextareaHandle } from './lexical/RichChatTextarea'
@@ -908,6 +909,7 @@ export function ChatInput({
 
   swapWorktreePointerRef.current = swapWorktreePointer
 
+  const draftOptions = useAgentStore((st) => st.sessions.find((x) => x.id === sessionId)?.draft)
   const { repoRoot, driftSuggestion, orphanedPath, orphanedBranch } = useMemo(() => {
     const s = sessionsForRepo.find((sess) => sess.id === sessionId)
     return {
@@ -1618,11 +1620,15 @@ export function ChatInput({
             has a worktree elsewhere) we update the store + persist to the
             conversations row; the running adapter keeps its old cwd until
             session restart, then picks up the new pointer. */}
-        <BranchPickerTrigger
-          cwd={repoRoot}
-          onSwapWorktree={swapWorktreePointer}
-          onCwdMissing={healOrphanedWorktree}
-        />
+        {draftOptions && sessionId ? (
+          <DraftWorkspaceChips sessionId={sessionId} cwd={repoRoot} draft={draftOptions} />
+        ) : (
+          <BranchPickerTrigger
+            cwd={repoRoot}
+            onSwapWorktree={swapWorktreePointer}
+            onCwdMissing={healOrphanedWorktree}
+          />
+        )}
 
         {/* Runtime mode selector (per-session) */}
         {runtimeMode && onRuntimeModeChange && (

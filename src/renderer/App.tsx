@@ -17,6 +17,7 @@ import { IdePane } from './components/ide/IdePane'
 import { KanbanView } from './components/kanban/KanbanView'
 import { SettingsModal } from './components/SettingsModal'
 import { CommandPalette } from './components/CommandPalette'
+import { NewChatProjectPicker } from './components/NewChatProjectPicker'
 import { SearchModal } from './components/SearchModal'
 import { StatusBar } from './components/StatusBar'
 import { SessionPickerModal } from './components/SessionPickerModal'
@@ -24,7 +25,6 @@ import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
-import { NewChatCheckoutDialog, type NewChatCheckout } from './components/NewChatCheckoutDialog'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
@@ -38,11 +38,13 @@ import {
   retryDesktopWorktreeCreation,
   shouldDismissDesktopWorktreeSnapshot,
   type DesktopNewChatCoordinator,
+  type DesktopNewChatState,
 } from './services/desktopNewChatCreation'
 import { createDesktopNewChatJournal } from './services/desktopNewChatJournal'
 import { WorktreeCreationProgress } from './components/worktree/WorktreeCreationProgress'
 import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
-import { newChatKey } from './services/newChatGuard'
+import { draftSessionId } from '@shared/new-chat-draft'
+import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draftChat'
 import type { SessionSummary, ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
 import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
@@ -81,16 +83,9 @@ export function App() {
   // the chat docked right (the right pane is flex:1 then, not resizable).
   const dsChatRef = useRef<HTMLDivElement>(null)
   const newChatCoordinators = useRef(new Map<string, DesktopNewChatCoordinator>())
+  const materializingDrafts = useRef(new Set<string>())
   const newChatJournal = useRef(createDesktopNewChatJournal(window.localStorage))
   const [worktreeCreationSnapshots, setWorktreeCreationSnapshots] = useState<Record<string, WorktreeCreationSnapshot>>({})
-  const newChatCheckoutChoiceRef = useRef<{
-    projectPath: string
-    machineId: string
-    guardKey: string
-    recommendedCheckout: NewChatCheckout
-  } | null>(null)
-  const newChatChoiceOpening = useRef(false)
-  const [newChatCheckoutChoice, setNewChatCheckoutChoice] = useState(newChatCheckoutChoiceRef.current)
 
   const {
     sidebarWidth,
@@ -133,6 +128,7 @@ export function App() {
   const { loadSavedTheme } = useThemeStore()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [newChatPickerOpen, setNewChatPickerOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [sessionPickerOpen, setSessionPickerOpen] = useState(false)
   const [quickPromptOpen, setQuickPromptOpen] = useState(false)
@@ -486,6 +482,13 @@ export function App() {
     runtimeMode: RuntimeMode
   }) => {
     window.api.routing.bind(session.id, session.machineId)
+    // A draft's first send created this conversation: hand its message and its
+    // picker choices to the real session before the pane mounts it.
+    const parkedDraftId = peekFirstSend(session.id)?.draftId
+    if (parkedDraftId) materializingDrafts.current.delete(parkedDraftId)
+    const draft = parkedDraftId
+      ? useAgentStore.getState().sessions.find((s) => s.id === parkedDraftId)
+      : undefined
     if (session.managedTerminalIds?.length && session.worktreePath) {
       useTerminalStore.getState().adoptManagedTerminals(
         session.id,
@@ -493,7 +496,16 @@ export function App() {
         session.worktreePath,
       )
     }
-    addSession(session)
+    addSession({
+      ...session,
+      ...(draft?.model ? { model: draft.model } : {}),
+      ...(draft?.instanceId ? { instanceId: draft.instanceId } : {}),
+      ...(draft?.reasoningEffort ? { reasoningEffort: draft.reasoningEffort } : {}),
+    })
+    if (draft?.model) window.api.app.setConversationModel?.(session.id, draft.model).catch((err: unknown) => log.warn('carry draft model failed', err))
+    if (draft?.instanceId) window.api.app.setConversationProviderInstanceId(session.id, draft.instanceId).catch((err: unknown) => log.warn('carry draft instance failed', err))
+    if (draft?.reasoningEffort) window.api.app.setConversationReasoningEffort(session.id, draft.reasoningEffort).catch((err: unknown) => log.warn('carry draft effort failed', err))
+    if (draft) window.api.app.setConversationRuntimeMode?.(session.id, session.runtimeMode).catch((err: unknown) => log.warn('persist runtime mode failed', err))
     selectChatSession(session.id)
     if (session.machineId === 'local') {
       emitSessionCreated({
@@ -512,7 +524,7 @@ export function App() {
     }
   }, [addSession, selectChatSession])
 
-  const makeNewChatCoordinator = useCallback(() => createDesktopNewChatCoordinator({
+  const makeNewChatCoordinator = useCallback((onState?: (state: DesktopNewChatState) => void) => createDesktopNewChatCoordinator({
     worktrees: {
       create: window.api.worktreeCreation.create,
       get: window.api.worktreeCreation.get,
@@ -544,6 +556,7 @@ export function App() {
     createId: () => crypto.randomUUID(),
     now: Date.now,
     onStateChange: (state) => {
+      onState?.(state)
       if (!state.creationId || !state.snapshot) return
       if (state.snapshot.status === 'ready' || shouldDismissDesktopWorktreeSnapshot(state.snapshot)) {
         newChatJournal.current.remove(state.creationId)
@@ -561,97 +574,120 @@ export function App() {
     },
   }), [publishAuthoritativeSession])
 
-  const newChatPending = useRef(new Set<string>())
-  const [pendingNewChats, setPendingNewChats] = useState<ReadonlySet<string>>(new Set())
-  const releaseNewChatGuard = useCallback((guardKey: string) => {
-    newChatPending.current.delete(guardKey)
-    setPendingNewChats(new Set(newChatPending.current))
+  // "+ New Chat" and cmd+shift+O open a draft. Nothing is created until the
+  // first send, so an abandoned click leaves no conversation row and no worktree.
+  const openDraftChat = useCallback(async (projectPath: string, machineId: string = 'local') => {
+    useLayoutStore.getState().setAppView('chats')
+    const id = draftSessionId(machineId, projectPath)
+    const store = useAgentStore.getState()
+    if (!store.sessions.some((s) => s.id === id)) {
+      // Carry the picks of the chat the user came from; the store default
+      // covers the rest.
+      const from = store.getActiveSession()
+      const carry = from && !from.draft && from.type !== 'terminal' ? from : undefined
+      const envMode = await getDefaultSessionEnvMode()
+      // A second open for the same project can land during the await.
+      if (useAgentStore.getState().sessions.some((s) => s.id === id)) { selectChatSession(id); return }
+      window.api.routing.bind(id, machineId)
+      store.addSession({
+        id,
+        type: carry?.type ?? 'claude-code',
+        status: 'idle',
+        projectPath,
+        machineId,
+        title: 'New chat',
+        runtimeMode: carry?.runtimeMode,
+        ...(carry?.model ? { model: carry.model } : {}),
+        ...(carry?.instanceId ? { instanceId: carry.instanceId } : {}),
+        ...(carry?.reasoningEffort ? { reasoningEffort: carry.reasoningEffort } : {}),
+        draft: { checkout: envMode === 'worktree' ? 'worktree' : 'project', baseRef: 'HEAD' },
+      })
+    }
+    selectChatSession(id)
+  }, [selectChatSession])
+
+  const retainCoordinator = useCallback((coordinator: DesktopNewChatCoordinator, checkout: 'project' | 'worktree') => {
+    const state = coordinator.state()
+    if (
+      checkout === 'worktree'
+      && state.creationId
+      && state.status !== 'ready'
+      && (!state.snapshot || !shouldDismissDesktopWorktreeSnapshot(state.snapshot))
+    ) {
+      newChatCoordinators.current.set(state.creationId, coordinator)
+    } else {
+      coordinator.dismiss()
+      coordinator.dispose()
+    }
   }, [])
 
-  const handleNewChat = useCallback(
-    async (projectPath: string, machineId: string = 'local') => {
-      // Worktree creation takes seconds (longer over SSH), so the buttons
-      // look dead and users click again, getting duplicate worktrees and
-      // conversation rows. Keyed per project + machine so A never blocks B.
-      const guardKey = newChatKey(projectPath, machineId)
-      if (newChatPending.current.has(guardKey)) return
-      if (newChatCheckoutChoiceRef.current || newChatChoiceOpening.current) return
-      newChatPending.current.add(guardKey)
-      setPendingNewChats(new Set(newChatPending.current))
-      newChatChoiceOpening.current = true
-      try {
-        const mode = await getDefaultSessionEnvMode()
-        const choice = {
-          projectPath,
-          machineId,
-          guardKey,
-          recommendedCheckout: mode === 'worktree' ? 'worktree' as const : 'project' as const,
+  useEffect(() => {
+    setDraftMaterializer(async (draftId, send) => {
+      // One creation per draft. A remounted composer has a fresh submit
+      // guard, so this is the one that holds across panes and view switches.
+      if (materializingDrafts.current.has(draftId)) {
+        return { accepted: false, error: 'This chat is already being created.' }
+      }
+      const draft = useAgentStore.getState().sessions.find((s) => s.id === draftId)
+      if (!draft?.draft || !draft.projectPath || draft.type === 'terminal') {
+        return { accepted: false, error: 'This draft is no longer available.' }
+      }
+      const checkout = draft.draft.checkout
+      const conversationId = crypto.randomUUID()
+      materializingDrafts.current.add(draftId)
+      let insideStart = true
+      let gaveBack = false
+      // A creation that ends without a conversation (failed, or a worktree
+      // left needing cleanup) returns the draft. Inside start() the composer
+      // restores the full payload from accepted: false; after it, a late
+      // failure can only put the text back.
+      const giveBack = () => {
+        const parked = takeFirstSend(conversationId)
+        if (!parked) return
+        gaveBack = true
+        materializingDrafts.current.delete(draftId)
+        useAgentStore.getState().updateStatus(draftId, 'idle')
+        if (!insideStart && !useDraftStore.getState().getDraft(draftId)) {
+          useDraftStore.getState().setDraft(draftId, parked.message)
         }
-        newChatCheckoutChoiceRef.current = choice
-        setNewChatCheckoutChoice(choice)
-      } catch (error) {
-        releaseNewChatGuard(guardKey)
-        setAppToast(error instanceof Error ? error.message : 'Could not prepare the new conversation.')
-      } finally {
-        newChatChoiceOpening.current = false
       }
-    },
-    [releaseNewChatGuard],
-  )
-
-  const confirmNewChatCheckout = useCallback(async (checkout: NewChatCheckout) => {
-    const choice = newChatCheckoutChoiceRef.current
-    if (!choice) return
-    newChatCheckoutChoiceRef.current = null
-    setNewChatCheckoutChoice(null)
-    const coordinator = makeNewChatCoordinator()
-    try {
-      useLayoutStore.getState().setAppView('chats')
-      const state = await coordinator.start({
-        projectPath: choice.projectPath,
-        machineId: choice.machineId,
-        checkout,
-        agentType: 'claude-code',
-        runtimeMode: useAgentStore.getState().getActiveSession()?.runtimeMode ?? 'sandbox',
+      const coordinator = makeNewChatCoordinator((state) => {
+        const snapshot = state.snapshot
+        if (state.status === 'failed' || (snapshot && snapshot.status !== 'ready' && (
+          snapshot.status === 'failed' || snapshot.status === 'cleanup_required' || shouldDismissDesktopWorktreeSnapshot(snapshot)
+        ))) giveBack()
       })
-      if (
-        checkout === 'worktree'
-        && state.creationId
-        && state.status !== 'ready'
-        && (!state.snapshot || !shouldDismissDesktopWorktreeSnapshot(state.snapshot))
-      ) {
-        newChatCoordinators.current.set(state.creationId, coordinator)
-      } else {
-        coordinator.dismiss()
-        coordinator.dispose()
+      parkFirstSend(conversationId, { ...send, draftId })
+      useAgentStore.getState().updateStatus(draftId, 'running')
+      let state: DesktopNewChatState
+      let startError: unknown
+      try {
+        state = await coordinator.start({
+          projectPath: draft.projectPath,
+          machineId: draft.machineId ?? 'local',
+          checkout,
+          agentType: draft.type,
+          runtimeMode: draft.runtimeMode,
+          baseRef: draft.draft.baseRef,
+          conversationId,
+          ...(draft.model ? { model: draft.model } : {}),
+          ...(draft.instanceId ? { instanceId: draft.instanceId } : {}),
+        })
+      } catch (error) {
+        startError = error
+        state = coordinator.state()
       }
-      if (state.status === 'failed') setAppToast(state.error ?? 'The worktree conversation was not started.')
-    } catch (error) {
-      const state = coordinator.state()
-      if (
-        checkout === 'worktree'
-        && state.creationId
-        && state.status !== 'ready'
-        && (!state.snapshot || !shouldDismissDesktopWorktreeSnapshot(state.snapshot))
-      ) {
-        newChatCoordinators.current.set(state.creationId, coordinator)
-      } else {
-        coordinator.dismiss()
-        coordinator.dispose()
+      insideStart = false
+      retainCoordinator(coordinator, checkout)
+      if (startError || gaveBack || state.status === 'failed') {
+        giveBack()
+        const message = startError instanceof Error ? startError.message : state.error
+        return { accepted: false, error: message ?? 'The new chat could not be created. See the worktree card for recovery.' }
       }
-      setAppToast(error instanceof Error ? error.message : 'Could not start the new conversation.')
-    } finally {
-      releaseNewChatGuard(choice.guardKey)
-    }
-  }, [makeNewChatCoordinator, releaseNewChatGuard])
-
-  const cancelNewChatCheckout = useCallback(() => {
-    const choice = newChatCheckoutChoiceRef.current
-    if (!choice) return
-    newChatCheckoutChoiceRef.current = null
-    setNewChatCheckoutChoice(null)
-    releaseNewChatGuard(choice.guardKey)
-  }, [releaseNewChatGuard])
+      return { accepted: true }
+    })
+    return () => setDraftMaterializer(null)
+  }, [makeNewChatCoordinator, retainCoordinator])
 
   const handleWorktreeCreationAction = useCallback(async (
     snapshot: WorktreeCreationSnapshot,
@@ -741,12 +777,6 @@ export function App() {
       for (const coordinator of restored) coordinator.dispose()
     }
   }, [makeNewChatCoordinator])
-
-  const isNewChatPending = useCallback(
-    (projectPath: string, machineId: string = 'local') =>
-      pendingNewChats.has(newChatKey(projectPath, machineId)),
-    [pendingNewChats],
-  )
 
   // Click a session in sidebar - load its messages from disk. If we're
   // in kanban view, drop back to chats so the user actually sees the
@@ -1073,6 +1103,11 @@ export function App() {
           e.preventDefault()
           useLayoutStore.getState().toggleAppView()
         }
+        // ⌘+Shift+O - new chat: pick the project, then a draft opens
+        else if ((e.key === 'o' || e.key === 'O') && e.shiftKey) {
+          e.preventDefault()
+          setNewChatPickerOpen(true)
+        }
         // ⌘+Shift+P - command palette
         else if ((e.key === 'p' || e.key === 'P') && e.shiftKey) {
           e.preventDefault()
@@ -1305,12 +1340,12 @@ export function App() {
           }}
         >
           <Sidebar
-            onNewChat={handleNewChat}
+            onNewChat={openDraftChat}
+            onPickNewChat={() => setNewChatPickerOpen(true)}
             onSessionSelect={handleSessionSelect}
             onOpenBeside={(session, projectPath, machineId) => {
               void handleSessionSelect(session, projectPath, machineId, 'beside')
             }}
-            isNewChatPending={isNewChatPending}
           />
         </div>
 
@@ -1455,15 +1490,6 @@ export function App() {
 
       <StatusBar />
 
-      {newChatCheckoutChoice && (
-        <NewChatCheckoutDialog
-          projectPath={newChatCheckoutChoice.projectPath}
-          machineId={newChatCheckoutChoice.machineId}
-          recommendedCheckout={newChatCheckoutChoice.recommendedCheckout}
-          onChoose={(checkout) => { void confirmNewChatCheckout(checkout) }}
-          onCancel={cancelNewChatCheckout}
-        />
-      )}
 
       {Object.values(worktreeCreationSnapshots).some((snapshot) => snapshot.status !== 'ready') && (
         <div style={{
@@ -1484,6 +1510,15 @@ export function App() {
 
       <SettingsModal open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <SearchModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+      <NewChatProjectPicker
+        open={newChatPickerOpen}
+        current={(() => {
+          const active = useAgentStore.getState().getActiveSession()
+          return active ? { projectPath: active.projectPath, machineId: active.machineId } : undefined
+        })()}
+        onPick={(projectPath, machineId) => { setNewChatPickerOpen(false); void openDraftChat(projectPath, machineId) }}
+        onClose={() => setNewChatPickerOpen(false)}
+      />
       <CommandPalette
         open={paletteOpen}
         onClose={() => setPaletteOpen(false)}
@@ -1492,7 +1527,7 @@ export function App() {
         onOpenSessionPicker={() => { setPaletteOpen(false); setSessionPickerOpen(true) }}
         onOpenQuickPrompt={() => { setPaletteOpen(false); setQuickPromptOpen(true) }}
         onContextBridge={() => { setPaletteOpen(false); appendTerminalSelectionToDraft() }}
-        onNewChat={handleNewChat}
+        onNewChat={openDraftChat}
       />
       <SessionPickerModal
         open={sessionPickerOpen}

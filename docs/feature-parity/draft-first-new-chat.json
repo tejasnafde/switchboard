@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "draft-first-new-chat",
+  "summary": "A new desktop chat starts as a renderer-only draft in the normal chat pane. cmd+shift+O (and the sidebar header button) always asks for the project, with the current one on top. The checkout (project or new worktree) and the worktree's base branch are composer chips instead of a modal. The conversation row and any worktree are created on the first send, and that message follows into the new conversation. A failed creation returns the draft with its text.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/App.tsx",
+        "src/renderer/components/NewChatProjectPicker.tsx",
+        "src/renderer/components/chat/DraftWorkspaceChips.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/sidebar/Sidebar.tsx",
+        "src/renderer/components/sidebar/MachineLayer.tsx",
+        "src/renderer/services/draftChat.ts",
+        "src/renderer/services/desktopNewChatCreation.ts",
+        "src/renderer/stores/agent-store.ts",
+        "tests/unit/new-chat-draft.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client already works this way: apps/mobile/src/screens/NewSessionScreen.tsx collects project, checkout, provider, model and mode on one screen and creates the conversation only when the user submits. There is no modal-then-create step to replace."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android's NewSessionScreen and NewSessionCoordinator follow the same collect-then-create flow as React Native, so no empty conversation or worktree is created by opening the screen."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/new-chat-draft.ts",
+        "tests/unit/new-chat-draft.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Drafts are never written to the database. Their text rides the existing localStorage draft store, keyed by a stable per-project id, so it survives a relaunch with no new storage. The worktree request already carried baseRef; only its value changes from a constant HEAD to the chosen ref."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only change. No channel, wire or capability change; a mixed desktop and remote-server pair behaves as before because creation still goes through the existing worktree-creation and create-conversation calls."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/new-chat-draft.test.ts",
+      "npm run typecheck",
+      "npm test",
+      "Playwright drive of the built app (SB_DEMO_ADAPTER=1, isolated profile, 20 checks): cmd+shift+O opens the picker, Enter opens a draft, no conversation row while drafting, first send creates exactly one row and the message appears in it, for both project checkout and a real new worktree; a project path the backend canonicalises still receives its first message; a worktree request in a non-git folder returns the draft with its text and leaves no row."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "Remote machines: a draft for a project on a connected VM was not driven end to end; it uses the same coordinator path with the machine id carried on the draft.",
+      "Previous worktree and the Run on machine chip from the mock are not built; the picker lists connected remote projects as separate entries instead."
+    ]
+  }
+}

@@ -8,14 +8,12 @@
       "status": "implemented",
       "evidence": [
         "src/renderer/services/desktopNewChatCreation.ts",
-        "src/renderer/components/NewChatCheckoutDialog.tsx",
         "src/renderer/components/worktree/WorktreeCreationProgress.tsx",
         "src/renderer/App.tsx",
         "src/renderer/stores/terminal-store.ts",
         "src/preload/worktree-creation-api.ts",
         "tests/unit/desktop-new-chat-creation.test.ts",
         "tests/unit/worktree-creation-progress.test.ts",
-        "tests/unit/new-chat-checkout-dialog.test.ts",
         "tests/unit/pty-manager-idempotency.test.ts",
         "e2e/backend-host.e2e.mjs"
       ]
