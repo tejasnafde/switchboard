@@ -39,7 +39,7 @@ import { createLogger } from '@shared/logger'
 import type { RootStackParamList } from '../../App'
 import { colors, radius, space, type } from '../theme'
 import { Markdown } from '../components/Markdown'
-import { summarizeTool, toolIcon } from '../lib/toolSummary'
+import { summarizeTool, toolIcon } from '@shared/tool-summary'
 import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
 import {
