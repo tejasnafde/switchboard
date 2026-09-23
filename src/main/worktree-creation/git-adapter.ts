@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { access, mkdir, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { promisify } from 'node:util'
+import { cloneDependencyDirsInBackground } from '../git/dependencyClone'
 
 const execFileAsync = promisify(execFile)
 
@@ -352,6 +353,7 @@ export class ExecFileGitWorktreeAdapter {
     }
 
     const headCommit = (await this.run(plan.worktreePath, ['rev-parse', 'HEAD'])).stdout.trim()
+    cloneDependencyDirsInBackground(plan.repository.projectPath, plan.worktreePath)
     return {
       kind: 'completed',
       worktreePath: plan.worktreePath,
