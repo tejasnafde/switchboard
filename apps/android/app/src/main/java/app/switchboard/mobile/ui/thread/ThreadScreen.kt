@@ -187,16 +187,24 @@ fun ThreadScreen(
     // onSendOverride is fire-and-forget (dispatched onto a worker coroutine), so
     // there is no synchronous result to gate a second tap on. Hide the offer the
     // instant it is tapped - that removes the Compact action before a second tap
-    // can land - and only put it back if the durable enqueue itself failed.
+    // can land. Two ways back: the durable enqueue itself failed (composer.error),
+    // or the compact turn finished (metadata.lastTurnAt advances past the tap) -
+    // composer.submitting is NOT that signal, it clears when the enqueue lands,
+    // long before the turn completes. Once cleared, the ordinary token/idle
+    // thresholds in CompactionOfferPolicy decide whether to offer again, so this
+    // does not re-show the banner right after compacting.
     var compactionAwaitingResult by rememberSaveable(threadId) { mutableStateOf(false) }
-    LaunchedEffect(threadId, composer?.error) {
-        if (compactionAwaitingResult && composer?.error != null) {
+    var compactionSubmittedAtMs by rememberSaveable(threadId) { mutableStateOf(0L) }
+    val presentation = remember(loadState) { ThreadPresenter.present(loadState) }
+    val metadata = presentation.metadataOrNull()
+    LaunchedEffect(threadId, composer?.error, metadata?.lastTurnAt) {
+        if (!compactionAwaitingResult) return@LaunchedEffect
+        val turnCompleted = (metadata?.lastTurnAt ?: 0L) > compactionSubmittedAtMs
+        if (composer?.error != null || turnCompleted) {
             compactionAwaitingResult = false
             compactionDismissed = false
         }
     }
-    val presentation = remember(loadState) { ThreadPresenter.present(loadState) }
-    val metadata = presentation.metadataOrNull()
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
     val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
 
@@ -305,6 +313,7 @@ fun ThreadScreen(
                     onCompact = {
                         compactionDismissed = true
                         compactionAwaitingResult = true
+                        compactionSubmittedAtMs = System.currentTimeMillis()
                         onSendOverride("/compact")
                     },
                     onDismiss = { compactionDismissed = true },

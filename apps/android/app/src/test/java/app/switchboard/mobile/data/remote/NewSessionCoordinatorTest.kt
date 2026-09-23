@@ -7,6 +7,7 @@ import app.switchboard.mobile.domain.outbox.StagedAttachment
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.CreateConversation
 import app.switchboard.mobile.domain.remote.ModelOption
+import app.switchboard.mobile.domain.remote.NewSessionDecisions
 import app.switchboard.mobile.domain.remote.ProviderInstance
 import app.switchboard.mobile.domain.remote.ProviderKind
 import app.switchboard.mobile.domain.remote.RemoteOutcome
@@ -153,6 +154,37 @@ class NewSessionCoordinatorTest {
         assertEquals("claude-work", coordinator.state.value.selectedInstanceId)
         assertEquals(2, remote.catalogRequests.size)
         assertEquals("claude-code" to "claude-work", remote.catalogRequests.last().first)
+    }
+
+    @Test
+    fun switchingInstanceAfterALiveCatalogNeverLeavesThePriorInstancesModelsSubmittable() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        remote.instances.single()(
+            success("instances", listOf(instance("claude-a"), instance("claude-b"))),
+        )
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", null)
+        remote.answerSetting("chat.defaultProviderInstanceId", null)
+        assertEquals("claude-code" to "claude-a", remote.catalogRequests.single().first)
+        remote.answerCatalog(listOf(modelOption("a-model-1", "A Model 1")))
+        coordinator.selectModel("a-model-1")
+        assertEquals(listOf("a-model-1"), coordinator.state.value.modelOptions.map { it.id })
+
+        coordinator.selectInstance("claude-b")
+
+        // Before B's probe answers at all, A's catalog must already be gone -
+        // otherwise submit() could still send an A-only model against B.
+        val staticIds = NewSessionDecisions.models(ProviderKind.Claude).map { it.id }
+        assertEquals(staticIds, coordinator.state.value.modelOptions.map { it.id })
+        assertNull(coordinator.state.value.selectedModelId)
+
+        // B's probe now fails - A's models must stay gone, not reappear.
+        remote.answerCatalog(null)
+        assertEquals(staticIds, coordinator.state.value.modelOptions.map { it.id })
+        assertNull(coordinator.state.value.selectedModelId)
     }
 
     @Test
