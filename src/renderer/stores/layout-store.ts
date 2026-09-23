@@ -145,6 +145,16 @@ interface LayoutStore {
   setTerminalWidth: (width: number) => void
 
   setChatSplitRatio: (ratio: number) => void
+
+  /**
+   * Opt-in: render per-file diff cards (with per-hunk accept/reject) inline
+   * in chat after a turn. Default OFF - most users review the diff via the
+   * PR, not in chat. Off collapses a turn's changed-file group to a single
+   * "Changed N files" button that expands the real cards for that turn only
+   * (local state in MessageList, not persisted). Persisted via settings DB.
+   */
+  showFileDiffCards: boolean
+  setShowFileDiffCards: (value: boolean) => void
 }
 
 // Persistence keys for sidebar collapse state - kept tight so we don't
@@ -156,6 +166,7 @@ const APP_VIEW_KEY = 'layout.appView'
 const DATA_SCIENCE_MODE_KEY = 'layout.dataScienceMode'
 const KANBAN_WS_FILTER_KEY = 'layout.kanbanWorkspaceFilter'
 const KANBAN_PROJECT_FILTER_KEY = 'layout.kanbanProjectFilter'
+const SHOW_FILE_DIFF_CARDS_KEY = 'chat.showFileDiffs'
 
 function currentChatWorkspace(): ChatWorkspaceState {
   const state = useLayoutStore.getState()
@@ -410,6 +421,16 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
   setChatSplitRatio: (ratio: number) => {
     applyChatWorkspaceEvent({ type: 'set-split-ratio', ratio })
   },
+
+  showFileDiffCards: false,
+  setShowFileDiffCards: (value) => {
+    try {
+      persistSetting(SHOW_FILE_DIFF_CARDS_KEY, String(value))
+    } catch (err) {
+      log.debug(`failed to persist ${SHOW_FILE_DIFF_CARDS_KEY}`, err)
+    }
+    set({ showFileDiffCards: value })
+  },
 }))
 
 registerChatWorkspaceController({
@@ -426,7 +447,7 @@ registerChatWorkspaceController({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr, dsModeStr] = await Promise.all([
+    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr, dsModeStr, showFileDiffsStr] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
       window.api.settings.get(RIGHT_PANE_MODE_KEY),
@@ -434,6 +455,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       window.api.settings.get(KANBAN_WS_FILTER_KEY),
       window.api.settings.get(KANBAN_PROJECT_FILTER_KEY),
       window.api.settings.get(DATA_SCIENCE_MODE_KEY),
+      window.api.settings.get(SHOW_FILE_DIFF_CARDS_KEY),
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
@@ -453,6 +475,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       kanbanWorkspaceFilter: kanbanWsStr || null,
       kanbanProjectFilter: kanbanProjStr || null,
       dataScienceMode,
+      showFileDiffCards: showFileDiffsStr === 'true',
     })
   } catch (err) {
     log.warn('failed to hydrate layout settings from disk - keeping in-memory defaults', err)

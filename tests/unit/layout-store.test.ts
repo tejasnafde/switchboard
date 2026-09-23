@@ -148,3 +148,17 @@ describe('data scientist mode', () => {
     expect(useLayoutStore.getState().rightPaneMode).toBe('files')
   })
 })
+
+describe('file diff cards opt-in', () => {
+  it('defaults to off', () => {
+    expect(useLayoutStore.getState().showFileDiffCards).toBe(false)
+  })
+
+  it('setShowFileDiffCards flips the flag', () => {
+    useLayoutStore.setState({ showFileDiffCards: false })
+    useLayoutStore.getState().setShowFileDiffCards(true)
+    expect(useLayoutStore.getState().showFileDiffCards).toBe(true)
+    useLayoutStore.getState().setShowFileDiffCards(false)
+    expect(useLayoutStore.getState().showFileDiffCards).toBe(false)
+  })
+})

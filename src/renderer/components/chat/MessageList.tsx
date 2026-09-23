@@ -1,10 +1,11 @@
-import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react'
+import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { MessageBubble } from './MessageBubble'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
-import { activitySummaryLabel, projectTurnPresentation } from './turnPresentation'
+import { useLayoutStore } from '../../stores/layout-store'
+import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from './turnPresentation'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -146,6 +147,16 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
   const turns = useMemo(() => groupIntoTurns(messages), [messages])
   const turnsLengthRef = useRef(turns.length)
   turnsLengthRef.current = turns.length
+
+  const showFileDiffCards = useLayoutStore((s) => s.showFileDiffCards)
+  // Per-turn override: expanding one collapsed "Changed N files" group only
+  // affects that group, keyed by its first message id (stable across
+  // re-renders since presentation re-derives from the same message objects).
+  const [expandedFileGroups, setExpandedFileGroups] = useState<Set<string>>(new Set())
+  // Set right before expanding a group from the collapsed toggle button, so
+  // the effect below can move focus to the header once the button (which a
+  // keyboard user may have focused) unmounts.
+  const focusFilesHeaderKeyRef = useRef<string | null>(null)
 
   // Skill-name set for the current session - passed to each bubble so
   // leading-`/cmd` chips only render for commands that actually exist.
@@ -333,6 +344,19 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
       // re-run this effect and find it.
       return
     }
+    // The target message may be inside a collapsed "Changed N files" group,
+    // in which case its bubble never mounts and the querySelector below
+    // would find nothing. Expand that group first and wait for the next
+    // render (triggered by expandedFileGroups changing) to actually scroll -
+    // don't clear the pending request yet, or this effect never gets to
+    // finish the jump.
+    const collapsedGroupKey = findCollapsedFilesGroupKey(
+      turns[turnIdx], matches, showFileDiffCards, expandedFileGroups,
+    )
+    if (collapsedGroupKey) {
+      setExpandedFileGroups((prev) => new Set(prev).add(collapsedGroupKey))
+      return
+    }
     // Disable scroll-lock so the virtualizer's scrollToIndex isn't competing
     // with our auto-scroll-to-bottom effect.
     isScrollLockedRef.current = true
@@ -379,7 +403,19 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
       })
     })
     clearScroll()
-  }, [pendingScroll, sessionId, turns.length])
+  }, [pendingScroll, sessionId, turns.length, showFileDiffCards, expandedFileGroups])
+
+  // Expanding a collapsed "Changed N files" button removes it from the DOM,
+  // which drops keyboard focus if it was the focused element. Land focus on
+  // the now-expanded group's header instead of losing it silently.
+  useEffect(() => {
+    const groupKey = focusFilesHeaderKeyRef.current
+    if (!groupKey) return
+    focusFilesHeaderKeyRef.current = null
+    containerRef.current
+      ?.querySelector<HTMLElement>(`[data-files-group-header="${groupKey}"]`)
+      ?.focus()
+  }, [expandedFileGroups])
 
   if (turns.length === 0) {
     return (
@@ -496,12 +532,29 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
                     </details>
                   )
                 }
+                const groupKey = item.messages[0].id
+                const expanded = isFilesGroupExpanded(showFileDiffCards, expandedFileGroups, groupKey)
                 return (
-                  <section className="turn-files" key={item.messages[0].id}>
-                    <header>
-                      Changed {item.messages.length} {item.messages.length === 1 ? 'file' : 'files'}
-                    </header>
-                    {item.messages.map((message) => renderMessage(message))}
+                  <section className="turn-files" key={groupKey}>
+                    {expanded ? (
+                      <>
+                        <header tabIndex={-1} data-files-group-header={groupKey}>
+                          {changedFilesLabel(item.messages.length)}
+                        </header>
+                        {item.messages.map((message) => renderMessage(message))}
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="turn-files-toggle"
+                        onClick={() => {
+                          focusFilesHeaderKeyRef.current = groupKey
+                          setExpandedFileGroups((prev) => new Set(prev).add(groupKey))
+                        }}
+                      >
+                        {changedFilesLabel(item.messages.length)}
+                      </button>
+                    )}
                   </section>
                 )
               })}

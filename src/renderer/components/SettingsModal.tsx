@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
+import { useLayoutStore } from '../stores/layout-store'
 import { emitSessionRename } from '../services/session-events'
 import { FEATURE_TOUR_STEPS } from './onboarding/featureRegistry'
 import type { UpdateStatus } from '@shared/update-status'
@@ -465,6 +466,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
               {/* Responses - token-by-token streaming gate */}
               <SettingsSection title="Responses">
                 <StreamAssistantToggle />
+                <FileDiffCardsToggle />
               </SettingsSection>
 
               {/* Privacy - anonymous usage counts, default on */}
@@ -1195,6 +1197,44 @@ function StreamAssistantToggle() {
         <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
           Show token-by-token output while a response is in progress. Off renders the final
           reply in one shot when the turn completes.
+        </div>
+      </span>
+    </label>
+  )
+}
+
+/**
+ * Toggle: render per-file diff cards inline in chat after a turn (default
+ * off - most users review the diff via the PR, not in chat). Off collapses
+ * a turn's changed files to a single button that expands them for that
+ * turn only. Backed by `layout-store` (`chat.showFileDiffs`).
+ */
+function FileDiffCardsToggle() {
+  const enabled = useLayoutStore((s) => s.showFileDiffCards)
+  const setEnabled = useLayoutStore((s) => s.setShowFileDiffCards)
+  return (
+    <label
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '10px',
+        padding: '8px 0',
+        cursor: 'pointer',
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={() => setEnabled(!enabled)}
+        style={{ cursor: 'pointer' }}
+      />
+      <span>
+        <div style={{ fontSize: '12.5px', color: 'var(--text-primary)' }}>
+          Show file diff cards in chat
+        </div>
+        <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', marginTop: '2px' }}>
+          Show per-file diffs inline after each turn. Off shows a "Changed N files" button that
+          expands them for that turn only.
         </div>
       </span>
     </label>
