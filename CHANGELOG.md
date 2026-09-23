@@ -2,6 +2,18 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.65 - Small audit fixes
+
+### Fixed
+- **Cost reads the same everywhere.** The status bar showed 3 or 4 decimals, kanban and the phone 2, and the kanban cap had no `$`. One `formatCostUsd` keeps enough digits that a small cost still shows.
+- **The context percent uses one formula.** The desktop meter clamped both ends, the phone header rounded and clamped only the top, and the phone thread screen had a third copy. `contextPercent` in `shared/format` serves all three.
+- **Codex static tiers match what the live catalog infers.** `gpt-5.5` and `gpt-5.4` were listed as max but inferred as balanced, so their badge jumped when the live list arrived. A test now keeps every static Codex entry in line, as one already did for Claude.
+- **A connection accepted after `TcpHost.dispose()` is destroyed on arrival.** It used to join the client set, where nothing would close it. This was also the cause of a `tcp-host` test that failed under full-suite load.
+
+### Changed
+- One `takeTurnDuration` replaces the five copies of the "Worked for" timing in the three adapters.
+- The legacy `workspace.yaml` read has tests: it is read when it is the only config, it loses to `launch-config.yaml`, and the next save migrates it.
+
 ## 0.8.64 - New models show up without a release
 
 ### Added

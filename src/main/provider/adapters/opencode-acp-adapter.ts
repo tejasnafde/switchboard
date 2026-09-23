@@ -20,6 +20,7 @@
  * SDK's WhatWG-stream API.
  */
 
+import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { Readable, Writable } from 'stream'
@@ -547,9 +548,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     const promptPromise = dispatchedPrompt
       .then((res) => {
         active.session.status = 'idle'
-        const durationMs =
-          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
-        active.turnStartedAt = null
+        const durationMs = takeTurnDuration(active)
         active.onEvent({
           type: 'turn.completed',
           threadId,

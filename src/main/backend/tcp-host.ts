@@ -48,6 +48,7 @@ export class TcpHost implements BackendHost {
   private readonly handlers = new Map<string, (...args: unknown[]) => unknown>()
   private readonly listeners = new Map<string, Array<(...args: unknown[]) => void>>()
   private readonly clients = new Set<Client>()
+  private disposed = false
   private readonly epoch = randomUUID()
 
   constructor(
@@ -56,6 +57,12 @@ export class TcpHost implements BackendHost {
     private readonly deviceScopes: readonly DeviceScope[] = PHONE_SCOPES,
   ) {
     server.on('connection', (socket) => {
+      // Accepted after dispose (the listener is closing): nothing would
+      // destroy it later, so it must not join the client set.
+      if (this.disposed) {
+        socket.destroy()
+        return
+      }
       socket.setNoDelay(true)
       const client: Client = {
         socket,
@@ -230,6 +237,7 @@ export class TcpHost implements BackendHost {
    * listener itself is going down.
    */
   dispose(): void {
+    this.disposed = true
     for (const client of this.clients) client.socket.destroy()
     this.clients.clear()
   }

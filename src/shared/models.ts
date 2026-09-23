@@ -33,8 +33,8 @@ export const CODEX_MODELS: ModelOption[] = [
   { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', tier: 'max' },
   { id: 'gpt-5.6-terra', label: 'GPT-5.6-Terra', tier: 'balanced' },
   { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna', tier: 'fast' },
-  { id: 'gpt-5.5', label: 'GPT-5.5', tier: 'max' },
-  { id: 'gpt-5.4', label: 'GPT-5.4', tier: 'max' },
+  { id: 'gpt-5.5', label: 'GPT-5.5', tier: 'balanced' },
+  { id: 'gpt-5.4', label: 'GPT-5.4', tier: 'balanced' },
   { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini', tier: 'fast' },
   { id: 'gpt-5.2', label: 'GPT-5.2', tier: 'balanced' },
 ]

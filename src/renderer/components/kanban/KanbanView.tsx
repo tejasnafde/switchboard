@@ -23,6 +23,7 @@
  * createdAt-sorted until we add a `sortOrder` column).
  */
 
+import { formatCostUsd } from '@shared/format'
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import {
   DndContext,
@@ -602,7 +603,7 @@ function CardTilePresentation({
         </span>
         {card.costCapUsd != null && (
           <span style={{ ...badgeStyle, color: overBudget ? 'var(--red, #d73a49)' : undefined }}>
-            ${(card.costUsedUsd ?? 0).toFixed(2)}/${card.costCapUsd.toFixed(2)}
+            {formatCostUsd(card.costUsedUsd ?? 0)}/{formatCostUsd(card.costCapUsd)}
           </span>
         )}
       </div>

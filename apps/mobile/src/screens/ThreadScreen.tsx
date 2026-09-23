@@ -31,7 +31,7 @@ import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@sha
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
-import { fmtDuration, formatTokens } from '@shared/format'
+import { fmtDuration, formatTokens, contextPercent } from '@shared/format'
 import { echoMessageId } from '@shared/provider-events'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { generateTitle } from '@shared/auto-title'
@@ -814,8 +814,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
     refine: { connectionId, projectPath: worktreePath ?? projectPath },
   })
 
-  const contextPct =
-    thread.usedTokens != null && thread.maxTokens ? Math.min(1, thread.usedTokens / thread.maxTokens) : null
+  const contextShare = thread.usedTokens != null ? contextPercent(thread.usedTokens, thread.maxTokens) : null
+  const contextPct = contextShare == null ? null : contextShare / 100
   const [compactionDismissed, setCompactionDismissed] = useState(false)
   // Same 60s tick as the desktop pane: nothing else re-renders an idle thread.
   const [now, setNow] = useState(() => Date.now())

@@ -1,5 +1,5 @@
 import { memo } from 'react'
-import { formatTokens } from '@shared/format'
+import { contextPercent, formatTokens } from '@shared/format'
 
 export interface ContextWindowUsage {
   usedTokens: number
@@ -17,9 +17,7 @@ export const ContextWindowMeter = memo(function ContextWindowMeter({
 }: {
   usage: ContextWindowUsage
 }) {
-  const percentage = usage.maxTokens
-    ? Math.min(100, Math.max(0, (usage.usedTokens / usage.maxTokens) * 100))
-    : null
+  const percentage = contextPercent(usage.usedTokens, usage.maxTokens)
 
   const radius = 9.75
   const circumference = 2 * Math.PI * radius

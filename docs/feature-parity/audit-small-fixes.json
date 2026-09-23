@@ -1,0 +1,55 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "audit-small-fixes",
+  "summary": "Small audit items: one formatCostUsd for the status bar, kanban and the phone (which showed 2, 3 or 4 decimals and dropped the $ on the kanban cap); one contextPercent for the desktop meter and the phone header and thread screen; one takeTurnDuration for the five adapter copies; Codex static tiers that match what the live catalog infers; a test for the legacy workspace.yaml read; and TcpHost destroying a connection that arrives after dispose, which also fixes a flaky test.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/StatusBar.tsx",
+        "src/renderer/components/kanban/KanbanView.tsx",
+        "src/renderer/components/chat/ContextWindowMeter.tsx",
+        "tests/unit/format-cost-context.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/components/ThreadHeaderStatus.tsx",
+        "apps/mobile/src/screens/ThreadScreen.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android formats cost and context in its own Kotlin presentation code and reads neither shared helper; its output is unchanged."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/format.ts",
+        "src/shared/models.ts",
+        "src/main/provider/turn-duration.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/backend/tcp-host.ts",
+        "tests/unit/claude-adapter-infer-tier.test.ts",
+        "tests/unit/tcp-host.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": ["tests/unit/launch-config-legacy-file.test.ts"]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No wire or protocol change; every change is local formatting, a helper extraction, or a server-side guard."
+    }
+  },
+  "verification": {
+    "automated": ["npm run typecheck", "npm test", "cd apps/mobile && npx tsc --noEmit -p tsconfig.json && npm test -- --runInBand", "npx vitest run tests/unit/tcp-host.test.ts (3 consecutive passes)"],
+    "hardware": [],
+    "notExercised": ["The new cost and context formatting was not looked at in the running apps; both helpers are unit-tested."]
+  }
+}

@@ -8,6 +8,7 @@
  * Promise until the user decides.
  */
 
+import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { execSync, execFile } from 'child_process'
 import { inferModelTier } from '@shared/models'
@@ -998,8 +999,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       const auth = await probeClaudeLogin(claudeBin, env, active.instanceOauthDir)
       if (!auth.ok) {
         active.onEvent({ type: 'error', threadId, message: auth.message })
-        const durationMs = active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
-        active.turnStartedAt = null
+        const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
         active.currentMessageId = null
         active.currentReasoningMessageId = null
@@ -1631,9 +1631,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.currentReasoningMessageId = null
         active.partialMessageText.clear()
 
-        const durationMs =
-          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
-        active.turnStartedAt = null
+        const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
         active.onEvent({
           type: 'turn.completed',
@@ -1717,8 +1715,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // this is the "no response, nothing" symptom from the 2026-07-25
           // investigation. Mirror the `result` case: clear turn state and emit
           // turn.completed, then flag the error status.
-          const durationMs = active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
-          active.turnStartedAt = null
+          const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
           active.currentMessageId = null
           active.currentReasoningMessageId = null
