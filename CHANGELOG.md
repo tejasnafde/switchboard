@@ -5,7 +5,8 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Fixed
-## Unreleased
+- **Sends are no longer refused after a worktree Follow has already happened.** A Follow queued behind a running turn stayed queued even when another Follow committed the move first, and every send was refused with "Session queue full while the working directory is moving" until the next turn ended. The stale request is dropped the moment a move commits. When the refusal is real, it now reads "This chat is moving to its worktree after the current turn. Send again once the turn ends."
+- **A usage window no longer turns red because another window hit its limit.** Codex reports "limit reached" for the whole account without naming the window, and the parser reddened every window, so a weekly window at 16% showed red next to a 5-hour window at 100%. Only the full window (or the fullest one) is marked critical now.
 
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
 
@@ -97,6 +98,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - React Native/iOS and native Android are unchanged and staged behind `execution_root_relocation_v1`; neither gained a Follow action. Existing terminal panes are not relocated either - new terminals use the new root, open shells stay where they are.
 - **Settings > About > Diagnostics is collapsed by default.** The page is opened to read a version number far more often than to debug a slow machine, but eleven lines of host trivia sat above the fold permanently. The collapsed row carries a gist - `arm64 - 12 terminals - 259 MiB` - so it previews its own contents instead of being a blind door, and most visits now need no click at all. The snapshot still loads on mount rather than on expand: collecting on click would put a visible "Collecting..." delay on an interaction that should feel instant, and it costs one IPC call either way. The open state persists under `about.diagnosticsExpanded`; an absent key means "no preference" and resolves to collapsed, so older databases need no backfill.
 - **A translated build opens the section for a user who has never answered, and then respects a deliberate close.** An x64 app under Apple silicon translation is slow for a reason the user can fix, and it is the only diagnostic here that is a call to action rather than a fact. It is not re-opened on every visit: the Settings modal unmounts when closed, so forcing it open on each mount discarded a preference the UI had just animated shut and told the user it saved - inert for exactly the population that sees the warning most. The call to action survives the close, because the gist keeps `arm64 translated` on the collapsed row in the warning colour.
+
 
 ## 0.8.58 - Search and pagination in Settings > Archived
 
