@@ -567,8 +567,8 @@ interface ActiveSession {
    * the user hasn't sent yet.
    */
   turnStartedAt: number | null
-  /** Messages sent with `priority: 'later'` that the SDK has not started yet. */
-  queuedTurns: number
+  /** Runtime modes of messages sent with `priority: 'later'`, oldest first; one per queued turn. */
+  queuedModes: Array<RuntimeMode | undefined>
   /**
    * Effective model id from the last `getContextUsage()` poll, e.g.
    * `claude-fable-5`. The rejection payload never carries the model, yet the
@@ -699,7 +699,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       skills: [],
       models: opts.knownModels?.length ? { models: opts.knownModels, identity: claudeExecutableIdentity() } : null,
       turnStartedAt: null,
-      queuedTurns: 0,
+      queuedModes: [],
       lastKnownModel: null,
       instanceEnv: opts.resolvedEnv ?? {},
       instanceOauthDir: opts.resolvedOauthDir ?? null,
@@ -725,9 +725,13 @@ export class ClaudeAdapter implements ProviderAdapter {
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) throw new Error(`Session ${threadId} not found`)
+    // Queued behind a running turn: its runtime mode must not touch that turn
+    // (a queued full-access message would otherwise let a plan turn run a
+    // shell). The mode travels with the message and applies when it starts.
+    const queued = delivery === 'queue' && active.turnStartedAt != null
 
     // Update session mode if overridden
-    if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
+    if (!queued && runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
       if (active.query) {
         try {
@@ -769,7 +773,6 @@ export class ClaudeAdapter implements ProviderAdapter {
     // { type: 'user', message: MessageParam, parent_tool_use_id: string | null }
     // Mid-turn, the SDK reads a message at the next tool boundary (a steer).
     // `later` holds it until the running turn ends: measured, a separate turn.
-    const queued = delivery === 'queue' && active.turnStartedAt != null
     const userMsg: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content },
@@ -781,9 +784,14 @@ export class ClaudeAdapter implements ProviderAdapter {
     // The user-perceived "Worked for X" should include any queueing delay
     // - that's the experience they're judging. A queued message leaves the
     // running turn's clock alone; its own turn starts when that one ends.
-    if (queued) active.queuedTurns += 1
-    else active.turnStartedAt = Date.now()
-    active.watchdog.turnStarted(Date.now())
+    // The running turn's watchdog stays as it is (it may be suspended on an
+    // approval); a queued turn gets its own when it starts.
+    if (queued) {
+      active.queuedModes.push(runtimeMode)
+    } else {
+      active.turnStartedAt = Date.now()
+      active.watchdog.turnStarted(Date.now())
+    }
 
     // If we haven't started the SDK query yet, kick it off now
     if (!active.draining) {
@@ -1224,6 +1232,24 @@ export class ClaudeAdapter implements ProviderAdapter {
   }
 
   /**
+   * The running turn ended. A message queued with `priority: 'later'` now
+   * starts as its own turn: give it a clock and a watchdog, and apply the
+   * runtime mode it was sent with. Called from every path that ends a turn.
+   */
+  private startQueuedTurn(active: ActiveSession): void {
+    if (active.queuedModes.length === 0) return
+    const mode = active.queuedModes.shift()
+    active.turnStartedAt = Date.now()
+    active.watchdog.turnStarted(Date.now())
+    if (mode && mode !== active.session.runtimeMode) {
+      active.session.runtimeMode = mode
+      active.query?.setPermissionMode(RUNTIME_MODE_TO_PERMISSION[mode]).catch((err: unknown) => {
+        log.warn(`could not apply the queued turn's runtime mode ${mode}: ${err}`)
+      })
+    }
+  }
+
+  /**
    * A pick the live catalog no longer covers would fail every turn. Fall back
    * to the provider default, and tell the clients so the fallback is not
    * silent. No catalog yet means no evidence, so nothing is dropped.
@@ -1654,12 +1680,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
-        // A message queued with `priority: 'later'` starts now, as its own turn.
-        if (active.queuedTurns > 0) {
-          active.queuedTurns -= 1
-          active.turnStartedAt = Date.now()
-          active.watchdog.turnStarted(Date.now())
-        }
+        this.startQueuedTurn(active)
         active.onEvent({
           type: 'turn.completed',
           threadId,
@@ -1744,6 +1765,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // turn.completed, then flag the error status.
           const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
+          this.startQueuedTurn(active)
           active.currentMessageId = null
           active.currentReasoningMessageId = null
           active.partialMessageText.clear()

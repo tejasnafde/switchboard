@@ -64,9 +64,10 @@ try {
   // after the first. Two turn completions in a row prove it was not steered.
   await win.getByText('queued message').first().waitFor({ timeout: 5000 })
   check('Alt+Enter posts the message at once (the backend holds it)', true)
-  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ timeout: 30_000 })
-  const worked = await win.getByText(/Worked for/).count()
-  check('the queued message ran as its own turn after the first', worked >= 2, `turns finished: ${worked}`)
+  // Two finished turns, polled: the button can read Send between the two.
+  const twoTurns = await win.waitForFunction(() => document.body.innerText.split('Worked for').length - 1 >= 2, null, { timeout: 30_000 })
+    .then(() => true, () => false)
+  check('the queued message ran as its own turn after the first', twoTurns)
   await win.waitForTimeout(1000)
   const users = q(`SELECT count(*) FROM messages WHERE role = 'user';`)
   check('both user turns are recorded', Number(users) === 2, `user rows: ${users}`)

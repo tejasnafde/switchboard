@@ -813,6 +813,14 @@ export class CodexAdapter implements ProviderAdapter {
     const active = this.sessions.get(threadId)
     if (!active?.child) throw new Error(`Session ${threadId} not found or not connected`)
 
+    // Queued behind a running (or starting) turn: kept with its own runtime
+    // mode, which must not reach the running turn, and started as its own
+    // turn once that one completes (see drainQueued).
+    if (delivery === 'queue' && (active.activeTurnId || active.turnStartPromise)) {
+      active.queuedTurns.push({ message, runtimeMode, images })
+      return
+    }
+
     // Pick up mode override (same semantics as claude-adapter)
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
@@ -861,12 +869,6 @@ export class CodexAdapter implements ProviderAdapter {
     // turn) rather than starting a concurrent one. Only a fresh turn resets
     // status/timestamp; steering leaves the in-flight turn's clock alone.
     const activeTurnId = active.activeTurnId
-    // Queued, not steered: kept here and started as its own turn once the
-    // running one completes (see turn/completed).
-    if (activeTurnId && delivery === 'queue') {
-      active.queuedTurns.push({ message, runtimeMode, images })
-      return
-    }
     if (activeTurnId) {
       const steer = (expectedTurnId: string) => this.sendRpc(active, 'turn/steer', {
         threadId: active.threadId,
@@ -1010,6 +1012,24 @@ export class CodexAdapter implements ProviderAdapter {
       log.warn(`model/list failed: ${err instanceof Error ? err.message : String(err)}`)
       return active.models?.models ?? []
     }
+  }
+
+  /**
+   * Start the oldest queued message as a turn of its own. One that cannot
+   * start is reported and resolved with a turn.completed, which the registry
+   * counts as the end of that accepted turn, and the next one is tried, so a
+   * failure never strands the messages behind it.
+   */
+  private drainQueued(threadId: string, active: ActiveSession): void {
+    const next = active.queuedTurns.shift()
+    if (!next) return
+    this.sendTurn(threadId, next.message, next.runtimeMode, next.images).catch((err: unknown) => {
+      const reason = err instanceof Error ? err.message : String(err)
+      log.warn(`queued codex turn failed to start for ${threadId}: ${reason}`)
+      active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
+      active.onEvent({ type: 'turn.completed', threadId })
+      this.drainQueued(threadId, active)
+    })
   }
 
   async setModel(threadId: string, model: string): Promise<void> {
@@ -1571,13 +1591,7 @@ export class CodexAdapter implements ProviderAdapter {
       active.assistantMessageText.clear()
       active.toolOutputText.clear()
       active.activeTurnId = null
-      const next = active.queuedTurns.shift()
-      if (next) {
-        this.sendTurn(threadId, next.message, next.runtimeMode, next.images).catch((err: unknown) => {
-          log.warn(`queued codex turn failed to start for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
-          active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${err instanceof Error ? err.message : String(err)}` })
-        })
-      }
+      this.drainQueued(threadId, active)
     } else if (method === 'turn/started') {
       active.session.status = 'running'
       if (active.turnStartedAt == null) active.turnStartedAt = Date.now()

@@ -1666,7 +1666,7 @@ describe('CodexAdapter', () => {
     await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
     await adapter.sendTurn('thread-1', 'hello codex')
     writes.length = 0
-    await adapter.sendTurn('thread-1', 'after this, update the docs', undefined, undefined, 'queue')
+    await adapter.sendTurn('thread-1', 'after this, update the docs', 'full-access', undefined, 'queue')
 
     let frames = writes.map((w) => JSON.parse(w))
     expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
@@ -1682,6 +1682,8 @@ describe('CodexAdapter', () => {
     frames = writes.map((w) => JSON.parse(w))
     const started = frames.find((m) => m.method === 'turn/start')
     expect(started?.params.input).toEqual([{ type: 'text', text: 'after this, update the docs' }])
+    // Its mode applied only to its own turn, never to the one it waited for.
+    expect(started?.params.approvalPolicy).toBe('never')
   })
 
   it('waits for an in-flight turn start response before steering a follow-up', async () => {

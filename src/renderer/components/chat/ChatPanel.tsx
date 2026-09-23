@@ -1182,7 +1182,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       // instead of treating an in-memory queue as backend acceptance.
       const liveStatus = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.status
       const busy = liveStatus === 'running' || liveStatus === 'thinking'
-      if (busy && agentType === 'opencode') {
+      // A queued send is held by the backend until the turn ends, so it may pass.
+      if (busy && agentType === 'opencode' && delivery !== 'queue') {
         return {
           accepted: false,
           error: 'OpenCode is still working. Your text and attachments are preserved; send again when it finishes.',

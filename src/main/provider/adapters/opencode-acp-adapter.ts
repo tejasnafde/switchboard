@@ -110,6 +110,8 @@ interface ActiveSession {
   availableModels: ModelInfo[]
   /** In-flight prompt promise (so we know a turn is active). */
   inFlightPrompt: Promise<void> | null
+  /** True while drainQueued sets up the next queued prompt (the slot stays taken). */
+  drainingQueue: boolean
   /** Messages sent with delivery 'queue' while a prompt ran, oldest first. */
   queuedTurns: Array<{ message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
@@ -359,6 +361,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       skills: [],
       availableModels: [],
       inFlightPrompt: null,
+      drainingQueue: false,
       queuedTurns: [],
       turnStartedAt: null,
       assistantMessageText: new Map(),
@@ -487,12 +490,37 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     return session
   }
 
+  /**
+   * Start the oldest queued message. The slot stays reserved until its prompt
+   * is in flight; one that cannot start is reported and resolved with a
+   * turn.completed (which the registry counts), and the next one is tried.
+   */
+  private drainQueued(threadId: string, active: ActiveSession): void {
+    const next = active.queuedTurns.shift()
+    if (!next) {
+      active.drainingQueue = false
+      return
+    }
+    active.drainingQueue = true
+    this.sendTurn(threadId, next.message, next.runtimeMode, next.images, undefined, true)
+      .then(() => { active.drainingQueue = false })
+      .catch((err: unknown) => {
+        const reason = err instanceof Error ? err.message : String(err)
+        log.warn(`queued opencode turn failed to start for ${threadId}: ${reason}`)
+        active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
+        active.onEvent({ type: 'turn.completed', threadId })
+        this.drainQueued(threadId, active)
+      })
+  }
+
   async sendTurn(
     threadId: string,
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
     delivery?: TurnDelivery,
+    /** Set only by drainQueued, which already holds the prompt slot. */
+    fromQueue = false,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) throw new Error(`No OpenCode ACP session: ${threadId}`)
@@ -501,11 +529,14 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     }
     // OpenCode cannot take a mid-turn message; a queued one waits here and
     // is sent when the running prompt settles.
-    if (active.inFlightPrompt && delivery === 'queue') {
+    // While a queued message is being set up the slot counts as busy, or a
+    // new send could start a second prompt ahead of it.
+    const busy = active.inFlightPrompt !== null || (active.drainingQueue && !fromQueue)
+    if (busy && delivery === 'queue') {
       active.queuedTurns.push({ message, runtimeMode, images })
       return
     }
-    if (active.inFlightPrompt) {
+    if (busy) {
       log.warn(`sendTurn called while turn in progress for ${threadId} - ignoring`)
       return
     }
@@ -583,13 +614,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       })
       .finally(() => {
         active.inFlightPrompt = null
-        const next = active.queuedTurns.shift()
-        if (next) {
-          this.sendTurn(threadId, next.message, next.runtimeMode, next.images).catch((err: unknown) => {
-            log.warn(`queued opencode turn failed to start for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
-            active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${err instanceof Error ? err.message : String(err)}` })
-          })
-        }
+        this.drainQueued(threadId, active)
       })
     active.inFlightPrompt = promptPromise
 
