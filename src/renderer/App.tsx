@@ -581,9 +581,10 @@ export function App() {
     const id = draftSessionId(machineId, projectPath)
     const store = useAgentStore.getState()
     if (!store.sessions.some((s) => s.id === id)) {
-      // Carry the picks of the chat the user came from; the store default
-      // covers the rest.
-      const from = store.getActiveSession()
+      // Carry the picks of the focused chat (the secondary pane in dual chat);
+      // the store default covers the rest.
+      const focusedId = useLayoutStore.getState().focusedChatSessionId()
+      const from = store.sessions.find((s) => s.id === focusedId)
       const carry = from && !from.draft && from.type !== 'terminal' ? from : undefined
       const envMode = await getDefaultSessionEnvMode()
       // A second open for the same project can land during the await.
@@ -1515,8 +1516,9 @@ export function App() {
       <NewChatProjectPicker
         open={newChatPickerOpen}
         current={(() => {
-          const active = useAgentStore.getState().getActiveSession()
-          return active ? { projectPath: active.projectPath, machineId: active.machineId } : undefined
+          const focusedId = useLayoutStore.getState().focusedChatSessionId()
+          const focused = useAgentStore.getState().sessions.find((s) => s.id === focusedId)
+          return focused ? { projectPath: focused.projectPath, machineId: focused.machineId } : undefined
         })()}
         onPick={(projectPath, machineId) => { setNewChatPickerOpen(false); void openDraftChat(projectPath, machineId) }}
         onClose={() => setNewChatPickerOpen(false)}
