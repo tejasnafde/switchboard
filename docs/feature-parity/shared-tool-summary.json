@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "shared-tool-summary",
+  "summary": "Replace three independently-drifted tool-call summarizers (desktop ToolCallBlock.tsx, mobile lib/toolSummary.ts, native Android ThreadPresentation.kt) with one canonical rule set, so the same tool call reads the same label and detail on every client. The TypeScript rules now live in src/shared/tool-summary.ts, moved from apps/mobile/src/lib/toolSummary.ts (its public API is unchanged) and adopted by desktop's ToolCallBlock.tsx for its collapsed-row label/detail; icons, colors, and the expanded body stay desktop-only rendering concerns. Native Android has no TypeScript runtime, so ThreadPresentation.kt's toolSummary was hand-edited to match the same rules rather than sharing the module directly. Cross-checked by tests/fixtures/tool-summary-cases.json, one JSON fixture file read by both a vitest test (tests/unit/tool-summary-fixtures.test.ts) and a native Android unit test (ToolSummaryFixturesTest.kt), so the two implementations are checked against one source of truth instead of trusting hand-written parity. Behaviour choices, comparing the old desktop vs. mobile implementations and preferring mobile unless desktop handled a case mobile did not: mobile's generic, provider-neutral labels won over desktop's Claude-specific ones (\"Terminal\" not \"Bash\", \"Search\" not \"Grep\", \"Find files\" not \"Glob\", \"Fetch\"/\"Web search\" as two labels not one merged \"Web\", \"Plan\" not \"Todos\"); mobile's path shortener (last two path segments, works for any path shape) replaced desktop's macOS-only \"/Users/...\" special case; desktop's move_path \"Rename\" detection (previously collapsed-row-invisible on desktop and entirely absent on mobile) was folded into the shared rule; a bare \"agent\" tool name (desktop-only alias) and Codex's real \"update_plan\"/\"shell\" and OpenCode's ACP \"search\" tool-call kind were added as recognized aliases since neither original implementation covered every real provider spelling. Five of the 32 fixture cases are marked android:false: native Android's pre-existing, already-tested MCP humanization (\"Notion · Search\" instead of the raw \"mcp__notion__search\") and unknown-tool Title Case (\"Custom provider action\" instead of the raw identifier) are kept as documented, intentional divergences rather than downgraded to match, and Android's uniform 140-char detail cap (vs. the shared module's task-specific 80-char cap) is left as-is for one long-prompt case. Where matching WAS reasonable, native Android's own summarizer was edited to match: label wording, no quotes around a Grep pattern, path-shortening threshold, and Fetch host-only detail.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ToolCallBlock.tsx",
+        "tests/unit/tool-call-presentation.test.ts",
+        "tests/unit/tool-summary-fixtures.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/screens/__tests__/feedItems.test.tsx"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadPresentationTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ToolSummaryFixturesTest.kt",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire-format, event-shape, or backend API change. The tool.started/tool.completed event contract in src/shared/provider-events.ts is untouched; src/shared/tool-summary.ts is a pure client-side presentation utility that derives a label/detail from a tool call's already-delivered name and input, not part of the wire contract."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Tool call name, input, and output already persist unchanged in historical thread snapshots on every surface; the summary label/detail stays derived at render time on every surface, not stored. No schema or migration change."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "UI-text and internal-module-location change only; no package identity, version, signing, deep link, or update-channel change on any surface. Documented in CHANGELOG.md under Unreleased for the next release of each app."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck (main + renderer) passes with src/shared/tool-summary.ts and the updated ToolCallBlock.tsx.",
+      "npx vitest run - full repo suite (393 files) passes, including tests/unit/tool-summary.test.ts (moved from tests/unit/mobile-tool-summary.test.ts, import path updated, 18 tests) and the new tests/unit/tool-summary-fixtures.test.ts (36 tests: 1 fixture-shape check + 1 case per fixture entry) reading tests/fixtures/tool-summary-cases.json.",
+      "npm test --prefix apps/mobile -- --runInBand passes (6 suites, 35 tests), including apps/mobile/src/screens/__tests__/feedItems.test.tsx which exercises ThreadScreen's tool-row rendering through the moved '@shared/tool-summary' import.",
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json passes clean.",
+      "cd apps/android && ./gradlew testDebugUnitTest lintDebug - ThreadPresentationTest (25 tests, all pre-existing assertions updated for the new label wording, no-quote Grep detail, and 2-segment path shortening) and the new ToolSummaryFixturesTest (reads the same tests/fixtures/tool-summary-cases.json from the repo root, walking up from the Gradle working directory the same way LegacyStateDecoderTest.kt already does, and asserts every case not marked android:false) both pass; lintDebug passes.",
+      "npm run validate:feature-parity -- --base origin/main passes against this manifest."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No device or emulator run: ThreadScreenRegressionTest.kt's collapsedToolShowsUsefulSummaryAtOneAccessible48DpTarget assertion was updated (\"Bash\" to \"Terminal\") for correctness but connectedDebugAndroidTest was not run, since the task's verification list only requires testDebugUnitTest and lintDebug.",
+      "No live provider turn was sent on any client to see a real Bash/Read/Edit/Grep/Task/MCP tool call render end to end; verification is fixture- and unit-test-based only.",
+      "The Codex and OpenCode adapters were not run live to confirm their actual wire-format tool names (read_file, apply_patch, shell, update_plan, and the ACP tool-call kind fetch/search/edit/read/etc.) still match what this change assumes; those spellings were taken from the existing adapter source (src/main/provider/adapters/codex-adapter.ts, src/main/provider/adapters/opencode-acp-adapter.ts) and from the pre-existing Android alias sets, not re-verified against a live session."
+    ]
+  }
+}

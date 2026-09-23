@@ -2,6 +2,11 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## Unreleased
+
+### Changed
+- **A tool call reads the same label on every client.** Desktop, mobile, and native Android each had their own tool-summary logic and disagreed: a shell call was "Bash" on desktop and Android but "Terminal" on mobile, a search was "Grep" or "Search" depending which client rendered it, and desktop's own path-shortener only collapsed macOS `/Users/...` paths while mobile's worked for any path. The rules now live in one place, `src/shared/tool-summary.ts` (moved from `apps/mobile/src/lib/toolSummary.ts`, same public API), and desktop's `ToolCallBlock.tsx` uses it for its collapsed-row label and detail; icons, colors and the expanded body stay desktop-only. Native Android has no TypeScript runtime, so `ThreadPresentation.kt`'s summarizer was hand-edited to match the same rules instead, and both are checked against one fixture file (`tests/fixtures/tool-summary-cases.json`) so they cannot silently drift apart again. Notable choices: mobile's generic, provider-neutral labels won over desktop's Claude-specific ones ("Terminal" not "Bash", "Search" not "Grep", "Find files" not "Glob", "Plan" not "Todos"); desktop's rename detection (an Edit with a `move_path` now shows "Rename" with an arrow) was folded in since neither mobile nor Android had it; Codex's real `update_plan`/`shell` tool names and OpenCode's ACP `search` tool-call kind are now recognized aliases. Native Android keeps two small, intentional divergences - MCP tool names stay humanized ("Notion · Search" instead of the raw `mcp__notion__search`) and unknown tool names stay Title Cased - both pre-existing and tested, so they were left alone rather than downgraded.
+
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
 
 ### Added
