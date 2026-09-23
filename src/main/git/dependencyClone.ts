@@ -100,9 +100,14 @@ function cloneArgsFor(platform: NodeJS.Platform, src: string, dst: string): stri
   return null
 }
 
-async function pathExists(p: string): Promise<boolean> {
+/** Test seam for the existence check, tests only. Defaults to `fs.access`. */
+export type AccessFn = (p: string) => Promise<void>
+
+const defaultAccess: AccessFn = (p) => access(p)
+
+async function pathExists(p: string, accessFn: AccessFn): Promise<boolean> {
   try {
-    await access(p)
+    await accessFn(p)
     return true
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code
@@ -113,8 +118,13 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
-/** Same device (and therefore same volume) - required for both clonefile and reflink. */
-async function defaultSameDevice(a: string, b: string): Promise<boolean> {
+/**
+ * Same device (and therefore same volume) - required for both clonefile
+ * and reflink. Exported so callers, and tests exercising the real
+ * environment, can reuse the exact check `cloneDependencyDirs` uses
+ * rather than re-deriving the precondition another way.
+ */
+export async function checkSameDevice(a: string, b: string): Promise<boolean> {
   try {
     const [statA, statB] = await Promise.all([stat(a), stat(b)])
     return statA.dev === statB.dev
@@ -137,9 +147,10 @@ const MOUNT_LINE_RE = /^\S+\son\s(.+)\s\(([a-zA-Z0-9_.+-]+)/
  * undocumented magic number - see the module doc comment for why that
  * was rejected). Any failure (spawn error, no matching mount line)
  * returns false, which skips the clone rather than risking a silent
- * `cp -c` fallback to a full copy.
+ * `cp -c` fallback to a full copy. Exported for the same reason as
+ * `checkSameDevice`.
  */
-async function defaultIsApfs(p: string): Promise<boolean> {
+export async function checkIsApfs(p: string): Promise<boolean> {
   try {
     const real = await realpath(p)
     const { stdout } = await execFileP('mount', [])
@@ -182,6 +193,8 @@ export interface CloneDependencyDirsOptions {
   isApfs?: (p: string) => Promise<boolean>
   /** Override for the staging-dir suffix, tests only. */
   stagingSuffix?: () => string
+  /** Override for the existence check's `fs.access`, tests only. */
+  access?: AccessFn
 }
 
 /**
@@ -206,9 +219,10 @@ export async function cloneDependencyDirs(
   const src = join(sourceRoot, DEPENDENCY_DIR_NAME)
   const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
   const platform = options.platform ?? osPlatform()
+  const accessFn = options.access ?? defaultAccess
 
-  if (!(await pathExists(src))) return
-  if (await pathExists(dst)) return
+  if (!(await pathExists(src, accessFn))) return
+  if (await pathExists(dst, accessFn)) return
 
   const isEnabled = options.isEnabled ?? isDependencyCloneEnabled
   if (!isEnabled()) return
@@ -218,14 +232,14 @@ export async function cloneDependencyDirs(
     return
   }
 
-  const sameDevice = options.sameDevice ?? defaultSameDevice
+  const sameDevice = options.sameDevice ?? checkSameDevice
   if (!(await sameDevice(src, worktreeRoot))) {
     log.info(`dependency clone skipped: source and worktree are on different devices/volumes`)
     return
   }
 
   if (platform === 'darwin') {
-    const isApfs = options.isApfs ?? defaultIsApfs
+    const isApfs = options.isApfs ?? checkIsApfs
     if (!(await isApfs(worktreeRoot))) {
       log.info(`dependency clone skipped: destination filesystem is not confirmed APFS (cp -c silently falls back to a full copy otherwise)`)
       return
@@ -256,7 +270,7 @@ export async function cloneDependencyDirs(
   // and finished, while `cp` was running. Adopt the staged clone only if
   // node_modules is still absent; otherwise the agent's real work wins
   // and the staged clone is discarded.
-  if (await pathExists(dst)) {
+  if (await pathExists(dst, accessFn)) {
     log.warn(`dependency clone: node_modules appeared during the clone, discarding staged clone: ${staging}`)
     await removeStaging(staging)
     return

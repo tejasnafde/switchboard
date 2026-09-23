@@ -13,7 +13,7 @@
  * staging dir and never retries with a plain recursive copy.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, rm, access, chmod, readdir, writeFile, readFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, access, readdir, writeFile, readFile } from 'node:fs/promises'
 import { tmpdir, platform as osPlatform } from 'node:os'
 import { join } from 'node:path'
 
@@ -37,9 +37,12 @@ import {
   cloneDependencyDirs,
   cloneDependencyDirsInBackground,
   isDependencyCloneEnabled,
+  checkSameDevice,
+  checkIsApfs,
   DEPENDENCY_DIR_NAME,
   WORKTREE_CLONE_DEPENDENCIES_SETTING,
   type CloneRunner,
+  type AccessFn,
 } from '../../src/main/git/dependencyClone'
 
 afterEach(() => {
@@ -85,6 +88,24 @@ const passingChecks = {
   isApfs: async () => true,
   stagingSuffix: () => 'fixedsuffix',
 }
+
+// Whether this machine's temp filesystem actually meets the precondition
+// the real code checks before touching `cp` - same device, and on macOS,
+// APFS. Computed once via the SAME exported checks `cloneDependencyDirs`
+// uses, so the "real defaults" test below only attempts a real clone
+// when it is expected to succeed; on Linux/Windows CI it is skipped by
+// design (Linux temp filesystems are commonly ext4, which does not
+// support --reflink=always, and Windows has no clone strategy at all).
+const realCloneReadyRoot = await mkdtemp(join(tmpdir(), 'sb-dep-clone-precheck-'))
+const realCloneReady = await (async () => {
+  try {
+    if (osPlatform() !== 'darwin') return false
+    if (!(await checkSameDevice(realCloneReadyRoot, tmpdir()))) return false
+    return checkIsApfs(realCloneReadyRoot)
+  } finally {
+    await rm(realCloneReadyRoot, { recursive: true, force: true })
+  }
+})()
 
 describe('cloneDependencyDirs', () => {
   it('runs `cp -c -R <src> <staging>` on darwin, then renames staging into place', async () => {
@@ -177,24 +198,34 @@ describe('cloneDependencyDirs', () => {
 
   it('logs and skips when checking the source raises an unexpected error (not ENOENT)', async () => {
     const root = await makeTempRoot()
-    const sourceRoot = join(root, 'source')
     try {
+      const sourceRoot = join(root, 'source')
       const worktreeRoot = join(root, 'worktree')
       await mkdir(sourceRoot, { recursive: true })
       await mkdir(worktreeRoot, { recursive: true })
-      // Remove search (x) permission on sourceRoot so accessing
-      // sourceRoot/node_modules fails with EACCES while traversing,
-      // not ENOENT.
-      await chmod(sourceRoot, 0o000)
 
       const runner = vi.fn<CloneRunner>(async () => ({ stdout: '', stderr: '' }))
+      // Deterministic EACCES for the source path, cross-platform (chmod
+      // 000 does not block access on Windows, or when running as root).
+      const eaccesOnSource: AccessFn = async (p) => {
+        if (p === join(sourceRoot, DEPENDENCY_DIR_NAME)) {
+          const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException
+          err.code = 'EACCES'
+          throw err
+        }
+        return access(p)
+      }
 
-      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' })
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, {
+        ...passingChecks,
+        runner,
+        platform: 'darwin',
+        access: eaccesOnSource,
+      })
 
       expect(runner).not.toHaveBeenCalled()
       expect(mocks.log.warn).toHaveBeenCalled()
     } finally {
-      await chmod(sourceRoot, 0o755).catch(() => undefined)
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -390,13 +421,14 @@ describe('cloneDependencyDirs', () => {
   // Runs the REAL same-device and real APFS detection - no overrides -
   // against actual temp directories on this machine, so the
   // `mount`-parsing logic is checked against a real mount table at
-  // least once, not just through injected fakes. macOS only: a Linux CI
-  // runner's temp filesystem (typically ext4) legitimately does not
-  // support --reflink=always, so a real, unmocked run there would fail
-  // for the same reason production traffic would - that is correct
-  // behavior, not something this test should assert against.
-  it('clones for real using the default same-device / APFS checks on this machine', async () => {
-    if (osPlatform() !== 'darwin') return
+  // least once, not just through injected fakes. Gated by `realCloneReady`,
+  // computed above with the exact same exported checks the code uses
+  // against os.tmpdir(), so this shows as SKIPPED (not a silent no-op
+  // pass) on Linux/Windows CI where the precondition legitimately does
+  // not hold - a Linux CI runner's temp filesystem is commonly ext4,
+  // which does not support --reflink=always, and Windows has no clone
+  // strategy at all.
+  it.skipIf(!realCloneReady)('clones for real using the default same-device / APFS checks on this machine', async () => {
     const root = await makeTempRoot()
     try {
       const sourceRoot = join(root, 'source')
