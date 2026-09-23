@@ -2381,6 +2381,14 @@ html, body, #root {
   overflow-y: auto !important;
 }
 
+/* xterm.css paints the viewport black so the macOS scrollbar reads as
+   opaque, but xterm 6 draws the theme background on the scrollable element
+   above it. The black showed through the translucent theme's 3% terminal
+   tint (a solid black pane) and as a strip under the last row in light. */
+.xterm .xterm-viewport {
+  background-color: transparent;
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════
    Selection & Markdown
