@@ -2,6 +2,12 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## Unreleased
+
+### Changed
+- The image file picker offers only PNG, JPEG, WebP and GIF, the types every provider accepts. It used to offer any image, and an SVG or HEIC then failed on send.
+- One `parseImageDataUrl` in `shared/provider-events` replaces the three data-URL patterns in the turn validator, the Claude adapter and the OpenCode adapter. The Claude adapter now logs an image it cannot parse instead of dropping it silently.
+
 ## 0.8.61 - New chats start as drafts
 
 ### Changed
