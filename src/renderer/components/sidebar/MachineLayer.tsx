@@ -20,28 +20,6 @@ import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { ProjectFavicon } from './ProjectFavicon'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
 
-/**
- * Tiny spinner swapped in for a compose icon while a new chat's worktree is
- * being created (seconds locally, longer over SSH). Reused by Sidebar's
- * compose buttons; lives here so Sidebar -> MachineLayer imports stay one-way.
- */
-export function ComposeSpinner() {
-  return (
-    <span
-      aria-label="Creating"
-      style={{
-        display: 'inline-block',
-        width: 10,
-        height: 10,
-        border: '2px solid var(--border)',
-        borderTopColor: 'var(--accent, #2563eb)',
-        borderRadius: '50%',
-        animation: 'sb-spin 720ms linear infinite',
-      }}
-    />
-  )
-}
-
 function SortableMachine({
   id,
   children,
@@ -79,7 +57,6 @@ function RemoteProject({
   activeSessionId,
   onOpen,
   onNewChat,
-  newChatPending,
   onContextMenu,
 }: {
   project: Project
@@ -88,7 +65,6 @@ function RemoteProject({
   activeSessionId: string | null
   onOpen?: (session: SessionSummary) => void
   onNewChat?: () => void
-  newChatPending?: boolean
   onContextMenu?: (e: MouseEvent, session: SessionSummary) => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: project.path })
@@ -145,23 +121,15 @@ function RemoteProject({
           <button
             type="button"
             className="sidebar-project-compose"
-            disabled={newChatPending}
-            // Hover-revealed button: keep it visible while pending so the
-            // spinner shows even after the pointer leaves the header.
-            style={newChatPending ? { opacity: 1 } : undefined}
             onClick={(e) => {
               e.stopPropagation()
               onNewChat()
             }}
             title="New thread in this project"
           >
-            {newChatPending ? (
-              <ComposeSpinner />
-            ) : (
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-              </svg>
-            )}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+            </svg>
           </button>
         )}
       </div>
@@ -199,14 +167,12 @@ export function MachineLayer({
   onEditMachine,
   onOpenRemoteSession,
   onNewRemoteChat,
-  isNewChatPending,
   onSessionContextMenu,
 }: {
   children: ReactNode
   onEditMachine?: (machine: Machine) => void
   onOpenRemoteSession?: (machineId: string, projectPath: string, session: SessionSummary) => void
   onNewRemoteChat?: (machineId: string, projectPath: string) => void
-  isNewChatPending?: (projectPath: string, machineId?: string) => boolean
   onSessionContextMenu?: (e: MouseEvent, machineId: string, projectPath: string, session: SessionSummary) => void
 }) {
   const remotes = useMachineStore((s) => s.remotes)
@@ -325,7 +291,6 @@ export function MachineLayer({
                   activeSessionId={activeSessionId}
                   onOpen={onOpenRemoteSession ? (s) => onOpenRemoteSession(node.id, p.path, s) : undefined}
                   onNewChat={onNewRemoteChat ? () => onNewRemoteChat(node.id, p.path) : undefined}
-                  newChatPending={isNewChatPending?.(p.path, node.id) ?? false}
                   onContextMenu={
                     onSessionContextMenu
                       ? (e, s) => {

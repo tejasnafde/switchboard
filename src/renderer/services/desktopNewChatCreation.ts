@@ -60,6 +60,13 @@ export interface DesktopNewChatIntent {
   checkout: 'project' | 'worktree'
   agentType: Exclude<AgentType, 'terminal'>
   runtimeMode: RuntimeMode
+  /** Ref a new worktree branches from. Defaults to HEAD. */
+  baseRef?: string
+  /** Pre-minted by a caller that must find the conversation again (a draft's first send). */
+  conversationId?: string
+  /** Picked before the conversation existed; the backend starts the first agent with them. */
+  model?: string
+  instanceId?: string
 }
 
 export interface AuthoritativeDesktopSession {
@@ -235,7 +242,7 @@ export function createDesktopNewChatCoordinator(
       if (intent.checkout !== 'worktree') {
         activeIntent = intent
         const creationId = options.createId()
-        const conversationId = options.createId()
+        const conversationId = intent.conversationId ?? options.createId()
         return options.parent.create({
           creationId,
           conversationId,
@@ -250,7 +257,7 @@ export function createDesktopNewChatCoordinator(
       }
       activeIntent = intent
       const creationId = options.createId()
-      const conversationId = options.createId()
+      const conversationId = intent.conversationId ?? options.createId()
       activeRequest = {
         schemaVersion: 1,
         creationId,
@@ -259,7 +266,7 @@ export function createDesktopNewChatCoordinator(
           machineId: intent.machineId,
         },
         checkout: {
-          baseRef: 'HEAD',
+          baseRef: intent.baseRef ?? 'HEAD',
           branch: { namespace: 'sb', seed: `thread-${conversationId}` },
           location: 'managed-user-data',
         },
@@ -275,6 +282,8 @@ export function createDesktopNewChatCoordinator(
           initialAgent: {
             provider: intent.agentType,
             runtimeMode: intent.runtimeMode,
+            ...(intent.model ? { model: intent.model } : {}),
+            ...(intent.instanceId ? { instanceId: intent.instanceId } : {}),
           },
         },
         provenance: {

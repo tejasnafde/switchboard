@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
+import { useTerminalStore } from '../../stores/terminal-store'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { useProviderInstanceStore } from '../../stores/provider-instance-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
@@ -16,6 +17,8 @@ import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
 import { ForkLineageBanner } from './ForkLineageBanner'
 import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
+import { isDraftSessionId } from '@shared/new-chat-draft'
+import { materializeDraft, takeFirstSend } from '../../services/draftChat'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
 import {
@@ -1075,6 +1078,26 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   }, [setTitle])
 
   // ── Send handler ──────────────────────────────────────────────
+  // The first message of a chat that started as a draft. Sent once, through
+  // the ordinary path, by whichever pane shows the new session first.
+  const handleSendRef = useRef<typeof handleSend | null>(null)
+  useEffect(() => {
+    if (!sessionId || isDraftSessionId(sessionId)) return
+    const parked = takeFirstSend(sessionId)
+    if (!parked) return
+    useDraftStore.getState().clearDraft(parked.draftId)
+    // The draft id is reused by the next draft for this project, so terminals
+    // opened in this one must go with it rather than reappear there.
+    // They are closed, not moved: moving is only right for a project checkout.
+    useTerminalStore.getState().clearSessionLayout(parked.draftId)
+    useAgentStore.getState().removeSession(parked.draftId)
+    void handleSendRef.current?.(parked.message, undefined, parked.images, parked.extras).then((result) => {
+      if (result.accepted) return
+      if (!useDraftStore.getState().getDraft(sessionId)) useDraftStore.getState().setDraft(sessionId, parked.message)
+      log.warn('first send from draft was not accepted', result.error)
+    })
+  }, [sessionId])
+
   const handleSend = useCallback(
     async (
       message: string,
@@ -1088,6 +1111,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       },
     ): Promise<ChatSendResult> => {
       if (!sessionId) return { accepted: false, error: 'This chat is no longer available.' }
+      // A draft has no conversation yet: the first send creates one and the
+      // message follows it there (services/draftChat).
+      if (isDraftSessionId(sessionId)) {
+        return materializeDraft(sessionId, { message, images, extras })
+      }
 
       // `/send-to <session>: <text>` hands the text to another live session
       // instead of this one's agent, so it is intercepted before every other
@@ -1103,7 +1131,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         const store = useAgentStore.getState()
         const target = resolveSendToTarget(
           sendTo.target,
-          store.sessions.map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
+          store.sessions.filter((s) => !s.draft).map((s) => ({ id: s.id, title: s.title ?? s.id, machineId: s.machineId })),
           sessionId,
         )
         if (!target.ok) return fail(target.error)
@@ -1404,6 +1432,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // switch had no effect" in the registry log.
     [sessionId, agentType, projectPath, runtimeMode, appendMessage, updateMessage, messages.length, resumeSessionId, setTitle, instanceId, model, reasoningEffort],
   )
+  handleSendRef.current = handleSend
 
   // ── In-pane search: compute matching message ids (substring on text) ──
   const searchMatches = useMemo(() => {
@@ -1681,11 +1710,13 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         {/* Status text */}
         {hasSession && (
           <span style={{ color: status === 'error' ? 'var(--error, #f85149)' : 'var(--text-muted)', fontSize: '11px', fontWeight: 400 }}>
-            {status === 'running'
-              ? 'thinking…'
-              : status === 'idle' && pendingDeliveryState === 'pending'
-                ? 'sending…'
-                : status === 'idle' ? 'ready' : status}
+            {activeSession?.draft
+              ? status === 'running' ? 'creating…' : 'draft'
+              : status === 'running'
+                ? 'thinking…'
+                : status === 'idle' && pendingDeliveryState === 'pending'
+                  ? 'sending…'
+                  : status === 'idle' ? 'ready' : status}
           </span>
         )}
       </div>
