@@ -45,6 +45,9 @@ describe('OpenCode first-turn acceptance', () => {
       inFlightPrompt: null,
       turnStartedAt: null,
       assistantMessageText: new Map(),
+      queuedTurns: [],
+      drainingQueue: false,
+      startingPrompt: false,
     }
     sessions.set(tid, active)
 
@@ -356,6 +359,24 @@ describe('OpenCode queued turns', () => {
     await first
     expect(prompt).toHaveBeenCalledTimes(1)
     finishFirst()
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
+    expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
+  })
+
+  it('starts the queued message when the prompt ahead of it is rejected', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    let releaseMode!: () => void
+    const setSessionMode = vi.fn(() => new Promise<void>((resolve) => { releaseMode = resolve }))
+    const prompt = vi.fn()
+      .mockImplementationOnce(() => { throw new Error('prompt rejected') })
+      .mockImplementation(() => Promise.resolve({}))
+    const active = fakeSession({ prompt, setSessionMode })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    const first = adapter.sendTurn(tid, 'first', 'full-access')
+    await adapter.sendTurn(tid, 'queued', undefined, undefined, 'queue')
+    releaseMode()
+    await expect(first).rejects.toBeInstanceOf(TurnNotAcceptedError)
     await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
     expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
   })

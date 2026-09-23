@@ -814,6 +814,8 @@ export class CodexAdapter implements ProviderAdapter {
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
     delivery?: TurnDelivery,
+    /** Set only by drainQueued, which owns the next drain step itself. */
+    fromQueue = false,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.child) throw new Error(`Session ${threadId} not found or not connected`)
@@ -968,6 +970,13 @@ export class CodexAdapter implements ProviderAdapter {
     active.turnStartPromise = startPromise
     try {
       await startPromise
+    } catch (err) {
+      // No turn/completed will come for a turn that never started, so the
+      // messages queued behind it are drained here instead. Clear the failed
+      // start first, or the next send would wait on it and fail too.
+      if (active.turnStartPromise === startPromise) active.turnStartPromise = null
+      if (!fromQueue) this.drainQueued(threadId, active)
+      throw err
     } finally {
       if (active.turnStartPromise === startPromise) active.turnStartPromise = null
     }
@@ -1028,7 +1037,7 @@ export class CodexAdapter implements ProviderAdapter {
   private drainQueued(threadId: string, active: ActiveSession): void {
     const next = active.queuedTurns.shift()
     if (!next) return
-    this.sendTurn(threadId, next.message, next.runtimeMode, next.images).catch((err: unknown) => {
+    this.sendTurn(threadId, next.message, next.runtimeMode, next.images, undefined, true).catch((err: unknown) => {
       const reason = err instanceof Error ? err.message : String(err)
       log.warn(`queued codex turn failed to start for ${threadId}: ${reason}`)
       active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })

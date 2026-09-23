@@ -1710,6 +1710,29 @@ describe('CodexAdapter', () => {
     expect(frames.find((m) => m.method === 'turn/start')?.params.input).toEqual([{ type: 'text', text: 'queued follow-up' }])
   })
 
+  it('starts the queued message when the turn it waited for fails to start', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    let releaseTurnStart!: () => void
+    turnStartGate = new Promise<void>((resolve) => { releaseTurnStart = resolve })
+    turnStartErrors = ['model not loaded']
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
+    const first = adapter.sendTurn('thread-1', 'first prompt')
+    await vi.waitFor(() => {
+      expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(true)
+    })
+    await adapter.sendTurn('thread-1', 'queued behind a failing start', undefined, undefined, 'queue')
+
+    releaseTurnStart()
+    turnStartGate = null
+    await expect(first).rejects.toThrow('model not loaded')
+    await vi.waitFor(() => {
+      const starts = writes.map((w) => JSON.parse(w)).filter((m) => m.method === 'turn/start')
+      expect(starts.at(-1)?.params.input).toEqual([{ type: 'text', text: 'queued behind a failing start' }])
+    })
+  })
+
   it('waits for an in-flight turn start response before steering a follow-up', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

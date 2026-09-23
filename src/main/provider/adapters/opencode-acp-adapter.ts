@@ -592,6 +592,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       active.turnStartedAt = null
       active.startingPrompt = false
       active.onEvent({ type: 'status', threadId, status: 'idle' })
+      // Messages queued behind this prompt have no settle to wait for.
+      if (!fromQueue) this.drainQueued(threadId, active)
       throw new TurnNotAcceptedError(
         error instanceof Error ? error.message : 'OpenCode rejected the turn before dispatch',
         { cause: error },
