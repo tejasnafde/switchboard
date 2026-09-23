@@ -8,6 +8,7 @@
  * Promise until the user decides.
  */
 
+import { parseImageDataUrl } from '@shared/provider-events'
 import { execSync, execFile } from 'child_process'
 import { inferModelTier } from '@shared/models'
 import { accessSync, constants, existsSync } from 'fs'
@@ -740,17 +741,14 @@ export class ClaudeAdapter implements ProviderAdapter {
     if (images && images.length > 0) {
       const blocks: Array<{ type: string; text?: string; source?: { type: string; media_type: string; data: string } }> = []
       for (const img of images) {
-        // data URL → raw base64 (strip "data:image/png;base64," prefix)
-        const match = img.url.match(/^data:(image\/\w+);base64,(.+)$/)
-        if (match) {
+        const parsed = parseImageDataUrl(img.url)
+        if (parsed) {
           blocks.push({
             type: 'image',
-            source: {
-              type: 'base64',
-              media_type: match[1],
-              data: match[2],
-            },
+            source: { type: 'base64', media_type: parsed.mimeType, data: parsed.data },
           })
+        } else {
+          log.warn(`dropping an image that is not a base64 data URL on ${threadId}`)
         }
       }
       if (message) {
