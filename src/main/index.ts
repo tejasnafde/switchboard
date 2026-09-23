@@ -1,7 +1,10 @@
+// Crash paths go to the on-disk log, not just stdout.
+const crashLog = createMainLogger('main:crash')
+
 // Prevent EPIPE crashes from killing the app
 process.on('uncaughtException', (err) => {
   if ((err as NodeJS.ErrnoException).code === 'EPIPE') return // ignore broken pipe
-  console.error('Uncaught:', err)
+  crashLog.error('uncaught exception', err)
 })
 
 // Surface promise rejections that nobody awaited. Without this, an
@@ -12,7 +15,7 @@ process.on('uncaughtException', (err) => {
 // majors; explicit handler keeps behaviour predictable).
 process.on('unhandledRejection', (reason) => {
   const msg = reason instanceof Error ? `${reason.message}\n${reason.stack ?? ''}` : String(reason)
-  console.error('Unhandled rejection:', msg)
+  crashLog.error('unhandled rejection', msg)
 })
 
 import { app, BrowserWindow, dialog, shell, nativeImage, ipcMain, Menu, powerMonitor, protocol, net, screen } from 'electron'
@@ -508,7 +511,7 @@ app.whenReady().then(() => {
   try {
     getDb()
   } catch (err) {
-    console.error('[main] fatal: database unavailable', err)
+    crashLog.error('fatal: database unavailable', err)
     dialog.showErrorBox(
       'Switchboard could not start',
       `The local database could not be created:\n${err instanceof Error ? err.message : String(err)}\n\nCheck free disk space and permissions on the app data folder, then relaunch.`,
