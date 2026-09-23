@@ -13,6 +13,9 @@
  *   - text mentions the state check -> a real edit to src/api/auth.ts in the
  *                           session cwd, so the registry's git checkpoint
  *                           emits a genuine `file.edited` (FileDiffCard)
+ *   - text says "run"    -> asks approval for `npm test` and holds the turn
+ *                           open until it is answered (ApprovalCard, and the
+ *                           running composer for the visual regression suite)
  *   - anything else      -> a short two-sentence reply
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
@@ -66,6 +69,10 @@ interface DemoSession {
   cwd: string
   runtimeMode: RuntimeMode
   cancelled: boolean
+  /** Time the current script has paused for; reported as the turn duration. */
+  scriptedMs: number
+  /** Resolves the approval the running script is blocked on, if any. */
+  pendingApproval?: { requestId: string; resolve: (decision: ApprovalDecision | 'cancelled') => void }
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -83,6 +90,7 @@ export class DemoAdapter implements ProviderAdapter {
       runtimeMode: opts.runtimeMode ?? 'sandbox',
       running: Promise.resolve(),
       cancelled: false,
+      scriptedMs: 0,
     }
     this.sessions.set(opts.threadId, session)
     onEvent({ type: 'status', threadId: opts.threadId, status: 'connecting' })
@@ -123,12 +131,12 @@ export class DemoAdapter implements ProviderAdapter {
   }
 
   private async run(threadId: string, session: DemoSession, message: string): Promise<void> {
-    const startedAt = Date.now()
+    session.scriptedMs = 0
     const emit = (event: RuntimeEvent): void => {
       if (!session.cancelled) session.onEvent(event)
     }
     emit({ type: 'status', threadId, status: 'running' })
-    await sleep(500)
+    await this.pause(session, 500)
 
     if (session.runtimeMode === 'plan') {
       await this.say(threadId, session, 'I will start by reading the existing callback handler.')
@@ -139,9 +147,9 @@ export class DemoAdapter implements ProviderAdapter {
         session,
         'The state token is checked after the exchange. I would move the check ahead of the fetch and keep the callback idempotent.',
       )
-      await sleep(350)
+      await this.pause(session, 350)
       emit({ type: 'tool.denied', threadId, toolName: 'Write', reason: denialMessage('plan', 'Write'), mode: 'plan' })
-      await sleep(600)
+      await this.pause(session, 600)
       await this.say(threadId, session, 'Plan mode blocks writes. Switch to Sandbox or Accept Edits and I will apply the change.')
     } else if (/state|validat|fix|apply|move/i.test(message)) {
       await this.say(threadId, session, 'Moving the state check ahead of the token exchange.')
@@ -154,6 +162,22 @@ export class DemoAdapter implements ProviderAdapter {
         session,
         'Done. The callback now rejects an expired state before any network call. Review the diff below and accept or reject each hunk.',
       )
+    } else if (/\brun\b/i.test(message)) {
+      await this.say(threadId, session, 'Running the auth tests to confirm the fix.')
+      const requestId = `demo_req_${++this.seq}`
+      const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
+        session.pendingApproval = { requestId, resolve }
+        emit({ type: 'request.opened', threadId, requestId, requestType: 'command', toolName: 'Bash', detail: 'npm test' })
+      })
+      session.pendingApproval = undefined
+      if (decision === 'cancelled') return
+      emit({ type: 'request.closed', threadId, requestId, decision })
+      if (decision === 'approve') {
+        await this.tool(threadId, session, 'Bash', { command: 'npm test' }, 'ok 1 - exchanges an OAuth code once\nok 2 - rejects an expired state token')
+        await this.say(threadId, session, 'Both tests pass.')
+      } else {
+        await this.say(threadId, session, 'Skipped the test run.')
+      }
     } else {
       await this.say(
         threadId,
@@ -162,8 +186,18 @@ export class DemoAdapter implements ProviderAdapter {
       )
     }
 
-    emit({ type: 'turn.completed', threadId, durationMs: Date.now() - startedAt, numTurns: 1 })
+    emit({ type: 'turn.completed', threadId, durationMs: session.scriptedMs, numTurns: 1 })
     emit({ type: 'status', threadId, status: 'idle' })
+  }
+
+  /**
+   * Sleep as part of the script. The turn reports the sum of these pauses
+   * rather than wall-clock time, so "Worked for 3.2s" is identical on every
+   * run (the visual regression suite captures it).
+   */
+  private async pause(session: DemoSession, ms: number): Promise<void> {
+    session.scriptedMs += ms
+    await sleep(ms)
   }
 
   /** Stream one assistant message word by word, like a real provider does. */
@@ -174,9 +208,9 @@ export class DemoAdapter implements ProviderAdapter {
       if (session.cancelled) return
       const chunk = (i === 0 ? '' : ' ') + words[i]
       session.onEvent({ type: 'content', threadId, messageId, streamKind: 'assistant', text: chunk, append: i > 0 })
-      await sleep(28)
+      await this.pause(session, 28)
     }
-    await sleep(320)
+    await this.pause(session, 320)
   }
 
   private async tool(
@@ -190,24 +224,29 @@ export class DemoAdapter implements ProviderAdapter {
     if (session.cancelled) return
     const toolId = `demo_tool_${++this.seq}`
     session.onEvent({ type: 'tool.started', threadId, toolId, toolName, input })
-    await sleep(520)
+    await this.pause(session, 520)
     sideEffect?.()
     session.onEvent({ type: 'tool.completed', threadId, toolId, output })
-    await sleep(260)
+    await this.pause(session, 260)
   }
 
   async interruptTurn(threadId: string): Promise<void> {
     const session = this.sessions.get(threadId)
     if (!session) return
     session.cancelled = true
+    session.pendingApproval?.resolve('cancelled')
     session.onEvent({ type: 'status', threadId, status: 'idle' })
   }
 
-  async respondToRequest(_threadId: string, _requestId: string, _decision: ApprovalDecision): Promise<void> {}
+  async respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
+    const pending = this.sessions.get(threadId)?.pendingApproval
+    if (pending?.requestId === requestId) pending.resolve(decision)
+  }
 
   async stopSession(threadId: string): Promise<void> {
     const session = this.sessions.get(threadId)
     if (session) session.cancelled = true
+    session?.pendingApproval?.resolve('cancelled')
     this.sessions.delete(threadId)
   }
 

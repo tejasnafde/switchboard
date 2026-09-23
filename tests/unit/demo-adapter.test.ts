@@ -56,6 +56,50 @@ describe('DemoAdapter (tour recorder script)', () => {
     expect(content.map((c) => c.text).join('')).toMatch(/^Two focused tests/)
   }, 20_000)
 
+  it('reports the scripted duration, identical on every run', async () => {
+    const duration = (events: RuntimeEvent[]) => events.find((e) => e.type === 'turn.completed')
+    const [first, second] = await Promise.all([
+      runTurn('sandbox', 'What do the tests cover?', cwd),
+      runTurn('sandbox', 'What do the tests cover?', cwd),
+    ])
+    expect(duration(first)).toMatchObject({ durationMs: expect.any(Number) })
+    expect(duration(first)).toEqual(duration(second))
+  }, 20_000)
+
+  it('a run request holds the turn on an approval until it is answered', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
+    const opened = await vi.waitFor(() => {
+      const event = events.find((e) => e.type === 'request.opened')
+      if (!event || event.type !== 'request.opened') throw new Error('no approval yet')
+      return event
+    }, { timeout: 5_000, interval: 50 })
+    expect(opened).toMatchObject({ requestType: 'command', toolName: 'Bash', detail: 'npm test' })
+    expect(events.some((e) => e.type === 'turn.completed')).toBe(false)
+    await adapter.respondToRequest('t1', opened.requestId, 'approve')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+    }, { timeout: 10_000, interval: 50 })
+    expect(events.some((e) => e.type === 'request.closed' && e.decision === 'approve')).toBe(true)
+    expect(events.some((e) => e.type === 'tool.started' && e.toolName === 'Bash')).toBe(true)
+  }, 20_000)
+
+  it('interrupting a turn blocked on an approval ends it without completing', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no approval yet')
+    }, { timeout: 5_000, interval: 50 })
+    await adapter.interruptTurn('t1')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(events.some((e) => e.type === 'turn.completed')).toBe(false)
+    expect(events.some((e) => e.type === 'request.closed')).toBe(false)
+  }, 20_000)
+
   it('exposes one scripted adapter per provider kind', () => {
     const map = demoAdapters()
     expect([...map.keys()].sort()).toEqual(['claude', 'codex', 'opencode'])
