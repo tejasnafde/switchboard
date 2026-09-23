@@ -6,6 +6,7 @@
  */
 
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
+import { inferModelTier } from '@shared/models'
 import { accessSync, constants } from 'fs'
 import { createInterface } from 'readline'
 import { createMainLogger as createLogger } from '../../logger'
@@ -354,13 +355,6 @@ function codexFileChangeOutput(status: unknown): string {
   return 'Finished'
 }
 
-function codexModelTier(id: string): 'fast' | 'balanced' | 'max' {
-  const normalized = id.toLowerCase()
-  if (/mini|nano|flash|fast/.test(normalized)) return 'fast'
-  if (/sol|pro|max|ultra/.test(normalized)) return 'max'
-  return 'balanced'
-}
-
 export function parseCodexModels(input: unknown): Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> {
   const root = asRecord(input)
   const entries = Array.isArray(root?.data) ? root.data : []
@@ -373,7 +367,7 @@ export function parseCodexModels(input: unknown): Array<{ id: string; label: str
     return [{
       id,
       label: typeof model?.displayName === 'string' ? model.displayName : id,
-      tier: codexModelTier(id),
+      tier: inferModelTier(id),
     }]
   })
 }

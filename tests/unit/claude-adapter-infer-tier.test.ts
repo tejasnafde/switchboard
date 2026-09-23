@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { inferTier } from '../../src/main/provider/adapters/claude-adapter'
+import { inferModelTier as inferTier } from '@shared/models'
 import { CLAUDE_MODELS, CODEX_MODELS, defaultModelFor } from '../../src/shared/models'
 
 /**
@@ -70,5 +70,19 @@ describe('defaultModelFor', () => {
     // It used to index CLAUDE_MODELS[1], so reordering changed the default.
     expect(CLAUDE_MODELS.map((m) => m.id)).toContain(defaultModelFor('claude-code'))
     expect(CODEX_MODELS.map((m) => m.id)).toContain(defaultModelFor('codex'))
+  })
+})
+
+describe('inferModelTier across providers', () => {
+  it('matches whole tokens, not substrings', () => {
+    expect(inferTier('google/gemini-2.5-pro')).toBe('max')
+    expect(inferTier('nvidia-nim/minimaxai/minimax-m2.7')).toBe('balanced')
+    expect(inferTier('google/gemini-2.5-flash')).toBe('fast')
+  })
+  it('knows the codex family names', () => {
+    expect(inferTier('gpt-5.6-sol')).toBe('max')
+    expect(inferTier('gpt-5.6-terra')).toBe('balanced')
+    expect(inferTier('gpt-5.6-luna')).toBe('fast')
+    expect(inferTier('gpt-5.4-mini')).toBe('fast')
   })
 })

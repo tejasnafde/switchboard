@@ -75,6 +75,20 @@ export const REASONING_EFFORTS: Array<{ id: ReasoningEffort; label: string }> = 
   { id: 'high', label: 'High' },
 ]
 
+const FAST_TOKENS = new Set(['haiku', 'mini', 'nano', 'flash', 'fast', 'luna'])
+const MAX_TOKENS = new Set(['opus', 'fable', 'sol', 'pro', 'max', 'ultra', 'large'])
+
+/**
+ * Picker tier for a model id no catalog labelled. Matches whole tokens, not
+ * substrings: `gemini` must not read as `mini`, nor `minimax` as `max`.
+ */
+export function inferModelTier(id: string): ModelOption['tier'] {
+  const tokens = id.toLowerCase().split(/[^a-z0-9]+/)
+  if (tokens.some((t) => FAST_TOKENS.has(t))) return 'fast'
+  if (tokens.some((t) => MAX_TOKENS.has(t))) return 'max'
+  return 'balanced'
+}
+
 export function modelsForAgent(agent: AgentType): ModelOption[] {
   if (agent === 'codex') return CODEX_MODELS
   if (agent === 'opencode') return OPENCODE_MODELS

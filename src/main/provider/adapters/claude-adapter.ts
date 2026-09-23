@@ -9,6 +9,7 @@
  */
 
 import { execSync, execFile } from 'child_process'
+import { inferModelTier } from '@shared/models'
 import { accessSync, constants, existsSync } from 'fs'
 import { homedir } from 'os'
 import { join, sep } from 'path'
@@ -528,17 +529,6 @@ export function parseClaudeSlashCommands(input: unknown): ProviderSkill[] {
     seen.add(k)
     return true
   })
-}
-
-/**
- * Infer a picker tier from a Claude model id. Pure - exported for tests.
- * Unknown families default to 'balanced' so new models still render.
- */
-export function inferTier(modelId: string): 'fast' | 'balanced' | 'max' {
-  const id = modelId.toLowerCase()
-  if (id.includes('haiku') || id.includes('mini')) return 'fast'
-  if (id.includes('opus') || id.includes('fable')) return 'max'
-  return 'balanced'
 }
 
 // ─── Pending approval + session state ───────────────────────────────
@@ -1208,7 +1198,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         const mapped = models.map((m) => ({
           id: m.value,
           label: m.displayName,
-          tier: inferTier(m.value),
+          tier: inferModelTier(m.value),
           ...(m.resolvedModel ? { resolvedModel: m.resolvedModel } : {}),
         }))
         // Empty is never committed, so a probe that raced session startup does

@@ -11,6 +11,7 @@ import {
   type ImageAttachment,
 } from '../../stores/draft-store'
 import {
+  inferModelTier,
   modelsForAgent,
   REASONING_EFFORTS,
   agentSupportsReasoningEffort,
@@ -204,7 +205,7 @@ export function ChatInput({
         persistDynamicModels(ids.map((id) => ({
           id,
           label: formatOpencodeModelLabel(id),
-          tier: inferTierFromId(id),
+          tier: inferModelTier(id),
         })))
       }).catch(() => { /* keep fallback list */ })
     }
@@ -1876,9 +1877,3 @@ function formatOpencodeModelLabel(id: string): string {
   return `${pretty}${badge}`
 }
 
-function inferTierFromId(id: string): 'fast' | 'balanced' | 'max' {
-  const lower = id.toLowerCase()
-  if (lower.includes('flash') || lower.includes('mini') || lower.includes('nano') || lower.includes('haiku')) return 'fast'
-  if (lower.includes('pro') || lower.includes('opus') || lower.includes('max') || lower.includes('large') || lower.includes('ultra')) return 'max'
-  return 'balanced'
-}
