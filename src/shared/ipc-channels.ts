@@ -289,6 +289,8 @@ export const ProviderChannels = {
   SET_MODEL: 'provider:set-model',
   OPENCODE_LIST_MODELS: 'provider:opencode-list-models',
   LIST_MODELS: 'provider:list-models',
+  /** Live catalog of an instance without a chat; `threadId` only routes it to a machine. */
+  LIST_CATALOG: 'provider:list-catalog',
   /**
    * Sessions running on this backend right now, whichever client started them.
    * A client that was not connected when a session started has no other way to

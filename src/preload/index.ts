@@ -582,6 +582,10 @@ const api = {
     listModels: (threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null> =>
       transport.invoke(ProviderChannels.LIST_MODELS, threadId),
 
+    /** An instance's live catalog before any session; `threadId` routes it to that chat's machine. */
+    listCatalog: (req: { threadId?: string; agentType: string; instanceId?: string | null }): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max'; resolvedModel?: string }>> =>
+      transport.invoke(ProviderChannels.LIST_CATALOG, req),
+
     /**
      * Sessions running on the backend now, whoever started them. Lets this
      * window adopt a chat begun on the phone instead of showing it as idle.

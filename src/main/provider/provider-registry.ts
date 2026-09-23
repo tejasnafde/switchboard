@@ -73,7 +73,8 @@ import {
   type UserTurnSubmissionV1,
   type UserTurnResolutionV1,
 } from '@shared/provider-events'
-import { toAgentProvider } from '@shared/types'
+import { isAgentProvider, toAgentProvider } from '@shared/types'
+import { probeCatalog } from './catalog-probe'
 
 const log = createLogger('provider:registry')
 
@@ -1550,6 +1551,11 @@ export class ProviderRegistry implements PeerToolHost {
         log.warn(`listSkills failed for ${threadId}: ${err}`)
         return []
       }
+    })
+
+    this.host.handle(ProviderChannels.LIST_CATALOG, async (req: { threadId?: string; agentType: string; instanceId?: string | null }) => {
+      if (!isAgentProvider(req?.agentType)) return []
+      return probeCatalog(req.agentType, req.instanceId)
     })
 
     this.host.handle(ProviderChannels.LIST_MODELS, async (threadId: string) => {

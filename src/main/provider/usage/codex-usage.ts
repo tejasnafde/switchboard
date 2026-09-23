@@ -56,7 +56,7 @@ interface PendingRpc {
   reject: (err: Error) => void
 }
 
-class CodexProbeSession {
+export class CodexProbeSession {
   private child: ChildProcessWithoutNullStreams
   private rl: Interface
   private pending = new Map<number, PendingRpc>()
