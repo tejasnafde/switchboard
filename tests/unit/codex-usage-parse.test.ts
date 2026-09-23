@@ -142,6 +142,30 @@ describe('parseCodexRateLimits - plan and reached state', () => {
     expect(out.windows[0]?.severity).toBe('critical')
   })
 
+  it('reddens only the window that hit its limit, not every window', () => {
+    const out = parseCodexRateLimits({
+      rateLimits: {
+        limitId: 'c',
+        primary: { usedPercent: 100, windowDurationMins: 300 },
+        secondary: { usedPercent: 16, windowDurationMins: 10080 },
+        rateLimitReachedType: 'rate_limit_reached',
+      },
+    })
+    expect(out.windows.map((w) => w.severity)).toEqual(['critical', 'ok'])
+  })
+
+  it('reddens the fullest window when the reached one is not at 100% yet', () => {
+    const out = parseCodexRateLimits({
+      rateLimits: {
+        limitId: 'c',
+        primary: { usedPercent: 40, windowDurationMins: 300 },
+        secondary: { usedPercent: 97, windowDurationMins: 10080 },
+        rateLimitReachedType: 'rate_limit_reached',
+      },
+    })
+    expect(out.windows.map((w) => w.severity)).toEqual(['ok', 'critical'])
+  })
+
   it('does not redden a healthy window when only credits are depleted', () => {
     const out = parseCodexRateLimits({
       rateLimits: { limitId: 'c', primary: { usedPercent: 5 }, rateLimitReachedType: 'workspace_owner_credits_depleted' },
