@@ -298,6 +298,14 @@ export const ProviderChannels = {
    * the session began.
    */
   LIST_SESSIONS: 'provider:list-sessions',
+  /**
+   * A thread's still-open approval/question/plan cards, from the registry's
+   * own bookkeeping rather than a live event. A resume gap or a reload drops
+   * the event that opened one of these for good, so a client asks this after
+   * such a gap, a reconnect, or opening a thread, and appends whatever it is
+   * missing. Gated behind the `pending_requests_v1` backend capability.
+   */
+  GET_PENDING_REQUESTS: 'provider:get-pending-requests',
   LIST_SKILLS: 'provider:list-skills',
   ANSWER_QUESTION: 'provider:answer-question',
   /**

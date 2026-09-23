@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Added
+- **Pending-approval recovery.** A resume gap, a reconnect, or a reload used to drop the live event that opened an approval, a question, or a proposed plan for good, so the card vanished and the turn looked like it was waiting on nothing. The backend now keeps its own record of a thread's still-open cards and serves it over `provider:get-pending-requests` (capability `pending_requests_v1`); desktop, mobile, and native Android each recover whatever they are missing on thread (re)open and on reconnect, deduping against what is already shown.
 - Native Android shows the model-unavailable notice in the thread feed, decoded from `model.unavailable` instead of falling through the generic extension-event notice.
 - Native Android's new-session screen reads the live model catalog from `provider:list-catalog` and reconciles the picked model against it, falling back to the static list on an older backend.
 - Native Android offers `/compact` above the thread feed on a token-heavy, stale Claude chat, mirroring the desktop and React Native compaction-offer banner.

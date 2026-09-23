@@ -76,6 +76,10 @@ object BackendChannels {
     const val SetModel = "provider:set-model"
     const val RespondToRequest = "provider:respond-to-request"
     const val AnswerQuestion = "provider:answer-question"
+    /** A thread's still-open approval/question/plan cards - see
+     *  `ProviderRegistry.getPendingRequests` and the `pending_requests_v1`
+     *  backend capability. */
+    const val GetPendingRequests = "provider:get-pending-requests"
     const val ProviderEvents = "provider:event"
     const val PushRegister = "push:register"
     const val PushUnregister = "push:unregister"
@@ -420,6 +424,19 @@ class SwitchboardRemoteClient(
         BackendChannels.ListModels,
         array(JsonString(threadId)),
         RemoteDecoders::models,
+        callback,
+    )
+
+    /** Only call this when the backend advertises `pending_requests_v1`
+     *  (see `ReadyClientLease.capabilities`) - an older backend has no
+     *  handler for the channel. */
+    fun getPendingRequests(
+        threadId: String,
+        callback: (RemoteResponse<List<JsonObject>>) -> Unit,
+    ) = call(
+        BackendChannels.GetPendingRequests,
+        array(JsonString(threadId)),
+        RemoteDecoders::pendingRequests,
         callback,
     )
 

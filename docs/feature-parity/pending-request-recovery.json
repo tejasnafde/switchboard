@@ -1,0 +1,77 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "pending-request-recovery",
+  "summary": "A resume gap, a reconnect, or a window/app reload can drop the live event that opened an approval/question/plan card for good, leaving a turn that looks like it is waiting on nothing. ProviderRegistry now keeps its own record of a thread's still-open cards and serves it over a new provider:get-pending-requests channel (capability pending_requests_v1); every client recovers whatever it is missing on thread (re)open and reconnect/resume-gap, deduping against what is already shown via the shared src/shared/pending-requests.ts.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts",
+        "src/shared/pending-requests.ts",
+        "src/shared/ipc-channels.ts",
+        "src/preload/index.ts",
+        "src/renderer/services/pendingRequestRecovery.ts",
+        "src/renderer/App.tsx",
+        "tests/unit/provider-registry-pending-requests.test.ts",
+        "tests/unit/pending-requests.test.ts",
+        "tests/unit/pending-request-recovery-desktop.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/lib/api.ts",
+        "apps/mobile/src/lib/pendingRequestRecovery.ts",
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "tests/unit/mobile-pending-request-recovery.test.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pending-requests.ts",
+        "src/shared/ipc-channels.ts",
+        "src/shared/ws-protocol.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/provider-registry-pending-requests.test.ts",
+        "tests/unit/pending-requests.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Pending cards live only in ProviderRegistry's in-memory pendingRequests map, cleared on the matching close/answer, on the next human-initiated turn, on a provider-reported death, or on stop-session; nothing is persisted, so no schema, table, or migration is touched."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Backward-compatible addition behind a new backend capability string (pending_requests_v1); an older backend simply never advertises it and every client's existing capability/gap-handling path already treats an unadvertised capability as absent. No change to package identity, version, update channel, or signing configuration."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/provider-registry-pending-requests.test.ts: ProviderRegistry records request.opened/question.asked/plan.proposed, clears on the matching close/answer, keeps a plan across the turn.completed that follows plan.proposed (it has no closing event of its own) and clears it only once the user sends the next turn, clears everything on a provider-reported status error and on stop-session, and resolves a rotated thread id through resolveRootThreadId",
+      "tests/unit/pending-request-recovery-orchestration.test.ts: recoverPendingRequests appends only the missing cards for a loaded session and is a no-op when the session is not yet in the store or the backend returns nothing",
+      "tests/unit/pending-requests.test.ts: pendingRequestKey and missingPendingRequests (the shared dedupe primitive both clients use)",
+      "tests/unit/pending-request-recovery-desktop.test.ts: desktop's message-id scheme matches ChatPanel's live handlers and missingPendingCards dedupes correctly",
+      "tests/unit/mobile-pending-request-recovery.test.ts: mobile's shownPendingKeys/missingPendingFeedItems dedupe against FeedItem.requestId/planId",
+      "apps/android/app/src/test/java/.../ThreadSessionCoordinatorTest.kt (5 new cases): a backend without the capability is never asked, a dropped approval/plan/question card is recovered after history loads, recovering an already-shown card does not duplicate it, and a resume gap re-asks"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No end-to-end run against a real WS resume gap (server restart mid-session, or an evicted replay buffer) on any of the three clients - all three were verified with fakes/mocks at the unit level.",
+      "Desktop's remote-machine (SSH-tunneled) resume-gap wiring (WsTransport.onResumeGap -> preload's routing.onResumeGap -> App.tsx) was not exercised against a live tunneled backend.",
+      "Android was not run on a physical device or emulator; only JVM unit tests via ThreadSessionCoordinatorTest's fakes.",
+      "A live Claude/Codex/OpenCode plan-mode denial (ExitPlanMode) was not driven end-to-end against a real provider to confirm a proposed plan behaves as reasoned from src/main/provider/adapters/claude-adapter.ts - only synthetic events were used."
+    ]
+  }
+}

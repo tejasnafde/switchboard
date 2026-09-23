@@ -20,6 +20,7 @@ import type {
   UserTurnResolutionResult,
 } from '@shared/provider-events'
 import type { ModelOption } from '@shared/models'
+import type { PendingBlockingEvent } from '@shared/pending-requests'
 import type { AgentType, Project, ConversationRow, CreateConversationParams, ChatMessage, ProviderInstance, ProviderSkill, Workspace } from '@shared/types'
 import type { SshIapTarget } from '@shared/machines'
 import type {
@@ -313,6 +314,17 @@ export class SwitchboardClient {
   /** Skills the live agent reports. Empty until its session is up. */
   listSkills(threadId: string): Promise<ProviderSkill[] | null> {
     return this.transport.invoke(ProviderChannels.LIST_SKILLS, threadId)
+  }
+
+  /**
+   * A thread's still-open approval/question/plan cards, from the backend's
+   * own bookkeeping rather than a live event a resume gap or a reload may
+   * have dropped for good. Only call this when the backend advertises
+   * `pending_requests_v1` (`supportsCapability`) - an older backend has no
+   * handler for the channel.
+   */
+  getPendingRequests(threadId: string): Promise<PendingBlockingEvent[]> {
+    return this.transport.invoke(ProviderChannels.GET_PENDING_REQUESTS, threadId)
   }
 
   interrupt(threadId: string): Promise<void> {

@@ -118,6 +118,74 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `a backend without pending_requests_v1 is never asked for pending requests`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, supportsPendingRequests = false)
+        coordinator.start()
+
+        remote.completeLoad(success("load", loadedSession()))
+
+        assertTrue(remote.pendingRequestsThreadIds.isEmpty())
+    }
+
+    @Test
+    fun `a resume-gap-dropped approval card is recovered after history loads`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, supportsPendingRequests = true)
+        coordinator.start()
+
+        remote.completeLoad(success("load", loadedSession()))
+        assertEquals(listOf("thread-1"), remote.pendingRequestsThreadIds)
+
+        remote.completePendingRequestsAt(0, success("pending", listOf(requestOpened("r1"))))
+
+        val approval = coordinator.currentThread()!!.feed.single() as FeedItem.Approval
+        assertEquals("r1", approval.requestId)
+        assertEquals("pending", approval.state)
+    }
+
+    @Test
+    fun `recovering a card already shown does not duplicate it`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val cached = ThreadState(feed = listOf(FeedItem.Approval("a-r1", "r1", "Bash", "ls", "command", "pending")))
+        val coordinator = coordinator(remote, cached = cached, supportsPendingRequests = true)
+        coordinator.start()
+
+        remote.completeLoad(success("load", loadedSession()))
+        remote.completePendingRequestsAt(0, success("pending", listOf(requestOpened("r1"))))
+
+        assertEquals(1, coordinator.currentThread()!!.feed.count { it is FeedItem.Approval })
+    }
+
+    @Test
+    fun `recovers a plan and a question in the same reply`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, supportsPendingRequests = true)
+        coordinator.start()
+
+        remote.completeLoad(success("load", loadedSession()))
+        remote.completePendingRequestsAt(0, success("pending", listOf(planProposed("p1"), questionAsked("q1"))))
+
+        val feed = coordinator.currentThread()!!.feed
+        assertTrue(feed.any { it is FeedItem.Plan && it.planId == "p1" })
+        assertTrue(feed.any { it is FeedItem.Question && it.requestId == "q1" })
+    }
+
+    @Test
+    fun `a resume gap re-asks for pending requests`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, supportsPendingRequests = true)
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+        remote.completePendingRequestsAt(0, success("pending", emptyList()))
+
+        coordinator.onReplayGap(scope)
+        remote.completeLoadAt(1, success("load", loadedSession()))
+
+        assertEquals(listOf("thread-1", "thread-1"), remote.pendingRequestsThreadIds)
+    }
+
+    @Test
     fun `accepted runtime reduction persists the latest live thread snapshot`() {
         val remote = FakeThreadSessionRemote(scope)
         val snapshots = RecordingThreadSnapshotStore()
@@ -927,6 +995,7 @@ class ThreadSessionCoordinatorTest {
         snapshotStore: ThreadSnapshotStore = NoOpThreadSnapshotStore,
         projectPath: String? = null,
         worktreePath: String? = null,
+        supportsPendingRequests: Boolean = false,
     ) = ThreadSessionCoordinator(
         scope = scope,
         threadId = "thread-1",
@@ -939,6 +1008,7 @@ class ThreadSessionCoordinatorTest {
         snapshotStore = snapshotStore,
         projectPath = projectPath,
         worktreePath = worktreePath,
+        supportsPendingRequests = supportsPendingRequests,
     )
 
     private fun loadedSession(vararg messages: ChatMessage) = LoadedSession(
@@ -1085,6 +1155,38 @@ class ThreadSessionCoordinatorTest {
     )
 
     private fun emptyJson() = JsonObject(linkedMapOf())
+
+    /** Wire-shape `request.opened` / `plan.proposed` / `question.asked` event
+     *  objects, matching exactly what `ProviderChannels.GET_PENDING_REQUESTS`
+     *  returns - `ThreadEventDecoder.decode` reads these unchanged. */
+    private fun requestOpened(requestId: String) = JsonObject(
+        linkedMapOf(
+            "type" to JsonString("request.opened"),
+            "threadId" to JsonString("thread-1"),
+            "requestId" to JsonString(requestId),
+            "requestType" to JsonString("command"),
+            "toolName" to JsonString("Bash"),
+            "detail" to JsonString("ls"),
+        ),
+    )
+
+    private fun planProposed(planId: String) = JsonObject(
+        linkedMapOf(
+            "type" to JsonString("plan.proposed"),
+            "threadId" to JsonString("thread-1"),
+            "planId" to JsonString(planId),
+            "planMarkdown" to JsonString("# Plan"),
+        ),
+    )
+
+    private fun questionAsked(requestId: String) = JsonObject(
+        linkedMapOf(
+            "type" to JsonString("question.asked"),
+            "threadId" to JsonString("thread-1"),
+            "requestId" to JsonString(requestId),
+            "questions" to app.switchboard.mobile.protocol.JsonArray(emptyList()),
+        ),
+    )
 
     private companion object {
         val scope = ThreadEventScope("machine", 7)
@@ -1259,6 +1361,14 @@ private class FakeThreadSessionRemote(
         interruptCallbacks += callback
     }
 
+    val pendingRequestsThreadIds = mutableListOf<String>()
+    val pendingRequestsCallbacks = mutableListOf<(RemoteResponse<List<JsonObject>>) -> Unit>()
+
+    override fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit) {
+        pendingRequestsThreadIds += threadId
+        pendingRequestsCallbacks += callback
+    }
+
     fun emit(scope: ThreadEventScope, payload: RuntimeEventPayload) {
         listener?.invoke(scope, payload)
     }
@@ -1325,6 +1435,10 @@ private class FakeThreadSessionRemote(
 
     fun completeArchive(response: RemoteResponse<ArchiveConversationResult>) {
         archiveCallbacks.removeAt(0)(response)
+    }
+
+    fun completePendingRequestsAt(index: Int, response: RemoteResponse<List<JsonObject>>) {
+        pendingRequestsCallbacks[index](response)
     }
 
     fun <T> RemoteResponse<T>.withScope(scope: ThreadEventScope) = copy(

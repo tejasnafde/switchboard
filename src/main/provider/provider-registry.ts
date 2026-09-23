@@ -75,6 +75,7 @@ import {
 } from '@shared/provider-events'
 import { isAgentProvider, toAgentProvider } from '@shared/types'
 import { peekCatalog, probeCatalog } from './catalog-probe'
+import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
 
 const log = createLogger('provider:registry')
 
@@ -121,6 +122,15 @@ export class ProviderRegistry implements PeerToolHost {
   private sessionStatus = new Map<string, ProviderSession['status']>()
   /** Descriptor per live thread, so a late-connecting client can adopt it. */
   private sessionDescriptors = new Map<string, ProviderSession>()
+  /**
+   * Approval/question/plan cards still open per thread, keyed by
+   * `pendingRequestKey` (requestId, or planId for a plan). Filled from the
+   * same event path that updates `sessionStatus` below, so a client that
+   * reconnected after a resume gap or reloaded the window can ask what it is
+   * missing instead of waiting on a card that will never arrive as a live
+   * event again. See `getPendingRequests` and `ProviderChannels.GET_PENDING_REQUESTS`.
+   */
+  private pendingRequests = new Map<string, Map<string, PendingBlockingEvent>>()
   /** Exact credentials/config location used by the live adapter. Kept private
    * so a failed rotation can restore the same identity even if DB rows change. */
   private sessionCredentials = new Map<string, ProviderCredentialSnapshot>()
@@ -312,6 +322,34 @@ export class ProviderRegistry implements PeerToolHost {
         log.warn(`failed to mirror assistant message ${messageId} for ${threadId}: ${err}`)
       }
     }
+  }
+
+  private addPendingRequest(event: PendingBlockingEvent): void {
+    let byKey = this.pendingRequests.get(event.threadId)
+    if (!byKey) {
+      byKey = new Map()
+      this.pendingRequests.set(event.threadId, byKey)
+    }
+    byKey.set(pendingRequestKey(event), event)
+  }
+
+  private resolvePendingRequest(threadId: string, key: string): void {
+    const byKey = this.pendingRequests.get(threadId)
+    if (!byKey) return
+    byKey.delete(key)
+    if (byKey.size === 0) this.pendingRequests.delete(threadId)
+  }
+
+  /**
+   * Original events for a thread's still-open cards. Resolves through
+   * `resolveRootThreadId` because the id a client asks with can be the
+   * rotated provider session id rather than the id these were recorded
+   * under - the same gotcha `getConversationRuntimeMode` and friends hit
+   * (see AGENTS.md's "Any new per-conversation setting..." note).
+   */
+  getPendingRequests(threadId: string): PendingBlockingEvent[] {
+    const byKey = this.pendingRequests.get(resolveRootThreadId(threadId))
+    return byKey ? [...byKey.values()] : []
   }
 
   /** Live sessions with their CURRENT status, not the status they started at. */
@@ -535,6 +573,28 @@ export class ProviderRegistry implements PeerToolHost {
     // for a chat the phone started - had no way to ever learn a session was
     // running. `listSessions` and the re-attach descriptor both read this.
     if (event.type === 'status') this.sessionStatus.set(event.threadId, event.status)
+    // Open cards a reconnecting or reloaded client can recover - see
+    // `getPendingRequests`. `request.opened` / `question.asked` block the
+    // turn until answered, so they are always closed explicitly. A
+    // `plan.proposed` is NOT: ExitPlanMode is denied at once and the turn
+    // ends normally on `turn.completed` while the plan still awaits the
+    // user's Implement/Iterate decision - clearing on `turn.completed` would
+    // discard a plan seconds after proposing it, before there is any chance
+    // to recover it. A plan (and, as a backstop, anything left stray) is
+    // cleared only once the user actually responds - see the `turnDepth`
+    // reset to 0 in `submitAtomicUserTurn`'s `prepare` and the legacy
+    // `SEND_TURN` handler's `dispatch`, the same point that marks a turn as
+    // human-initiated rather than a peer message or a queued follow-up.
+    if (event.type === 'request.opened' || event.type === 'question.asked' || event.type === 'plan.proposed') {
+      this.addPendingRequest(event)
+    }
+    if (event.type === 'request.closed') this.resolvePendingRequest(event.threadId, event.requestId)
+    if (event.type === 'question.answered') this.resolvePendingRequest(event.threadId, event.requestId)
+    // The provider reporting it died means nothing on this thread can still
+    // be waiting - a stale card must not survive that either.
+    if (event.type === 'status' && (event.status === 'error' || event.status === 'stopped')) {
+      this.pendingRequests.delete(event.threadId)
+    }
     this.bufferAssistantText(event)
     if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
     this.bus.publish(event)
@@ -772,6 +832,10 @@ export class ProviderRegistry implements PeerToolHost {
             if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
             notebookManager.beginTurn(threadId)
             this.turnDepth.set(threadId, 0)
+            // The user just responded - whatever card was pending on this
+            // thread (a plan awaiting Implement/Iterate, or a stray unclosed
+            // entry) is resolved by this turn, same as hop depth resetting.
+            this.pendingRequests.delete(threadId)
           } catch (error) {
             throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
           }
@@ -854,6 +918,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.sessionCredentials.delete(threadId)
       this.outstandingTurns.delete(threadId)
       this.turnDepth.delete(threadId)
+      this.pendingRequests.delete(threadId)
       this.checkpoints.clear(threadId)
       this.driftWatcher.onSessionStopped(threadId)
       notebookManager.detach(threadId)
@@ -1479,6 +1544,10 @@ export class ProviderRegistry implements PeerToolHost {
           if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
           notebookManager.beginTurn(threadId)
           this.turnDepth.set(threadId, 0)
+          // The user just responded - whatever card was pending on this
+          // thread (a plan awaiting Implement/Iterate, or a stray unclosed
+          // entry) is resolved by this turn, same as hop depth resetting.
+          this.pendingRequests.delete(threadId)
         } catch (error) {
           throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
         }
@@ -1593,6 +1662,12 @@ export class ProviderRegistry implements PeerToolHost {
     // phone began: events are broadcast live, never replayed from before the
     // session existed, and every store reducer no-ops on an unknown threadId.
     this.host.handle(ProviderChannels.LIST_SESSIONS, () => this.listSessions())
+
+    // A thread's still-open approval/question/plan cards - see
+    // `getPendingRequests`. Not gated on a live adapter: the whole point is
+    // recovering a card after the process that opened it may be long gone
+    // from this client's view (reload, resume gap).
+    this.host.handle(ProviderChannels.GET_PENDING_REQUESTS, (threadId: string) => this.getPendingRequests(threadId))
 
     this.host.handle(ProviderChannels.OPENCODE_LIST_MODELS, async () => {
       try {
