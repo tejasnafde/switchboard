@@ -573,8 +573,6 @@ const api = {
       transport.invoke(ProviderChannels.SET_MODEL, threadId, model),
 
     /** Dynamically fetch `opencode models` output. Returns provider/model IDs. */
-    listOpencodeModels: (): Promise<string[]> =>
-      transport.invoke(ProviderChannels.OPENCODE_LIST_MODELS),
 
     /**
      * Fetch the session adapter's live model list (Claude SDK's

@@ -1,0 +1,62 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "opencode-models-one-channel",
+  "summary": "OpenCode models are served through the same provider:list-models channel as Claude and Codex, as ModelOption rows with labels and tiers built in the backend. The desktop's separate OpenCode-only channel, preload method and renderer effect are removed, and both phone clients, which already call provider:list-models for every thread, now show a model chip on OpenCode threads.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/preload/index.ts",
+        "tests/unit/chat-input-provider-skills.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/lib/api.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/shared/models.ts",
+        "tests/unit/claude-adapter-infer-tier.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "The OpenCode catalog stays in the adapter's in-memory session state, as before; nothing is stored."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/chat-input-provider-skills.test.ts tests/unit/claude-adapter-infer-tier.test.ts",
+      "npm run typecheck",
+      "npm test",
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live OpenCode session was driven; the adapter maps the session/new catalog it already held. The phone clients were not run; they call provider:list-models unconditionally, which now answers for OpenCode.",
+      "Mixed versions: a desktop older than 0.8.62 against a newer remote server still gets bare ids from the kept provider:opencode-list-models alias. A newer desktop against an older server gets null from provider:list-models for OpenCode and falls back to the static list, which is what it showed before."
+    ]
+  }
+}

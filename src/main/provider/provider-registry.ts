@@ -1571,7 +1571,8 @@ export class ProviderRegistry implements PeerToolHost {
 
     this.host.handle(ProviderChannels.OPENCODE_LIST_MODELS, async () => {
       try {
-        return await this.opencodeAcp.listAvailableModels()
+        // Alias for desktops older than 0.8.62, which still ask for bare ids.
+        return (await this.opencodeAcp.listModels('')).map((m) => m.id)
       } catch {
         return []
       }
