@@ -386,7 +386,7 @@ class ThreadScreenRegressionTest {
         compose.onNodeWithTag(ThreadTestTags.toolContainer("tool"))
             .assertHeightIsEqualTo(48.dp)
         row.assertIsDisplayed()
-            .assertTextContains("Bash")
+            .assertTextContains("Terminal")
             .assertTextContains("npm test -- --runInBand")
             .assertHeightIsEqualTo(48.dp)
             .assertWidthIsAtLeast(48.dp)

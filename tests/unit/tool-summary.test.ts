@@ -1,9 +1,10 @@
 /**
- * Tool-call summaries for the mobile feed. Replaces a truncated
- * JSON.stringify of the whole input object.
+ * Tool-call summaries shared by desktop, mobile and (in spirit, via
+ * tests/fixtures/tool-summary-cases.json) native Android. Replaces a
+ * truncated JSON.stringify of the whole input object.
  */
 import { describe, it, expect } from 'vitest'
-import { summarizeTool, shortenPath, condense, toolIcon } from '../../apps/mobile/src/lib/toolSummary'
+import { summarizeTool, shortenPath, condense, toolIcon } from '../../src/shared/tool-summary'
 
 describe('summarizeTool', () => {
   it('shows the command for Bash, not the surrounding JSON', () => {

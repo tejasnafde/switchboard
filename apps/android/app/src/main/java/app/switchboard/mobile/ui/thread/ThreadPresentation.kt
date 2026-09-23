@@ -19,6 +19,7 @@ private val TOOL_NAME_SEPARATORS = Regex("[^a-z0-9]+")
 private val TOOL_KEY_SEPARATORS = Regex("[^A-Za-z0-9]+")
 private val TOOL_WHITESPACE = Regex("\\s+")
 private val APPLY_PATCH_FILE = Regex("(?m)^\\*\\*\\* (?:Add|Update|Delete) File: (.+)$")
+private val WEB_FETCH_HOST = Regex("^https?://([^/]+)")
 private val SHELL_TOOL_NAMES = setOf(
     "bash", "shell", "terminal", "exec", "exec_command", "execute", "execute_command",
     "run_command", "shell_command", "command",
@@ -414,7 +415,7 @@ object ThreadPresenter {
 
         val summary = when (canonical) {
             in SHELL_TOOL_NAMES -> ToolSummary(
-                label = "Bash",
+                label = "Terminal",
                 detail = listOf("command", "cmd", "args")
                     .firstNotNullOfOrNull(::command)
                     .orEmpty(),
@@ -424,22 +425,36 @@ object ThreadPresenter {
 
             in READ_TOOL_NAMES -> ToolSummary("Read", filePath(values), ToolIconKind.READ, true)
             in WRITE_TOOL_NAMES -> ToolSummary("Write", filePath(values), ToolIconKind.WRITE, true)
-            in EDIT_TOOL_NAMES -> ToolSummary("Edit", editPath(canonical, values), ToolIconKind.EDIT, true)
+            in EDIT_TOOL_NAMES -> {
+                // A move/rename carries both the source and destination path -
+                // matches src/shared/tool-summary.ts's "Rename" rule.
+                val movePath = string("move_path", "movePath")
+                if (movePath != null) {
+                    ToolSummary(
+                        "Rename",
+                        "${editPath(canonical, values)} → ${concisePath(movePath)}",
+                        ToolIconKind.EDIT,
+                        true,
+                    )
+                } else {
+                    ToolSummary("Edit", editPath(canonical, values), ToolIconKind.EDIT, true)
+                }
+            }
             in NOTEBOOK_READ_TOOL_NAMES -> ToolSummary("Read notebook", filePath(values), ToolIconKind.NOTEBOOK, true)
             in NOTEBOOK_EDIT_TOOL_NAMES -> ToolSummary("Edit notebook", filePath(values), ToolIconKind.NOTEBOOK, true)
             in GREP_TOOL_NAMES -> {
                 val pattern = string("pattern", "query", "regex").orEmpty()
-                val path = string("path", "dir", "directory")
+                val path = string("path", "dir", "directory")?.let(::concisePath)
                 ToolSummary(
-                    "Grep",
-                    if (pattern.isBlank()) "" else "\"$pattern\"" + (path?.let { " in $it" } ?: ""),
+                    "Search",
+                    if (pattern.isBlank()) "" else pattern + (path?.let { " in $it" } ?: ""),
                     ToolIconKind.SEARCH,
                     true,
                 )
             }
 
             in GLOB_TOOL_NAMES -> ToolSummary(
-                "Glob",
+                "Find files",
                 string("pattern", "query", "glob").orEmpty(),
                 ToolIconKind.SEARCH,
                 true,
@@ -447,17 +462,22 @@ object ThreadPresenter {
 
             in LIST_TOOL_NAMES -> ToolSummary(
                 "List files",
-                string("path", "dir", "directory").orEmpty(),
+                concisePath(string("path", "dir", "directory").orEmpty()),
                 ToolIconKind.FILES,
                 true,
             )
 
-            in WEB_FETCH_TOOL_NAMES -> ToolSummary(
-                "Fetch",
-                string("url", "uri").orEmpty(),
-                ToolIconKind.WEB,
-                true,
-            )
+            in WEB_FETCH_TOOL_NAMES -> {
+                // Host identifies it; a full URL just wraps a narrow row.
+                val url = string("url", "uri")
+                val host = url?.let(WEB_FETCH_HOST::find)?.groupValues?.getOrNull(1)
+                ToolSummary(
+                    "Fetch",
+                    host ?: url.orEmpty(),
+                    ToolIconKind.WEB,
+                    false,
+                )
+            }
 
             in WEB_SEARCH_TOOL_NAMES -> ToolSummary(
                 "Web search",
@@ -467,7 +487,7 @@ object ThreadPresenter {
             )
 
             in TASK_TOOL_NAMES -> ToolSummary(
-                "Task",
+                "Subagent",
                 string("description", "prompt", "task").orEmpty(),
                 ToolIconKind.TASK,
                 false,
@@ -574,9 +594,14 @@ object ThreadPresenter {
             else condensed.take(TOOL_DETAIL_MAX_CHARS - 1) + "…"
         }
 
+    /**
+     * Last two segments - matches src/shared/tool-summary.ts's shortenPath so
+     * a deep path reads the same length on every surface. See
+     * tests/fixtures/tool-summary-cases.json.
+     */
     private fun concisePath(path: String): String {
         val parts = path.split('/').filter(String::isNotBlank)
-        return if (parts.size > 4) "…/${parts.takeLast(3).joinToString("/")}" else path
+        return if (parts.size > 2) "…/${parts.takeLast(2).joinToString("/")}" else path
     }
 
     private fun contentStatus(state: ThreadLoadState): ThreadContentStatus = when (state) {

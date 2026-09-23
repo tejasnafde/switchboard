@@ -328,6 +328,19 @@ describe('queueing behind a running turn', () => {
     expect(coordinator.hasQueued('t1')).toBe(false)
   })
 
+  it('drops a queued request as soon as another move commits, so sends are not refused', async () => {
+    // Seen live: a Follow queued behind a turn, then a second Follow committed
+    // once the chat was idle. The stale queued one kept refusing every send
+    // ("working directory is moving") until the next turn ended.
+    const coordinator = new ExecutionRootCoordinator(host)
+    await coordinator.relocate(request())
+    expect(coordinator.hasQueued('t1')).toBe(true)
+    state.turnActive = false
+    const committed = await coordinator.relocate(request())
+    expect(committed).toMatchObject({ ok: true, outcome: 'relocated' })
+    expect(coordinator.hasQueued('t1')).toBe(false)
+  })
+
   it('drops a queued request when the session stops', async () => {
     const coordinator = new ExecutionRootCoordinator(host)
     await coordinator.relocate(request())
