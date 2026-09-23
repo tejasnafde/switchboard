@@ -1,0 +1,458 @@
+[
+  {
+    "id": "bash-simple",
+    "toolName": "Bash",
+    "input": {
+      "command": "npm run typecheck"
+    },
+    "expected": {
+      "label": "Terminal",
+      "detail": "npm run typecheck"
+    }
+  },
+  {
+    "id": "bash-long-command",
+    "toolName": "Bash",
+    "input": {
+      "command": "echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "expected": {
+      "label": "Terminal",
+      "detail": "echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+    },
+    "note": "Command is 205 chars; condensed to 140 with a trailing ellipsis."
+  },
+  {
+    "id": "shell-array-command",
+    "toolName": "shell",
+    "input": {
+      "command": [
+        "git",
+        "status",
+        "--short"
+      ]
+    },
+    "expected": {
+      "label": "Terminal",
+      "detail": "git status --short"
+    },
+    "note": "Codex's real tool name for a shell call is literally \"shell\"; it sends argv as an array where Claude sends a joined string."
+  },
+  {
+    "id": "read-long-path",
+    "toolName": "Read",
+    "input": {
+      "file_path": "/Users/t/projects/switchboard/src/main/index.ts"
+    },
+    "expected": {
+      "label": "Read",
+      "detail": "…/main/index.ts"
+    }
+  },
+  {
+    "id": "read-file-codex-name",
+    "toolName": "read_file",
+    "input": {
+      "path": "/a/b/c/d.ts"
+    },
+    "expected": {
+      "label": "Read",
+      "detail": "…/c/d.ts"
+    },
+    "note": "Codex spelling of Read."
+  },
+  {
+    "id": "write-short-path",
+    "toolName": "Write",
+    "input": {
+      "file_path": "src/App.tsx",
+      "content": "export default {}"
+    },
+    "expected": {
+      "label": "Write",
+      "detail": "src/App.tsx"
+    }
+  },
+  {
+    "id": "write-file-codex-name",
+    "toolName": "write_file",
+    "input": {
+      "path": "notes/todo.md"
+    },
+    "expected": {
+      "label": "Write",
+      "detail": "notes/todo.md"
+    },
+    "note": "Codex spelling of Write."
+  },
+  {
+    "id": "edit-deep-path",
+    "toolName": "Edit",
+    "input": {
+      "file_path": "/repo/src/main/index.ts",
+      "old_string": "a",
+      "new_string": "b"
+    },
+    "expected": {
+      "label": "Edit",
+      "detail": "…/main/index.ts"
+    }
+  },
+  {
+    "id": "edit-rename",
+    "toolName": "Edit",
+    "input": {
+      "file_path": "/repo/src/old-name.ts",
+      "move_path": "/repo/src/new-name.ts"
+    },
+    "expected": {
+      "label": "Rename",
+      "detail": "…/src/old-name.ts → …/src/new-name.ts"
+    },
+    "note": "Desktop was the only surface that special-cased a rename; folded into the shared rule since it is strictly more informative than plain \"Edit\"."
+  },
+  {
+    "id": "multiedit-short-path",
+    "toolName": "MultiEdit",
+    "input": {
+      "file_path": "src/app.ts",
+      "edits": [
+        {
+          "old_string": "a",
+          "new_string": "b"
+        }
+      ]
+    },
+    "expected": {
+      "label": "Edit",
+      "detail": "src/app.ts"
+    }
+  },
+  {
+    "id": "apply-patch-single-file",
+    "toolName": "apply_patch",
+    "input": {
+      "patch": "*** Begin Patch\n*** Update File: src/app/main.ts\n@@\n-a\n+b\n*** End Patch"
+    },
+    "expected": {
+      "label": "Edit",
+      "detail": "…/app/main.ts"
+    },
+    "note": "Codex's apply_patch names its files inside the patch body, not in a file_path field."
+  },
+  {
+    "id": "apply-patch-multi-file",
+    "toolName": "apply_patch",
+    "input": {
+      "patch": "*** Update File: a.ts\n*** Add File: b.ts\n*** Delete File: c.ts"
+    },
+    "expected": {
+      "label": "Edit",
+      "detail": "3 files"
+    }
+  },
+  {
+    "id": "grep-with-path",
+    "toolName": "Grep",
+    "input": {
+      "pattern": "TODO",
+      "path": "/repo/src/main"
+    },
+    "expected": {
+      "label": "Search",
+      "detail": "TODO in …/src/main"
+    }
+  },
+  {
+    "id": "grep-no-path",
+    "toolName": "Grep",
+    "input": {
+      "pattern": "TODO"
+    },
+    "expected": {
+      "label": "Search",
+      "detail": "TODO"
+    }
+  },
+  {
+    "id": "search-files-codex-name",
+    "toolName": "search_files",
+    "input": {
+      "pattern": "FIXME",
+      "path": "apps/android/app/src/main/java"
+    },
+    "expected": {
+      "label": "Search",
+      "detail": "FIXME in …/main/java"
+    },
+    "note": "Codex spelling of Grep."
+  },
+  {
+    "id": "glob-pattern",
+    "toolName": "Glob",
+    "input": {
+      "pattern": "**/*.test.ts"
+    },
+    "expected": {
+      "label": "Find files",
+      "detail": "**/*.test.ts"
+    }
+  },
+  {
+    "id": "webfetch-url-with-query",
+    "toolName": "WebFetch",
+    "input": {
+      "url": "https://docs.example.dev/a/b?c=1"
+    },
+    "expected": {
+      "label": "Fetch",
+      "detail": "docs.example.dev"
+    },
+    "note": "Only the host is shown; a full URL just wraps a narrow row."
+  },
+  {
+    "id": "fetch-long-url-codex-name",
+    "toolName": "fetch",
+    "input": {
+      "url": "https://example.com/very/long/path/that/wraps/around/the/panel/a/b/c"
+    },
+    "expected": {
+      "label": "Fetch",
+      "detail": "example.com"
+    },
+    "note": "Codex spelling of WebFetch."
+  },
+  {
+    "id": "websearch-query",
+    "toolName": "WebSearch",
+    "input": {
+      "query": "React Native gesture handling"
+    },
+    "expected": {
+      "label": "Web search",
+      "detail": "React Native gesture handling"
+    }
+  },
+  {
+    "id": "todowrite-three-items",
+    "toolName": "TodoWrite",
+    "input": {
+      "todos": [
+        1,
+        2,
+        3
+      ]
+    },
+    "expected": {
+      "label": "Plan",
+      "detail": "3 items"
+    }
+  },
+  {
+    "id": "todowrite-one-item",
+    "toolName": "TodoWrite",
+    "input": {
+      "todos": [
+        1
+      ]
+    },
+    "expected": {
+      "label": "Plan",
+      "detail": "1 item"
+    },
+    "note": "Singular \"item\" for a count of one."
+  },
+  {
+    "id": "task-description",
+    "toolName": "Task",
+    "input": {
+      "description": "Audit provider lifecycle for leaks"
+    },
+    "expected": {
+      "label": "Subagent",
+      "detail": "Audit provider lifecycle for leaks"
+    }
+  },
+  {
+    "id": "task-long-prompt",
+    "toolName": "task",
+    "input": {
+      "prompt": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    },
+    "expected": {
+      "label": "Subagent",
+      "detail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+    },
+    "android": false,
+    "note": "The shared TS module caps a Task/Subagent detail at 80 chars (mobile's original rule); native Android applies one uniform 140-char cap to every tool detail (pre-existing, tested in ThreadPresentationTest.everyToolDetailNormalizesWhitespaceAndStopsAt140Characters). Not worth a special-cased length just for this one tool kind."
+  },
+  {
+    "id": "notebookedit-path",
+    "toolName": "NotebookEdit",
+    "input": {
+      "notebook_path": "/repo/notebooks/analysis.ipynb"
+    },
+    "expected": {
+      "label": "Edit notebook",
+      "detail": "…/notebooks/analysis.ipynb"
+    }
+  },
+  {
+    "id": "mcp-search-tool",
+    "toolName": "mcp__notion__search",
+    "input": {
+      "query": "Android density"
+    },
+    "expected": {
+      "label": "mcp__notion__search",
+      "detail": "Android density"
+    },
+    "android": false,
+    "note": "Neither desktop nor mobile ever humanized an mcp__server__tool name - both showed it raw, so that is the shared rule. Native Android already humanizes it to \"Notion · Search\" (pre-existing, tested in ThreadPresentationTest.mcpNamespaceRemainsVisibleEvenWhenTheLeafMatchesABuiltInAlias); downgrading to the raw identifier would be a readability regression, so this is a documented, intentional divergence rather than a bug."
+  },
+  {
+    "id": "mcp-unmatched-tool",
+    "toolName": "mcp__linear__create_issue",
+    "input": {
+      "description": "Track Android density"
+    },
+    "expected": {
+      "label": "mcp__linear__create_issue",
+      "detail": "Track Android density"
+    },
+    "android": false,
+    "note": "Same MCP-humanization divergence as mcp-search-tool."
+  },
+  {
+    "id": "update-plan-codex-name",
+    "toolName": "update_plan",
+    "input": {
+      "plan": [
+        {
+          "step": "a"
+        },
+        {
+          "step": "b"
+        }
+      ]
+    },
+    "expected": {
+      "label": "Plan",
+      "detail": "2 items"
+    },
+    "note": "Codex's own checklist tool (see codex-adapter.ts); a differently-shaped payload (\"plan\" array) than Claude's TodoWrite (\"todos\" array), same concept."
+  },
+  {
+    "id": "agent-alias",
+    "toolName": "agent",
+    "input": {
+      "prompt": "Investigate flaky test"
+    },
+    "expected": {
+      "label": "Subagent",
+      "detail": "Investigate flaky test"
+    },
+    "note": "Desktop treated a bare \"agent\" tool name as an alias for Task/Subagent; mobile did not. Folded into the shared rule."
+  },
+  {
+    "id": "read-file-very-long-path",
+    "toolName": "read_file",
+    "input": {
+      "path": "/Users/tejas/Desktop/projects/switchboard/apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt"
+    },
+    "expected": {
+      "label": "Read",
+      "detail": "…/thread/ThreadPresentation.kt"
+    }
+  },
+  {
+    "id": "opencode-search-kind",
+    "toolName": "search",
+    "input": {
+      "query": "find me"
+    },
+    "expected": {
+      "label": "Search",
+      "detail": "find me"
+    },
+    "note": "\"search\" is the Agent Client Protocol tool-call kind OpenCode reports (opencode-acp-adapter.ts falls back to update.kind for the tool name) - not a Claude/Codex spelling. Native Android already recognized it as a Grep alias; folded into the shared TS rule to match."
+  },
+  {
+    "id": "unknown-tool-command-field",
+    "toolName": "custom_provider_action",
+    "input": {
+      "command": "do the useful thing"
+    },
+    "expected": {
+      "label": "custom_provider_action",
+      "detail": "do the useful thing"
+    },
+    "android": false,
+    "note": "Shared rule shows the raw tool name for an unrecognized tool. Native Android Title-Cases it (\"Custom provider action\", pre-existing, tested in ThreadPresentationTest.unknownAndMcpToolsDegradeToReadableBoundedSummaries); kept as a documented, intentional divergence rather than a regression."
+  },
+  {
+    "id": "unknown-tool-keys-only",
+    "toolName": "WeirdTool",
+    "input": {
+      "alpha": 1,
+      "beta": 2
+    },
+    "expected": {
+      "label": "WeirdTool",
+      "detail": "alpha, beta"
+    },
+    "android": false,
+    "note": "Same unknown-tool label divergence as unknown-tool-command-field; the detail (key names, joined) matches on both surfaces."
+  },
+  {
+    "id": "bash-null-input",
+    "toolName": "Bash",
+    "input": null,
+    "expected": {
+      "label": "Terminal",
+      "detail": ""
+    },
+    "note": "Malformed/missing input never crashes or dumps JSON; the tool is still recognized by name."
+  },
+  {
+    "id": "bash-string-input",
+    "toolName": "Bash",
+    "input": "raw string",
+    "expected": {
+      "label": "Terminal",
+      "detail": ""
+    },
+    "note": "A non-object input (e.g. an already-serialized string that failed to parse) degrades the same way as null."
+  },
+  {
+    "id": "read-null-input",
+    "toolName": "Read",
+    "input": null,
+    "expected": {
+      "label": "Read",
+      "detail": ""
+    }
+  },
+  {
+    "id": "list-files-deep-path",
+    "toolName": "list_files",
+    "input": {
+      "path": "/repo/apps/android/app"
+    },
+    "expected": {
+      "label": "List files",
+      "detail": "…/android/app"
+    }
+  },
+  {
+    "id": "ls-deep-path",
+    "toolName": "LS",
+    "input": {
+      "path": "/repo/apps/android/app"
+    },
+    "expected": {
+      "label": "List files",
+      "detail": "…/android/app"
+    }
+  }
+]
