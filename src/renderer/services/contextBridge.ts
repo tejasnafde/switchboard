@@ -13,6 +13,9 @@
  */
 
 import { getTerminalInstance } from './terminal-registry'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:context-bridge')
 import { useTerminalStore } from '../stores/terminal-store'
 import { useAgentStore } from '../stores/agent-store'
 import { emitSessionActivity } from './session-events'
@@ -346,7 +349,9 @@ export async function sendQuickPrompt(
     emitSessionActivity(agentSid, userMsg.timestamp)
     window.api.app
       .saveMessage({ id: userMsg.id, conversationId: agentSid, role: 'user', content: message })
-      .catch(() => {})
+      .catch((err) => {
+        log.warn(`saveMessage failed for quick-prompt turn on ${agentSid}`, err)
+      })
 
     await window.api.provider?.sendTurn?.(agentSid, message, runtimeMode)
     return true

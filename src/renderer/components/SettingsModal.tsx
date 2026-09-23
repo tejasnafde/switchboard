@@ -141,7 +141,9 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     window.api.app.getProjects().then((rows: LaunchConfigProjectRow[]) => {
       setLaunchConfigProjectRows(rows ?? [])
       if (rows?.length && !selectedLaunchConfigProject) setSelectedLaunchConfigProject(rows[0].path)
-    }).catch(() => {})
+    }).catch((err) => {
+      log.warn('getProjects failed for launch configs tab', err)
+    })
   }, [open, activeTab, selectedLaunchConfigProject])
 
   // When selected project changes, load + parse its yaml
@@ -1552,7 +1554,11 @@ function NotificationToggle() {
     await setNotificationsEnabled(next)
     // Ask for permission when enabling (no-op if already granted/denied)
     if (next && typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      try { await Notification.requestPermission() } catch { /* ignore */ }
+      try {
+        await Notification.requestPermission()
+      } catch (err) {
+        log.debug('Notification.requestPermission failed', err)
+      }
       setPermission(currentNotificationPermission())
     }
   }
@@ -1641,12 +1647,18 @@ function TourTab({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     window.api.settings.get('tour.autoplay').then((v) => {
       setAutoplay(v !== 'false')
-    }).catch(() => {})
+    }).catch((err) => {
+      log.debug('getting tour.autoplay setting failed - keeping default', err)
+    })
   }, [])
 
   const toggleAutoplay = useCallback(async (next: boolean) => {
     setAutoplay(next)
-    try { await window.api.settings.set('tour.autoplay', next ? 'true' : 'false') } catch { /* ignore */ }
+    try {
+      await window.api.settings.set('tour.autoplay', next ? 'true' : 'false')
+    } catch (err) {
+      log.warn('saving tour.autoplay setting failed', err)
+    }
   }, [])
 
   const replay = useCallback((startAt = 0) => {

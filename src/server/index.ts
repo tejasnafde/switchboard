@@ -91,8 +91,9 @@ function stableToken(): string {
   try {
     const existing = readFileSync(file, 'utf8').trim()
     if (existing) return existing
-  } catch {
+  } catch (err) {
     // No token file yet, which is the normal first-run case.
+    log.debug('no stable server token file yet - minting a new one', err)
   }
   const fresh = randomBytes(12).toString('hex')
   try {

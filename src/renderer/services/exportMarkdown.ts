@@ -1,4 +1,7 @@
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:export-markdown')
 
 /**
  * Serialize a chat session to Markdown.
@@ -170,7 +173,9 @@ function summarizeToolCall(_name: string, input: string | object): string {
       if (typeof obj.path === 'string') return obj.path
       if (typeof obj.url === 'string') return obj.url
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    log.debug('tool call input is not summarizable JSON - showing blank summary', err)
+  }
   return ''
 }
 

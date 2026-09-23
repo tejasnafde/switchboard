@@ -16,6 +16,9 @@
  * `node:fs/promises`. Atomic rename works the same on POSIX and NTFS.
  */
 import { promises as fs } from 'node:fs'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('files:writing')
 
 export interface WriteOptions {
   /**
@@ -60,8 +63,9 @@ export async function writeFileSafe(
     const stat = await fs.stat(absPath)
     exists = stat.isFile()
     currentMtimeMs = stat.mtimeMs
-  } catch {
+  } catch (err) {
     // ENOENT - file doesn't exist; create-on-write path is fine.
+    log.debug('stat failed before write, treating as new file', { absPath, err })
   }
 
   if (exists && opts.expectedMtimeMs !== undefined && currentMtimeMs > opts.expectedMtimeMs) {
@@ -77,7 +81,11 @@ export async function writeFileSafe(
     await fs.rename(tmp, absPath)
   } catch (err) {
     // Best-effort cleanup of the .tmp file on failure
-    try { await fs.unlink(tmp) } catch { /* ignore */ }
+    try {
+      await fs.unlink(tmp)
+    } catch (unlinkErr) {
+      log.debug('failed to clean up temp file after write failure', { tmp, unlinkErr })
+    }
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 

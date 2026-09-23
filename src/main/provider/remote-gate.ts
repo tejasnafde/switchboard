@@ -137,8 +137,9 @@ function parsesAsLoggedIn(stdout: string): boolean {
     if (parsed && typeof parsed === 'object') {
       return parsed.loggedIn === true || parsed.logged_in === true
     }
-  } catch {
-    /* not JSON - fall through to the prose form */
+  } catch (err) {
+    // Not JSON - fall through to the prose form.
+    log.debug('codex login probe output is not JSON, falling back to prose parsing', err)
   }
   if (/\bnot logged in\b|\blogged out\b/i.test(text)) return false
   return /\blogged in\b|\bauthenticated\b/i.test(text)

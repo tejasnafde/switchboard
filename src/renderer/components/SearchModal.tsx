@@ -7,6 +7,9 @@ import {
   projectLoadedSearchSession,
   type LoadedSearchSessionMeta,
 } from '../services/searchSessionProjection'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('search-modal')
 
 interface SearchResult {
   messageId: string
@@ -87,8 +90,8 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
           addSession(projectLoadedSearchSession(resp.meta))
           if (resp.messages.length > 0) setMessages(resp.meta.id, resp.messages)
         }
-      } catch {
-        /* best-effort - setActiveSession still fires below */
+      } catch (err) {
+        log.warn(`loadSessionById failed for ${result.conversationId} - best-effort, setActiveSession still fires below`, err)
       }
     }
 

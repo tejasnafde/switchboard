@@ -5,6 +5,9 @@ import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
 import { sessionExecutionRootPath } from '../services/executionRoot'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('command-palette')
 
 interface CommandPaletteProps {
   open: boolean
@@ -100,13 +103,19 @@ function buildCommands(opts: {
         const s = sid ? agents().sessions.find((x) => x.id === sid) : null
         return !!s && (s.status === 'running' || s.status === 'thinking')
       },
-      run: withFocusedSession((sid) => { window.api.provider?.interrupt?.(sid).catch(() => {}) }) },
+      run: withFocusedSession((sid) => {
+        window.api.provider?.interrupt?.(sid).catch((err) => {
+          log.debug(`command-palette interrupt failed for ${sid}`, err)
+        })
+      }) },
     { id: 'chat.clear', group: 'Chat', label: 'Clear all messages in active session',
       run: withFocusedSession((sid) => { agents().clearMessages(sid) }) },
     { id: 'chat.archive', group: 'Chat', label: 'Archive active session',
       run: withFocusedSession((sid) => {
         const s = agents().sessions.find((x) => x.id === sid)
-        window.api.app.archiveConversation(sid, s?.projectPath, s?.title).catch(() => {})
+        window.api.app.archiveConversation(sid, s?.projectPath, s?.title).catch((err) => {
+          log.warn(`archiveConversation failed for ${sid}`, err)
+        })
         agents().removeSession(sid)
       }) },
     { id: 'chat.plan-mode', group: 'Chat', label: 'Runtime mode: Plan (no execution)',

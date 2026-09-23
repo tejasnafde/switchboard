@@ -15,6 +15,10 @@
  * stays testable in isolation and these primitives are easy to reuse.
  */
 
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('agent:jsonl-truncate')
+
 export interface TruncateClaudeOptions {
   /**
    * If provided, every kept line's `sessionId` field is rewritten to
@@ -276,7 +280,9 @@ export function countClaudeVisibleEvents(content: string): number {
     if (!trimmed) continue
     try {
       if (isClaudeVisible(JSON.parse(trimmed))) n++
-    } catch { /* skip malformed */ }
+    } catch (err) {
+      log.debug('skipping malformed JSONL line while counting visible events', err)
+    }
   }
   return n
 }

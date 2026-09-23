@@ -15,6 +15,10 @@
  * has been used in the project, so a fresh project still gets a
  * sensible top-of-list pick.
  */
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:launch-config-usage')
+
 const STORAGE_KEY = 'sb-launch-config-usage'
 
 type UsageMap = Record<string, Record<string, number>>
@@ -33,8 +37,9 @@ function read(): UsageMap {
 function write(map: UsageMap): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(map))
-  } catch {
-    /* localStorage full / unavailable - silently no-op; sort just falls back to alphabetical */
+  } catch (err) {
+    // localStorage full / unavailable - sort just falls back to alphabetical.
+    log.debug('failed to persist launch config usage', err)
   }
 }
 

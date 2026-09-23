@@ -11,6 +11,10 @@
  * React, xterm, or Electron IPC.
  */
 
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('shared:terminal-login-start')
+
 export interface StartTerminalSessionDeps {
   createTerminal: (
     paneId: string,
@@ -91,7 +95,9 @@ export async function startTerminalSession(
     projectPath: params.projectPath,
     agentType: 'terminal',
     title: params.command,
-  }).catch(() => {})
+  }).catch((err) => {
+    log.warn(`createConversation failed for terminal session ${sessionId}`, err)
+  })
   deps.emitSessionCreated({
     id: sessionId,
     projectPath: params.projectPath,

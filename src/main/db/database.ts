@@ -195,7 +195,9 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'pills_meta')) {
       db.exec('ALTER TABLE messages ADD COLUMN pills_meta TEXT')
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    log.warn('messages table migration failed (images/display_body/pills_meta columns)', err)
+  }
 
   // Migration: add `archived` column to conversations if missing
   try {
@@ -258,7 +260,9 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'execution_root_revision')) {
       db.exec('ALTER TABLE conversations ADD COLUMN execution_root_revision INTEGER')
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    log.warn('conversations table migration failed', err)
+  }
 
   // Migration (v0.1.20): track which launch config a session hydrated
   // from, so the per-chat picker can show the correct current selection
@@ -276,7 +280,9 @@ function migrate(db: Database.Database): void {
     } else if (!hasNew) {
       db.exec('ALTER TABLE session_layouts ADD COLUMN launch_config_name TEXT')
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    log.warn('session_layouts table migration failed (launch_config_name column)', err)
+  }
 
   // ─── Workspaces (outer sidebar grouping above projects) ──────────
   // A project belongs to at most one workspace via the nullable
@@ -388,7 +394,9 @@ function migrate(db: Database.Database): void {
       })()
       if (rewrote > 0) log.info(`thread_sessions: flattened ${rewrote} chain row(s) to ultimate roots`)
     }
-  } catch { /* best-effort - flattening can be re-run on next launch */ }
+  } catch (err) {
+    log.warn('thread_sessions chain flattening failed - best-effort, can be re-run on next launch', err)
+  }
 
   // ─── Kanban (v0.1.26) ────────────────────────────────────────────
   // Per-project task cards. `tags` is JSON-encoded (SQLite has no
@@ -424,7 +432,9 @@ function migrate(db: Database.Database): void {
     if (!cols.some((c) => c.name === 'runtime_mode')) {
       db.exec("ALTER TABLE kanban_cards ADD COLUMN runtime_mode TEXT NOT NULL DEFAULT 'accept-edits'")
     }
-  } catch { /* ignore */ }
+  } catch (err) {
+    log.warn('kanban_cards table migration failed (runtime_mode column)', err)
+  }
 
   ensureBookmarksTable(db)
 
@@ -515,7 +525,9 @@ function migrate(db: Database.Database): void {
           SELECT rowid, content, conversation_id, role FROM messages WHERE content != '';
       `)
     }
-  } catch { /* FTS rebuild failed - not critical */ }
+  } catch (err) {
+    log.warn('FTS index rebuild failed - search may miss recent messages until next launch', err)
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS machines (
@@ -2037,7 +2049,12 @@ function normalizeRuntimeMode(raw: string | null | undefined): RuntimeMode {
 
 function rowToCard(r: KanbanRow): KanbanCard {
   let tags: string[] = []
-  try { const parsed = JSON.parse(r.tags); if (Array.isArray(parsed)) tags = parsed.map(String) } catch { /* malformed - show as empty */ }
+  try {
+    const parsed = JSON.parse(r.tags)
+    if (Array.isArray(parsed)) tags = parsed.map(String)
+  } catch (err) {
+    log.debug('kanban card tags JSON malformed - showing as empty', { cardId: r.id, err })
+  }
   return {
     id: r.id,
     projectPath: r.project_path,

@@ -26,6 +26,9 @@ import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
 import { useMessageMutable } from '../../services/messageLifecycle'
 import { buildForwardedContext, forwardingSource, forwardingTargets } from '../../services/chatForwarding'
 import { focusComposer } from '../../services/composerRegistry'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('chat:message-bubble')
 
 interface MessageBubbleProps {
   message: ChatMessage
@@ -171,7 +174,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             code.textContent = originalText
             span.replaceWith(code)
           }
-        }).catch(() => { /* ignore - leave optimistic chip */ })
+        }).catch((err) => {
+          log.debug(`resolveFileCached failed for ${ref.path} - leaving optimistic chip`, err)
+        })
         return span
       })
     }, POST_PROCESS_DEBOUNCE_MS)
@@ -305,7 +310,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    }).catch(() => {})
+    }).catch((err) => {
+      log.warn('failed to copy message text to clipboard', err)
+    })
   }
 
   const handleBookmark = () => {
@@ -712,7 +719,9 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
               canvas.getContext('2d')?.drawImage(imgEl, 0, 0)
               canvas.toBlob((blob) => {
                 if (blob) {
-                  navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch(() => {})
+                  navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]).catch((err) => {
+                    log.warn('failed to copy preview image to clipboard', err)
+                  })
                 }
               }, 'image/png')
             }

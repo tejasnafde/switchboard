@@ -10,6 +10,9 @@ import {
 import type { ChatMessage } from '../../shared/types'
 import { useAgentStore } from '../stores/agent-store'
 import { useLayoutStore } from '../stores/layout-store'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:fork-session')
 
 interface DurableForkIntent {
   requestId: string
@@ -41,13 +44,17 @@ function loadForks(): void {
         intent,
       )
     }
-  } catch { /* backend idempotency remains authoritative */ }
+  } catch (err) {
+    log.warn('failed to load persisted fork intents - backend idempotency remains authoritative', err)
+  }
 }
 
 function saveForks(): void {
   try {
     window.localStorage?.setItem(FORK_STORAGE_KEY, JSON.stringify([...pendingForks.values()]))
-  } catch { /* retries in this renderer still retain the in-memory request id */ }
+  } catch (err) {
+    log.debug('failed to persist fork intents - retries in this renderer still retain the in-memory request id', err)
+  }
 }
 
 async function sha256(value: string): Promise<string> {
