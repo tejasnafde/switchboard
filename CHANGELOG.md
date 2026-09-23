@@ -5,7 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Fixed
-- **Sends are no longer refused after a worktree Follow has already happened.** A Follow queued behind a running turn stayed queued even when another Follow committed the move first, and every send was refused with "Session queue full while the working directory is moving" until the next turn ended. The stale request is dropped the moment a move commits. When the refusal is real, it now reads "This chat is moving to its worktree after the current turn. Send again once the turn ends."
+- **Sends are no longer refused after a worktree Follow has already happened.** A Follow queued behind a running turn stayed queued even when another Follow committed the move first, and every send was refused with "Session queue full while the working directory is moving" until the next turn ended. The stale request is dropped the moment a move commits. When the refusal is real, it now says whether the move is waiting for the current turn or running right now, and when to send again.
 - **A usage window no longer turns red because another window hit its limit.** Codex reports "limit reached" for the whole account without naming the window, and the parser reddened every window, so a weekly window at 16% showed red next to a 5-hour window at 100%. Only the full window (or the fullest one) is marked critical now.
 
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
