@@ -8,6 +8,7 @@
  * Promise until the user decides.
  */
 
+import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { execSync, execFile } from 'child_process'
@@ -566,6 +567,8 @@ interface ActiveSession {
    * the user hasn't sent yet.
    */
   turnStartedAt: number | null
+  /** Messages sent with `priority: 'later'` that the SDK has not started yet. */
+  queuedTurns: number
   /**
    * Effective model id from the last `getContextUsage()` poll, e.g.
    * `claude-fable-5`. The rejection payload never carries the model, yet the
@@ -696,6 +699,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       skills: [],
       models: opts.knownModels?.length ? { models: opts.knownModels, identity: claudeExecutableIdentity() } : null,
       turnStartedAt: null,
+      queuedTurns: 0,
       lastKnownModel: null,
       instanceEnv: opts.resolvedEnv ?? {},
       instanceOauthDir: opts.resolvedOauthDir ?? null,
@@ -717,6 +721,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
+    delivery?: TurnDelivery,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) throw new Error(`Session ${threadId} not found`)
@@ -762,16 +767,22 @@ export class ClaudeAdapter implements ProviderAdapter {
 
     // Push the message into the prompt queue - must match SDKUserMessage shape:
     // { type: 'user', message: MessageParam, parent_tool_use_id: string | null }
+    // Mid-turn, the SDK reads a message at the next tool boundary (a steer).
+    // `later` holds it until the running turn ends: measured, a separate turn.
+    const queued = delivery === 'queue' && active.turnStartedAt != null
     const userMsg: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content },
       parent_tool_use_id: null,
+      ...(queued ? { priority: 'later' as const } : {}),
     } as SDKUserMessage
     active.prompt.push(userMsg)
     // Stamp wall-clock turn start now (not when SDK actually picks it up).
     // The user-perceived "Worked for X" should include any queueing delay
-    // - that's the experience they're judging.
-    active.turnStartedAt = Date.now()
+    // - that's the experience they're judging. A queued message leaves the
+    // running turn's clock alone; its own turn starts when that one ends.
+    if (queued) active.queuedTurns += 1
+    else active.turnStartedAt = Date.now()
     active.watchdog.turnStarted(Date.now())
 
     // If we haven't started the SDK query yet, kick it off now
@@ -1643,6 +1654,12 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
+        // A message queued with `priority: 'later'` starts now, as its own turn.
+        if (active.queuedTurns > 0) {
+          active.queuedTurns -= 1
+          active.turnStartedAt = Date.now()
+          active.watchdog.turnStarted(Date.now())
+        }
         active.onEvent({
           type: 'turn.completed',
           threadId,

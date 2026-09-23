@@ -18,3 +18,16 @@ describe('turn delivery', () => {
     expect(waitsForIdle('claude-code', false, 'queue')).toBe(false)
   })
 })
+
+import { canonicalUserTurnSubmission, validateUserTurnSubmission } from '@shared/provider-events'
+
+describe('turn envelope delivery field', () => {
+  const base = { version: 1 as const, threadId: 't', origin: 'o', providerText: 'hi' }
+  it('leaves the fingerprint of a turn without it unchanged, so retries across the upgrade still match', () => {
+    expect(canonicalUserTurnSubmission(base)).not.toContain('delivery')
+    expect(canonicalUserTurnSubmission({ ...base, delivery: 'queue' })).toContain('"delivery":"queue"')
+  })
+  it('rejects an unknown delivery', () => {
+    expect(() => validateUserTurnSubmission({ ...base, delivery: 'later' })).toThrow(/delivery/)
+  })
+})

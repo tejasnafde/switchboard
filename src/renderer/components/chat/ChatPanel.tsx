@@ -1074,32 +1074,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   }, [setTitle])
 
   // ── Send handler ──────────────────────────────────────────────
-  // Messages queued for after the running turn, oldest first, per pane.
-  // ponytail: in memory only; a queued message is lost if the app quits
-  // mid-turn. Persist through the draft store if that proves to matter.
-  const [queuedSends, setQueuedSends] = useState<Array<{
-    id: string
-    sessionId: string
-    message: string
-    images?: Array<{ file: File; previewUrl: string }>
-    extras?: Parameters<NonNullable<typeof handleSendRef.current>>[3]
-  }>>([])
-  const flushingRef = useRef(false)
-  useEffect(() => {
-    const busy = status === 'running' || status === 'thinking'
-    const next = queuedSends.find((q) => q.sessionId === sessionId)
-    if (busy || !next || flushingRef.current) return
-    flushingRef.current = true
-    setQueuedSends((current) => current.filter((q) => q.id !== next.id))
-    void handleSendRef.current?.(next.message, undefined, next.images, next.extras)
-      .then((result) => {
-        if (!result.accepted && sessionId && !useDraftStore.getState().getDraft(sessionId)) {
-          useDraftStore.getState().setDraft(sessionId, next.message)
-        }
-      })
-      .finally(() => { flushingRef.current = false })
-  }, [status, queuedSends, sessionId])
-
   // The first message of a chat that started as a draft. Sent once, through
   // the ordinary path, by whichever pane shows the new session first.
   const handleSendRef = useRef<typeof handleSend | null>(null)
@@ -1133,12 +1107,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       },
     ): Promise<ChatSendResult> => {
       if (!sessionId) return { accepted: false, error: 'This chat is no longer available.' }
-      // Queued while the agent works: held here and sent through this same
-      // path when the turn ends (see the flush effect below).
-      if (delivery === 'queue') {
-        setQueuedSends((current) => [...current, { id: crypto.randomUUID(), sessionId, message, images, extras }])
-        return { accepted: true }
-      }
       // A draft has no conversation yet: the first send creates one and the
       // message follows it there (services/draftChat).
       if (isDraftSessionId(sessionId)) {
@@ -1285,6 +1253,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         runtimeMode,
         handoff,
         autoTitleText: message,
+        // The backend holds a queued message until the running turn ends.
+        ...(delivery === 'queue' ? { delivery: 'queue' as const } : {}),
       })
 
       // Immediate but honest feedback: this row is keyed exactly like the
@@ -1792,38 +1762,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           <span>{pendingDeliveryState === 'pending' && status === 'idle'
             ? 'Sending…'
             : status === 'thinking' ? 'Thinking…' : 'Working…'}</span>
-        </div>
-      )}
-
-      {queuedSends.some((q) => q.sessionId === sessionId) && (
-        <div data-testid="queued-sends" style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '0 16px 6px' }}>
-          {queuedSends.filter((q) => q.sessionId === sessionId).map((q) => (
-            <div
-              key={q.id}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '5px 9px', fontSize: 11,
-                color: 'var(--text-secondary)', background: 'var(--bg-tertiary)',
-                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
-              }}
-            >
-              <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>Queued</span>
-              <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {q.extras?.displayBody ?? q.message}
-              </span>
-              <button
-                type="button"
-                aria-label="Remove queued message"
-                title="Remove, and put the text back in the composer if it is empty"
-                onClick={() => {
-                  setQueuedSends((current) => current.filter((x) => x.id !== q.id))
-                  if (!useDraftStore.getState().getDraft(q.sessionId)) useDraftStore.getState().setDraft(q.sessionId, q.message)
-                }}
-                style={{ border: 0, background: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 13, lineHeight: 1 }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
         </div>
       )}
 

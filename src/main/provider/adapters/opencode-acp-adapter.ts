@@ -20,6 +20,7 @@
  * SDK's WhatWG-stream API.
  */
 
+import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
@@ -109,6 +110,8 @@ interface ActiveSession {
   availableModels: ModelInfo[]
   /** In-flight prompt promise (so we know a turn is active). */
   inFlightPrompt: Promise<void> | null
+  /** Messages sent with delivery 'queue' while a prompt ran, oldest first. */
+  queuedTurns: Array<{ message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
   /** Accumulates chunk deltas by messageId for text and reasoning blocks. */
@@ -356,6 +359,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       skills: [],
       availableModels: [],
       inFlightPrompt: null,
+      queuedTurns: [],
       turnStartedAt: null,
       assistantMessageText: new Map(),
     }
@@ -488,11 +492,18 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
+    delivery?: TurnDelivery,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) throw new Error(`No OpenCode ACP session: ${threadId}`)
     if (!active.connection || !active.sessionId) {
       throw new Error('OpenCode ACP session not initialized')
+    }
+    // OpenCode cannot take a mid-turn message; a queued one waits here and
+    // is sent when the running prompt settles.
+    if (active.inFlightPrompt && delivery === 'queue') {
+      active.queuedTurns.push({ message, runtimeMode, images })
+      return
     }
     if (active.inFlightPrompt) {
       log.warn(`sendTurn called while turn in progress for ${threadId} - ignoring`)
@@ -572,6 +583,13 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       })
       .finally(() => {
         active.inFlightPrompt = null
+        const next = active.queuedTurns.shift()
+        if (next) {
+          this.sendTurn(threadId, next.message, next.runtimeMode, next.images).catch((err: unknown) => {
+            log.warn(`queued opencode turn failed to start for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+            active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${err instanceof Error ? err.message : String(err)}` })
+          })
+        }
       })
     active.inFlightPrompt = promptPromise
 

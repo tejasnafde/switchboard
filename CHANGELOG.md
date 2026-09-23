@@ -5,7 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Added
-- **Steer or queue a message while the agent works.** Enter steers: the agent reads the message at its next step (Claude and Codex). Alt+Enter, or the Queue button beside Steer, holds it until the turn ends and then sends it as its own turn; queued messages show above the composer with a remove button. OpenCode cannot take a mid-turn message, so there it always queues. On the phone, a chip above the composer switches the next send to queued.
+- **Steer or queue a message while the agent works.** Enter steers: the agent reads the message at its next step (Claude and Codex). Alt+Enter, or the Queue button beside Steer, queues it: it posts at once, the backend holds it, and it runs as its own turn when the current one ends. It survives switching or closing the pane and keeps its images and pills. OpenCode cannot take a mid-turn message, so there it always queues. On the phone, a chip above the composer switches the next send to queued.
 
 ### Fixed
 - **A usage window no longer turns red because another window hit its limit.** Codex reports "limit reached" for the whole account without naming the window, and the parser reddened every window, so a weekly window at 16% showed red next to a 5-hour window at 100%. Only the full window (or the fullest one) is marked critical now.

@@ -60,13 +60,16 @@ try {
   await editor.click()
   await win.keyboard.type('queued message')
   await win.keyboard.press('Alt+Enter')
-  await win.getByTestId('queued-sends').waitFor({ timeout: 3000 })
-  check('Alt+Enter shows a Queued chip', (await win.getByTestId('queued-sends').innerText()).includes('queued message'))
-  await win.getByTestId('queued-sends').waitFor({ state: 'detached', timeout: 30_000 })
-  check('the chip clears once the turn ends', true)
-  await win.getByText('queued message').first().waitFor({ timeout: 15_000 })
+  // The backend holds it: both messages show at once, and a second turn runs
+  // after the first. Two turn completions in a row prove it was not steered.
+  await win.getByText('queued message').first().waitFor({ timeout: 5000 })
+  check('Alt+Enter posts the message at once (the backend holds it)', true)
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ timeout: 30_000 })
+  const worked = await win.getByText(/Worked for/).count()
+  check('the queued message ran as its own turn after the first', worked >= 2, `turns finished: ${worked}`)
+  await win.waitForTimeout(1000)
   const users = q(`SELECT count(*) FROM messages WHERE role = 'user';`)
-  check('the queued text went out as its own user turn', Number(users) === 2, `user rows: ${users}`)
+  check('both user turns are recorded', Number(users) === 2, `user rows: ${users}`)
 } catch (e) {
   check('unexpected error', false, e.message.split('\n')[0])
   await win.screenshot({ path: '/tmp/sb-queue-error.png' }).catch(() => {})

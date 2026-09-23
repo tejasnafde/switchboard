@@ -52,6 +52,12 @@ export interface UserTurnSubmissionV1 {
   runtimeMode?: RuntimeMode
   handoff?: UserTurnHandoffV1
   autoTitleText?: string
+  /**
+   * Mid-turn only: `queue` holds the message until the running turn ends;
+   * absent or `steer` delivers it into the running turn where the provider
+   * can. Needs the `turn_queue_v1` capability; an older backend ignores it.
+   */
+  delivery?: 'steer' | 'queue'
 }
 
 export interface UserTurnResolutionV1 {
@@ -343,6 +349,9 @@ export function validateUserTurnSubmission(input: unknown): UserTurnSubmissionV1
   if (value.autoTitleText !== undefined && typeof value.autoTitleText !== 'string') {
     throw new Error('User turn title text must be text')
   }
+  if (value.delivery !== undefined && value.delivery !== 'steer' && value.delivery !== 'queue') {
+    throw new Error('User turn delivery is invalid')
+  }
   if (value.pillsMeta !== undefined) {
     if (!value.pillsMeta || typeof value.pillsMeta !== 'object' || Array.isArray(value.pillsMeta)) {
       throw new Error('User turn pill metadata is invalid')
@@ -396,6 +405,8 @@ export function canonicalUserTurnSubmission(input: unknown): string {
         }
       : null,
     autoTitleText: value.autoTitleText ?? null,
+    // Only when set, so every fingerprint minted before this field stays identical.
+    ...(value.delivery ? { delivery: value.delivery } : {}),
   })
 }
 

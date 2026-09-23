@@ -1659,6 +1659,31 @@ describe('CodexAdapter', () => {
     expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
   })
 
+  it('holds a queued message during a running turn and starts it when that turn completes', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
+    await adapter.sendTurn('thread-1', 'hello codex')
+    writes.length = 0
+    await adapter.sendTurn('thread-1', 'after this, update the docs', undefined, undefined, 'queue')
+
+    let frames = writes.map((w) => JSON.parse(w))
+    expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
+    expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+    }) + '\n')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    frames = writes.map((w) => JSON.parse(w))
+    const started = frames.find((m) => m.method === 'turn/start')
+    expect(started?.params.input).toEqual([{ type: 'text', text: 'after this, update the docs' }])
+  })
+
   it('waits for an in-flight turn start response before steering a follow-up', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

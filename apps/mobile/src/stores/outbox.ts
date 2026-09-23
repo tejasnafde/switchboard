@@ -215,18 +215,27 @@ function nextPerThread(): QueuedMessage[] {
   return nextDeliverablePerThread(useOutboxStore.getState().messages)
 }
 
+/** True when the backend holds a queued turn itself (`delivery: 'queue'`). */
+function backendQueues(client: ReturnType<typeof getClient>): boolean {
+  return client?.supportsCapability('turn_queue_v1') === true
+}
+
 async function deliver(message: QueuedMessage): Promise<void> {
   const client = getClient(message.connectionId)
   const chat = useChatStore.getState()
   const thread = chat.threads[threadKey(message.connectionId, message.threadId)]
+  // Waits for the turn to end: OpenCode always does, Claude and Codex only
+  // when the user queued it. A backend with turn_queue_v1 does the waiting.
+  const wantsQueue = waitsForIdle(thread?.provider, thread?.status === 'running', message.whenIdle ? 'queue' : 'steer')
   const action = deliveryAction({
     // `isConnected`, not `isAlive`: the latter stays true through a reconnect,
     // so a send with the radio off sat pending for the 200s provider timeout
     // and blocked the queue behind it.
     connected: client?.transport.isConnected?.() ?? client !== undefined,
-    // Claude and Codex take a mid-turn message as a steer; OpenCode cannot,
-    // and a message the user queued waits for the turn to end either way.
-    threadBusy: waitsForIdle(thread?.provider, thread?.status === 'running', message.whenIdle ? 'queue' : 'steer'),
+    // A backend with turn_queue_v1 holds a queued message itself, so it goes
+    // out at once. Only an older backend needs the phone to wait: OpenCode
+    // cannot take a mid-turn message, and a queued one would be steered.
+    threadBusy: wantsQueue && !backendQueues(client),
     // Always true today: the thread row is never removed by the app.
     threadExists: true,
     editing: useOutboxStore.getState().editingId === message.messageId,
@@ -260,6 +269,7 @@ async function deliver(message: QueuedMessage): Promise<void> {
         images: prepared.images,
         runtimeMode: prepared.runtimeMode as RuntimeMode | undefined,
         autoTitleText: prepared.titleCandidate,
+        ...(wantsQueue && backendQueues(client) ? { delivery: 'queue' as const } : {}),
       }),
     })
     const prepared = delivered.message

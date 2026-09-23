@@ -5,6 +5,7 @@
  * via JSON-RPC 2.0 over newline-delimited JSON on stdio.
  */
 
+import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
 import { inferModelTier } from '@shared/models'
@@ -224,6 +225,8 @@ interface ActiveSession {
   models: CatalogCache | null
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
+  /** Messages sent with delivery 'queue' while a turn ran, oldest first. */
+  queuedTurns: Array<{ message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
   /** Active codex turn id (from turn/start response or turn/started); null
    * when idle. Required as `expectedTurnId` to steer a running turn. */
   activeTurnId: string | null
@@ -632,6 +635,7 @@ export class CodexAdapter implements ProviderAdapter {
       skills: null,
       models: opts.knownModels?.length ? { models: opts.knownModels, identity: codexExecutable.current()?.identity ?? null } : null,
       turnStartedAt: null,
+      queuedTurns: [],
       activeTurnId: null,
       turnStartPromise: null,
     }
@@ -804,6 +808,7 @@ export class CodexAdapter implements ProviderAdapter {
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
+    delivery?: TurnDelivery,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.child) throw new Error(`Session ${threadId} not found or not connected`)
@@ -856,6 +861,12 @@ export class CodexAdapter implements ProviderAdapter {
     // turn) rather than starting a concurrent one. Only a fresh turn resets
     // status/timestamp; steering leaves the in-flight turn's clock alone.
     const activeTurnId = active.activeTurnId
+    // Queued, not steered: kept here and started as its own turn once the
+    // running one completes (see turn/completed).
+    if (activeTurnId && delivery === 'queue') {
+      active.queuedTurns.push({ message, runtimeMode, images })
+      return
+    }
     if (activeTurnId) {
       const steer = (expectedTurnId: string) => this.sendRpc(active, 'turn/steer', {
         threadId: active.threadId,
@@ -1560,6 +1571,13 @@ export class CodexAdapter implements ProviderAdapter {
       active.assistantMessageText.clear()
       active.toolOutputText.clear()
       active.activeTurnId = null
+      const next = active.queuedTurns.shift()
+      if (next) {
+        this.sendTurn(threadId, next.message, next.runtimeMode, next.images).catch((err: unknown) => {
+          log.warn(`queued codex turn failed to start for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
+          active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${err instanceof Error ? err.message : String(err)}` })
+        })
+      }
     } else if (method === 'turn/started') {
       active.session.status = 'running'
       if (active.turnStartedAt == null) active.turnStartedAt = Date.now()

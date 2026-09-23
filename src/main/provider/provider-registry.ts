@@ -758,7 +758,7 @@ export class ProviderRegistry implements PeerToolHost {
           if (this.switchingSessions.has(threadId)) {
             throw new TurnNotAcceptedError('Session queue full while a profile switch is in progress')
           }
-          if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId)) {
+          if (adapter.provider === 'opencode' && this.hasOutstandingTurn(threadId) && input.delivery !== 'queue') {
             throw new TurnNotAcceptedError('OpenCode is mid-turn and cannot take another message yet')
           }
           try {
@@ -771,11 +771,13 @@ export class ProviderRegistry implements PeerToolHost {
           }
         },
         dispatch: async () => {
-          const startsNewProviderTurn = adapter.provider !== 'codex' || !this.hasOutstandingTurn(threadId)
+          // A queued message becomes a turn of its own once the running one
+          // ends, so it counts; a Codex steer joins the running turn and does not.
+          const startsNewProviderTurn = adapter.provider !== 'codex' || !this.hasOutstandingTurn(threadId) || input.delivery === 'queue'
           if (startsNewProviderTurn) this.beginOutstandingTurn(threadId)
           releasePreparation()
           try {
-            await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images)
+            await adapter.sendTurn(threadId, input.providerText, input.runtimeMode, input.images, input.delivery)
           } catch (error) {
             if (startsNewProviderTurn) this.finishOutstandingTurn(threadId)
             if (isDefiniteAdapterPreconditionFailure(error, threadId)) {

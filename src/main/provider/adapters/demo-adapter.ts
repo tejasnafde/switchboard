@@ -15,6 +15,7 @@
  *                           emits a genuine `file.edited` (FileDiffCard)
  *   - anything else      -> a short two-sentence reply
  */
+import type { TurnDelivery } from '@shared/turn-delivery'
 import { existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../types'
@@ -59,6 +60,8 @@ const SKILLS: Record<ProviderKind, ProviderSkill[]> = {
 }
 
 interface DemoSession {
+  /** The script now running, so a queued message can wait for it. */
+  running: Promise<void>
   onEvent: (event: RuntimeEvent) => void
   cwd: string
   runtimeMode: RuntimeMode
@@ -78,6 +81,7 @@ export class DemoAdapter implements ProviderAdapter {
       onEvent,
       cwd: opts.cwd,
       runtimeMode: opts.runtimeMode ?? 'sandbox',
+      running: Promise.resolve(),
       cancelled: false,
     }
     this.sessions.set(opts.threadId, session)
@@ -97,16 +101,25 @@ export class DemoAdapter implements ProviderAdapter {
     }
   }
 
-  async sendTurn(threadId: string, message: string, runtimeMode?: RuntimeMode): Promise<void> {
+  async sendTurn(
+    threadId: string,
+    message: string,
+    runtimeMode?: RuntimeMode,
+    _images?: Array<{ url: string; mimeType?: string }>,
+    delivery?: TurnDelivery,
+  ): Promise<void> {
     const session = this.sessions.get(threadId)
     if (!session) throw new Error(`No demo session: ${threadId}`)
     if (runtimeMode) session.runtimeMode = runtimeMode
     session.cancelled = false
-    void this.run(threadId, session, message).catch((err) => {
+    // Like the real adapters: a queued message runs after the current script.
+    const previous = delivery === 'queue' ? session.running : Promise.resolve()
+    const task = previous.then(() => this.run(threadId, session, message)).catch((err) => {
       log.error('demo script failed', err)
       session.onEvent({ type: 'error', threadId, message: err instanceof Error ? err.message : String(err) })
       session.onEvent({ type: 'status', threadId, status: 'idle' })
     })
+    session.running = task
   }
 
   private async run(threadId: string, session: DemoSession, message: string): Promise<void> {

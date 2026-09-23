@@ -7,6 +7,7 @@
  * those for adapter-internal convenience and adds main-only types.
  */
 
+import type { TurnDelivery } from '@shared/turn-delivery'
 import type { ModelOption } from '@shared/models'
 import type { Effect } from 'effect'
 
@@ -117,6 +118,8 @@ export interface ProviderAdapter {
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
+    /** Mid-turn: `queue` holds the message until the running turn ends. */
+    delivery?: TurnDelivery,
   ): Promise<void>
 
   /**
