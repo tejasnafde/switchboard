@@ -9,6 +9,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - Native Android's new-session screen reads the live model catalog from `provider:list-catalog` and reconciles the picked model against it, falling back to the static list on an older backend.
 - Native Android offers `/compact` above the thread feed on a token-heavy, stale Claude chat, mirroring the desktop and React Native compaction-offer banner.
 
+### Fixed
+- **A usage window no longer turns red because another window hit its limit.** Codex reports "limit reached" for the whole account without naming the window, and the parser reddened every window, so a weekly window at 16% showed red next to a 5-hour window at 100%. Only the full window (or the fullest one) is marked critical now.
+
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
 
 ### Added
