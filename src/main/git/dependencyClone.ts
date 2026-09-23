@@ -111,7 +111,9 @@ async function pathExists(p: string, accessFn: AccessFn): Promise<boolean> {
     return true
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code
-    if (code !== 'ENOENT') {
+    if (code === 'ENOENT') {
+      log.debug(`dependency clone: ${p} does not exist`)
+    } else {
       log.warn(`dependency clone: unexpected error checking ${p}: ${err instanceof Error ? err.message : String(err)}`)
     }
     return false

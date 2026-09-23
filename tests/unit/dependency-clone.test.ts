@@ -173,7 +173,7 @@ describe('cloneDependencyDirs', () => {
     }
   })
 
-  it('skips when the source has no node_modules, and never logs (ENOENT is the expected no-op case)', async () => {
+  it('skips when the source has no node_modules, with only a debug log (ENOENT is the expected no-op case)', async () => {
     const root = await makeTempRoot()
     try {
       const sourceRoot = join(root, 'source')
@@ -191,6 +191,7 @@ describe('cloneDependencyDirs', () => {
       // opt-out setting at all.
       expect(isEnabled).not.toHaveBeenCalled()
       expect(mocks.log.warn).not.toHaveBeenCalled()
+      expect(mocks.log.debug).toHaveBeenCalledWith(expect.stringContaining('does not exist'))
     } finally {
       await rm(root, { recursive: true, force: true })
     }
