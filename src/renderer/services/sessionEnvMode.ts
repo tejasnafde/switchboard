@@ -11,6 +11,10 @@
  * The cache pattern mirrors `notifications.ts` - one read on first
  * access, one write to flip; persisted via the existing settings KV.
  */
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:session-env-mode')
+
 export type SessionEnvMode = 'local' | 'worktree'
 
 const SETTING_KEY = 'defaultSessionEnvMode'
@@ -37,8 +41,8 @@ export async function setDefaultSessionEnvMode(mode: SessionEnvMode): Promise<vo
   cached = mode
   try {
     await window.api.settings.set(SETTING_KEY, mode)
-  } catch {
-    /* best-effort */
+  } catch (err) {
+    log.warn('failed to persist defaultSessionEnvMode setting', err)
   }
 }
 

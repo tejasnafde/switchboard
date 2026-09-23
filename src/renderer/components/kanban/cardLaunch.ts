@@ -43,7 +43,9 @@ export async function resolveCardRuntimeMode(
       if (isRuntimeMode(persisted)) {
         return persisted as RuntimeMode
       }
-    } catch { /* fall through */ }
+    } catch (err) {
+      launchLog.debug(`getConversationRuntimeMode failed for ${conversationId} - falling through to card/store default`, err)
+    }
   }
   if (isRuntimeMode(cardRuntimeMode)) return cardRuntimeMode
   return getStoreDefaultRuntimeMode() ?? KANBAN_DEFAULT_RUNTIME_MODE
@@ -160,7 +162,9 @@ export async function launchCardChat(
         const persisted = runtimeModeResult.value
         if (persisted !== existing.runtimeMode) {
           useAgentStore.getState().setRuntimeMode(existing.id, persisted)
-          window.api?.provider?.setRuntimeMode?.(existing.id, persisted).catch(() => {})
+          window.api?.provider?.setRuntimeMode?.(existing.id, persisted).catch((err) => {
+            log('setRuntimeMode failed on reuse', { sessionId: existing.id, err: String(err) })
+          })
         }
       } else {
         log('runtime-mode hydrate failed', { err: String(runtimeModeResult.reason) })
@@ -169,7 +173,9 @@ export async function launchCardChat(
         const res = modelResult.value
         if (res?.model && res.model !== existing.model) {
           useAgentStore.getState().setModel(existing.id, res.model)
-          window.api?.provider?.setModel?.(existing.id, res.model).catch(() => {})
+          window.api?.provider?.setModel?.(existing.id, res.model).catch((err) => {
+            log('setModel failed on reuse', { sessionId: existing.id, err: String(err) })
+          })
         }
       } else {
         log('model hydrate failed', { err: String(modelResult.reason) })
@@ -233,7 +239,9 @@ export async function launchCardChat(
     })
     // Persist the chosen mode against the freshly-created conversation row
     // so subsequent reopens (incl. via card click) restore it.
-    api.app.setConversationRuntimeMode?.(sessionId, runtimeMode).catch(() => {})
+    api.app.setConversationRuntimeMode?.(sessionId, runtimeMode).catch((err) => {
+      log('setConversationRuntimeMode failed after launch', { sessionId, err: String(err) })
+    })
   } catch (err) {
     log('startSession failed', { err: String(err) })
     useAgentStore.getState().updateStatus(sessionId, 'error')

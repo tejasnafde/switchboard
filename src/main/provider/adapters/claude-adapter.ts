@@ -109,7 +109,9 @@ export function resolveClaudeResumeId(threadId: string, hint?: string): string |
     return selectClaudeResumeId(typedId, hint, ids, (id) =>
       claudeCandidateDirs().some((dir) => listClaudeSessionCopies(dir, id).length > 0)
     )
-  } catch { /* DB might not be ready yet - fine, we'll start fresh */ }
+  } catch (err) {
+    log.debug('resolveClaudeResumeId failed - DB might not be ready yet, starting fresh', err)
+  }
   return undefined
 }
 import type {
@@ -298,7 +300,9 @@ function resolveClaudeBin(): string | null {
       env: buildClaudeCliEnv(),
     }).trim().split('\n')[0]
     if (which) return which
-  } catch { /* no global claude - fall through to the SDK-bundled binary */ }
+  } catch (err) {
+    log.debug('no global claude on PATH - falling through to the SDK-bundled binary', err)
+  }
   // Remote VMs may have no linked `claude` at all; the SDK ships its CLI as a
   // per-platform package. Resolve it ourselves and prefer the glibc variant -
   // node's detect-libc misfires to musl on some builds (e.g. a node whose
@@ -341,15 +345,23 @@ function findSdkClaudeBin(): string | undefined {
     const marker = `${sep}@anthropic-ai${sep}`
     const i = main.lastIndexOf(marker)
     if (i >= 0) bases.push(main.slice(0, i + marker.length - 1))
-  } catch { /* not resolvable - the __dirname base still covers the VM */ }
+  } catch (err) {
+    log.debug('@anthropic-ai/claude-agent-sdk not resolvable - the __dirname base still covers the VM', err)
+  }
   for (const base of bases) {
     for (const v of variants) {
       const p = join(base, `claude-agent-sdk-${v}`, bin)
       try {
         execSync(`test -f "${p}"`, { timeout: 2000 })
-        try { execSync(`chmod +x "${p}"`, { timeout: 2000 }) } catch { /* may already be +x */ }
+        try {
+          execSync(`chmod +x "${p}"`, { timeout: 2000 })
+        } catch (chmodErr) {
+          log.debug('chmod +x on SDK-bundled claude binary failed - may already be +x', { p, chmodErr })
+        }
         return p
-      } catch { /* variant not installed - try next */ }
+      } catch (err) {
+        log.debug('claude-agent-sdk binary variant not installed - trying next', { p, err })
+      }
     }
   }
   return undefined
@@ -736,7 +748,9 @@ export class ClaudeAdapter implements ProviderAdapter {
       if (active.query) {
         try {
           await active.query.setPermissionMode(RUNTIME_MODE_TO_PERMISSION[runtimeMode])
-        } catch { /* ignore - best-effort */ }
+        } catch (err) {
+          log.warn(`failed to apply runtime mode ${runtimeMode} to live query`, { threadId, err })
+        }
       }
     }
 
@@ -1295,8 +1309,9 @@ export class ClaudeAdapter implements ProviderAdapter {
     if (!active?.query) return
     try {
       await active.query.interrupt()
-    } catch {
-      // Interrupt may fail if already finished
+    } catch (err) {
+      // Interrupt may fail if already finished - not worth more than a debug line.
+      log.debug(`interrupt failed for ${threadId}, turn was likely already finished`, err)
     }
     log.info(`interrupted: ${threadId}`)
   }
@@ -1446,7 +1461,9 @@ export class ClaudeAdapter implements ProviderAdapter {
           if (rotated) {
             try {
               recordThreadSession(newId, threadId)
-            } catch { /* best-effort, don't break the turn */ }
+            } catch (err) {
+              log.warn('failed to record rotated thread session lineage - best-effort, turn continues', { threadId, newId, err })
+            }
           }
           active.onEvent({
             type: 'session',

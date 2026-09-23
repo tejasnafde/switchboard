@@ -385,7 +385,9 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
             })),
           )
           log.info(`indexed ${messages.length} messages for search`)
-        } catch { /* indexing failed - search won't find these, but load still works */ }
+        } catch (err) {
+          log.warn(`indexing failed for ${filePath} - search won't find these messages, but load still works`, err)
+        }
       }
 
       return messages

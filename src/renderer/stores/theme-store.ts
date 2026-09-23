@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import { updateAllTerminalThemes } from '../services/terminal-registry'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('store:theme')
 
 export type ThemeName = 'dark' | 'light' | 'translucent' | 'system'
 
@@ -17,9 +20,15 @@ function apply(theme: ThemeName) {
   document.documentElement.className = `theme-${resolved}`
   // Mirror for the pre-paint script in index.html (kills the dark first-frame
   // flash before the async settings-DB read lands).
-  try { localStorage.setItem('sb-theme', resolved) } catch { /* quota / private mode - flash is cosmetic */ }
+  try {
+    localStorage.setItem('sb-theme', resolved)
+  } catch (err) {
+    log.debug('failed to mirror theme to localStorage - quota / private mode, flash is cosmetic', err)
+  }
   updateAllTerminalThemes()
-  window.api?.app?.setVibrancy?.(resolved).catch(() => {})
+  window.api?.app?.setVibrancy?.(resolved).catch((err) => {
+    log.warn(`setVibrancy(${resolved}) failed`, err)
+  })
 }
 
 interface ThemeStore {
@@ -34,7 +43,9 @@ export const useThemeStore = create<ThemeStore>((set) => ({
   setTheme: (theme) => {
     apply(theme)
     set({ theme })
-    window.api?.settings?.set('theme', theme).catch(() => {})
+    window.api?.settings?.set('theme', theme).catch((err) => {
+      log.warn(`failed to persist theme setting (${theme})`, err)
+    })
   },
 
   loadSavedTheme: () => {
@@ -43,7 +54,9 @@ export const useThemeStore = create<ThemeStore>((set) => ({
         apply(saved as ThemeName)
         set({ theme: saved as ThemeName })
       }
-    }).catch(() => {})
+    }).catch((err) => {
+      log.warn('failed to load saved theme setting - keeping default', err)
+    })
   },
 }))
 
