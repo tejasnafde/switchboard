@@ -7,6 +7,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ### Changed
 - **No more silent catches.** 132 empty/comment-only `catch` blocks and `.catch(() => {})` handlers across `src/main`, `src/renderer` and `src/server` now log through the module's scoped logger (`log.warn` for real failures, `log.debug` for expected/benign paths), instead of swallowing the error. 12 sites are deliberately left silent with an `eslint-disable-next-line` comment explaining why: 5 in `src/main/logger.ts` (logging a failure inside the logger's own write/init path would recurse), 1 in `src/main/index.ts` (forwarding a renderer console message can throw EPIPE, and the scoped logger risks the same throw), and 6 pointer-capture release/acquire call sites across `App.tsx`, `ResizeHandle.tsx` and `PaneResizeHandle.tsx` (`releasePointerCapture`/`setPointerCapture` throw routinely and are not a bug). A new `no-restricted-syntax` ESLint rule (`src/**` only) rejects both patterns going forward.
 
+### Fixed
+- **A usage window no longer turns red because another window hit its limit.** Codex reports "limit reached" for the whole account without naming the window, and the parser reddened every window, so a weekly window at 16% showed red next to a 5-hour window at 100%. Only the full window (or the fullest one) is marked critical now.
+
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
 
 ### Added
