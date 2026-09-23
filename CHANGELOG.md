@@ -8,6 +8,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - **Steer or queue a message while the agent works.** Enter steers: the agent reads the message at its next step (Claude and Codex). Alt+Enter, or the Queue button beside Steer, holds it until the turn ends and then sends it as its own turn; queued messages show above the composer with a remove button. OpenCode cannot take a mid-turn message, so there it always queues. On the phone, a chip above the composer switches the next send to queued.
 
 ### Fixed
+- **A usage window no longer turns red because another window hit its limit.** Codex reports "limit reached" for the whole account without naming the window, and the parser reddened every window, so a weekly window at 16% showed red next to a 5-hour window at 100%. Only the full window (or the fullest one) is marked critical now.
 - **The composer no longer says "Queue" for a message that steers.** A mid-turn message on Claude or Codex has always been read in the running turn, measured against the Claude SDK and Codex's `turn/steer`, but the button and placeholder promised it would wait.
 
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
@@ -100,7 +101,6 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 - React Native/iOS and native Android are unchanged and staged behind `execution_root_relocation_v1`; neither gained a Follow action. Existing terminal panes are not relocated either - new terminals use the new root, open shells stay where they are.
 - **Settings > About > Diagnostics is collapsed by default.** The page is opened to read a version number far more often than to debug a slow machine, but eleven lines of host trivia sat above the fold permanently. The collapsed row carries a gist - `arm64 - 12 terminals - 259 MiB` - so it previews its own contents instead of being a blind door, and most visits now need no click at all. The snapshot still loads on mount rather than on expand: collecting on click would put a visible "Collecting..." delay on an interaction that should feel instant, and it costs one IPC call either way. The open state persists under `about.diagnosticsExpanded`; an absent key means "no preference" and resolves to collapsed, so older databases need no backfill.
 - **A translated build opens the section for a user who has never answered, and then respects a deliberate close.** An x64 app under Apple silicon translation is slow for a reason the user can fix, and it is the only diagnostic here that is a call to action rather than a fact. It is not re-opened on every visit: the Settings modal unmounts when closed, so forcing it open on each mount discarded a preference the UI had just animated shut and told the user it saved - inert for exactly the population that sees the warning most. The call to action survives the close, because the gist keeps `arm64 translated` on the collapsed row in the warning colour.
-
 
 ## 0.8.58 - Search and pagination in Settings > Archived
 
