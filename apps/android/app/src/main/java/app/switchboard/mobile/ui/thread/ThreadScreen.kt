@@ -1537,8 +1537,9 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
                 modifier = Modifier
                     .width(24.dp)
                     .height(ToolActivityLayoutPolicy.CollapsedRowHeightDp.dp)
-                    .clearAndSetSemantics { }
-                    .testTag(ThreadTestTags.toolStatus(row.key)),
+                    .testTag(ThreadTestTags.toolStatus(row.key))
+                    // Tag first: clearAndSetSemantics drops every semantics modifier after it.
+                    .clearAndSetSemantics { },
                 contentAlignment = Alignment.CenterStart,
             ) {
                 if (row.activityState == ToolActivityState.RUNNING) {
@@ -1584,8 +1585,9 @@ private fun ToolRow(row: ThreadRowPresentation.Tool) {
                     modifier = Modifier
                         .width(24.dp)
                         .height(ToolActivityLayoutPolicy.CollapsedRowHeightDp.dp)
-                        .clearAndSetSemantics { }
-                        .testTag(ThreadTestTags.toolDisclosure(row.key)),
+                        .testTag(ThreadTestTags.toolDisclosure(row.key))
+                        // Tag first: clearAndSetSemantics drops every semantics modifier after it.
+                        .clearAndSetSemantics { },
                     contentAlignment = Alignment.CenterEnd,
                 ) {
                     Text(

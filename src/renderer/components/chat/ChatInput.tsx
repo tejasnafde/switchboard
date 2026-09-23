@@ -1,3 +1,4 @@
+import { USER_MESSAGE_IMAGE_TYPES } from '@shared/provider-events'
 import { useState, useCallback, useMemo, useRef, useEffect, type DragEvent } from 'react'
 import { createRendererLogger } from '../../logger'
 
@@ -1376,7 +1377,7 @@ export function ChatInput({
       <input
         ref={filePickerRef}
         type="file"
-        accept="image/*"
+        accept={USER_MESSAGE_IMAGE_TYPES.join(',')}
         multiple
         onChange={(e) => {
           const files = Array.from(e.target.files ?? [])
