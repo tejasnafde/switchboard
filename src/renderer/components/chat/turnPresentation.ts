@@ -20,6 +20,24 @@ export function isFilesGroupExpanded(
   return showFileDiffCards || expandedGroups.has(groupKey)
 }
 
+/** If `isTarget` matches a message inside a collapsed changed-files group of
+ *  this turn, returns that group's key so the caller can expand it before
+ *  scrolling to the message. Returns null when there's no match, or the
+ *  matching group is already expanded. */
+export function findCollapsedFilesGroupKey(
+  messages: ChatMessage[],
+  isTarget: (message: ChatMessage) => boolean,
+  showFileDiffCards: boolean,
+  expandedGroups: ReadonlySet<string>,
+): string | null {
+  for (const item of projectTurnPresentation(messages)) {
+    if (item.kind !== 'files' || !item.messages.some(isTarget)) continue
+    const groupKey = item.messages[0].id
+    return isFilesGroupExpanded(showFileDiffCards, expandedGroups, groupKey) ? null : groupKey
+  }
+  return null
+}
+
 export function activitySummaryLabel(toolCount: number, durationMs?: number): string {
   const tools = `Used ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`
   const duration = durationMs === undefined ? undefined : fmtDuration(durationMs).replace(/\.0s$/, 's')

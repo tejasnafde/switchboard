@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { groupIntoTurns, roleLabel } from '../../src/renderer/components/chat/MessageList'
-import { activitySummaryLabel, changedFilesLabel, isFilesGroupExpanded, projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
+import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
 
 const messageListSource = readFileSync(new URL('../../src/renderer/components/chat/MessageList.tsx', import.meta.url), 'utf8')
 
@@ -283,6 +283,36 @@ describe('projectTurnPresentation', () => {
     expect(output[0]).toBe(fileA)
     expect(output[1]).toBe(fileB)
     expect(output[2]).toBe(approval)
+  })
+})
+
+describe('findCollapsedFilesGroupKey', () => {
+  const fileA = msg({ id: 'diff-a', fileDiff: {
+    fileEditId: 'turn:a.ts', repoRoot: '/repo', relPath: 'a.ts', changeKind: 'modify',
+    oldContent: 'a', newContent: 'b', status: 'pending',
+  } })
+  const fileB = msg({ id: 'diff-b', fileDiff: {
+    fileEditId: 'turn:b.ts', repoRoot: '/repo', relPath: 'b.ts', changeKind: 'add',
+    oldContent: '', newContent: 'b', status: 'pending',
+  } })
+  const prose = msg({ id: 'prose', content: 'done' })
+  const isTargetB = (m: ChatMessage) => m.id === 'diff-b'
+
+  it('returns the group key when the target is inside a collapsed files group', () => {
+    expect(findCollapsedFilesGroupKey([fileA, fileB, prose], isTargetB, false, new Set())).toBe('diff-a')
+  })
+
+  it('returns null when the group is already expanded (global setting on)', () => {
+    expect(findCollapsedFilesGroupKey([fileA, fileB, prose], isTargetB, true, new Set())).toBeNull()
+  })
+
+  it('returns null when the group is already expanded (locally, by key)', () => {
+    expect(findCollapsedFilesGroupKey([fileA, fileB, prose], isTargetB, false, new Set(['diff-a']))).toBeNull()
+  })
+
+  it('returns null when the target is not in any files group', () => {
+    const isTargetProse = (m: ChatMessage) => m.id === 'prose'
+    expect(findCollapsedFilesGroupKey([fileA, fileB, prose], isTargetProse, false, new Set())).toBeNull()
   })
 })
 
