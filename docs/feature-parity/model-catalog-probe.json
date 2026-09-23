@@ -19,11 +19,18 @@
       ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "model_catalog_probe_v1",
-      "followUpRelease": "Native Android's new-session model selector reads provider:list-catalog; until then it keeps the static list it shows today",
+      "status": "implemented",
       "evidence": [
-        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionScreen.kt"
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClient.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/remote/NewSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/RemoteDecoders.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/remote/ModelCatalogReconcile.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/SwitchboardRemoteClientTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/NewSessionCoordinatorTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/remote/NewSessionWorktreeCreationContractTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/remote/ModelCatalogReconcileTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -54,13 +61,15 @@
       "npm run typecheck",
       "npm test",
       "cd apps/mobile && npx tsc --noEmit -p tsconfig.json",
-      "Built app, isolated profile: window.api.provider.listCatalog returned 5 Claude rows in 1.2 s (including opus -> claude-opus-5-5 and claude-fable-5-1, which the static list lacks) and 4 Codex rows in 3.9 s; a second call returned from cache in 2 ms. No turn was sent."
+      "Built app, isolated profile: window.api.provider.listCatalog returned 5 Claude rows in 1.2 s (including opus -> claude-opus-5-5 and claude-fable-5-1, which the static list lacks) and 4 Codex rows in 3.9 s; a second call returned from cache in 2 ms. No turn was sent.",
+      "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew testDebugUnitTest compileDebugAndroidTestKotlin lintDebug --console=plain"
     ],
     "hardware": [],
     "notExercised": [
       "A remote machine: the call routes by the chat's threadId binding; an instance id the remote does not know probes the remote's default instance.",
       "OpenCode against a real binary; the output parser is unit-tested.",
-      "Mixed versions: a client calling provider:list-catalog on an older backend gets an unknown-channel error, which both clients catch and fall back to the cached or static list."
+      "Mixed versions: a client calling provider:list-catalog on an older backend gets an unknown-channel error, which both clients catch and fall back to the cached or static list.",
+      "The Android new-session screen's live model list was not rendered on a device; NewSessionCoordinator's catalog refresh, the reconcile port to SwitchboardRemoteClient, and ModelCatalogReconcile's ported subset of rules (exact id, resolvedModel, capability-suffix stripping - the bare-family-alias rule is deliberately not ported, see the class doc) are unit-tested. There is no Android emulator in this environment."
     ]
   }
 }

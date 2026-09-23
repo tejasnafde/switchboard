@@ -443,6 +443,29 @@ class SwitchboardRemoteClientTest {
         client.listModels("thread-1") {}
         assertCall(rpc, "provider:list-models", JsonString("thread-1"))
 
+        rpc.reply(
+            JsonArray(
+                listOf(
+                    obj(
+                        "id" to JsonString("claude-opus-5-5"),
+                        "label" to JsonString("Claude Opus 5.5"),
+                        "tier" to JsonString("max"),
+                        "resolvedModel" to JsonString("claude-opus-5-5-20260901"),
+                    ),
+                ),
+            ),
+        )
+        val catalog = mutableListOf<RemoteResponse<List<app.switchboard.mobile.domain.remote.ModelOption>?>>()
+        client.listCatalog("claude-code", "claude-default", catalog::add)
+        assertCall(
+            rpc,
+            "provider:list-catalog",
+            obj("agentType" to JsonString("claude-code"), "instanceId" to JsonString("claude-default")),
+        )
+        val row = (catalog.single().outcome as RemoteOutcome.Success).value!!.single()
+        assertEquals("claude-opus-5-5", row.id)
+        assertEquals("claude-opus-5-5-20260901", row.resolvedModel)
+
         val events = mutableListOf<Pair<TransportScope, RuntimeEventPayload>>()
         val cancel = client.onProviderEvent { scope, event -> events += scope to event }
         rpc.emit(

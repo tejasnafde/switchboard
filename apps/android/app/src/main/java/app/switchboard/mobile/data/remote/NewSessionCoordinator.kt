@@ -5,6 +5,8 @@ import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.CreateConversation
+import app.switchboard.mobile.domain.remote.ModelCatalogReconcile
+import app.switchboard.mobile.domain.remote.ModelOption
 import app.switchboard.mobile.domain.remote.NewSessionDecisions
 import app.switchboard.mobile.domain.remote.NewSessionModelOption
 import app.switchboard.mobile.domain.remote.ProviderInstance
@@ -42,6 +44,15 @@ interface NewSessionRemote {
     fun startSession(
         input: StartSession,
         callback: (RemoteResponse<StartedSession>) -> Unit,
+    )
+
+    /** An instance's live catalog before any session exists. Optional: older
+     *  backends have no `provider:list-catalog` handler, so a coordinator
+     *  must keep working (static list) if this is never called or always fails. */
+    fun listCatalog(
+        agentType: String,
+        instanceId: String?,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
     )
 }
 
@@ -163,6 +174,9 @@ class NewSessionCoordinator(
         "worktree-${ids.nextThreadId()}"
     },
     private val worktreeAvailable: Boolean = false,
+    /** Rejection is expected against an older backend (no `provider:list-catalog`
+     *  handler) - the static list stays, this just names the reason. */
+    private val onCatalogProbeFailed: (String) -> Unit = {},
 ) : Closeable {
     private val mutableState = MutableStateFlow(
         NewSessionState(connectionId, projectPath, projectName, worktreeAvailable = worktreeAvailable),
@@ -171,6 +185,7 @@ class NewSessionCoordinator(
 
     private var allInstances: List<ProviderInstance> = emptyList()
     private var defaultsRequest = 0L
+    private var catalogRequest = 0L
     private var instanceTouched = false
     private var modelTouched = false
     private var requestedDefaultInstanceId: String? = null
@@ -255,6 +270,7 @@ class NewSessionCoordinator(
         instanceTouched = true
         val valid = instanceId?.takeIf { id -> mutableState.value.profiles.any { it.id == id } }
         mutableState.value = mutableState.value.copy(selectedInstanceId = valid, error = null)
+        refreshCatalog()
     }
 
     @Synchronized
@@ -623,6 +639,54 @@ class NewSessionCoordinator(
             },
             loadingDefaults = false,
         )
+        refreshCatalog()
+    }
+
+    /**
+     * The instance's live catalog before any session exists - mirrors the
+     * `liveModels` effect in NewSessionScreen.tsx, keyed the same way (agent
+     * type + resolved instance id). Replaces the static [NewSessionState.modelOptions]
+     * only once a non-empty catalog answers; a rejection (older backend with
+     * no `provider:list-catalog` handler) or an empty answer keeps the static list.
+     */
+    @Synchronized
+    private fun refreshCatalog() {
+        val request = ++catalogRequest
+        val provider = mutableState.value.provider
+        val agentType = NewSessionDecisions.providers.first { it.kind == provider }.agentType
+        val instanceId = mutableState.value.selectedInstanceId ?: mutableState.value.profiles.firstOrNull()?.id
+        remote.listCatalog(agentType, instanceId) { response ->
+            synchronized(this@NewSessionCoordinator) {
+                if (request != catalogRequest) return@listCatalog
+                if (!accepts(response) || provider != mutableState.value.provider) return@listCatalog
+                val currentInstanceId = mutableState.value.selectedInstanceId
+                    ?: mutableState.value.profiles.firstOrNull()?.id
+                if (currentInstanceId != instanceId) return@listCatalog
+                val catalog = when (val outcome = response.outcome) {
+                    is RemoteOutcome.Success -> outcome.value
+                    is RemoteOutcome.Failure -> {
+                        onCatalogProbeFailed(outcome.message)
+                        null
+                    }
+                }
+                if (catalog.isNullOrEmpty()) return@listCatalog
+                applyCatalog(agentType, catalog)
+            }
+        }
+    }
+
+    @Synchronized
+    private fun applyCatalog(agentType: String, catalog: List<ModelOption>) {
+        val covers = ModelCatalogReconcile.coversFor(agentType)
+        val reconciledModelId = ModelCatalogReconcile.reconcileSelectedModel(
+            mutableState.value.selectedModelId,
+            catalog,
+            covers,
+        )
+        mutableState.value = mutableState.value.copy(
+            modelOptions = catalog.map { row -> NewSessionModelOption(row.id, row.label, row.tier) },
+            selectedModelId = reconciledModelId,
+        )
     }
 
     private fun create(value: Launch) {
@@ -755,6 +819,12 @@ class SwitchboardNewSessionRemote(
         input: StartSession,
         callback: (RemoteResponse<StartedSession>) -> Unit,
     ) = client.startSession(input, callback).let { Unit }
+
+    override fun listCatalog(
+        agentType: String,
+        instanceId: String?,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
+    ) = client.listCatalog(agentType, instanceId, callback).let { Unit }
 }
 
 object NewSessionTitle {

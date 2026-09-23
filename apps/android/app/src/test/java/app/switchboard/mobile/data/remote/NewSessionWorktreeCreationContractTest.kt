@@ -866,4 +866,10 @@ private class FakeRemote : NewSessionRemote {
     ) {
         starts += input to callback
     }
+
+    override fun listCatalog(
+        agentType: String,
+        instanceId: String?,
+        callback: (RemoteResponse<List<app.switchboard.mobile.domain.remote.ModelOption>?>) -> Unit,
+    ) = Unit
 }
