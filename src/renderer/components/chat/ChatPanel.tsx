@@ -736,6 +736,30 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           }
           break
         }
+        case 'model.unavailable': {
+          // The adapter already switched to the default; clear the stored pick
+          // so reopening the chat does not bring the retired model back. A
+          // newer pick made before this event arrived is left alone.
+          const current = useAgentStore.getState().sessions.find((s) => s.id === tid)
+          if (current?.model === event.model) {
+            useAgentStore.getState().setModel(tid, '')
+            window.api.app.setConversationModel?.(tid, '').catch((err: unknown) => log.warn('clear retired model failed', err))
+          }
+          // And the machine default, or every new chat would start on it again.
+          if (current && current.type !== 'terminal') {
+            const key = defaultModelSettingKey(current.type)
+            void window.api.settings?.get?.(key).then((stored: string | null) => {
+              if (stored === event.model) return window.api.settings?.set?.(key, '')
+            }).catch((err: unknown) => log.warn('clear retired default model failed', err))
+          }
+          appendMessage(tid, {
+            id: `model_unavailable_${Date.now()}`,
+            role: 'system',
+            content: `${event.model} is not available on this account any more. This chat now uses the default model.`,
+            timestamp: Date.now(),
+          })
+          break
+        }
         case 'model.variants': {
           // Agent-reported variant set for the currently selected model
           // (OpenCode ACP). Drives the chip group next to the model picker.

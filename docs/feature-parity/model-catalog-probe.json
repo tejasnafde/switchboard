@@ -1,0 +1,66 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "model-catalog-probe",
+  "summary": "provider:list-catalog returns a provider instance's live model list without a chat. The backend starts the provider's own process with the instance's credentials, asks for its models (Claude supportedModels on a prompt-less query, Codex model/list, OpenCode `opencode models`) and exits, sending no turn. Results are cached per instance for an hour. The desktop composer and the phone's New Session screen use it, so a model the provider launches after our release is offered before any session exists.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/preload/index.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/NewSessionScreen.tsx",
+        "apps/mobile/src/lib/api.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "model_catalog_probe_v1",
+      "followUpRelease": "Native Android's new-session model selector reads provider:list-catalog; until then it keeps the static list it shows today",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/newsession/NewSessionScreen.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/catalog-probe.ts",
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/usage/codex-usage.ts",
+        "src/shared/ipc-channels.ts",
+        "tests/unit/catalog-probe.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "The backend cache is in memory. The desktop keeps writing the list it shows into its existing per-instance settings cache, as before."
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "apps/mobile/src/screens/NewSessionScreen.tsx"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/catalog-probe.test.ts",
+      "npm run typecheck",
+      "npm test",
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json",
+      "Built app, isolated profile: window.api.provider.listCatalog returned 5 Claude rows in 1.2 s (including opus -> claude-opus-5-5 and claude-fable-5-1, which the static list lacks) and 4 Codex rows in 3.9 s; a second call returned from cache in 2 ms. No turn was sent."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A remote machine: the call routes by the chat's threadId binding; an instance id the remote does not know probes the remote's default instance.",
+      "OpenCode against a real binary; the output parser is unit-tested.",
+      "Mixed versions: a client calling provider:list-catalog on an older backend gets an unknown-channel error, which both clients catch and fall back to the cached or static list."
+    ]
+  }
+}

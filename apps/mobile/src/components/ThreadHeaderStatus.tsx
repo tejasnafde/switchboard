@@ -4,7 +4,7 @@
  */
 import React, { memo } from 'react'
 import { Pressable, StyleSheet, Text, View } from 'react-native'
-import { formatTokens } from '@shared/format'
+import { contextPercent, formatCostUsd, formatTokens } from '@shared/format'
 import { colors, space, statusColor, type } from '../theme'
 import { emptyThread, useChatStore } from '../stores/chat'
 
@@ -16,10 +16,8 @@ export const ThreadHeaderStatus = memo(function ThreadHeaderStatus({
   onPress?: () => void
 }) {
   const thread = useChatStore((s) => s.threads[key]) ?? emptyThread()
-  const pct =
-    thread.usedTokens != null && thread.maxTokens
-      ? Math.min(100, Math.round((thread.usedTokens / thread.maxTokens) * 100))
-      : null
+  const percent = thread.usedTokens != null ? contextPercent(thread.usedTokens, thread.maxTokens) : null
+  const pct = percent == null ? null : Math.round(percent)
 
   return (
     <Pressable
@@ -33,7 +31,7 @@ export const ThreadHeaderStatus = memo(function ThreadHeaderStatus({
           thread.usedTokens != null && thread.maxTokens != null
             ? `${formatTokens(thread.usedTokens)} of ${formatTokens(thread.maxTokens)} tokens`
             : null,
-          thread.costUsd != null ? `cost ${thread.costUsd.toFixed(2)} dollars` : null,
+          thread.costUsd != null ? `cost ${formatCostUsd(thread.costUsd).slice(1)} dollars` : null,
         ]
           .filter(Boolean)
           .join(', ')
@@ -42,7 +40,7 @@ export const ThreadHeaderStatus = memo(function ThreadHeaderStatus({
       <View style={[styles.dot, { backgroundColor: statusColor[thread.status] ?? colors.textFaint }]} />
       {pct != null && <Text style={styles.value}>{pct}%</Text>}
       {thread.costUsd != null && thread.costUsd > 0 && (
-        <Text style={styles.value}>${thread.costUsd.toFixed(2)}</Text>
+        <Text style={styles.value}>{formatCostUsd(thread.costUsd)}</Text>
       )}
     </Pressable>
   )

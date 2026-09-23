@@ -827,19 +827,22 @@ describe('CodexAdapter', () => {
     // gpt-5.6-sol / gpt-5-mini only) has moved on without it.
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
 
     await adapter.startSession({
       threadId: 'thread-1',
       provider: 'codex',
       cwd: '/tmp/project',
       model: 'gpt-4-ancient',
-    }, vi.fn())
+    }, onEvent)
     await adapter.listModels?.('thread-1')
     await adapter.sendTurn('thread-1', 'hello')
 
     const frames = writes.map((line) => JSON.parse(line))
     expect(frames.find((message) => message.method === 'thread/start')?.params.model).toBeUndefined()
     expect(frames.find((message) => message.method === 'turn/start')?.params.model).toBeUndefined()
+    // And the fallback is announced, not silent.
+    expect(onEvent).toHaveBeenCalledWith({ type: 'model.unavailable', threadId: 'thread-1', model: 'gpt-4-ancient' })
   })
 
   it('maps Switchboard approval decisions to Codex accept/decline values', async () => {

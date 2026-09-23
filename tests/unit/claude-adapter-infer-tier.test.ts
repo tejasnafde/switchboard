@@ -86,3 +86,9 @@ describe('inferModelTier across providers', () => {
     expect(inferTier('gpt-5.4-mini')).toBe('fast')
   })
 })
+
+describe('CODEX_MODELS', () => {
+  it('assigns every entry the tier the live catalog would infer, so the badge does not jump', () => {
+    for (const m of CODEX_MODELS) expect(m.tier).toBe(inferTier(m.id))
+  })
+})

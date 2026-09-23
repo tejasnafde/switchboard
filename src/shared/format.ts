@@ -49,3 +49,15 @@ export function formatRelativeTime(timestamp: number): string {
   if (months < 1) return `${weeks}w`
   return `${months}mo`
 }
+
+/** `$0.0032`, `$0.042`, `$1.25`: enough digits that a small cost still shows. */
+export function formatCostUsd(usd: number): string {
+  const digits = usd >= 1 ? 2 : usd >= 0.01 ? 3 : 4
+  return `$${usd.toFixed(digits)}`
+}
+
+/** Share of the context window in use, 0-100; null while the limit is unknown. */
+export function contextPercent(used: number, max: number | null | undefined): number | null {
+  if (!max || max <= 0) return null
+  return Math.min(100, Math.max(0, (used / max) * 100))
+}

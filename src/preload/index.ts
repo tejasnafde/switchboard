@@ -582,6 +582,18 @@ const api = {
     listModels: (threadId: string): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max' }> | null> =>
       transport.invoke(ProviderChannels.LIST_MODELS, threadId),
 
+    /** An instance's live catalog before any session; `threadId` routes it to that chat's machine. */
+    listCatalog: async (req: { threadId?: string; agentType: string; instanceId?: string | null }): Promise<Array<{ id: string; label: string; tier: 'fast' | 'balanced' | 'max'; resolvedModel?: string }>> => {
+      // A remote knows no desktop profile ids: forward the profile's config
+      // dir, exactly as startSession does, so the probe lists that account.
+      const target = routingTable.resolve(ProviderChannels.LIST_CATALOG, [req])
+      if (target !== 'local' && (req.agentType === 'claude-code' || req.agentType === 'codex')) {
+        const seg = await router.invokeOn<string | null>('local', ProviderInstanceChannels.RESOLVE_OAUTH_DIR, req.agentType, req.instanceId)
+        if (seg) return transport.invoke(ProviderChannels.LIST_CATALOG, { ...req, remoteConfigDir: seg })
+      }
+      return transport.invoke(ProviderChannels.LIST_CATALOG, req)
+    },
+
     /**
      * Sessions running on the backend now, whoever started them. Lets this
      * window adopt a chat begun on the phone instead of showing it as idle.

@@ -349,6 +349,11 @@ export class SwitchboardClient {
     return this.transport.invoke(ProviderChannels.LIST_MODELS, threadId)
   }
 
+  /** An instance's live catalog before any session exists (New Session screen). */
+  listCatalog(agentType: string, instanceId?: string | null): Promise<ModelOption[]> {
+    return this.transport.invoke(ProviderChannels.LIST_CATALOG, { agentType, instanceId })
+  }
+
   /** Switch the model on a live thread. No-op server-side if the thread is
    *  unknown or the adapter has no setModel. */
   setModel(threadId: string, model: string): Promise<void> {

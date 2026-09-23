@@ -7,6 +7,7 @@
  * those for adapter-internal convenience and adds main-only types.
  */
 
+import type { ModelOption } from '@shared/models'
 import type { Effect } from 'effect'
 
 export type {
@@ -65,6 +66,8 @@ export interface SessionStartOpts {
    * under the VM user's home; unset uses the provider's default config dir.
    */
   remoteConfigDir?: string
+  /** A fresh catalog-probe result, so the first query can be reconciled. */
+  knownModels?: ModelOption[]
   /**
    * All known config dirs for this agent kind (every enabled instance's
    * resolved oauth_dir, plus the default). Used by adapters to find a

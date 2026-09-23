@@ -1,3 +1,4 @@
+import { formatCostUsd } from '@shared/format'
 import { useAgentStore } from '../stores/agent-store'
 import { useTerminalStore } from '../stores/terminal-store'
 import { useLayoutStore } from '../stores/layout-store'
@@ -62,7 +63,7 @@ export function StatusBar() {
           Hidden when zero or undefined so Claude/Codex sessions stay clean. */}
       {typeof session?.costUsd === 'number' && session.costUsd > 0 && (
         <span title="Cumulative session cost reported by the agent">
-          ${session.costUsd < 0.01 ? session.costUsd.toFixed(4) : session.costUsd.toFixed(3)}
+          {formatCostUsd(session.costUsd)}
         </span>
       )}
 

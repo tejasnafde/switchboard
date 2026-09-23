@@ -224,6 +224,18 @@ export interface RuntimeTodoUpdatedEvent {
   items: TodoItem[]
 }
 
+/**
+ * The chat's picked model is not in the provider's live catalog any more, so
+ * the adapter dropped it and this turn runs on the provider default. Sent so
+ * every client can say so, instead of the fallback happening silently.
+ */
+export interface RuntimeModelUnavailableEvent {
+  type: 'model.unavailable'
+  threadId: string
+  /** The pick that was dropped, e.g. `claude-opus-4-7`. */
+  model: string
+}
+
 export type RuntimeEvent = (
   | RuntimeContentEvent
   | RuntimeUserMessageEvent
@@ -247,6 +259,7 @@ export type RuntimeEvent = (
   | RuntimeWorktreeDriftEvent
   | RuntimeExecutionRootChangedEvent
   | RuntimeSpendBlockedEvent
+  | RuntimeModelUnavailableEvent
   | RuntimeThreadReadEvent
   | RuntimePeerMessageEvent
   | RuntimeTodoUpdatedEvent

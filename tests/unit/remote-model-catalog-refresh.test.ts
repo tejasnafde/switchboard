@@ -20,7 +20,7 @@ import {
   shouldRefreshCatalog,
   type CatalogCache,
 } from '../../src/main/provider/model-catalog'
-import { claudeRowCovers } from '../../src/main/provider/claude-model-alias'
+import { claudeRowCovers } from '@shared/model-reconcile'
 import { CODEX_MODELS, type ModelOption } from '@shared/models'
 
 const live = [

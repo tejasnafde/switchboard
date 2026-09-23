@@ -73,7 +73,8 @@ import {
   type UserTurnSubmissionV1,
   type UserTurnResolutionV1,
 } from '@shared/provider-events'
-import { toAgentProvider } from '@shared/types'
+import { isAgentProvider, toAgentProvider } from '@shared/types'
+import { peekCatalog, probeCatalog } from './catalog-probe'
 
 const log = createLogger('provider:registry')
 
@@ -1137,6 +1138,10 @@ export class ProviderRegistry implements PeerToolHost {
       }
       // Remote: point the provider config env at its durable per-instance dir under this VM's $HOME.
       if (remoteProviderConfig) enrichedOpts.resolvedOauthDir = remoteProviderConfig
+      // A catalog the picker already probed lets the first query be
+      // reconciled before any live list exists. Cache only; never spawns.
+      const knownModels = peekCatalog(agentType, resolvedInstanceId, opts.remoteConfigDir)
+      if (knownModels?.length) enrichedOpts.knownModels = knownModels
       log.info(`startSession resolved instance=${instance?.id ?? '(none)'} oauthDir=${enrichedOpts.resolvedOauthDir ?? '(none)'} candidates=[${candidateOauthDirs.join(', ')}]`)
 
       // Only a *synchronous* session event fired during this startSession call
@@ -1550,6 +1555,11 @@ export class ProviderRegistry implements PeerToolHost {
         log.warn(`listSkills failed for ${threadId}: ${err}`)
         return []
       }
+    })
+
+    this.host.handle(ProviderChannels.LIST_CATALOG, async (req: { threadId?: string; agentType: string; instanceId?: string | null; remoteConfigDir?: string }) => {
+      if (!isAgentProvider(req?.agentType)) return []
+      return probeCatalog(req.agentType, req.instanceId, req.remoteConfigDir)
     })
 
     this.host.handle(ProviderChannels.LIST_MODELS, async (threadId: string) => {

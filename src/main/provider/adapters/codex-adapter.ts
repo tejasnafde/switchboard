@@ -5,6 +5,7 @@
  * via JSON-RPC 2.0 over newline-delimited JSON on stdio.
  */
 
+import { takeTurnDuration } from '../turn-duration'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
 import { inferModelTier } from '@shared/models'
 import { accessSync, constants } from 'fs'
@@ -629,7 +630,7 @@ export class CodexAdapter implements ProviderAdapter {
       toolOutputText: new Map(),
       threadId: resumeThreadId,
       skills: null,
-      models: null,
+      models: opts.knownModels?.length ? { models: opts.knownModels, identity: codexExecutable.current()?.identity ?? null } : null,
       turnStartedAt: null,
       activeTurnId: null,
       turnStartPromise: null,
@@ -820,6 +821,7 @@ export class CodexAdapter implements ProviderAdapter {
     const reconciledModel = reconcileSelectedModel(active.session.model, active.models)
     if (active.session.model && !reconciledModel) {
       log.warn(`codex model ${active.session.model} is no longer in the live catalog for ${threadId} - clearing it so the CLI default takes over`)
+      active.onEvent({ type: 'model.unavailable', threadId, model: active.session.model })
     }
     active.session.model = reconciledModel
 
@@ -1539,9 +1541,7 @@ export class CodexAdapter implements ProviderAdapter {
         active.onEvent({ type: 'status', threadId, status: 'error' })
       } else {
         active.session.status = 'idle'
-        const durationMs =
-          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
-        active.turnStartedAt = null
+        const durationMs = takeTurnDuration(active)
         active.onEvent({
           type: 'turn.completed',
           threadId,

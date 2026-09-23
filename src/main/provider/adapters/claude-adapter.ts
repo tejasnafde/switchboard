@@ -8,6 +8,7 @@
  * Promise until the user decides.
  */
 
+import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { execSync, execFile } from 'child_process'
 import { inferModelTier } from '@shared/models'
@@ -381,6 +382,7 @@ import {
   preferManagedExecutable,
 } from '../managed-bin'
 import { commitCatalog, shouldRefreshCatalog, type CatalogCache } from '../model-catalog'
+import { claudeRowCovers, reconcileSelectedModel } from '@shared/model-reconcile'
 import {
   ensureClaudeSessionResumable,
   locateResumeTranscript,
@@ -692,7 +694,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       partialMessageText: new Map(),
       draining: false,
       skills: [],
-      models: null,
+      models: opts.knownModels?.length ? { models: opts.knownModels, identity: claudeExecutableIdentity() } : null,
       turnStartedAt: null,
       lastKnownModel: null,
       instanceEnv: opts.resolvedEnv ?? {},
@@ -997,8 +999,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       const auth = await probeClaudeLogin(claudeBin, env, active.instanceOauthDir)
       if (!auth.ok) {
         active.onEvent({ type: 'error', threadId, message: auth.message })
-        const durationMs = active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
-        active.turnStartedAt = null
+        const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
         active.currentMessageId = null
         active.currentReasoningMessageId = null
@@ -1027,6 +1028,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       ? buildPeerToolServer(sdk, this.peerHost, threadId)
       : null
 
+    await this.dropUnavailableModel(threadId, active)
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,
       ...(active.session.model ? { model: active.session.model } : {}),
@@ -1202,11 +1204,36 @@ export class ClaudeAdapter implements ProviderAdapter {
         // Empty is never committed, so a probe that raced session startup does
         // not pin this session to the static catalog for its whole life.
         active.models = commitCatalog(active.models, mapped, identity)
+        await this.dropUnavailableModel(threadId, active)
       } catch (err) {
         log.warn(`supportedModels() failed, using cached: ${err}`)
       }
     }
     return active.models?.models ?? []
+  }
+
+  /**
+   * A pick the live catalog no longer covers would fail every turn. Fall back
+   * to the provider default, and tell the clients so the fallback is not
+   * silent. No catalog yet means no evidence, so nothing is dropped.
+   */
+  private async dropUnavailableModel(threadId: string, active: ActiveSession): Promise<void> {
+    const picked = active.session.model
+    if (!picked || reconcileSelectedModel(picked, active.models, claudeRowCovers)) return
+    // Reset the live query first: announcing a default that is not in effect
+    // would leave clients and the query disagreeing. On failure nothing
+    // changes, and the next turn fails loudly on the retired model.
+    if (active.query) {
+      try {
+        await active.query.setModel(undefined)
+      } catch (err) {
+        log.warn(`could not reset ${threadId} to the default model, keeping ${picked}: ${err}`)
+        return
+      }
+    }
+    log.warn(`claude model ${picked} is no longer in the live catalog for ${threadId} - using the default`)
+    active.session.model = undefined
+    active.onEvent({ type: 'model.unavailable', threadId, model: picked })
   }
 
   async setModel(threadId: string, model: string): Promise<void> {
@@ -1614,9 +1641,7 @@ export class ClaudeAdapter implements ProviderAdapter {
         active.currentReasoningMessageId = null
         active.partialMessageText.clear()
 
-        const durationMs =
-          active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
-        active.turnStartedAt = null
+        const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
         active.onEvent({
           type: 'turn.completed',
@@ -1700,8 +1725,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // this is the "no response, nothing" symptom from the 2026-07-25
           // investigation. Mirror the `result` case: clear turn state and emit
           // turn.completed, then flag the error status.
-          const durationMs = active.turnStartedAt != null ? Date.now() - active.turnStartedAt : undefined
-          active.turnStartedAt = null
+          const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
           active.currentMessageId = null
           active.currentReasoningMessageId = null

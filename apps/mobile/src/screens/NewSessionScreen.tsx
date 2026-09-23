@@ -17,7 +17,8 @@ import { agentLabel, providerKindFor, type AgentType, type ProviderInstance } fr
 import type { WorktreeSetupPolicy } from '@shared/worktree-creation'
 import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
-import { modelsForAgent } from '@shared/models'
+import { modelsForAgent, type ModelOption } from '@shared/models'
+import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
 import { isRuntimeMode } from '@shared/session-defaults'
 import type { RootStackParamList } from '../../App'
 import { ModePicker } from '../components/ModePicker'
@@ -132,7 +133,23 @@ export default function NewSessionScreen({ route, navigation }: Props) {
 
   const agentInstances = useMemo(() => profilesFor(instances, provider), [instances, provider])
   const selectedInstance = agentInstances.find((i) => i.id === instanceId) ?? agentInstances[0]
-  const models = useMemo(() => modelsForAgent(agentType), [agentType])
+  // The static list first, then the backend's live catalog for this profile,
+  // so a model launched after this app build is offered here too.
+  const [liveModels, setLiveModels] = useState<ModelOption[] | null>(null)
+  useEffect(() => {
+    setLiveModels(null)
+    let cancelled = false
+    getClient(connectionId)?.listCatalog(agentType, selectedInstance?.id)
+      .then((catalog) => {
+        if (cancelled || !catalog?.length) return
+        setLiveModels(catalog)
+        // A pick the live catalog does not cover would start on a retired model.
+        setModel((picked) => reconcileSelectedModel(picked || undefined, { models: catalog }, coversFor(agentType)) ?? '')
+      })
+      .catch((err: unknown) => log.warn('catalog probe failed, keeping the static list', err))
+    return () => { cancelled = true }
+  }, [connectionId, agentType, selectedInstance?.id])
+  const models = useMemo(() => liveModels ?? modelsForAgent(agentType), [liveModels, agentType])
 
   useEffect(() => {
     if (activeWorktreeCreation) return

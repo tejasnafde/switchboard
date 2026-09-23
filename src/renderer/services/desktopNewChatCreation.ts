@@ -67,6 +67,8 @@ export interface DesktopNewChatIntent {
   /** Picked before the conversation existed; the backend starts the first agent with them. */
   model?: string
   instanceId?: string
+  /** Run in a worktree that already exists instead of the parent checkout. */
+  existingWorktree?: { path: string; branch: string }
 }
 
 export interface AuthoritativeDesktopSession {
@@ -91,6 +93,7 @@ export interface ParentCheckoutCreationIntent {
   agentType: Exclude<AgentType, 'terminal'>
   runtimeMode: RuntimeMode
   title: string
+  existingWorktree?: { path: string; branch: string }
 }
 
 export interface DesktopNewChatState {
@@ -251,6 +254,7 @@ export function createDesktopNewChatCoordinator(
           agentType: intent.agentType,
           runtimeMode: intent.runtimeMode,
           title: 'New conversation',
+          ...(intent.existingWorktree ? { existingWorktree: intent.existingWorktree } : {}),
         }).then((result) => {
           return replaceState({ status: 'ready', creationId, conversationId: result.conversationId })
         })

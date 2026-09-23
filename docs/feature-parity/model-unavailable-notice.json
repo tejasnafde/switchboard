@@ -1,0 +1,69 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "model-unavailable-notice",
+  "summary": "When a chat's picked model is not in the provider's live catalog any more, the composer warns before the send and offers Use default, and the adapter falls back to the provider default and announces it with a model.unavailable event instead of failing every turn (Claude) or falling back silently (Codex). One reconcile function in src/shared decides for both the composer and the adapters, with Claude's alias rules and an exact match for the others.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/stores/chat.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "model_unavailable_notice_v1",
+      "followUpRelease": "Native Android shows the notice in the thread feed; until then WsProtocol treats model.unavailable as an extension event and ignores it, and the backend fallback applies either way",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/WsProtocol.kt"
+      ]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/model-reconcile.ts",
+        "src/shared/provider-events.ts",
+        "src/main/provider/model-catalog.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/codex-adapter.ts",
+        "tests/unit/model-reconcile.test.ts",
+        "tests/unit/remote-model-catalog-refresh.test.ts",
+        "tests/unit/codex-adapter.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/db/database.ts"
+      ]
+    },
+    "updateRelease": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/WsProtocol.kt",
+        "apps/mobile/src/stores/chat.ts"
+      ]
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/model-reconcile.test.ts tests/unit/remote-model-catalog-refresh.test.ts tests/unit/codex-adapter.test.ts",
+      "npm run typecheck",
+      "npm test",
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json && npm test -- --runInBand"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No live Claude or Codex session was driven with a retired model. The Claude path relies on the SDK's setModel(undefined) resetting to the default, which is its documented contract; the Codex path is covered by an adapter test that asserts both the dropped model and the event.",
+      "The composer warning was not rendered in the running app; it is one expression over the cached live catalog and the shared reconcile function, which is unit-tested.",
+      "Mixed versions: an older desktop or phone ignores model.unavailable (React Native's reducer default, Android's extension path); the backend fallback still happens, so the only loss on an old client is the notice."
+    ]
+  }
+}

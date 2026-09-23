@@ -403,6 +403,15 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           }
         case 'session':
           return { sessionId: event.sessionId }
+        case 'model.unavailable':
+          // The backend already fell back to the default; say so in the feed.
+          return {
+            items: [...t.items, {
+              kind: 'notice',
+              id: `model-unavailable-${Date.now()}`,
+              text: `${event.model} is not available on this account any more. This chat now uses the default model.`,
+            }],
+          }
         case 'context_window':
           // Codex emits maxTokens: null while the model limit is unknown -
           // keep a previously-learned limit instead of blanking the meter.

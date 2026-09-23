@@ -11,6 +11,7 @@ import {
   type DraftPayload,
   type ImageAttachment,
 } from '../../stores/draft-store'
+import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
 import {
   modelsForAgent,
   REASONING_EFFORTS,
@@ -174,6 +175,8 @@ export function ChatInput({
   // Prevents the dropdown from being empty on first render.
   const staticModels = modelsForAgent(agentType)
   const [dynamicModels, setDynamicModels] = useState<typeof staticModels | null>(null)
+  // Set once this chat's own session answered; the pre-session catalog never overwrites it.
+  const liveListRef = useRef(false)
 
   // Claude model availability is per account, so the cache key includes the
   // instance - instance A's list must not hydrate instance B's picker.
@@ -202,8 +205,21 @@ export function ChatInput({
       }
     }).catch(() => { /* no cache yet */ })
 
+    // Then the instance's live catalog without waiting for a session, so a
+    // model launched after this release shows up in a new chat. A running
+    // session's own list, once it lands, stays authoritative.
+    liveListRef.current = false
+    if (agentType !== 'terminal') {
+      window.api.provider.listCatalog?.({ threadId: sessionId ?? undefined, agentType, instanceId })
+        .then((catalog) => {
+          if (cancelled || liveListRef.current || !catalog?.length) return
+          persistDynamicModels(catalog)
+        })
+        .catch((err: unknown) => log.warn('catalog probe failed, keeping cached list', err))
+    }
+
     return () => { cancelled = true }
-  }, [agentType, sessionId, persistDynamicModels])
+  }, [agentType, sessionId, instanceId, persistDynamicModels])
 
   // Provider catalogs only exist after startup, so fetch when the first turn
   // activates the session.
@@ -219,6 +235,7 @@ export function ChatInput({
       ;window.api.provider.listModels?.(sessionId).then((models) => {
         if (cancelled) return
         if (models && models.length > 0) {
+          liveListRef.current = true
           persistDynamicModels(models)
         } else if (attempts++ < 4) {
           setTimeout(tryFetch, 500 * (attempts + 1))
@@ -230,6 +247,11 @@ export function ChatInput({
   }, [agentType, sessionId, sessionIsActive, persistDynamicModels])
 
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
+  // Checked against the live (or last cached live) catalog only: the static
+  // list is not evidence that a model was retired.
+  const pickUnavailable = Boolean(model)
+    && Boolean(dynamicModels?.length)
+    && !reconcileSelectedModel(model, { models: dynamicModels ?? [] }, coversFor(agentType))
 
   // Per-session draft - reads from store, updates on every keystroke
   const draft = useDraftStore((s) => (sessionId ? s.drafts[sessionId] ?? '' : ''))
@@ -1365,6 +1387,40 @@ export function ChatInput({
         }}
         style={{ display: 'none' }}
       />
+
+      {/* Before the send: a retired pick would otherwise fall back silently. */}
+      {pickUnavailable && (
+        <div
+          data-model-unavailable-warning
+          style={{
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'center',
+            margin: '0 0 6px',
+            padding: '7px 9px',
+            fontSize: '11px',
+            lineHeight: 1.45,
+            color: 'var(--text-secondary)',
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--warning)',
+            borderRadius: 'var(--radius)',
+          }}
+        >
+          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>!</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {model} is not available on this account any more. Your next message uses the default model, or pick another one.
+          </span>
+          {onModelChange && (
+            <button
+              type="button"
+              onClick={() => onModelChange('')}
+              style={{ border: 0, background: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}
+            >
+              Use default
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Shown before the send: the plan windows read normal in this case. */}
       {spendBlock && (
