@@ -260,6 +260,7 @@ data class RuntimeEventPayload(
             "session.provider",
             "context_window",
             "model.variants",
+            "model.unavailable",
             "plan.proposed",
             "question.asked",
             "question.answered",

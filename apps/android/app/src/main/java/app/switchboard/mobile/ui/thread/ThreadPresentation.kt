@@ -368,6 +368,12 @@ object ThreadPresenter {
                 title = "Earlier messages are not shown",
                 body = item.text,
             )
+        } else if (item.eventType == "model.unavailable") {
+            ThreadRowPresentation.Notice(
+                key = item.id,
+                title = "Model unavailable",
+                body = item.text,
+            )
         } else {
             ThreadRowPresentation.RawNotice(
                 source = item,

@@ -334,6 +334,17 @@ object ThreadStoreReducer {
                 availableVariants = event.availableVariants,
                 currentVariant = event.currentVariant,
             )
+            is ThreadEventPayload.ModelUnavailable -> withJournal.copy(
+                feed = upsert(
+                    withJournal.feed,
+                    FeedItem.RawNotice(
+                        eventId(scoped, "model-unavailable", withJournal.eventJournal.size),
+                        "model.unavailable",
+                        "${event.model} is not available on this account any more. This chat now uses the default model.",
+                        scoped.event.raw,
+                    ),
+                ),
+            )
             is ThreadEventPayload.PlanProposed -> withJournal.copy(
                 feed = upsert(withJournal.feed, FeedItem.Plan("p-${event.planId}", event.planId, event.markdown)),
             )

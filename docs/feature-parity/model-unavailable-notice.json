@@ -18,11 +18,16 @@
       ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "model_unavailable_notice_v1",
-      "followUpRelease": "Native Android shows the notice in the thread feed; until then WsProtocol treats model.unavailable as an extension event and ignores it, and the backend fallback applies either way",
+      "status": "implemented",
       "evidence": [
-        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/WsProtocol.kt"
+        "apps/android/app/src/main/java/app/switchboard/mobile/protocol/WsProtocol.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadModels.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/domain/thread/ThreadEventDecoder.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/domain/thread/ThreadEventDecoderTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadPresentationTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -57,13 +62,15 @@
       "npx vitest run tests/unit/model-reconcile.test.ts tests/unit/remote-model-catalog-refresh.test.ts tests/unit/codex-adapter.test.ts",
       "npm run typecheck",
       "npm test",
-      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json && npm test -- --runInBand"
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json && npm test -- --runInBand",
+      "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew testDebugUnitTest compileDebugAndroidTestKotlin lintDebug --console=plain"
     ],
     "hardware": [],
     "notExercised": [
       "No live Claude or Codex session was driven with a retired model. The Claude path relies on the SDK's setModel(undefined) resetting to the default, which is its documented contract; the Codex path is covered by an adapter test that asserts both the dropped model and the event.",
       "The composer warning was not rendered in the running app; it is one expression over the cached live catalog and the shared reconcile function, which is unit-tested.",
-      "Mixed versions: an older desktop or phone ignores model.unavailable (React Native's reducer default, Android's extension path); the backend fallback still happens, so the only loss on an old client is the notice."
+      "Mixed versions: an older desktop or phone ignores model.unavailable (React Native's reducer default, an old Android build's extension path); the backend fallback still happens, so the only loss on an old client is the notice.",
+      "The Android notice card was not rendered on a device or through Compose UI tests - it reuses the existing RawNotice/Notice row type, and the decoder, reducer, and title/body mapping are unit-tested. There is no Android emulator in this environment."
     ]
   }
 }

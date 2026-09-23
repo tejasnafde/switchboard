@@ -173,6 +173,20 @@ class ThreadStoreReducerTest {
     }
 
     @Test
+    fun modelUnavailableAppendsAFriendlyNoticeWithTheDroppedModelName() {
+        var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
+        state = ingest(state, "mac-a", 1, 1, event("model.unavailable", "model" to s("claude-opus-4-7")))
+
+        val notices = state.thread("mac-a", "thread-1")!!.feed.filterIsInstance<FeedItem.RawNotice>()
+        assertEquals(1, notices.size)
+        assertEquals("model.unavailable", notices.single().eventType)
+        assertEquals(
+            "claude-opus-4-7 is not available on this account any more. This chat now uses the default model.",
+            notices.single().text,
+        )
+    }
+
+    @Test
     fun unknownAndMalformedEventsAppendVisibleRawNotices() {
         var state = reduce(ThreadStoreState(), ThreadAction.Activate("mac-a", 1))
         state = ingest(state, "mac-a", 1, 1, event("provider.future", "payload" to n(3)))
@@ -355,6 +369,7 @@ class ThreadStoreReducerTest {
         event("session.provider", "provider" to s("codex"), "instanceId" to JsonNull, "instanceName" to JsonNull),
         event("context_window", "usedTokens" to n(44), "maxTokens" to n(100), "model" to s("gpt-5.6-luna"), "costUsd" to n("0.5")),
         event("model.variants", "modelId" to s("gpt-5.6-luna"), "availableVariants" to arr(s("low"), s("high")), "currentVariant" to s("high")),
+        event("model.unavailable", "model" to s("claude-opus-4-7")),
         event("plan.proposed", "planId" to s("plan"), "planMarkdown" to s("# Plan")),
         event("question.asked", "requestId" to s("question"), "questions" to arr(question())),
         event("question.answered", "requestId" to s("question"), "answers" to arr(arr(s("A")))),
