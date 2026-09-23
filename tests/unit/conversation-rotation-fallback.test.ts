@@ -31,6 +31,7 @@ const conversations = new Map<string, {
   archived?: number
   last_read_at?: number | null
   pending_handoff_from?: string | null
+  title?: string | null
 }>()
 
 vi.mock('better-sqlite3', () => {
@@ -90,6 +91,13 @@ vi.mock('better-sqlite3', () => {
             const row = conversations.get(id)
             if (!row) return { changes: 0 }
             row.provider_instance_id = instanceId
+            return { changes: 1 }
+          }
+          if (/UPDATE conversations SET title = \?/.test(sql)) {
+            const [title, , id, current] = args as [string, number, string, string]
+            const row = conversations.get(id)
+            if (!row || row.title === current) return { changes: 0 }
+            row.title = title
             return { changes: 1 }
           }
           if (/UPDATE conversations SET runtime_mode = \?/.test(sql)) {
@@ -180,6 +188,7 @@ const {
   getConversationPendingHandoff,
   setConversationPendingHandoff,
   setConversationProviderSelection,
+  updateConversationTitle,
 } = await import('../../src/main/db/database')
 
 beforeEach(() => {
@@ -373,5 +382,15 @@ describe('pending context handoff survives Claude session-id rotation', () => {
   it('returns null when no handoff was ever scheduled', () => {
     conversations.set('agent_789', {})
     expect(getConversationPendingHandoff('agent_789')).toBeNull()
+  })
+})
+
+describe('rename survives Claude session-id rotation', () => {
+  it('writes through a rotated UUID land on the synthetic parent row', () => {
+    conversations.set('agent_123', { title: 'Old' })
+    threadSessions.set('uuid-abc', 'agent_123')
+    expect(updateConversationTitle('uuid-abc', 'New')).toBe(true)
+    expect(conversations.get('agent_123')?.title).toBe('New')
+    expect(conversations.has('uuid-abc')).toBe(false)
   })
 })

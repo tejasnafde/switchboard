@@ -941,7 +941,7 @@ export function updateConversationSessionId(id: string, sessionId: string): void
 export function updateConversationTitle(id: string, title: string): boolean {
   const info = getDb().prepare(
     'UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND title IS NOT ?'
-  ).run(title, Date.now(), id, title)
+  ).run(title, Date.now(), resolveRootThreadId(id), title)
   return info.changes > 0
 }
 
