@@ -386,6 +386,7 @@ export {
 } from '../policy'
 import { decidePermission, CUSTOM_UI_TOOLS, denialMessage, notebookWriteRedirect } from '../policy'
 import { notebookManager } from '../../notebooks/manager'
+import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
 import { applyEnvOverlay } from '../env-overlay'
 import { applyClaudeHome, canonicalClaudeHome } from '../claude-home'
 import {
@@ -1052,6 +1053,13 @@ export class ClaudeAdapter implements ProviderAdapter {
     // an unset systemPrompt is the EMPTY string (verified against sdk.mjs), so
     // passing a plain string adds exactly this text and nothing else.
     const notebookPrompt = notebookManager.systemPromptFor(threadId)
+    // Agent digest rule, appended the same way. Deliberately NOT using
+    // `{ type: 'preset', preset: 'claude_code', append: ... }` - that would
+    // pull in the whole Claude Code preset prompt, which is not what users
+    // get today when there is no notebook guidance. Concatenating plain
+    // strings keeps today's "no systemPrompt at all" baseline intact and
+    // only adds this one rule.
+    const systemPrompt = [notebookPrompt, AGENT_DIGEST_PROMPT_RULE].filter(Boolean).join('\n\n')
 
     // Cross-session messaging, as two in-process MCP tools. Built per query
     // because the server binds to this thread id, which is what makes
@@ -1064,7 +1072,7 @@ export class ClaudeAdapter implements ProviderAdapter {
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,
       ...(active.session.model ? { model: active.session.model } : {}),
-      ...(notebookPrompt ? { systemPrompt: notebookPrompt } : {}),
+      ...(systemPrompt ? { systemPrompt } : {}),
       ...(peerTools ? { mcpServers: { [PEER_TOOL_SERVER_NAME]: peerTools } } : {}),
       permissionMode,
       // Always enable the dangerously-skip-permissions CLI flag so the user

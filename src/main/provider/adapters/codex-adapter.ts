@@ -6,6 +6,7 @@
  */
 
 import type { TurnDelivery } from '@shared/turn-delivery'
+import { AGENT_DIGEST_PROMPT_RULE } from '@shared/agent-digest'
 import { takeTurnDuration } from '../turn-duration'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
 import { inferModelTier } from '@shared/models'
@@ -733,6 +734,7 @@ export class CodexAdapter implements ProviderAdapter {
             cwd: session.cwd,
             approvalPolicy,
             sandbox,
+            developerInstructions: AGENT_DIGEST_PROMPT_RULE,
             ...codexReviewer(session.runtimeMode),
             ...(session.model ? { model: session.model } : {}),
           })
@@ -918,6 +920,11 @@ export class CodexAdapter implements ProviderAdapter {
           cwd: active.session.cwd,
           approvalPolicy,
           sandbox,
+          // `developerInstructions` layers on top of Codex's own base
+          // instructions (unlike `baseInstructions`, which replaces them) -
+          // the same "append, don't replace" contract as Claude's
+          // `systemPrompt` preset `append` above.
+          developerInstructions: AGENT_DIGEST_PROMPT_RULE,
           ...codexReviewer(active.session.runtimeMode),
           ...(active.session.model ? { model: active.session.model } : {}),
         })

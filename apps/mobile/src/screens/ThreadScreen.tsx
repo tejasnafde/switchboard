@@ -34,6 +34,7 @@ import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conve
 import type { ModelOption } from '@shared/models'
 import { fmtDuration, formatTokens, contextPercent } from '@shared/format'
 import { echoMessageId } from '@shared/provider-events'
+import { stripDigest } from '@shared/agent-digest'
 import { VIEWING_RENEW_MS } from '@shared/push-policy'
 import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
@@ -1108,7 +1109,10 @@ export const TextItem = memo(function TextItem({
 
   return (
     <Pressable style={styles.itemBlock} onLongPress={onLongPress} disabled={!onLongPress}>
-      <Markdown text={item.text} />
+      {/* <agent_digest> status tags drive the thread-list preview, not the
+          transcript - stripped here the same way the desktop MessageBubble
+          strips them. See @shared/agent-digest. */}
+      <Markdown text={stripDigest(item.text)} />
       {item.done && item.durationMs != null && (
         <Text style={styles.durationText}>Worked for {fmtDuration(item.durationMs)}</Text>
       )}

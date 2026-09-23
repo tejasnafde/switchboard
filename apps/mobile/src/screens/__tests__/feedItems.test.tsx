@@ -103,4 +103,21 @@ describe('TextItem', () => {
     const v = renderComponent(<TextItem item={row({ done: false, durationMs: 1500 })} />)
     expect(v.texts().join(' ')).not.toMatch(/worked for/i)
   })
+
+  it('strips a complete <agent_digest> tag instead of showing it raw', () => {
+    const v = renderComponent(
+      <TextItem item={row({ text: 'Working on it.\n\n<agent_digest>Writing tests</agent_digest>' })} />,
+    )
+    const text = v.texts().join(' ')
+    expect(text).toContain('Working on it.')
+    expect(text).not.toContain('agent_digest')
+    expect(text).not.toContain('Writing tests')
+  })
+
+  it('hides a still-streaming, unclosed <agent_digest> tag', () => {
+    const v = renderComponent(<TextItem item={row({ text: 'Working on it. <agent_dig', done: false })} />)
+    const text = v.texts().join(' ')
+    expect(text).toContain('Working on it.')
+    expect(text).not.toContain('agent_dig')
+  })
 })

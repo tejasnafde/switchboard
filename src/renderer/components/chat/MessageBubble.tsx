@@ -20,6 +20,7 @@ import {
 } from '../../services/forkSession'
 import { isForkableForkMessage } from '@shared/conversation-fork'
 import { parseRotationMarker } from './rotationMarker'
+import { stripDigest } from '@shared/agent-digest'
 import { TodoList } from './TodoList'
 import { useBookmarkStore } from '../../stores/bookmark-store'
 import { MarkdownWithCopyControls } from './MarkdownWithCopyControls'
@@ -96,9 +97,13 @@ function resolveFileCached(projectPath: string, path: string): Promise<boolean> 
 export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve, hideTurnDuration = false }: MessageBubbleProps) {
   const markdownContent = useMemo(() => {
     if (!message.content) return ''
+    // Strip <agent_digest> status tags - they drive the sidebar/kanban
+    // previews (see @shared/agent-digest), not the chat transcript. Raw
+    // stored text is untouched; this only affects what renders here.
+    const stripped = stripDigest(message.content)
     // Escape lone tildes used as "approximately" (e.g. ~34) so they don't
     // pair up into ~~strikethrough~~ in GFM markdown.
-    const escaped = message.content.replace(/~(\d)/g, '\\~$1')
+    const escaped = stripped.replace(/~(\d)/g, '\\~$1')
     return escaped
   }, [message.content])
 
@@ -306,7 +311,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   }
 
   const handleCopy = () => {
-    const text = message.content || ''
+    const text = stripDigest(message.content || '')
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)

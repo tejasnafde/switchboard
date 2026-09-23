@@ -440,6 +440,14 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       })
       log.info(`acp initialize: protocolVersion=${init.protocolVersion} agent=${init.agentInfo?.name ?? 'unknown'} ${init.agentInfo?.version ?? ''}`)
 
+      // No agent-digest prompt rule here: ACP's `NewSessionRequest` carries
+      // only `cwd`/`mcpServers`/`additionalDirectories` (checked against
+      // @agentclientprotocol/sdk's types.gen.d.ts) - there is no
+      // system/developer instructions seam to append it to, and `prompt`
+      // content blocks are the user's own message, not an instructions
+      // channel. OpenCode sessions do not get the digest rule; previews
+      // for them fall back to today's behavior. See
+      // docs/feature-parity/agent-digest.json.
       const newSession: NewSessionResponse = await connection.newSession({
         cwd: opts.cwd,
         mcpServers: [],

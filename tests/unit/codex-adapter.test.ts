@@ -509,6 +509,24 @@ describe('CodexAdapter', () => {
     }])
   })
 
+  it('sends the agent-digest rule as developerInstructions on thread/start', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const { AGENT_DIGEST_PROMPT_RULE } = await import('../../src/shared/agent-digest')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({
+      threadId: 'thread-1',
+      provider: 'codex',
+      cwd: '/tmp/project',
+      runtimeMode: 'sandbox',
+    }, vi.fn())
+    await adapter.sendTurn('thread-1', 'hello codex')
+
+    const messages = writes.map((line) => JSON.parse(line))
+    const threadStart = messages.find((message) => message.method === 'thread/start')
+    expect(threadStart.params.developerInstructions).toBe(AGENT_DIGEST_PROMPT_RULE)
+  })
+
   it('starts a codex thread before sending the first turn with v2 input', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()
@@ -586,11 +604,13 @@ describe('CodexAdapter', () => {
       resumeSessionId: 'codex-thread-existing',
     }, vi.fn())
 
+    const { AGENT_DIGEST_PROMPT_RULE } = await import('../../src/shared/agent-digest')
     const messages = writes.map((line) => JSON.parse(line))
     expect(messages.find((message) => message.method === 'thread/resume')).toMatchObject({
       params: {
         threadId: 'codex-thread-existing',
         cwd: '/tmp/project',
+        developerInstructions: AGENT_DIGEST_PROMPT_RULE,
       },
     })
 
