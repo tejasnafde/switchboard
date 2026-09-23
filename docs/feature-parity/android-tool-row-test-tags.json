@@ -1,0 +1,28 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "android-tool-row-test-tags",
+  "summary": "Native Android tool rows put their status and disclosure test tags before clearAndSetSemantics, which drops every semantics modifier after it. With the tag after it no node carried the tag, so five ThreadScreenRegressionTest cases have failed since the Compose job was added on 2026-09-03. Accessibility is unchanged: both slots still expose no semantics of their own.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "Android-only Compose modifier order; the desktop renders tool rows in React." },
+    "reactNativeIos": { "status": "not_applicable", "reason": "Android-only Compose modifier order; React Native has its own tool row component." },
+    "nativeAndroid": {
+      "status": "implemented",
+      "evidence": [
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/androidTest/java/app/switchboard/mobile/ui/thread/ThreadScreenRegressionTest.kt"
+      ]
+    },
+    "sharedBackendApi": { "status": "not_applicable", "reason": "No wire or backend change." },
+    "storageDataMigration": { "status": "not_applicable", "reason": "No stored data." },
+    "updateRelease": { "status": "not_applicable", "reason": "The Android release lane is manual; this changes only test tags and ships with the next APK." }
+  },
+  "verification": {
+    "automated": [
+      "cd apps/android && ./gradlew compileDebugAndroidTestKotlin testDebugUnitTest",
+      "GitHub Actions: Compose UI tests (ThreadScreenRegressionTest) on the pull request"
+    ],
+    "hardware": [],
+    "notExercised": ["No local emulator; the Compose run on the pull request is the verification."]
+  }
+}
