@@ -6,6 +6,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 
 ### Fixed
 - **Renaming a chat after Claude rotated its session id did nothing.** `updateConversationTitle` matched the raw id, so the update touched no rows and no broadcast fired. It resolves through `resolveRootThreadId` like the other per-conversation setters now, with a rotation test.
+- **The Android tool-row Compose tests pass for the first time.** Five `ThreadScreenRegressionTest` cases failed from the day the Compose job was added (2026-09-03): the status and disclosure slots set `testTag` after `clearAndSetSemantics`, which drops every semantics modifier after it, so no node carried the tag. The tag comes first now; the slots still expose no semantics of their own.
 - **Crash paths reach the on-disk log.** Uncaught exceptions, unhandled rejections and a database that fails to open wrote only to stdout, so a packaged app kept no trace of them.
 - **Model tier badges were wrong for some OpenCode models.** The composer guessed tiers by substring, so `gemini-2.5-pro` and `minimax` models read as fast because they contain "mini". One `inferModelTier` in `shared/models` matches whole tokens and replaces the three copies in the Claude adapter, Codex adapter and composer.
 
