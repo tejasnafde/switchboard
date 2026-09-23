@@ -61,6 +61,14 @@ export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SES
       <div className="sidebar-section-label">Recents</div>
       {visibleItems.map((item) => {
         const statusLabel = item.status ? STATUS[item.status] : null
+        // For 'working'/'done' the agent's own digest line is more useful
+        // than a static "Working"/"Done" word - it says WHAT is happening,
+        // not just that something is. Approval/input/failed keep their
+        // label: those are short, urgent states where the badge word
+        // itself is the point.
+        const showPreviewInBadge = item.previewLine !== undefined
+          && (item.status === 'working' || item.status === 'done')
+        const badgeText = showPreviewInBadge ? item.previewLine : statusLabel
         return (
           <button
             key={`${item.machineId}:${item.session.id}`}
@@ -70,10 +78,14 @@ export function RecentSessionsSection({ items, initialLimit = DEFAULT_RECENT_SES
             onClick={() => onSelect(item)}
           >
             <span className="sidebar-recent-title">{item.session.title}</span>
-            {statusLabel && item.status ? (
-              <span className={`sidebar-recent-status ${item.status}`}>
+            {badgeText && item.status ? (
+              <span className={`sidebar-recent-status ${item.status}`} title={showPreviewInBadge ? item.previewLine : undefined}>
                 <StatusIcon status={item.status} />
-                <span>{statusLabel}</span>
+                <span className="sidebar-recent-status-text">{badgeText}</span>
+              </span>
+            ) : item.previewLine ? (
+              <span className="sidebar-recent-detail sidebar-recent-preview" title={item.previewLine}>
+                {item.previewLine}
               </span>
             ) : (
               <span className="sidebar-recent-detail">{formatRelativeTime(item.session.startedAt)}</span>

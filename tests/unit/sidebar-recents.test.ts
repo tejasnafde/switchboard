@@ -119,6 +119,62 @@ describe('deriveRecentSessions', () => {
     ])
   })
 
+  it('surfaces the agent digest as previewLine when the last assistant message has one', () => {
+    const result = deriveRecentSessions({
+      localProjects: [project()],
+      remoteProjects: {},
+      liveSessions: [
+        {
+          id: 'running',
+          machineId: 'local',
+          status: 'running',
+          messages: [
+            {
+              id: 'm1',
+              role: 'assistant',
+              content: 'I will start by looking at <agent_digest>Reading cost tracking code</agent_digest>',
+              timestamp: 100,
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(result.find((item) => item.session.id === 'running')?.previewLine).toBe(
+      'Reading cost tracking code',
+    )
+  })
+
+  it('falls back to a truncated raw preview when the assistant reported no digest', () => {
+    const longText = 'a'.repeat(120)
+    const result = deriveRecentSessions({
+      localProjects: [project()],
+      remoteProjects: {},
+      liveSessions: [
+        {
+          id: 'running',
+          machineId: 'local',
+          status: 'running',
+          messages: [{ id: 'm1', role: 'assistant', content: longText, timestamp: 100 }],
+        },
+      ],
+    })
+
+    const preview = result.find((item) => item.session.id === 'running')?.previewLine
+    expect(preview).toBeDefined()
+    expect(preview!.length).toBe(70)
+  })
+
+  it('leaves previewLine undefined for a session with no live entry', () => {
+    const result = deriveRecentSessions({
+      localProjects: [project()],
+      remoteProjects: {},
+      liveSessions: [],
+    })
+
+    expect(result.every((item) => item.previewLine === undefined)).toBe(true)
+  })
+
   it('marks a retained worktree recovery as failed without a live chat session', () => {
     const recoverable = {
       id: 'recoverable',

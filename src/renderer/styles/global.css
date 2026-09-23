@@ -809,14 +809,34 @@ html, body, #root {
   font-variant-numeric: tabular-nums;
 }
 
+/* A digest/raw-text preview can run much longer than a timestamp, so
+   (unlike the plain relative-time case above) it needs to shrink and
+   truncate instead of pushing the row title off. */
+.sidebar-recent-detail.sidebar-recent-preview {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-recent-status {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
   font-size: 10.5px;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
+}
+
+.sidebar-recent-status-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-recent-status.approval { color: var(--warning); }

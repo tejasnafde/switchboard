@@ -107,6 +107,7 @@ import app.switchboard.mobile.domain.composer.OutboxUiAction
 import app.switchboard.mobile.domain.outbox.OutboxDeliveryState
 import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.remote.ApprovalDecision
+import app.switchboard.mobile.domain.thread.AgentDigest
 import app.switchboard.mobile.domain.thread.FeedItem
 import app.switchboard.mobile.domain.remote.RuntimeMode
 import app.switchboard.mobile.domain.remote.ProviderSkill
@@ -1562,7 +1563,12 @@ private fun TextRow(
                 overflow = TextOverflow.Ellipsis,
             )
         } else {
-            ThreadRichText(row.source.text)
+            // <agent_digest> status tags drive the conversation-list preview
+            // (see BrowseScreen.kt), not the transcript - stripped here the
+            // same way the desktop MessageBubble strips them. streaming =
+            // !done, so a finished message that merely quotes the tag
+            // literally is not chopped off.
+            ThreadRichText(AgentDigest.stripDigest(row.source.text, streaming = !row.source.done))
         }
         if (reasoning) {
             TextButton(

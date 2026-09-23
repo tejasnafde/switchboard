@@ -28,6 +28,7 @@ import { getClient } from '../stores/connections'
 import { useChatStore, threadKey } from '../stores/chat'
 import { UnreadPill } from '../components/UnreadPill'
 import { conversationSourceLabel } from '../lib/conversationSource'
+import { threadPreviewLine } from '../lib/threadPreview'
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
 
@@ -39,16 +40,24 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Conversations'>
 const RowMeta = memo(function RowMeta({ threadKeyStr, title }: { threadKeyStr: string; title: string }) {
   const unread = useChatStore((s) => s.threads[threadKeyStr]?.unread ?? 0)
   const status = useChatStore((s) => s.threads[threadKeyStr]?.status)
+  const preview = useChatStore((s) => threadPreviewLine(s.threads[threadKeyStr]?.items ?? []))
   return (
-    <View style={styles.titleLine}>
-      {status != null && (
-        <View style={[styles.statusDot, { backgroundColor: statusColor[status] ?? colors.textFaint }]} />
+    <>
+      <View style={styles.titleLine}>
+        {status != null && (
+          <View style={[styles.statusDot, { backgroundColor: statusColor[status] ?? colors.textFaint }]} />
+        )}
+        <Text style={styles.title} numberOfLines={1}>
+          {title}
+        </Text>
+        <UnreadPill count={unread} />
+      </View>
+      {preview != null && (
+        <Text style={styles.preview} numberOfLines={1}>
+          {preview}
+        </Text>
       )}
-      <Text style={styles.title} numberOfLines={1}>
-        {title}
-      </Text>
-      <UnreadPill count={unread} />
-    </View>
+    </>
   )
 })
 
@@ -419,5 +428,9 @@ const styles = StyleSheet.create({
   time: {
     ...type.monoSm,
     color: colors.textFaint,
+  },
+  preview: {
+    ...type.monoSm,
+    color: colors.textDim,
   },
 })

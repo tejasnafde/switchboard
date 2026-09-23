@@ -1,4 +1,5 @@
 import type { AgentStatus, ChatMessage, Project, SessionSummary } from '@shared/types'
+import { sessionPreviewLine } from '../../services/sessionPreview'
 
 export interface RecentLiveSession {
   id: string
@@ -37,6 +38,13 @@ export interface RecentSessionItem {
   projectName: string
   machineId: string
   status?: RecentSessionStatus
+  /**
+   * Live, in-memory-only preview of the session's latest assistant message
+   * (the agent's own `<agent_digest>` status line when reported, else a
+   * raw truncated preview) - see `sessionPreview.ts`. Undefined for a
+   * session with no live assistant message yet (e.g. not opened this run).
+   */
+  previewLine?: string
 }
 
 export function deriveRecentSessions(_input: {
@@ -65,6 +73,7 @@ export function deriveRecentSessions(_input: {
         projectName: project.name,
         machineId,
         status,
+        previewLine: live ? sessionPreviewLine(live.messages) : undefined,
         priority: status ? STATUS_PRIORITY[status] : 0,
       }
     })))

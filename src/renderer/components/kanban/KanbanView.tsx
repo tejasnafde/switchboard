@@ -38,6 +38,7 @@ import {
 } from '@dnd-kit/core'
 import { useAgentStore } from '../../stores/agent-store'
 import { useKanbanStore } from '../../stores/kanban-store'
+import { sessionPreviewLine } from '../../services/sessionPreview'
 import { describeKanbanWorktreeCreation } from './kanbanWorktreePresentation'
 import { useLayoutStore } from '../../stores/layout-store'
 import { KANBAN_COLUMNS, type KanbanCard, type KanbanStatus } from '@shared/kanban'
@@ -493,6 +494,15 @@ function CardTilePresentation({
       ? s.sessions.find((x) => x.id === card.conversationId)?.unreadCount ?? 0
       : 0,
   )
+  // Live, in-memory preview (digest when the agent reported one, else a
+  // raw truncated fallback) - same source as the sidebar Recents row. See
+  // sessionPreview.ts. Undefined for a card with no linked session, or one
+  // that has produced no assistant message yet this run.
+  const previewLine = useAgentStore((s) =>
+    card.conversationId
+      ? sessionPreviewLine(s.sessions.find((x) => x.id === card.conversationId)?.messages ?? [])
+      : undefined,
+  )
 
   const overBudget = card.costCapUsd != null && card.costUsedUsd != null && card.costUsedUsd >= card.costCapUsd
   const hasSession = !!card.conversationId
@@ -560,6 +570,9 @@ function CardTilePresentation({
           </div>
         )}
       </div>
+      {previewLine && (
+        <div style={tilePreviewStyle} title={previewLine}>{previewLine}</div>
+      )}
       {card.tags.length > 0 && (
         <div style={tagsRowStyle}>
           {card.tags.map((t) => <span key={t} style={tagStyle}>{t}</span>)}
@@ -727,6 +740,10 @@ const tileHeaderRowStyle: CSSProperties = {
   display: 'flex', alignItems: 'flex-start', gap: 6, justifyContent: 'space-between',
 }
 const tileTitleStyle: CSSProperties = { fontSize: 13, lineHeight: 1.3, fontWeight: 500, flex: 1, minWidth: 0 }
+const tilePreviewStyle: CSSProperties = {
+  fontSize: 11, lineHeight: 1.3, color: 'var(--text-muted, #888)',
+  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+}
 const tileActionsStyle: CSSProperties = { display: 'flex', gap: 4, flexShrink: 0 }
 const startBtnStyle: CSSProperties = {
   fontSize: 11, lineHeight: 1, padding: '2px 6px', borderRadius: 3,
