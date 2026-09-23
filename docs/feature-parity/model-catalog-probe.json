@@ -62,7 +62,8 @@
       "npm test",
       "cd apps/mobile && npx tsc --noEmit -p tsconfig.json",
       "Built app, isolated profile: window.api.provider.listCatalog returned 5 Claude rows in 1.2 s (including opus -> claude-opus-5-5 and claude-fable-5-1, which the static list lacks) and 4 Codex rows in 3.9 s; a second call returned from cache in 2 ms. No turn was sent.",
-      "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew testDebugUnitTest compileDebugAndroidTestKotlin lintDebug --console=plain"
+      "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew testDebugUnitTest compileDebugAndroidTestKotlin lintDebug --console=plain",
+      "2026-09-23: fixed a race where getSetting answering before listProviderInstances left the catalog probe stuck on instanceId=null (no re-probe ever fired) and a gap where a live catalog row covering the selection only via suffix-stripping left nothing exactly selected in modelOptions. cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew testDebugUnitTest --console=plain"
     ],
     "hardware": [],
     "notExercised": [
