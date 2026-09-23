@@ -8,6 +8,7 @@
  * Promise until the user decides.
  */
 
+import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { execSync, execFile } from 'child_process'
@@ -578,6 +579,8 @@ interface ActiveSession {
    * the user hasn't sent yet.
    */
   turnStartedAt: number | null
+  /** Runtime modes of messages sent with `priority: 'later'`, oldest first; one per queued turn. */
+  queuedModes: Array<RuntimeMode | undefined>
   /**
    * Effective model id from the last `getContextUsage()` poll, e.g.
    * `claude-fable-5`. The rejection payload never carries the model, yet the
@@ -708,6 +711,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       skills: [],
       models: opts.knownModels?.length ? { models: opts.knownModels, identity: claudeExecutableIdentity() } : null,
       turnStartedAt: null,
+      queuedModes: [],
       lastKnownModel: null,
       instanceEnv: opts.resolvedEnv ?? {},
       instanceOauthDir: opts.resolvedOauthDir ?? null,
@@ -729,12 +733,23 @@ export class ClaudeAdapter implements ProviderAdapter {
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
+    delivery?: TurnDelivery,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) throw new Error(`Session ${threadId} not found`)
+    // Queued behind a running turn: its runtime mode must not touch that turn
+    // (a queued full-access message would otherwise let a plan turn run a
+    // shell). The mode travels with the message and applies when it starts.
+    const queued = delivery === 'queue' && active.turnStartedAt != null
+    // Reserve the turn before any await, so a queued send that arrives while
+    // this one applies its mode still sees a turn in progress.
+    if (!queued) {
+      active.turnStartedAt = Date.now()
+      active.watchdog.turnStarted(Date.now())
+    }
 
     // Update session mode if overridden
-    if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
+    if (!queued && runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
       if (active.query) {
         try {
@@ -776,17 +791,19 @@ export class ClaudeAdapter implements ProviderAdapter {
 
     // Push the message into the prompt queue - must match SDKUserMessage shape:
     // { type: 'user', message: MessageParam, parent_tool_use_id: string | null }
+    // Mid-turn, the SDK reads a message at the next tool boundary (a steer).
+    // `later` holds it until the running turn ends: measured, a separate turn.
     const userMsg: SDKUserMessage = {
       type: 'user',
       message: { role: 'user', content },
       parent_tool_use_id: null,
+      ...(queued ? { priority: 'later' as const } : {}),
     } as SDKUserMessage
     active.prompt.push(userMsg)
-    // Stamp wall-clock turn start now (not when SDK actually picks it up).
-    // The user-perceived "Worked for X" should include any queueing delay
-    // - that's the experience they're judging.
-    active.turnStartedAt = Date.now()
-    active.watchdog.turnStarted(Date.now())
+    // A queued message leaves the running turn's clock and watchdog alone
+    // (it may be suspended on an approval). Its own turn starts when that
+    // one ends, in startQueuedTurn.
+    if (queued) active.queuedModes.push(runtimeMode)
 
     // If we haven't started the SDK query yet, kick it off now
     if (!active.draining) {
@@ -1024,6 +1041,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           ...(durationMs !== undefined ? { durationMs } : {}),
         })
         active.onEvent({ type: 'status', threadId, status: 'error' })
+        this.dropQueuedTurns(threadId, active)
         // Let a later send re-drain (e.g. after the user re-logs in).
         active.draining = false
         return
@@ -1167,6 +1185,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       // The query loop is gone, so nothing can arrive for this turn - stop
       // the stall clock even on the paths that never reached `result`.
       active.watchdog.turnEnded()
+      this.dropQueuedTurns(threadId, active)
     }
   }
 
@@ -1224,6 +1243,43 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     }
     return active.models?.models ?? []
+  }
+
+  /**
+   * The query cannot run the queued messages any more. Discard them and end
+   * each accepted turn, so the registry does not wait for them forever. A
+   * later send starts a fresh prompt queue.
+   */
+  private dropQueuedTurns(threadId: string, active: ActiveSession): void {
+    if (active.queuedModes.length === 0) return
+    const count = active.queuedModes.length
+    active.queuedModes = []
+    active.prompt = new PromptQueue()
+    log.warn(`dropping ${count} queued message(s): the query stopped before they ran`, { threadId })
+    active.onEvent({
+      type: 'error',
+      threadId,
+      message: `${count === 1 ? 'A queued message was' : `${count} queued messages were`} not sent because the session stopped. Send again.`,
+    })
+    for (let i = 0; i < count; i++) active.onEvent({ type: 'turn.completed', threadId })
+  }
+
+  /**
+   * The running turn ended. A message queued with `priority: 'later'` now
+   * starts as its own turn: give it a clock and a watchdog, and apply the
+   * runtime mode it was sent with. Called from every path that ends a turn.
+   */
+  private startQueuedTurn(active: ActiveSession): void {
+    if (active.queuedModes.length === 0) return
+    const mode = active.queuedModes.shift()
+    active.turnStartedAt = Date.now()
+    active.watchdog.turnStarted(Date.now())
+    if (mode && mode !== active.session.runtimeMode) {
+      active.session.runtimeMode = mode
+      active.query?.setPermissionMode(RUNTIME_MODE_TO_PERMISSION[mode]).catch((err: unknown) => {
+        log.warn(`could not apply the queued turn's runtime mode ${mode}: ${err}`)
+      })
+    }
   }
 
   /**
@@ -1660,6 +1716,7 @@ export class ClaudeAdapter implements ProviderAdapter {
 
         const durationMs = takeTurnDuration(active)
         active.watchdog.turnEnded()
+        this.startQueuedTurn(active)
         active.onEvent({
           type: 'turn.completed',
           threadId,
@@ -1744,6 +1801,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           // turn.completed, then flag the error status.
           const durationMs = takeTurnDuration(active)
           active.watchdog.turnEnded()
+          this.startQueuedTurn(active)
           active.currentMessageId = null
           active.currentReasoningMessageId = null
           active.partialMessageText.clear()

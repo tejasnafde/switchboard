@@ -27,6 +27,7 @@ import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
+import { canSteer } from '@shared/turn-delivery'
 import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
@@ -97,6 +98,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
   const headerHeight = useHeaderHeight()
   const insets = useSafeAreaInsets()
   const [draft, setDraft] = useState('')
+  // True when the next send should wait for the running turn instead of steering it.
+  const [queueNext, setQueueNext] = useState(false)
   // The focus-effect cleanup closes over its first render, so it reads the
   // latest text from a ref rather than a stale `draft`.
   const draftRef = useRef('')
@@ -480,7 +483,9 @@ export default function ThreadScreen({ route, navigation }: Props) {
       images,
       runtimeMode: thread.runtimeMode,
       titleCandidate,
+      whenIdle: queueNext && !textOverride,
     })
+    setQueueNext(false)
     // Title from the first message, as the desktop does. `isNew` matters: an
     // existing chat whose items were emptied by /clear, or one whose history
     // has not loaded yet, also has no user items - titling those would
@@ -1010,13 +1015,28 @@ export default function ThreadScreen({ route, navigation }: Props) {
         )}
         {slashQuery !== null && <SlashMenu commands={slashMatches} onPick={runSlash} />}
         <AttachmentStrip attachments={attachments} onRemove={removeAttachment} />
+        {isRunning && canSteer(thread.provider ?? provider) && (
+          <Pressable
+            onPress={() => setQueueNext((v) => !v)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: queueNext }}
+            accessibilityLabel="Send after this turn instead of steering it"
+            testID="queue-next-toggle"
+            style={[styles.queueChip, queueNext && styles.queueChipOn]}
+            hitSlop={6}
+          >
+            <Text style={[styles.queueChipText, queueNext && styles.queueChipTextOn]}>
+              {queueNext ? 'Sends after this turn' : 'Steering the running turn · tap to queue'}
+            </Text>
+          </Pressable>
+        )}
         <View style={styles.inputSurface}>
           <TextInput
             ref={composerRef}
             style={styles.input}
             value={draft}
             onChangeText={setDraft}
-            placeholder={isRunning ? 'Queue a follow-up…' : 'Message the agent…'}
+            placeholder={isRunning ? (canSteer(thread.provider ?? provider) && !queueNext ? 'Steer the agent…' : 'Queue a follow-up…') : 'Message the agent…'}
             placeholderTextColor={colors.textFaint}
             multiline
           />
@@ -1357,6 +1377,10 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   compactBanner: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  queueChip: { alignSelf: 'flex-start', marginBottom: 6, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+  queueChipOn: { borderColor: colors.accent, backgroundColor: colors.accentWash },
+  queueChipText: { color: colors.textDim, fontSize: 11 },
+  queueChipTextOn: { color: colors.accent },
   compactBannerText: { flex: 1 },
   compactAction: { color: colors.accent, fontSize: 11, lineHeight: 15 },
   feedContent: {

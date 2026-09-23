@@ -5,6 +5,7 @@
  * via JSON-RPC 2.0 over newline-delimited JSON on stdio.
  */
 
+import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process'
 import { inferModelTier } from '@shared/models'
@@ -224,6 +225,8 @@ interface ActiveSession {
   models: CatalogCache | null
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
+  /** Messages sent with delivery 'queue' while a turn ran, oldest first. */
+  queuedTurns: Array<{ message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
   /** Active codex turn id (from turn/start response or turn/started); null
    * when idle. Required as `expectedTurnId` to steer a running turn. */
   activeTurnId: string | null
@@ -632,6 +635,7 @@ export class CodexAdapter implements ProviderAdapter {
       skills: null,
       models: opts.knownModels?.length ? { models: opts.knownModels, identity: codexExecutable.current()?.identity ?? null } : null,
       turnStartedAt: null,
+      queuedTurns: [],
       activeTurnId: null,
       turnStartPromise: null,
     }
@@ -809,9 +813,20 @@ export class CodexAdapter implements ProviderAdapter {
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
+    delivery?: TurnDelivery,
+    /** Set only by drainQueued, which owns the next drain step itself. */
+    fromQueue = false,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active?.child) throw new Error(`Session ${threadId} not found or not connected`)
+
+    // Queued behind a running (or starting) turn: kept with its own runtime
+    // mode, which must not reach the running turn, and started as its own
+    // turn once that one completes (see drainQueued).
+    if (delivery === 'queue' && (active.activeTurnId || active.turnStartPromise)) {
+      active.queuedTurns.push({ message, runtimeMode, images })
+      return
+    }
 
     // Pick up mode override (same semantics as claude-adapter)
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
@@ -955,6 +970,13 @@ export class CodexAdapter implements ProviderAdapter {
     active.turnStartPromise = startPromise
     try {
       await startPromise
+    } catch (err) {
+      // No turn/completed will come for a turn that never started, so the
+      // messages queued behind it are drained here instead. Clear the failed
+      // start first, or the next send would wait on it and fail too.
+      if (active.turnStartPromise === startPromise) active.turnStartPromise = null
+      if (!fromQueue) this.drainQueued(threadId, active)
+      throw err
     } finally {
       if (active.turnStartPromise === startPromise) active.turnStartPromise = null
     }
@@ -1004,6 +1026,24 @@ export class CodexAdapter implements ProviderAdapter {
       log.warn(`model/list failed: ${err instanceof Error ? err.message : String(err)}`)
       return active.models?.models ?? []
     }
+  }
+
+  /**
+   * Start the oldest queued message as a turn of its own. One that cannot
+   * start is reported and resolved with a turn.completed, which the registry
+   * counts as the end of that accepted turn, and the next one is tried, so a
+   * failure never strands the messages behind it.
+   */
+  private drainQueued(threadId: string, active: ActiveSession): void {
+    const next = active.queuedTurns.shift()
+    if (!next) return
+    this.sendTurn(threadId, next.message, next.runtimeMode, next.images, undefined, true).catch((err: unknown) => {
+      const reason = err instanceof Error ? err.message : String(err)
+      log.warn(`queued codex turn failed to start for ${threadId}: ${reason}`)
+      active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
+      active.onEvent({ type: 'turn.completed', threadId })
+      this.drainQueued(threadId, active)
+    })
   }
 
   async setModel(threadId: string, model: string): Promise<void> {
@@ -1543,6 +1583,15 @@ export class CodexAdapter implements ProviderAdapter {
           message,
           ...(typeof turnId === 'string' ? { turnId } : {}),
         })
+        // A failed turn still ends: the registry counts it as outstanding
+        // until turn.completed, and a queued turn starts right after.
+        const durationMs = takeTurnDuration(active)
+        active.onEvent({
+          type: 'turn.completed',
+          threadId,
+          ...(typeof turnId === 'string' ? { turnId } : {}),
+          ...(durationMs !== undefined ? { durationMs } : {}),
+        })
         active.onEvent({ type: 'status', threadId, status: 'error' })
       } else {
         active.session.status = 'idle'
@@ -1565,6 +1614,7 @@ export class CodexAdapter implements ProviderAdapter {
       active.assistantMessageText.clear()
       active.toolOutputText.clear()
       active.activeTurnId = null
+      this.drainQueued(threadId, active)
     } else if (method === 'turn/started') {
       active.session.status = 'running'
       if (active.turnStartedAt == null) active.turnStartedAt = Date.now()

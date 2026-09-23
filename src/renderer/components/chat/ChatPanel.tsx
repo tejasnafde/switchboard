@@ -18,6 +18,7 @@ import { ForkLineageBanner } from './ForkLineageBanner'
 import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { isDraftSessionId } from '@shared/new-chat-draft'
+import { canSteer } from '@shared/turn-delivery'
 import { materializeDraft, takeFirstSend } from '../../services/draftChat'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
@@ -1114,7 +1115,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const handleSend = useCallback(
     async (
       message: string,
-      _mode?: string,
+      delivery?: string,
       images?: Array<{ file: File; previewUrl: string }>,
       extras?: {
         origin?: string
@@ -1199,7 +1200,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       // instead of treating an in-memory queue as backend acceptance.
       const liveStatus = useAgentStore.getState().sessions.find((s) => s.id === sessionId)?.status
       const busy = liveStatus === 'running' || liveStatus === 'thinking'
-      if (busy && agentType === 'opencode') {
+      // A queued send is held by the backend until the turn ends, so it may pass.
+      if (busy && agentType === 'opencode' && delivery !== 'queue') {
         return {
           accepted: false,
           error: 'OpenCode is still working. Your text and attachments are preserved; send again when it finishes.',
@@ -1270,6 +1272,8 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         runtimeMode,
         handoff,
         autoTitleText: message,
+        // The backend holds a queued message until the running turn ends.
+        ...(delivery === 'queue' ? { delivery: 'queue' as const } : {}),
       })
 
       // Immediate but honest feedback: this row is keyed exactly like the
@@ -1801,7 +1805,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             : !hasSession
               ? 'Click "+ New Chat" or select a session to start...'
               : status === 'running' || status === 'thinking'
-                ? 'Queue a follow-up… will send after current turn.'
+                ? canSteer(activeSession?.type)
+                  ? 'Steer the agent, or ⌥Enter to queue for after this turn…'
+                  : 'Queue a follow-up… it sends when this turn ends.'
                 : 'Message the agent...'
         }
         agentType={agentType}

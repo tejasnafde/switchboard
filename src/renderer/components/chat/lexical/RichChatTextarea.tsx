@@ -90,7 +90,8 @@ interface RichChatTextareaProps {
    */
   onChange: (value: string, caret: number | null) => void
   onCaretChange?: (caret: number | null) => void
-  onEnter?: () => void
+  /** `altKey` is true for Alt/Option+Enter (queue instead of steer). */
+  onEnter?: (key: { altKey: boolean }) => void
   onPasteFiles?: (files: File[]) => void
   pillsById: Record<string, Pick<DraftPill, 'id' | 'label' | 'kind'>>
   placeholder?: string
@@ -370,7 +371,7 @@ function HydrationPlugin({
  * Plugin: register Enter key handler so the host can intercept "send
  * on Enter". Shift+Enter falls through to Lexical's default (newline).
  */
-function EnterKeyPlugin({ onEnter }: { onEnter?: () => void }): null {
+function EnterKeyPlugin({ onEnter }: { onEnter?: (key: { altKey: boolean }) => void }): null {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
     return editor.registerCommand<KeyboardEvent | null>(
@@ -378,7 +379,7 @@ function EnterKeyPlugin({ onEnter }: { onEnter?: () => void }): null {
       (event) => {
         if (event && event.shiftKey) return false // soft break
         event?.preventDefault()
-        onEnter?.()
+        onEnter?.({ altKey: Boolean(event?.altKey) })
         return true
       },
       COMMAND_PRIORITY_LOW,

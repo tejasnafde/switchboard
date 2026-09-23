@@ -1659,6 +1659,80 @@ describe('CodexAdapter', () => {
     expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
   })
 
+  it('holds a queued message during a running turn and starts it when that turn completes', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
+    await adapter.sendTurn('thread-1', 'hello codex')
+    writes.length = 0
+    await adapter.sendTurn('thread-1', 'after this, update the docs', 'full-access', undefined, 'queue')
+
+    let frames = writes.map((w) => JSON.parse(w))
+    expect(frames.some((m) => m.method === 'turn/steer')).toBe(false)
+    expect(frames.some((m) => m.method === 'turn/start')).toBe(false)
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'completed' } },
+    }) + '\n')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    frames = writes.map((w) => JSON.parse(w))
+    const started = frames.find((m) => m.method === 'turn/start')
+    expect(started?.params.input).toEqual([{ type: 'text', text: 'after this, update the docs' }])
+    // Its mode applied only to its own turn, never to the one it waited for.
+    expect(started?.params.approvalPolicy).toBe('never')
+  })
+
+  it('ends a failed turn with turn.completed before it starts the queued one', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'queued follow-up', undefined, undefined, 'queue')
+    writes.length = 0
+
+    lastChild?.stdout.write(JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: { threadId: 'codex-thread-1', turn: { id: 'turn-1', items: [], status: 'failed', error: { message: 'boom' } } },
+    }) + '\n')
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    const types = onEvent.mock.calls.map(([e]) => e.type)
+    expect(types).toContain('error')
+    expect(onEvent.mock.calls.filter(([e]) => e.type === 'turn.completed' && e.turnId === 'turn-1')).toHaveLength(1)
+    const frames = writes.map((w) => JSON.parse(w))
+    expect(frames.find((m) => m.method === 'turn/start')?.params.input).toEqual([{ type: 'text', text: 'queued follow-up' }])
+  })
+
+  it('starts the queued message when the turn it waited for fails to start', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    let releaseTurnStart!: () => void
+    turnStartGate = new Promise<void>((resolve) => { releaseTurnStart = resolve })
+    turnStartErrors = ['model not loaded']
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, vi.fn())
+    const first = adapter.sendTurn('thread-1', 'first prompt')
+    await vi.waitFor(() => {
+      expect(writes.map((w) => JSON.parse(w)).some((m) => m.method === 'turn/start')).toBe(true)
+    })
+    await adapter.sendTurn('thread-1', 'queued behind a failing start', undefined, undefined, 'queue')
+
+    releaseTurnStart()
+    turnStartGate = null
+    await expect(first).rejects.toThrow('model not loaded')
+    await vi.waitFor(() => {
+      const starts = writes.map((w) => JSON.parse(w)).filter((m) => m.method === 'turn/start')
+      expect(starts.at(-1)?.params.input).toEqual([{ type: 'text', text: 'queued behind a failing start' }])
+    })
+  })
+
   it('waits for an in-flight turn start response before steering a follow-up', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

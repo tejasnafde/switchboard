@@ -20,6 +20,7 @@
  * SDK's WhatWG-stream API.
  */
 
+import type { TurnDelivery } from '@shared/turn-delivery'
 import { takeTurnDuration } from '../turn-duration'
 import { parseImageDataUrl } from '@shared/provider-events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
@@ -109,6 +110,12 @@ interface ActiveSession {
   availableModels: ModelInfo[]
   /** In-flight prompt promise (so we know a turn is active). */
   inFlightPrompt: Promise<void> | null
+  /** True while drainQueued sets up the next queued prompt (the slot stays taken). */
+  drainingQueue: boolean
+  /** True while a send applies its mode, before its prompt is in flight. */
+  startingPrompt: boolean
+  /** Messages sent with delivery 'queue' while a prompt ran, oldest first. */
+  queuedTurns: Array<{ message: string; runtimeMode?: RuntimeMode; images?: Array<{ url: string; mimeType?: string }> }>
   /** Wall-clock turn-start timestamp; null when no turn is in flight. */
   turnStartedAt: number | null
   /** Accumulates chunk deltas by messageId for text and reasoning blocks. */
@@ -356,6 +363,9 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       skills: [],
       availableModels: [],
       inFlightPrompt: null,
+      drainingQueue: false,
+      startingPrompt: false,
+      queuedTurns: [],
       turnStartedAt: null,
       assistantMessageText: new Map(),
     }
@@ -487,21 +497,59 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     return session
   }
 
+  /**
+   * Start the oldest queued message. The slot stays reserved until its prompt
+   * is in flight; one that cannot start is reported and resolved with a
+   * turn.completed (which the registry counts), and the next one is tried.
+   */
+  private drainQueued(threadId: string, active: ActiveSession): void {
+    const next = active.queuedTurns.shift()
+    if (!next) {
+      active.drainingQueue = false
+      return
+    }
+    active.drainingQueue = true
+    this.sendTurn(threadId, next.message, next.runtimeMode, next.images, undefined, true)
+      .then(() => { active.drainingQueue = false })
+      .catch((err: unknown) => {
+        const reason = err instanceof Error ? err.message : String(err)
+        log.warn(`queued opencode turn failed to start for ${threadId}: ${reason}`)
+        active.onEvent({ type: 'error', threadId, message: `A queued message could not be sent: ${reason}` })
+        active.onEvent({ type: 'turn.completed', threadId })
+        this.drainQueued(threadId, active)
+      })
+  }
+
   async sendTurn(
     threadId: string,
     message: string,
     runtimeMode?: RuntimeMode,
     images?: Array<{ url: string; mimeType?: string }>,
+    delivery?: TurnDelivery,
+    /** Set only by drainQueued, which already holds the prompt slot. */
+    fromQueue = false,
   ): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) throw new Error(`No OpenCode ACP session: ${threadId}`)
     if (!active.connection || !active.sessionId) {
       throw new Error('OpenCode ACP session not initialized')
     }
-    if (active.inFlightPrompt) {
+    // OpenCode cannot take a mid-turn message; a queued one waits here and
+    // is sent when the running prompt settles.
+    // While a queued message is being set up the slot counts as busy, or a
+    // new send could start a second prompt ahead of it.
+    const busy = active.inFlightPrompt !== null || active.startingPrompt || (active.drainingQueue && !fromQueue)
+    if (busy && delivery === 'queue') {
+      active.queuedTurns.push({ message, runtimeMode, images })
+      return
+    }
+    if (busy) {
       log.warn(`sendTurn called while turn in progress for ${threadId} - ignoring`)
       return
     }
+    // Hold the slot across the mode await below, or a queued send arriving
+    // now would start its own prompt ahead of this one.
+    active.startingPrompt = true
 
     if (runtimeMode && runtimeMode !== active.session.runtimeMode) {
       active.session.runtimeMode = runtimeMode
@@ -542,7 +590,10 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     } catch (error) {
       active.session.status = 'idle'
       active.turnStartedAt = null
+      active.startingPrompt = false
       active.onEvent({ type: 'status', threadId, status: 'idle' })
+      // Messages queued behind this prompt have no settle to wait for.
+      if (!fromQueue) this.drainQueued(threadId, active)
       throw new TurnNotAcceptedError(
         error instanceof Error ? error.message : 'OpenCode rejected the turn before dispatch',
         { cause: error },
@@ -572,12 +623,17 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         log.error(`acp prompt failed: ${msg}`)
         active.session.status = 'error'
         active.onEvent({ type: 'error', threadId, message: msg })
+        // The failed prompt still ends its turn, which the registry counts,
+        // before a queued one starts.
+        active.onEvent({ type: 'turn.completed', threadId })
         active.onEvent({ type: 'status', threadId, status: 'error' })
       })
       .finally(() => {
         active.inFlightPrompt = null
+        this.drainQueued(threadId, active)
       })
     active.inFlightPrompt = promptPromise
+    active.startingPrompt = false
 
     // The summary makes the session visible to scanners, so it must not exist
     // until the ACP connection has accepted the prompt invocation.
