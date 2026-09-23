@@ -5,9 +5,8 @@
  * from the same file, so desktop/mobile (this test) and native Android are
  * checked against one source of truth instead of three copies drifting
  * apart. A case marked `"android": false` is a documented, intentional
- * divergence - see the `note` field on that case - and is skipped here too,
- * since this file exists to confirm what DOES match, not to re-litigate
- * what does not.
+ * divergence (see its `note`) that only the Android test skips. Every case
+ * runs here, because each `expected` value is the shared TypeScript rule.
  */
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'

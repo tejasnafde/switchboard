@@ -462,7 +462,7 @@ object ThreadPresenter {
 
             in LIST_TOOL_NAMES -> ToolSummary(
                 "List files",
-                string("path", "dir", "directory").orEmpty(),
+                concisePath(string("path", "dir", "directory").orEmpty()),
                 ToolIconKind.FILES,
                 true,
             )

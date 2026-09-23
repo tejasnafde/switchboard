@@ -205,6 +205,7 @@ export function toolIcon(toolName: string): string {
       return 'pencil'
     case 'grep':
     case 'search_files':
+    case 'search':
     case 'glob':
       return 'search'
     case 'list_files':
@@ -215,8 +216,10 @@ export function toolIcon(toolName: string): string {
     case 'websearch':
       return 'globe-outline'
     case 'task':
+    case 'agent':
       return 'sparkles-outline'
     case 'todowrite':
+    case 'update_plan':
       return 'checkbox-outline'
     default:
       return 'construct-outline'
