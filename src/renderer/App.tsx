@@ -663,8 +663,14 @@ export function App() {
       let state: DesktopNewChatState
       let startError: unknown
       try {
-        if (checkout === 'existing' && !draft.draft.existing) {
-          throw new Error('Pick the worktree this chat should run in.')
+        if (checkout === 'existing') {
+          const picked = draft.draft.existing
+          if (!picked) throw new Error('Pick the worktree this chat should run in.')
+          // It may have been removed since the chip listed it.
+          const refs = await window.api.git.listRefs(draft.projectPath)
+          if (refs.ok && !refs.refs.some((r) => r.worktreePath === picked.path)) {
+            throw new Error(`The worktree for ${picked.branch} no longer exists. Pick another one.`)
+          }
         }
         state = await coordinator.start({
           projectPath: draft.projectPath,
