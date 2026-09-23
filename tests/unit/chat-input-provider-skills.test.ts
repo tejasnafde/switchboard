@@ -21,7 +21,8 @@ describe('shouldFetchLiveModels', () => {
 
   it('waits for provider startup and ignores providers without session catalogs', () => {
     expect(shouldFetchLiveModels('codex', 'session-1', false)).toBe(false)
-    expect(shouldFetchLiveModels('opencode', 'session-1', true)).toBe(false)
+    expect(shouldFetchLiveModels('opencode', 'session-1', true)).toBe(true)
+    expect(shouldFetchLiveModels('opencode', 'session-1', false)).toBe(true)
     expect(shouldFetchLiveModels('terminal', 'session-1', true)).toBe(false)
   })
 })

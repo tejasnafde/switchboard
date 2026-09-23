@@ -27,7 +27,7 @@ import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, Question, RuntimeMode } from '@shared/provider-events'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
-import type { ProviderInstance, ProviderSkill } from '@shared/types'
+import { providerKindFor, type ProviderInstance, type ProviderSkill } from '@shared/types'
 import type { ChatMessage } from '@shared/types'
 import type { ForkConversationRequest, ForkLineageMetadata } from '@shared/conversation-fork'
 import type { ModelOption } from '@shared/models'
@@ -84,12 +84,6 @@ const IMPLEMENT_MESSAGE = 'Implement the plan you proposed.'
 
 /** KeyboardAvoidingView cannot take an Animated.Value in its style unwrapped. */
 const AnimatedKeyboardAvoidingView = Animated.createAnimatedComponent(KeyboardAvoidingView)
-
-function providerFromAgentType(agentType: string | undefined): ProviderKind {
-  if (agentType === 'codex') return 'codex'
-  if (agentType === 'opencode') return 'opencode'
-  return 'claude'
-}
 
 export default function ThreadScreen({ route, navigation }: Props) {
   const { connectionId, threadId, projectPath, worktreePath, isNew } = route.params
@@ -219,7 +213,7 @@ export default function ThreadScreen({ route, navigation }: Props) {
           }
           return []
         }))
-        provider = providerFromAgentType(loaded.meta?.agentType)
+        provider = providerKindFor(loaded.meta?.agentType)
         setProvider(provider)
         const store = useChatStore.getState()
         const current = store.threads[key]

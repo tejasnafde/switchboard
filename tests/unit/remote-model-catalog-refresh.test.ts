@@ -20,6 +20,7 @@ import {
   shouldRefreshCatalog,
   type CatalogCache,
 } from '../../src/main/provider/model-catalog'
+import { claudeRowCovers } from '../../src/main/provider/claude-model-alias'
 import { CODEX_MODELS, type ModelOption } from '@shared/models'
 
 const live = [
@@ -118,29 +119,29 @@ const claudeCache: CatalogCache = { models: claudeLive, identity: 'claude-id-1' 
 describe('reconcileSelectedModel against a live Claude alias catalog', () => {
   it('keeps a row the catalog offers verbatim, suffix and all', () => {
     // The exact value is what the CLI named; it is always sendable.
-    expect(reconcileSelectedModel('opus[1m]', claudeCache)).toBe('opus[1m]')
-    expect(reconcileSelectedModel('sonnet', claudeCache)).toBe('sonnet')
-    expect(reconcileSelectedModel('default', claudeCache)).toBe('default')
+    expect(reconcileSelectedModel('opus[1m]', claudeCache, claudeRowCovers)).toBe('opus[1m]')
+    expect(reconcileSelectedModel('sonnet', claudeCache, claudeRowCovers)).toBe('sonnet')
+    expect(reconcileSelectedModel('default', claudeCache, claudeRowCovers)).toBe('default')
   })
 
   it('keeps claude-sonnet-5, which the alias row `sonnet` covers', () => {
     // The regression this exists for: a persisted picker choice (and the
     // static list's own default) was being silently cleared even though the
     // live CLI completed a turn on it.
-    expect(reconcileSelectedModel('claude-sonnet-5', claudeCache)).toBe('claude-sonnet-5')
+    expect(reconcileSelectedModel('claude-sonnet-5', claudeCache, claudeRowCovers)).toBe('claude-sonnet-5')
   })
 
   it('keeps every shipped static id whose family the live catalog offers', () => {
     for (const id of ['claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5']) {
-      expect(reconcileSelectedModel(id, claudeCache)).toBe(id)
+      expect(reconcileSelectedModel(id, claudeCache, claudeRowCovers)).toBe(id)
     }
   })
 
   it('sees through a bracketed capability suffix in either direction', () => {
     // `opus[1m]` is `opus` plus a context-window capability marker.
-    expect(reconcileSelectedModel('opus', claudeCache)).toBe('opus')
-    expect(reconcileSelectedModel('claude-fable-5', claudeCache)).toBe('claude-fable-5')
-    expect(reconcileSelectedModel('fable', claudeCache)).toBe('fable')
+    expect(reconcileSelectedModel('opus', claudeCache, claudeRowCovers)).toBe('opus')
+    expect(reconcileSelectedModel('claude-fable-5', claudeCache, claudeRowCovers)).toBe('claude-fable-5')
+    expect(reconcileSelectedModel('fable', claudeCache, claudeRowCovers)).toBe('fable')
   })
 
   it('combines both rules: a suffixed alias row still covers a full id', () => {
@@ -150,37 +151,37 @@ describe('reconcileSelectedModel against a live Claude alias catalog', () => {
       models: [{ id: 'sonnet[1m]', label: 'Sonnet 1M', tier: 'balanced' }],
       identity: 'x',
     }
-    expect(reconcileSelectedModel('claude-sonnet-5', suffixedAlias)).toBe('claude-sonnet-5')
+    expect(reconcileSelectedModel('claude-sonnet-5', suffixedAlias, claudeRowCovers)).toBe('claude-sonnet-5')
     const suffixedFull: CatalogCache = {
       models: [{ id: 'claude-sonnet-5[1m]', label: 'Sonnet 5 (1M context)', tier: 'balanced' }],
       identity: 'x',
     }
-    expect(reconcileSelectedModel('claude-sonnet-5', suffixedFull)).toBe('claude-sonnet-5')
+    expect(reconcileSelectedModel('claude-sonnet-5', suffixedFull, claudeRowCovers)).toBe('claude-sonnet-5')
   })
 
   it('does NOT let one family vouch for another', () => {
     // No opus row may keep a sonnet id alive, and vice versa.
     const opusOnly: CatalogCache = { models: [claudeLive[1]], identity: 'x' }
-    expect(reconcileSelectedModel('claude-sonnet-5', opusOnly)).toBeUndefined()
+    expect(reconcileSelectedModel('claude-sonnet-5', opusOnly, claudeRowCovers)).toBeUndefined()
     const sonnetOnly: CatalogCache = { models: [claudeLive[3]], identity: 'x' }
-    expect(reconcileSelectedModel('claude-opus-5', sonnetOnly)).toBeUndefined()
+    expect(reconcileSelectedModel('claude-opus-5', sonnetOnly, claudeRowCovers)).toBeUndefined()
   })
 
   it('drops a stale id of a live family that this build does not ship', () => {
     // An alias row is not a licence for ANY id shaped like its family - only
     // for the full ids shared/models.ts was actually transcribed from a CLI.
-    expect(reconcileSelectedModel('claude-sonnet-3-legacy', claudeCache)).toBeUndefined()
-    expect(reconcileSelectedModel('claude-opus-3', claudeCache)).toBeUndefined()
+    expect(reconcileSelectedModel('claude-sonnet-3-legacy', claudeCache, claudeRowCovers)).toBeUndefined()
+    expect(reconcileSelectedModel('claude-opus-3', claudeCache, claudeRowCovers)).toBeUndefined()
   })
 
   it('drops an id from a family the live catalog never mentioned', () => {
     const noHaiku: CatalogCache = { models: claudeLive.slice(0, 4), identity: 'x' }
-    expect(reconcileSelectedModel('claude-haiku-4-5', noHaiku)).toBeUndefined()
+    expect(reconcileSelectedModel('claude-haiku-4-5', noHaiku, claudeRowCovers)).toBeUndefined()
   })
 
   it('drops an id that is not a Claude model at all', () => {
-    expect(reconcileSelectedModel('gpt-5.6-sol', claudeCache)).toBeUndefined()
-    expect(reconcileSelectedModel('claude-neo-9', claudeCache)).toBeUndefined()
+    expect(reconcileSelectedModel('gpt-5.6-sol', claudeCache, claudeRowCovers)).toBeUndefined()
+    expect(reconcileSelectedModel('claude-neo-9', claudeCache, claudeRowCovers)).toBeUndefined()
   })
 
   it('never INFERS a named model from `default`', () => {
@@ -189,8 +190,8 @@ describe('reconcileSelectedModel against a live Claude alias catalog', () => {
     // row does say what it resolves to - that is rule 2 below, the CLI's own
     // answer, not an inference from the string `default`.)
     const defaultOnly: CatalogCache = { models: [claudeLive[0]], identity: 'x' }
-    expect(reconcileSelectedModel('claude-sonnet-5', defaultOnly)).toBeUndefined()
-    expect(reconcileSelectedModel('sonnet', defaultOnly)).toBeUndefined()
+    expect(reconcileSelectedModel('claude-sonnet-5', defaultOnly, claudeRowCovers)).toBeUndefined()
+    expect(reconcileSelectedModel('sonnet', defaultOnly, claudeRowCovers)).toBeUndefined()
   })
 
   it('uses ModelInfo.resolvedModel when the CLI supplies it', () => {
@@ -206,7 +207,7 @@ describe('reconcileSelectedModel against a live Claude alias catalog', () => {
       models: [{ id: 'sonnet', label: 'Sonnet', tier: 'balanced', resolvedModel: 'claude-sonnet-5-20260215' }],
       identity: 'x',
     }
-    expect(reconcileSelectedModel('claude-sonnet-5-20260215', withResolved)).toBe('claude-sonnet-5-20260215')
+    expect(reconcileSelectedModel('claude-sonnet-5-20260215', withResolved, claudeRowCovers)).toBe('claude-sonnet-5-20260215')
   })
 })
 

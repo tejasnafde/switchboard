@@ -75,6 +75,20 @@ export const REASONING_EFFORTS: Array<{ id: ReasoningEffort; label: string }> = 
   { id: 'high', label: 'High' },
 ]
 
+const FAST_TOKENS = new Set(['haiku', 'mini', 'nano', 'flash', 'fast', 'luna'])
+const MAX_TOKENS = new Set(['opus', 'fable', 'sol', 'pro', 'max', 'ultra', 'large'])
+
+/**
+ * Picker tier for a model id no catalog labelled. Matches whole tokens, not
+ * substrings: `gemini` must not read as `mini`, nor `minimax` as `max`.
+ */
+export function inferModelTier(id: string): ModelOption['tier'] {
+  const tokens = id.toLowerCase().split(/[^a-z0-9]+/)
+  if (tokens.some((t) => FAST_TOKENS.has(t))) return 'fast'
+  if (tokens.some((t) => MAX_TOKENS.has(t))) return 'max'
+  return 'balanced'
+}
+
 export function modelsForAgent(agent: AgentType): ModelOption[] {
   if (agent === 'codex') return CODEX_MODELS
   if (agent === 'opencode') return OPENCODE_MODELS
@@ -94,4 +108,30 @@ export function defaultModelFor(agent: AgentType): string {
  */
 export function agentSupportsReasoningEffort(agent: AgentType): boolean {
   return agent === 'codex'
+}
+
+/**
+ * Turn an opencode model ID like `nvidia-nim/z-ai/glm-5.1` into a nice
+ * human label like "GLM 5.1 · nvidia-nim". Keeps the full ID visible enough
+ * for users to disambiguate, but puts the model name first.
+ */
+export function formatOpencodeModelLabel(id: string): string {
+  const parts = id.split('/')
+  const provider = parts[0]
+  // For 3-part IDs (openai-compat providers like nvidia-nim/org/model),
+  // take the last segment as the model name. For 2-part (google/gemini-2.5-pro),
+  // the second segment is the name.
+  const modelName = parts[parts.length - 1]
+  // Prettify: replace dashes/underscores with spaces, title-case-ish
+  const pretty = modelName
+    .replace(/[-_]/g, ' ')
+    .replace(/\b(glm|gpt|llm|ai|r1|v3|k2)\b/gi, (s) => s.toUpperCase())
+  // Free-tier callouts
+  const isFree = id.startsWith('opencode/') || id.endsWith('-free')
+  const badge = isFree
+    ? ' · free'
+    : provider === 'nvidia-nim'
+      ? ' · nvidia'
+      : ` · ${provider}`
+  return `${pretty}${badge}`
 }

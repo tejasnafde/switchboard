@@ -13,6 +13,7 @@
 import type { OverageScope } from './claude-rate-limit'
 import type { PeerMessageInitiator } from './peer-messaging'
 import { stripHandoffPreamble } from './handoff'
+import type { AgentProvider } from './types'
 
 export type ProviderSessionStatus =
   | 'connecting'
@@ -25,10 +26,17 @@ export type ApprovalDecision = 'approve' | 'deny'
 
 export type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
 
+/** The one list of runtime modes; every validator goes through isRuntimeMode. */
+export const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'auto', 'full-access']
+
+export function isRuntimeMode(value: unknown): value is RuntimeMode {
+  return typeof value === 'string' && (RUNTIME_MODES as readonly string[]).includes(value)
+}
+
 export type ProviderKind = 'claude' | 'codex' | 'opencode'
 
 export interface UserTurnHandoffV1 {
-  expectedFrom: 'claude-code' | 'codex' | 'opencode' | 'cursor'
+  expectedFrom: AgentProvider | 'cursor'
   markerId: string
   markerText: string
 }
@@ -316,7 +324,7 @@ export function validateUserTurnSubmission(input: unknown): UserTurnSubmissionV1
   if (value.displayBody !== undefined && typeof value.displayBody !== 'string') {
     throw new Error('User turn display body must be text')
   }
-  if (value.runtimeMode !== undefined && !(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'] as unknown[]).includes(value.runtimeMode)) {
+  if (value.runtimeMode !== undefined && !isRuntimeMode(value.runtimeMode)) {
     throw new Error('User turn runtime mode is invalid')
   }
   if (value.autoTitleText !== undefined && typeof value.autoTitleText !== 'string') {

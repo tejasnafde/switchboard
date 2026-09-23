@@ -53,8 +53,8 @@ import {
 } from '../../services/desktopTurnSubmission'
 import { onUserTurnAccepted } from '../../services/session-events'
 import { registerComposer } from '../../services/composerRegistry'
+import type { RuntimeMode } from '@shared/provider-events'
 
-type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
 
 export type ChatSendResult =
   | { accepted: true }
@@ -87,7 +87,10 @@ export function shouldFetchLiveModels(
   sessionId: string | null | undefined,
   sessionIsActive: boolean,
 ): boolean {
-  return Boolean(sessionId) && sessionIsActive && (agentType === 'claude-code' || agentType === 'codex')
+  if (!sessionId || agentType === 'terminal') return false
+  // OpenCode's catalog belongs to the binary, so the backend can answer from
+  // another open OpenCode session before this one has started.
+  return sessionIsActive || agentType === 'opencode'
 }
 
 interface ChatInputProps {
@@ -199,16 +202,6 @@ export function ChatInput({
       }
     }).catch(() => { /* no cache yet */ })
 
-    if (agentType === 'opencode') {
-      ;window.api.provider.listOpencodeModels?.().then((ids: string[]) => {
-        if (cancelled || !ids || ids.length === 0) return
-        persistDynamicModels(ids.map((id) => ({
-          id,
-          label: formatOpencodeModelLabel(id),
-          tier: inferTierFromId(id),
-        })))
-      }).catch(() => { /* keep fallback list */ })
-    }
     return () => { cancelled = true }
   }, [agentType, sessionId, persistDynamicModels])
 
@@ -1851,35 +1844,4 @@ export function splitModelVariant(
   return { base: id, variant: '' }
 }
 
-/**
- * Turn an opencode model ID like `nvidia-nim/z-ai/glm-5.1` into a nice
- * human label like "GLM 5.1 · nvidia-nim". Keeps the full ID visible enough
- * for users to disambiguate, but puts the model name first.
- */
-function formatOpencodeModelLabel(id: string): string {
-  const parts = id.split('/')
-  const provider = parts[0]
-  // For 3-part IDs (openai-compat providers like nvidia-nim/org/model),
-  // take the last segment as the model name. For 2-part (google/gemini-2.5-pro),
-  // the second segment is the name.
-  const modelName = parts[parts.length - 1]
-  // Prettify: replace dashes/underscores with spaces, title-case-ish
-  const pretty = modelName
-    .replace(/[-_]/g, ' ')
-    .replace(/\b(glm|gpt|llm|ai|r1|v3|k2)\b/gi, (s) => s.toUpperCase())
-  // Free-tier callouts
-  const isFree = id.startsWith('opencode/') || id.endsWith('-free')
-  const badge = isFree
-    ? ' · free'
-    : provider === 'nvidia-nim'
-      ? ' · nvidia'
-      : ` · ${provider}`
-  return `${pretty}${badge}`
-}
 
-function inferTierFromId(id: string): 'fast' | 'balanced' | 'max' {
-  const lower = id.toLowerCase()
-  if (lower.includes('flash') || lower.includes('mini') || lower.includes('nano') || lower.includes('haiku')) return 'fast'
-  if (lower.includes('pro') || lower.includes('opus') || lower.includes('max') || lower.includes('large') || lower.includes('ultra')) return 'max'
-  return 'balanced'
-}

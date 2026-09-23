@@ -1,6 +1,7 @@
 import type { ForkLineageMetadata } from '@shared/conversation-fork'
 import type { AgentType, ChatMessage } from '@shared/types'
 import { useAgentStore } from '../stores/agent-store'
+import type { RuntimeMode } from '../../shared/provider-events'
 
 interface LoadedConversation {
   messages: ChatMessage[]
@@ -14,7 +15,7 @@ interface LoadedConversation {
     worktreeBranch?: string | null
     worktreeId?: string | null
     providerInstanceId?: string | null
-    runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access' | null
+    runtimeMode?: RuntimeMode | null
     model?: string | null
     reasoningEffort?: 'low' | 'medium' | 'high' | null
     forkMetadata?: ForkLineageMetadata | null

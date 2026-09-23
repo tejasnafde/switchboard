@@ -1,5 +1,5 @@
-import type { RuntimeMode } from './provider-events'
-import type { AgentType } from './types'
+import { isRuntimeMode, type RuntimeMode } from './provider-events'
+import { isAgentProvider, type AgentType } from './types'
 
 export const WORKTREE_CREATION_SCHEMA_VERSION = 1 as const
 
@@ -237,8 +237,6 @@ type UnknownRecord = Record<string, unknown>
 
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$/
 const AGENT_TYPE_VALUES: ReadonlySet<string> = new Set(['claude-code', 'codex', 'opencode', 'terminal'])
-const PROVIDERS: ReadonlySet<string> = new Set(['claude-code', 'codex', 'opencode'])
-const RUNTIME_MODES: ReadonlySet<string> = new Set(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'])
 
 function record(value: unknown): UnknownRecord | null {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
@@ -421,7 +419,7 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
           issue('invalid_value', 'owner.create.status', 'Card status is invalid.')
         }
         const runtimeMode = draft.runtimeMode
-        if (runtimeMode !== undefined && !RUNTIME_MODES.has(runtimeMode as string)) {
+        if (runtimeMode !== undefined && !isRuntimeMode(runtimeMode)) {
           issue('invalid_value', 'owner.create.runtimeMode', 'Card runtime mode is invalid.')
         }
         const costCapUsd = draft.costCapUsd
@@ -503,18 +501,18 @@ export function parseWorktreeCreationRequest(input: unknown): WorktreeCreationPa
       let initialAgent: WorktreeInitialAgentIntent | undefined
       if (launchInput.initialAgent !== undefined) {
         const agent = record(launchInput.initialAgent)
-        if (!agent || !PROVIDERS.has(agent.provider as string)) {
+        if (!agent || !isAgentProvider(agent.provider)) {
           issue('invalid_value', 'launch.initialAgent.provider', 'Initial provider is invalid.')
         } else {
           const runtimeMode = agent.runtimeMode
-          if (runtimeMode !== undefined && !RUNTIME_MODES.has(runtimeMode as string)) {
+          if (runtimeMode !== undefined && !isRuntimeMode(runtimeMode)) {
             issue('invalid_value', 'launch.initialAgent.runtimeMode', 'Runtime mode is invalid.')
           }
           initialAgent = {
             provider: agent.provider as WorktreeInitialAgentIntent['provider'],
             ...(optionalString(agent.instanceId) ? { instanceId: agent.instanceId as string } : {}),
             ...(optionalString(agent.model) ? { model: agent.model as string } : {}),
-            ...(runtimeMode && RUNTIME_MODES.has(runtimeMode as string) ? { runtimeMode: runtimeMode as RuntimeMode } : {}),
+            ...(runtimeMode && isRuntimeMode(runtimeMode) ? { runtimeMode } : {}),
             ...(optionalString(agent.prompt) ? { prompt: agent.prompt as string } : {}),
           }
         }

@@ -348,7 +348,7 @@ Traps:
 ### Kanban board (⌘⇧K top-level view)
 
 - Top-level view (not a right-pane mode) swapping the chat area for a workspace-scoped board; sidebar stays mounted. `layout-store.appView: 'chats' | 'kanban'`.
-- `kanban_cards` table: `(id, project_path, title, description, tags JSON, status, cost_cap_usd, cost_used_usd, runtime_mode, conversation_id, worktree_path, worktree_branch, created_at, updated_at, completed_at)`. Statuses: `backlog | in_progress | in_review | done`.
+- `kanban_cards` table: `(id, project_path, title, description, tags JSON, status, cost_cap_usd, cost_used_usd, runtime_mode, conversation_id, worktree_path, worktree_branch, created_at, updated_at, completed_at)`. Statuses: `backlog | in_progress | needs_input | done`.
 - IPC (`KanbanChannels`): `list / create / update / delete / create-worktree / remove-worktree / list-worktrees / list-stale-worktrees / remove-stale-worktree`. Moving a card to `done` auto-archives its linked conversation (`applyKanbanArchiveSideEffect`); moving back unarchives.
 - `cardLaunch.ts` `launchCardChat`: reuses the linked conversation if live, else spins up a new session rooted at `worktree_path ?? project_path`, links card→conversation, seeds + auto-sends the first turn (title + description). `WorktreeManagerModal` is the manual cleanup UI (lists worktrees, flags `inUse`, batch-removes stale).
 
@@ -468,7 +468,6 @@ src/
 │   ├── backend/                       # host.ts (BackendHost: ElectronIpcHost | WsHost) · ws-host.ts
 │   ├── machines/                      # sshTunnel · connectionManager · provisioner · reconnectBackoff (remote-over-SSH)
 │   ├── agent/
-│   │   ├── agent-manager.ts           # Legacy --print agent (deprecated)
 │   │   ├── jsonl-parser.ts            # Source-aware (claude-code | codex) + image extraction
 │   │   └── jsonl-truncate.ts          # Pure fork truncation (assembleClaudeFork, truncate*Jsonl)
 │   ├── conversations/fork.ts          # Fork-from-message orchestration (per-provider resume)
@@ -480,7 +479,7 @@ src/
 │   ├── ide/                           # code-server-manager · binary (download) · bridge-server (ws)
 │   ├── worktree.ts                    # kanban / fork / session worktree creation + cleanup
 │   ├── ipc/
-│   │   ├── terminal.ts · agent.ts(dep) · app.ts   # PTY · legacy · projects/sessions/archive/fork
+│   │   ├── terminal.ts · app.ts       # PTY · projects/sessions/archive/fork
 │   │   ├── files.ts · git.ts · ide.ts · kanban.ts # files + git + IDE + kanban IPC
 │   │   ├── providerInstances.ts       # instance LIST/UPSERT/DELETE/TEST/CREATE_OAUTH_DIR
 │   │   └── enrichDisplayBody.ts       # pill/display-body enrichment for stored messages
@@ -525,7 +524,7 @@ src/
 │   │   ├── sidebar/                   # Sidebar · ProjectFavicon · WorkspaceManager · dragLogic
 │   │   ├── onboarding/               # FeatureTourModal + featureRegistry
 │   │   └── terminal/                  # TerminalStrip · TerminalWindow · TerminalPane · TerminalHeader · TemplatePicker
-│   ├── hooks/                         # useTerminalLifecycle · useAgent · useTerminal
+│   ├── hooks/                         # useTerminalLifecycle · useTerminal
 │   ├── services/                      # terminal-registry · session-events · contextBridge · fuzzyScore · notifications
 │   └── stores/                        # agent · terminal · layout · theme · draft · kanban · provider-instance · skill · bookmark
 ├── preload/                           # transport.ts (IpcTransport) · ws-transport (via shared) · hybrid-transport · transport-router · routing-table

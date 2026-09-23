@@ -24,6 +24,7 @@ import { parseImageDataUrl } from '@shared/provider-events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { Readable, Writable } from 'stream'
 import { promises as fs } from 'fs'
+import { formatOpencodeModelLabel, inferModelTier, type ModelOption } from '@shared/models'
 import { TurnNotAcceptedError } from '../durable-turn-acceptance'
 import {
   ClientSideConnection,
@@ -679,23 +680,22 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
   }
 
   /**
-   * Surfaces the model catalog captured from `session/new`. Called from
-   * the OPENCODE_LIST_MODELS IPC handler. This replaces the legacy
-   * `opencode models` shell-out - the catalog is already in memory.
-   *
-   * If no session is active, falls back to an empty list (the renderer
-   * will retry once a session exists).
+   * The catalog `session/new` returned, in the same shape the Claude and
+   * Codex adapters give LIST_MODELS, so every client (desktop, phone) reads
+   * OpenCode models through one channel. This thread's catalog first; any
+   * other session's otherwise, since the list belongs to the binary, not
+   * the cwd. Empty until a session has started; clients retry.
    */
-  async listAvailableModels(): Promise<string[]> {
-    // Pick any active session - model catalogs are global to the binary
-    // version, not per-cwd. (If the user has multiple sessions with
-    // different models active, all see the same catalog.)
-    for (const active of this.sessions.values()) {
-      if (active.availableModels.length > 0) {
-        return active.availableModels.map((m) => m.modelId)
-      }
-    }
-    return []
+  async listModels(threadId: string): Promise<ModelOption[]> {
+    const own = this.sessions.get(threadId)?.availableModels ?? []
+    const catalog = own.length > 0
+      ? own
+      : [...this.sessions.values()].find((s) => s.availableModels.length > 0)?.availableModels ?? []
+    return catalog.map((m) => ({
+      id: m.modelId,
+      label: formatOpencodeModelLabel(m.modelId),
+      tier: inferModelTier(m.modelId),
+    }))
   }
 
   // ── Internals ────────────────────────────────────────────────

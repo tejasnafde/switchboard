@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   AppChannels,
-  AgentChannels,
   TerminalChannels,
   WorktreeCreationChannels,
 } from '@shared/ipc-channels'
@@ -21,7 +20,6 @@ describe('IPC channel constants', () => {
     const allChannels = [
       ...Object.values(TerminalChannels),
       ...Object.values(AppChannels),
-      ...Object.values(AgentChannels),
       ...Object.values(WorktreeCreationChannels),
     ]
     const unique = new Set(allChannels)

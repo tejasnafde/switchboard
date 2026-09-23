@@ -5,16 +5,16 @@
  * react-native cannot load in a node test.
  */
 import type { ProviderKind } from '@shared/provider-events'
-import { defaultInstanceId, type AgentType, type ProviderInstance } from '@shared/types'
+import { AGENT_PROVIDERS, agentLabel, defaultInstanceId, providerKindFor, toAgentProvider, type AgentType, type ProviderInstance } from '@shared/types'
 
-export const AGENTS: { kind: ProviderKind; label: string; agentType: AgentType }[] = [
-  { kind: 'claude', label: 'Claude Code', agentType: 'claude-code' },
-  { kind: 'codex', label: 'Codex', agentType: 'codex' },
-  { kind: 'opencode', label: 'OpenCode', agentType: 'opencode' },
-]
+export const AGENTS: { kind: ProviderKind; label: string; agentType: AgentType }[] = AGENT_PROVIDERS.map((agentType) => ({
+  kind: providerKindFor(agentType),
+  label: agentLabel(agentType),
+  agentType,
+}))
 
 export function agentTypeFor(kind: ProviderKind): AgentType {
-  return AGENTS.find((a) => a.kind === kind)?.agentType ?? 'claude-code'
+  return toAgentProvider(kind)
 }
 
 /** Enabled profiles for one agent, default first then alphabetical. */

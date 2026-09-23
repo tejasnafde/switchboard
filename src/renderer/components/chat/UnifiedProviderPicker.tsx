@@ -31,6 +31,9 @@ import {
   type ModelOption,
 } from '@shared/models'
 import {
+  AGENT_TYPES,
+  agentLabel,
+  agentShortLabel,
   defaultInstanceId,
   type AgentType,
   type ProviderInstance,
@@ -66,19 +69,7 @@ interface UnifiedProviderPickerProps {
   resolvedModel?: string
 }
 
-const AGENTS: Array<{ value: AgentType; label: string }> = [
-  { value: 'claude-code', label: 'Claude Code' },
-  { value: 'codex', label: 'Codex' },
-  { value: 'opencode', label: 'OpenCode' },
-  { value: 'terminal', label: 'Terminal' },
-]
-
-const AGENT_SHORT: Record<AgentType, string> = {
-  'claude-code': 'Claude',
-  'codex': 'Codex',
-  'opencode': 'OpenCode',
-  'terminal': 'Terminal',
-}
+const AGENTS = AGENT_TYPES.map((value) => ({ value, label: agentLabel(value) }))
 
 export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   const {
@@ -211,7 +202,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
         ref={triggerRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        title={`${AGENT_SHORT[agentType]}${effectiveInstance ? ' · ' + effectiveInstance.displayName : ''} · ${modelLabel}`}
+        title={`${agentShortLabel(agentType)}${effectiveInstance ? ' · ' + effectiveInstance.displayName : ''} · ${modelLabel}`}
         style={{
           display: 'inline-flex',
           alignItems: 'center',
@@ -246,7 +237,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             flexShrink: 0,
           }}
         >
-          {showInstanceBadge ? initials : AGENT_SHORT[agentType].slice(0, 2).toUpperCase()}
+          {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
         </span>
         <span
           style={{
@@ -257,7 +248,7 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
             color: 'var(--text-primary)',
           }}
         >
-          {AGENT_SHORT[agentType]}
+          {agentShortLabel(agentType)}
           {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
         </span>
         <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>·</span>
