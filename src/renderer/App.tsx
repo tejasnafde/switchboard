@@ -677,10 +677,12 @@ export function App() {
         startError = error
         state = coordinator.state()
       }
+      const failed = Boolean(startError) || gaveBack || state.status === 'failed'
+      // Still inside start: the composer, not giveBack, restores the payload.
+      if (failed) giveBack()
       insideStart = false
       retainCoordinator(coordinator, checkout)
-      if (startError || gaveBack || state.status === 'failed') {
-        giveBack()
+      if (failed) {
         const message = startError instanceof Error ? startError.message : state.error
         return { accepted: false, error: message ?? 'The new chat could not be created. See the worktree card for recovery.' }
       }
