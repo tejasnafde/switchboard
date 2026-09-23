@@ -41,7 +41,7 @@
     "storageDataMigration": {
       "status": "implemented",
       "evidence": [
-        "src/renderer/components/chat/ChatPanel.tsx"
+        "src/main/db/database.ts"
       ]
     },
     "updateRelease": {
