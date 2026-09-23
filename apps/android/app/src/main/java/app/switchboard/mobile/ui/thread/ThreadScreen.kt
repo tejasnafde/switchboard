@@ -225,7 +225,7 @@ fun ThreadScreen(
         CompactionOfferPolicy.Input(
             provider = metadata.provider,
             usedTokens = metadata.usedTokens,
-            lastMessageAtMs = metadata.lastTurnAt ?: lastUserAt,
+            lastMessageAtMs = listOfNotNull(metadata.lastTurnAt, lastUserAt).maxOrNull(),
             busy = metadata.status in ThreadSessionCoordinator.ACTIVE_PROVIDER_STATUSES,
             nowMs = now,
         ),

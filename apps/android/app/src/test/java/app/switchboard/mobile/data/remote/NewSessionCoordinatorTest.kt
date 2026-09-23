@@ -188,6 +188,38 @@ class NewSessionCoordinatorTest {
     }
 
     @Test
+    fun aSavedModelAbsentFromTheStaticCatalogSurvivesInstanceResolutionRacingAheadOfIt() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        // Settings resolve before listProviderInstances does, so the first catalog
+        // probe goes out for no specific instance (instanceId=null).
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", "team-custom-model")
+        remote.answerSetting("chat.defaultProviderInstanceId", null)
+        assertEquals("claude-code" to null, remote.catalogRequests.single().first)
+        assertEquals("team-custom-model", coordinator.state.value.selectedModelId)
+
+        // That null-instance probe answers and covers the saved model exactly, so
+        // it marks a live catalog as applied (catalogApplied=true) before any real
+        // instance has resolved.
+        remote.answerCatalog(listOf(modelOption("team-custom-model", "Team Custom Model")))
+        assertEquals("team-custom-model", coordinator.state.value.selectedModelId)
+
+        // Now the real instance resolves - a different owner than the null-instance
+        // probe above, so refreshCatalog() restores a fallback before its own probe.
+        // That fallback must still carry the saved model, not just the bare static
+        // catalog, or the selection is lost here with nothing left to reapply it.
+        remote.instances.single()(success("instances", listOf(instance("claude-work"))))
+
+        assertEquals(2, remote.catalogRequests.size)
+        assertEquals("claude-code" to "claude-work", remote.catalogRequests.last().first)
+        assertEquals("team-custom-model", coordinator.state.value.selectedModelId)
+        assertTrue(coordinator.state.value.modelOptions.any { it.id == "team-custom-model" })
+    }
+
+    @Test
     fun startOrdersCreateThenSessionThenDurableFirstMessageAndRetriesOnlyTheWrite() {
         val remote = FakeNewSessionRemote()
         val enqueueResults = ArrayDeque<EnqueueResult>().apply {

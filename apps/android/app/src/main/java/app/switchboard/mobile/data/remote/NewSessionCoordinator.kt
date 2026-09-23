@@ -196,6 +196,13 @@ class NewSessionCoordinator(
     private var catalogApplied = false
     private var catalogOwnerInstanceId: String? = null
     private val catalogCache = mutableMapOf<String?, List<NewSessionModelOption>>()
+    // The bare static catalog is not always the right thing to fall back to: when
+    // the saved default model is absent from it, applyDefaults injects an
+    // authoritative-default row for it. Restoring the bare static list instead of
+    // this would drop that saved model the moment a different instance's catalog
+    // races ahead of instance resolution. Refreshed whenever defaults are
+    // (re)applied; reset in selectProvider().
+    private var fallbackModelOptions: List<NewSessionModelOption> = NewSessionDecisions.models(ProviderKind.Claude)
     private var instanceTouched = false
     private var modelTouched = false
     private var requestedDefaultInstanceId: String? = null
@@ -272,6 +279,7 @@ class NewSessionCoordinator(
         // should be treated as still "owning" the just-reset modelOptions.
         catalogApplied = false
         catalogOwnerInstanceId = null
+        fallbackModelOptions = NewSessionDecisions.models(provider)
         mutableState.value = mutableState.value.copy(
             provider = provider,
             profiles = NewSessionDecisions.profiles(allInstances, provider),
@@ -665,6 +673,11 @@ class NewSessionCoordinator(
             },
             loadingDefaults = false,
         )
+        // The just-resolved list (which may carry a defaults-injected row for a
+        // saved model absent from the static catalog) is a better restore target
+        // than the bare static list if a different instance's catalog probe races
+        // ahead of this one and refreshCatalog() needs to fall back to something.
+        fallbackModelOptions = mutableState.value.modelOptions
         refreshCatalog()
     }
 
@@ -687,9 +700,11 @@ class NewSessionCoordinator(
             // empty, nothing else clears it, so the old instance's models - and a
             // selectedModelId picked from them - would stay submittable against the
             // new instance. Restore this instance's own cached catalog, or the
-            // static fallback, before the probe goes out.
+            // latest defaults-derived fallback (not the bare static list - that
+            // would drop a saved model the static catalog does not carry), before
+            // the probe goes out.
             val cached = catalogCache[instanceId]
-            val restored = cached ?: NewSessionDecisions.models(provider)
+            val restored = cached ?: fallbackModelOptions
             catalogApplied = cached != null
             catalogOwnerInstanceId = if (cached != null) instanceId else null
             mutableState.value = mutableState.value.copy(
