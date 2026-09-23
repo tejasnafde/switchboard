@@ -11,6 +11,7 @@ import type { AddressInfo } from 'node:net'
 import { TcpHost } from '../../src/main/backend/tcp-host'
 import { currentBackendRequestContext } from '../../src/main/backend/request-context'
 import { TerminalChannels } from '../../src/shared/ipc-channels'
+import { BACKEND_CAPABILITIES } from '../../src/shared/ws-protocol'
 import type { DeviceScope } from '../../src/shared/device-auth'
 
 let server: Server | null = null
@@ -96,7 +97,7 @@ describe('TcpHost auth gate', () => {
     expect(await r.next()).toMatchObject({ ok: true, result: 'authed' })
     expect(await r.next()).toMatchObject({
       k: 'ready',
-      capabilities: ['durable_turn_origin', 'atomic_user_turn_v1', 'worktree_creation_v1', 'conversation_fork_v1'],
+      capabilities: [...BACKEND_CAPABILITIES],
     })
   })
 

@@ -34,6 +34,8 @@ export interface QueuedMessage {
   deliveryState?: 'ambiguous'
   /** Generated from the first visible turn, applied only after acceptance. */
   titleCandidate?: string
+  /** Queued by the user for after the running turn, instead of steering it. */
+  whenIdle?: boolean
 }
 
 /** Shape check for records restored from an older or current app build. */
@@ -68,6 +70,7 @@ export function parseQueuedMessage(value: unknown): QueuedMessage | null {
     pendingHandoff: typeof message.pendingHandoff === 'boolean' ? message.pendingHandoff : undefined,
     deliveryState: message.deliveryState === 'ambiguous' ? 'ambiguous' : undefined,
     titleCandidate: typeof message.titleCandidate === 'string' ? message.titleCandidate : undefined,
+    whenIdle: message.whenIdle === true ? true : undefined,
   }
 }
 

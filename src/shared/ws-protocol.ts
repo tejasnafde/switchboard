@@ -37,6 +37,8 @@ export const BACKEND_CAPABILITIES = [
   'atomic_user_turn_v1',
   'worktree_creation_v1',
   'conversation_fork_v1',
+  /** submitUserTurn honours `delivery: 'queue'` (held until the running turn ends). */
+  'turn_queue_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

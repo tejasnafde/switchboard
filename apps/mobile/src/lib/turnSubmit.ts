@@ -19,6 +19,7 @@ export interface BuildTurnInput {
   images?: Array<{ url: string; mimeType?: string }>
   runtimeMode?: string
   titleCandidate?: string
+  whenIdle?: boolean
 }
 
 export interface BuiltTurn {
@@ -41,6 +42,7 @@ export function buildTurn(input: BuildTurnInput): BuiltTurn {
       images: input.images && input.images.length > 0 ? input.images : undefined,
       runtimeMode: input.runtimeMode,
       titleCandidate: input.titleCandidate,
+      ...(input.whenIdle ? { whenIdle: true } : {}),
       createdAt: Date.now(),
       attempts: 0,
     },

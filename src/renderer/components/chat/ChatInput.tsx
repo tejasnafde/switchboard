@@ -12,6 +12,7 @@ import {
   type ImageAttachment,
 } from '../../stores/draft-store'
 import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
+import { canSteer, waitsForIdle, type TurnDelivery } from '@shared/turn-delivery'
 import {
   modelsForAgent,
   REASONING_EFFORTS,
@@ -669,7 +670,7 @@ export function ChatInput({
     [sessionId, removeImageFromSession],
   )
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(async (delivery: TurnDelivery = 'steer') => {
     const trimmed = value.trim()
     const hasPills = pills.length > 0
     if ((!trimmed && images.length === 0 && !hasPills) || disabled || submittingRef.current) return
@@ -723,7 +724,8 @@ export function ChatInput({
     try {
       result = await onSend(
         body,
-        undefined,
+        // ChatPanel holds a queued message until the running turn ends.
+        waitsForIdle(agentType, isRunning, delivery) ? 'queue' : undefined,
         images.length > 0 ? images : undefined,
         {
           origin,
@@ -823,7 +825,7 @@ export function ChatInput({
     }
     if (sessionIdRef.current !== submittedSessionId || submission !== submissionRef.current) return
     insertedPillsRef.current.clear()
-  }, [value, pills, pillsById, images, disabled, onSend, sessionId, composerFingerprint, recovery, updateRecoveries])
+  }, [value, pills, pillsById, images, disabled, onSend, sessionId, composerFingerprint, recovery, updateRecoveries, agentType, isRunning])
 
   const restoreRecovery = useCallback(() => {
     if (!sessionId || !recovery || (recovery.restored && !recovery.collisionPayload)) return
@@ -1510,7 +1512,7 @@ export function ChatInput({
             value={value}
             onChange={handleEditorChange}
             onCaretChange={handleEditorCaret}
-            onEnter={handleSend}
+            onEnter={({ altKey }) => { void handleSend(altKey ? 'queue' : 'steer') }}
             onPasteFiles={addImages}
             pillsById={pillsById}
             placeholder={placeholder}
@@ -1545,8 +1547,29 @@ export function ChatInput({
             Stop
           </button>
         )}
+        {isRunning && canSteer(agentType) && (
+          <button
+            type="button"
+            onClick={() => { void handleSend('queue') }}
+            disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
+            title="Send after this turn ends (⌥Enter)"
+            style={{
+              padding: '10px 12px',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--text-secondary)',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 600,
+              flexShrink: 0,
+            }}
+          >
+            Queue
+          </button>
+        )}
         <button
-          onClick={handleSend}
+          onClick={() => { void handleSend('steer') }}
           disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
           style={{
             padding: '10px 16px',
@@ -1560,7 +1583,7 @@ export function ChatInput({
             flexShrink: 0,
             transition: 'all 0.12s',
           }}
-          title={isRunning ? 'Queue a follow-up message (sends after current turn finishes)' : undefined}
+          title={isRunning ? (canSteer(agentType) ? 'Steer: the agent reads this at its next step (Enter)' : 'Sends after this turn ends') : undefined}
         >
           {isSubmitting
             ? 'Sending…'
@@ -1568,7 +1591,7 @@ export function ChatInput({
               ? 'Retry safely'
               : recoveryAction === 'retry'
                 ? 'Retry'
-                : isRunning ? 'Queue' : 'Send'}
+                : isRunning ? (canSteer(agentType) ? 'Steer' : 'Queue') : 'Send'}
         </button>
       </div>
 
