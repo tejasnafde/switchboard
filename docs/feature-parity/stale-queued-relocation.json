@@ -1,0 +1,26 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "stale-queued-relocation",
+  "summary": "A worktree Follow queued behind a running turn is dropped as soon as another move commits for that chat. It used to stay queued until the next turn ended, and while it sat there every send was refused with \"Session queue full while the working directory is moving\" even though the move had already happened. The refusal, when it is real, now says what is happening and what to do.",
+  "surfaces": {
+    "desktop": { "status": "not_applicable", "reason": "Backend-only change; the desktop shows the backend's refusal text unchanged in form." },
+    "reactNativeIos": { "status": "not_applicable", "reason": "Backend-only change; the phone shows the same refusal text." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "Backend-only change; Android shows the same refusal text." },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/execution-root-coordinator.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/execution-root-coordinator.test.ts"
+      ]
+    },
+    "storageDataMigration": { "status": "not_applicable", "reason": "The queue is in memory; the durable execution root and its revision are unchanged." },
+    "updateRelease": { "status": "not_applicable", "reason": "No wire change; only the text of an existing refusal changes." }
+  },
+  "verification": {
+    "automated": ["npx vitest run tests/unit/execution-root-coordinator.test.ts", "npm run typecheck", "npm test"],
+    "hardware": ["Diagnosed from the live log of thread 689129fb (post guardrails explore): queued relocation expecting revision 1, a relocation committed to revision 2 at 12:46:19, the stale queued one dropped only at the next turn boundary at 12:48:24; sends were refused in between."],
+    "notExercised": ["The fix was not replayed against the live thread; the regression test reproduces the same sequence."]
+  }
+}

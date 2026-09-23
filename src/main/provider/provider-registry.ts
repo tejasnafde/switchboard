@@ -723,7 +723,7 @@ export class ProviderRegistry implements PeerToolHost {
     // A queued relocation commits at the next turn boundary, so accepting a
     // new turn here would start it in the directory the user is leaving.
     if (this.executionRoot?.hasQueued(threadId) || this.executionRoot?.isRelocating(threadId)) {
-      return rejectedAtomicTurn('Session queue full while the working directory is moving')
+      return rejectedAtomicTurn('This chat is moving to its worktree after the current turn. Send again once the turn ends.')
     }
     const starting = this.startingSessions.get(threadId)
     if (starting) await starting
@@ -731,7 +731,7 @@ export class ProviderRegistry implements PeerToolHost {
       return rejectedAtomicTurn('Session queue full while a profile switch is in progress')
     }
     if (this.executionRoot?.hasQueued(threadId) || this.executionRoot?.isRelocating(threadId)) {
-      return rejectedAtomicTurn('Session queue full while the working directory is moving')
+      return rejectedAtomicTurn('This chat is moving to its worktree after the current turn. Send again once the turn ends.')
     }
     const adapter = this.sessionAdapters.get(threadId)
     if (!adapter) return rejectedAtomicTurn(`No session: ${threadId}`)
