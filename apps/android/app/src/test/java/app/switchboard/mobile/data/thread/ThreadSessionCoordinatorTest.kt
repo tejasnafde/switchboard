@@ -461,6 +461,27 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `submitText publishes state like submit and blocks a reentrant call`() {
+        val remote = FakeThreadSessionRemote(scope)
+        lateinit var coordinator: ThreadSessionCoordinator
+        var nestedResult: ComposerSubmitResult? = null
+        var submittingObservedDuringEnqueue = false
+        val enqueue = ThreadEnqueuePort { draft ->
+            submittingObservedDuringEnqueue = coordinator.state.value.composer.submitting
+            nestedResult = coordinator.submitText("second")
+            durable("compact-1", draft.text)
+        }
+        coordinator = coordinator(remote, enqueue = enqueue)
+
+        assertTrue(coordinator.submitText("/compact") is ComposerSubmitResult.Durable)
+
+        assertTrue(submittingObservedDuringEnqueue)
+        assertEquals(ComposerSubmitResult.Busy, nestedResult)
+        assertFalse(coordinator.state.value.composer.submitting)
+        assertEquals(listOf("remote_compact-1"), coordinator.currentThread()?.feed?.map(FeedItem::id))
+    }
+
+    @Test
     fun `saved composer restores mode attachments and supports image only send`() {
         val remote = FakeThreadSessionRemote(scope)
         val persistence = FakeComposerPersistence()

@@ -229,11 +229,22 @@ class NewSessionCoordinator(
                         profiles.any { it.id == requested }
                     } ?: profiles.firstOrNull()?.id
                 }
+                val previousResolvedInstanceId = current.selectedInstanceId
+                    ?: current.profiles.firstOrNull()?.id
                 mutableState.value = current.copy(
                     loadingInstances = false,
                     profiles = profiles,
                     selectedInstanceId = selected,
                 )
+                // Defaults can resolve before this callback does (getSetting racing
+                // listProviderInstances). If applyDefaults already probed the catalog
+                // with a stale/null instance id, re-probe now that this callback has
+                // resolved the real one - otherwise the earlier response is dropped
+                // as stale (Line ~664) and nothing else ever re-asks.
+                val resolvedInstanceId = selected ?: profiles.firstOrNull()?.id
+                if (!mutableState.value.loadingDefaults && resolvedInstanceId != previousResolvedInstanceId) {
+                    refreshCatalog()
+                }
             }
         }
         loadDefaults(mutableState.value.provider)
@@ -678,13 +689,34 @@ class NewSessionCoordinator(
     @Synchronized
     private fun applyCatalog(agentType: String, catalog: List<ModelOption>) {
         val covers = ModelCatalogReconcile.coversFor(agentType)
+        val previousOptions = mutableState.value.modelOptions
         val reconciledModelId = ModelCatalogReconcile.reconcileSelectedModel(
             mutableState.value.selectedModelId,
             catalog,
             covers,
         )
+        val mapped = catalog.map { row ->
+            NewSessionModelOption(
+                id = row.id,
+                label = row.label,
+                tier = row.tier,
+                authoritativeDefault = previousOptions.any { it.id == row.id && it.authoritativeDefault },
+            )
+        }
+        // reconcileSelectedModel returns the pick verbatim (e.g. "claude-opus-4-7"
+        // even when only "claude-opus-4-7[1m]" covers it), but NewSessionScreen only
+        // marks an option selected on an exact id match. Without the prior entry the
+        // picker would show nothing selected while submit() still sends it. Keep the
+        // prior selected (or, failing that, the prior authoritative-default) option
+        // visible until a catalog row exists at that exact id.
+        val preserved = reconciledModelId
+            ?.takeIf { id -> mapped.none { it.id == id } }
+            ?.let { id ->
+                previousOptions.firstOrNull { it.id == id }
+                    ?: previousOptions.firstOrNull { it.authoritativeDefault }
+            }
         mutableState.value = mutableState.value.copy(
-            modelOptions = catalog.map { row -> NewSessionModelOption(row.id, row.label, row.tier) },
+            modelOptions = if (preserved != null) listOf(preserved) + mapped else mapped,
             selectedModelId = reconciledModelId,
         )
     }

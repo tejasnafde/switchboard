@@ -71,9 +71,16 @@ class NewSessionCoordinatorTest {
         )
 
         val state = coordinator.state.value
-        assertEquals(listOf("claude-fable-5", "claude-opus-4-7[1m]"), state.modelOptions.map { it.id })
-        // Rule 3 (suffix stripping): the live row covers the selection verbatim.
+        // Rule 3 (suffix stripping): the live row covers the selection verbatim, but
+        // no catalog row has that exact id - the prior selected option is preserved
+        // so the picker still has something to mark selected.
+        assertEquals(
+            listOf("claude-opus-4-7", "claude-fable-5", "claude-opus-4-7[1m]"),
+            state.modelOptions.map { it.id },
+        )
         assertEquals("claude-opus-4-7", state.selectedModelId)
+        assertTrue(state.modelOptions.any { it.id == state.selectedModelId })
+        assertTrue(state.modelOptions.first { it.id == "claude-opus-4-7" }.authoritativeDefault)
     }
 
     @Test
@@ -123,6 +130,27 @@ class NewSessionCoordinatorTest {
 
         coordinator.selectInstance("claude-work")
 
+        assertEquals(2, remote.catalogRequests.size)
+        assertEquals("claude-code" to "claude-work", remote.catalogRequests.last().first)
+    }
+
+    @Test
+    fun settingsAnsweringBeforeInstancesStillReprobesTheCatalogOnceTheInstanceResolves() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        // Defaults resolve before listProviderInstances does: applyDefaults runs
+        // against an empty allInstances, so the first catalog probe has no instance.
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", null)
+        remote.answerSetting("chat.defaultProviderInstanceId", "claude-work")
+        assertEquals(1, remote.catalogRequests.size)
+        assertEquals("claude-code" to null, remote.catalogRequests.single().first)
+
+        remote.instances.single()(success("instances", listOf(instance("claude-work"))))
+
+        assertEquals("claude-work", coordinator.state.value.selectedInstanceId)
         assertEquals(2, remote.catalogRequests.size)
         assertEquals("claude-code" to "claude-work", remote.catalogRequests.last().first)
     }

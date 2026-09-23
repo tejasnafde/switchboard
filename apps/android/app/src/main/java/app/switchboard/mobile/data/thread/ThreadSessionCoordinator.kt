@@ -580,8 +580,14 @@ class ThreadSessionCoordinator(
      */
     @Synchronized
     fun submitText(text: String): ComposerSubmitResult {
+        // Same reentrancy guard as submit(): a second tap (e.g. the compaction-offer
+        // banner's Compact button) while one of these is already in flight must not
+        // enqueue a second turn.
+        if (composer.submitting) return ComposerSubmitResult.Busy
         val trimmed = text.trim()
         if (trimmed.isEmpty()) return ComposerSubmitResult.Empty
+        composer = composer.copy(submitting = true, error = null)
+        publish()
         val result = enqueueDraft(
             text = trimmed,
             mode = composer.runtimeMode,
@@ -591,10 +597,12 @@ class ThreadSessionCoordinator(
         return when (result) {
             is EnqueueResult.Durable -> {
                 addOptimistic(result.turn)
+                composer = composer.copy(submitting = false, error = null)
+                publish()
                 ComposerSubmitResult.Durable(result.turn)
             }
-            is EnqueueResult.AttachmentFailure -> ComposerSubmitResult.Failed(controlFailed(result.reason).message)
-            is EnqueueResult.StorageFailure -> ComposerSubmitResult.Failed(controlFailed(result.reason).message)
+            is EnqueueResult.AttachmentFailure -> submitFailed(result.reason)
+            is EnqueueResult.StorageFailure -> submitFailed(result.reason)
         }
     }
 
@@ -1312,7 +1320,7 @@ class ThreadSessionCoordinator(
         const val HISTORY_LIMIT = 250L
         const val IMPLEMENT_PLAN_MESSAGE = "Implement the plan you proposed."
         const val OPEN_FILE_UNSUPPORTED = "Opening changed files is not available on mobile yet."
-        private val ACTIVE_PROVIDER_STATUSES = setOf(
+        val ACTIVE_PROVIDER_STATUSES = setOf(
             "running",
             "working",
             "thinking",

@@ -97,7 +97,7 @@ class DurableComposerRuntime(
             when (val result = outbox.enqueue(outgoing)) {
                 is EnqueueResult.AttachmentFailure -> recordError(key, result.reason)
                 is EnqueueResult.StorageFailure -> recordError(key, result.reason)
-                is EnqueueResult.Durable -> Unit
+                is EnqueueResult.Durable -> mutableErrors.value = mutableErrors.value - key
             }
         }
     }

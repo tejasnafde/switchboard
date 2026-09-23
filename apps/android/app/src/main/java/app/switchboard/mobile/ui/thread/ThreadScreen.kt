@@ -115,6 +115,7 @@ import app.switchboard.mobile.data.thread.ThreadPendingActions
 import app.switchboard.mobile.data.thread.ThreadArchiveState
 import app.switchboard.mobile.data.thread.ThreadModelState
 import app.switchboard.mobile.data.thread.ThreadProfileState
+import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.GeistMono
@@ -183,6 +184,17 @@ fun ThreadScreen(
     var forkMessageId by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     // Per-thread, in memory only - a fresh screen instance re-offers.
     var compactionDismissed by rememberSaveable(threadId) { mutableStateOf(false) }
+    // onSendOverride is fire-and-forget (dispatched onto a worker coroutine), so
+    // there is no synchronous result to gate a second tap on. Hide the offer the
+    // instant it is tapped - that removes the Compact action before a second tap
+    // can land - and only put it back if the durable enqueue itself failed.
+    var compactionAwaitingResult by rememberSaveable(threadId) { mutableStateOf(false) }
+    LaunchedEffect(threadId, composer?.error) {
+        if (compactionAwaitingResult && composer?.error != null) {
+            compactionAwaitingResult = false
+            compactionDismissed = false
+        }
+    }
     val presentation = remember(loadState) { ThreadPresenter.present(loadState) }
     val metadata = presentation.metadataOrNull()
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
@@ -206,7 +218,7 @@ fun ThreadScreen(
             provider = metadata.provider,
             usedTokens = metadata.usedTokens,
             lastMessageAtMs = metadata.lastTurnAt ?: lastUserAt,
-            busy = metadata.status == "running",
+            busy = metadata.status in ThreadSessionCoordinator.ACTIVE_PROVIDER_STATUSES,
             nowMs = now,
         ),
     )
@@ -290,7 +302,11 @@ fun ThreadScreen(
             if (offerCompaction && metadata?.usedTokens != null) {
                 CompactionOfferBanner(
                     usedTokens = metadata.usedTokens,
-                    onCompact = { onSendOverride("/compact") },
+                    onCompact = {
+                        compactionDismissed = true
+                        compactionAwaitingResult = true
+                        onSendOverride("/compact")
+                    },
                     onDismiss = { compactionDismissed = true },
                 )
             }
