@@ -86,7 +86,7 @@ describe('DemoAdapter (tour recorder script)', () => {
     expect(events.some((e) => e.type === 'tool.started' && e.toolName === 'Bash')).toBe(true)
   }, 20_000)
 
-  it('interrupting a turn blocked on an approval ends it without completing', async () => {
+  it('interrupting a turn blocked on an approval closes the approval without completing', async () => {
     const adapter = new DemoAdapter('claude')
     const events: RuntimeEvent[] = []
     await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
@@ -97,8 +97,27 @@ describe('DemoAdapter (tour recorder script)', () => {
     await adapter.interruptTurn('t1')
     await new Promise((resolve) => setTimeout(resolve, 200))
     expect(events.some((e) => e.type === 'turn.completed')).toBe(false)
-    expect(events.some((e) => e.type === 'request.closed')).toBe(false)
+    expect(events.some((e) => e.type === 'request.closed' && e.decision === 'deny')).toBe(true)
   }, 20_000)
+
+  it('a steer that opens a second approval leaves the first one answerable', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    const opened = (): string[] => events.flatMap((e) => (e.type === 'request.opened' ? [e.requestId] : []))
+    await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
+    await vi.waitFor(() => { if (opened().length < 1) throw new Error('no approval yet') }, { timeout: 5_000, interval: 50 })
+    await adapter.sendTurn('t1', 'Run them again', 'sandbox', undefined, 'steer')
+    await vi.waitFor(() => { if (opened().length < 2) throw new Error('no second approval yet') }, { timeout: 5_000, interval: 50 })
+    await adapter.respondToRequest('t1', opened()[0], 'approve')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('first turn still running')
+    }, { timeout: 10_000, interval: 50 })
+    await adapter.respondToRequest('t1', opened()[1], 'deny')
+    await vi.waitFor(() => {
+      if (events.filter((e) => e.type === 'turn.completed').length < 2) throw new Error('second turn still running')
+    }, { timeout: 10_000, interval: 50 })
+  }, 30_000)
 
   it('exposes one scripted adapter per provider kind', () => {
     const map = demoAdapters()
