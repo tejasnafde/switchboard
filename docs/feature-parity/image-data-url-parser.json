@@ -1,0 +1,45 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "image-data-url-parser",
+  "summary": "One parseImageDataUrl in shared/provider-events replaces the three data-URL patterns in the turn validator and the Claude and OpenCode adapters, and the desktop file picker offers only the four image types every provider accepts.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "tests/unit/image-data-url.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone attaches images from the system photo picker, which produces JPEG or PNG; it has no file-type filter to narrow, and its sends go through the same shared validator."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android attaches from the system photo picker as well and sends through the same backend validator; nothing in apps/android parses data URLs."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/provider-events.ts",
+        "src/main/provider/adapters/claude-adapter.ts",
+        "src/main/provider/adapters/opencode-acp-adapter.ts",
+        "tests/unit/image-data-url.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes; images are validated in memory at the turn boundary as before."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "The accepted set of image types is unchanged (PNG, JPEG, WebP, GIF), so old and new clients and servers agree."
+    }
+  },
+  "verification": {
+    "automated": ["npx vitest run tests/unit/image-data-url.test.ts", "npm run typecheck", "npm test"],
+    "hardware": [],
+    "notExercised": ["The file picker filter was not opened in the running app; it is the standard accept attribute."]
+  }
+}

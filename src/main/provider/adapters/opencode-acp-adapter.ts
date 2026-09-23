@@ -20,6 +20,7 @@
  * SDK's WhatWG-stream API.
  */
 
+import { parseImageDataUrl } from '@shared/provider-events'
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { Readable, Writable } from 'stream'
 import { promises as fs } from 'fs'
@@ -836,12 +837,8 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
 export function parseImageInput(
   img: { url: string; mimeType?: string },
 ): { mimeType: string | undefined; data: string | null } {
-  if (!img.url) return { mimeType: img.mimeType, data: null }
-  const m = img.url.match(/^data:([^;]+);base64,(.*)$/)
-  if (m) {
-    return { mimeType: m[1], data: m[2] }
-  }
-  return { mimeType: img.mimeType, data: null }
+  const parsed = img.url ? parseImageDataUrl(img.url) : null
+  return parsed ?? { mimeType: img.mimeType, data: null }
 }
 
 // ─── Avoid an `Agent` import warning when the Agent symbol is only used at types. ───
