@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react'
 import type { ToolCall } from '@shared/types'
+import { summarizeTool as summarizeToolShared } from '@shared/tool-summary'
 import { createRendererLogger } from '../../logger'
 
 const log = createRendererLogger('chat:tool-call')
@@ -47,55 +48,24 @@ function Icon({ kind }: { kind: ToolKind }) {
 interface ToolSummary {
   label: string
   detail?: string
+  mono: boolean
 }
 
-function summarizeTool(kind: ToolKind, name: string, input: string): ToolSummary {
+/**
+ * Desktop's `ToolCall.input` is a JSON string; the shared module takes an
+ * already-parsed value, same as mobile. Malformed input degrades to the
+ * same "raw name, no detail" fallback the previous desktop-only summarizer
+ * used, rather than throwing.
+ */
+function summarizeTool(name: string, input: string): ToolSummary {
+  let parsed: unknown
   try {
-    const p = JSON.parse(input)
-    switch (kind) {
-      case 'bash':
-        return { label: 'Bash', detail: p.command || '' }
-      case 'read':
-        return { label: 'Read', detail: shortenPath(p.file_path) }
-      case 'edit':
-        return {
-          label: p.move_path ? 'Rename' : 'Edit',
-          detail: p.move_path
-            ? `${shortenPath(p.file_path)} → ${shortenPath(p.move_path)}`
-            : shortenPath(p.file_path),
-        }
-      case 'write':
-        return { label: 'Write', detail: shortenPath(p.file_path) }
-      case 'glob':
-        return { label: 'Glob', detail: p.pattern || '' }
-      case 'grep':
-        return { label: 'Grep', detail: p.pattern ? `"${p.pattern}"${p.path ? ` in ${shortenPath(p.path)}` : ''}` : '' }
-      case 'agent':
-        return { label: 'Subagent', detail: p.description || p.prompt?.slice(0, 80) || '' }
-      case 'web':
-        return { label: 'Web', detail: p.url || p.query || '' }
-      case 'todo':
-        return { label: 'Todos', detail: Array.isArray(p.todos) ? `${p.todos.length} items` : '' }
-      default:
-        return { label: name }
-    }
+    parsed = JSON.parse(input)
   } catch {
-    return { label: name }
+    parsed = undefined
   }
-}
-
-function shortenPath(path?: string): string {
-  if (!path) return ''
-  // Collapse home dir
-  const home = '/Users/'
-  if (path.startsWith(home)) {
-    const parts = path.split('/')
-    // /Users/tejas/Desktop/projects/switchboard/src/file.ts → …/switchboard/src/file.ts
-    if (parts.length > 5) {
-      return '…/' + parts.slice(-3).join('/')
-    }
-  }
-  return path
+  const { title, detail, mono } = summarizeToolShared(name, parsed)
+  return { label: title, detail: detail || undefined, mono }
 }
 
 // ─── Expanded body per tool type ──────────────────────────────────
@@ -314,7 +284,7 @@ function DiffChunk({ type, content }: { type: 'add' | 'remove'; content: string 
 export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
   const [expanded, setExpanded] = useState(false)
   const kind = classifyTool(toolCall.name)
-  const summary = useMemo(() => summarizeTool(kind, toolCall.name, toolCall.input), [kind, toolCall.name, toolCall.input])
+  const summary = useMemo(() => summarizeTool(toolCall.name, toolCall.input), [toolCall.name, toolCall.input])
   const hasRunning = !toolCall.output
 
   return (
@@ -355,7 +325,7 @@ export function ToolCallBlock({ toolCall }: ToolCallBlockProps) {
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
-            fontFamily: 'var(--font-mono)',
+            fontFamily: summary.mono ? 'var(--font-mono)' : 'inherit',
             fontSize: '11px',
             color: 'var(--text-muted)',
           }} title={summary.detail}>

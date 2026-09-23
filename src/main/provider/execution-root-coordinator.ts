@@ -270,6 +270,18 @@ export class ExecutionRootCoordinator {
     continuity: RelocationContinuity,
   ): RelocateExecutionRootResult {
     this.host.commitRuntime(request.threadId, target.path, revision)
+    // A move queued against an older revision can never commit now, and while
+    // it sits in the queue every send is refused. Drop it here, not at the
+    // next turn boundary.
+    const pending = this.queued.get(request.threadId)
+    if (pending && pending.request.expectedRevision !== revision) {
+      this.queued.delete(request.threadId)
+      log.info('dropping queued relocation - another move committed first', {
+        threadId: request.threadId,
+        expected: pending.request.expectedRevision,
+        actual: revision,
+      })
+    }
     const to = resolveExecutionRoot({
       projectPath: from.projectPath,
       worktreePath: target.path,

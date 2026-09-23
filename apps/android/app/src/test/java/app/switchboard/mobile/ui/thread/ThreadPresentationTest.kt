@@ -107,7 +107,7 @@ class ThreadPresentationTest {
         ) as ThreadRowPresentation.Tool
 
         assertEquals("stable-tool-row", row.key)
-        assertEquals("Bash", row.label)
+        assertEquals("Terminal", row.label)
         assertEquals("npm test --runInBand", row.detail)
         assertEquals(ToolIconKind.SHELL, row.iconKind)
         assertTrue(row.monospaceDetail)
@@ -129,7 +129,7 @@ class ThreadPresentationTest {
             ),
         )
 
-        assertEquals("Bash", stringCommand.label)
+        assertEquals("Terminal", stringCommand.label)
         assertEquals("npm test -- --runInBand", stringCommand.detail)
         assertEquals("git status", arrayCommand.detail)
         assertEquals(ToolIconKind.SHELL, arrayCommand.iconKind)
@@ -167,10 +167,10 @@ class ThreadPresentationTest {
         val glob = toolRow("file_glob", obj("query" to JsonString("**/Thread*.kt")))
         val list = toolRow("list-files", obj("directory" to JsonString("apps/android")))
 
-        assertEquals("Grep", grep.label)
-        assertEquals("\"ThreadRow\" in apps/android", grep.detail)
+        assertEquals("Search", grep.label)
+        assertEquals("ThreadRow in apps/android", grep.detail)
         assertEquals(ToolIconKind.SEARCH, grep.iconKind)
-        assertEquals("Glob", glob.label)
+        assertEquals("Find files", glob.label)
         assertEquals("**/Thread*.kt", glob.detail)
         assertEquals("List files", list.label)
         assertEquals("apps/android", list.detail)
@@ -182,9 +182,9 @@ class ThreadPresentationTest {
         val search = toolRow("WebSearch", obj("q" to JsonString("Compose merged semantics")))
 
         assertEquals("Fetch", fetch.label)
-        assertEquals("https://example.com/docs", fetch.detail)
+        assertEquals("example.com", fetch.detail)
         assertEquals(ToolIconKind.WEB, fetch.iconKind)
-        assertTrue(fetch.monospaceDetail)
+        assertFalse(fetch.monospaceDetail)
         assertEquals("Web search", search.label)
         assertEquals("Compose merged semantics", search.detail)
         assertFalse(search.monospaceDetail)
@@ -194,7 +194,7 @@ class ThreadPresentationTest {
     fun taskAndSubagentAliasesPresentDescriptions() {
         listOf("task", "subagent", "spawn_agent").forEach { name ->
             val row = toolRow(name, obj("description" to JsonString("Audit provider lifecycle")))
-            assertEquals(name, "Task", row.label)
+            assertEquals(name, "Subagent", row.label)
             assertEquals(name, "Audit provider lifecycle", row.detail)
             assertEquals(name, ToolIconKind.TASK, row.iconKind)
             assertFalse(name, row.monospaceDetail)
@@ -340,7 +340,7 @@ class ThreadPresentationTest {
         )
 
         assertEquals("Notion · Search", row.label)
-        assertEquals("\"Android density\"", row.detail)
+        assertEquals("Android density", row.detail)
         assertEquals(ToolIconKind.SEARCH, row.iconKind)
     }
 
@@ -372,7 +372,7 @@ class ThreadPresentationTest {
             ),
         )
 
-        assertEquals("…/src/main/ThreadScreen.kt", row.detail)
+        assertEquals("…/main/ThreadScreen.kt", row.detail)
     }
 
     @Test
