@@ -10,9 +10,19 @@
  *     (SB_DEMO_ADAPTER=1) and pixel-compared with the baselines in
  *     e2e/snapshots/<screen>-<theme>-<platform>.png.
  *
+ * Translucent: the real window shows whatever desktop is behind it, blurred by
+ * native vibrancy, so an on-screen capture can never be a stable baseline.
+ * Playwright's capture holds only the app's own pixels with their alpha, and
+ * every screen is flattened over one fixed two-colour backdrop
+ * (flattenOverBackdrop), which makes a surface that turns opaque, or one
+ * that turns see-through, change pixels. The behaviour phase keeps the native
+ * check that the desktop colour actually comes through (needs Screen
+ * Recording permission).
+ *
  * SB_UPDATE_SNAPSHOTS=1 rewrites every baseline instead of comparing. Failed
  * comparisons write <name>-actual.png and <name>-diff.png to the artifact dir
- * (SB_VISUAL_ARTIFACT_DIR, default e2e/artifacts/visual, emptied per run).
+ * (SB_VISUAL_ARTIFACT_DIR, default e2e/artifacts/visual, which is emptied per
+ * run).
  */
 
 import { _electron as electron } from 'playwright'
@@ -36,7 +46,8 @@ if (!['all', 'behaviour', 'screens'].includes(scope)) {
   console.error(`SB_VISUAL_SCOPE must be all, behaviour or screens (got ${scope})`)
   process.exit(1)
 }
-const updateSnapshots = process.env.SB_UPDATE_SNAPSHOTS === '1'
+// SB_UPDATE_VISUAL_SNAPSHOTS is the name this flag had before the screens phase.
+const updateSnapshots = process.env.SB_UPDATE_SNAPSHOTS === '1' || process.env.SB_UPDATE_VISUAL_SNAPSHOTS === '1'
 const snapshotDir = join(repoRoot, 'e2e', 'snapshots')
 const tempPaths = []
 const makeTemp = (prefix) => {
@@ -46,7 +57,9 @@ const makeTemp = (prefix) => {
 }
 const userDataDir = makeTemp('sb-visual-e2e-')
 const artifactDir = resolve(process.env.SB_VISUAL_ARTIFACT_DIR ?? join(repoRoot, 'e2e', 'artifacts', 'visual'))
-rmSync(artifactDir, { recursive: true, force: true })
+// Only the default dir is ours to empty; a directory passed in may hold
+// anything.
+if (!process.env.SB_VISUAL_ARTIFACT_DIR) rmSync(artifactDir, { recursive: true, force: true })
 mkdirSync(artifactDir, { recursive: true })
 const screenshotPath = join(artifactDir, 'translucent.png')
 const windowScreenshotPath = join(artifactDir, 'translucent-window.png')
@@ -397,7 +410,7 @@ const FREEZE_CSS = `
 `
 
 async function openConversation(win, title) {
-  await win.locator('.sidebar-thread-main').filter({ hasText: title }).first().click()
+  await win.locator('.sidebar-recent-row').filter({ hasText: title }).first().click()
   await win.locator('.chat-identity-title').filter({ hasText: title }).waitFor({ state: 'visible' })
 }
 
@@ -517,7 +530,11 @@ async function runThemeScreens() {
     fixture.restore()
     const { win } = await launchSwitchboard({ userData: fixture.userData, demo: true })
     win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
+    // The fixed clock applies from the next navigation, so reload: every
+    // label, memoised or not, is then first computed from FROZEN_NOW.
     await win.clock.setFixedTime(FROZEN_NOW)
+    await win.reload()
+    await win.waitForFunction((now) => !!window.api?.settings && Date.now() === now, FROZEN_NOW, { timeout: 20_000 })
     await win.addStyleTag({ content: FREEZE_CSS })
     await captureThemeScreens(win, theme)
     await closeApp()
@@ -525,13 +542,13 @@ async function runThemeScreens() {
 }
 
 async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) {
-  // The screens phase pins everything that changes pixels between machines:
-  // a 1x device scale (Retina or not), a fixed window size, and a fixed shell
-  // prompt for the terminal pane, and UTC for every rendered time.
+  // The screens phase pins what changes pixels between machines: a 1x device
+  // scale (Retina or not), sRGB output whatever the display's colour profile,
+  // the window size, the terminal's shell prompt and the time zone.
   const demoEnv = demo
     ? { SB_DEMO_ADAPTER: '1', TZ: 'UTC', SHELL: '/bin/sh', PS1: 'demo@acme:$ ', ENV: '/dev/null', USER: 'developer', LOGNAME: 'developer' }
     : {}
-  const args = demo ? ['--force-device-scale-factor=1'] : []
+  const args = demo ? ['--force-device-scale-factor=1', '--force-color-profile=srgb'] : []
   const instance = await electron.launch({
     ...(packagedExecutable ? { executablePath: packagedExecutable, args } : { args: ['.', ...args] }),
     cwd: repoRoot,

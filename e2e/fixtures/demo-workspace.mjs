@@ -12,7 +12,7 @@ const sql = (value) => value == null ? 'NULL' : `'${String(value).replaceAll("'"
 
 function gitCommitAll(cwd, message) {
   const identity = ['-c', 'user.email=demo@switchboard.local', '-c', 'user.name=Switchboard Demo']
-  execFileSync('git', ['init', '-q'], { cwd })
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd })
   execFileSync('git', [...identity, 'add', '.'], { cwd })
   execFileSync('git', [...identity, 'commit', '-qm', message], { cwd })
 }
