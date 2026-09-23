@@ -1,0 +1,60 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "no-silent-catch",
+  "summary": "Every empty/comment-only catch block and empty .catch(() => {}) handler under src/main, src/renderer and src/server now logs through the module's scoped logger instead of swallowing the error, with log.warn for real failures and log.debug for expected/benign paths. A handful of sites (the logger's own write path, pointer-capture release/acquire) are deliberately left silent with an eslint-disable comment explaining why. A new no-restricted-syntax ESLint rule (src/** only) rejects both patterns going forward, so the count cannot silently regrow. No behavior changed: only logging was added, no new throws or changed return values.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/App.tsx",
+        "src/renderer/stores/layout-store.ts",
+        "src/renderer/components/sidebar/Sidebar.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/main/index.ts",
+        "src/main/logger.ts",
+        "src/main/provider/adapters/claude-adapter.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "No files under apps/mobile were touched. The mobile app has its own logging conventions and was not audited as part of this pass."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "No files under apps/android were touched. Native Android was not audited as part of this pass."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/main/provider/provider-registry.ts",
+        "src/main/provider/remote-gate.ts",
+        "src/main/worktree-creation/worktree-creation-service.ts",
+        "src/main/db/database.ts",
+        "src/main/db/machines.ts",
+        "src/main/db/providerInstances.ts",
+        "src/server/index.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, column, or migration behavior changed. The touched sites in src/main/db/database.ts and src/main/db/machines.ts are existing migration/parse catch blocks that now log their failure; no new table, column, or migration step was added."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No wire protocol, version, or packaging change. This is a logging-only change plus a lint rule; nothing here affects update channels or release packaging."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx eslint --max-warnings=0 'src/**/*.{ts,tsx}'",
+      "npm run typecheck",
+      "npx vitest run (392 files, 3814 tests, all passing)",
+      "Manually verified the new no-restricted-syntax rule fires on a throwaway bare `catch {}` and a throwaway `.catch(() => {})`, then removed both before committing"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The new log lines were not visually inspected in the running desktop app's DevTools console or log files beyond the one test (app-view.test.ts) that incidentally exercises a real failure path under vitest."
+    ]
+  }
+}
