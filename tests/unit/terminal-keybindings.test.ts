@@ -64,16 +64,3 @@ describe('terminal keybinding sequences', () => {
   })
 })
 
-describe('CLI flags', () => {
-  it('buildArgs includes --verbose for stream-json output', () => {
-    const fs = require('fs')
-    const source = fs.readFileSync(
-      'src/main/agent/agent-manager.ts',
-      'utf-8'
-    )
-    // --verbose is required with --print --output-format stream-json in Claude CLI v2.1.101+
-    expect(source).toContain("'--verbose'")
-    expect(source).toContain("'--print'")
-    expect(source).toContain("'stream-json'")
-  })
-})

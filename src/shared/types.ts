@@ -162,19 +162,6 @@ export interface ProviderInstance {
   updatedAt: number
 }
 
-export interface AgentStartOptions {
-  id: string
-  type: AgentType
-  cwd: string
-  resumeSessionId?: string
-}
-
-export interface AgentSendPayload {
-  id: string
-  message: string
-  context?: TerminalContext[]
-}
-
 export interface TerminalContext {
   text: string
   paneName: string

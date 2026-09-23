@@ -23,7 +23,6 @@ import { registerSttHandlers } from '../main/ipc/stt'
 import { registerKanbanHandlers } from '../main/ipc/kanban'
 import { registerProviderInstanceHandlers } from '../main/ipc/providerInstances'
 import { registerTerminalHandlers } from '../main/ipc/terminal'
-import { registerAgentHandlers } from '../main/ipc/agent'
 import { ProviderRegistry } from '../main/provider/provider-registry'
 import { disposeUsageProbes } from '../main/provider/usage'
 import { startBridgeHost } from '../main/ide/bridge-host'
@@ -141,7 +140,6 @@ registerGitHandlers(host)
 registerSttHandlers(host)
 registerProviderInstanceHandlers(host)
 registerTerminalHandlers(host)
-registerAgentHandlers(host)
 host.handle(SERVER_VERSION_CHANNEL, () => __SERVER_VERSION__)
 
 const registry = new ProviderRegistry(host)

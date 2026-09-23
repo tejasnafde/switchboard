@@ -4,7 +4,7 @@ import { WsTransport } from '@shared/ws-transport'
 import { HybridTransport } from './hybrid-transport'
 import { TransportRouter, shouldReplaceTransport } from './transport-router'
 import { RoutingTable } from './routing-table'
-import { TerminalChannels, AgentChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels } from '@shared/ipc-channels'
+import { TerminalChannels, AppChannels, ProviderChannels, FilesChannels, GitChannels, IdeChannels, KanbanChannels, MachineChannels, ProviderInstanceChannels, BookmarkChannels, PushChannels, AnalyticsChannels } from '@shared/ipc-channels'
 import { DESKTOP_VIEWER_REF } from '@shared/push-policy'
 import type { PeerMessageInput } from '@shared/peer-messaging'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanWorktreeCreationIntent, WorktreeInfo } from '@shared/kanban'
@@ -12,8 +12,6 @@ import type { Machine, MachineInput, SshHost, MachineSnapshot } from '@shared/ma
 import type {
   TerminalCreateOptions,
   TerminalResizePayload,
-  AgentStartOptions,
-  AgentSendPayload,
   CreateConversationParams,
   SaveMessageParams,
   MobilePairingStatus,
@@ -112,31 +110,6 @@ const api = {
 
     onExit: (callback: (id: string, exitCode: number) => void) =>
       transport.on<[string, number]>(TerminalChannels.EXIT, (id, exitCode) => callback(id, exitCode)),
-  },
-
-  // ─── Agent ─────────────────────────────────────────────────────
-  agent: {
-    start: (opts: AgentStartOptions) =>
-      transport.invoke(AgentChannels.START, opts),
-
-    send: (payload: AgentSendPayload) =>
-      transport.invoke(AgentChannels.SEND, payload),
-
-    kill: (id: string) =>
-      transport.send(AgentChannels.KILL, id),
-
-    onMessage: (callback: (agentId: string, message: unknown) => void) =>
-      transport.on<[string, unknown]>(AgentChannels.MESSAGE, (agentId, message) => callback(agentId, message)),
-
-    onMessageUpdate: (callback: (agentId: string, messageId: string, updates: unknown) => void) =>
-      transport.on<[string, string, unknown]>(AgentChannels.MESSAGE_UPDATE, (agentId, messageId, updates) =>
-        callback(agentId, messageId, updates)),
-
-    onStatus: (callback: (agentId: string, status: string) => void) =>
-      transport.on<[string, string]>(AgentChannels.STATUS, (agentId, status) => callback(agentId, status)),
-
-    onError: (callback: (agentId: string, error: string) => void) =>
-      transport.on<[string, string]>(AgentChannels.ERROR, (agentId, error) => callback(agentId, error)),
   },
 
   // ─── App ──────────────────────────────────────────────────────

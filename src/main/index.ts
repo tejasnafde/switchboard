@@ -23,7 +23,6 @@ import { join, basename } from 'path'
 import { registerTerminalHandlers, shutdownTerminals, livePtyCount } from './ipc/terminal'
 import { registerDiagnosticsHandlers } from './ipc/diagnostics'
 import { configureAnalytics, attachAnalyticsCrashHooks, trackAppLaunched, registerAnalyticsHandlers } from './analytics'
-import { registerAgentHandlers } from './ipc/agent'
 import { registerPushHandlers } from './ipc/push'
 import { attachPushNotifier } from './push/registry'
 import { registerAppHandlers } from './ipc/app'
@@ -635,7 +634,6 @@ app.whenReady().then(() => {
   })
 
   registerTerminalHandlers(backendHost)
-  registerAgentHandlers(backendHost)
   registerAppHandlers(backendHost)
   registerPushHandlers(backendHost)
   registerAppDesktopHandlers(mainWindow)
@@ -708,7 +706,6 @@ app.whenReady().then(() => {
         ? new MultiHost(new ElectronIpcHost(mainWindow), mobileEndpoint)
         : new ElectronIpcHost(mainWindow)
       registerTerminalHandlers(reactivatedHost)
-      registerAgentHandlers(reactivatedHost)
       registerAppHandlers(reactivatedHost)
       registerPushHandlers(reactivatedHost)
       registerAppDesktopHandlers(mainWindow)

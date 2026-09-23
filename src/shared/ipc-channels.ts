@@ -258,16 +258,6 @@ export const BookmarkChannels = {
   LIST: 'bookmark:list',
 } as const
 
-export const AgentChannels = {
-  START: 'agent:start',
-  SEND: 'agent:send',
-  KILL: 'agent:kill',
-  MESSAGE: 'agent:message',
-  MESSAGE_UPDATE: 'agent:message-update',
-  STATUS: 'agent:status',
-  ERROR: 'agent:error',
-} as const
-
 export const ProviderInstanceChannels = {
   LIST: 'provider-instances:list',
   UPSERT: 'provider-instances:upsert',

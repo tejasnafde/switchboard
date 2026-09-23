@@ -888,36 +888,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     return () => removeProvider()
   }, [appendMessage, updateMessage, updateStatus, setTitle])
 
-  // ── Legacy agent event listeners (old --print mode) ───────────
-  useEffect(() => {
-    const removeMessage = window.api.agent.onMessage((agentId, message) => {
-      appendMessage(agentId, message as ChatMessage)
-      const msg = message as ChatMessage
-      window.api.app.saveMessage({
-        id: msg.id,
-        conversationId: agentId,
-        role: msg.role,
-        content: msg.content,
-        toolCalls: msg.toolCalls ? JSON.stringify(msg.toolCalls) : undefined,
-      }).catch(() => {})
-    })
-    const removeUpdate = window.api.agent.onMessageUpdate?.((agentId, messageId, updates) => {
-      updateMessage(agentId, messageId, updates as Partial<ChatMessage>)
-    }) ?? (() => {})
-    const removeStatus = window.api.agent.onStatus((agentId, s) => {
-      updateStatus(agentId, s as AgentStatus)
-    })
-    const removeError = window.api.agent.onError((agentId, error) => {
-      appendMessage(agentId, {
-        id: `error_${Date.now()}`,
-        role: 'system',
-        content: `Error: ${error}`,
-        timestamp: Date.now(),
-      })
-    })
-    return () => { removeMessage(); removeUpdate(); removeStatus(); removeError() }
-  }, [appendMessage, updateMessage, updateStatus])
-
   // ── Approval handler ──────────────────────────────────────────
   // Rejections propagate to the card so it can re-enable its buttons.
   const handleApproval = useCallback(async (requestId: string, decision: 'approve' | 'deny', note?: string) => {
