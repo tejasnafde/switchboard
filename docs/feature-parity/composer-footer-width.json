@@ -1,0 +1,47 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "composer-footer-width",
+  "summary": "Keep the desktop composer footer on one row: short runtime-mode labels with the detail as a tooltip, a footer hint that names steer and queue while the agent works, and Alt+Enter that still queues while an autocomplete menu is open.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/composerFooterLayout.ts",
+        "tests/unit/composer-footer-layout.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile has no runtime-mode select or desktop footer hint; its composer layout is separate and unchanged."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The Compose composer has no runtime-mode select or desktop footer hint; nothing it renders is affected."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer copy and layout only. Runtime modes, steer and queue delivery, and every wire contract are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes. The runtime-mode values persisted per conversation are the same five values."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "An unconditional desktop renderer fix with no flag, package identity, signing, update-channel or rollout change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/composer-footer-layout.test.ts",
+      "npm run typecheck",
+      "npm test"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The footer at narrow pane widths and the Alt+Enter path with an open @ or slash menu were not exercised in a running app."
+    ]
+  }
+}

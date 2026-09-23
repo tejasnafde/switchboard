@@ -9,22 +9,22 @@ import { composerFooterLayout, COMPACT_FOOTER_BELOW_PX } from '../../src/rendere
 
 describe('composerFooterLayout', () => {
   it('shows everything on a wide pane', () => {
-    expect(composerFooterLayout(900)).toEqual({ showHint: true, shortModeLabels: false })
+    expect(composerFooterLayout(900)).toEqual({ showHint: true })
   })
 
-  it('drops the hint and shortens mode labels on a narrow pane', () => {
-    expect(composerFooterLayout(400)).toEqual({ showHint: false, shortModeLabels: true })
+  it('drops the hint on a narrow pane', () => {
+    expect(composerFooterLayout(400)).toEqual({ showHint: false })
   })
 
   it('treats the breakpoint itself as wide', () => {
-    expect(composerFooterLayout(COMPACT_FOOTER_BELOW_PX)).toEqual({ showHint: true, shortModeLabels: false })
+    expect(composerFooterLayout(COMPACT_FOOTER_BELOW_PX)).toEqual({ showHint: true })
   })
 
   it('compacts one pixel under the breakpoint', () => {
-    expect(composerFooterLayout(COMPACT_FOOTER_BELOW_PX - 1)).toEqual({ showHint: false, shortModeLabels: true })
+    expect(composerFooterLayout(COMPACT_FOOTER_BELOW_PX - 1)).toEqual({ showHint: false })
   })
 
   it('assumes wide before the first measurement lands', () => {
-    expect(composerFooterLayout(null)).toEqual({ showHint: true, shortModeLabels: false })
+    expect(composerFooterLayout(null)).toEqual({ showHint: true })
   })
 })
