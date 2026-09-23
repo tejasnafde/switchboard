@@ -963,11 +963,10 @@ class ThreadSessionCoordinator(
      * (re)open and a resume gap (`onReplayGap` -> `refresh()`) land here, the
      * same way ThreadScreen's single seed effect covers both on mobile.
      *
-     * No explicit dedupe against the current feed: each returned event
-     * decodes and dispatches through the ordinary reducer path
-     * (`ThreadAction.Runtime`), whose `upsert` already replaces a card with
-     * the same id in place rather than duplicating it, so recovering a card
-     * that is already shown is a harmless no-op.
+     * Each returned event is checked against `isAlreadyShown` first: `upsert`
+     * replaces a feed item with the same id in place, so an unfiltered replay
+     * would turn an already-resolved card back into "pending" if the recovery
+     * reply lands after the live close/answer that resolved it.
      */
     private fun recoverPendingRequests() {
         if (!supportsPendingRequests) return
@@ -984,6 +983,11 @@ class ThreadSessionCoordinator(
                     for (raw in pending) {
                         val event = ThreadEventDecoder.decode(raw)
                         if (event.threadId != threadId) continue
+                        // upsert() replaces a feed item that already has this id, so a
+                        // recovered event for a card the user already resolved (a live
+                        // request.closed/question.answered landed before this reply came
+                        // back) would turn it back into "pending". Skip it instead.
+                        if (isAlreadyShown(event)) continue
                         reduce(ThreadAction.Runtime(ScopedThreadEvent(scope, null, event, nowMs = clock.nowMs())))
                         changed = true
                     }
@@ -1001,6 +1005,24 @@ class ThreadSessionCoordinator(
         } catch (_: RuntimeException) {
             // Recovery is optional, like loadSkills()/refreshModels() above -
             // the feed the ordinary load already installed remains usable.
+        }
+    }
+
+    /** A recovered request.opened / question.asked / plan.proposed whose
+     *  requestId/planId is already on an Approval, Question or Plan item in
+     *  the current feed - same dedupe desktop and mobile do before appending
+     *  a recovered card, so a late reply cannot undo an already-resolved one. */
+    private fun isAlreadyShown(event: app.switchboard.mobile.domain.thread.ThreadRuntimeEvent): Boolean {
+        val known = event as? app.switchboard.mobile.domain.thread.ThreadRuntimeEvent.Known ?: return false
+        val feed = currentThread()?.feed ?: return false
+        return when (val payload = known.payload) {
+            is app.switchboard.mobile.domain.thread.ThreadEventPayload.RequestOpened ->
+                feed.any { it is FeedItem.Approval && it.requestId == payload.requestId }
+            is app.switchboard.mobile.domain.thread.ThreadEventPayload.QuestionAsked ->
+                feed.any { it is FeedItem.Question && it.requestId == payload.requestId }
+            is app.switchboard.mobile.domain.thread.ThreadEventPayload.PlanProposed ->
+                feed.any { it is FeedItem.Plan && it.planId == payload.planId }
+            else -> false
         }
     }
 

@@ -158,6 +158,27 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `a recovered card does not resurrect one already resolved locally`() {
+        // upsert() replaces a feed item that shares its id, so an unfiltered
+        // replay of a stale request.opened would turn an already-approved
+        // card back into "pending" if the recovery reply lands after the
+        // live request.closed that resolved it.
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote, supportsPendingRequests = true)
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+
+        remote.emit(scope, requestOpenedEvent("thread-1", "r1"))
+        remote.emit(scope, requestClosed("thread-1", "r1"))
+        // The pending-requests reply, describing the card as still open,
+        // lands late - after the live open+close already resolved it.
+        remote.completePendingRequestsAt(0, success("pending", listOf(requestOpened("r1"))))
+
+        val approval = coordinator.currentThread()!!.feed.single { it is FeedItem.Approval } as FeedItem.Approval
+        assertEquals("approve", approval.state)
+    }
+
+    @Test
     fun `recovers a plan and a question in the same reply`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(remote, supportsPendingRequests = true)
@@ -1091,6 +1112,16 @@ class ThreadSessionCoordinatorTest {
 
     private fun turnCompleted(threadId: String): RuntimeEventPayload =
         event("turn.completed", threadId, "turnId" to JsonString("turn-1"))
+
+    private fun requestOpenedEvent(threadId: String, requestId: String): RuntimeEventPayload =
+        event(
+            "request.opened",
+            threadId,
+            "requestId" to JsonString(requestId),
+            "requestType" to JsonString("command"),
+            "toolName" to JsonString("Bash"),
+            "detail" to JsonString("ls"),
+        )
 
     private fun requestClosed(threadId: String, requestId: String): RuntimeEventPayload =
         event(

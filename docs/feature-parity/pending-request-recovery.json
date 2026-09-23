@@ -8,13 +8,11 @@
       "status": "implemented",
       "evidence": [
         "src/main/provider/provider-registry.ts",
-        "src/shared/pending-requests.ts",
-        "src/shared/ipc-channels.ts",
         "src/preload/index.ts",
         "src/renderer/services/pendingRequestRecovery.ts",
         "src/renderer/App.tsx",
         "tests/unit/provider-registry-pending-requests.test.ts",
-        "tests/unit/pending-requests.test.ts",
+        "tests/unit/pending-request-recovery-orchestration.test.ts",
         "tests/unit/pending-request-recovery-desktop.test.ts"
       ]
     },

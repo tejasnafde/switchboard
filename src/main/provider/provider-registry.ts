@@ -341,6 +341,24 @@ export class ProviderRegistry implements PeerToolHost {
   }
 
   /**
+   * Drop only the `plan.proposed` entries for a thread - called when the
+   * user responds with a new turn (see the two `turnDepth` reset sites
+   * below). A running turn can still be blocked on an open approval or
+   * question at that moment (a Codex steer, or a `delivery: 'queue'` send
+   * both prepare a turn while one is in flight), and those close only
+   * through their own `request.closed` / `question.answered` events - never
+   * through this.
+   */
+  private clearPendingPlans(threadId: string): void {
+    const byKey = this.pendingRequests.get(threadId)
+    if (!byKey) return
+    for (const [key, event] of byKey) {
+      if (event.type === 'plan.proposed') byKey.delete(key)
+    }
+    if (byKey.size === 0) this.pendingRequests.delete(threadId)
+  }
+
+  /**
    * Original events for a thread's still-open cards. Resolves through
    * `resolveRootThreadId` because the id a client asks with can be the
    * rotated provider session id rather than the id these were recorded
@@ -580,11 +598,14 @@ export class ProviderRegistry implements PeerToolHost {
     // ends normally on `turn.completed` while the plan still awaits the
     // user's Implement/Iterate decision - clearing on `turn.completed` would
     // discard a plan seconds after proposing it, before there is any chance
-    // to recover it. A plan (and, as a backstop, anything left stray) is
-    // cleared only once the user actually responds - see the `turnDepth`
-    // reset to 0 in `submitAtomicUserTurn`'s `prepare` and the legacy
-    // `SEND_TURN` handler's `dispatch`, the same point that marks a turn as
-    // human-initiated rather than a peer message or a queued follow-up.
+    // to recover it. A plan is cleared only once the user actually responds
+    // - see `clearPendingPlans`, called from the `turnDepth` reset to 0 in
+    // `submitAtomicUserTurn`'s `prepare` and the legacy `SEND_TURN` handler's
+    // `dispatch`, the same point that marks a turn as human-initiated rather
+    // than a peer message or a queued follow-up. It clears ONLY plans there
+    // - a Codex steer or a `delivery: 'queue'` send can reach that point
+    // while the running turn is still blocked on an open approval or
+    // question, which must keep waiting for its own closing event.
     if (event.type === 'request.opened' || event.type === 'question.asked' || event.type === 'plan.proposed') {
       this.addPendingRequest(event)
     }
@@ -832,10 +853,13 @@ export class ProviderRegistry implements PeerToolHost {
             if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
             notebookManager.beginTurn(threadId)
             this.turnDepth.set(threadId, 0)
-            // The user just responded - whatever card was pending on this
-            // thread (a plan awaiting Implement/Iterate, or a stray unclosed
-            // entry) is resolved by this turn, same as hop depth resetting.
-            this.pendingRequests.delete(threadId)
+            // The user just responded, resolving any plan awaiting
+            // Implement/Iterate - same as hop depth resetting. Only plans:
+            // this `prepare` also runs for a Codex steer or a
+            // `delivery: 'queue'` send while the running turn is still
+            // blocked on an open approval or question, and those must keep
+            // waiting for their own request.closed / question.answered.
+            this.clearPendingPlans(threadId)
           } catch (error) {
             throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
           }
@@ -1544,10 +1568,12 @@ export class ProviderRegistry implements PeerToolHost {
           if (cwd) await this.checkpoints.beginTurn(threadId, cwd)
           notebookManager.beginTurn(threadId)
           this.turnDepth.set(threadId, 0)
-          // The user just responded - whatever card was pending on this
-          // thread (a plan awaiting Implement/Iterate, or a stray unclosed
-          // entry) is resolved by this turn, same as hop depth resetting.
-          this.pendingRequests.delete(threadId)
+          // The user just responded, resolving any plan awaiting
+          // Implement/Iterate - same as hop depth resetting. Only plans:
+          // this can also run as a Codex steer while the running turn is
+          // still blocked on an open approval or question, and those must
+          // keep waiting for their own request.closed / question.answered.
+          this.clearPendingPlans(threadId)
         } catch (error) {
           throw new TurnNotAcceptedError('turn preparation failed before provider dispatch', { cause: error })
         }
