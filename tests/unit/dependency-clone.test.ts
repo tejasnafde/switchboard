@@ -1,20 +1,36 @@
 /**
  * Copy-on-write `node_modules` clone for new worktrees. Exercises the
- * per-platform command/argv, the skip conditions (missing source,
- * existing destination, unsupported platform, opt-out setting), and
- * the "never fall back to a full copy" contract: a failed clone leaves
- * no partial destination and never retries with a plain recursive copy.
+ * per-platform command/argv, the pre-flight same-device and macOS-APFS
+ * checks (macOS `cp -c` silently falls back to a real copy instead of
+ * failing when clonefile isn't available, so these must run BEFORE
+ * `cp`, not be inferred from its exit code), the staging-dir + atomic
+ * rename contract (never write straight into a worktree's live
+ * `node_modules`, never adopt a staged clone if the real thing showed
+ * up first), the skip conditions (missing source, existing destination,
+ * unsupported platform, opt-out setting), the ENOENT-vs-other-error
+ * distinction in the existence check, and the "never fall back to a
+ * full copy" contract: a failed clone leaves no trace but its own
+ * staging dir and never retries with a plain recursive copy.
  */
-import { describe, expect, it, vi } from 'vitest'
-import { mkdtemp, mkdir, rm, access } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { mkdtemp, mkdir, rm, access, chmod, readdir, writeFile, readFile } from 'node:fs/promises'
+import { tmpdir, platform as osPlatform } from 'node:os'
 import { join } from 'node:path'
 
 const mocks = vi.hoisted(() => ({
   getSetting: vi.fn<(key: string) => string | null>(() => null),
+  log: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
 }))
 vi.mock('../../src/main/db/database', () => ({
   getSetting: mocks.getSetting,
+}))
+vi.mock('../../src/main/logger', () => ({
+  createMainLogger: () => mocks.log,
 }))
 
 import {
@@ -25,6 +41,13 @@ import {
   WORKTREE_CLONE_DEPENDENCIES_SETTING,
   type CloneRunner,
 } from '../../src/main/git/dependencyClone'
+
+afterEach(() => {
+  mocks.log.info.mockClear()
+  mocks.log.warn.mockClear()
+  mocks.log.error.mockClear()
+  mocks.log.debug.mockClear()
+})
 
 async function makeTempRoot(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'sb-dep-clone-test-'))
@@ -39,74 +62,72 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+/** Staging dirs land beside `node_modules` as `node_modules.sb-clone-<suffix>`. */
+async function stagingDirsIn(worktreeRoot: string): Promise<string[]> {
+  const entries = await readdir(worktreeRoot).catch(() => [])
+  return entries.filter((name) => name.startsWith(`${DEPENDENCY_DIR_NAME}.sb-clone-`))
+}
+
+/** A runner that behaves like a real `cp`: creates the staged dir it was told to write. */
+function fakeCloningRunner(): { runner: CloneRunner; calls: Array<{ cmd: string; args: string[] }> } {
+  const calls: Array<{ cmd: string; args: string[] }> = []
+  const runner: CloneRunner = async (cmd, args) => {
+    calls.push({ cmd, args })
+    await mkdir(args[args.length - 1], { recursive: true })
+    return { stdout: '', stderr: '' }
+  }
+  return { runner, calls }
+}
+
+const passingChecks = {
+  isEnabled: () => true,
+  sameDevice: async () => true,
+  isApfs: async () => true,
+  stagingSuffix: () => 'fixedsuffix',
+}
+
 describe('cloneDependencyDirs', () => {
-  it('runs `cp -c -R <src> <dst>` on darwin', async () => {
+  it('runs `cp -c -R <src> <staging>` on darwin, then renames staging into place', async () => {
     const root = await makeTempRoot()
     try {
       const sourceRoot = join(root, 'source')
       const worktreeRoot = join(root, 'worktree')
       await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
       await mkdir(worktreeRoot, { recursive: true })
+      const { runner, calls } = fakeCloningRunner()
+      const staging = join(worktreeRoot, `${DEPENDENCY_DIR_NAME}.sb-clone-fixedsuffix`)
+      const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
 
-      const calls: Array<{ cmd: string; args: string[] }> = []
-      const runner: CloneRunner = async (cmd, args) => {
-        calls.push({ cmd, args })
-        return { stdout: '', stderr: '' }
-      }
-
-      await cloneDependencyDirs(sourceRoot, worktreeRoot, {
-        runner,
-        platform: 'darwin',
-        isEnabled: () => true,
-      })
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' })
 
       expect(calls).toEqual([
-        {
-          cmd: 'cp',
-          args: [
-            '-c',
-            '-R',
-            join(sourceRoot, DEPENDENCY_DIR_NAME),
-            join(worktreeRoot, DEPENDENCY_DIR_NAME),
-          ],
-        },
+        { cmd: 'cp', args: ['-c', '-R', join(sourceRoot, DEPENDENCY_DIR_NAME), staging] },
       ])
+      expect(await exists(staging)).toBe(false)
+      expect(await exists(dst)).toBe(true)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
   })
 
-  it('runs `cp -R --reflink=always <src> <dst>` on linux', async () => {
+  it('runs `cp -R --reflink=always <src> <staging>` on linux, then renames staging into place', async () => {
     const root = await makeTempRoot()
     try {
       const sourceRoot = join(root, 'source')
       const worktreeRoot = join(root, 'worktree')
       await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
       await mkdir(worktreeRoot, { recursive: true })
+      const { runner, calls } = fakeCloningRunner()
+      const staging = join(worktreeRoot, `${DEPENDENCY_DIR_NAME}.sb-clone-fixedsuffix`)
+      const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
 
-      const calls: Array<{ cmd: string; args: string[] }> = []
-      const runner: CloneRunner = async (cmd, args) => {
-        calls.push({ cmd, args })
-        return { stdout: '', stderr: '' }
-      }
-
-      await cloneDependencyDirs(sourceRoot, worktreeRoot, {
-        runner,
-        platform: 'linux',
-        isEnabled: () => true,
-      })
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'linux' })
 
       expect(calls).toEqual([
-        {
-          cmd: 'cp',
-          args: [
-            '-R',
-            '--reflink=always',
-            join(sourceRoot, DEPENDENCY_DIR_NAME),
-            join(worktreeRoot, DEPENDENCY_DIR_NAME),
-          ],
-        },
+        { cmd: 'cp', args: ['-R', '--reflink=always', join(sourceRoot, DEPENDENCY_DIR_NAME), staging] },
       ])
+      expect(await exists(staging)).toBe(false)
+      expect(await exists(dst)).toBe(true)
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -122,11 +143,7 @@ describe('cloneDependencyDirs', () => {
 
       const runner = vi.fn<CloneRunner>(async () => ({ stdout: '', stderr: '' }))
 
-      await cloneDependencyDirs(sourceRoot, worktreeRoot, {
-        runner,
-        platform: 'win32',
-        isEnabled: () => true,
-      })
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'win32' })
 
       expect(runner).not.toHaveBeenCalled()
       expect(await exists(join(worktreeRoot, DEPENDENCY_DIR_NAME))).toBe(false)
@@ -135,7 +152,7 @@ describe('cloneDependencyDirs', () => {
     }
   })
 
-  it('skips when the source has no node_modules', async () => {
+  it('skips when the source has no node_modules, and never logs (ENOENT is the expected no-op case)', async () => {
     const root = await makeTempRoot()
     try {
       const sourceRoot = join(root, 'source')
@@ -152,7 +169,32 @@ describe('cloneDependencyDirs', () => {
       // The common no-op case (no node_modules yet) must not touch the
       // opt-out setting at all.
       expect(isEnabled).not.toHaveBeenCalled()
+      expect(mocks.log.warn).not.toHaveBeenCalled()
     } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('logs and skips when checking the source raises an unexpected error (not ENOENT)', async () => {
+    const root = await makeTempRoot()
+    const sourceRoot = join(root, 'source')
+    try {
+      const worktreeRoot = join(root, 'worktree')
+      await mkdir(sourceRoot, { recursive: true })
+      await mkdir(worktreeRoot, { recursive: true })
+      // Remove search (x) permission on sourceRoot so accessing
+      // sourceRoot/node_modules fails with EACCES while traversing,
+      // not ENOENT.
+      await chmod(sourceRoot, 0o000)
+
+      const runner = vi.fn<CloneRunner>(async () => ({ stdout: '', stderr: '' }))
+
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' })
+
+      expect(runner).not.toHaveBeenCalled()
+      expect(mocks.log.warn).toHaveBeenCalled()
+    } finally {
+      await chmod(sourceRoot, 0o755).catch(() => undefined)
       await rm(root, { recursive: true, force: true })
     }
   })
@@ -167,7 +209,7 @@ describe('cloneDependencyDirs', () => {
 
       const runner = vi.fn<CloneRunner>(async () => ({ stdout: '', stderr: '' }))
 
-      await cloneDependencyDirs(sourceRoot, worktreeRoot, { runner, platform: 'darwin', isEnabled: () => true })
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' })
 
       expect(runner).not.toHaveBeenCalled()
     } finally {
@@ -186,6 +228,7 @@ describe('cloneDependencyDirs', () => {
       const runner = vi.fn<CloneRunner>(async () => ({ stdout: '', stderr: '' }))
 
       await cloneDependencyDirs(sourceRoot, worktreeRoot, {
+        ...passingChecks,
         runner,
         platform: 'darwin',
         isEnabled: () => false,
@@ -198,7 +241,76 @@ describe('cloneDependencyDirs', () => {
     }
   })
 
-  it('removes a partial destination and does not retry with a full copy when the clone command fails', async () => {
+  it('skips, without calling cp, when source and worktree are on different devices/volumes', async () => {
+    const root = await makeTempRoot()
+    try {
+      const sourceRoot = join(root, 'source')
+      const worktreeRoot = join(root, 'worktree')
+      await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
+      await mkdir(worktreeRoot, { recursive: true })
+
+      const runner = vi.fn<CloneRunner>(async () => ({ stdout: '', stderr: '' }))
+      const isApfs = vi.fn(async () => true)
+
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, {
+        ...passingChecks,
+        runner,
+        isApfs,
+        platform: 'darwin',
+        sameDevice: async () => false,
+      })
+
+      expect(runner).not.toHaveBeenCalled()
+      // Cross-device already answers the question; the more expensive
+      // (subprocess-spawning) APFS check should not even run.
+      expect(isApfs).not.toHaveBeenCalled()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('skips, without calling cp, when the macOS destination filesystem is not confirmed APFS', async () => {
+    const root = await makeTempRoot()
+    try {
+      const sourceRoot = join(root, 'source')
+      const worktreeRoot = join(root, 'worktree')
+      await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
+      await mkdir(worktreeRoot, { recursive: true })
+
+      const runner = vi.fn<CloneRunner>(async () => ({ stdout: '', stderr: '' }))
+
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, {
+        ...passingChecks,
+        runner,
+        platform: 'darwin',
+        isApfs: async () => false,
+      })
+
+      expect(runner).not.toHaveBeenCalled()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not run the APFS check on linux (reflink already fails safely on its own)', async () => {
+    const root = await makeTempRoot()
+    try {
+      const sourceRoot = join(root, 'source')
+      const worktreeRoot = join(root, 'worktree')
+      await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
+      await mkdir(worktreeRoot, { recursive: true })
+      const { runner } = fakeCloningRunner()
+      const isApfs = vi.fn(async () => true)
+
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, isApfs, platform: 'linux' })
+
+      expect(isApfs).not.toHaveBeenCalled()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('removes the staging dir and does not retry with a full copy when the clone command fails', async () => {
     const root = await makeTempRoot()
     try {
       const sourceRoot = join(root, 'source')
@@ -207,18 +319,49 @@ describe('cloneDependencyDirs', () => {
       await mkdir(worktreeRoot, { recursive: true })
       const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
 
-      const runner: CloneRunner = vi.fn(async () => {
-        // Simulate a clone that got partway before the platform refused
-        // (e.g. reflink not supported on this filesystem after all) -
-        // it should have left a partial destination on disk.
-        await mkdir(dst, { recursive: true })
+      const runner: CloneRunner = vi.fn(async (_cmd, args) => {
+        // Simulate a clone that got partway before failing - it should
+        // have left a partial staging dir, not a partial node_modules.
+        await mkdir(args[args.length - 1], { recursive: true })
         throw new Error('cp: reflink failed')
       })
 
-      await cloneDependencyDirs(sourceRoot, worktreeRoot, { runner, platform: 'linux', isEnabled: () => true })
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'linux' })
 
       expect(runner).toHaveBeenCalledTimes(1)
       expect(await exists(dst)).toBe(false)
+      expect(await stagingDirsIn(worktreeRoot)).toEqual([])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('discards the staged clone without touching node_modules if it appears mid-clone', async () => {
+    const root = await makeTempRoot()
+    try {
+      const sourceRoot = join(root, 'source')
+      const worktreeRoot = join(root, 'worktree')
+      await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
+      await mkdir(worktreeRoot, { recursive: true })
+      const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
+
+      const runner: CloneRunner = async (_cmd, args) => {
+        // The clone "succeeds" into staging, but meanwhile an agent's
+        // `npm install` finished and created the real node_modules
+        // first - simulate that race right here.
+        await mkdir(args[args.length - 1], { recursive: true })
+        await mkdir(dst, { recursive: true })
+        await writeFile(join(dst, 'marker.txt'), 'installed-by-agent')
+        return { stdout: '', stderr: '' }
+      }
+
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' })
+
+      // The agent's real node_modules must survive untouched.
+      expect(await readFile(join(dst, 'marker.txt'), 'utf8')).toBe('installed-by-agent')
+      // And the losing staged clone must not be left behind.
+      expect(await stagingDirsIn(worktreeRoot)).toEqual([])
+      expect(mocks.log.warn).toHaveBeenCalled()
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -237,8 +380,39 @@ describe('cloneDependencyDirs', () => {
       }
 
       await expect(
-        cloneDependencyDirs(sourceRoot, worktreeRoot, { runner, platform: 'darwin', isEnabled: () => true }),
+        cloneDependencyDirs(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' }),
       ).resolves.toBeUndefined()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  // Runs the REAL same-device and real APFS detection - no overrides -
+  // against actual temp directories on this machine, so the
+  // `mount`-parsing logic is checked against a real mount table at
+  // least once, not just through injected fakes. macOS only: a Linux CI
+  // runner's temp filesystem (typically ext4) legitimately does not
+  // support --reflink=always, so a real, unmocked run there would fail
+  // for the same reason production traffic would - that is correct
+  // behavior, not something this test should assert against.
+  it('clones for real using the default same-device / APFS checks on this machine', async () => {
+    if (osPlatform() !== 'darwin') return
+    const root = await makeTempRoot()
+    try {
+      const sourceRoot = join(root, 'source')
+      const worktreeRoot = join(root, 'worktree')
+      await mkdir(join(sourceRoot, DEPENDENCY_DIR_NAME), { recursive: true })
+      await writeFile(join(sourceRoot, DEPENDENCY_DIR_NAME, 'pkg.txt'), 'hello')
+      await mkdir(worktreeRoot, { recursive: true })
+      const dst = join(worktreeRoot, DEPENDENCY_DIR_NAME)
+
+      await cloneDependencyDirs(sourceRoot, worktreeRoot, {
+        isEnabled: () => true,
+        // No sameDevice/isApfs/runner override: exercises the real
+        // implementations end to end.
+      })
+
+      expect(await readFile(join(dst, 'pkg.txt'), 'utf8')).toBe('hello')
     } finally {
       await rm(root, { recursive: true, force: true })
     }
@@ -259,7 +433,7 @@ describe('cloneDependencyDirsInBackground', () => {
         resolveRunner = resolve
       })
       let calls = 0
-      const runner: CloneRunner = async (cmd, args) => {
+      const runner: CloneRunner = async (_cmd, args) => {
         calls += 1
         await gate
         // Actually perform the copy so we can observe completion on disk.
@@ -268,7 +442,7 @@ describe('cloneDependencyDirsInBackground', () => {
       }
 
       expect(() =>
-        cloneDependencyDirsInBackground(sourceRoot, worktreeRoot, { runner, platform: 'darwin', isEnabled: () => true }),
+        cloneDependencyDirsInBackground(sourceRoot, worktreeRoot, { ...passingChecks, runner, platform: 'darwin' }),
       ).not.toThrow()
 
       // Fire-and-forget: the call above returns before the runner has
