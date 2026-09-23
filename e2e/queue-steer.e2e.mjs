@@ -50,6 +50,14 @@ try {
   await win.keyboard.press('Enter')
   await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
   await win.getByTestId('draft-workspace').selectOption('project')
+  // Record turn starts and ends, to prove the order and not just the count.
+  await win.evaluate(() => {
+    window.__turnLog = []
+    window.api.provider.onEvent((e) => {
+      if (e.type === 'turn.completed') window.__turnLog.push('end')
+      else if (e.type === 'status' && e.status === 'running') window.__turnLog.push('start')
+    })
+  })
   const editor = win.locator('[contenteditable="true"]').last()
   await editor.click()
   await win.keyboard.type('first message')
@@ -68,6 +76,10 @@ try {
   const twoTurns = await win.waitForFunction(() => document.body.innerText.split('Worked for').length - 1 >= 2, null, { timeout: 30_000 })
     .then(() => true, () => false)
   check('the queued message ran as its own turn after the first', twoTurns)
+  // Collapse repeats: a sequential run reads start,end,start,end. Two turns
+  // at once would read start,end,end.
+  const order = (await win.evaluate(() => window.__turnLog)).filter((x, i, a) => x !== a[i - 1]).join(',')
+  check('the second turn starts after the first one ends', order.startsWith('start,end,start,end'), order)
   await win.waitForTimeout(1000)
   const users = q(`SELECT count(*) FROM messages WHERE role = 'user';`)
   check('both user turns are recorded', Number(users) === 2, `user rows: ${users}`)

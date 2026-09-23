@@ -741,6 +741,12 @@ export class ClaudeAdapter implements ProviderAdapter {
     // (a queued full-access message would otherwise let a plan turn run a
     // shell). The mode travels with the message and applies when it starts.
     const queued = delivery === 'queue' && active.turnStartedAt != null
+    // Reserve the turn before any await, so a queued send that arrives while
+    // this one applies its mode still sees a turn in progress.
+    if (!queued) {
+      active.turnStartedAt = Date.now()
+      active.watchdog.turnStarted(Date.now())
+    }
 
     // Update session mode if overridden
     if (!queued && runtimeMode && runtimeMode !== active.session.runtimeMode) {
@@ -794,18 +800,10 @@ export class ClaudeAdapter implements ProviderAdapter {
       ...(queued ? { priority: 'later' as const } : {}),
     } as SDKUserMessage
     active.prompt.push(userMsg)
-    // Stamp wall-clock turn start now (not when SDK actually picks it up).
-    // The user-perceived "Worked for X" should include any queueing delay
-    // - that's the experience they're judging. A queued message leaves the
-    // running turn's clock alone; its own turn starts when that one ends.
-    // The running turn's watchdog stays as it is (it may be suspended on an
-    // approval); a queued turn gets its own when it starts.
-    if (queued) {
-      active.queuedModes.push(runtimeMode)
-    } else {
-      active.turnStartedAt = Date.now()
-      active.watchdog.turnStarted(Date.now())
-    }
+    // A queued message leaves the running turn's clock and watchdog alone
+    // (it may be suspended on an approval). Its own turn starts when that
+    // one ends, in startQueuedTurn.
+    if (queued) active.queuedModes.push(runtimeMode)
 
     // If we haven't started the SDK query yet, kick it off now
     if (!active.draining) {
@@ -1043,6 +1041,7 @@ export class ClaudeAdapter implements ProviderAdapter {
           ...(durationMs !== undefined ? { durationMs } : {}),
         })
         active.onEvent({ type: 'status', threadId, status: 'error' })
+        this.dropQueuedTurns(threadId, active)
         // Let a later send re-drain (e.g. after the user re-logs in).
         active.draining = false
         return
@@ -1186,6 +1185,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       // The query loop is gone, so nothing can arrive for this turn - stop
       // the stall clock even on the paths that never reached `result`.
       active.watchdog.turnEnded()
+      this.dropQueuedTurns(threadId, active)
     }
   }
 
@@ -1243,6 +1243,25 @@ export class ClaudeAdapter implements ProviderAdapter {
       }
     }
     return active.models?.models ?? []
+  }
+
+  /**
+   * The query cannot run the queued messages any more. Discard them and end
+   * each accepted turn, so the registry does not wait for them forever. A
+   * later send starts a fresh prompt queue.
+   */
+  private dropQueuedTurns(threadId: string, active: ActiveSession): void {
+    if (active.queuedModes.length === 0) return
+    const count = active.queuedModes.length
+    active.queuedModes = []
+    active.prompt = new PromptQueue()
+    log.warn(`dropping ${count} queued message(s): the query stopped before they ran`, { threadId })
+    active.onEvent({
+      type: 'error',
+      threadId,
+      message: `${count === 1 ? 'A queued message was' : `${count} queued messages were`} not sent because the session stopped. Send again.`,
+    })
+    for (let i = 0; i < count; i++) active.onEvent({ type: 'turn.completed', threadId })
   }
 
   /**

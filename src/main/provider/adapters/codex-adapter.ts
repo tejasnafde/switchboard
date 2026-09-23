@@ -1574,6 +1574,15 @@ export class CodexAdapter implements ProviderAdapter {
           message,
           ...(typeof turnId === 'string' ? { turnId } : {}),
         })
+        // A failed turn still ends: the registry counts it as outstanding
+        // until turn.completed, and a queued turn starts right after.
+        const durationMs = takeTurnDuration(active)
+        active.onEvent({
+          type: 'turn.completed',
+          threadId,
+          ...(typeof turnId === 'string' ? { turnId } : {}),
+          ...(durationMs !== undefined ? { durationMs } : {}),
+        })
         active.onEvent({ type: 'status', threadId, status: 'error' })
       } else {
         active.session.status = 'idle'

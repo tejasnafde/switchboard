@@ -315,3 +315,61 @@ describe('parseImageInput', () => {
     expect(out.data).toBeNull()
   })
 })
+
+describe('OpenCode queued turns', () => {
+  function fakeSession(connection: Record<string, unknown>) {
+    return {
+      session: { threadId: tid, provider: 'opencode', status: 'idle', runtimeMode: 'sandbox', cwd: '/tmp/project', createdAt: 1 },
+      onEvent: vi.fn(),
+      child: null,
+      connection,
+      sessionId: 'native-session',
+      pendingPermissions: new Map(),
+      skills: [],
+      availableModels: [],
+      inFlightPrompt: null,
+      turnStartedAt: null,
+      assistantMessageText: new Map(),
+      firstUserMessage: 'already titled',
+      queuedTurns: [],
+      drainingQueue: false,
+      startingPrompt: false,
+    }
+  }
+
+  it('holds a queued send that arrives while the running send applies its mode', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    let releaseMode!: () => void
+    const setSessionMode = vi.fn(() => new Promise<void>((resolve) => { releaseMode = resolve }))
+    let finishFirst!: () => void
+    const prompt = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { finishFirst = () => resolve({}) }))
+      .mockImplementation(() => Promise.resolve({}))
+    const active = fakeSession({ prompt, setSessionMode })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    const first = adapter.sendTurn(tid, 'first', 'full-access')
+    await adapter.sendTurn(tid, 'queued', undefined, undefined, 'queue')
+    expect(active.queuedTurns).toHaveLength(1)
+
+    releaseMode()
+    await first
+    expect(prompt).toHaveBeenCalledTimes(1)
+    finishFirst()
+    await vi.waitFor(() => expect(prompt).toHaveBeenCalledTimes(2))
+    expect(prompt.mock.calls[1][0].prompt).toEqual([{ type: 'text', text: 'queued' }])
+  })
+
+  it('ends a prompt that fails in flight with turn.completed', async () => {
+    const adapter = new OpencodeAcpAdapter()
+    const prompt = vi.fn(() => Promise.reject(new Error('transport lost')))
+    const active = fakeSession({ prompt })
+    ;(Reflect.get(adapter, 'sessions') as Map<string, unknown>).set(tid, active)
+
+    await adapter.sendTurn(tid, 'doomed')
+    await vi.waitFor(() => expect(active.inFlightPrompt).toBeNull())
+    const types = active.onEvent.mock.calls.map(([e]) => e.type)
+    expect(types).toContain('error')
+    expect(types.filter((t) => t === 'turn.completed')).toHaveLength(1)
+  })
+})
