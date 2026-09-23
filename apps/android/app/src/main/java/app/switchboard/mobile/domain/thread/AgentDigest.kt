@@ -53,20 +53,35 @@ object AgentDigest {
 
     /**
      * Removes every complete `<agent_digest>...</agent_digest>` tag from
-     * [text]. Also hides a trailing PARTIAL tag so it never flashes on
-     * screen mid-stream: an unclosed `<agent_digest>...` (with or without a
-     * partial `</agent_dig` close in progress), or a bare prefix of the open
-     * tag itself such as `<agent_di`.
+     * [text]. The caller must say whether [text] is still streaming in:
      *
-     * Known tradeoff: a message whose final character happens to be a lone
-     * `<` (or another short prefix of the open tag) that is genuinely part
-     * of the message, not a digest tag, is trimmed too. This only affects
-     * the last few characters of a full message and is the standard cost of
-     * streaming-safe tag hiding.
+     * - `streaming = false` (a finished message): only complete tag pairs
+     *   are removed. A message that merely QUOTES the literal
+     *   `<agent_digest>` string with no close tag - this file's own
+     *   [OPEN_TAG] constant, for instance - is left alone. Nothing more can
+     *   arrive for a finished message, so there is no "still typing a tag"
+     *   case to guard against, and guarding against it anyway was the bug:
+     *   it silently ate every character after an unmatched
+     *   `<agent_digest>` in ordinary finished text.
+     * - `streaming = true`: in addition to complete pairs, a trailing
+     *   PARTIAL tag is hidden so it never flashes on screen mid-stream - an
+     *   unclosed `<agent_digest>...` (with or without a partial
+     *   `</agent_dig` close in progress), or a bare prefix of the open tag
+     *   itself such as `<agent_di`. Known tradeoff, streaming only: a
+     *   message whose text SO FAR happens to end in a lone `<` (or another
+     *   short prefix of the open tag) that is genuinely part of the
+     *   message, not a digest tag, is trimmed too until more text arrives.
+     *   That is the standard cost of streaming-safe tag hiding, and does
+     *   not apply once the message is marked done.
+     *
+     * Does not special-case tags inside fenced code blocks - a
+     * still-streaming code fence that quotes `<agent_digest>` verbatim is
+     * trimmed the same as anywhere else in the text.
      */
-    fun stripDigest(text: String): String {
+    fun stripDigest(text: String, streaming: Boolean): String {
         if (text.isEmpty()) return text
         val withoutComplete = TAG_PATTERN.replace(text, "")
+        if (!streaming) return withoutComplete
         val openIdx = withoutComplete.indexOf(OPEN_TAG)
         if (openIdx != -1) {
             // An open tag with no matching close anywhere after it - the

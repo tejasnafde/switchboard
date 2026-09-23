@@ -64,65 +64,97 @@ class AgentDigestTest {
     }
 
     @Test
-    fun `stripDigest returns text unchanged when no tag is present`() {
-        assertEquals("Just some plain text.", AgentDigest.stripDigest("Just some plain text."))
+    fun `stripDigest returns text unchanged when no tag is present - streaming true`() {
+        assertEquals(
+            "Just some plain text.",
+            AgentDigest.stripDigest("Just some plain text.", streaming = true),
+        )
     }
 
     @Test
-    fun `stripDigest removes a single complete tag`() {
+    fun `stripDigest returns text unchanged when no tag is present - streaming false`() {
+        assertEquals(
+            "Just some plain text.",
+            AgentDigest.stripDigest("Just some plain text.", streaming = false),
+        )
+    }
+
+    @Test
+    fun `stripDigest removes a single complete tag - streaming true`() {
         assertEquals(
             "Hello  world",
-            AgentDigest.stripDigest("Hello <agent_digest>Working</agent_digest> world"),
+            AgentDigest.stripDigest("Hello <agent_digest>Working</agent_digest> world", streaming = true),
         )
     }
 
     @Test
-    fun `stripDigest removes multiple complete tags`() {
+    fun `stripDigest removes a single complete tag - streaming false`() {
+        assertEquals(
+            "Hello  world",
+            AgentDigest.stripDigest("Hello <agent_digest>Working</agent_digest> world", streaming = false),
+        )
+    }
+
+    @Test
+    fun `stripDigest removes multiple complete tags regardless of streaming`() {
         val text = "<agent_digest>Step one</agent_digest>body one" +
             "<agent_digest>Step two</agent_digest>body two"
-        assertEquals("body onebody two", AgentDigest.stripDigest(text))
+        assertEquals("body onebody two", AgentDigest.stripDigest(text, streaming = true))
+        assertEquals("body onebody two", AgentDigest.stripDigest(text, streaming = false))
     }
 
     @Test
-    fun `stripDigest hides a fully unclosed trailing tag and its partial body`() {
+    fun `stripDigest hides a fully unclosed trailing tag and its partial body when streaming`() {
         assertEquals(
             "Working on it. ",
-            AgentDigest.stripDigest("Working on it. <agent_digest>Writing te"),
+            AgentDigest.stripDigest("Working on it. <agent_digest>Writing te", streaming = true),
         )
     }
 
     @Test
-    fun `stripDigest hides an unclosed tag with a partial close tag in progress`() {
+    fun `stripDigest hides an unclosed tag with a partial close tag in progress when streaming`() {
         assertEquals(
             "Working on it. ",
-            AgentDigest.stripDigest("Working on it. <agent_digest>Writing tests</agent_dig"),
+            AgentDigest.stripDigest(
+                "Working on it. <agent_digest>Writing tests</agent_dig",
+                streaming = true,
+            ),
         )
     }
 
     @Test
-    fun `stripDigest hides a bare partial prefix of the open tag at the end of the text`() {
-        assertEquals("Working on it. ", AgentDigest.stripDigest("Working on it. <agent_di"))
+    fun `stripDigest hides a bare partial prefix of the open tag at the end of the text when streaming`() {
+        assertEquals(
+            "Working on it. ",
+            AgentDigest.stripDigest("Working on it. <agent_di", streaming = true),
+        )
     }
 
     @Test
-    fun `stripDigest hides the shortest partial prefix - a single trailing angle bracket`() {
-        assertEquals("Working on it. ", AgentDigest.stripDigest("Working on it. <"))
+    fun `stripDigest hides the shortest partial prefix - a single trailing angle bracket when streaming`() {
+        assertEquals("Working on it. ", AgentDigest.stripDigest("Working on it. <", streaming = true))
     }
 
     @Test
-    fun `stripDigest does not touch an angle bracket not followed by tag-prefix characters`() {
-        assertEquals("if (x < 5) return", AgentDigest.stripDigest("if (x < 5) return"))
+    fun `stripDigest does not touch an angle bracket not followed by tag-prefix characters when streaming`() {
+        assertEquals(
+            "if (x < 5) return",
+            AgentDigest.stripDigest("if (x < 5) return", streaming = true),
+        )
     }
 
     @Test
-    fun `stripDigest does not touch an unrelated trailing tag`() {
-        assertEquals("some <b>bold</b> text", AgentDigest.stripDigest("some <b>bold</b> text"))
+    fun `stripDigest does not touch an unrelated trailing tag when streaming`() {
+        assertEquals(
+            "some <b>bold</b> text",
+            AgentDigest.stripDigest("some <b>bold</b> text", streaming = true),
+        )
     }
 
     @Test
-    fun `stripDigest keeps prose between a complete tag and a later unclosed one`() {
+    fun `stripDigest keeps prose between a complete tag and a later unclosed one when streaming`() {
         val text = "<agent_digest>first</agent_digest> body text <agent_digest>second"
-        assertEquals(" body text ", AgentDigest.stripDigest(text))
+        assertEquals(" body text ", AgentDigest.stripDigest(text, streaming = true))
     }
 
     @Test
@@ -138,8 +170,46 @@ class AgentDigestTest {
             "Working on it. <agent_digest>Writing tests, 2 of 4 done</agent_dig",
         )
         for (partial in prefixes) {
-            assertEquals("Working on it. ", AgentDigest.stripDigest(partial))
+            assertEquals("Working on it. ", AgentDigest.stripDigest(partial, streaming = true))
         }
-        assertEquals("Working on it. ", AgentDigest.stripDigest(full))
+        assertEquals("Working on it. ", AgentDigest.stripDigest(full, streaming = true))
+    }
+
+    // Regression (CodeRabbit, PR #105): a FINISHED message that merely
+    // quotes the literal `<agent_digest>` string, with no close tag, used
+    // to lose everything after it. A finished message cannot still be
+    // "mid-tag", so only complete pairs are ever removed when not streaming.
+
+    @Test
+    fun `stripDigest does not touch an unclosed tag when not streaming`() {
+        val text = "Working on it. <agent_digest>Writing te"
+        assertEquals(text, AgentDigest.stripDigest(text, streaming = false))
+    }
+
+    @Test
+    fun `stripDigest leaves a literal quoted open tag with no close alone when not streaming`() {
+        val text = "private const val OPEN_TAG = \"<agent_digest>\""
+        assertEquals(text, AgentDigest.stripDigest(text, streaming = false))
+    }
+
+    @Test
+    fun `stripDigest leaves a bare partial prefix of the open tag alone when not streaming`() {
+        val text = "Working on it. <agent_di"
+        assertEquals(text, AgentDigest.stripDigest(text, streaming = false))
+    }
+
+    @Test
+    fun `stripDigest leaves a trailing angle bracket alone when not streaming`() {
+        val text = "Working on it. <"
+        assertEquals(text, AgentDigest.stripDigest(text, streaming = false))
+    }
+
+    @Test
+    fun `stripDigest still removes a complete pair even when a later unclosed one follows and not streaming`() {
+        val text = "<agent_digest>first</agent_digest> body text <agent_digest>second"
+        assertEquals(
+            " body text <agent_digest>second",
+            AgentDigest.stripDigest(text, streaming = false),
+        )
     }
 }

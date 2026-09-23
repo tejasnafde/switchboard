@@ -67,55 +67,61 @@ describe('extractDigest', () => {
   })
 })
 
-describe('stripDigest', () => {
-  it('returns falsy input unchanged', () => {
-    expect(stripDigest('')).toBe('')
+describe('stripDigest - complete-tag removal (both modes)', () => {
+  it.each([true, false])('returns falsy input unchanged (streaming: %s)', (streaming) => {
+    expect(stripDigest('', { streaming })).toBe('')
   })
 
-  it('returns text unchanged when no tag is present', () => {
-    expect(stripDigest('Just some plain text.')).toBe('Just some plain text.')
+  it.each([true, false])('returns text unchanged when no tag is present (streaming: %s)', (streaming) => {
+    expect(stripDigest('Just some plain text.', { streaming })).toBe('Just some plain text.')
   })
 
-  it('removes a single complete tag', () => {
-    expect(stripDigest('Hello <agent_digest>Working</agent_digest> world')).toBe('Hello  world')
+  it.each([true, false])('removes a single complete tag (streaming: %s)', (streaming) => {
+    expect(stripDigest('Hello <agent_digest>Working</agent_digest> world', { streaming })).toBe(
+      'Hello  world',
+    )
   })
 
-  it('removes multiple complete tags', () => {
+  it.each([true, false])('removes multiple complete tags (streaming: %s)', (streaming) => {
     const text =
       '<agent_digest>Step one</agent_digest>body one' +
       '<agent_digest>Step two</agent_digest>body two'
-    expect(stripDigest(text)).toBe('body onebody two')
+    expect(stripDigest(text, { streaming })).toBe('body onebody two')
   })
+})
 
+describe('stripDigest - streaming: true (still typing in)', () => {
   it('hides a fully unclosed trailing tag and its partial body', () => {
-    expect(stripDigest('Working on it. <agent_digest>Writing te')).toBe('Working on it. ')
-  })
-
-  it('hides an unclosed tag with a partial close tag in progress', () => {
-    expect(stripDigest('Working on it. <agent_digest>Writing tests</agent_dig')).toBe(
+    expect(stripDigest('Working on it. <agent_digest>Writing te', { streaming: true })).toBe(
       'Working on it. ',
     )
   })
 
+  it('hides an unclosed tag with a partial close tag in progress', () => {
+    expect(
+      stripDigest('Working on it. <agent_digest>Writing tests</agent_dig', { streaming: true }),
+    ).toBe('Working on it. ')
+  })
+
   it('hides a bare partial prefix of the open tag at the end of the text', () => {
-    expect(stripDigest('Working on it. <agent_di')).toBe('Working on it. ')
+    expect(stripDigest('Working on it. <agent_di', { streaming: true })).toBe('Working on it. ')
   })
 
   it('hides the shortest partial prefix: a single trailing "<"', () => {
-    expect(stripDigest('Working on it. <')).toBe('Working on it. ')
+    expect(stripDigest('Working on it. <', { streaming: true })).toBe('Working on it. ')
   })
 
   it('does not touch a "<" that is not followed by tag-prefix characters', () => {
-    expect(stripDigest('if (x < 5) return')).toBe('if (x < 5) return')
+    expect(stripDigest('if (x < 5) return', { streaming: true })).toBe('if (x < 5) return')
   })
 
   it('does not touch an unrelated trailing angle-bracket tag', () => {
-    expect(stripDigest('some <b>bold</b> text')).toBe('some <b>bold</b> text')
+    expect(stripDigest('some <b>bold</b> text', { streaming: true })).toBe('some <b>bold</b> text')
   })
 
   it('keeps prose between a complete tag and a later unclosed one', () => {
     const text = '<agent_digest>first</agent_digest> body text <agent_digest>second'
-    expect(stripDigest(text)).toBe(' body text ')
+    expect(stripDigest(text, { streaming: true })).toBe(' body text ')
   })
 
   it('progressively strips a tag as it streams in, character by character', () => {
@@ -130,8 +136,44 @@ describe('stripDigest', () => {
       'Working on it. <agent_digest>Writing tests, 2 of 4 done</agent_dig',
     ]
     for (const partial of prefixesThatShouldAllHideTheTag) {
-      expect(stripDigest(partial)).toBe('Working on it. ')
+      expect(stripDigest(partial, { streaming: true })).toBe('Working on it. ')
     }
-    expect(stripDigest(full)).toBe('Working on it. ')
+    expect(stripDigest(full, { streaming: true })).toBe('Working on it. ')
+  })
+})
+
+describe('stripDigest - streaming: false (finished message)', () => {
+  // Regression (CodeRabbit, PR #105): a FINISHED message that merely quotes
+  // the literal `<agent_digest>` string, with no close tag, used to lose
+  // everything after it - in the chat transcript, on copy, on mobile, and
+  // on Android. A finished message cannot still be "mid-tag", so only
+  // complete pairs are ever removed.
+
+  it('does not touch an unclosed tag - nothing more can arrive for a finished message', () => {
+    expect(stripDigest('Working on it. <agent_digest>Writing te', { streaming: false })).toBe(
+      'Working on it. <agent_digest>Writing te',
+    )
+  })
+
+  it('leaves a literal, quoted open tag with no close alone', () => {
+    // The exact case from the report: this file's own OPEN_TAG constant,
+    // quoted in prose or code, in an already-finished message.
+    const text = "const OPEN_TAG = '<agent_digest>'"
+    expect(stripDigest(text, { streaming: false })).toBe(text)
+  })
+
+  it('leaves a bare partial prefix of the open tag alone', () => {
+    expect(stripDigest('Working on it. <agent_di', { streaming: false })).toBe(
+      'Working on it. <agent_di',
+    )
+  })
+
+  it('leaves a trailing "<" alone', () => {
+    expect(stripDigest('Working on it. <', { streaming: false })).toBe('Working on it. <')
+  })
+
+  it('still removes a complete tag pair even when a later, unclosed one follows', () => {
+    const text = '<agent_digest>first</agent_digest> body text <agent_digest>second'
+    expect(stripDigest(text, { streaming: false })).toBe(' body text <agent_digest>second')
   })
 })

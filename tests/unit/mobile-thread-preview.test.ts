@@ -42,4 +42,24 @@ describe('threadPreviewLine', () => {
     ]
     expect(threadPreviewLine(items)).toBe('Real status')
   })
+
+  it('finds a digest in an earlier message of the same turn when the newest assistant text (post-tool-call) has none', () => {
+    // Regression (CodeRabbit, PR #105): Claude splits a turn into several
+    // assistant text items at tool-call boundaries.
+    const items: FeedItem[] = [
+      { kind: 'user', id: 'u1', text: 'do the thing', at: 1 },
+      assistantText('<agent_digest>Reading files</agent_digest> then running tests', 'a1'),
+      { kind: 'tool', id: 't1', toolName: 'Bash', input: {}, state: 'done' },
+      assistantText('Now running the test suite...', 'a2'),
+    ]
+    expect(threadPreviewLine(items)).toBe('Reading files')
+  })
+
+  it('shows no preview once a new user message starts a turn the agent has not replied to yet', () => {
+    const items: FeedItem[] = [
+      assistantText('<agent_digest>Done: tests green</agent_digest>', 'a1'),
+      { kind: 'user', id: 'u2', text: 'thanks, now do one more thing', at: 2 },
+    ]
+    expect(threadPreviewLine(items)).toBeUndefined()
+  })
 })

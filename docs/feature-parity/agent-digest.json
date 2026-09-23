@@ -2,7 +2,7 @@
   "$schema": "../schemas/feature-parity.schema.json",
   "schemaVersion": 1,
   "feature": "agent-digest",
-  "summary": "Sidebar/kanban/conversation-list previews used to show the first raw, mid-sentence words of the latest assistant reply. The agent now reports a one-line status wrapped in <agent_digest>...</agent_digest> (a prompt rule appended for Claude and Codex, which have a clean instructions seam; OpenCode's ACP does not, so it keeps today's raw preview). src/shared/agent-digest.ts is pure and provider-agnostic: extractDigest pulls the last complete tag for previews (capped ~120 chars), stripDigest removes it from the text shown in the transcript, including hiding a still-streaming partial tag so it never flashes on screen. The raw message is stored unchanged everywhere - both functions run at render time only, so previews are derived live from in-memory session/thread state (agent-store on desktop, the chat store on mobile) and reset on reload rather than needing a DB migration.",
+  "summary": "Sidebar/kanban/conversation-list previews used to show the first raw, mid-sentence words of the latest assistant reply. The agent now reports a one-line status wrapped in <agent_digest>...</agent_digest> (a prompt rule appended for Claude and Codex, which have a clean instructions seam; OpenCode's ACP does not, so it keeps today's raw preview). src/shared/agent-digest.ts is pure and provider-agnostic: extractDigest pulls the last complete tag for previews (capped ~120 chars); stripDigest(text, { streaming }) removes complete tag pairs always, and additionally hides a still-forming trailing tag only when streaming is true - a FINISHED message that merely quotes the literal tag with no close (this file's own OPEN_TAG constant, for instance) is left alone, which fixed a CodeRabbit-caught bug where that case silently ate the rest of the message in the chat bubble, on copy, on mobile, and on Android. src/shared/turn-preview.ts (also CodeRabbit-prompted) makes the preview search every assistant message in the CURRENT TURN (everything after the last user message) for a digest before falling back to raw text, since Claude splits a turn into several messages at tool calls and the newest one often has no digest of its own yet. The raw message is stored unchanged everywhere - all of this runs at render time only, so previews are derived live from in-memory session/thread state (agent-store on desktop, the chat store on mobile) and reset on reload rather than needing a DB migration.",
   "surfaces": {
     "desktop": {
       "status": "implemented",
@@ -47,10 +47,12 @@
       "status": "implemented",
       "evidence": [
         "src/shared/agent-digest.ts",
+        "src/shared/turn-preview.ts",
         "src/main/provider/adapters/claude-adapter.ts",
         "src/main/provider/adapters/codex-adapter.ts",
         "src/main/provider/adapters/opencode-acp-adapter.ts",
         "tests/unit/agent-digest.test.ts",
+        "tests/unit/turn-preview.test.ts",
         "tests/unit/codex-adapter.test.ts"
       ]
     },
@@ -68,14 +70,15 @@
   },
   "verification": {
     "automated": [
-      "npx vitest run tests/unit/agent-digest.test.ts: extractDigest/stripDigest, including streaming partial-tag hiding at every truncation length",
+      "npx vitest run tests/unit/agent-digest.test.ts: extractDigest/stripDigest(text, { streaming }) - complete-tag removal in both modes, streaming-only partial-tag hiding at every truncation length, and non-streaming's finished-message cases (a quoted, unclosed literal tag is left alone)",
+      "npx vitest run tests/unit/turn-preview.test.ts: turnPreviewLine's turn-boundary detection, searching every assistant message in the current turn for a digest before falling back to the newest one's raw text, and not leaking a digest or raw text across a user-message turn boundary",
       "npx vitest run tests/unit/codex-adapter.test.ts: thread/start and thread/resume both carry developerInstructions = AGENT_DIGEST_PROMPT_RULE",
       "npx vitest run tests/unit/sidebar-recents.test.ts tests/unit/sidebar-recents-render.test.ts: previewLine derivation and the working/done badge swap to the digest text",
-      "npx vitest run tests/unit/session-preview.test.ts tests/unit/mobile-thread-preview.test.ts: the shared preview-line selection helpers (desktop and mobile)",
+      "npx vitest run tests/unit/session-preview.test.ts tests/unit/mobile-thread-preview.test.ts: the shared turn-aware preview-line adapters (desktop and mobile), including the multi-message-turn regression",
       "npm run typecheck",
       "npm test",
-      "cd apps/mobile && npm test: TextItem strips a complete and a still-streaming <agent_digest> tag",
-      "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew testDebugUnitTest: AgentDigestTest, the Kotlin port of the shared extractDigest/stripDigest test suite",
+      "cd apps/mobile && npm test: TextItem strips a complete and a still-streaming <agent_digest> tag, with streaming derived from item.done",
+      "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew testDebugUnitTest: AgentDigestTest, the Kotlin port of the shared extractDigest/stripDigest(text, streaming) test suite, both modes",
       "npm run validate:feature-parity -- --base origin/main"
     ],
     "hardware": [],
@@ -84,7 +87,8 @@
       "The claim that OpenCode's ACP has no instructions seam was checked by reading @agentclientprotocol/sdk's NewSessionRequest/PromptRequest types, not by probing a live opencode acp session.",
       "The Android conversation-list digest preview is staged and unbuilt, so it has nothing to exercise yet.",
       "Android's chat-text stripping (ThreadScreen.kt TextRow) was verified only via AgentDigestTest.kt's JVM unit tests, not on a physical device or emulator.",
-      "The desktop sidebar Recents preview and kanban card preview were not visually verified in a running build - only through renderToStaticMarkup-based unit tests and the pure previewLine/sessionPreviewLine helpers."
+      "The desktop sidebar Recents preview and kanban card preview were not visually verified in a running build - only through renderToStaticMarkup-based unit tests and the pure previewLine/sessionPreviewLine/turnPreviewLine helpers.",
+      "No live multi-message Claude turn (a real tool-call split) was observed end to end; the turn-boundary and cross-message digest search is verified only against synthetic message arrays."
     ]
   }
 }

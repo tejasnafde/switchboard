@@ -1111,8 +1111,11 @@ export const TextItem = memo(function TextItem({
     <Pressable style={styles.itemBlock} onLongPress={onLongPress} disabled={!onLongPress}>
       {/* <agent_digest> status tags drive the thread-list preview, not the
           transcript - stripped here the same way the desktop MessageBubble
-          strips them. See @shared/agent-digest. */}
-      <Markdown text={stripDigest(item.text)} />
+          strips them. See @shared/agent-digest. streaming: !item.done, so a
+          finished message that merely quotes the tag literally is not
+          chopped off - only a message still streaming in hides a trailing
+          partial/unclosed tag. */}
+      <Markdown text={stripDigest(item.text, { streaming: !item.done })} />
       {item.done && item.durationMs != null && (
         <Text style={styles.durationText}>Worked for {fmtDuration(item.durationMs)}</Text>
       )}

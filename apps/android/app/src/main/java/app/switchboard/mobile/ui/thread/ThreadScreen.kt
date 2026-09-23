@@ -1565,8 +1565,10 @@ private fun TextRow(
         } else {
             // <agent_digest> status tags drive the conversation-list preview
             // (see BrowseScreen.kt), not the transcript - stripped here the
-            // same way the desktop MessageBubble strips them.
-            ThreadRichText(AgentDigest.stripDigest(row.source.text))
+            // same way the desktop MessageBubble strips them. streaming =
+            // !done, so a finished message that merely quotes the tag
+            // literally is not chopped off.
+            ThreadRichText(AgentDigest.stripDigest(row.source.text, streaming = !row.source.done))
         }
         if (reasoning) {
             TextButton(

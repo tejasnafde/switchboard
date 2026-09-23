@@ -95,24 +95,30 @@ function resolveFileCached(projectPath: string, path: string): Promise<boolean> 
 }
 
 export const MessageBubble = memo(function MessageBubble({ message, sessionId, knownSkillNames, onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve, hideTurnDuration = false }: MessageBubbleProps) {
+  // Drives both markdownContent's stripDigest call below and the file-pill
+  // enhancement effect further down - a still-streaming message hides a
+  // trailing partial <agent_digest> tag; a finished one only strips
+  // complete pairs, so quoted tag text (this file's own OPEN_TAG constant,
+  // for instance) is not chopped off.
+  const isMutable = useMessageMutable(sessionId, message.id)
+
   const markdownContent = useMemo(() => {
     if (!message.content) return ''
     // Strip <agent_digest> status tags - they drive the sidebar/kanban
     // previews (see @shared/agent-digest), not the chat transcript. Raw
     // stored text is untouched; this only affects what renders here.
-    const stripped = stripDigest(message.content)
+    const stripped = stripDigest(message.content, { streaming: isMutable })
     // Escape lone tildes used as "approximately" (e.g. ~34) so they don't
     // pair up into ~~strikethrough~~ in GFM markdown.
     const escaped = stripped.replace(/~(\d)/g, '\\~$1')
     return escaped
-  }, [message.content])
+  }, [message.content, isMutable])
 
   const [copied, setCopied] = useState(false)
   const isBookmarked = useBookmarkStore((s) => s.isBookmarked(sessionId ?? '', message.timestamp))
   const bookmarkId = useBookmarkStore((s) => s.idFor(sessionId ?? '', message.timestamp))
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const markdownRef = useRef<HTMLDivElement>(null)
-  const isMutable = useMessageMutable(sessionId, message.id)
   // Right-click → Fork popover. Anchored at the click coordinates;
   // dismisses on click-outside / Escape. We resolve the fork's source
   // conversation lazily off `useAgentStore.getState()` at click time so
@@ -311,7 +317,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   }
 
   const handleCopy = () => {
-    const text = stripDigest(message.content || '')
+    const text = stripDigest(message.content || '', { streaming: isMutable })
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
