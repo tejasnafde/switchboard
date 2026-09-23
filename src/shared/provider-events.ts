@@ -270,8 +270,15 @@ export function echoMessageId(origin: string): string {
   return `remote_${origin}`
 }
 
-const USER_MESSAGE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])
+/** The image types every provider accepts; also the composer's file filter. */
+export const USER_MESSAGE_IMAGE_TYPES: readonly string[] = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
 const USER_MESSAGE_IMAGE_DATA_LIMIT = 3 * 1024 * 1024
+
+/** `data:image/png;base64,AAAA` -> its MIME type and raw base64, or null. */
+export function parseImageDataUrl(url: string): { mimeType: string; data: string } | null {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(url)
+  return match ? { mimeType: match[1], data: match[2] } : null
+}
 
 /** Validate attachments before they cross the provider, persistence, or replay boundaries. */
 export function validateUserMessageImages<T extends { url: string; mimeType?: string; name?: string }>(
@@ -280,11 +287,11 @@ export function validateUserMessageImages<T extends { url: string; mimeType?: st
   if (!images?.length) return undefined
   let encodedBytes = 0
   for (const image of images) {
-    const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/=]+)$/.exec(image.url)
-    if (!match || !USER_MESSAGE_IMAGE_TYPES.has(match[1])) {
+    const parsed = parseImageDataUrl(image.url)
+    if (!parsed || !USER_MESSAGE_IMAGE_TYPES.includes(parsed.mimeType) || !/^[A-Za-z0-9+/=]+$/.test(parsed.data)) {
       throw new Error('Images must be PNG, JPEG, WebP, or GIF data URLs')
     }
-    if (image.mimeType && image.mimeType !== match[1]) {
+    if (image.mimeType && image.mimeType !== parsed.mimeType) {
       throw new Error('Image MIME type does not match its data URL')
     }
     encodedBytes += image.url.length
