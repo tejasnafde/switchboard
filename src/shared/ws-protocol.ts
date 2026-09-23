@@ -39,6 +39,10 @@ export const BACKEND_CAPABILITIES = [
   'conversation_fork_v1',
   /** submitUserTurn honours `delivery: 'queue'` (held until the running turn ends). */
   'turn_queue_v1',
+  /** `ProviderChannels.GET_PENDING_REQUESTS` returns a thread's still-open
+   *  approval/question/plan cards, so a client can recover them after a
+   *  resume gap instead of waiting on a card that will never re-arrive. */
+  'pending_requests_v1',
 ] as const
 
 export function isReplayableEventChannel(channel: string): boolean {

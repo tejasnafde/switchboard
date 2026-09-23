@@ -958,6 +958,7 @@ private fun ConnectedThreadRoute(
             projectPath = route.projectPath,
             worktreePath = route.worktreePath,
             providerHint = route.provider,
+            supportsPendingRequests = "pending_requests_v1" in lease.capabilities,
             composerPersistence = object : ThreadComposerPersistence {
                 override fun save(draft: ComposerDraft) = runtime.saveComposerDraft(draft)
 

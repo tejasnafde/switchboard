@@ -43,6 +43,7 @@ import { Markdown } from '../components/Markdown'
 import { summarizeTool, toolIcon } from '@shared/tool-summary'
 import { getClient, onAppForeground, useConnectionsStore } from '../stores/connections'
 import { useChatStore, threadKey, emptyThread, type FeedItem } from '../stores/chat'
+import { missingPendingFeedItems } from '../lib/pendingRequestRecovery'
 import {
   completeRejectedEdit,
   drain,
@@ -261,6 +262,24 @@ export default function ThreadScreen({ route, navigation }: Props) {
       } catch (err) {
         startedKeyRef.current = null
         reportError(err)
+        return
+      }
+      // Recover any approval/question/plan card a resume gap or a reload
+      // dropped - this effect re-runs on both (staleGeneration), so it also
+      // covers an ordinary reconnect. Older backends have no handler for the
+      // channel, hence the capability gate.
+      if (client.supportsCapability('pending_requests_v1') === true) {
+        try {
+          const pending = await client.getPendingRequests(threadId)
+          if (pending.length) {
+            const items = useChatStore.getState().threads[key]?.items ?? []
+            for (const event of missingPendingFeedItems(pending, items)) {
+              useChatStore.getState().ingestNow(connectionId, event)
+            }
+          }
+        } catch (err) {
+          reportError(err)
+        }
       }
     })()
   }, [connectionId, threadId, projectPath, key, isNew, reportError, staleGeneration, invalidated, thread.cached])

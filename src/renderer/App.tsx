@@ -53,6 +53,7 @@ import { focusComposer } from './services/composerRegistry'
 import { useDraftStore } from './stores/draft-store'
 import { nextChatPresentation, nextDualChatShortcutAction, shouldEvictReplacedSession, shouldShowChatFocusIndicator, type ChatPresentation } from './services/chatWorkspace'
 import type { AgentProvider } from '@shared/types'
+import { recoverPendingRequests } from './services/pendingRequestRecovery'
 
 const log = createRendererLogger('app')
 
@@ -338,6 +339,22 @@ export function App() {
       }
     })()
   }, [loadSavedTheme])
+
+  // A remote (or the hybrid base) backend could not replay everything a
+  // window missed - the live event that opened an approval/question/plan
+  // card is gone for good. Recover it for whatever is actually on screen;
+  // `machineId === null` means the base backend, so every displayed thread
+  // is a candidate rather than trying to filter by one.
+  useEffect(() => {
+    return window.api.routing?.onResumeGap?.((machineId) => {
+      for (const sessionId of useLayoutStore.getState().displayedChatSessionIds()) {
+        const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
+        if (!session || session.type === 'terminal') continue
+        if (machineId !== null && session.machineId !== machineId) continue
+        void recoverPendingRequests(sessionId)
+      }
+    })
+  }, [])
 
   // Safety net: runs AFTER handle's own cleanup. Only reverts state that looks
   // "stuck" (cursor still in resize mode with no handle claiming it).
@@ -873,6 +890,10 @@ export function App() {
             log.warn('session history reload failed', { sessionId: session.id, machineId: effectiveMachineId, err })
           }
         }
+        // Thread (re)open: recover any approval/question/plan card a resume
+        // gap or a reload dropped. Cards are never persisted to history, so
+        // this runs whether or not the reload above ran.
+        if (session.agentType !== 'terminal') void recoverPendingRequests(session.id)
         return
       }
 
@@ -929,6 +950,7 @@ export function App() {
           useAgentStore.getState().syncExecutionRootRevision(targetId, loaded.meta.executionRootRevision)
         }
         placeAndEvict(targetId)
+        void recoverPendingRequests(targetId)
         return
       }
 
@@ -1038,6 +1060,7 @@ export function App() {
       }
 
       if (loaded?.messages?.length) setMessages(session.id, loaded.messages)
+      void recoverPendingRequests(session.id)
     },
     [addSession, selectChatSession, openChatBeside, setMessages, clearMessages],
   )
@@ -1058,6 +1081,7 @@ export function App() {
         setAppToast('The chat opened, but its history could not be reloaded.')
       }
     }
+    void recoverPendingRequests(sessionId)
     requestAnimationFrame(() => focusComposer(sessionId))
   }, [openChatBeside, setMessages])
 

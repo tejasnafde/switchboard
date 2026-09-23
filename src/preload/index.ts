@@ -76,8 +76,11 @@ export interface ProviderInstanceUpsertInput {
 // backend; desktop-only channels still resolve to local IPC via HybridTransport.
 // Unset → fully local, as before.
 const backendUrl = process.env.SWITCHBOARD_BACKEND_URL
-const baseTransport: Transport = backendUrl
-  ? new HybridTransport(new IpcTransport(), new WsTransport(backendUrl))
+// Kept as a WsTransport reference (not just `Transport`) so its onResumeGap
+// can be wired below - HybridTransport wraps it and does not re-expose it.
+const remoteBaseTransport = backendUrl ? new WsTransport(backendUrl) : null
+const baseTransport: Transport = remoteBaseTransport
+  ? new HybridTransport(new IpcTransport(), remoteBaseTransport)
   : new IpcTransport()
 if (backendUrl) console.info(`[SB:preload] remote backend: ${backendUrl}`)
 // Router holds 'local' (above) plus a WsTransport per connected remote; the
@@ -88,6 +91,20 @@ const routingTable = new RoutingTable()
 const router = new TransportRouter(baseTransport, (channel, args) => routingTable.resolve(channel, args))
 const remoteTransports = new Map<string, WsTransport>()
 const transport: Transport = router
+
+/**
+ * A WsTransport's resume gap (server restart, an evicted replay cursor) is
+ * detected client-side, here in preload - but only the renderer knows which
+ * threads are actually open, so it is forwarded through a small in-process
+ * pub/sub rather than a wire channel. `machineId` is null for the base/hybrid
+ * backend (no per-machine identity), so the renderer recovers every open
+ * thread rather than trying to filter by one.
+ */
+const resumeGapListeners = new Set<(machineId: string | null) => void>()
+function notifyResumeGap(machineId: string | null): void {
+  for (const fn of resumeGapListeners) fn(machineId)
+}
+if (remoteBaseTransport) remoteBaseTransport.onResumeGap = () => notifyResumeGap(null)
 
 const api = {
   worktreeCreation: createWorktreeCreationApi(transport),
@@ -437,6 +454,7 @@ const api = {
         remoteTransports.delete(machineId)
       }
       const ws = new WsTransport(url)
+      ws.onResumeGap = () => notifyResumeGap(machineId)
       remoteTransports.set(machineId, ws)
       router.register(machineId, ws)
     },
@@ -445,6 +463,16 @@ const api = {
       routingTable.forgetMachine(machineId)
       remoteTransports.get(machineId)?.close()
       remoteTransports.delete(machineId)
+    },
+    /**
+     * A remote (or the hybrid base) backend could not replay everything this
+     * window missed - `machineId` is null for the base backend. The renderer
+     * re-fetches whatever it cannot trust any more, e.g. pending
+     * approval/question/plan cards (see `provider.getPendingRequests`).
+     */
+    onResumeGap: (callback: (machineId: string | null) => void): (() => void) => {
+      resumeGapListeners.add(callback)
+      return () => resumeGapListeners.delete(callback)
     },
   },
 
@@ -600,6 +628,14 @@ const api = {
      */
     listSessions: (): Promise<LiveSessionSummary[]> =>
       transport.invoke(ProviderChannels.LIST_SESSIONS),
+
+    /**
+     * A thread's still-open approval/question/plan cards, from the backend's
+     * own bookkeeping rather than a live event a resume gap or a reload may
+     * have dropped for good. See `ProviderChannels.GET_PENDING_REQUESTS`.
+     */
+    getPendingRequests: (threadId: string): Promise<import('@shared/pending-requests').PendingBlockingEvent[]> =>
+      transport.invoke(ProviderChannels.GET_PENDING_REQUESTS, threadId),
 
     /**
      * Fetch the agent-defined slash commands/skills for a session

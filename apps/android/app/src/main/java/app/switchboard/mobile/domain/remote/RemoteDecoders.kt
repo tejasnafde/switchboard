@@ -145,6 +145,18 @@ object RemoteDecoders {
         }
     }
 
+    /**
+     * A thread's still-open approval/question/plan cards. Each element is the
+     * original wire-shape event object (`request.opened` / `question.asked` /
+     * `plan.proposed`) - identical to what streams live, so
+     * `ThreadEventDecoder.decode` can decode it unchanged and feed it through
+     * the same reducer path a live event takes.
+     */
+    fun pendingRequests(value: JsonValue?): List<JsonObject> {
+        if (value == null || value === JsonNull) return emptyList()
+        return value.array().values.map { it.obj() }
+    }
+
     fun setting(value: JsonValue?): String? =
         when (value) {
             null, JsonNull -> null

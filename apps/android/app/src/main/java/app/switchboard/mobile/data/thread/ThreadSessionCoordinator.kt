@@ -234,6 +234,12 @@ interface ThreadSessionRemote {
     )
 
     fun interrupt(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit)
+
+    /** A thread's still-open approval/question/plan cards, from the backend's
+     *  own bookkeeping rather than a live event a resume gap or a reload may
+     *  have dropped for good. Only call when `pending_requests_v1` is
+     *  advertised - an older backend has no handler for the channel. */
+    fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit)
 }
 
 class SwitchboardThreadSessionRemote(
@@ -330,6 +336,10 @@ class SwitchboardThreadSessionRemote(
     override fun interrupt(threadId: String, callback: (RemoteResponse<CommandBody>) -> Unit) {
         client.interrupt(threadId, callback)
     }
+
+    override fun getPendingRequests(threadId: String, callback: (RemoteResponse<List<JsonObject>>) -> Unit) {
+        client.getPendingRequests(threadId, callback)
+    }
 }
 
 object LoadedSessionSnapshotMapper {
@@ -417,6 +427,9 @@ class ThreadSessionCoordinator(
     private val projectPath: String? = null,
     private val worktreePath: String? = null,
     private val providerHint: String? = initialCached?.provider,
+    /** Backend advertises `pending_requests_v1` - see `getPendingRequests`.
+     *  False for an older backend, which has no handler for the channel. */
+    private val supportsPendingRequests: Boolean = false,
 ) : AutoCloseable {
     private val key = ThreadKey(scope.connectionId, threadId)
     private val composerKey = ComposerDraftKey(scope.connectionId, threadId)
@@ -933,6 +946,7 @@ class ThreadSessionCoordinator(
                     load = ThreadSessionLoad.Ready(requireNotNull(currentThread()))
                     persistSnapshot()
                     reattach(outcome.value)
+                    recoverPendingRequests()
                 }
 
                 is RemoteOutcome.Failure -> {
@@ -940,6 +954,75 @@ class ThreadSessionCoordinator(
                 }
             }
             publish()
+        }
+    }
+
+    /**
+     * Recover any approval/question/plan card a resume gap or a reload
+     * dropped. Called after every successful `refresh()` - both a thread
+     * (re)open and a resume gap (`onReplayGap` -> `refresh()`) land here, the
+     * same way ThreadScreen's single seed effect covers both on mobile.
+     *
+     * Each returned event is checked against `isAlreadyShown` first: `upsert`
+     * replaces a feed item with the same id in place, so an unfiltered replay
+     * would turn an already-resolved card back into "pending" if the recovery
+     * reply lands after the live close/answer that resolved it.
+     */
+    private fun recoverPendingRequests() {
+        if (!supportsPendingRequests) return
+        try {
+            remote.getPendingRequests(threadId) { response ->
+                synchronized(this) {
+                    if (!accepts(response) || closed || remote.scope != scope) return@synchronized
+                    // Recovery is best-effort: a Failure outcome (offline, an
+                    // older backend, a transient error) just means this pass
+                    // recovers nothing - the next refresh() (thread reopen,
+                    // resume gap) tries again.
+                    val pending = (response.outcome as? RemoteOutcome.Success)?.value ?: return@synchronized
+                    var changed = false
+                    for (raw in pending) {
+                        val event = ThreadEventDecoder.decode(raw)
+                        if (event.threadId != threadId) continue
+                        // upsert() replaces a feed item that already has this id, so a
+                        // recovered event for a card the user already resolved (a live
+                        // request.closed/question.answered landed before this reply came
+                        // back) would turn it back into "pending". Skip it instead.
+                        if (isAlreadyShown(event)) continue
+                        reduce(ThreadAction.Runtime(ScopedThreadEvent(scope, null, event, nowMs = clock.nowMs())))
+                        changed = true
+                    }
+                    if (changed) {
+                        load = when (val current = load) {
+                            is ThreadSessionLoad.Loading -> ThreadSessionLoad.Loading(currentThread())
+                            is ThreadSessionLoad.Failed -> current.copy(cached = currentThread())
+                            is ThreadSessionLoad.Ready -> current.copy(thread = requireNotNull(currentThread()))
+                        }
+                        persistSnapshot()
+                        publish()
+                    }
+                }
+            }
+        } catch (_: RuntimeException) {
+            // Recovery is optional, like loadSkills()/refreshModels() above -
+            // the feed the ordinary load already installed remains usable.
+        }
+    }
+
+    /** A recovered request.opened / question.asked / plan.proposed whose
+     *  requestId/planId is already on an Approval, Question or Plan item in
+     *  the current feed - same dedupe desktop and mobile do before appending
+     *  a recovered card, so a late reply cannot undo an already-resolved one. */
+    private fun isAlreadyShown(event: app.switchboard.mobile.domain.thread.ThreadRuntimeEvent): Boolean {
+        val known = event as? app.switchboard.mobile.domain.thread.ThreadRuntimeEvent.Known ?: return false
+        val feed = currentThread()?.feed ?: return false
+        return when (val payload = known.payload) {
+            is app.switchboard.mobile.domain.thread.ThreadEventPayload.RequestOpened ->
+                feed.any { it is FeedItem.Approval && it.requestId == payload.requestId }
+            is app.switchboard.mobile.domain.thread.ThreadEventPayload.QuestionAsked ->
+                feed.any { it is FeedItem.Question && it.requestId == payload.requestId }
+            is app.switchboard.mobile.domain.thread.ThreadEventPayload.PlanProposed ->
+                feed.any { it is FeedItem.Plan && it.planId == payload.planId }
+            else -> false
         }
     }
 
