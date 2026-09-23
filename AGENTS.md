@@ -514,6 +514,7 @@ src/
 │   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · settings/ProviderUsagePanel.tsx · SessionPickerModal.tsx
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
+│   │   │   ├── providerEventReducer.ts # desktop provider event → agent-store reducer (ChatPanel's listener)
 │   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slashCommands.ts
 │   │   │   ├── UnifiedProviderPicker.tsx # agent tabs → instance rail → model search
 │   │   │   ├── BranchPicker.tsx + branchPickerPolicy.ts · SkillChip · FileChip
