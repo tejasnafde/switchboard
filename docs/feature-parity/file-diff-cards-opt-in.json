@@ -13,8 +13,7 @@
         "src/renderer/components/SettingsModal.tsx",
         "src/renderer/styles/global.css",
         "tests/unit/layout-store.test.ts",
-        "tests/unit/message-list.test.ts",
-        "videos/capture-tour.mjs"
+        "tests/unit/message-list.test.ts"
       ]
     },
     "reactNativeIos": {
