@@ -2,6 +2,21 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.62 - Audit cleanup: one model path, one vocabulary, no dead agent
+
+### Fixed
+- **Renaming a chat after Claude rotated its session id did nothing.** `updateConversationTitle` matched the raw id, so the update touched no rows and no broadcast fired. It resolves through `resolveRootThreadId` like the other per-conversation setters now, with a rotation test.
+- **Crash paths reach the on-disk log.** Uncaught exceptions, unhandled rejections and a database that fails to open wrote only to stdout, so a packaged app kept no trace of them.
+- **Model tier badges were wrong for some OpenCode models.** The composer guessed tiers by substring, so `gemini-2.5-pro` and `minimax` models read as fast because they contain "mini". One `inferModelTier` in `shared/models` matches whole tokens and replaces the three copies in the Claude adapter, Codex adapter and composer.
+
+### Changed
+- **OpenCode models go through the same channel as Claude and Codex.** The OpenCode adapter answers `provider:list-models` with labelled, tiered rows, so the phone apps, which only ever asked that channel, show a model chip on OpenCode threads for the first time. The desktop's separate OpenCode channel, preload method and renderer effect are gone; the old channel stays one release as an alias for older desktops against a newer server.
+- **One vocabulary for runtime modes and agent providers.** `RUNTIME_MODES` and `isRuntimeMode` live next to the `RuntimeMode` type, and `AgentProvider`, `AGENT_PROVIDERS`, `isAgentProvider`, `toAgentProvider` and `providerKindFor` in `shared/types` replace four `claude`/`claude-code` mapping functions on desktop, three on the phone, two provider Sets, three hand-copied mode lists and about fifteen inline provider unions. The composer and the phone use `agentLabel` / `agentShortLabel` instead of their own label tables.
+- **The Claude alias rules left the shared model catalog.** `reconcileSelectedModel` takes the matching rule as a parameter and defaults to an exact match, which is what its only caller, the Codex adapter, needs. The Claude rules live in `claude-model-alias.ts`.
+
+### Removed
+- **The legacy `--print` agent path.** The SDK adapter replaced it in April, but its handlers were still registered on both the Electron host and the headless server, and a paired phone's scope did not deny `agent:*`, so a phone could still start a `claude --print` process through it. The manager, handlers, channels, preload API, unused hook, listener effect and tests are deleted.
+
 ## 0.8.61 - New chats start as drafts
 
 ### Changed
