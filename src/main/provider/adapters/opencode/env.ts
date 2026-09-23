@@ -53,7 +53,9 @@ export function findOpencodePath(): string | null {
       execSync(`test -x "${p}"`, { timeout: 2000 })
       cachedPath = p
       return p
-    } catch { /* not found */ }
+    } catch (err) {
+      log.debug(`opencode not found at candidate path ${p}`, err)
+    }
   }
   try {
     cachedPath = execSync('which opencode 2>/dev/null', {
@@ -87,7 +89,9 @@ export function buildOpencodeEnv(extra?: Record<string, string>): Record<string,
         merged[key] = val
         injected.push(key)
       }
-    } catch { /* settings table optional */ }
+    } catch (err) {
+      log.debug(`settings lookup for opencode.env.${key} failed - settings table optional`, err)
+    }
   }
   if (extra) {
     for (const [k, v] of Object.entries(extra)) merged[k] = v

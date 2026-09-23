@@ -354,7 +354,12 @@ function createWindow(): BrowserWindow {
   })
 
   // Expose log paths for Settings/About
-  try { ipcMain.removeHandler('app:get-log-paths') } catch { /* ignore */ }
+  try {
+    ipcMain.removeHandler('app:get-log-paths')
+  } catch (err) {
+    // Expected on first registration - there is no handler to remove yet.
+    log.debug('removeHandler(app:get-log-paths) - no prior handler', err)
+  }
   ipcMain.handle('app:get-log-paths', () => ({
     dir: getLogDir(),
     file: getLogFilePath(),
@@ -366,7 +371,10 @@ function createWindow(): BrowserWindow {
       const levels = ['debug', 'info', 'warn', 'error']
       const src = sourceId ? sourceId.split('/').pop() : ''
       console.log(`[renderer:${levels[level] ?? level}] ${message} (${src}:${line})`)
-    } catch { /* EPIPE if stdout is closed - ignore */ }
+      // EPIPE if stdout is closed; the scoped logger also writes to console,
+      // so logging here risks the same throw.
+      // eslint-disable-next-line no-restricted-syntax -- see comment above
+    } catch { /* stdout write failed, most likely EPIPE - nothing else to do */ }
   })
 
   if (!app.isPackaged && process.env['ELECTRON_RENDERER_URL']) {

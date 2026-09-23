@@ -1232,9 +1232,14 @@ export class WorktreeCreationService {
     if (running) return running
     const promise = this.recover(record)
     this.recoveryInFlight.set(key, promise)
+    // The returned `promise` is the one callers await and handle; this
+    // `.finally().catch()` only prevents an unhandledRejection warning on
+    // the separate finally-chain promise.
     void promise.finally(() => {
       if (this.recoveryInFlight.get(key) === promise) this.recoveryInFlight.delete(key)
-    }).catch(() => {})
+    }).catch((err) => {
+      log.debug(`worktree recovery for ${key} rejected (handled by the real awaiter)`, err)
+    })
     return promise
   }
 

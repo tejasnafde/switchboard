@@ -473,7 +473,11 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
       onEvent({ type: 'error', threadId: opts.threadId, message })
       onEvent({ type: 'status', threadId: opts.threadId, status: 'error' })
       // Tear down the child so the user can retry cleanly
-      try { child.kill('SIGTERM') } catch { /* ignore */ }
+      try {
+        child.kill('SIGTERM')
+      } catch (killErr) {
+        log.debug('SIGTERM on opencode child failed during init cleanup', { threadId: opts.threadId, killErr })
+      }
       active.child = null
       active.connection = null
       this.sessions.delete(opts.threadId)
@@ -661,7 +665,11 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     const active = this.sessions.get(threadId)
     if (!active) return
     if (active.child) {
-      try { active.child.kill('SIGTERM') } catch { /* ignore */ }
+      try {
+        active.child.kill('SIGTERM')
+      } catch (killErr) {
+        log.debug('SIGTERM on opencode child failed during stopSession', { threadId, killErr })
+      }
       active.child = null
     }
     for (const [, pending] of active.pendingPermissions) {

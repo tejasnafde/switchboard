@@ -57,6 +57,27 @@ export default tseslint.config(
       'no-useless-catch': 'error',
       'no-else-return': ['error', { allowElseIf: false }],
       'no-useless-rename': 'error',
+      // No silent catches (AGENTS.md "Logging conventions"): every catch that
+      // doesn't re-throw must log through the module's scoped logger. A
+      // comment-only body still has body.length 0 - that's the point,
+      // `catch { /* ignore */ }` is exactly the pattern this bans. For the
+      // handful of sites where logging is impossible or harmful (the
+      // logger's own write path, pointer-capture release, etc.), use:
+      //   // eslint-disable-next-line no-restricted-syntax -- <reason>
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'CatchClause > BlockStatement[body.length=0]',
+          message:
+            'Empty catch block - log the error with the scoped logger (see AGENTS.md Logging conventions), or add a disable comment explaining why logging is impossible or harmful here.',
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='catch'] > ArrowFunctionExpression[body.type='BlockStatement'][body.body.length=0]",
+          message:
+            'Empty .catch(() => {}) handler - log the rejection with the scoped logger (see AGENTS.md Logging conventions), or add a disable comment explaining why logging is impossible or harmful here.',
+        },
+      ],
     },
   },
 )

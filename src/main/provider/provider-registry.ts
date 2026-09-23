@@ -1070,7 +1070,12 @@ export class ProviderRegistry implements PeerToolHost {
         resolveStart = resolve
         rejectStart = reject
       })
-      void startPromise.catch(() => {})
+      // Real failures are surfaced to the actual awaiter below; this only
+      // stops Node's unhandledRejection warning for the promise stashed in
+      // `startingSessions` before anyone has awaited it.
+      void startPromise.catch((err) => {
+        log.debug(`startSession ${opts.threadId} rejected (handled by the real awaiter)`, err)
+      })
       this.startingSessions.set(opts.threadId, startPromise)
       let allocatedEpoch: number | null = null
       try {
@@ -1360,7 +1365,9 @@ export class ProviderRegistry implements PeerToolHost {
         } catch (targetError) {
           targetEventGate.state = 'discarded'
           targetEventGate.events.length = 0
-          await stopSession(threadId).catch(() => {})
+          await stopSession(threadId).catch((stopErr) => {
+            log.warn(`cleanup stopSession(${threadId}) failed after a failed provider switch`, stopErr)
+          })
           try {
             await startSession(oldOpts, true, undefined, oldCredentials)
             return failure(

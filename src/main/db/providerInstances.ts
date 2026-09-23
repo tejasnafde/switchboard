@@ -200,8 +200,9 @@ function parseEnvOrNull(json: string): Record<string, string> | null {
   try {
     const parsed = JSON.parse(json)
     if (parsed && typeof parsed === 'object') return parsed as Record<string, string>
-  } catch {
-    /* malformed blob */
+  } catch (err) {
+    // Never log `json` - it may hold decrypted secrets.
+    log.warn('provider instance env blob is malformed JSON', err)
   }
   return null
 }
@@ -227,7 +228,11 @@ export function encryptEnv(env: Record<string, string>): Buffer {
 function rowToFull(r: DbRow): ProviderInstanceRow {
   let configJson: unknown = null
   if (r.config_json) {
-    try { configJson = JSON.parse(r.config_json) } catch {}
+    try {
+      configJson = JSON.parse(r.config_json)
+    } catch (err) {
+      log.warn('provider instance config_json is malformed - ignoring', { id: r.id, err })
+    }
   }
   return {
     id: r.id,
