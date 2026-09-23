@@ -1,6 +1,14 @@
 /**
  * Pick the one field of a tool call that says what it is doing, instead of
  * dumping JSON. Covers Claude's tool names and the Codex/OpenCode spellings.
+ *
+ * Shared by all three UI surfaces (desktop, mobile, native Android) so a
+ * Bash call reads "Terminal" everywhere instead of "Bash" on one client and
+ * "Terminal" on another. Desktop parses `ToolCall.input` from a JSON string
+ * before calling `summarizeTool`; mobile and this module's own consumers
+ * pass an already-parsed value. Android has no TypeScript runtime, so
+ * `ThreadPresentation.kt`'s `toolSummary` mirrors these rules by hand -
+ * see `tests/fixtures/tool-summary-cases.json` for the cross-checked cases.
  */
 
 export interface ToolSummary {
@@ -54,6 +62,10 @@ const TITLES: Record<string, string> = {
   multiedit: 'Edit',
   grep: 'Search',
   search_files: 'Search',
+  // Bare "search" is the Agent Client Protocol tool-call `kind` OpenCode
+  // reports (`update.kind` in opencode-acp-adapter.ts) - not a Claude/Codex
+  // spelling, but the same one-word category as grep/search_files.
+  search: 'Search',
   glob: 'Find files',
   list_files: 'List files',
   ls: 'List files',
@@ -61,7 +73,13 @@ const TITLES: Record<string, string> = {
   fetch: 'Fetch',
   websearch: 'Web search',
   task: 'Subagent',
+  // Desktop's classifyTool also treated a bare "agent" tool name as the
+  // subagent kind; mobile did not, so it is folded in here.
+  agent: 'Subagent',
   todowrite: 'Plan',
+  // Codex's own checklist tool (see codex-adapter.ts) - not TodoWrite, but
+  // the same "Plan" concept with a differently-shaped payload.
+  update_plan: 'Plan',
   notebookedit: 'Edit notebook',
 }
 
@@ -83,10 +101,22 @@ export function summarizeTool(toolName: string, input: unknown): ToolSummary {
     case 'read_file':
     case 'write':
     case 'write_file':
-    case 'edit':
-    case 'multiedit':
     case 'notebookedit': {
       const path = pick(o, 'file_path', 'path', 'filePath', 'notebook_path')
+      return { title, detail: path ? shortenPath(path) : '', mono: true }
+    }
+
+    case 'edit':
+    case 'multiedit': {
+      const path = pick(o, 'file_path', 'path', 'filePath')
+      // A move/rename carries both the source and destination path - desktop
+      // used to be the only surface that called this out; folded into the
+      // shared rule since it is strictly more informative than plain "Edit".
+      const movePath = pick(o, 'move_path', 'movePath')
+      if (movePath) {
+        const from = path ? shortenPath(path) : ''
+        return { title: 'Rename', detail: `${from} → ${shortenPath(movePath)}`, mono: true }
+      }
       return { title, detail: path ? shortenPath(path) : '', mono: true }
     }
 
@@ -100,7 +130,8 @@ export function summarizeTool(toolName: string, input: unknown): ToolSummary {
     }
 
     case 'grep':
-    case 'search_files': {
+    case 'search_files':
+    case 'search': {
       const pattern = pick(o, 'pattern', 'query', 'regex')
       const where = pick(o, 'path', 'dir', 'directory')
       const scope = where ? ` in ${shortenPath(where)}` : ''
@@ -125,19 +156,23 @@ export function summarizeTool(toolName: string, input: unknown): ToolSummary {
     case 'websearch':
       return { title, detail: condense(pick(o, 'query', 'q') ?? ''), mono: false }
 
-    case 'task': {
+    case 'task':
+    case 'agent': {
       const desc = pick(o, 'description', 'prompt')
       return { title, detail: condense(desc ?? '', 80), mono: false }
     }
 
-    case 'todowrite': {
-      const todos = o.todos
+    case 'todowrite':
+    case 'update_plan': {
+      const todos = o.todos ?? o.plan ?? o.items
       const n = Array.isArray(todos) ? todos.length : 0
       return { title, detail: n > 0 ? `${n} ${n === 1 ? 'item' : 'items'}` : '', mono: false }
     }
 
     default: {
-      // Unknown tool: a plausible field beats raw JSON.
+      // Unknown tool (including MCP tools, e.g. mcp__server__tool): a
+      // plausible field beats raw JSON, and the raw tool name beats guessing
+      // at a human label neither original implementation attempted.
       const guess = pick(o, 'command', 'file_path', 'path', 'pattern', 'query', 'url', 'description')
       if (guess !== null) return { title, detail: condense(guess), mono: true }
       const keys = Object.keys(o)
@@ -170,6 +205,7 @@ export function toolIcon(toolName: string): string {
       return 'pencil'
     case 'grep':
     case 'search_files':
+    case 'search':
     case 'glob':
       return 'search'
     case 'list_files':
@@ -180,8 +216,10 @@ export function toolIcon(toolName: string): string {
     case 'websearch':
       return 'globe-outline'
     case 'task':
+    case 'agent':
       return 'sparkles-outline'
     case 'todowrite':
+    case 'update_plan':
       return 'checkbox-outline'
     default:
       return 'construct-outline'
