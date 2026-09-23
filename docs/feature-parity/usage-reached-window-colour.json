@@ -1,0 +1,25 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "usage-reached-window-colour",
+  "summary": "When Codex reports rateLimitReachedType, only the window that is full (or the fullest one) is marked critical. The flag is per account and names no window, and the parser used to redden every window, so a weekly window at 16% showed red because the 5-hour window hit 100%.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": ["src/renderer/components/settings/ProviderUsagePanel.tsx", "tests/unit/codex-usage-parse.test.ts"]
+    },
+    "reactNativeIos": { "status": "not_applicable", "reason": "The phone has no provider usage panel; nothing under apps/mobile reads ProviderUsage." },
+    "nativeAndroid": { "status": "not_applicable", "reason": "Native Android has no provider usage panel; nothing under apps/android reads usage windows." },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/shared/codex-usage-parse.ts", "tests/unit/codex-usage-parse.test.ts"]
+    },
+    "storageDataMigration": { "status": "not_applicable", "reason": "Usage is fetched live and cached in memory; nothing is stored." },
+    "updateRelease": { "status": "not_applicable", "reason": "Parsing change inside the backend's usage reader; the ProviderUsage shape is unchanged." }
+  },
+  "verification": {
+    "automated": ["npx vitest run tests/unit/codex-usage-parse.test.ts", "npm run typecheck", "npm test"],
+    "hardware": [],
+    "notExercised": ["Not re-checked against a live Codex account at its limit; the reported shape (5-hour 100%, weekly 16%, rate_limit_reached) is the new test case."]
+  }
+}
