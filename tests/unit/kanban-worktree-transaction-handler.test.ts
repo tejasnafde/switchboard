@@ -9,7 +9,6 @@ const state = vi.hoisted(() => ({
   card: null as KanbanCard | null,
   createPlainCard: vi.fn(),
   setKanbanWorktree: vi.fn(),
-  legacyCreateWorktree: vi.fn(),
   removeWorktree: vi.fn(),
   listWorktrees: vi.fn(async () => [] as Array<{ path: string }>),
   inUsePaths: new Set<string>(),
@@ -28,11 +27,9 @@ vi.mock('../../src/main/db/database', () => ({
 }))
 
 vi.mock('../../src/main/worktree', () => ({
-  createWorktree: state.legacyCreateWorktree,
   removeWorktree: state.removeWorktree,
   listWorktrees: state.listWorktrees,
   findStaleWorktrees: vi.fn(async () => []),
-  rmWorktreeDir: vi.fn(),
   worktreeRootFor: vi.fn(() => '/repo/.switchboard/worktrees'),
 }))
 
@@ -117,7 +114,6 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     })).rejects.toThrow('transaction is unavailable')
 
     expect(state.createPlainCard).not.toHaveBeenCalled()
-    expect(state.legacyCreateWorktree).not.toHaveBeenCalled()
     expect(state.setKanbanWorktree).not.toHaveBeenCalled()
   })
 
@@ -152,7 +148,6 @@ describe('Kanban worktree transaction compatibility handlers', () => {
     }) as KanbanCard & { worktreeCreation: WorktreeCreationSnapshot }
 
     expect(state.createPlainCard).not.toHaveBeenCalled()
-    expect(state.legacyCreateWorktree).not.toHaveBeenCalled()
     expect(submitted).toMatchObject({
       creationId: 'creation-1',
       repository: { projectPath: '/repo', machineId: 'machine-1' },
@@ -245,7 +240,6 @@ describe('Kanban worktree transaction compatibility handlers', () => {
       worktreePath: '/repo/.switchboard/worktrees/card-1',
       worktreeCreation: { status: 'ready' },
     })
-    expect(state.legacyCreateWorktree).not.toHaveBeenCalled()
   })
 
   it('stores initial-agent launch intent without starting a provider in the renderer path', async () => {
