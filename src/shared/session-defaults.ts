@@ -6,7 +6,7 @@
  *
  * Per FIELD, not per tier - the phone sends a mode and no model.
  */
-import type { RuntimeMode } from './provider-events'
+import { isRuntimeMode, type RuntimeMode } from './provider-events'
 
 /** Shared: the desktop writes these, the backend reads them, the phone reads
  *  them over `settings:get`. Three places that must agree on a string. */
@@ -49,14 +49,10 @@ export function resolveMachineInstanceId(params: {
   return undefined
 }
 
-const RUNTIME_MODES: readonly RuntimeMode[] = ['plan', 'sandbox', 'accept-edits', 'auto', 'full-access']
-
 /** An unknown mode must never widen permissions. */
 export const FALLBACK_RUNTIME_MODE: RuntimeMode = 'sandbox'
 
-export function isRuntimeMode(value: unknown): value is RuntimeMode {
-  return typeof value === 'string' && (RUNTIME_MODES as readonly string[]).includes(value)
-}
+export { isRuntimeMode }
 
 /** One tier's opinion. Every field optional. */
 export interface SessionDefaults {

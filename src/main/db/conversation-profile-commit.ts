@@ -1,8 +1,9 @@
 import type Database from 'better-sqlite3'
+import type { AgentProvider } from '../../shared/types'
 
 export interface ConversationProfileCommit {
   conversationId: string
-  provider: 'claude-code' | 'codex' | 'opencode'
+  provider: AgentProvider
   providerInstanceId: string
   providerSessionId: string | null
   pendingHandoffFrom?: string

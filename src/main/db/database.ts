@@ -25,6 +25,7 @@ import {
   getKanbanWorktreeCreationKey as getKanbanWorktreeCreationKeyFromDb,
   listOwnedWorktreePaths,
 } from './worktree-creation'
+import type { AgentProvider } from '@shared/types'
 
 const log = createLogger('db')
 
@@ -1277,7 +1278,7 @@ export function listSessionIdsForThread(threadId: string): string[] {
   return result
 }
 
-export type ConversationSegmentProvider = 'claude-code' | 'codex' | 'opencode'
+export type ConversationSegmentProvider = AgentProvider
 
 export interface ConversationSegmentRow {
   id: string

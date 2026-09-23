@@ -1,6 +1,7 @@
 import type { ReasoningEffort } from './models'
 import type { RuntimeMode } from './provider-events'
 import type { AgentType, ChatMessage, MessageRole } from './types'
+import type { AgentProvider } from './types'
 
 export const FORK_CONVERSATION_SCHEMA_VERSION = 1 as const
 
@@ -43,7 +44,7 @@ export interface ResolvedForkAnchor extends ForkAnchor {
   canonicalIndex: number
   canonicalMessageCount: number
   resolution: 'exact-id' | 'unique-legacy-fingerprint'
-  provider?: 'claude-code' | 'codex' | 'opencode' | null
+  provider?: AgentProvider | null
   providerSessionId?: string | null
   providerEventId?: string | null
   preview: string

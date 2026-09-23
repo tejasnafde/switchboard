@@ -77,6 +77,7 @@ import {
   requiresDraftTransferConfirmation,
   withDraftProvenance,
 } from '../../services/draftTransfer'
+import { providerKindFor } from '@shared/types'
 
 interface ChatPanelProps {
   /**
@@ -1240,7 +1241,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       // rejection leaves the composer intact and does not create a false user
       // turn or a persisted system bubble.
       const providerApi = window.api.provider
-      const providerKind = agentType === 'codex' ? 'codex' : agentType === 'opencode' ? 'opencode' : 'claude'
+      const providerKind = providerKindFor(agentType)
       const effectiveMode = runtimeMode
 
       const submissionDependencies: DesktopTurnSubmissionDependencies = {

@@ -13,7 +13,7 @@ import {
 import { useHeaderHeight } from '@react-navigation/elements'
 import type { NativeStackScreenProps } from '@react-navigation/native-stack'
 import type { ProviderKind, RuntimeMode } from '@shared/provider-events'
-import type { AgentType, ProviderInstance } from '@shared/types'
+import { agentLabel, providerKindFor, type AgentType, type ProviderInstance } from '@shared/types'
 import type { WorktreeSetupPolicy } from '@shared/worktree-creation'
 import { generateTitle } from '@shared/auto-title'
 import { createLogger } from '@shared/logger'
@@ -45,9 +45,9 @@ type Props = NativeStackScreenProps<RootStackParamList, 'NewSession'>
 type CheckoutKind = 'parent-checkout' | 'worktree'
 
 const PROVIDERS: { kind: ProviderKind; label: string; blurb: string }[] = [
-  { kind: 'claude', label: 'Claude Code', blurb: 'Anthropic agent SDK, resumable sessions' },
-  { kind: 'codex', label: 'Codex', blurb: 'OpenAI codex app-server' },
-  { kind: 'opencode', label: 'OpenCode', blurb: 'Agent Client Protocol' },
+  { kind: 'claude', label: agentLabel('claude-code'), blurb: 'Anthropic agent SDK, resumable sessions' },
+  { kind: 'codex', label: agentLabel('codex'), blurb: 'OpenAI codex app-server' },
+  { kind: 'opencode', label: agentLabel('opencode'), blurb: 'Agent Client Protocol' },
 ]
 
 const SETUP_POLICIES: { value: WorktreeSetupPolicy; label: string }[] = [
@@ -55,12 +55,6 @@ const SETUP_POLICIES: { value: WorktreeSetupPolicy; label: string }[] = [
   { value: 'inherit', label: 'Use project default' },
   { value: 'run', label: 'Run setup' },
 ]
-
-function providerKindFor(agentType: AgentType): ProviderKind {
-  if (agentType === 'codex') return 'codex'
-  if (agentType === 'opencode') return 'opencode'
-  return 'claude'
-}
 
 export default function NewSessionScreen({ route, navigation }: Props) {
   const { connectionId, projectPath, projectName } = route.params

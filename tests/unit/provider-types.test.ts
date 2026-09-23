@@ -70,3 +70,27 @@ describe('provider types', () => {
     expect(decisions).toHaveLength(2)
   })
 })
+
+import { AGENT_PROVIDERS, isAgentProvider, providerKindFor, toAgentProvider } from '@shared/types'
+import { RUNTIME_MODES, isRuntimeMode } from '@shared/provider-events'
+
+describe('shared provider and mode vocabularies', () => {
+  it('maps both spellings of Claude and passes the others through', () => {
+    expect(toAgentProvider('claude')).toBe('claude-code')
+    expect(toAgentProvider('claude-code')).toBe('claude-code')
+    expect(toAgentProvider('codex')).toBe('codex')
+    expect(toAgentProvider('opencode')).toBe('opencode')
+    expect(toAgentProvider(undefined)).toBe('claude-code')
+    for (const agent of AGENT_PROVIDERS) expect(toAgentProvider(providerKindFor(agent))).toBe(agent)
+  })
+  it('rejects terminal and unknown values as providers', () => {
+    expect(isAgentProvider('terminal')).toBe(false)
+    expect(isAgentProvider('cursor')).toBe(false)
+    for (const agent of AGENT_PROVIDERS) expect(isAgentProvider(agent)).toBe(true)
+  })
+  it('accepts every runtime mode and nothing else', () => {
+    for (const mode of RUNTIME_MODES) expect(isRuntimeMode(mode)).toBe(true)
+    expect(isRuntimeMode('yolo')).toBe(false)
+    expect(isRuntimeMode(undefined)).toBe(false)
+  })
+})

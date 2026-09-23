@@ -10,6 +10,7 @@ import type {
   ManagedTerminalRuntime,
 } from '../terminal/managed-terminal-runtime'
 import type { WorktreeStartupLauncherPort } from './worktree-creation-service'
+import { providerKindFor } from '../../shared/types'
 
 export interface ManagedProviderRegistry {
   startManagedSession(input: SessionStartOpts): Promise<ProviderSession>
@@ -113,10 +114,6 @@ export class WorktreeLaunchConfigTerminalProvisioner implements WorktreeTerminal
   }
 }
 
-function providerKind(provider: Exclude<WorkspaceLaunchIntent['initialAgent'], undefined>['provider']): ProviderKind {
-  return provider === 'claude-code' ? 'claude' : provider
-}
-
 export class ProviderWorktreeStartupLauncher implements WorktreeStartupLauncherPort {
   constructor(
     private readonly registry: () => ManagedProviderRegistry | null,
@@ -146,7 +143,7 @@ export class ProviderWorktreeStartupLauncher implements WorktreeStartupLauncherP
     try {
       session = await registry.startManagedSession({
         threadId: input.conversationId,
-        provider: providerKind(initialAgent.provider),
+        provider: providerKindFor(initialAgent.provider),
         cwd: input.worktreePath,
         ...(initialAgent.instanceId ? { instanceId: initialAgent.instanceId } : {}),
         ...(initialAgent.model ? { model: initialAgent.model } : {}),

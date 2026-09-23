@@ -12,8 +12,9 @@
  */
 
 import type { AgentStatus, ProviderSkill } from '@shared/types'
+import type { RuntimeMode } from '@shared/provider-events'
+import type { AgentProvider } from '@shared/types'
 
-type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
 
 /**
  * Context passed to every slash-command action. Keeping this in one place
@@ -48,7 +49,7 @@ export interface SlashCommandContext {
  *   - `codex`: same as above but inserts `/<name> ` (Codex CLI also reads
  *     leading-slash commands from user input).
  */
-export type SlashCommandSource = 'switchboard' | 'claude-code' | 'codex' | 'opencode'
+export type SlashCommandSource = 'switchboard' | AgentProvider
 
 export interface SlashCommand {
   /** `plan`, `sandbox`, etc. (no leading slash) */

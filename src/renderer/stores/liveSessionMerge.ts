@@ -10,6 +10,7 @@
  */
 
 import type { LiveSessionSummary } from '@shared/live-sessions'
+import { toAgentProvider, type AgentProvider } from '@shared/types'
 
 export type { LiveSessionSummary }
 
@@ -32,14 +33,8 @@ export function toAgentStatus(status: string): 'idle' | 'running' | 'thinking' |
 }
 
 /** `claude` on the wire is `claude-code` in the store. Total by design. */
-export function toAgentType(provider: string): 'claude-code' | 'codex' | 'opencode' {
-  switch (provider) {
-    case 'codex':
-    case 'opencode':
-      return provider
-    default:
-      return 'claude-code'
-  }
+export function toAgentType(provider: string): AgentProvider {
+  return toAgentProvider(provider)
 }
 
 export interface MergeInput<Row> {

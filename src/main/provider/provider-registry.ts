@@ -73,6 +73,7 @@ import {
   type UserTurnSubmissionV1,
   type UserTurnResolutionV1,
 } from '@shared/provider-events'
+import { toAgentProvider } from '@shared/types'
 
 const log = createLogger('provider:registry')
 
@@ -85,10 +86,6 @@ function realpathSyncOr(p: string): string {
   }
 }
 
-/** `claude` is spelled `claude-code` everywhere the DB is involved. */
-function agentTypeForProvider(provider: ProviderKind): Exclude<AgentType, 'terminal'> {
-  return provider === 'claude' ? 'claude-code' : provider
-}
 
 type ProviderEventGate = {
   state: 'staging' | 'flushing' | 'committed' | 'discarded'
@@ -1001,7 +998,7 @@ export class ProviderRegistry implements PeerToolHost {
         if (!gate) return
         this.relocationGates.delete(threadId)
         const descriptor = this.sessionDescriptors.get(threadId)
-        const agentType = agentTypeForProvider(descriptor?.provider ?? 'claude')
+        const agentType = toAgentProvider(descriptor?.provider ?? 'claude')
         const instanceId = this.sessionCredentials.get(threadId)?.instanceId ?? null
         gate.state = 'flushing'
         // One at a time, like the profile switch: a staged event can itself
@@ -1054,7 +1051,7 @@ export class ProviderRegistry implements PeerToolHost {
           // A descriptor captures startup state; the registry tracks the live
           // status so a client attaching mid-turn does not render the chat idle.
           status: this.sessionStatus.get(opts.threadId) ?? 'idle',
-          runtimeMode: sessionDefaultsFor(opts.threadId, agentTypeForProvider(opts.provider), {
+          runtimeMode: sessionDefaultsFor(opts.threadId, toAgentProvider(opts.provider), {
             runtimeMode: opts.runtimeMode,
           }).runtimeMode,
           cwd: this.sessionCwd.get(opts.threadId) ?? live?.cwd ?? opts.cwd,
@@ -1099,7 +1096,7 @@ export class ProviderRegistry implements PeerToolHost {
       // stored state, then the machine default. Without this a chat reopened
       // from the phone silently restarted in sandbox with the default profile,
       // whatever the desktop had set on it.
-      const defaults = sessionDefaultsFor(opts.threadId, agentTypeForProvider(opts.provider), {
+      const defaults = sessionDefaultsFor(opts.threadId, toAgentProvider(opts.provider), {
         runtimeMode: opts.runtimeMode,
         model: opts.model,
         instanceId: opts.instanceId,
@@ -1111,7 +1108,7 @@ export class ProviderRegistry implements PeerToolHost {
       // SDK fails deep in the stack with cryptic EPERMs.
       await assertCwdReadable(opts.cwd)
 
-      const agentType = agentTypeForProvider(opts.provider)
+      const agentType = toAgentProvider(opts.provider)
       // A desktop-routed remote session carries the local profile id plus a
       // sanitized remote config-dir basename. Do not replace that identity
       // with the remote DB's default row merely because the ids differ.
@@ -1246,7 +1243,7 @@ export class ProviderRegistry implements PeerToolHost {
         }
       }
 
-      const agentType = agentTypeForProvider(descriptor.provider)
+      const agentType = toAgentProvider(descriptor.provider)
       const target = getProviderInstanceFull(input.targetInstanceId)
       const remoteTargetConfig = agentType !== 'opencode' && process.env.SWITCHBOARD_REMOTE && input.targetRemoteConfigDir
         ? remoteProviderConfigDir(agentType, input.targetRemoteConfigDir)

@@ -52,8 +52,8 @@ import {
 } from '../../services/desktopTurnSubmission'
 import { onUserTurnAccepted } from '../../services/session-events'
 import { registerComposer } from '../../services/composerRegistry'
+import type { RuntimeMode } from '@shared/provider-events'
 
-type RuntimeMode = 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
 
 export type ChatSendResult =
   | { accepted: true }

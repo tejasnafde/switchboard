@@ -1,4 +1,5 @@
 /** Shared types between main process and renderer */
+import type { ProviderKind, RuntimeMode } from './provider-events'
 
 // ─── Terminal ────────────────────────────────────────────────────────
 
@@ -61,6 +62,27 @@ export type AgentType = 'claude-code' | 'codex' | 'opencode' | 'terminal'
 
 export const AGENT_TYPES: readonly AgentType[] = ['claude-code', 'codex', 'opencode', 'terminal'] as const
 
+/** An agent type that runs a provider, i.e. everything but a plain terminal. */
+export type AgentProvider = Exclude<AgentType, 'terminal'>
+
+export const AGENT_PROVIDERS: readonly AgentProvider[] = ['claude-code', 'codex', 'opencode']
+
+export function isAgentProvider(value: unknown): value is AgentProvider {
+  return typeof value === 'string' && (AGENT_PROVIDERS as readonly string[]).includes(value)
+}
+
+/**
+ * The store and DB say `claude-code`; the provider wire says `claude`. Takes
+ * either spelling. Unknown values map to Claude, the default agent.
+ */
+export function toAgentProvider(value: string | undefined | null): AgentProvider {
+  return value === 'codex' || value === 'opencode' ? value : 'claude-code'
+}
+
+export function providerKindFor(agentType: string | undefined | null): ProviderKind {
+  return agentType === 'codex' || agentType === 'opencode' ? agentType : 'claude'
+}
+
 export function isAgentType(v: unknown): v is AgentType {
   return AGENT_TYPES.includes(v as AgentType)
 }
@@ -113,7 +135,7 @@ export interface ProviderSkill {
   argumentHint?: string
   /** Codex app-server requires the resolved SKILL.md path in a skill input block. */
   path?: string
-  source: 'claude-code' | 'codex' | 'opencode'
+  source: AgentProvider
 }
 
 /**
@@ -270,7 +292,7 @@ export interface ChatMessage {
   denial?: {
     toolName: string
     reason: string
-    mode: 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access'
+    mode: RuntimeMode
   }
   /**
    * Wall-clock duration of the assistant turn that produced this message,

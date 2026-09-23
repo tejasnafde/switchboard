@@ -1,10 +1,8 @@
 import type { ReasoningEffort } from '../../shared/models'
-import type { RuntimeMode } from '../../shared/provider-events'
-import type { AgentType } from '../../shared/types'
+import { isRuntimeMode, type RuntimeMode } from '../../shared/provider-events'
+import { isAgentProvider, type AgentType } from '../../shared/types'
 import type { ConversationRow } from '../db/database'
 
-const FORK_PROVIDERS = new Set<AgentType>(['claude-code', 'codex', 'opencode'])
-const RUNTIME_MODES = new Set<RuntimeMode>(['plan', 'sandbox', 'accept-edits', 'auto', 'full-access'])
 const REASONING_EFFORTS = new Set<ReasoningEffort>(['low', 'medium', 'high'])
 
 export interface ForkSourceExecution {
@@ -45,11 +43,11 @@ export function projectForkSourceExecution(
   row: ForkSourceRow,
   context: { machineId: string },
 ): ForkSourceExecution {
-  if (!FORK_PROVIDERS.has(row.agent_type as AgentType)) {
+  if (!isAgentProvider(row.agent_type)) {
     throw new Error(`fork: unsupported provider ${row.agent_type}`)
   }
   const runtimeMode = row.runtime_mode ?? 'sandbox'
-  if (!RUNTIME_MODES.has(runtimeMode as RuntimeMode)) {
+  if (!isRuntimeMode(runtimeMode)) {
     throw new Error(`fork: unsupported runtime mode ${runtimeMode}`)
   }
   const reasoningEffort = row.reasoning_effort ?? null
@@ -65,10 +63,10 @@ export function projectForkSourceExecution(
     sourceWorktreeBranch: row.worktree_branch ?? null,
     sourceWorktreeId: row.worktree_id ?? null,
     machineId: context.machineId,
-    agentType: row.agent_type as ForkSourceExecution['agentType'],
+    agentType: row.agent_type,
     providerSessionId: row.session_id ?? null,
     providerInstanceId: row.provider_instance_id ?? null,
-    runtimeMode: runtimeMode as RuntimeMode,
+    runtimeMode,
     model: row.model ?? null,
     reasoningEffort: reasoningEffort as ReasoningEffort | null,
     launchConfigName: row.launch_config_name ?? null,

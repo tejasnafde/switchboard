@@ -33,6 +33,7 @@ import type { UpdateStatus } from '@shared/update-status'
 import type { DiagnosticsSnapshot } from '@shared/diagnostics-report'
 import { createRendererLogger } from '../renderer/logger'
 import { createWorktreeCreationApi } from './worktree-creation-api'
+import type { AgentProvider } from '@shared/types'
 
 const log = createRendererLogger('preload:provider')
 
@@ -56,7 +57,7 @@ export interface StartSessionOpts {
 
 export interface ProviderInstanceUpsertInput {
   id?: string
-  agentType: 'claude-code' | 'codex' | 'opencode'
+  agentType: AgentProvider
   displayName: string
   accentColor?: string | null
   authMode?: 'env' | 'oauth_dir'
@@ -200,7 +201,7 @@ const api = {
       transport.invoke(AppChannels.SET_CONVERSATION_REASONING_EFFORT, id, effort),
     setConversationProviderSelection: (
       id: string,
-      agentType: 'claude-code' | 'codex' | 'opencode',
+      agentType: AgentProvider,
       instanceId: string,
     ): Promise<{ ok: boolean }> =>
       transport.invoke(AppChannels.SET_CONVERSATION_PROVIDER_SELECTION, id, agentType, instanceId),

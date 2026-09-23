@@ -6,9 +6,10 @@ import {
   type ResolvedForkAnchor,
 } from '../../shared/conversation-fork'
 import type { ChatMessage } from '../../shared/types'
+import type { AgentProvider } from '../../shared/types'
 
 export interface ForkMessageProvenance {
-  provider: 'claude-code' | 'codex' | 'opencode'
+  provider: AgentProvider
   providerSessionId?: string | null
   providerEventId?: string | null
 }

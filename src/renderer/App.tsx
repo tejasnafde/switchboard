@@ -45,13 +45,14 @@ import { WorktreeCreationProgress } from './components/worktree/WorktreeCreation
 import type { WorktreeCreationRecoveryAction, WorktreeCreationSnapshot } from '@shared/worktree-creation'
 import { draftSessionId } from '@shared/new-chat-draft'
 import { parkFirstSend, peekFirstSend, setDraftMaterializer, takeFirstSend } from './services/draftChat'
-import type { SessionSummary, ChatMessage } from '@shared/types'
+import { toAgentProvider, type SessionSummary, type ChatMessage } from '@shared/types'
 import { SETTING_DEFAULT_RUNTIME_MODE, isRuntimeMode } from '@shared/session-defaults'
 import { needsMessageReload, resolveSessionDisplayTitle, resolveSessionOpenAgentType, resolveSessionResumeId, resolveSessionSelectTarget, shouldEvictMessages, shouldRetrySessionLoadAfterCreate } from './utils/session-eviction'
 import { createRendererLogger } from './logger'
 import { focusComposer } from './services/composerRegistry'
 import { useDraftStore } from './stores/draft-store'
 import { nextChatPresentation, nextDualChatShortcutAction, shouldEvictReplacedSession, shouldShowChatFocusIndicator, type ChatPresentation } from './services/chatWorkspace'
+import type { AgentProvider } from '@shared/types'
 
 const log = createRendererLogger('app')
 
@@ -62,13 +63,6 @@ function toggleDualChatWorkspace(openPicker: () => void): void {
   } else {
     openPicker()
   }
-}
-
-/** Map a SessionSummary's provider `source` to the agent-store's `AgentType`. */
-function agentTypeForSource(source: SessionSummary['source']): 'claude-code' | 'codex' | 'opencode' {
-  if (source === 'codex') return 'codex'
-  if (source === 'opencode') return 'opencode'
-  return 'claude-code'
 }
 
 /**
@@ -470,7 +464,7 @@ export function App() {
   // action the user must choose explicitly.
   const publishAuthoritativeSession = useCallback((session: {
     id: string
-    type: 'claude-code' | 'codex' | 'opencode'
+    type: AgentProvider
     status: 'idle'
     projectPath: string
     machineId: string
@@ -884,7 +878,7 @@ export function App() {
           executionRootRevision?: number
           worktreeId?: string | null
           providerInstanceId?: string | null
-          runtimeMode?: 'plan' | 'sandbox' | 'accept-edits' | 'auto' | 'full-access' | null
+          runtimeMode?: RuntimeMode | null
           model?: string | null
           reasoningEffort?: 'low' | 'medium' | 'high' | null
           launchConfigName?: string | null
@@ -941,7 +935,7 @@ export function App() {
       }
       addSession({
         id: session.id,
-        type: resolveSessionOpenAgentType(agentTypeForSource(session.source), loaded?.meta?.agentType),
+        type: resolveSessionOpenAgentType(toAgentProvider(session.source), loaded?.meta?.agentType),
         status: 'idle',
         projectPath: loaded?.meta?.projectPath ?? projectPath,
         machineId: effectiveMachineId,
@@ -967,7 +961,7 @@ export function App() {
       await window.api.app.createConversation({
         id: session.id,
         projectPath,
-        agentType: agentTypeForSource(session.source),
+        agentType: toAgentProvider(session.source),
         title: session.title,
       }).catch(() => {})
 
