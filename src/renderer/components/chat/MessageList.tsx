@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
 import { useLayoutStore } from '../../stores/layout-store'
-import { activitySummaryLabel, changedFilesLabel, projectTurnPresentation } from './turnPresentation'
+import { activitySummaryLabel, changedFilesLabel, isFilesGroupExpanded, projectTurnPresentation } from './turnPresentation'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -504,7 +504,7 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
                   )
                 }
                 const groupKey = item.messages[0].id
-                const expanded = showFileDiffCards || expandedFileGroups.has(groupKey)
+                const expanded = isFilesGroupExpanded(showFileDiffCards, expandedFileGroups, groupKey)
                 return (
                   <section className="turn-files" key={groupKey}>
                     {expanded ? (

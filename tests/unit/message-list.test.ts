@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, it, expect } from 'vitest'
 import type { ChatMessage } from '../../src/shared/types'
 import { groupIntoTurns, roleLabel } from '../../src/renderer/components/chat/MessageList'
-import { activitySummaryLabel, changedFilesLabel, projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
+import { activitySummaryLabel, changedFilesLabel, isFilesGroupExpanded, projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
 
 const messageListSource = readFileSync(new URL('../../src/renderer/components/chat/MessageList.tsx', import.meta.url), 'utf8')
 
@@ -234,6 +234,16 @@ describe('projectTurnPresentation', () => {
   it('formats the changed-files label used by both the header and the collapsed toggle', () => {
     expect(changedFilesLabel(1)).toBe('Changed 1 file')
     expect(changedFilesLabel(8)).toBe('Changed 8 files')
+  })
+
+  it('a changed-files group expands when the global setting is on, regardless of local state', () => {
+    expect(isFilesGroupExpanded(true, new Set(), 'turn-1')).toBe(true)
+  })
+
+  it('a changed-files group stays collapsed until its own key is expanded locally', () => {
+    expect(isFilesGroupExpanded(false, new Set(), 'turn-1')).toBe(false)
+    expect(isFilesGroupExpanded(false, new Set(['turn-2']), 'turn-1')).toBe(false)
+    expect(isFilesGroupExpanded(false, new Set(['turn-1']), 'turn-1')).toBe(true)
   })
 
   it('groups adjacent tool-only activity without hiding conversational content', () => {
