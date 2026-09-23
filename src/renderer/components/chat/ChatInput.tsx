@@ -147,6 +147,16 @@ const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
 const EMPTY_PILLS: import('../../stores/draft-store').DraftPill[] = []
 const EMPTY_IMAGES: import('../../stores/draft-store').ImageAttachment[] = []
 
+// Short labels only: a native select is as wide as its longest option, and
+// the long text pushed the footer onto a second row. The detail is a tooltip.
+const RUNTIME_MODE_OPTIONS: Array<{ value: RuntimeMode; label: string; detail: string }> = [
+  { value: 'sandbox', label: 'Supervised', detail: 'Ask before commands and file changes' },
+  { value: 'accept-edits', label: 'Auto-accept edits', detail: 'Ask before other actions' },
+  { value: 'auto', label: 'Auto', detail: 'The agent approves routine actions. OpenCode still asks.' },
+  { value: 'full-access', label: 'Full access', detail: 'No prompts' },
+  { value: 'plan', label: 'Plan', detail: 'No execution' },
+]
+
 export function ChatInput({
   sessionId,
   onSend,
@@ -1716,6 +1726,7 @@ export function ChatInput({
           <select
             className="runtime-mode-select"
             data-runtime-mode={runtimeMode}
+            title={RUNTIME_MODE_OPTIONS.find((m) => m.value === runtimeMode)?.detail}
             value={runtimeMode}
             onChange={(e) => onRuntimeModeChange(e.target.value as RuntimeMode)}
             style={{
@@ -1729,11 +1740,9 @@ export function ChatInput({
               outline: 'none',
             }}
           >
-            <option value="sandbox">{footerLayout.shortModeLabels ? 'Supervised' : 'Supervised (ask before commands and file changes)'}</option>
-            <option value="accept-edits">{footerLayout.shortModeLabels ? 'Auto-accept edits' : 'Auto-accept edits (ask before other actions)'}</option>
-            <option value="auto">{footerLayout.shortModeLabels ? 'Auto' : 'Auto (agent approves routine actions; OpenCode still asks)'}</option>
-            <option value="full-access">{footerLayout.shortModeLabels ? 'Full access' : 'Full access (no prompts)'}</option>
-            <option value="plan">{footerLayout.shortModeLabels ? 'Plan' : 'Plan (no execution)'}</option>
+            {RUNTIME_MODE_OPTIONS.map((m) => (
+              <option key={m.value} value={m.value} title={m.detail}>{m.label}</option>
+            ))}
           </select>
         )}
 
@@ -1749,7 +1758,9 @@ export function ChatInput({
 
         {footerLayout.showHint && (
           <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            Enter send · Shift+Enter newline
+            {isRunning && canSteer(agentType)
+              ? 'Enter steer · ⌥Enter queue · Shift+Enter newline'
+              : 'Enter send · Shift+Enter newline'}
           </span>
         )}
       </div>
