@@ -82,6 +82,10 @@ interface RootNavigationRuntime {
 
     fun submitSavedComposerDraft(key: ComposerDraftKey) = Unit
 
+    /** One-tap actions (the compaction-offer banner's "Compact"): send this
+     *  text as its own turn, leaving the saved draft untouched. */
+    fun submitComposerText(key: ComposerDraftKey, text: String, runtimeMode: String) = Unit
+
     fun beginQueuedEdit(key: ComposerDraftKey, origin: String) = Unit
 
     fun retryQueued(origin: String) = Unit

@@ -21,11 +21,26 @@
       ]
     },
     "nativeAndroid": {
-      "status": "staged",
-      "flag": "compaction_offer_v1",
-      "followUpRelease": "Native Android after ThreadPresentation gains the offer row and RoomThreadSnapshotStore records lastTurnAt; the shared thresholds live in src/shared/compaction-offer.ts and the RN implementation is the reference",
+      "status": "implemented",
       "evidence": [
-        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt"
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/CompactionOfferPolicy.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadPresentation.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionScreen.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadSessionCommandRouter.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/CachedThreadStateMapper.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/runtime/DurableComposerRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/RootNavigationRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/AndroidRootNavigationRuntime.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/ui/navigation/SwitchboardNavigation.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/CompactionOfferPolicyTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadPresentationTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/ui/thread/ThreadSessionCommandRouterTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadStoreReducerTest.kt",
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinatorTest.kt"
       ]
     },
     "sharedBackendApi": {
@@ -50,12 +65,15 @@
       "npx vitest run tests/unit/compaction-offer.test.ts",
       "npm run typecheck",
       "npm test",
-      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json"
+      "cd apps/mobile && npx tsc --noEmit -p tsconfig.json",
+      "cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@17 ./gradlew testDebugUnitTest compileDebugAndroidTestKotlin lintDebug --console=plain",
+      "2026-09-23: fixed a double /compact submission (two taps before status flips to busy could enqueue two turns) and a busy check that only recognized \"running\", missing working/thinking/connecting/retrying. ThreadScreen now hides the offer on tap and only restores it on a durable-enqueue failure; CompactionOfferPolicy's busy input now reads the full ThreadSessionCoordinator.ACTIVE_PROVIDER_STATUSES set; ThreadSessionCoordinator.submitText publishes state and guards reentrancy like submit(); DurableComposerRuntime.submitText clears its own key's error on a durable result. cd apps/android && JAVA_HOME=/opt/homebrew/opt/openjdk@21 ./gradlew testDebugUnitTest --console=plain"
     ],
     "hardware": [],
     "notExercised": [
       "The banner has not been observed against a live Claude session with 100k+ tokens and 70 minutes idle; the threshold logic is unit-tested and the /compact send path is the existing slash passthrough.",
-      "The React Native banner has not been rendered on a device; the shared decision is unit-tested and the send path is the existing outbox with a text override."
+      "The React Native banner has not been rendered on a device; the shared decision is unit-tested and the send path is the existing outbox with a text override.",
+      "The Android banner has not been rendered on a device or through Compose UI tests - CompactionOfferPolicy (same thresholds, same cases as tests/unit/compaction-offer.test.ts), the lastTurnAt stamping in ThreadStoreReducer/ThreadSessionCoordinator, and the /compact override send path (ThreadSessionCoordinator.submitText, DurableComposerRuntime.submitText) are all unit-tested. There is no Android emulator in this environment. The tap-then-hide/restore-on-failure guard in ThreadScreen is Compose-only logic with no JVM unit-test harness (no Robolectric/compose-ui-test in the `test` source set - see ThreadScreenRegressionTest.kt in `androidTest` for the existing pattern) and was not exercised."
     ]
   }
 }

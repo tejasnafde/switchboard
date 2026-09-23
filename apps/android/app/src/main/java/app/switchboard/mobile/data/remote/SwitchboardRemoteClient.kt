@@ -70,6 +70,7 @@ object BackendChannels {
     const val SwitchInstance = "provider:switch-instance"
     const val ListSkills = "provider:list-skills"
     const val ListModels = "provider:list-models"
+    const val ListCatalog = "provider:list-catalog"
     const val ListProviderInstances = "provider-instances:list"
     const val SetRuntimeMode = "provider:set-runtime-mode"
     const val SetModel = "provider:set-model"
@@ -418,6 +419,20 @@ class SwitchboardRemoteClient(
     ) = call(
         BackendChannels.ListModels,
         array(JsonString(threadId)),
+        RemoteDecoders::models,
+        callback,
+    )
+
+    /** An instance's live catalog before any session exists (New Session screen).
+     *  No thread is bound yet, so the backend starts the provider's own
+     *  process with the instance's credentials and asks for its models. */
+    fun listCatalog(
+        agentType: String,
+        instanceId: String?,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
+    ) = call(
+        BackendChannels.ListCatalog,
+        array(obj("agentType" to JsonString(agentType), "instanceId" to instanceId.jsonStringOrNull())),
         RemoteDecoders::models,
         callback,
     )

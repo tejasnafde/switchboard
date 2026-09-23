@@ -572,6 +572,40 @@ class ThreadSessionCoordinator(
         }
     }
 
+    /**
+     * A one-tap action's own turn (the compaction-offer banner's "Compact"),
+     * sent through the same durable enqueue as [submit]. Mirrors
+     * `send(textOverride)` in ThreadScreen.tsx: it does not read or clear the
+     * composer's draft or attachments, so what the user was typing survives.
+     */
+    @Synchronized
+    fun submitText(text: String): ComposerSubmitResult {
+        // Same reentrancy guard as submit(): a second tap (e.g. the compaction-offer
+        // banner's Compact button) while one of these is already in flight must not
+        // enqueue a second turn.
+        if (composer.submitting) return ComposerSubmitResult.Busy
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return ComposerSubmitResult.Empty
+        composer = composer.copy(submitting = true, error = null)
+        publish()
+        val result = enqueueDraft(
+            text = trimmed,
+            mode = composer.runtimeMode,
+            attachments = emptyList(),
+            editingOrigin = null,
+        )
+        return when (result) {
+            is EnqueueResult.Durable -> {
+                addOptimistic(result.turn)
+                composer = composer.copy(submitting = false, error = null)
+                publish()
+                ComposerSubmitResult.Durable(result.turn)
+            }
+            is EnqueueResult.AttachmentFailure -> submitFailed(result.reason)
+            is EnqueueResult.StorageFailure -> submitFailed(result.reason)
+        }
+    }
+
     @Synchronized
     fun selectRuntimeMode(mode: RuntimeMode) {
         if (closed || composer.modeChanging || remote.scope != scope) return
@@ -1001,7 +1035,11 @@ class ThreadSessionCoordinator(
                 else -> Unit
             }
             val previousInstanceId = attachedInstanceId
-            reduce(ThreadAction.Runtime(ScopedThreadEvent(eventScope, payload.sequence, event)))
+            reduce(
+                ThreadAction.Runtime(
+                    ScopedThreadEvent(eventScope, payload.sequence, event, nowMs = clock.nowMs()),
+                ),
+            )
             val providerEvent = known?.payload as?
                 app.switchboard.mobile.domain.thread.ThreadEventPayload.SessionProvider
             if (providerEvent != null) {
@@ -1282,7 +1320,7 @@ class ThreadSessionCoordinator(
         const val HISTORY_LIMIT = 250L
         const val IMPLEMENT_PLAN_MESSAGE = "Implement the plan you proposed."
         const val OPEN_FILE_UNSUPPORTED = "Opening changed files is not available on mobile yet."
-        private val ACTIVE_PROVIDER_STATUSES = setOf(
+        val ACTIVE_PROVIDER_STATUSES = setOf(
             "running",
             "working",
             "thinking",

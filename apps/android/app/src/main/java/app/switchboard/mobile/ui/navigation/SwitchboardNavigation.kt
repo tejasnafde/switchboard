@@ -1,5 +1,6 @@
 package app.switchboard.mobile.ui.navigation
 
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -751,6 +752,9 @@ private fun NewSessionRouteHost(
             worktreeStore = runtime.worktreeCreations,
             creationIds = WorktreeCreationIdSource { java.util.UUID.randomUUID().toString() },
             worktreeAvailable = "worktree_creation_v1" in lease.capabilities,
+            onCatalogProbeFailed = { message ->
+                Log.w("NewSessionCoordinator", "catalog probe failed, keeping the static list: $message")
+            },
         )
     }
     val state by coordinator.state.collectAsState()
@@ -854,6 +858,9 @@ private fun ThreadRouteHost(
                 runtime?.removeComposerImage(composerKey, attachmentId)
             },
             onSend = { runtime?.submitSavedComposerDraft(composerKey) },
+            onSendOverride = { text ->
+                runtime?.submitComposerText(composerKey, text, localDraft.runtimeMode)
+            },
             queuedTurns = queuedTurns,
             onOutboxAction = { origin, action ->
                 runtime?.performOutboxAction(composerKey, origin, action)

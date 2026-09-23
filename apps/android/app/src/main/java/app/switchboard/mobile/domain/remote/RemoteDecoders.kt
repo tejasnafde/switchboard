@@ -139,6 +139,7 @@ object RemoteDecoders {
                 id = raw.stringRequired("id"),
                 label = raw.stringRequired("label"),
                 tier = raw.stringRequired("tier"),
+                resolvedModel = raw.string("resolvedModel"),
                 raw = raw,
             )
         }

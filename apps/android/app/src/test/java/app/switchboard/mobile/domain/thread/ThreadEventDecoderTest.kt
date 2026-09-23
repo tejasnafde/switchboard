@@ -64,6 +64,7 @@ class ThreadEventDecoderTest {
             event("session.provider", "provider" to s("codex"), "instanceId" to JsonNull, "instanceName" to JsonNull) to ThreadEventKind.SessionProvider,
             event("context_window", "usedTokens" to n(44), "maxTokens" to JsonNull, "model" to s("gpt-5.6-luna"), "costUsd" to n("0.5")) to ThreadEventKind.ContextWindow,
             event("model.variants", "modelId" to s("m"), "availableVariants" to arr(s("low"), s("high")), "currentVariant" to s("high")) to ThreadEventKind.ModelVariants,
+            event("model.unavailable", "model" to s("claude-opus-4-7")) to ThreadEventKind.ModelUnavailable,
             event("plan.proposed", "planId" to s("p1"), "planMarkdown" to s("# Plan")) to ThreadEventKind.PlanProposed,
             event("question.asked", "requestId" to s("q1"), "questions" to arr(question())) to ThreadEventKind.QuestionAsked,
             event("question.answered", "requestId" to s("q1"), "answers" to arr(arr(s("A"), s("B")))) to ThreadEventKind.QuestionAnswered,
@@ -80,6 +81,16 @@ class ThreadEventDecoderTest {
             assertEquals(kind, decoded.kind)
             assertEquals(s("kept"), decoded.raw.values["future"])
         }
+    }
+
+    @Test
+    fun modelUnavailableDecodesTheDroppedModelId() {
+        val event = ThreadEventDecoder.decode(
+            event("model.unavailable", "model" to s("claude-opus-4-7")),
+        ) as ThreadRuntimeEvent.Known
+
+        val payload = event.payload as ThreadEventPayload.ModelUnavailable
+        assertEquals("claude-opus-4-7", payload.model)
     }
 
     @Test

@@ -60,6 +60,7 @@ object CachedThreadStateMapper {
             availableVariants = metadata.stringArray("availableVariants"),
             currentVariant = metadata.string("currentVariant"),
             lastTurnDurationMs = metadata.long("lastTurnDurationMs"),
+            lastTurnAt = metadata.long("lastTurnAt"),
             unread = metadata.long("unread")?.toInt()?.coerceAtLeast(0) ?: 0,
             drift = metadata.drift(),
             spendBlock = metadata.spendBlock(),

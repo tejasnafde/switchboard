@@ -144,6 +144,9 @@ data class ModelOption(
     val id: String,
     val label: String,
     val tier: String,
+    /** Canonical id an alias row resolves to, when the provider says so
+     *  (Claude only). Mirrors ModelOption.resolvedModel in src/shared/models.ts. */
+    val resolvedModel: String? = null,
     val raw: JsonObject,
 )
 

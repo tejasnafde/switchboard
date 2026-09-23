@@ -21,6 +21,7 @@ enum class ThreadEventKind {
     SessionProvider,
     ContextWindow,
     ModelVariants,
+    ModelUnavailable,
     PlanProposed,
     QuestionAsked,
     QuestionAnswered,
@@ -123,6 +124,9 @@ sealed interface ThreadEventPayload {
         val costUsd: Double?,
     ) : ThreadEventPayload
     data class ModelVariants(val modelId: String, val availableVariants: List<String>, val currentVariant: String) : ThreadEventPayload
+    /** The chat's picked model dropped out of the provider's live catalog; the backend already
+     *  fell back to the default and this says so - mirrors RuntimeModelUnavailableEvent. */
+    data class ModelUnavailable(val model: String) : ThreadEventPayload
     data class PlanProposed(val planId: String, val markdown: String) : ThreadEventPayload
     data class QuestionAsked(val requestId: String, val questions: List<ThreadQuestion>) : ThreadEventPayload
     data class QuestionAnswered(val requestId: String, val answers: List<List<String>>) : ThreadEventPayload

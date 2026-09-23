@@ -5,6 +5,9 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## Unreleased
 
 ### Added
+- Native Android shows the model-unavailable notice in the thread feed, decoded from `model.unavailable` instead of falling through the generic extension-event notice.
+- Native Android's new-session screen reads the live model catalog from `provider:list-catalog` and reconciles the picked model against it, falling back to the static list on an older backend.
+- Native Android offers `/compact` above the thread feed on a token-heavy, stale Claude chat, mirroring the desktop and React Native compaction-offer banner.
 - **Steer or queue a message while the agent works.** Enter steers: the agent reads the message at its next step (Claude and Codex). Alt+Enter, or the Queue button beside Steer, queues it: it posts at once, the backend holds it, and it runs as its own turn when the current one ends. It survives switching or closing the pane and keeps its images and pills. OpenCode cannot take a mid-turn message, so there it always queues. On the phone, a chip above the composer switches the next send to queued.
 
 ### Changed

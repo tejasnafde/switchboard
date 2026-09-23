@@ -5,6 +5,8 @@ import app.switchboard.mobile.domain.outbox.EnqueueResult
 import app.switchboard.mobile.domain.outbox.OutgoingTurnDraft
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.CreateConversation
+import app.switchboard.mobile.domain.remote.ModelCatalogReconcile
+import app.switchboard.mobile.domain.remote.ModelOption
 import app.switchboard.mobile.domain.remote.NewSessionDecisions
 import app.switchboard.mobile.domain.remote.NewSessionModelOption
 import app.switchboard.mobile.domain.remote.ProviderInstance
@@ -42,6 +44,15 @@ interface NewSessionRemote {
     fun startSession(
         input: StartSession,
         callback: (RemoteResponse<StartedSession>) -> Unit,
+    )
+
+    /** An instance's live catalog before any session exists. Optional: older
+     *  backends have no `provider:list-catalog` handler, so a coordinator
+     *  must keep working (static list) if this is never called or always fails. */
+    fun listCatalog(
+        agentType: String,
+        instanceId: String?,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
     )
 }
 
@@ -163,6 +174,9 @@ class NewSessionCoordinator(
         "worktree-${ids.nextThreadId()}"
     },
     private val worktreeAvailable: Boolean = false,
+    /** Rejection is expected against an older backend (no `provider:list-catalog`
+     *  handler) - the static list stays, this just names the reason. */
+    private val onCatalogProbeFailed: (String) -> Unit = {},
 ) : Closeable {
     private val mutableState = MutableStateFlow(
         NewSessionState(connectionId, projectPath, projectName, worktreeAvailable = worktreeAvailable),
@@ -171,6 +185,24 @@ class NewSessionCoordinator(
 
     private var allInstances: List<ProviderInstance> = emptyList()
     private var defaultsRequest = 0L
+    private var catalogRequest = 0L
+    // Which instance's live catalog currently backs modelOptions, so switching
+    // instances never leaves a different instance's models (or a selectedModelId
+    // picked from them) sitting in state while a probe for the new one is in
+    // flight, fails, or returns empty. catalogOwnerInstanceId is meaningful only
+    // when catalogApplied is true - the resolved instance id itself can be null
+    // (no profiles configured), which is a real, distinct owner from "no live
+    // catalog has been applied yet".
+    private var catalogApplied = false
+    private var catalogOwnerInstanceId: String? = null
+    private val catalogCache = mutableMapOf<String?, List<NewSessionModelOption>>()
+    // The bare static catalog is not always the right thing to fall back to: when
+    // the saved default model is absent from it, applyDefaults injects an
+    // authoritative-default row for it. Restoring the bare static list instead of
+    // this would drop that saved model the moment a different instance's catalog
+    // races ahead of instance resolution. Refreshed whenever defaults are
+    // (re)applied; reset in selectProvider().
+    private var fallbackModelOptions: List<NewSessionModelOption> = NewSessionDecisions.models(ProviderKind.Claude)
     private var instanceTouched = false
     private var modelTouched = false
     private var requestedDefaultInstanceId: String? = null
@@ -214,11 +246,22 @@ class NewSessionCoordinator(
                         profiles.any { it.id == requested }
                     } ?: profiles.firstOrNull()?.id
                 }
+                val previousResolvedInstanceId = current.selectedInstanceId
+                    ?: current.profiles.firstOrNull()?.id
                 mutableState.value = current.copy(
                     loadingInstances = false,
                     profiles = profiles,
                     selectedInstanceId = selected,
                 )
+                // Defaults can resolve before this callback does (getSetting racing
+                // listProviderInstances). If applyDefaults already probed the catalog
+                // with a stale/null instance id, re-probe now that this callback has
+                // resolved the real one - otherwise the earlier response is dropped
+                // as stale (Line ~664) and nothing else ever re-asks.
+                val resolvedInstanceId = selected ?: profiles.firstOrNull()?.id
+                if (!mutableState.value.loadingDefaults && resolvedInstanceId != previousResolvedInstanceId) {
+                    refreshCatalog()
+                }
             }
         }
         loadDefaults(mutableState.value.provider)
@@ -231,6 +274,12 @@ class NewSessionCoordinator(
         instanceTouched = false
         modelTouched = false
         requestedDefaultInstanceId = null
+        // A live catalog is scoped to one provider's agentType; a different
+        // provider's instance ids are a different namespace, so nothing here
+        // should be treated as still "owning" the just-reset modelOptions.
+        catalogApplied = false
+        catalogOwnerInstanceId = null
+        fallbackModelOptions = NewSessionDecisions.models(provider)
         mutableState.value = mutableState.value.copy(
             provider = provider,
             profiles = NewSessionDecisions.profiles(allInstances, provider),
@@ -255,6 +304,7 @@ class NewSessionCoordinator(
         instanceTouched = true
         val valid = instanceId?.takeIf { id -> mutableState.value.profiles.any { it.id == id } }
         mutableState.value = mutableState.value.copy(selectedInstanceId = valid, error = null)
+        refreshCatalog()
     }
 
     @Synchronized
@@ -623,6 +673,105 @@ class NewSessionCoordinator(
             },
             loadingDefaults = false,
         )
+        // The just-resolved list (which may carry a defaults-injected row for a
+        // saved model absent from the static catalog) is a better restore target
+        // than the bare static list if a different instance's catalog probe races
+        // ahead of this one and refreshCatalog() needs to fall back to something.
+        fallbackModelOptions = mutableState.value.modelOptions
+        refreshCatalog()
+    }
+
+    /**
+     * The instance's live catalog before any session exists - mirrors the
+     * `liveModels` effect in NewSessionScreen.tsx, keyed the same way (agent
+     * type + resolved instance id). Replaces the static [NewSessionState.modelOptions]
+     * only once a non-empty catalog answers; a rejection (older backend with
+     * no `provider:list-catalog` handler) or an empty answer keeps the static list.
+     */
+    @Synchronized
+    private fun refreshCatalog() {
+        val request = ++catalogRequest
+        val provider = mutableState.value.provider
+        val agentType = NewSessionDecisions.providers.first { it.kind == provider }.agentType
+        val instanceId = mutableState.value.selectedInstanceId ?: mutableState.value.profiles.firstOrNull()?.id
+        if (catalogApplied && catalogOwnerInstanceId != instanceId) {
+            // modelOptions currently reflects a DIFFERENT instance's live catalog (an
+            // earlier probe already applied one). If this probe fails or answers
+            // empty, nothing else clears it, so the old instance's models - and a
+            // selectedModelId picked from them - would stay submittable against the
+            // new instance. Restore this instance's own cached catalog, or the
+            // latest defaults-derived fallback (not the bare static list - that
+            // would drop a saved model the static catalog does not carry), before
+            // the probe goes out.
+            val cached = catalogCache[instanceId]
+            val restored = cached ?: fallbackModelOptions
+            catalogApplied = cached != null
+            catalogOwnerInstanceId = if (cached != null) instanceId else null
+            mutableState.value = mutableState.value.copy(
+                modelOptions = restored,
+                selectedModelId = mutableState.value.selectedModelId
+                    ?.takeIf { id -> restored.any { it.id == id } },
+            )
+        }
+        remote.listCatalog(agentType, instanceId) { response ->
+            synchronized(this@NewSessionCoordinator) {
+                if (request != catalogRequest) return@listCatalog
+                if (!accepts(response) || provider != mutableState.value.provider) return@listCatalog
+                val currentInstanceId = mutableState.value.selectedInstanceId
+                    ?: mutableState.value.profiles.firstOrNull()?.id
+                if (currentInstanceId != instanceId) return@listCatalog
+                val catalog = when (val outcome = response.outcome) {
+                    is RemoteOutcome.Success -> outcome.value
+                    is RemoteOutcome.Failure -> {
+                        onCatalogProbeFailed(outcome.message)
+                        null
+                    }
+                }
+                if (catalog.isNullOrEmpty()) return@listCatalog
+                applyCatalog(agentType, catalog)
+                // Cache the mapped NewSessionModelOption rows (not the raw ModelOption
+                // response), so a later restore-before-probe can drop them straight
+                // into modelOptions without re-deriving them.
+                catalogCache[instanceId] = mutableState.value.modelOptions
+                catalogApplied = true
+                catalogOwnerInstanceId = instanceId
+            }
+        }
+    }
+
+    @Synchronized
+    private fun applyCatalog(agentType: String, catalog: List<ModelOption>) {
+        val covers = ModelCatalogReconcile.coversFor(agentType)
+        val previousOptions = mutableState.value.modelOptions
+        val reconciledModelId = ModelCatalogReconcile.reconcileSelectedModel(
+            mutableState.value.selectedModelId,
+            catalog,
+            covers,
+        )
+        val mapped = catalog.map { row ->
+            NewSessionModelOption(
+                id = row.id,
+                label = row.label,
+                tier = row.tier,
+                authoritativeDefault = previousOptions.any { it.id == row.id && it.authoritativeDefault },
+            )
+        }
+        // reconcileSelectedModel returns the pick verbatim (e.g. "claude-opus-4-7"
+        // even when only "claude-opus-4-7[1m]" covers it), but NewSessionScreen only
+        // marks an option selected on an exact id match. Without the prior entry the
+        // picker would show nothing selected while submit() still sends it. Keep the
+        // prior selected (or, failing that, the prior authoritative-default) option
+        // visible until a catalog row exists at that exact id.
+        val preserved = reconciledModelId
+            ?.takeIf { id -> mapped.none { it.id == id } }
+            ?.let { id ->
+                previousOptions.firstOrNull { it.id == id }
+                    ?: previousOptions.firstOrNull { it.authoritativeDefault }
+            }
+        mutableState.value = mutableState.value.copy(
+            modelOptions = if (preserved != null) listOf(preserved) + mapped else mapped,
+            selectedModelId = reconciledModelId,
+        )
     }
 
     private fun create(value: Launch) {
@@ -755,6 +904,12 @@ class SwitchboardNewSessionRemote(
         input: StartSession,
         callback: (RemoteResponse<StartedSession>) -> Unit,
     ) = client.startSession(input, callback).let { Unit }
+
+    override fun listCatalog(
+        agentType: String,
+        instanceId: String?,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
+    ) = client.listCatalog(agentType, instanceId, callback).let { Unit }
 }
 
 object NewSessionTitle {

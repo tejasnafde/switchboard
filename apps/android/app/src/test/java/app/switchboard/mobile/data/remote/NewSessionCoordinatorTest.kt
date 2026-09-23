@@ -6,6 +6,8 @@ import app.switchboard.mobile.domain.outbox.QueuedTurn
 import app.switchboard.mobile.domain.outbox.StagedAttachment
 import app.switchboard.mobile.domain.remote.CommandBody
 import app.switchboard.mobile.domain.remote.CreateConversation
+import app.switchboard.mobile.domain.remote.ModelOption
+import app.switchboard.mobile.domain.remote.NewSessionDecisions
 import app.switchboard.mobile.domain.remote.ProviderInstance
 import app.switchboard.mobile.domain.remote.ProviderKind
 import app.switchboard.mobile.domain.remote.RemoteOutcome
@@ -48,6 +50,173 @@ class NewSessionCoordinatorTest {
         assertTrue(state.modelOptions.first().authoritativeDefault)
         assertEquals("claude-work", state.selectedInstanceId)
         assertFalse(state.loadingDefaults)
+    }
+
+    @Test
+    fun liveCatalogReplacesTheStaticListAndReconcilesTheSelectedModel() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        remote.instances.single()(success("instances", emptyList()))
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", "claude-opus-4-7")
+        remote.answerSetting("chat.defaultProviderInstanceId", null)
+
+        assertEquals("claude-code" to null, remote.catalogRequests.single().first)
+        remote.answerCatalog(
+            listOf(
+                modelOption("claude-fable-5", "Claude Fable 5"),
+                modelOption("claude-opus-4-7[1m]", "Claude Opus 4.7 (1M)"),
+            ),
+        )
+
+        val state = coordinator.state.value
+        // Rule 3 (suffix stripping): the live row covers the selection verbatim, but
+        // no catalog row has that exact id - the prior selected option is preserved
+        // so the picker still has something to mark selected.
+        assertEquals(
+            listOf("claude-opus-4-7", "claude-fable-5", "claude-opus-4-7[1m]"),
+            state.modelOptions.map { it.id },
+        )
+        assertEquals("claude-opus-4-7", state.selectedModelId)
+        assertTrue(state.modelOptions.any { it.id == state.selectedModelId })
+        assertTrue(state.modelOptions.first { it.id == "claude-opus-4-7" }.authoritativeDefault)
+    }
+
+    @Test
+    fun aModelTheLiveCatalogDoesNotCoverIsDropped() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        remote.instances.single()(success("instances", emptyList()))
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", "claude-retired-model")
+        remote.answerSetting("chat.defaultProviderInstanceId", null)
+        remote.answerCatalog(listOf(modelOption("claude-sonnet-5", "Claude Sonnet 5")))
+
+        assertNull(coordinator.state.value.selectedModelId)
+    }
+
+    @Test
+    fun catalogRejectionKeepsTheStaticListAndReportsWhy() {
+        val remote = FakeNewSessionRemote()
+        val failures = mutableListOf<String>()
+        val coordinator = coordinator(remote, onCatalogProbeFailed = failures::add)
+
+        coordinator.load()
+        remote.instances.single()(success("instances", emptyList()))
+        val staticOptions = coordinator.state.value.modelOptions
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", null)
+        remote.answerSetting("chat.defaultProviderInstanceId", null)
+        remote.answerCatalog(null)
+
+        assertEquals(staticOptions, coordinator.state.value.modelOptions)
+        assertEquals(listOf("no handler"), failures)
+    }
+
+    @Test
+    fun selectingAnInstanceReprobesTheCatalogForThatInstance() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        remote.instances.single()(success("instances", listOf(instance("claude-work"))))
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", null)
+        remote.answerSetting("chat.defaultProviderInstanceId", null)
+        assertEquals("claude-code" to "claude-work", remote.catalogRequests.last().first)
+
+        coordinator.selectInstance("claude-work")
+
+        assertEquals(2, remote.catalogRequests.size)
+        assertEquals("claude-code" to "claude-work", remote.catalogRequests.last().first)
+    }
+
+    @Test
+    fun settingsAnsweringBeforeInstancesStillReprobesTheCatalogOnceTheInstanceResolves() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        // Defaults resolve before listProviderInstances does: applyDefaults runs
+        // against an empty allInstances, so the first catalog probe has no instance.
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", null)
+        remote.answerSetting("chat.defaultProviderInstanceId", "claude-work")
+        assertEquals(1, remote.catalogRequests.size)
+        assertEquals("claude-code" to null, remote.catalogRequests.single().first)
+
+        remote.instances.single()(success("instances", listOf(instance("claude-work"))))
+
+        assertEquals("claude-work", coordinator.state.value.selectedInstanceId)
+        assertEquals(2, remote.catalogRequests.size)
+        assertEquals("claude-code" to "claude-work", remote.catalogRequests.last().first)
+    }
+
+    @Test
+    fun switchingInstanceAfterALiveCatalogNeverLeavesThePriorInstancesModelsSubmittable() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        remote.instances.single()(
+            success("instances", listOf(instance("claude-a"), instance("claude-b"))),
+        )
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", null)
+        remote.answerSetting("chat.defaultProviderInstanceId", null)
+        assertEquals("claude-code" to "claude-a", remote.catalogRequests.single().first)
+        remote.answerCatalog(listOf(modelOption("a-model-1", "A Model 1")))
+        coordinator.selectModel("a-model-1")
+        assertEquals(listOf("a-model-1"), coordinator.state.value.modelOptions.map { it.id })
+
+        coordinator.selectInstance("claude-b")
+
+        // Before B's probe answers at all, A's catalog must already be gone -
+        // otherwise submit() could still send an A-only model against B.
+        val staticIds = NewSessionDecisions.models(ProviderKind.Claude).map { it.id }
+        assertEquals(staticIds, coordinator.state.value.modelOptions.map { it.id })
+        assertNull(coordinator.state.value.selectedModelId)
+
+        // B's probe now fails - A's models must stay gone, not reappear.
+        remote.answerCatalog(null)
+        assertEquals(staticIds, coordinator.state.value.modelOptions.map { it.id })
+        assertNull(coordinator.state.value.selectedModelId)
+    }
+
+    @Test
+    fun aSavedModelAbsentFromTheStaticCatalogSurvivesInstanceResolutionRacingAheadOfIt() {
+        val remote = FakeNewSessionRemote()
+        val coordinator = coordinator(remote)
+
+        coordinator.load()
+        // Settings resolve before listProviderInstances does, so the first catalog
+        // probe goes out for no specific instance (instanceId=null).
+        remote.answerSetting("chat.defaultRuntimeMode", null)
+        remote.answerSetting("chat.defaultModel.claude-code", "team-custom-model")
+        remote.answerSetting("chat.defaultProviderInstanceId", null)
+        assertEquals("claude-code" to null, remote.catalogRequests.single().first)
+        assertEquals("team-custom-model", coordinator.state.value.selectedModelId)
+
+        // That null-instance probe answers and covers the saved model exactly, so
+        // it marks a live catalog as applied (catalogApplied=true) before any real
+        // instance has resolved.
+        remote.answerCatalog(listOf(modelOption("team-custom-model", "Team Custom Model")))
+        assertEquals("team-custom-model", coordinator.state.value.selectedModelId)
+
+        // Now the real instance resolves - a different owner than the null-instance
+        // probe above, so refreshCatalog() restores a fallback before its own probe.
+        // That fallback must still carry the saved model, not just the bare static
+        // catalog, or the selection is lost here with nothing left to reapply it.
+        remote.instances.single()(success("instances", listOf(instance("claude-work"))))
+
+        assertEquals(2, remote.catalogRequests.size)
+        assertEquals("claude-code" to "claude-work", remote.catalogRequests.last().first)
+        assertEquals("team-custom-model", coordinator.state.value.selectedModelId)
+        assertTrue(coordinator.state.value.modelOptions.any { it.id == "team-custom-model" })
     }
 
     @Test
@@ -99,6 +268,7 @@ class NewSessionCoordinatorTest {
         remote: FakeNewSessionRemote,
         enqueue: NewSessionEnqueue = NewSessionEnqueue { durable("mob-id") },
         onStarted: (NewSessionStarted) -> Unit = {},
+        onCatalogProbeFailed: (String) -> Unit = {},
     ) = NewSessionCoordinator(
         connectionId = "machine",
         generation = 7,
@@ -109,6 +279,14 @@ class NewSessionCoordinatorTest {
         ids = NewSessionIdSource { "mob-id" },
         clock = NewSessionClock { 10 },
         onStarted = onStarted,
+        onCatalogProbeFailed = onCatalogProbeFailed,
+    )
+
+    private fun modelOption(id: String, label: String) = ModelOption(
+        id = id,
+        label = label,
+        tier = "max",
+        raw = JsonObject(linkedMapOf()),
     )
 
     private fun instance(id: String) = ProviderInstance(
@@ -182,6 +360,27 @@ private class FakeNewSessionRemote : NewSessionRemote {
         callback: (RemoteResponse<StartedSession>) -> Unit,
     ) {
         starts += input to callback
+    }
+
+    val catalogRequests = mutableListOf<Pair<Pair<String, String?>, (RemoteResponse<List<ModelOption>?>) -> Unit>>()
+
+    override fun listCatalog(
+        agentType: String,
+        instanceId: String?,
+        callback: (RemoteResponse<List<ModelOption>?>) -> Unit,
+    ) {
+        catalogRequests += (agentType to instanceId) to callback
+    }
+
+    fun answerCatalog(catalog: List<ModelOption>?) {
+        val (_, callback) = catalogRequests.last()
+        callback(
+            if (catalog == null) {
+                RemoteResponse(RemoteRequestKey("machine", 7, "provider:list-catalog"), RemoteOutcome.Failure("no handler"))
+            } else {
+                RemoteResponse(RemoteRequestKey("machine", 7, "provider:list-catalog"), RemoteOutcome.Success(catalog))
+            },
+        )
     }
 
     fun answerSetting(key: String, value: String?) {

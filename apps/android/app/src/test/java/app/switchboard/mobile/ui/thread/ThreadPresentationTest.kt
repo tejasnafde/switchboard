@@ -407,6 +407,25 @@ class ThreadPresentationTest {
     }
 
     @Test
+    fun `model unavailable is presented as a product notice without diagnostics`() {
+        val row = ThreadPresenter.row(
+            FeedItem.RawNotice(
+                id = "model-unavailable:seq:9",
+                eventType = "model.unavailable",
+                text = "claude-opus-4-7 is not available on this account any more. This chat now uses the default model.",
+                raw = JsonObject(linkedMapOf("model" to JsonString("claude-opus-4-7"))),
+            ),
+        ) as ThreadRowPresentation.Notice
+
+        assertEquals("model-unavailable:seq:9", row.key)
+        assertEquals("Model unavailable", row.title)
+        assertEquals(
+            "claude-opus-4-7 is not available on this account any more. This chat now uses the default model.",
+            row.body,
+        )
+    }
+
+    @Test
     fun metadataIncludesStatusContextCostDurationAndProviderWithoutGuessing() {
         val state = ThreadState(
             feed = listOf(FeedItem.User("u", "hello", 1)),
@@ -419,6 +438,7 @@ class ThreadPresentationTest {
             costUsd = 0.42,
             resolvedModel = "gpt-5.6-luna",
             lastTurnDurationMs = 1_250,
+            lastTurnAt = 999_000,
             unread = 3,
         )
 
@@ -435,6 +455,8 @@ class ThreadPresentationTest {
         assertEquals("$0.42", metadata.costLabel)
         assertEquals("1.3s", metadata.durationLabel)
         assertEquals(3, metadata.unread)
+        assertEquals(1_500L, metadata.usedTokens)
+        assertEquals(999_000L, metadata.lastTurnAt)
     }
 
     @Test

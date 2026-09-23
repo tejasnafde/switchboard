@@ -131,6 +131,7 @@ object ThreadSnapshotCacheCodec {
             "availableVariants" to JsonArray(state.availableVariants.map(::JsonString)),
             "currentVariant" to state.currentVariant.jsonString(),
             "lastTurnDurationMs" to state.lastTurnDurationMs.jsonNumber(),
+            "lastTurnAt" to state.lastTurnAt.jsonNumber(),
             "unread" to JsonNumber(state.unread.toString()),
             "driftWorktreePath" to state.drift?.worktreePath.jsonString(),
             "driftBranch" to state.drift?.branch.jsonString(),

@@ -10,6 +10,10 @@ fun interface ThreadCommandDispatcher {
 interface ThreadSessionCommandPort {
     fun submit()
 
+    /** A one-tap action's own turn (the compaction-offer banner's "Compact"),
+     *  bypassing the visible draft. */
+    fun submitText(text: String)
+
     fun perform(action: ThreadUiAction)
 
     fun interrupt()
@@ -24,6 +28,10 @@ class CoordinatorThreadSessionCommandPort(
 ) : ThreadSessionCommandPort {
     override fun submit() {
         coordinator.submit()
+    }
+
+    override fun submitText(text: String) {
+        coordinator.submitText(text)
     }
 
     override fun perform(action: ThreadUiAction) {
@@ -42,6 +50,8 @@ class ThreadSessionCommandRouter(
     private val dispatcher: ThreadCommandDispatcher,
 ) {
     fun send() = dispatcher.dispatch(commands::submit)
+
+    fun sendText(text: String) = dispatcher.dispatch { commands.submitText(text) }
 
     fun perform(action: ThreadUiAction) = dispatcher.dispatch { commands.perform(action) }
 

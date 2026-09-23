@@ -99,6 +99,9 @@ class AndroidRootNavigationRuntime(
 
     override fun submitSavedComposerDraft(key: ComposerDraftKey) = composer.submitSavedDraft(key)
 
+    override fun submitComposerText(key: ComposerDraftKey, text: String, runtimeMode: String) =
+        composer.submitText(key, text, runtimeMode)
+
     override fun beginQueuedEdit(key: ComposerDraftKey, origin: String) = composer.beginEdit(key, origin)
 
     override fun retryQueued(origin: String) = composer.retry(origin)

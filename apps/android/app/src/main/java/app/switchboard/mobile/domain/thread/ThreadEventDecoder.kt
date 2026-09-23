@@ -87,6 +87,9 @@ object ThreadEventDecoder {
                 raw.requiredString("modelId"), raw.requiredStringList("availableVariants"),
                 raw.requiredString("currentVariant"),
             )
+            "model.unavailable" -> ThreadEventKind.ModelUnavailable to ThreadEventPayload.ModelUnavailable(
+                raw.requiredString("model"),
+            )
             "plan.proposed" -> ThreadEventKind.PlanProposed to ThreadEventPayload.PlanProposed(
                 raw.requiredString("planId"), raw.requiredString("planMarkdown"),
             )

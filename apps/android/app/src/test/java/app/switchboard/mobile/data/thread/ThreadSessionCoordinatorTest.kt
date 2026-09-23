@@ -132,6 +132,18 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `turn completed stamps lastTurnAt from the coordinator's own clock`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+
+        remote.emit(scope, turnCompleted("thread-1"))
+
+        assertEquals(123L, coordinator.currentThread()?.lastTurnAt)
+    }
+
+    @Test
     fun `existing thread profile switch uses one atomic request and keeps local thread state intact`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(
@@ -446,6 +458,27 @@ class ThreadSessionCoordinatorTest {
 
         assertEquals(1, calls)
         assertEquals(ComposerSubmitResult.Busy, nested)
+    }
+
+    @Test
+    fun `submitText publishes state like submit and blocks a reentrant call`() {
+        val remote = FakeThreadSessionRemote(scope)
+        lateinit var coordinator: ThreadSessionCoordinator
+        var nestedResult: ComposerSubmitResult? = null
+        var submittingObservedDuringEnqueue = false
+        val enqueue = ThreadEnqueuePort { draft ->
+            submittingObservedDuringEnqueue = coordinator.state.value.composer.submitting
+            nestedResult = coordinator.submitText("second")
+            durable("compact-1", draft.text)
+        }
+        coordinator = coordinator(remote, enqueue = enqueue)
+
+        assertTrue(coordinator.submitText("/compact") is ComposerSubmitResult.Durable)
+
+        assertTrue(submittingObservedDuringEnqueue)
+        assertEquals(ComposerSubmitResult.Busy, nestedResult)
+        assertFalse(coordinator.state.value.composer.submitting)
+        assertEquals(listOf("remote_compact-1"), coordinator.currentThread()?.feed?.map(FeedItem::id))
     }
 
     @Test
@@ -985,6 +1018,9 @@ class ThreadSessionCoordinatorTest {
             "origin" to JsonString(origin),
             "at" to JsonNumber("123"),
         )
+
+    private fun turnCompleted(threadId: String): RuntimeEventPayload =
+        event("turn.completed", threadId, "turnId" to JsonString("turn-1"))
 
     private fun requestClosed(threadId: String, requestId: String): RuntimeEventPayload =
         event(

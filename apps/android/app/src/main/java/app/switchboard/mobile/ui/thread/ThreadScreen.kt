@@ -115,6 +115,7 @@ import app.switchboard.mobile.data.thread.ThreadPendingActions
 import app.switchboard.mobile.data.thread.ThreadArchiveState
 import app.switchboard.mobile.data.thread.ThreadModelState
 import app.switchboard.mobile.data.thread.ThreadProfileState
+import app.switchboard.mobile.data.thread.ThreadSessionCoordinator
 import app.switchboard.mobile.ui.theme.Accent
 import app.switchboard.mobile.ui.theme.Amber
 import app.switchboard.mobile.ui.theme.GeistMono
@@ -135,8 +136,10 @@ import app.switchboard.mobile.ui.voice.ThreadVoicePrimaryControl
 import app.switchboard.mobile.ui.voice.VoiceNoticeRow
 import app.switchboard.mobile.ui.voice.rememberVoiceComposer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 @Composable
 fun ThreadScreen(
@@ -172,16 +175,61 @@ fun ThreadScreen(
     onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
     forkMetadata: ForkLineageMetadata? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
+    onSendOverride: (String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
     var lightboxUrl by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     var settingsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
     var forkMessageId by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
+    // Per-thread, in memory only - a fresh screen instance re-offers.
+    var compactionDismissed by rememberSaveable(threadId) { mutableStateOf(false) }
+    // onSendOverride is fire-and-forget (dispatched onto a worker coroutine), so
+    // there is no synchronous result to gate a second tap on. Hide the offer the
+    // instant it is tapped - that removes the Compact action before a second tap
+    // can land. Two ways back: the durable enqueue itself failed (composer.error),
+    // or the compact turn finished (metadata.lastTurnAt advances past the tap) -
+    // composer.submitting is NOT that signal, it clears when the enqueue lands,
+    // long before the turn completes. Once cleared, the ordinary token/idle
+    // thresholds in CompactionOfferPolicy decide whether to offer again, so this
+    // does not re-show the banner right after compacting.
+    var compactionAwaitingResult by rememberSaveable(threadId) { mutableStateOf(false) }
+    var compactionSubmittedAtMs by rememberSaveable(threadId) { mutableStateOf(0L) }
     val presentation = remember(loadState) { ThreadPresenter.present(loadState) }
     val metadata = presentation.metadataOrNull()
+    LaunchedEffect(threadId, composer?.error, metadata?.lastTurnAt) {
+        if (!compactionAwaitingResult) return@LaunchedEffect
+        val turnCompleted = (metadata?.lastTurnAt ?: 0L) > compactionSubmittedAtMs
+        if (composer?.error != null || turnCompleted) {
+            compactionAwaitingResult = false
+            compactionDismissed = false
+        }
+    }
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
     val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
+
+    // Same 60s tick as the desktop pane and ThreadScreen.tsx: nothing else
+    // re-renders an idle thread, so staleness needs its own clock source.
+    var now by remember(threadId) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(threadId) {
+        while (true) {
+            delay(60_000)
+            now = System.currentTimeMillis()
+        }
+    }
+    // Seeded history has no lastTurnAt yet, so the last user row's time stands in.
+    val lastUserAt = remember(rows) {
+        rows.asReversed().firstNotNullOfOrNull { (it as? ThreadRowPresentation.User)?.source?.at }
+    }
+    val offerCompaction = !compactionDismissed && metadata != null && CompactionOfferPolicy.shouldOffer(
+        CompactionOfferPolicy.Input(
+            provider = metadata.provider,
+            usedTokens = metadata.usedTokens,
+            lastMessageAtMs = listOfNotNull(metadata.lastTurnAt, lastUserAt).maxOrNull(),
+            busy = metadata.status in ThreadSessionCoordinator.ACTIVE_PROVIDER_STATUSES,
+            nowMs = now,
+        ),
+    )
 
     if (settingsOpen && composer != null) {
         ThreadAgentSettingsScreen(
@@ -259,6 +307,18 @@ fun ThreadScreen(
                 .padding(scaffoldPadding),
         ) {
             metadata?.let { ThreadMetricStrip(it) }
+            if (offerCompaction && metadata?.usedTokens != null) {
+                CompactionOfferBanner(
+                    usedTokens = metadata.usedTokens,
+                    onCompact = {
+                        compactionDismissed = true
+                        compactionAwaitingResult = true
+                        compactionSubmittedAtMs = System.currentTimeMillis()
+                        onSendOverride("/compact")
+                    },
+                    onDismiss = { compactionDismissed = true },
+                )
+            }
             forkMetadata?.let { ForkLineageBanner(it) }
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
@@ -318,6 +378,52 @@ fun ThreadScreen(
                     TextButton(onClick = { forkMessageId = null }) { Text("Cancel") }
                 }
             }
+        }
+    }
+}
+
+/** Compact form of tokens for banner text - mirrors formatTokens in
+ *  src/shared/format.ts (128000 -> "128.0k", not the comma-grouped form
+ *  ThreadMetricStrip uses for the context meter). */
+private fun formatTokensCompact(tokens: Long): String = when {
+    tokens >= 1_000_000 -> String.format(Locale.US, "%.1fM", tokens / 1_000_000.0)
+    tokens >= 1_000 -> String.format(Locale.US, "%.1fk", tokens / 1_000.0)
+    else -> tokens.toString()
+}
+
+@Composable
+private fun CompactionOfferBanner(
+    usedTokens: Long,
+    onCompact: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Surface)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .semantics {
+                contentDescription = "Resume with less context. " +
+                    "${formatTokensCompact(usedTokens)} tokens from earlier."
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Resume with less context · ${formatTokensCompact(usedTokens)} tokens from earlier",
+            color = TextDim,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onCompact) { Text("Compact", color = Accent) }
+        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Keep full history",
+                tint = TextDim,
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }
