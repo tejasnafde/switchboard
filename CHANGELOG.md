@@ -2,29 +2,23 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
-## 0.8.65 - Small audit fixes
+## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
+
+### Added
+- **A new chat can join a worktree that already exists.** The draft's Workspace chip lists the worktrees git has for the project next to Project checkout and New worktree, so a follow-up task runs where the last one left off without a new branch. `e2e/draft-new-chat.e2e.mjs` drives the whole draft flow against the built app.
+- **The picker shows a provider's live model list before any chat starts.** A new `provider:list-catalog` channel starts the provider's own process with the instance's credentials, asks for its models and exits, sending no turn and spending no usage: `supportedModels()` on a prompt-less Claude query, `model/list` on a short-lived `codex app-server`, and `opencode models`. Answers are cached per instance for an hour. The desktop composer shows its cached list first, then the probe's, and a running session's own list always wins. The phone's New Session screen uses it too. Measured: Claude answers in about 1.2 s and listed `opus -> claude-opus-5-5` and `claude-fable-5-1`, which were not in the static list; Codex in about 3.9 s; repeat calls return from cache.
+
+### Changed
+- One `takeTurnDuration` replaces the five copies of the "Worked for" timing in the three adapters.
+- The legacy `workspace.yaml` read has tests: it is read when it is the only config, it loses to `launch-config.yaml`, and the next save migrates it.
+- **A picked model the provider no longer offers is announced, before and after the send.** The composer checks the chat's pick against the live (or last cached live) catalog and warns above the input, with a Use default button. If a message goes out anyway, the adapter falls back to the provider default and posts a notice in the chat, on the desktop and the phone. Claude used to send the retired id on every turn and fail each time; Codex used to fall back with only a log line.
+- **One reconcile function for the composer and the adapters.** `reconcileSelectedModel`, the exact-match rule and Claude's alias rules moved to `src/shared/model-reconcile.ts`, so the warning and the fallback can never disagree. The Claude adapter now reconciles too, which the 0.8.53 notes already claimed and which only Codex did: when the live catalog arrives, and before each query starts, it switches a running session to the default with the SDK's `setModel(undefined)`.
 
 ### Fixed
 - **Cost reads the same everywhere.** The status bar showed 3 or 4 decimals, kanban and the phone 2, and the kanban cap had no `$`. One `formatCostUsd` keeps enough digits that a small cost still shows.
 - **The context percent uses one formula.** The desktop meter clamped both ends, the phone header rounded and clamped only the top, and the phone thread screen had a third copy. `contextPercent` in `shared/format` serves all three.
 - **Codex static tiers match what the live catalog infers.** `gpt-5.5` and `gpt-5.4` were listed as max but inferred as balanced, so their badge jumped when the live list arrived. A test now keeps every static Codex entry in line, as one already did for Claude.
 - **A connection accepted after `TcpHost.dispose()` is destroyed on arrival.** It used to join the client set, where nothing would close it. This was also the cause of a `tcp-host` test that failed under full-suite load.
-
-### Changed
-- One `takeTurnDuration` replaces the five copies of the "Worked for" timing in the three adapters.
-- The legacy `workspace.yaml` read has tests: it is read when it is the only config, it loses to `launch-config.yaml`, and the next save migrates it.
-
-## 0.8.64 - New models show up without a release
-
-### Added
-- **A new chat can join a worktree that already exists.** The draft's Workspace chip lists the worktrees git has for the project next to Project checkout and New worktree, so a follow-up task runs where the last one left off without a new branch. `e2e/draft-new-chat.e2e.mjs` drives the whole draft flow against the built app.
-- **The picker shows a provider's live model list before any chat starts.** A new `provider:list-catalog` channel starts the provider's own process with the instance's credentials, asks for its models and exits, sending no turn and spending no usage: `supportedModels()` on a prompt-less Claude query, `model/list` on a short-lived `codex app-server`, and `opencode models`. Answers are cached per instance for an hour. The desktop composer shows its cached list first, then the probe's, and a running session's own list always wins. The phone's New Session screen uses it too. Measured: Claude answers in about 1.2 s and listed `opus -> claude-opus-5-5` and `claude-fable-5-1`, which were not in the static list; Codex in about 3.9 s; repeat calls return from cache.
-
-## 0.8.63 - A retired model says so
-
-### Changed
-- **A picked model the provider no longer offers is announced, before and after the send.** The composer checks the chat's pick against the live (or last cached live) catalog and warns above the input, with a Use default button. If a message goes out anyway, the adapter falls back to the provider default and posts a notice in the chat, on the desktop and the phone. Claude used to send the retired id on every turn and fail each time; Codex used to fall back with only a log line.
-- **One reconcile function for the composer and the adapters.** `reconcileSelectedModel`, the exact-match rule and Claude's alias rules moved to `src/shared/model-reconcile.ts`, so the warning and the fallback can never disagree. The Claude adapter now reconciles too, which the 0.8.53 notes already claimed and which only Codex did: when the live catalog arrives, and before each query starts, it switches a running session to the default with the SDK's `setModel(undefined)`.
 
 ## 0.8.62 - Audit cleanup: one model path, one vocabulary, no dead agent
 
