@@ -2,6 +2,14 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## Unreleased
+
+### Added
+- **Steer or queue a message while the agent works.** Enter steers: the agent reads the message at its next step (Claude and Codex). Alt+Enter, or the Queue button beside Steer, holds it until the turn ends and then sends it as its own turn; queued messages show above the composer with a remove button. OpenCode cannot take a mid-turn message, so there it always queues. On the phone, a chip above the composer switches the next send to queued.
+
+### Fixed
+- **The composer no longer says "Queue" for a message that steers.** A mid-turn message on Claude or Codex has always been read in the running turn, measured against the Claude SDK and Codex's `turn/steer`, but the button and placeholder promised it would wait.
+
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
 
 ### Added

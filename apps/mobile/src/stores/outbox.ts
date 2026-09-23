@@ -9,6 +9,7 @@
  * Publishes optimistically and writes durably behind that, so the composer
  * clears on the tap frame. A failed write rolls the message back out.
  */
+import { waitsForIdle } from '@shared/turn-delivery'
 import { create } from 'zustand'
 import { createLogger } from '@shared/logger'
 import { echoMessageId, type RuntimeMode } from '@shared/provider-events'
@@ -223,8 +224,9 @@ async function deliver(message: QueuedMessage): Promise<void> {
     // so a send with the radio off sat pending for the 200s provider timeout
     // and blocked the queue behind it.
     connected: client?.transport.isConnected?.() ?? client !== undefined,
-    // Only OpenCode drops a mid-turn message; Claude queues and Codex steers.
-    threadBusy: thread?.provider === 'opencode' && thread.status === 'running',
+    // Claude and Codex take a mid-turn message as a steer; OpenCode cannot,
+    // and a message the user queued waits for the turn to end either way.
+    threadBusy: waitsForIdle(thread?.provider, thread?.status === 'running', message.whenIdle ? 'queue' : 'steer'),
     // Always true today: the thread row is never removed by the app.
     threadExists: true,
     editing: useOutboxStore.getState().editingId === message.messageId,

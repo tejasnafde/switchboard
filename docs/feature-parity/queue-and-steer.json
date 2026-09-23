@@ -1,0 +1,57 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "queue-and-steer",
+  "summary": "A message sent while the agent works can steer the running turn (the agent reads it at its next step) or be queued until the turn ends. Measured against the Claude SDK: a mid-turn user message with no priority is read at the next tool boundary, so Claude already steered; Codex steers through turn/steer; OpenCode cannot take a mid-turn message. The composer used to call all of this Queue. Now Enter steers (Claude and Codex), Alt+Enter or the Queue button queues, and OpenCode always queues. Queueing is done by the client, which holds the message and sends it through the ordinary path when the turn ends, so no wire change is needed.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
+        "e2e/queue-steer.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "implemented",
+      "evidence": [
+        "apps/mobile/src/screens/ThreadScreen.tsx",
+        "apps/mobile/src/stores/outbox.ts",
+        "apps/mobile/src/lib/outboxModel.ts",
+        "apps/mobile/src/lib/turnSubmit.ts"
+      ]
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "turn_queue_v1",
+      "followUpRelease": "Native Android composer gains the queue toggle; until then a mid-turn send steers on Claude and Codex, as it did before",
+      "evidence": ["apps/android/app/src/main/java/app/switchboard/mobile/ui/thread/ThreadScreen.kt"]
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": ["src/shared/turn-delivery.ts", "tests/unit/turn-delivery.test.ts"]
+    },
+    "storageDataMigration": {
+      "status": "implemented",
+      "evidence": ["apps/mobile/src/lib/outboxModel.ts"]
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Client-side only: a queued message is sent later through the existing submitUserTurn call, so older and newer backends behave the same. The phone's persisted outbox gains an optional whenIdle field that older builds ignore."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npx vitest run tests/unit/turn-delivery.test.ts",
+      "npm run build:fast && node e2e/queue-steer.e2e.mjs (Steer and Queue both offered while running; Alt+Enter shows a Queued chip; the chip clears when the turn ends; the queued text is sent as its own user turn)",
+      "npm run typecheck", "npm test", "cd apps/mobile && npx tsc --noEmit -p tsconfig.json && npm test -- --runInBand",
+      "Claude SDK experiment (Haiku): a mid-turn message with no priority or priority next was read at the next tool boundary and ended the turn early; priority later waited for the turn to finish"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The phone's queue toggle was not tapped on a device; the hold rule is the shared waitsForIdle, unit-tested.",
+      "Desktop queued messages live in memory: one queued when the app quits mid-turn is lost."
+    ]
+  }
+}
