@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 import { getDb } from '../db/database'
 import { userDataDir } from '../runtime'
 import { resolveSessionWorktreePath } from './worktreePaths'
+import { cloneDependencyDirsInBackground } from './dependencyClone'
 
 const execFileAsync = promisify(execFile)
 
@@ -471,6 +472,9 @@ export class GitLegacySessionWorktreeMaterializer implements LegacySessionWorktr
       }
     }
     const after = await this.inspect(plan)
+    if (after.kind === 'exact') {
+      cloneDependencyDirsInBackground(plan.projectPath, plan.worktreePath)
+    }
     return after.kind === 'exact'
       ? { kind: 'completed' }
       : {

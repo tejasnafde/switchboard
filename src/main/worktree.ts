@@ -25,6 +25,7 @@ import { mkdir, access, rm } from 'node:fs/promises'
 import { dirname, join, isAbsolute, resolve } from 'node:path'
 import { createMainLogger } from './logger'
 import { resolveSessionWorktreePath } from './git/worktreePaths'
+import { cloneDependencyDirsInBackground } from './git/dependencyClone'
 import type { WorktreeInfo } from '@shared/kanban'
 
 const log = createMainLogger('worktree')
@@ -87,6 +88,7 @@ export async function createWorktree(
   await mkdir(worktreeRootFor(repoPath), { recursive: true })
   log.info(`creating worktree: ${worktreePath} (branch ${branch})`)
   await runner(['worktree', 'add', '-b', branch, worktreePath, 'HEAD'], repoPath)
+  cloneDependencyDirsInBackground(repoPath, worktreePath)
   return { path: worktreePath, branch }
 }
 
@@ -133,6 +135,7 @@ export async function createForkWorktree(
     log.info(`createForkWorktree: attempt ${i} → ${worktreePath} (branch ${branch}, base ${baseRef})`)
     try {
       await runner(['worktree', 'add', '-b', branch, worktreePath, baseRef], repoRoot)
+      cloneDependencyDirsInBackground(repoRoot, worktreePath)
       return { path: worktreePath, branch }
     } catch (err) {
       lastErr = err
@@ -323,5 +326,6 @@ export async function createSessionWorktree(
   await mkdir(dirname(path), { recursive: true })
   log.info(`createSessionWorktree: ${path} (branch ${branch}, base ${baseRef})`)
   await runner(['worktree', 'add', '-b', branch, path, baseRef], opts.projectPath)
+  cloneDependencyDirsInBackground(opts.projectPath, path)
   return { path, branch }
 }
