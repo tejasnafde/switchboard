@@ -668,8 +668,9 @@ export function App() {
           if (!picked) throw new Error('Pick the worktree this chat should run in.')
           // It may have been removed since the chip listed it.
           const refs = await window.api.git.listRefs(draft.projectPath)
-          if (refs.ok && !refs.refs.some((r) => r.worktreePath === picked.path)) {
-            throw new Error(`The worktree for ${picked.branch} no longer exists. Pick another one.`)
+          if (!refs.ok) throw new Error('Could not check the worktree. Try again.')
+          if (!refs.refs.some((r) => r.worktreePath === picked.path && r.name === picked.branch)) {
+            throw new Error(`The worktree for ${picked.branch} no longer exists or changed branch. Pick it again.`)
           }
         }
         state = await coordinator.start({

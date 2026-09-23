@@ -13,6 +13,7 @@ describe('contextPercent', () => {
   it('is null while the limit is unknown, and clamped to 0-100', () => {
     expect(contextPercent(1000, null)).toBeNull()
     expect(contextPercent(1000, 0)).toBeNull()
+    expect(contextPercent(50, -200)).toBeNull()
     expect(contextPercent(50, 200)).toBe(25)
     expect(contextPercent(500, 200)).toBe(100)
     expect(contextPercent(-5, 200)).toBe(0)

@@ -10,8 +10,9 @@ import { mkdtempSync, rmSync, writeFileSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
-const repoRoot = new URL('..', import.meta.url).pathname
+const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const scratch = []
 const mk = (p) => { const d = mkdtempSync(join(tmpdir(), p)); scratch.push(d); return d }
 process.on('exit', () => { for (const d of scratch) rmSync(d, { recursive: true, force: true }) })

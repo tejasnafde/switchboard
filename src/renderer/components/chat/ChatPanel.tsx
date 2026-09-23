@@ -738,9 +738,20 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         }
         case 'model.unavailable': {
           // The adapter already switched to the default; clear the stored pick
-          // so reopening the chat does not bring the retired model back.
-          useAgentStore.getState().setModel(tid, '')
-          window.api.app.setConversationModel?.(tid, '').catch((err: unknown) => log.warn('clear retired model failed', err))
+          // so reopening the chat does not bring the retired model back. A
+          // newer pick made before this event arrived is left alone.
+          const current = useAgentStore.getState().sessions.find((s) => s.id === tid)
+          if (current?.model === event.model) {
+            useAgentStore.getState().setModel(tid, '')
+            window.api.app.setConversationModel?.(tid, '').catch((err: unknown) => log.warn('clear retired model failed', err))
+          }
+          // And the machine default, or every new chat would start on it again.
+          if (current && current.type !== 'terminal') {
+            const key = defaultModelSettingKey(current.type)
+            void window.api.settings?.get?.(key).then((stored: string | null) => {
+              if (stored === event.model) return window.api.settings?.set?.(key, '')
+            }).catch((err: unknown) => log.warn('clear retired default model failed', err))
+          }
           appendMessage(tid, {
             id: `model_unavailable_${Date.now()}`,
             role: 'system',

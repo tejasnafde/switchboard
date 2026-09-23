@@ -630,7 +630,7 @@ export class CodexAdapter implements ProviderAdapter {
       toolOutputText: new Map(),
       threadId: resumeThreadId,
       skills: null,
-      models: null,
+      models: opts.knownModels?.length ? { models: opts.knownModels, identity: codexExecutable.current()?.identity ?? null } : null,
       turnStartedAt: null,
       activeTurnId: null,
       turnStartPromise: null,

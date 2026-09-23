@@ -39,3 +39,15 @@ describe('legacy workspace.yaml', () => {
     expect(readLaunchConfig(dir)).toBe('saved: true\n')
   })
 })
+
+describe('launch config watcher', () => {
+  it('survives its project folder being deleted', async () => {
+    const dir = project()
+    writeFileSync(join(dir, '.switchboard', 'launch-config.yaml'), 'a: 1\n')
+    readLaunchConfig(dir)
+    rmSync(dir, { recursive: true, force: true })
+    // An unhandled watcher 'error' would fail the run here (EPERM on Windows).
+    await new Promise((r) => setTimeout(r, 50))
+    expect(readLaunchConfig(dir)).toBeNull()
+  })
+})

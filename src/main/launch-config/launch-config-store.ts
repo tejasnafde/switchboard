@@ -55,6 +55,13 @@ export function watchLaunchConfig(projectPath: string): void {
         emit('app:launch-config-changed', projectPath)
       }
     })
+    // A watched file that is deleted or moved (the project folder removed, on
+    // Windows EPERM) emits 'error'; unhandled, that would crash the main process.
+    watcher.on('error', (err) => {
+      log.warn(`launch config watcher stopped for ${projectPath}`, err)
+      watcher.close()
+      watchers.delete(projectPath)
+    })
     watchers.set(projectPath, watcher)
     log.info(`watching launch config for ${projectPath}`)
   } catch (err) {

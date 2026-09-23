@@ -37,6 +37,7 @@ export function DraftWorkspaceChips({
   // One read serves both lists: local branches to base a new worktree on, and
   // the worktrees already on disk a chat can join.
   useEffect(() => {
+    setRefs([])
     if (!cwd) return
     let cancelled = false
     window.api.git.listRefs(cwd)

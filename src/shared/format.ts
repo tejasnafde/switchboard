@@ -58,6 +58,6 @@ export function formatCostUsd(usd: number): string {
 
 /** Share of the context window in use, 0-100; null while the limit is unknown. */
 export function contextPercent(used: number, max: number | null | undefined): number | null {
-  if (!max) return null
+  if (!max || max <= 0) return null
   return Math.min(100, Math.max(0, (used / max) * 100))
 }

@@ -15,11 +15,13 @@ import { formatOpencodeModelLabel, inferModelTier, type ModelOption } from '@sha
 import type { AgentProvider } from '@shared/types'
 import { resolveProviderInstance } from '../db/providerInstances'
 import { createMainLogger } from '../logger'
-import { findClaudeBin } from './adapters/claude-adapter'
-import { findCodexPath, parseCodexModels } from './adapters/codex-adapter'
+import { buildClaudeCliEnv, findClaudeBin } from './adapters/claude-adapter'
+import { buildCodexCliEnv, findCodexPath, parseCodexModels } from './adapters/codex-adapter'
 import { buildOpencodeEnv, findOpencodePath } from './adapters/opencode/env'
+import { applyCredentialHome } from './credential-home'
 import { applyEnvOverlay } from './env-overlay'
 import { resolveInstanceEnv } from './instance-env'
+import { remoteProviderConfigDir } from './remote-gate'
 import { CodexProbeSession } from './usage/codex-usage'
 
 const log = createMainLogger('provider:catalog-probe')
@@ -87,17 +89,52 @@ function probeOpencode(instanceEnv: Record<string, string>): Promise<ModelOption
   })
 }
 
-/** Live catalog for an instance, or [] when it cannot be probed (no binary, signed out). */
-export function probeCatalog(agentType: AgentProvider, instanceId?: string | null): Promise<ModelOption[]> {
-  // An id this backend does not know (a desktop profile asked of a remote)
-  // probes the default instance rather than failing.
+interface ProbeTarget {
+  key: string
+  env: Record<string, string>
+  instanceEnv: Record<string, string>
+}
+
+/**
+ * Which credentials to probe with. A remote backend has no desktop profile
+ * rows, so the desktop forwards the profile's config-dir basename, exactly as
+ * startSession does, and the probe uses that dir's credential home.
+ */
+function probeTarget(agentType: AgentProvider, instanceId: string | null | undefined, remoteConfigDir?: string): ProbeTarget {
+  if (remoteConfigDir && agentType !== 'opencode') {
+    const dir = remoteProviderConfigDir(agentType, remoteConfigDir)
+    const env = agentType === 'claude-code' ? buildClaudeCliEnv() : buildCodexCliEnv()
+    applyCredentialHome(env, agentType, dir)
+    return { key: `${agentType}:dir:${dir}`, env, instanceEnv: {} }
+  }
   let instance: ReturnType<typeof resolveProviderInstance> = null
   try {
     instance = resolveProviderInstance(agentType, instanceId ?? null)
-  } catch {
+  } catch (err) {
+    log.warn(`catalog probe: instance ${instanceId} unknown here, probing the default`, err)
     instance = resolveProviderInstance(agentType, null)
   }
-  const key = `${agentType}:${instance?.id ?? 'default'}`
+  const env = instance
+    ? resolveInstanceEnv(instance)
+    : agentType === 'codex' ? buildCodexCliEnv() : agentType === 'claude-code' ? buildClaudeCliEnv() : { ...(process.env as Record<string, string>) }
+  return { key: `${agentType}:${instance?.id ?? 'default'}`, env, instanceEnv: instance?.env ?? {} }
+}
+
+/** A cached catalog if one is fresh; never spawns. Seeds a session's first turn. */
+export function peekCatalog(agentType: AgentProvider, instanceId?: string | null, remoteConfigDir?: string): ModelOption[] | undefined {
+  try {
+    const hit = cache.get(probeTarget(agentType, instanceId, remoteConfigDir).key)
+    return hit && Date.now() - hit.at < TTL_MS ? hit.models : undefined
+  } catch (err) {
+    log.warn('catalog peek failed', err)
+    return undefined
+  }
+}
+
+/** Live catalog for an instance, or [] when it cannot be probed (no binary, signed out). */
+export function probeCatalog(agentType: AgentProvider, instanceId?: string | null, remoteConfigDir?: string): Promise<ModelOption[]> {
+  const target = probeTarget(agentType, instanceId, remoteConfigDir)
+  const key = target.key
   const hit = cache.get(key)
   if (hit && Date.now() - hit.at < TTL_MS) return Promise.resolve(hit.models)
   const running = inFlight.get(key)
@@ -106,10 +143,10 @@ export function probeCatalog(agentType: AgentProvider, instanceId?: string | nul
   const task = (async () => {
     try {
       const models = agentType === 'claude-code'
-        ? await probeClaude(instance ? resolveInstanceEnv(instance) : {})
+        ? await probeClaude(target.env)
         : agentType === 'codex'
-          ? await probeCodex(instance ? resolveInstanceEnv(instance) : { ...(process.env as Record<string, string>) })
-          : await probeOpencode(instance?.env ?? {})
+          ? await probeCodex(target.env)
+          : await probeOpencode(target.instanceEnv)
       // An empty answer is not cached, so the next ask retries.
       if (models.length > 0) cache.set(key, { models, at: Date.now() })
       return models
