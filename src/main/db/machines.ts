@@ -6,6 +6,9 @@
 import { randomUUID } from 'node:crypto'
 import { getDb } from './database'
 import type { Machine, MachineInput, MachineSnapshot } from '@shared/machines'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('db:machines')
 
 export type { Machine, MachineInput }
 
@@ -155,8 +158,8 @@ export function getMachineSnapshots(): Record<string, MachineSnapshot> {
   for (const r of rows) {
     try {
       out[r.machine_id] = { syncedAt: r.synced_at, projects: JSON.parse(r.data) }
-    } catch {
-      /* skip a corrupt snapshot row */
+    } catch (err) {
+      log.warn('skipping corrupt machine snapshot row', { machineId: r.machine_id, err })
     }
   }
   return out

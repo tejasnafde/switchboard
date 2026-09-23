@@ -203,7 +203,9 @@ export function ChatInput({
       } catch (err) {
         log.warn('corrupt dynamic-model cache, awaiting live fetch', { key: modelsCacheKey, err })
       }
-    }).catch(() => { /* no cache yet */ })
+    }).catch((err) => {
+      log.debug('no model cache yet for settings key', { key: modelsCacheKey, err })
+    })
 
     // Then the instance's live catalog without waiting for a session, so a
     // model launched after this release shows up in a new chat. A running
@@ -240,7 +242,9 @@ export function ChatInput({
         } else if (attempts++ < 4) {
           setTimeout(tryFetch, 500 * (attempts + 1))
         }
-      }).catch(() => { /* keep fallback list */ })
+      }).catch((err) => {
+        log.debug(`listModels failed for ${sessionId} - keeping fallback list`, err)
+      })
     }
     tryFetch()
     return () => { cancelled = true }
@@ -387,7 +391,9 @@ export function ChatInput({
       if (Array.isArray(skills) && skills.length > 0) {
         setAgentSkills(skills)
       }
-    }).catch(() => { /* keep current - built-ins still work */ })
+    }).catch((err) => {
+      log.debug(`listSkills failed for ${sessionId} - keeping current list, built-ins still work`, err)
+    })
   }, [sessionId, agentType, instanceId, skillsScope])
 
   useEffect(() => {
@@ -408,7 +414,9 @@ export function ChatInput({
         } else if (attempts++ < 4) {
           setTimeout(tryFetch, 500 * (attempts + 1))
         }
-      }).catch(() => { /* keep [] - built-ins still work */ })
+      }).catch((err) => {
+        log.debug(`listSkills retry failed for ${sessionId} - keeping [], built-ins still work`, err)
+      })
     }
     tryFetch()
     return () => { cancelled = true }
@@ -1742,7 +1750,9 @@ export function ChatInput({
                 if (blob) {
                   navigator.clipboard.write([
                     new ClipboardItem({ 'image/png': blob }),
-                  ]).catch(() => {})
+                  ]).catch((err) => {
+                    log.warn('failed to copy preview image to clipboard', err)
+                  })
                 }
               }, 'image/png')
             }

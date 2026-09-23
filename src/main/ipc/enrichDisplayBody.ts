@@ -6,6 +6,9 @@
  */
 import type { ChatMessage } from '@shared/types'
 import type { DisplayBodyEnrichment } from '../db/database'
+import { createMainLogger } from '../logger'
+
+const log = createMainLogger('ipc:enrich-display-body')
 
 type PillsMetaParsed = NonNullable<ChatMessage['pillsMeta']>
 type ImagesParsed = NonNullable<ChatMessage['images']>
@@ -40,8 +43,8 @@ export function enrichMessagesWithDisplayBody(
         if (Array.isArray(parsedImages) && parsedImages.length > 0) {
           updates.images = parsedImages
         }
-      } catch {
-        // ignore corrupt image metadata
+      } catch (err) {
+        log.warn('corrupt image metadata for enriched message - skipping', err)
       }
     }
 

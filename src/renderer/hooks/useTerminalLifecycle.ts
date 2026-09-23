@@ -8,6 +8,9 @@ import { getRecentOutputPaneLabels } from '../services/terminal-registry'
 import { launchConfigListReducer } from '../services/launchConfigListReducer'
 import { useLayoutStore } from '../stores/layout-store'
 import { executionRootForSession } from '../services/executionRoot'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('hooks:terminal-lifecycle')
 
 export function terminalHydrationTargets(
   displayedSessionIds: readonly string[],
@@ -108,7 +111,9 @@ export function useTerminalLifecycle() {
           })),
         }
         const launchConfigName = useTerminalStore.getState().getSessionLaunchConfigName?.(sessionId) ?? null
-        window.api.app.saveSessionLayout(sessionId, JSON.stringify(layoutData), launchConfigName).catch(() => {})
+        window.api.app.saveSessionLayout(sessionId, JSON.stringify(layoutData), launchConfigName).catch((err) => {
+          log.warn(`periodic saveSessionLayout failed for ${sessionId}`, err)
+        })
       }
     }, 30000)
 
@@ -144,7 +149,9 @@ async function spawnTerminalsForSession(
           return
         }
       }
-    } catch { /* fall through */ }
+    } catch (err) {
+      log.debug(`getSessionLayout failed for ${sessionId} - falling through to launch-config.yaml`, err)
+    }
   }
 
   // 2. Try launch-config.yaml - hydrate from named launch config (or default).
@@ -165,7 +172,9 @@ async function spawnTerminalsForSession(
           return
         }
       }
-    } catch { /* fall through */ }
+    } catch (err) {
+      log.debug(`getLaunchConfig failed for ${projectPath} - falling through to default layout`, err)
+    }
   }
 
   // 3. Default: one window, one pane
@@ -300,7 +309,9 @@ export async function applyLaunchConfig(
   }
 
   // Persist immediately so a relaunch picks up the new selection.
-  void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), resolved.launchConfigName).catch(() => {})
+  void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), resolved.launchConfigName).catch((err) => {
+    log.warn(`saveSessionLayout failed for ${sessionId} after applying launch config`, err)
+  })
 }
 
 /**
@@ -311,7 +322,9 @@ export async function applyLaunchConfig(
  */
 export function clearLaunchConfigPin(sessionId: string): void {
   useTerminalStore.getState().setSessionLaunchConfigName(sessionId, null)
-  void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), null).catch(() => {})
+  void window.api.app.saveSessionLayout(sessionId, snapshotLayoutJson(sessionId), null).catch((err) => {
+    log.warn(`saveSessionLayout failed for ${sessionId} after clearing launch config pin`, err)
+  })
 }
 
 /**

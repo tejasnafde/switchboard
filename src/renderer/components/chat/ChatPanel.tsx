@@ -266,11 +266,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     if (!sessionId) return
     storeSetRuntimeMode(sessionId, mode)
     // Propagate to active provider session if running
-    ;window.api.provider?.setRuntimeMode?.(sessionId, mode).catch(() => {})
+    ;window.api.provider?.setRuntimeMode?.(sessionId, mode).catch((err: unknown) => {
+      log.warn(`setRuntimeMode failed for ${sessionId} - live provider session may not have applied it`, err)
+    })
     // Persist as the per-conversation source of truth so reopening this
     // chat (sidebar, kanban card click, ⌘⇧F search jump) restores the
     // selection instead of falling back to the hardcoded default.
-    window.api.app?.setConversationRuntimeMode?.(sessionId, mode).catch(() => {})
+    window.api.app?.setConversationRuntimeMode?.(sessionId, mode).catch((err: unknown) => {
+      log.warn(`setConversationRuntimeMode failed for ${sessionId}`, err)
+    })
     // Also remember as the user-level default so brand-new sessions seed
     // with this mode instead of always reverting to 'sandbox'.
     setStoreDefaultRuntimeMode(mode)
@@ -285,11 +289,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     // Propagate to the running provider session (opencode reads this per
     // turn; Claude/Codex no-op). Without this, the adapter keeps using
     // whatever model was passed at startSession forever.
-    window.api.provider.setModel?.(sessionId, m).catch(() => {})
+    window.api.provider.setModel?.(sessionId, m).catch((err: unknown) => {
+      log.warn(`setModel failed for ${sessionId} - live provider session may not have applied it`, err)
+    })
     // Persist as the per-conversation source of truth so reopening this
     // chat (sidebar, kanban card click) restores the pin instead of losing
     // it the moment the live session object stops matching session.id.
-    window.api.app?.setConversationModel?.(sessionId, m).catch(() => {})
+    window.api.app?.setConversationModel?.(sessionId, m).catch((err: unknown) => {
+      log.warn(`setConversationModel failed for ${sessionId}`, err)
+    })
     // And as the machine default, so a session started from anywhere else -
     // notably the phone, which cannot see this window - opens on the same
     // model instead of whatever the provider CLI picks.
@@ -304,7 +312,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
     if (!sessionId) return
     storeSetReasoningEffort(sessionId, effort)
-    window.api.app.setConversationReasoningEffort(sessionId, effort).catch(() => {})
+    window.api.app.setConversationReasoningEffort(sessionId, effort).catch((err: unknown) => {
+      log.warn(`setConversationReasoningEffort failed for ${sessionId}`, err)
+    })
   }, [sessionId, storeSetReasoningEffort])
 
   useEffect(() => {
@@ -352,7 +362,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         conversationId: sessionId,
         role: marker.role,
         content: marker.content,
-      }).catch(() => {})
+      }).catch((err) => {
+        log.warn(`failed to persist agent-swap marker for ${sessionId}`, err)
+      })
     }
     // Schedule the cross-provider context handoff: the new adapter starts
     // cold, so the next send replays the transcript as a preamble (see
@@ -378,7 +390,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     storeSetAgentType(sessionId, t)
     providerStartedRef.current.delete(sessionId)
     agentStartedRef.current.delete(sessionId)
-    await window.api.provider?.stopSession?.(sessionId).catch(() => {})
+    await window.api.provider?.stopSession?.(sessionId).catch((err) => {
+      log.warn(`stopSession failed for ${sessionId} during agent switch`, err)
+    })
     messageLifecycle.settleThread(sessionId)
   }, [sessionId, storeSetAgentType, agentType, activeSession?.messages?.length, appendMessage])
 
@@ -470,7 +484,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         conversationId: sessionId,
         role: marker.role,
         content: marker.content,
-      }).catch(() => {})
+      }).catch((err) => {
+        log.warn(`failed to persist instance-rotation marker for ${sessionId}`, err)
+      })
     }
     // The new instance may map to a different remote config dir - drop the
     // machine's cached auth verdicts so the banner re-probes under it.
@@ -1059,7 +1075,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     const trimmed = editTitleValue.trim()
     if (trimmed && sessionId) {
       setTitle(sessionId, trimmed)
-      window.api.app.renameConversation(sessionId, trimmed).catch(() => {})
+      window.api.app.renameConversation(sessionId, trimmed).catch((err) => {
+        log.warn(`renameConversation failed for ${sessionId} - optimistic title may not persist`, err)
+      })
       emitSessionRename(sessionId, trimmed)
     }
     setEditingTitle(false)
@@ -1844,7 +1862,9 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         onArchive={() => {
           if (!sessionId) return
           messageLifecycle.settleThread(sessionId)
-          window.api.app.archiveConversation(sessionId, projectPath, chatTitle).catch(() => {})
+          window.api.app.archiveConversation(sessionId, projectPath, chatTitle).catch((err) => {
+            log.warn(`archiveConversation failed for ${sessionId}`, err)
+          })
           removeSession(sessionId)
         }}
         onShowSlashHelp={() => setSlashHelpOpen(true)}

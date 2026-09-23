@@ -42,6 +42,9 @@ import {
   projectOrganizationItems,
   reorderWorkspacesById,
 } from '@shared/workspaceOrganization'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('sidebar')
 import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { RecentSessionsSection } from './RecentSessionsSection'
@@ -255,7 +258,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   }, [createMenuOpen])
 
   const refreshWorkspaces = useCallback(() => {
-    window.api.app.workspaces.list().then((list) => setWorkspaces(list ?? [])).catch(() => {})
+    window.api.app.workspaces.list().then((list) => setWorkspaces(list ?? [])).catch((err) => {
+      log.warn('workspaces.list failed', err)
+    })
   }, [])
 
   const loadProjects = useCallback(async (firstRun = false): Promise<void> => {
@@ -342,7 +347,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
         }
       })
     )
-    window.api.app.renameConversation(sessionId, newTitle).catch(() => {})
+    window.api.app.renameConversation(sessionId, newTitle).catch((err) => {
+      log.warn(`renameConversation failed for ${sessionId} - optimistic title may not persist`, err)
+    })
     emitSessionRename(sessionId, newTitle)
     setEditingId(null)
   }, [editValue])
@@ -371,7 +378,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
 
   // Refresh project list from disk (e.g., after unarchive)
   useEffect(() => {
-    const handler = () => void loadProjects().catch(() => {})
+    const handler = () => void loadProjects().catch((err) => {
+      log.warn('loadProjects failed on sidebar-refresh event', err)
+    })
     window.addEventListener('sidebar-refresh', handler)
     // onSessionCreated is renderer-local, so another client's chat needs this.
     const off = window.api.app.onConversationsChanged(handler)
@@ -427,7 +436,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
           const resp = await window.api.app.loadSessionById(session.id) as { messages?: ChatMessage[] } | null
           messages = resp?.messages ?? []
         }
-      } catch { /* best-effort - export whatever we have */ }
+      } catch (err) {
+        log.warn(`failed to load messages for export of ${session.id} - exporting whatever we have`, err)
+      }
     }
     const content = serializeConversationToMarkdown({
       title: session.title ?? 'Conversation',
@@ -456,8 +467,8 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
             : { ...p, sessions: p.sessions.filter((s) => s.id !== fragment.sessionId) }
         )
       )
-    } catch {
-      // best-effort - next getProjects refresh will correct state
+    } catch (err) {
+      log.warn(`attachToThread(${fragment.sessionId}, ${rootThreadId}) failed - next getProjects refresh will correct state`, err)
     }
   }, [])
 
@@ -487,8 +498,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   const commitRemoteRename = useCallback((menu: { machineId: string; session: SessionSummary }, title: string) => {
     if (title === menu.session.title) return
     window.api.routing.bind(menu.session.id, menu.machineId)
-    window.api.app.renameConversation(menu.session.id, title).catch(() => {
+    window.api.app.renameConversation(menu.session.id, title).catch((err) => {
       // best-effort - next sync restores the real title
+      log.warn(`remote renameConversation failed for ${menu.session.id}`, err)
     })
     emitSessionRename(menu.session.id, title)
   }, [])
@@ -501,7 +513,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
         window.api.routing.bind(menu.session.id, menu.machineId)
         const resp = await window.api.app.loadSessionById(menu.session.id) as { messages?: ChatMessage[] }
         messages = resp?.messages
-      } catch { /* best-effort - export whatever we have */ }
+      } catch (err) {
+        log.warn(`failed to load remote messages for export of ${menu.session.id} - exporting whatever we have`, err)
+      }
     }
     const content = serializeConversationToMarkdown({
       title: menu.session.title ?? 'Conversation',
@@ -552,8 +566,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     setRenamingProjectPath(null)
     if (!name) return
     setProjects((prev) => prev.map((p) => p.path === projectPath ? { ...p, name } : p))
-    window.api.app.renameProject(projectPath, name).catch(() => {
+    window.api.app.renameProject(projectPath, name).catch((err) => {
       // optimistic - next refresh will correct
+      log.warn(`renameProject failed for ${projectPath}`, err)
     })
   }, [editValue])
 
@@ -567,7 +582,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
     for (const s of sessions.filter((s) => s.projectPath === project.path)) removeSession(s.id)
     try {
       await window.api.app.removeProject(project.path)
-    } catch { /* best-effort - next refresh will restore if it failed */ }
+    } catch (err) {
+      log.warn(`removeProject failed for ${project.path} - next refresh will restore if it failed`, err)
+    }
   }, [])
 
   const handleCreateWorkspaceFromProject = useCallback(async (projectPath: string) => {
@@ -578,7 +595,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       const w = await window.api.app.workspaces.create({ name })
       setWorkspaces((prev) => [...prev, w])
       await handleAssignWorkspace(projectPath, w.id)
-    } catch { /* best-effort */ }
+    } catch (err) {
+      log.warn(`failed to create workspace from project ${projectPath}`, err)
+    }
   }, [handleAssignWorkspace])
 
   // Drives both same- and cross-workspace drops off the *rendered* flat
@@ -1378,7 +1397,9 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
           }}
           onMutated={() => {
             refreshWorkspaces()
-            void loadProjects().catch(() => {})
+            void loadProjects().catch((err) => {
+              log.warn('loadProjects failed after workspace manager mutation', err)
+            })
           }}
         />
       )}

@@ -761,7 +761,11 @@ export class CodexAdapter implements ProviderAdapter {
       // Tear down the child + registry entry so the next sendTurn doesn't
       // race on a half-initialized session.
       if (active.child) {
-        try { active.child.kill('SIGTERM') } catch { /* already dead */ }
+        try {
+          active.child.kill('SIGTERM')
+        } catch (killErr) {
+          log.debug(`SIGTERM on codex child failed during init cleanup, likely already dead`, { threadId: opts.threadId, killErr })
+        }
         active.child = null
       }
       this.sessions.delete(opts.threadId)
@@ -782,8 +786,9 @@ export class CodexAdapter implements ProviderAdapter {
     try {
       const typed = resolveResumeSegment(opts.threadId, 'codex', opts.instanceId)
       if (typed) return typed.provider_session_id
-    } catch {
+    } catch (err) {
       // Legacy databases or startup failures still have the old lineage path.
+      log.debug('resolveResumeSegment failed - falling back to legacy lineage path', { threadId: opts.threadId, err })
     }
     try {
       const candidates = [

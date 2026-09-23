@@ -148,7 +148,9 @@ async function scanClaudeProjectsDir(
             : ''
           if (text) title = generateTitle(text)
         }
-      } catch { /* title extraction failed - use default */ }
+      } catch (err) {
+        log.debug('title extraction failed - using default title', { filePath, err })
+      }
 
       copies.push({
         summary: {

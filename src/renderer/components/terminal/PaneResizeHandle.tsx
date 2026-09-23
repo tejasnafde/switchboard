@@ -1,5 +1,8 @@
 import { useRef, useEffect } from 'react'
 import { showDragOverlay, hideDragOverlay } from '../../services/dragOverlay'
+import { createRendererLogger } from '../../logger'
+
+const log = createRendererLogger('terminal:pane-resize-handle')
 
 interface PaneResizeHandleProps {
   direction?: 'row' | 'column'
@@ -41,6 +44,9 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
     const onPointerDown = (e: PointerEvent) => {
       e.preventDefault()
       e.stopPropagation()
+      // setPointerCapture can throw for an already-released pointer id;
+      // routine, not worth logging.
+      // eslint-disable-next-line no-restricted-syntax -- see comment above
       try { handle.setPointerCapture(e.pointerId) } catch { /* ignore */ }
       activePointerRef.current = e.pointerId
       lastPosRef.current = isColumn ? e.clientX : e.clientY
@@ -63,11 +69,18 @@ export function PaneResizeHandle({ direction = 'row', onResize, onResizeEnd }: P
     const endDrag = (e?: PointerEvent) => {
       if (activePointerRef.current === null) return
       if (e && e.pointerId !== activePointerRef.current) return
+      // releasePointerCapture throws routinely (capture already lost/yanked);
+      // this is the expected, high-frequency case, not a bug.
+      // eslint-disable-next-line no-restricted-syntax -- see comment above
       try { handle.releasePointerCapture(activePointerRef.current) } catch { /* ignore */ }
       activePointerRef.current = null
       cancelAnimationFrame(rafRef.current)
       resetStyle()
-      try { onResizeEndRef.current() } catch { /* ignore */ }
+      try {
+        onResizeEndRef.current()
+      } catch (err) {
+        log.warn('onResizeEnd callback threw', err)
+      }
     }
 
     const onPointerUp = (e: PointerEvent) => endDrag(e)
