@@ -1,4 +1,7 @@
 import { create } from 'zustand'
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('store:draft')
 
 const STORAGE_KEY = 'switchboard.drafts'
 const PILLS_STORAGE_KEY = 'switchboard.draftPills'
@@ -93,7 +96,9 @@ function loadDrafts(): Record<string, string> {
 function saveDrafts(drafts: Record<string, string>) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts))
-  } catch { /* quota exceeded or similar - ignore */ }
+  } catch (err) {
+    log.debug('failed to persist drafts - quota exceeded or similar', err)
+  }
 }
 
 function loadPills(): Record<string, DraftPill[]> {
@@ -111,7 +116,9 @@ function loadPills(): Record<string, DraftPill[]> {
 function savePills(pills: Record<string, DraftPill[]>) {
   try {
     localStorage.setItem(PILLS_STORAGE_KEY, JSON.stringify(pills))
-  } catch { /* ignore */ }
+  } catch (err) {
+    log.debug('failed to persist draft pills - quota exceeded or similar', err)
+  }
 }
 
 interface DraftStore {

@@ -15,6 +15,10 @@
  * platform notifications on macOS/Windows/Linux.
  */
 
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:notifications')
+
 const SETTING_KEY = 'notificationsEnabled'
 
 let cached: boolean | null = null
@@ -38,8 +42,8 @@ export async function setNotificationsEnabled(enabled: boolean): Promise<void> {
   cached = enabled
   try {
     await window.api.settings.set(SETTING_KEY, enabled ? 'true' : 'false')
-  } catch {
-    /* best-effort */
+  } catch (err) {
+    log.warn('failed to persist notificationsEnabled setting', err)
   }
 }
 
@@ -74,7 +78,14 @@ export async function fireTestNotification(): Promise<{ ok: boolean; reason?: st
       body: 'Test notification - Switchboard will notify you when an agent turn finishes in a backgrounded chat.',
       tag: 'switchboard.test',
     })
-    n.onclick = () => { try { window.focus() } catch { /* ignore */ } n.close() }
+    n.onclick = () => {
+      try {
+        window.focus()
+      } catch (err) {
+        log.debug('window.focus() failed from test notification click', err)
+      }
+      n.close()
+    }
     return { ok: true }
   } catch (err) {
     return { ok: false, reason: `new Notification() threw: ${String(err)}` }
@@ -123,7 +134,11 @@ export async function notifyTurnCompleted(opts: {
   if (typeof Notification === 'undefined') return
   if (Notification.permission === 'denied') return
   if (Notification.permission === 'default') {
-    try { await Notification.requestPermission() } catch { /* ignore */ }
+    try {
+      await Notification.requestPermission()
+    } catch (err) {
+      log.debug('Notification.requestPermission failed for turn-completed notification', err)
+    }
   }
   if (Notification.permission !== 'granted') return
 
@@ -137,7 +152,11 @@ export async function notifyTurnCompleted(opts: {
     tag: `turn.${threadId}`, // coalesce multiple notifs for the same session
   })
   notif.onclick = () => {
-    try { window.focus() } catch { /* ignore */ }
+    try {
+      window.focus()
+    } catch (err) {
+      log.debug('window.focus() failed from turn-completed notification click', err)
+    }
     onClick?.()
     notif.close()
   }

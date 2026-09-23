@@ -372,8 +372,9 @@ function extractSummary(detail: string): string {
       const firstKey = Object.keys(parsed)[0]
       if (firstKey) return truncLine(`${firstKey}: ${String(parsed[firstKey]).slice(0, 100)}`)
     }
-  } catch {
+  } catch (err) {
     // JSON is likely truncated. Fall through to regex.
+    log.debug('approval detail JSON is likely truncated - falling back to regex summary', err)
   }
 
   // Regex fallback - pull known keys from the raw (possibly truncated) text.

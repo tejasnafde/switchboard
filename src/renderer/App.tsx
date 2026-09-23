@@ -208,7 +208,9 @@ export function App() {
           // Defer one tick so first render settles before the modal mounts
           setTimeout(() => { if (!cancelled) { setTourStartAt(0); setTourOpen(true) } }, 400)
         }
-      } catch { /* settings unavailable - silently skip auto-open */ }
+      } catch (err) {
+        log.debug('tour auto-open settings unavailable - skipping', err)
+      }
     })()
     return () => { cancelled = true }
   }, [])
@@ -317,7 +319,9 @@ export function App() {
         if (isRuntimeMode(stored)) {
           setStoreDefaultRuntimeMode(stored)
         }
-      } catch { /* settings unavailable in tests / first boot */ }
+      } catch (err) {
+        log.debug('default runtime mode settings unavailable in tests / first boot', err)
+      }
     })()
     // Adopt whatever the backend is already running. A chat started on the
     // phone exists only in the backend until this asks: runtime events are
@@ -980,7 +984,9 @@ export function App() {
         projectPath,
         agentType: toAgentProvider(session.source),
         title: session.title,
-      }).catch(() => {})
+      }).catch((err) => {
+        log.debug(`createConversation failed for ${session.id} - row may already exist`, err)
+      })
 
       if (shouldRetrySessionLoadAfterCreate(Boolean(loaded?.meta), session.filePath)) {
         try {
@@ -1186,7 +1192,9 @@ export function App() {
             )
             if (!inText && sid) {
               e.preventDefault()
-              window.api.provider?.interrupt?.(sid).catch(() => {})
+              window.api.provider?.interrupt?.(sid).catch((err) => {
+                log.debug(`keyboard-shortcut interrupt failed for ${sid}`, err)
+              })
             }
           }
         }
@@ -1806,6 +1814,9 @@ function ChatSplitHandle({
   const endDrag = useCallback(() => {
     if (activePointerRef.current === null) return
     const el = handleElRef.current
+    // releasePointerCapture throws routinely (capture already lost/yanked by a
+    // webview) - this is the expected, high-frequency case, not a bug.
+    // eslint-disable-next-line no-restricted-syntax -- see comment above
     if (el) { try { el.releasePointerCapture(activePointerRef.current) } catch { /* ignore */ } }
     activePointerRef.current = null
     onDraggingChange?.(false)
@@ -1843,6 +1854,9 @@ function ChatSplitHandle({
         touchAction: 'none',
       }}
       onPointerDown={(e) => {
+        // setPointerCapture can throw for an already-released pointer id;
+        // routine, not worth logging.
+        // eslint-disable-next-line no-restricted-syntax -- see comment above
         try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* ignore */ }
         activePointerRef.current = e.pointerId
         onDraggingChange?.(true)

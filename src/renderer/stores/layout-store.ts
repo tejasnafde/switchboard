@@ -186,7 +186,9 @@ function applyChatWorkspaceEvent(event: ChatWorkspaceEvent): void {
 function persistList(key: string, list: string[]): void {
   try {
     void window.api?.settings?.set(key, JSON.stringify(list))
-  } catch { /* settings unavailable in tests / early boot */ }
+  } catch (err) {
+    log.debug(`failed to persist setting ${key} - settings unavailable in tests / early boot`, err)
+  }
 }
 
 // Panel width + visibility are driven from JSX in App.tsx - do NOT
@@ -221,7 +223,11 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 
   rightPaneMode: 'terminal',
   setRightPaneMode: (mode) => {
-    try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, mode) } catch { /* ignore */ }
+    try {
+      void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, mode)
+    } catch (err) {
+      log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
+    }
     set({ rightPaneMode: mode })
   },
   toggleRightPaneMode: () => {
@@ -229,18 +235,30 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     // see appView/⌘⇧K - not a right-pane mode.)
     const cur = get().rightPaneMode
     const next: RightPaneMode = cur === 'terminal' ? 'files' : 'terminal'
-    try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, next) } catch { /* ignore */ }
+    try {
+      void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, next)
+    } catch (err) {
+      log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
+    }
     set({ rightPaneMode: next })
   },
 
   dataScienceMode: false,
   toggleDataScienceMode: () => {
     const next = !get().dataScienceMode
-    try { void window.api?.settings?.set(DATA_SCIENCE_MODE_KEY, String(next)) } catch { /* ignore */ }
+    try {
+      void window.api?.settings?.set(DATA_SCIENCE_MODE_KEY, String(next))
+    } catch (err) {
+      log.debug(`failed to persist ${DATA_SCIENCE_MODE_KEY}`, err)
+    }
     // Entering DS mode surfaces the workbench in the wide slot; leaving it
     // keeps whatever right-pane mode the user last had.
     if (next) {
-      try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
+      try {
+        void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files')
+      } catch (err) {
+        log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
+      }
       set({ dataScienceMode: true, rightPaneMode: 'files' })
     } else {
       set({ dataScienceMode: false })
@@ -249,25 +267,41 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
 
   appView: 'chats',
   setAppView: (v) => {
-    try { void window.api?.settings?.set(APP_VIEW_KEY, v) } catch { /* ignore */ }
+    try {
+      void window.api?.settings?.set(APP_VIEW_KEY, v)
+    } catch (err) {
+      log.debug(`failed to persist ${APP_VIEW_KEY}`, err)
+    }
     set({ appView: v })
   },
   toggleAppView: () => {
     const next: AppView = get().appView === 'chats' ? 'kanban' : 'chats'
-    try { void window.api?.settings?.set(APP_VIEW_KEY, next) } catch { /* ignore */ }
+    try {
+      void window.api?.settings?.set(APP_VIEW_KEY, next)
+    } catch (err) {
+      log.debug(`failed to persist ${APP_VIEW_KEY}`, err)
+    }
     set({ appView: next })
   },
   kanbanWorkspaceFilter: null,
   kanbanProjectFilter: null,
   setKanbanWorkspaceFilter: (id) => {
-    try { void window.api?.settings?.set(KANBAN_WS_FILTER_KEY, id ?? '') } catch { /* ignore */ }
+    try {
+      void window.api?.settings?.set(KANBAN_WS_FILTER_KEY, id ?? '')
+    } catch (err) {
+      log.debug(`failed to persist ${KANBAN_WS_FILTER_KEY}`, err)
+    }
     // Clearing workspace also clears project filter - a project belongs
     // to one workspace, so a stale project filter under a new workspace
     // would silently render zero cards.
     set({ kanbanWorkspaceFilter: id, kanbanProjectFilter: null })
   },
   setKanbanProjectFilter: (path) => {
-    try { void window.api?.settings?.set(KANBAN_PROJECT_FILTER_KEY, path ?? '') } catch { /* ignore */ }
+    try {
+      void window.api?.settings?.set(KANBAN_PROJECT_FILTER_KEY, path ?? '')
+    } catch (err) {
+      log.debug(`failed to persist ${KANBAN_PROJECT_FILTER_KEY}`, err)
+    }
     set({ kanbanProjectFilter: path })
   },
 
@@ -277,7 +311,11 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     // isn't connected yet (workbench still booting), the click simply
     // focuses the pane.
     set({ rightPaneMode: 'files' })
-    try { void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files') } catch { /* ignore */ }
+    try {
+      void window.api?.settings?.set(RIGHT_PANE_MODE_KEY, 'files')
+    } catch (err) {
+      log.debug(`failed to persist ${RIGHT_PANE_MODE_KEY}`, err)
+    }
     try {
       const agent = useAgentStore.getState()
       const targetSessionId = sessionId ?? useLayoutStore.getState().companionSessionId()
@@ -408,5 +446,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       kanbanProjectFilter: kanbanProjStr || null,
       dataScienceMode,
     })
-  } catch { /* silent */ }
+  } catch (err) {
+    log.warn('failed to hydrate layout settings from disk - keeping in-memory defaults', err)
+  }
 }

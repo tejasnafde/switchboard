@@ -8,6 +8,10 @@
  * `sessionEnvMode.ts` - one read on first access, one write to flip;
  * settings KV is the source of truth.
  */
+import { createRendererLogger } from '../logger'
+
+const log = createRendererLogger('service:streaming-pref')
+
 const SETTING_KEY = 'assistantStreamingEnabled'
 const DEFAULT_ENABLED = true
 
@@ -28,8 +32,8 @@ export async function setAssistantStreamingEnabled(enabled: boolean): Promise<vo
   cached = enabled
   try {
     await window.api.settings.set(SETTING_KEY, enabled ? 'true' : 'false')
-  } catch {
-    /* best-effort */
+  } catch (err) {
+    log.warn('failed to persist assistantStreamingEnabled setting', err)
   }
 }
 

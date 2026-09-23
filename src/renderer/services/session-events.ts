@@ -22,7 +22,11 @@ export function onSessionRename(cb: RenameListener): () => void {
 
 export function emitSessionRename(sessionId: string, title: string): void {
   for (const listener of renameListeners) {
-    try { listener(sessionId, title) } catch { /* ignore */ }
+    try {
+      listener(sessionId, title)
+    } catch (err) {
+      log.warn('a session-rename listener threw', err)
+    }
   }
 }
 
@@ -42,7 +46,11 @@ export function onSessionActivity(cb: ActivityListener): () => void {
 
 export function emitSessionActivity(sessionId: string, timestamp: number = Date.now()): void {
   for (const listener of activityListeners) {
-    try { listener(sessionId, timestamp) } catch { /* ignore */ }
+    try {
+      listener(sessionId, timestamp)
+    } catch (err) {
+      log.warn('a session-activity listener threw', err)
+    }
   }
 }
 
@@ -57,7 +65,11 @@ export function onUserTurnAccepted(cb: UserTurnAcceptedListener): () => void {
 
 export function emitUserTurnAccepted(sessionId: string, origin: string): void {
   for (const listener of userTurnAcceptedListeners) {
-    try { listener(sessionId, origin) } catch { /* ignore */ }
+    try {
+      listener(sessionId, origin)
+    } catch (err) {
+      log.warn('a user-turn-accepted listener threw', err)
+    }
   }
 }
 
@@ -83,7 +95,11 @@ export function onSessionCreated(cb: CreatedListener): () => void {
 
 export function emitSessionCreated(session: NewSession): void {
   for (const listener of createdListeners) {
-    try { listener(session) } catch { /* ignore */ }
+    try {
+      listener(session)
+    } catch (err) {
+      log.warn('a session-created listener threw', err)
+    }
   }
 }
 
