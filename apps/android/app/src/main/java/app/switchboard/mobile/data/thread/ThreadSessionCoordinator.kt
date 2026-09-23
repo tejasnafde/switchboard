@@ -572,6 +572,32 @@ class ThreadSessionCoordinator(
         }
     }
 
+    /**
+     * A one-tap action's own turn (the compaction-offer banner's "Compact"),
+     * sent through the same durable enqueue as [submit]. Mirrors
+     * `send(textOverride)` in ThreadScreen.tsx: it does not read or clear the
+     * composer's draft or attachments, so what the user was typing survives.
+     */
+    @Synchronized
+    fun submitText(text: String): ComposerSubmitResult {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return ComposerSubmitResult.Empty
+        val result = enqueueDraft(
+            text = trimmed,
+            mode = composer.runtimeMode,
+            attachments = emptyList(),
+            editingOrigin = null,
+        )
+        return when (result) {
+            is EnqueueResult.Durable -> {
+                addOptimistic(result.turn)
+                ComposerSubmitResult.Durable(result.turn)
+            }
+            is EnqueueResult.AttachmentFailure -> ComposerSubmitResult.Failed(controlFailed(result.reason).message)
+            is EnqueueResult.StorageFailure -> ComposerSubmitResult.Failed(controlFailed(result.reason).message)
+        }
+    }
+
     @Synchronized
     fun selectRuntimeMode(mode: RuntimeMode) {
         if (closed || composer.modeChanging || remote.scope != scope) return
@@ -1001,7 +1027,11 @@ class ThreadSessionCoordinator(
                 else -> Unit
             }
             val previousInstanceId = attachedInstanceId
-            reduce(ThreadAction.Runtime(ScopedThreadEvent(eventScope, payload.sequence, event)))
+            reduce(
+                ThreadAction.Runtime(
+                    ScopedThreadEvent(eventScope, payload.sequence, event, nowMs = clock.nowMs()),
+                ),
+            )
             val providerEvent = known?.payload as?
                 app.switchboard.mobile.domain.thread.ThreadEventPayload.SessionProvider
             if (providerEvent != null) {

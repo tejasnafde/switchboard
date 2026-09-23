@@ -20,6 +20,11 @@ data class ScopedThreadEvent(
     val sequence: Long?,
     val event: ThreadRuntimeEvent,
     val rawPayloads: List<JsonObject> = listOf(event.raw),
+    /** Wall-clock arrival time, stamped by the caller (mirrors chat.ts's
+     *  `Date.now()` on turn.completed) so the reducer stays a pure function
+     *  of its inputs instead of reading the clock itself. Only turn.completed
+     *  consumes this, to drive the compaction-offer banner's staleness check. */
+    val nowMs: Long = 0L,
 )
 
 data class ThreadState(
@@ -37,6 +42,10 @@ data class ThreadState(
     val availableVariants: List<String> = emptyList(),
     val currentVariant: String? = null,
     val lastTurnDurationMs: Long? = null,
+    /** When the agent last finished a turn (wall clock). Mirrors
+     *  ThreadState.lastTurnAt in apps/mobile/src/stores/chat.ts - drives the
+     *  compaction-offer banner's staleness check. */
+    val lastTurnAt: Long? = null,
     val unread: Int = 0,
     val drift: DriftSuggestion? = null,
     val spendBlock: SpendBlock? = null,
@@ -299,7 +308,7 @@ object ThreadStoreReducer {
                     ),
                 )
             }
-            is ThreadEventPayload.TurnCompleted -> finishTurn(withJournal, event)
+            is ThreadEventPayload.TurnCompleted -> finishTurn(withJournal, event, scoped.nowMs)
             is ThreadEventPayload.TurnRetrying -> withJournal.copy(
                 feed = upsert(
                     withJournal.feed,
@@ -433,6 +442,7 @@ object ThreadStoreReducer {
     private fun finishTurn(
         thread: ThreadState,
         event: ThreadEventPayload.TurnCompleted,
+        nowMs: Long,
     ): ThreadState {
         val lastAssistant = thread.feed.indexOfLast { it is FeedItem.Text && it.stream == "assistant" }
         val feed = thread.feed.mapIndexed { index, item ->
@@ -453,6 +463,7 @@ object ThreadStoreReducer {
             maxTokens = event.maxTokens ?: thread.maxTokens,
             costUsd = event.costUsd ?: thread.costUsd,
             lastTurnDurationMs = event.durationMs,
+            lastTurnAt = nowMs,
         )
     }
 

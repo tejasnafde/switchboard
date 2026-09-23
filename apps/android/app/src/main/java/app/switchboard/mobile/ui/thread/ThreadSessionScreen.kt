@@ -75,6 +75,7 @@ fun ThreadSessionScreen(
         },
         onDraftChange = coordinator::updateDraft,
         onSend = router::send,
+        onSendOverride = router::sendText,
         onInterrupt = router::interrupt,
         onRuntimeModeChange = router::selectRuntimeMode,
         models = session.models,

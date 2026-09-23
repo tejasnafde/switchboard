@@ -91,6 +91,10 @@ data class ThreadMetadataPresentation(
     val costLabel: String?,
     val durationLabel: String?,
     val unread: Int,
+    /** Raw fields the formatted labels above are built from, needed
+     *  unformatted by CompactionOfferPolicy (see ThreadScreen). */
+    val usedTokens: Long? = null,
+    val lastTurnAt: Long? = null,
 )
 
 enum class ThreadRowKind {
@@ -309,6 +313,8 @@ object ThreadPresenter {
             costLabel = thread.costUsd?.let { String.format(Locale.US, "$%.2f", it) },
             durationLabel = thread.lastTurnDurationMs?.let(::formatDuration),
             unread = thread.unread,
+            usedTokens = thread.usedTokens,
+            lastTurnAt = thread.lastTurnAt,
         )
     }
 

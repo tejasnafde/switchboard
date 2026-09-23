@@ -132,6 +132,18 @@ class ThreadSessionCoordinatorTest {
     }
 
     @Test
+    fun `turn completed stamps lastTurnAt from the coordinator's own clock`() {
+        val remote = FakeThreadSessionRemote(scope)
+        val coordinator = coordinator(remote)
+        coordinator.start()
+        remote.completeLoad(success("load", loadedSession()))
+
+        remote.emit(scope, turnCompleted("thread-1"))
+
+        assertEquals(123L, coordinator.currentThread()?.lastTurnAt)
+    }
+
+    @Test
     fun `existing thread profile switch uses one atomic request and keeps local thread state intact`() {
         val remote = FakeThreadSessionRemote(scope)
         val coordinator = coordinator(
@@ -985,6 +997,9 @@ class ThreadSessionCoordinatorTest {
             "origin" to JsonString(origin),
             "at" to JsonNumber("123"),
         )
+
+    private fun turnCompleted(threadId: String): RuntimeEventPayload =
+        event("turn.completed", threadId, "turnId" to JsonString("turn-1"))
 
     private fun requestClosed(threadId: String, requestId: String): RuntimeEventPayload =
         event(

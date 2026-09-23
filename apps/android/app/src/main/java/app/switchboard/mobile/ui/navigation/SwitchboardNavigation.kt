@@ -858,6 +858,9 @@ private fun ThreadRouteHost(
                 runtime?.removeComposerImage(composerKey, attachmentId)
             },
             onSend = { runtime?.submitSavedComposerDraft(composerKey) },
+            onSendOverride = { text ->
+                runtime?.submitComposerText(composerKey, text, localDraft.runtimeMode)
+            },
             queuedTurns = queuedTurns,
             onOutboxAction = { origin, action ->
                 runtime?.performOutboxAction(composerKey, origin, action)

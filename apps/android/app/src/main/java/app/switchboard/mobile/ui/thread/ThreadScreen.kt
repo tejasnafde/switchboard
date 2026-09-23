@@ -135,8 +135,10 @@ import app.switchboard.mobile.ui.voice.ThreadVoicePrimaryControl
 import app.switchboard.mobile.ui.voice.VoiceNoticeRow
 import app.switchboard.mobile.ui.voice.rememberVoiceComposer
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 
 @Composable
 fun ThreadScreen(
@@ -172,16 +174,42 @@ fun ThreadScreen(
     onOutboxAction: (String, OutboxUiAction) -> Unit = { _, _ -> },
     forkMetadata: ForkLineageMetadata? = null,
     onFork: (messageId: String, withWorktree: Boolean) -> Unit = { _, _ -> },
+    onSendOverride: (String) -> Unit = {},
 ) {
     BackHandler(onBack = onBack)
     var selections by rememberSaveable(threadId) { mutableStateOf(QuestionSelections.empty()) }
     var lightboxUrl by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
     var settingsOpen by rememberSaveable(threadId) { mutableStateOf(false) }
     var forkMessageId by rememberSaveable(threadId) { mutableStateOf<String?>(null) }
+    // Per-thread, in memory only - a fresh screen instance re-offers.
+    var compactionDismissed by rememberSaveable(threadId) { mutableStateOf(false) }
     val presentation = remember(loadState) { ThreadPresenter.present(loadState) }
     val metadata = presentation.metadataOrNull()
     val rows = (presentation as? ThreadPresentation.Content)?.rows.orEmpty()
     val pendingApproval = ThreadChromePolicy.pendingApproval(rows)
+
+    // Same 60s tick as the desktop pane and ThreadScreen.tsx: nothing else
+    // re-renders an idle thread, so staleness needs its own clock source.
+    var now by remember(threadId) { mutableStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(threadId) {
+        while (true) {
+            delay(60_000)
+            now = System.currentTimeMillis()
+        }
+    }
+    // Seeded history has no lastTurnAt yet, so the last user row's time stands in.
+    val lastUserAt = remember(rows) {
+        rows.asReversed().firstNotNullOfOrNull { (it as? ThreadRowPresentation.User)?.source?.at }
+    }
+    val offerCompaction = !compactionDismissed && metadata != null && CompactionOfferPolicy.shouldOffer(
+        CompactionOfferPolicy.Input(
+            provider = metadata.provider,
+            usedTokens = metadata.usedTokens,
+            lastMessageAtMs = metadata.lastTurnAt ?: lastUserAt,
+            busy = metadata.status == "running",
+            nowMs = now,
+        ),
+    )
 
     if (settingsOpen && composer != null) {
         ThreadAgentSettingsScreen(
@@ -259,6 +287,13 @@ fun ThreadScreen(
                 .padding(scaffoldPadding),
         ) {
             metadata?.let { ThreadMetricStrip(it) }
+            if (offerCompaction && metadata?.usedTokens != null) {
+                CompactionOfferBanner(
+                    usedTokens = metadata.usedTokens,
+                    onCompact = { onSendOverride("/compact") },
+                    onDismiss = { compactionDismissed = true },
+                )
+            }
             forkMetadata?.let { ForkLineageBanner(it) }
             Box(modifier = Modifier.weight(1f)) {
             when (presentation) {
@@ -318,6 +353,52 @@ fun ThreadScreen(
                     TextButton(onClick = { forkMessageId = null }) { Text("Cancel") }
                 }
             }
+        }
+    }
+}
+
+/** Compact form of tokens for banner text - mirrors formatTokens in
+ *  src/shared/format.ts (128000 -> "128.0k", not the comma-grouped form
+ *  ThreadMetricStrip uses for the context meter). */
+private fun formatTokensCompact(tokens: Long): String = when {
+    tokens >= 1_000_000 -> String.format(Locale.US, "%.1fM", tokens / 1_000_000.0)
+    tokens >= 1_000 -> String.format(Locale.US, "%.1fk", tokens / 1_000.0)
+    else -> tokens.toString()
+}
+
+@Composable
+private fun CompactionOfferBanner(
+    usedTokens: Long,
+    onCompact: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Surface)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .semantics {
+                contentDescription = "Resume with less context. " +
+                    "${formatTokensCompact(usedTokens)} tokens from earlier."
+            },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = "Resume with less context · ${formatTokensCompact(usedTokens)} tokens from earlier",
+            color = TextDim,
+            style = MaterialTheme.typography.labelSmall,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onCompact) { Text("Compact", color = Accent) }
+        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = "Keep full history",
+                tint = TextDim,
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }

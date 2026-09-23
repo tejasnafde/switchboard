@@ -2,6 +2,13 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## Unreleased
+
+### Added
+- Native Android shows the model-unavailable notice in the thread feed, decoded from `model.unavailable` instead of falling through the generic extension-event notice.
+- Native Android's new-session screen reads the live model catalog from `provider:list-catalog` and reconciles the picked model against it, falling back to the static list on an older backend.
+- Native Android offers `/compact` above the thread feed on a token-heavy, stale Claude chat, mirroring the desktop and React Native compaction-offer banner.
+
 ## 0.8.63 - Retired models say so, new models show up without a release, drafts can join a worktree
 
 ### Added

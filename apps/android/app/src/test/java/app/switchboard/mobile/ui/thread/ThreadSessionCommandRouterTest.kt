@@ -16,6 +16,7 @@ class ThreadSessionCommandRouterTest {
         val action = ThreadUiAction.OpenFile("edit", "/repo", "A.kt")
 
         router.send()
+        router.sendText("/compact")
         router.perform(action)
         router.interrupt()
         router.selectRuntimeMode(RuntimeMode.Plan)
@@ -24,7 +25,7 @@ class ThreadSessionCommandRouterTest {
         assertTrueEvents(emptyList(), port.events)
         while (pending.isNotEmpty()) pending.removeFirst().invoke()
         assertTrueEvents(
-            listOf("send", "action:$action", "interrupt", "mode:Plan", "clear-local"),
+            listOf("send", "send-text:/compact", "action:$action", "interrupt", "mode:Plan", "clear-local"),
             port.events,
         )
     }
@@ -39,6 +40,10 @@ private class FakeThreadSessionCommands : ThreadSessionCommandPort {
 
     override fun submit() {
         events += "send"
+    }
+
+    override fun submitText(text: String) {
+        events += "send-text:$text"
     }
 
     override fun perform(action: ThreadUiAction) {

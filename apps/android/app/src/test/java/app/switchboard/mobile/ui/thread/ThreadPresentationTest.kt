@@ -438,6 +438,7 @@ class ThreadPresentationTest {
             costUsd = 0.42,
             resolvedModel = "gpt-5.6-luna",
             lastTurnDurationMs = 1_250,
+            lastTurnAt = 999_000,
             unread = 3,
         )
 
@@ -454,6 +455,8 @@ class ThreadPresentationTest {
         assertEquals("$0.42", metadata.costLabel)
         assertEquals("1.3s", metadata.durationLabel)
         assertEquals(3, metadata.unread)
+        assertEquals(1_500L, metadata.usedTokens)
+        assertEquals(999_000L, metadata.lastTurnAt)
     }
 
     @Test

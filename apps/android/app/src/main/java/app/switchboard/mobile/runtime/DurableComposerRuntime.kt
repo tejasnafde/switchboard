@@ -78,6 +78,30 @@ class DurableComposerRuntime(
         worker.execute { outbox.dismiss(origin) }
     }
 
+    /**
+     * A one-tap action's own turn (the compaction-offer banner's "Compact"),
+     * sent through the same durable outbox as an ordinary send. Mirrors
+     * `send(textOverride)` in ThreadScreen.tsx: it does not touch the saved
+     * draft or its attachments, so the text the user was composing survives.
+     */
+    fun submitText(key: ComposerDraftKey, text: String, runtimeMode: String) {
+        worker.execute {
+            val outgoing = OutgoingTurnDraft(
+                connectionId = key.connectionId,
+                threadId = key.threadId,
+                text = text.trim(),
+                attachments = emptyList(),
+                runtimeMode = runtimeMode,
+                createdAtMs = System.currentTimeMillis(),
+            )
+            when (val result = outbox.enqueue(outgoing)) {
+                is EnqueueResult.AttachmentFailure -> recordError(key, result.reason)
+                is EnqueueResult.StorageFailure -> recordError(key, result.reason)
+                is EnqueueResult.Durable -> Unit
+            }
+        }
+    }
+
     fun submitSavedDraft(key: ComposerDraftKey) {
         worker.execute {
             val draft = drafts.value[key] ?: return@execute
