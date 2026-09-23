@@ -533,6 +533,9 @@ export function App() {
           projectPath: intent.projectPath,
           agentType: intent.agentType,
           title: intent.title,
+          ...(intent.existingWorktree
+            ? { worktreePath: intent.existingWorktree.path, worktreeBranch: intent.existingWorktree.branch }
+            : {}),
         })
         publishAuthoritativeSession({
           id: intent.conversationId,
@@ -542,6 +545,9 @@ export function App() {
           machineId: intent.machineId,
           title: intent.title,
           runtimeMode: intent.runtimeMode,
+          ...(intent.existingWorktree
+            ? { worktreePath: intent.existingWorktree.path, worktreeBranch: intent.existingWorktree.branch }
+            : {}),
         })
         return { conversationId: intent.conversationId }
       },
@@ -657,10 +663,14 @@ export function App() {
       let state: DesktopNewChatState
       let startError: unknown
       try {
+        if (checkout === 'existing' && !draft.draft.existing) {
+          throw new Error('Pick the worktree this chat should run in.')
+        }
         state = await coordinator.start({
           projectPath: draft.projectPath,
           machineId: draft.machineId ?? 'local',
-          checkout,
+          checkout: checkout === 'worktree' ? 'worktree' : 'project',
+          ...(checkout === 'existing' && draft.draft.existing ? { existingWorktree: draft.draft.existing } : {}),
           agentType: draft.type,
           runtimeMode: draft.runtimeMode,
           baseRef: draft.draft.baseRef,
@@ -676,7 +686,7 @@ export function App() {
       // Still inside start: the composer, not giveBack, restores the payload.
       if (failed) giveBack()
       insideStart = false
-      retainCoordinator(coordinator, checkout)
+      retainCoordinator(coordinator, checkout === 'worktree' ? 'worktree' : 'project')
       if (failed) {
         const message = startError instanceof Error ? startError.message : state.error
         return { accepted: false, error: message ?? 'The new chat could not be created. See the worktree card for recovery.' }

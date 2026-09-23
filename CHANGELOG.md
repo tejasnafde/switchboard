@@ -5,6 +5,7 @@ All notable changes across Switchboard development sessions. Reverse-chronologic
 ## 0.8.64 - New models show up without a release
 
 ### Added
+- **A new chat can join a worktree that already exists.** The draft's Workspace chip lists the worktrees git has for the project next to Project checkout and New worktree, so a follow-up task runs where the last one left off without a new branch. `e2e/draft-new-chat.e2e.mjs` drives the whole draft flow against the built app.
 - **The picker shows a provider's live model list before any chat starts.** A new `provider:list-catalog` channel starts the provider's own process with the instance's credentials, asks for its models and exits, sending no turn and spending no usage: `supportedModels()` on a prompt-less Claude query, `model/list` on a short-lived `codex app-server`, and `opencode models`. Answers are cached per instance for an hour. The desktop composer shows its cached list first, then the probe's, and a running session's own list always wins. The phone's New Session screen uses it too. Measured: Claude answers in about 1.2 s and listed `opus -> claude-opus-5-5` and `claude-fable-5-1`, which were not in the static list; Codex in about 3.9 s; repeat calls return from cache.
 
 ## 0.8.63 - A retired model says so

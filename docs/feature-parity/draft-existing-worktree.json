@@ -1,0 +1,50 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "draft-existing-worktree",
+  "summary": "A draft chat's Workspace chip offers Existing worktree next to Project checkout and New worktree, listing the worktrees git already has for the project. The chat is created inside that worktree (createConversation with worktreePath/branch) and no new worktree is made.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/DraftWorkspaceChips.tsx",
+        "src/renderer/App.tsx",
+        "src/renderer/services/desktopNewChatCreation.ts",
+        "e2e/draft-new-chat.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The phone's New Session screen offers parent checkout or a new worktree; joining an existing worktree from a phone is not part of this change and nothing there reads the new draft option."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Native Android's new-session flow is unchanged and does not read the desktop draft options."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/new-chat-draft.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "Uses the existing worktree_path and worktree_branch columns through the existing createConversation call; no schema change."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only; no wire or capability change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run build:fast && node e2e/draft-new-chat.e2e.mjs (23 checks, including: the picker lists the worktree on disk, the new chat's worktree_path is that worktree, and git worktree list does not grow)",
+      "npm run typecheck",
+      "npm test"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "A remote machine's worktrees; listRefs routes by the draft's machine binding."
+    ]
+  }
+}

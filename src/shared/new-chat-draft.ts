@@ -5,12 +5,15 @@
  * second "new chat" for the same project reopens the same draft instead of
  * stacking empty ones.
  */
-export type DraftCheckout = 'project' | 'worktree'
+/** `existing` starts the chat inside a worktree that is already on disk. */
+export type DraftCheckout = 'project' | 'worktree' | 'existing'
 
 export interface DraftChatOptions {
   checkout: DraftCheckout
-  /** Base ref for a new worktree. Ignored for a project checkout. */
+  /** Base ref for a new worktree. Ignored for the other checkouts. */
   baseRef: string
+  /** The worktree an `existing` checkout runs in. */
+  existing?: { path: string; branch: string }
 }
 
 const PREFIX = 'draft:'
