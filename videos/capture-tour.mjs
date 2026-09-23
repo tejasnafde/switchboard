@@ -180,6 +180,9 @@ function seedDatabase(dbPath, projectPath, sidePath) {
     `INSERT OR REPLACE INTO machines (id, name, ssh_alias, ssh_host, ssh_user, ssh_port, transport_kind, sort_order, created_at, updated_at) VALUES ('promo-build', 'Build server', 'build', 'build.internal', 'deploy', 22, 'ssh', 1, ${now}, ${now});`,
     `INSERT OR REPLACE INTO machine_snapshots (machine_id, data, synced_at) VALUES ('promo-linux', ${sql(snapshotA)}, ${now - 42000});`,
     `INSERT OR REPLACE INTO machine_snapshots (machine_id, data, synced_at) VALUES ('promo-build', ${sql(snapshotB)}, ${now - 95000});`,
+    // Diff cards are opt-in and off by default; the 'diff-review' scene needs
+    // them expanded to record the accept/reject UI.
+    `INSERT OR REPLACE INTO settings (key, value) VALUES ('chat.showFileDiffs', 'true');`,
   ]
   execFileSync('sqlite3', [dbPath, statements.join('\n')])
 }

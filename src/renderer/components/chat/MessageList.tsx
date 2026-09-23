@@ -1,10 +1,11 @@
-import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, type ReactNode } from 'react'
+import { useRef, useEffect, useCallback, useLayoutEffect, useMemo, useState, type ReactNode } from 'react'
 import { agentShortLabel, type AgentType, type ChatMessage } from '@shared/types'
 import { MessageBubble } from './MessageBubble'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
-import { activitySummaryLabel, projectTurnPresentation } from './turnPresentation'
+import { useLayoutStore } from '../../stores/layout-store'
+import { activitySummaryLabel, changedFilesLabel, projectTurnPresentation } from './turnPresentation'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -146,6 +147,12 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
   const turns = useMemo(() => groupIntoTurns(messages), [messages])
   const turnsLengthRef = useRef(turns.length)
   turnsLengthRef.current = turns.length
+
+  const showFileDiffCards = useLayoutStore((s) => s.showFileDiffCards)
+  // Per-turn override: expanding one collapsed "Changed N files" group only
+  // affects that group, keyed by its first message id (stable across
+  // re-renders since presentation re-derives from the same message objects).
+  const [expandedFileGroups, setExpandedFileGroups] = useState<Set<string>>(new Set())
 
   // Skill-name set for the current session - passed to each bubble so
   // leading-`/cmd` chips only render for commands that actually exist.
@@ -496,12 +503,24 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
                     </details>
                   )
                 }
+                const groupKey = item.messages[0].id
+                const expanded = showFileDiffCards || expandedFileGroups.has(groupKey)
                 return (
-                  <section className="turn-files" key={item.messages[0].id}>
-                    <header>
-                      Changed {item.messages.length} {item.messages.length === 1 ? 'file' : 'files'}
-                    </header>
-                    {item.messages.map((message) => renderMessage(message))}
+                  <section className="turn-files" key={groupKey}>
+                    {expanded ? (
+                      <>
+                        <header>{changedFilesLabel(item.messages.length)}</header>
+                        {item.messages.map((message) => renderMessage(message))}
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="turn-files-toggle"
+                        onClick={() => setExpandedFileGroups((prev) => new Set(prev).add(groupKey))}
+                      >
+                        {changedFilesLabel(item.messages.length)}
+                      </button>
+                    )}
                   </section>
                 )
               })}

@@ -6,6 +6,10 @@ export type TurnPresentationItem =
   | { kind: 'activity'; messages: ChatMessage[]; toolCount: number }
   | { kind: 'files'; messages: ChatMessage[] }
 
+export function changedFilesLabel(fileCount: number): string {
+  return `Changed ${fileCount} ${fileCount === 1 ? 'file' : 'files'}`
+}
+
 export function activitySummaryLabel(toolCount: number, durationMs?: number): string {
   const tools = `Used ${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}`
   const duration = durationMs === undefined ? undefined : fmtDuration(durationMs).replace(/\.0s$/, 's')
