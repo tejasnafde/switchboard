@@ -87,7 +87,10 @@ export function shouldFetchLiveModels(
   sessionId: string | null | undefined,
   sessionIsActive: boolean,
 ): boolean {
-  return Boolean(sessionId) && sessionIsActive && agentType !== 'terminal'
+  if (!sessionId || agentType === 'terminal') return false
+  // OpenCode's catalog belongs to the binary, so the backend can answer from
+  // another open OpenCode session before this one has started.
+  return sessionIsActive || agentType === 'opencode'
 }
 
 interface ChatInputProps {
