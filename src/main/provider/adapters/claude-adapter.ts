@@ -380,6 +380,7 @@ import {
   preferManagedExecutable,
 } from '../managed-bin'
 import { commitCatalog, shouldRefreshCatalog, type CatalogCache } from '../model-catalog'
+import { claudeRowCovers, reconcileSelectedModel } from '@shared/model-reconcile'
 import {
   ensureClaudeSessionResumable,
   locateResumeTranscript,
@@ -1029,6 +1030,7 @@ export class ClaudeAdapter implements ProviderAdapter {
       ? buildPeerToolServer(sdk, this.peerHost, threadId)
       : null
 
+    this.dropUnavailableModel(threadId, active)
     const queryOptions: SDKOptions = {
       cwd: active.session.cwd,
       ...(active.session.model ? { model: active.session.model } : {}),
@@ -1204,11 +1206,26 @@ export class ClaudeAdapter implements ProviderAdapter {
         // Empty is never committed, so a probe that raced session startup does
         // not pin this session to the static catalog for its whole life.
         active.models = commitCatalog(active.models, mapped, identity)
+        this.dropUnavailableModel(threadId, active)
       } catch (err) {
         log.warn(`supportedModels() failed, using cached: ${err}`)
       }
     }
     return active.models?.models ?? []
+  }
+
+  /**
+   * A pick the live catalog no longer covers would fail every turn. Fall back
+   * to the provider default, and tell the clients so the fallback is not
+   * silent. No catalog yet means no evidence, so nothing is dropped.
+   */
+  private dropUnavailableModel(threadId: string, active: ActiveSession): void {
+    const picked = active.session.model
+    if (!picked || reconcileSelectedModel(picked, active.models, claudeRowCovers)) return
+    log.warn(`claude model ${picked} is no longer in the live catalog for ${threadId} - using the default`)
+    active.session.model = undefined
+    active.query?.setModel(undefined).catch((err: unknown) => log.warn(`reset to default model failed for ${threadId}: ${err}`))
+    active.onEvent({ type: 'model.unavailable', threadId, model: picked })
   }
 
   async setModel(threadId: string, model: string): Promise<void> {

@@ -2,6 +2,12 @@
 
 All notable changes across Switchboard development sessions. Reverse-chronological.
 
+## 0.8.63 - A retired model says so
+
+### Changed
+- **A picked model the provider no longer offers is announced, before and after the send.** The composer checks the chat's pick against the live (or last cached live) catalog and warns above the input, with a Use default button. If a message goes out anyway, the adapter falls back to the provider default and posts a notice in the chat, on the desktop and the phone. Claude used to send the retired id on every turn and fail each time; Codex used to fall back with only a log line.
+- **One reconcile function for the composer and the adapters.** `reconcileSelectedModel`, the exact-match rule and Claude's alias rules moved to `src/shared/model-reconcile.ts`, so the warning and the fallback can never disagree. The Claude adapter now reconciles too, which the 0.8.53 notes already claimed and which only Codex did: when the live catalog arrives, and before each query starts, it switches a running session to the default with the SDK's `setModel(undefined)`.
+
 ## 0.8.62 - Audit cleanup: one model path, one vocabulary, no dead agent
 
 ### Fixed

@@ -10,6 +10,7 @@ import {
   type DraftPayload,
   type ImageAttachment,
 } from '../../stores/draft-store'
+import { coversFor, reconcileSelectedModel } from '@shared/model-reconcile'
 import {
   modelsForAgent,
   REASONING_EFFORTS,
@@ -226,6 +227,11 @@ export function ChatInput({
   }, [agentType, sessionId, sessionIsActive, persistDynamicModels])
 
   const models = dynamicModels && dynamicModels.length > 0 ? dynamicModels : staticModels
+  // Checked against the live (or last cached live) catalog only: the static
+  // list is not evidence that a model was retired.
+  const pickUnavailable = Boolean(model)
+    && Boolean(dynamicModels?.length)
+    && !reconcileSelectedModel(model, { models: dynamicModels ?? [] }, coversFor(agentType))
 
   // Per-session draft - reads from store, updates on every keystroke
   const draft = useDraftStore((s) => (sessionId ? s.drafts[sessionId] ?? '' : ''))
@@ -1361,6 +1367,40 @@ export function ChatInput({
         }}
         style={{ display: 'none' }}
       />
+
+      {/* Before the send: a retired pick would otherwise fall back silently. */}
+      {pickUnavailable && (
+        <div
+          data-model-unavailable-warning
+          style={{
+            display: 'flex',
+            gap: '8px',
+            alignItems: 'center',
+            margin: '0 0 6px',
+            padding: '7px 9px',
+            fontSize: '11px',
+            lineHeight: 1.45,
+            color: 'var(--text-secondary)',
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--warning)',
+            borderRadius: 'var(--radius)',
+          }}
+        >
+          <span aria-hidden style={{ color: 'var(--warning)', fontWeight: 600 }}>!</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            {model} is not available on this account any more. Your next message uses the default model, or pick another one.
+          </span>
+          {onModelChange && (
+            <button
+              type="button"
+              onClick={() => onModelChange('')}
+              style={{ border: 0, background: 'none', color: 'var(--accent)', cursor: 'pointer', fontSize: '11px', whiteSpace: 'nowrap' }}
+            >
+              Use default
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Shown before the send: the plan windows read normal in this case. */}
       {spendBlock && (

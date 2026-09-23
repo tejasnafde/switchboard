@@ -20,6 +20,8 @@
  */
 import type { ModelOption } from '@shared/models'
 
+export { reconcileSelectedModel, exactRow, type RowCovers } from '@shared/model-reconcile'
+
 export interface CatalogCache {
   models: ModelOption[]
   /** Identity of the executable that produced this list (see managed-bin). */
@@ -45,45 +47,3 @@ export function commitCatalog(
   if (models.length === 0) return cache
   return { models, identity }
 }
-
-/**
- * The model id to actually put on a Codex `thread/start`/`turn/start` request,
- * and the shared answer to "is this selection still supported?".
- *
- * A selection made before the live catalog existed - a persisted picker
- * choice, or the static list's default - must not go on being sent once the
- * live catalog no longer offers it: nothing else in this path ever revisits
- * that choice, so a dropped or renamed model would otherwise ride every turn
- * indefinitely. Once a live catalog exists, an id NO ROW COVERS is dropped so
- * the CLI's own default takes over; before that (no live catalog fetched yet
- * for this session), the selection passes through unchanged - there is no
- * live evidence to contradict it.
- *
- * "Covers", not "equals". A live Claude catalog is a list of ALIASES, not the
- * set of ids the CLI accepts. Claude Agent SDK 0.3.260 on roster-dev returned
- * `default`, `opus[1m]`, `claude-fable-5[1m]`, `sonnet`, `haiku` - yet an
- * explicit `claude-sonnet-5` turn completed on that same session. Exact-id
- * matching therefore cleared a selection the provider had just honoured, and
- * did it silently. The Claude rules live in claude-model-alias.ts and are
- * passed in as `covers`; the default is an exact match.
- *
- * The selection is returned VERBATIM when kept - never rewritten to the row
- * that covered it. `sonnet` and `claude-sonnet-5` are different requests (the
- * alias floats to whatever the account resolves it to), and the user picked
- * one of them.
- */
-export function reconcileSelectedModel(
-  selected: string | undefined,
-  cache: CatalogCache | null,
-  covers: RowCovers = exactRow,
-): string | undefined {
-  if (!selected) return selected
-  if (!cache || cache.models.length === 0) return selected
-  return cache.models.some((m) => covers(m, selected)) ? selected : undefined
-}
-
-/** Does this catalog row vouch for `selected`? Provider-specific. */
-export type RowCovers = (row: ModelOption, selected: string) => boolean
-
-/** Exact ids only: right for Codex, whose rows are the ids it accepts. */
-export const exactRow: RowCovers = (row, selected) => row.id === selected

@@ -820,6 +820,7 @@ export class CodexAdapter implements ProviderAdapter {
     const reconciledModel = reconcileSelectedModel(active.session.model, active.models)
     if (active.session.model && !reconciledModel) {
       log.warn(`codex model ${active.session.model} is no longer in the live catalog for ${threadId} - clearing it so the CLI default takes over`)
+      active.onEvent({ type: 'model.unavailable', threadId, model: active.session.model })
     }
     active.session.model = reconciledModel
 
