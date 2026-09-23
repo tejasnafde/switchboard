@@ -49,7 +49,6 @@ function readWindow(
   raw: unknown,
   id: string,
   labelPrefix: string,
-  forceCritical: boolean,
 ): UsageWindow | null {
   if (!isRecord(raw)) return null
   const percent = toPercent(raw.usedPercent)
@@ -65,7 +64,6 @@ function readWindow(
     percent,
     resetsAtMs: unixSecondsToMs(raw.resetsAt),
     windowMinutes: minutes,
-    forceCritical,
   })
 }
 
@@ -80,10 +78,20 @@ function readSnapshot(
   const windowReached = reached !== null && !reached.toLowerCase().includes('credits_depleted')
 
   const windows: UsageWindow[] = []
-  const primary = readWindow(snapshot.primary, `${key}_primary`, labelPrefix, windowReached)
+  const primary = readWindow(snapshot.primary, `${key}_primary`, labelPrefix)
   if (primary) windows.push(primary)
-  const secondary = readWindow(snapshot.secondary, `${key}_secondary`, labelPrefix, windowReached)
+  const secondary = readWindow(snapshot.secondary, `${key}_secondary`, labelPrefix)
   if (secondary) windows.push(secondary)
+  // The reached flag is per account and does not name the window. Redden the
+  // window that is full (or the fullest one), not every window: a weekly
+  // window at 16% must not turn red because the 5-hour window hit 100%.
+  if (windowReached && windows.length > 0) {
+    const full = windows.filter((w) => (w.usedPercent ?? 0) >= 100)
+    const hit = full.length > 0
+      ? full
+      : [windows.reduce((a, b) => ((b.usedPercent ?? 0) > (a.usedPercent ?? 0) ? b : a))]
+    for (const w of hit) w.severity = 'critical'
+  }
 
   // A spend control is a hard cap rather than a rolling window, but it
   // consumes the same visual row.
