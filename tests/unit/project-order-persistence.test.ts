@@ -53,7 +53,8 @@ describe('project ordering database contract', () => {
   })
 
   it('validates and rewrites the complete project organization in one transaction', () => {
-    const organizer = projects.slice(projects.indexOf('export function organizeProjects'))
+    const start = projects.indexOf('export function organizeProjects')
+    const organizer = projects.slice(start, projects.indexOf('\n}\n', start))
     expect(organizer).toContain('db.transaction')
     expect(organizer).toContain('Project list changed while it was being reordered')
     expect(organizer).toContain('UPDATE projects SET workspace_id = ?, sort_order = ?')

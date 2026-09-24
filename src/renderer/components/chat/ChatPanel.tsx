@@ -451,7 +451,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       finishRuntimeEventLifecycle(event, messageLifecycle)
     })
     return () => removeProvider()
-  }, [appendMessage, updateMessage, updateStatus, setTitle])
+  }, [])
 
   // ── Approval handler ──────────────────────────────────────────
   // Rejections propagate to the card so it can re-enable its buttons.

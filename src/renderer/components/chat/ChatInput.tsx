@@ -1168,7 +1168,8 @@ export function ChatInput({
   // RichChatTextarea's `onEnter` prop instead.
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      const slashMatches = slashQuery === null ? null : filterSlashCommands(slashQuery, mergedCommands)
+      // An open @-mention picker claims or passes every key before the slash menu is consulted.
+      const slashMatches = slashQuery === null || atQuery !== null ? null : filterSlashCommands(slashQuery, mergedCommands)
       const action = resolvePickerKeydown(e, {
         sendToMatches: sendToQuery === null ? null : sendToMatches.length,
         atMatches: atQuery === null ? null : atMatches.length,
@@ -1176,7 +1177,7 @@ export function ChatInput({
       })
       if (!action) return
       e.preventDefault()
-      if (action.op === 'pick' && action.menu !== 'send-to') e.stopPropagation()
+      if ('stopPropagation' in action) e.stopPropagation()
       if (action.menu === 'send-to') {
         if (action.op === 'move') {
           const delta = action.delta
