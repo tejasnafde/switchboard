@@ -9,9 +9,9 @@
  */
 export type PickerKeyAction =
   | { menu: 'send-to'; op: 'move'; delta: 1 | -1 }
-  | { menu: 'send-to'; op: 'pick' | 'dismiss' }
+  | { menu: 'send-to'; op: 'dismiss' }
   | { menu: 'at' | 'slash'; op: 'next' | 'prev' | 'dismiss' }
-  | { menu: 'at' | 'slash'; op: 'pick'; stopPropagation: true }
+  | { menu: 'send-to' | 'at' | 'slash'; op: 'pick'; stopPropagation: true }
 
 export interface PickerKeyState {
   /** Match count when the send-to picker is open, else null. */
@@ -30,7 +30,9 @@ export function resolvePickerKeydown(
   if (state.sendToMatches !== null && state.sendToMatches > 0) {
     if (e.key === 'ArrowDown') return { menu: 'send-to', op: 'move', delta: 1 }
     if (e.key === 'ArrowUp') return { menu: 'send-to', op: 'move', delta: -1 }
-    if (isPick) return { menu: 'send-to', op: 'pick' }
+    // Lexical ignores defaultPrevented, so a pick that only prevented default
+    // also reached its Enter handler and sent the half-typed `/send-to`.
+    if (isPick) return { menu: 'send-to', op: 'pick', stopPropagation: true }
     if (e.key === 'Escape') return { menu: 'send-to', op: 'dismiss' }
   }
 

@@ -15,8 +15,8 @@ describe('resolvePickerKeydown', () => {
     const s = { sendToMatches: 2, atMatches: 3, slashMatches: 3 }
     expect(resolvePickerKeydown(k('ArrowDown'), s)).toEqual({ menu: 'send-to', op: 'move', delta: 1 })
     expect(resolvePickerKeydown(k('ArrowUp'), s)).toEqual({ menu: 'send-to', op: 'move', delta: -1 })
-    expect(resolvePickerKeydown(k('Enter'), s)).toEqual({ menu: 'send-to', op: 'pick' })
-    expect(resolvePickerKeydown(k('Tab'), s)).toEqual({ menu: 'send-to', op: 'pick' })
+    expect(resolvePickerKeydown(k('Enter'), s)).toEqual({ menu: 'send-to', op: 'pick', stopPropagation: true })
+    expect(resolvePickerKeydown(k('Tab'), s)).toEqual({ menu: 'send-to', op: 'pick', stopPropagation: true })
     expect(resolvePickerKeydown(k('Escape'), s)).toEqual({ menu: 'send-to', op: 'dismiss' })
   })
 

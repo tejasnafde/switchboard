@@ -1,5 +1,8 @@
 import Database from 'better-sqlite3'
+import { createMainLogger as createLogger } from '../logger'
 import { getDb } from './database'
+
+const log = createLogger('db')
 
 // ─── Bookmarks (save-for-later on messages) ─────────────────────
 
@@ -53,14 +56,20 @@ export function saveBookmark(params: {
       params.agentType, params.messageRole, params.contentExcerpt, params.messageTimestamp,
     )
     return { ok: true }
-  } catch { return { ok: false } }
+  } catch (err) {
+    log.warn(`saveBookmark failed for ${params.id}`, err)
+    return { ok: false }
+  }
 }
 
 export function removeBookmark(id: string): { ok: boolean } {
   try {
     getDb().prepare('DELETE FROM bookmarks WHERE id = ?').run(id)
     return { ok: true }
-  } catch { return { ok: false } }
+  } catch (err) {
+    log.warn(`removeBookmark failed for ${id}`, err)
+    return { ok: false }
+  }
 }
 
 export function listBookmarks(): BookmarkRow[] {
