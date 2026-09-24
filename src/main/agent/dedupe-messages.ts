@@ -40,7 +40,7 @@ export function dedupeMessagesById(messages: ChatMessage[]): DedupeResult {
   return { messages: out, removed, conflicts }
 }
 
-const LEGACY_ID_MATCH_WINDOW_MS = 60_000
+export const LEGACY_ID_MATCH_WINDOW_MS = 60_000
 
 /**
  * Merge provider-owned history with Switchboard's SQLite mirror.
@@ -69,8 +69,23 @@ export function mergeConversationMessages(
   const candidateCursor = new Map<string, number>()
   const matchedDiskIndexes = new Set<number>()
   const databaseOnly: ChatMessage[] = []
+  // SQLite too: a user line the transcript lost or hides must still end the
+  // previous turn, or the range below would reach into it.
+  const userTimes = [...disk, ...databaseMessages]
+    .filter((message) => message.role === 'user')
+    .map((message) => message.timestamp)
+    .sort((a, b) => a - b)
+  let userCursor = 0
 
   for (const message of [...databaseMessages].sort((a, b) => a.timestamp - b.timestamp)) {
+    while (userCursor < userTimes.length && userTimes[userCursor] <= message.timestamp) userCursor++
+    // Assistant mirror rows written before 2026-09-24 carry the TURN END time,
+    // so an interim text can sit minutes before its row. Anywhere in the same
+    // turn (after the last user message) still counts as the same message.
+    const turnStart = message.role === 'assistant' && userCursor > 0
+      ? userTimes[userCursor - 1]
+      : Infinity
+    const lowerBound = Math.min(message.timestamp - LEGACY_ID_MATCH_WINDOW_MS, turnStart)
     const exactIndex = diskIndexesById.get(message.id)
     if (exactIndex !== undefined) {
       disk[exactIndex] = enrichDiskMessage(disk[exactIndex], message)
@@ -82,7 +97,7 @@ export function mergeConversationMessages(
     let cursor = candidateCursor.get(key) ?? 0
     while (cursor < candidates.length && (
       matchedDiskIndexes.has(candidates[cursor].index)
-      || candidates[cursor].timestamp < message.timestamp - LEGACY_ID_MATCH_WINDOW_MS
+      || candidates[cursor].timestamp < lowerBound
     )) {
       cursor++
     }

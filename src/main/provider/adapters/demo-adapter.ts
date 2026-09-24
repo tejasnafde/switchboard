@@ -13,11 +13,21 @@
  *   - text mentions the state check -> a real edit to src/api/auth.ts in the
  *                           session cwd, so the registry's git checkpoint
  *                           emits a genuine `file.edited` (FileDiffCard)
+ *   - text mentions "render order" -> reasoning, interim text, a tool that
+ *                           runs past the reload merge's 60s window, then the
+ *                           answer (e2e/chat-render-order.e2e.mjs)
  *   - anything else      -> a short two-sentence reply
+ *
+ * With `SB_DEMO_CLAUDE_TRANSCRIPT_DIR` set, the claude adapter also appends a
+ * Claude Code shaped JSONL under that config dir, so a reload exercises the
+ * same disk + SQLite merge a real Claude chat does.
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
-import { existsSync, writeFileSync } from 'fs'
+import { randomUUID } from 'crypto'
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
+import { encodeClaudeProjectPath } from '../../projects/session-scanner'
+import { LEGACY_ID_MATCH_WINDOW_MS } from '../../agent/dedupe-messages'
 import type { ProviderAdapter, ProviderSession, SessionStartOpts } from '../types'
 import type {
   ApprovalDecision,
@@ -66,7 +76,11 @@ interface DemoSession {
   cwd: string
   runtimeMode: RuntimeMode
   cancelled: boolean
+  /** Claude-shaped transcript this session appends to, when enabled. */
+  transcript?: string
 }
+
+const LONG_TOOL_MS = LEGACY_ID_MATCH_WINDOW_MS + 1_000
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -83,6 +97,12 @@ export class DemoAdapter implements ProviderAdapter {
       runtimeMode: opts.runtimeMode ?? 'sandbox',
       running: Promise.resolve(),
       cancelled: false,
+    }
+    const transcriptRoot = process.env.SB_DEMO_CLAUDE_TRANSCRIPT_DIR
+    if (transcriptRoot && this.provider === 'claude') {
+      const dir = join(transcriptRoot, 'projects', encodeClaudeProjectPath(opts.cwd))
+      mkdirSync(dir, { recursive: true })
+      session.transcript = join(dir, `demo-${opts.threadId}.jsonl`)
     }
     this.sessions.set(opts.threadId, session)
     onEvent({ type: 'status', threadId: opts.threadId, status: 'connecting' })
@@ -127,6 +147,8 @@ export class DemoAdapter implements ProviderAdapter {
     const emit = (event: RuntimeEvent): void => {
       if (!session.cancelled) session.onEvent(event)
     }
+    // Written when the message runs, as Claude does for a queued one.
+    this.record(session, 'user', [{ type: 'text', text: message }])
     emit({ type: 'status', threadId, status: 'running' })
     await sleep(500)
 
@@ -154,6 +176,12 @@ export class DemoAdapter implements ProviderAdapter {
         session,
         'Done. The callback now rejects an expired state before any network call. Review the diff below and accept or reject each hunk.',
       )
+    } else if (/render order/i.test(message)) {
+      emit({ type: 'content', threadId, messageId: `demo_think_${++this.seq}`, streamKind: 'reasoning', text: 'Weighing where the order could break.' })
+      await sleep(300)
+      await this.say(threadId, session, 'Interim note: checking the reload path first.')
+      await this.tool(threadId, session, 'Bash', { command: 'sleep 61' }, 'ok', undefined, LONG_TOOL_MS)
+      await this.say(threadId, session, 'Final answer: the order holds.')
     } else {
       await this.say(
         threadId,
@@ -176,6 +204,7 @@ export class DemoAdapter implements ProviderAdapter {
       session.onEvent({ type: 'content', threadId, messageId, streamKind: 'assistant', text: chunk, append: i > 0 })
       await sleep(28)
     }
+    this.record(session, 'assistant', [{ type: 'text', text }])
     await sleep(320)
   }
 
@@ -186,14 +215,23 @@ export class DemoAdapter implements ProviderAdapter {
     input: unknown,
     output?: string,
     sideEffect?: () => void,
+    durationMs = 520,
   ): Promise<void> {
     if (session.cancelled) return
     const toolId = `demo_tool_${++this.seq}`
     session.onEvent({ type: 'tool.started', threadId, toolId, toolName, input })
-    await sleep(520)
+    this.record(session, 'assistant', [{ type: 'tool_use', id: toolId, name: toolName, input }])
+    await sleep(durationMs)
     sideEffect?.()
     session.onEvent({ type: 'tool.completed', threadId, toolId, output })
     await sleep(260)
+  }
+
+  /** One transcript line, stamped when written, as Claude Code does. */
+  private record(session: DemoSession, type: 'user' | 'assistant', content: unknown[]): void {
+    if (!session.transcript) return
+    const line = { type, uuid: randomUUID(), timestamp: new Date().toISOString(), message: { role: type, content } }
+    appendFileSync(session.transcript, `${JSON.stringify(line)}\n`)
   }
 
   async interruptTurn(threadId: string): Promise<void> {

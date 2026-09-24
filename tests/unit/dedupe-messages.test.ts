@@ -154,6 +154,50 @@ describe('mergeConversationMessages', () => {
     expect(merge(disk, database)).toHaveLength(2)
   })
 
+  // Timestamps from a real Claude turn (2026-09). The registry mirrored every
+  // assistant message of the turn at turn end, so the interim texts carried a
+  // SQLite timestamp 94s and 191s after their JSONL copy. They missed the
+  // window, came back as SQLite-only rows, and sorted below the final answer.
+  it('matches mirror rows stamped at turn end to their JSONL copies in the same turn', () => {
+    const disk = [
+      msg('u', { role: 'user', content: 'finish it', timestamp: 1_790_195_600_000 }),
+      msg('d1', { content: 'The whole flow passes.', timestamp: 1_790_195_728_763 }),
+      msg('d2', { content: 'Committed on the branch.', timestamp: 1_790_195_826_233 }),
+      msg('d3', { content: 'The web app now runs.', timestamp: 1_790_195_919_936 }),
+    ]
+    const database = [
+      msg('turn_1', { role: 'user', content: 'finish it', timestamp: 1_790_195_600_010 }),
+      msg('msg_a', { content: 'The whole flow passes.', timestamp: 1_790_195_920_122 }),
+      msg('msg_b', { content: 'Committed on the branch.', timestamp: 1_790_195_920_122 }),
+      msg('msg_c', { content: 'The web app now runs.', timestamp: 1_790_195_920_122 }),
+    ]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['u', 'd1', 'd2', 'd3'])
+  })
+
+  it('does not match a mirror row to an equal message from an earlier turn', () => {
+    const disk = [
+      msg('d1', { content: 'Done.', timestamp: 1_000 }),
+      msg('u2', { role: 'user', content: 'again', timestamp: 200_000 }),
+    ]
+    const database = [msg('msg_x', { content: 'Done.', timestamp: 400_000 })]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['d1', 'u2', 'msg_x'])
+  })
+
+  it('ends a turn at a SQLite user row when the transcript lacks that user line', () => {
+    const disk = [
+      msg('u1', { role: 'user', content: 'first', timestamp: 0 }),
+      msg('d1', { content: 'Done.', timestamp: 1_000 }),
+    ]
+    const database = [
+      msg('turn_2', { role: 'user', content: 'second', timestamp: 300_000 }),
+      msg('msg_b', { content: 'Done.', timestamp: 400_000 }),
+    ]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'turn_2', 'msg_b'])
+  })
+
   it('reconciles a large legacy transcript without scanning the full disk list per row', () => {
     const disk = Array.from({ length: 20_000 }, (_, index) =>
       msg(`disk-${index}`, { content: `turn-${index}`, timestamp: index * 100_000 }))

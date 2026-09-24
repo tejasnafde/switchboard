@@ -293,7 +293,7 @@ export class ProviderRegistry implements PeerToolHost {
    * Claude Code prunes and rotates. Persisted here, not in ChatPanel, for the
    * same reason as the error card above: a headless server has no window.
    */
-  private pendingAssistantText = new Map<string, Map<string, string>>()
+  private pendingAssistantText = new Map<string, Map<string, { text: string; at: number }>>()
 
   /** Fold one content delta into the in-flight turn buffer. */
   private bufferAssistantText(event: RuntimeEvent): void {
@@ -303,10 +303,14 @@ export class ProviderRegistry implements PeerToolHost {
       byMessage = new Map()
       this.pendingAssistantText.set(event.threadId, byMessage)
     }
-    byMessage.set(
-      event.messageId,
-      applyContentText(byMessage.get(event.messageId), { text: event.text, append: event.append }),
-    )
+    const pending = byMessage.get(event.messageId)
+    byMessage.set(event.messageId, {
+      text: applyContentText(pending?.text, { text: event.text, append: event.append }),
+      // Last chunk, not flush time: a reload sorts by it and matches it to the
+      // transcript line written when the message finished. Stamping the whole
+      // turn at its end put interim text below the answer.
+      at: Date.now(),
+    })
   }
 
   /** Mirror the finished turn's assistant messages, then drop the buffer. */
@@ -314,10 +318,10 @@ export class ProviderRegistry implements PeerToolHost {
     const byMessage = this.pendingAssistantText.get(threadId)
     this.pendingAssistantText.delete(threadId)
     if (!byMessage) return
-    for (const [messageId, text] of byMessage) {
+    for (const [messageId, { text, at }] of byMessage) {
       if (!text.trim()) continue
       try {
-        saveMessageIfAbsent(messageId, threadId, 'assistant', text)
+        saveMessageIfAbsent(messageId, threadId, 'assistant', text, undefined, undefined, at)
       } catch (err) {
         log.warn(`failed to mirror assistant message ${messageId} for ${threadId}: ${err}`)
       }

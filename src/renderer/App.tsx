@@ -1376,6 +1376,7 @@ export function App() {
              back to state on the next commit. See layout-store.ts. */}
         <div
           ref={sidebarRef}
+          data-testid="app-sidebar"
           style={{
             width: sidebarVisible ? `${sidebarWidth}px` : '0px',
             visibility: sidebarVisible ? 'visible' : 'hidden',
