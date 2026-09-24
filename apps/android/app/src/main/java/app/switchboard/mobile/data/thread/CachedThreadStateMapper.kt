@@ -81,6 +81,10 @@ object CachedThreadStateMapper {
                     .orEmpty()
                     .mapNotNull(::decodeImage),
                 pillsMeta = decodeMessagePills(value.values["pillsMeta"]),
+                // ponytail: caches written before the flag existed treat history rows
+                // as transcript; a typed one starting with a marker is misread once,
+                // until the next history load reseeds the feed.
+                fromTranscript = value.boolean("fromTranscript") ?: id.startsWith("h-"),
             )
 
             "text" -> FeedItem.Text(

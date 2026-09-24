@@ -13,6 +13,7 @@
 import type { OverageScope } from './claude-rate-limit'
 import type { PeerMessageInitiator } from './peer-messaging'
 import { stripHandoffPreamble } from './handoff'
+import { splitSyntheticUserText } from './synthetic-message'
 import type { AgentProvider } from './types'
 
 export type ProviderSessionStatus =
@@ -410,39 +411,21 @@ export function canonicalUserTurnSubmission(input: unknown): string {
   })
 }
 
-const SYNTHETIC_USER_BLOCKS: ReadonlyArray<{
-  start: string
-  end: string
-}> = [
-  { start: '<recommended_plugins>', end: '</recommended_plugins>' },
-  { start: '# AGENTS.md instructions for ', end: '</INSTRUCTIONS>' },
-  { start: '<environment_context>', end: '</environment_context>' },
-]
-
 /**
  * Resolve the body a human should see for a submitted user turn.
  *
  * Some clients send a provider-only wrapper while persisting a separate
  * display body. Provider bootstraps can also surface as user-role transcript
- * entries; only an entire sequence of known generated blocks is filtered, so
- * ordinary prompts that mention one of the markers stay visible.
+ * entries; a message made only of generated context blocks is filtered.
+ * Anything with a row-worthy block (a task notification, an interrupt) or real
+ * text comes back whole, and the surface splits it with `splitSyntheticUserText`.
  */
 export function visibleUserMessageText(text: string, displayBody?: string): string | null {
   if (displayBody !== undefined) return displayBody
   const handoffBody = stripHandoffPreamble(text)
   if (handoffBody !== text) return handoffBody
-  let remaining = text.trim()
-  if (!remaining) return text
-  let matched = false
-  while (remaining) {
-    const block = SYNTHETIC_USER_BLOCKS.find(({ start }) => remaining.startsWith(start))
-    if (!block) return text
-    const end = remaining.indexOf(block.end)
-    if (end < 0) return text
-    matched = true
-    remaining = remaining.slice(end + block.end.length).trimStart()
-  }
-  return matched ? null : text
+  const split = splitSyntheticUserText(text)
+  return split && split.parts.length === 0 && !split.userText ? null : text
 }
 
 export interface RuntimeContentEvent {

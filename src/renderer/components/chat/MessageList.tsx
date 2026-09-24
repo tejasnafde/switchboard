@@ -6,6 +6,7 @@ import { useAgentStore } from '../../stores/agent-store'
 import { useSkillStore } from '../../stores/skill-store'
 import { useLayoutStore } from '../../stores/layout-store'
 import { activitySummaryLabel, changedFilesLabel, findCollapsedFilesGroupKey, isFilesGroupExpanded, projectTurnPresentation } from './turnPresentation'
+import { isSyntheticOnlyMessage } from './SyntheticUserRow'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -507,8 +508,8 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
               group={group}
               measureElement={virtualizer.measureElement}
             >
-              {/* Turn role label */}
-              <div style={{
+              {/* Turn role label. A group of provider-generated user rows is not "You". */}
+              {!(isUser && group.every(isSyntheticOnlyMessage)) && <div style={{
                 padding: '4px 16px 0',
                 fontSize: '11px',
                 color: isSystem ? 'var(--warning)' : 'var(--text-muted)',
@@ -516,7 +517,7 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
                 textAlign: isUser ? 'right' : 'left',
               }}>
                 {roleLabel(role, agentType)}
-              </div>
+              </div>}
 
               {/* Preserve message objects and handlers while lowering the
                   default prominence of implementation detail. */}

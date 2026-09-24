@@ -14,6 +14,7 @@
  */
 import type { ChatMessage } from '@shared/types'
 import { turnPreviewLine, type PreviewMessage } from '@shared/turn-preview'
+import { isSyntheticOnlyUserText } from '@shared/synthetic-message'
 
 export function sessionPreviewLine(messages: ChatMessage[]): string | undefined {
   return turnPreviewLine(
@@ -21,7 +22,8 @@ export function sessionPreviewLine(messages: ChatMessage[]): string | undefined 
       (message): PreviewMessage => ({
         text: message.content,
         isAssistant: message.role === 'assistant',
-        isUser: message.role === 'user',
+        // A background-task notification is not a turn boundary for the preview.
+        isUser: message.role === 'user' && (message.displayBody !== undefined || !isSyntheticOnlyUserText(message.content)),
       }),
     ),
   )

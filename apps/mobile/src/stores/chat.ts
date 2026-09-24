@@ -20,6 +20,8 @@ import type {
 } from '@shared/provider-events'
 import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
+import type { SyntheticUserPart } from '@shared/synthetic-message'
+import { splitLegacyCachedItems } from '../lib/threadHistory'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -33,6 +35,8 @@ export type FeedItem =
   | { kind: 'error'; id: string; message: string }
   /** Non-agent row the UI inserts itself, e.g. "showing last N of M messages". */
   | { kind: 'notice'; id: string; text: string }
+  /** Provider-generated user-role block, e.g. a background-task notification. */
+  | { kind: 'synthetic'; id: string; part: SyntheticUserPart }
 
 export interface ThreadState {
   items: FeedItem[]
@@ -282,12 +286,13 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           const id = echoMessageId(event.origin ?? String(event.at))
           if (t.items.some((i) => i.id === id)) return {}
           const text = visibleUserMessageText(event.text, event.displayBody)
-          if (text === null) return {}
           const images = event.images?.map((image) => image.url)
+          // Context-only text is hidden, but images sent with it still show.
+          if (text === null && !images?.length) return {}
           return {
             items: [
               ...t.items,
-              { kind: 'user', id, text, at: event.at, images: images?.length ? images : undefined },
+              { kind: 'user', id, text: text ?? '', at: event.at, images: images?.length ? images : undefined },
             ],
           }
         }
@@ -549,6 +554,17 @@ export const useChatStore = create<ChatState>()(
     {
       name: 'sb-chat-cache',
       storage: createJSONStorage(() => cacheStorage),
+      // 1: history user rows are split into synthetic rows (splitLegacyCachedItems).
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = persisted as { threads?: Record<string, ThreadState> }
+        if (version >= 1 || !state?.threads) return state
+        return {
+          threads: Object.fromEntries(
+            Object.entries(state.threads).map(([key, t]) => [key, { ...t, items: splitLegacyCachedItems(t.items ?? []) }]),
+          ),
+        }
+      },
       // Only the feeds. activeKey and staleGeneration describe this run.
       partialize: (s) => ({ threads: prunePersistedThreads(s.threads) }),
       onRehydrateStorage: () => (state) => {

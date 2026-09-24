@@ -160,6 +160,7 @@ object ThreadSnapshotCacheCodec {
             "id" to JsonString(item.id),
             "text" to JsonString(item.text),
             "at" to JsonNumber(item.at.toString()),
+            "fromTranscript" to JsonBoolean(item.fromTranscript),
             "images" to JsonArray(item.images.map { image ->
                 jsonObject(
                     "url" to JsonString(image.url),

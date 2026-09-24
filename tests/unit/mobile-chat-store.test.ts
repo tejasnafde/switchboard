@@ -190,6 +190,19 @@ describe('user.message echo', () => {
     expect(useChatStore.getState().threads[KEY].items.filter((i) => i.kind === 'user')).toHaveLength(1)
   })
 
+  it('keeps the images of a context-only turn, with empty text', () => {
+    useChatStore.getState().ingestNow('c1', {
+      type: 'user.message',
+      threadId: 't1',
+      text: '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>',
+      images: [{ url: 'data:image/png;base64,AAA' }],
+      origin: 'other',
+      at: 1,
+    })
+    const users = useChatStore.getState().threads[KEY].items.filter((i) => i.kind === 'user')
+    expect(users).toEqual([expect.objectContaining({ text: '', images: ['data:image/png;base64,AAA'] })])
+  })
+
   it('still shows a turn sent from another device', () => {
     useChatStore.getState().ingestNow('c1', {
       type: 'user.message',
