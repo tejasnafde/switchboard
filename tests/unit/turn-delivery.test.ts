@@ -88,3 +88,13 @@ describe('queued turn accounting', () => {
     expect(promoteUnavailableReason('opencode')).toMatch(/OpenCode/)
   })
 })
+
+import { runningPlaceholder } from '@shared/turn-delivery'
+
+describe('running placeholder', () => {
+  it('names the Enter behaviour the user chose, and the other key', () => {
+    expect(runningPlaceholder('claude-code', 'steer')).toBe('Steer the agent, or ⌥Enter to queue for after this turn…')
+    expect(runningPlaceholder('codex', 'queue')).toBe('Queue a follow-up, or ⌥Enter to steer the agent now…')
+    expect(runningPlaceholder('opencode', 'steer')).toBe('Queue a follow-up… it sends when this turn ends.')
+  })
+})

@@ -22,6 +22,8 @@ import { applyContentText, mergeContentChunks } from '@shared/content-stream'
 import { echoMessageId, visibleUserMessageText } from '@shared/provider-events'
 import type { SyntheticUserPart } from '@shared/synthetic-message'
 import { splitLegacyCachedItems } from '../lib/threadHistory'
+import { applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
+import type { QueuedTurnSummary } from '@shared/turn-delivery'
 
 export type FeedItem =
   | { kind: 'user'; id: string; text: string; at: number; images?: string[] }
@@ -61,6 +63,8 @@ export interface ThreadState {
    *  on an EMPTY feed, so without this a cached thread looks already-loaded and
    *  the app opens on yesterday's transcript with live events appended. */
   cached?: boolean
+  /** Messages the backend holds until the running turn ends, by feed row id. Not cached. */
+  heldTurns?: QueuedTurnsByMessage
 }
 
 /** The cache shows the last thing you were reading offline; it is not an
@@ -79,8 +83,9 @@ export function prunePersistedThreads(
     .slice(0, maxThreads)
   const out: Record<string, ThreadState> = {}
   for (const [key, thread] of keep) {
+    const { heldTurns: _held, ...rest } = thread
     out[key] = {
-      ...thread,
+      ...rest,
       // The tail, because a feed renders newest-last and that is what the user
       // was looking at.
       items: thread.items.length > maxItems ? thread.items.slice(-maxItems) : thread.items,
@@ -116,6 +121,8 @@ interface ChatState {
   seedItems: (key: string, items: FeedItem[], keepIds?: string[]) => void
   /** Remove an optimistic user bubble whose message will never be sent. */
   removeUserMessage: (key: string, id: string) => void
+  /** Replace the held messages with what the backend lists. */
+  setHeldTurns: (key: string, turns: readonly QueuedTurnSummary[]) => void
   /** Queued: coalesced and applied on the next flush tick. */
   ingest: (connectionId: string, event: RuntimeEvent) => void
   /** Unbatched single-event apply. Used by the flush path and by tests. */
@@ -152,6 +159,8 @@ const FLUSH_IMMEDIATELY: ReadonlySet<RuntimeEvent['type']> = new Set([
   'question.answered',
   'plan.proposed',
   'turn.completed',
+  'turn.queued',
+  'turn.dequeued',
   'error',
   'status',
 ])
@@ -399,7 +408,17 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           }
         }
         case 'status':
-          return { status: event.status }
+          return { status: event.status, heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event) }
+        case 'turn.queued':
+          return { heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event) }
+        case 'turn.dequeued': {
+          const heldTurns = applyQueuedTurnEvent(t.heldTurns ?? {}, event)
+          // A cancelled message never reached the agent: its bubble goes, on
+          // every client, live or reloaded from history.
+          if (event.reason !== 'cancelled') return { heldTurns }
+          const gone = new Set([event.messageId, `h-${event.messageId}`])
+          return { heldTurns, items: t.items.filter((i) => !(i.kind === 'user' && gone.has(i.id))) }
+        }
         case 'session.provider':
           return {
             provider: event.provider,
@@ -508,6 +527,9 @@ export const useChatStore = create<ChatState>()(
 
   removeUserMessage: (key, id) =>
     set((s) => ({ threads: patchThread(s.threads, key, (t) => ({ items: t.items.filter((i) => i.id !== id) })) })),
+
+  setHeldTurns: (key, turns) =>
+    set((s) => ({ threads: patchThread(s.threads, key, () => ({ heldTurns: seedQueuedTurns(turns) })) })),
 
   seedItems: (key, items, keepIds) =>
     // Clearing `cached` is the point: this feed now came from the backend.

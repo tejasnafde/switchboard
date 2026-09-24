@@ -20,7 +20,7 @@ import { ForkLineageBanner } from './ForkLineageBanner'
 import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { isDraftSessionId } from '@shared/new-chat-draft'
-import { canSteer } from '@shared/turn-delivery'
+import { runningPlaceholder } from '@shared/turn-delivery'
 import { materializeDraft, takeFirstSend } from '../../services/draftChat'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import {
@@ -100,6 +100,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const slotSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).own)
   const focusedChatSlot = useLayoutStore((state) => state.focusedChatSlot)
   const focusChatSlot = useLayoutStore((state) => state.focusChatSlot)
+  const followUpDefault = useLayoutStore((state) => state.followUpDefault)
   const activeSession = useAgentStore((s) => {
     const resolvedId = sessionIdOverride ?? (chatSlot ? slotSessionId : s.activeSessionId)
     return s.sessions.find((sess) => sess.id === resolvedId)
@@ -1248,9 +1249,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
             : !hasSession
               ? 'Click "+ New Chat" or select a session to start...'
               : status === 'running' || status === 'thinking'
-                ? canSteer(activeSession?.type)
-                  ? 'Steer the agent, or ⌥Enter to queue for after this turn…'
-                  : 'Queue a follow-up… it sends when this turn ends.'
+                ? runningPlaceholder(activeSession?.type, followUpDefault)
                 : 'Message the agent...'
         }
         agentType={agentType}

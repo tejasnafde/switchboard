@@ -63,6 +63,14 @@ export function sendAction(provider: string | undefined | null, running: boolean
   }
 }
 
+/** The composer placeholder while a turn runs; it follows the default too. */
+export function runningPlaceholder(provider: string | undefined | null, preferred: TurnDelivery): string {
+  if (!canSteer(provider)) return 'Queue a follow-up… it sends when this turn ends.'
+  return preferred === 'queue'
+    ? 'Queue a follow-up, or ⌥Enter to steer the agent now…'
+    : 'Steer the agent, or ⌥Enter to queue for after this turn…'
+}
+
 /**
  * Does an accepted send start a provider turn of its own, one the registry
  * waits on a `turn.completed` for? A Codex steer joins the running turn and

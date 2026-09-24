@@ -778,6 +778,7 @@ html, body, #root {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 400;
+  line-height: 15px;
   font-variant-numeric: tabular-nums;
 }
 
