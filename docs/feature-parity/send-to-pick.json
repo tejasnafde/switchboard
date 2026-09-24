@@ -1,0 +1,50 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "send-to-pick",
+  "summary": "The desktop /send-to target picker writes the picked chat's title (or #<id> when the title would not resolve back to that chat alone) pins the send to the picked id while the command still names that title, and skips unstarted chats; text restored after a failed send gets the caret at its end; the composer error banner clears on edit or on the next successful send, has a Dismiss button, and offers 'Write the message' for an empty /send-to.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/sendToCommand.ts",
+        "src/renderer/components/chat/ChatInput.tsx",
+        "src/renderer/components/chat/lexical/RichChatTextarea.tsx",
+        "tests/unit/send-to-command.test.ts",
+        "e2e/send-to-pick.e2e.mjs"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "The React Native client has no /send-to command, picker or peer-message send: there is no occurrence of send-to, sendTo or deliverPeerMessage anywhere under apps/mobile/src. Its composer is a plain TextInput without the Lexical caret-restore path."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "The native Android client has no /send-to command, picker or peer-message send: there is no occurrence of send-to, sendTo or deliverPeerMessage anywhere under apps/android/app/src."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No wire change. The picked target is still resolved in the renderer by resolveSendToTarget and delivered through the unchanged provider:deliver-peer-message channel with an exact targetThreadId; the backend never sees the typed target text."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema or stored-data change. Drafts stay plain strings in localStorage; a draft saved with the old '#<id>' target still resolves exactly, because resolveSendToTarget keeps its '#<id>' branch."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer-only change. No package identity, signing, deep-link, update channel, IPC channel or protocol change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "tests/unit/send-to-command.test.ts: sendToPickInsertion inserts a unique title, falls back to #<id> for a case-insensitive twin, a ':' in the title, a leading '#', edge whitespace and a missing title, ignores same-titled chats on another machine or not started, and every pick round-trips through parseSendTo + resolveSendToTarget to the picked chat. The picker leaves out unstarted chats. pinSendToTarget swaps a still-picked title for the picked #<id> at send time and leaves a retargeted body alone.",
+      "e2e/send-to-pick.e2e.mjs against the built app with the demo adapter: slash-then-mouse, mouse and keyboard picks show the title with the caret after ': ' and typing lands in the message half; the keyboard pick is sent and the peer message is stored on the picked conversation; a slash-command pick and an @-mention pick keep the caret after the insertion; after an empty /send-to fails the restored text has the caret at its end (this check failed on the pre-fix build with caret 0); the banner's Write the message action, Dismiss button, editing and clearing each remove or act on the banner. Run 3 times, all pass.",
+      "npm run typecheck and npm test green."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The original report (one Enter picked and also sent, leaving the caret at 0) cannot be replayed on this branch because PR #116 already stopped the double send; the e2e covers the restore path it went through instead.",
+      "A chat renamed between the pick and the send is covered by pinSendToTarget in unit tests only; after a reload the pick is forgotten, so a renamed title then resolves by fuzzy match (a tie names the candidates). Not exercised in the running app."
+    ]
+  }
+}

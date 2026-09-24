@@ -41,7 +41,7 @@ import {
   type SlashCommandContext,
 } from './slashCommands'
 import { detectAtTrigger, filterAtMatches } from './atMention'
-import { detectSendToTrigger, sendToPickerItems } from './sendToCommand'
+import { detectSendToTrigger, pinSendToTarget, SEND_TO_EMPTY_MESSAGE, sendToPickAfterSend, sendToPickerItems, sendToPickInsertion } from './sendToCommand'
 import { fuzzyScore } from '../../services/fuzzyScore'
 import { AtMentionMenu } from './AtMentionMenu'
 import { DraftWorkspaceChips } from './DraftWorkspaceChips'
@@ -82,6 +82,8 @@ interface ComposerRecovery {
   collisionPayload?: DraftPayload
   collisionFingerprint?: string
   collisionOrigin?: string
+  /** The user closed the banner. The recovery itself still guards the next send. */
+  dismissed?: boolean
 }
 
 export function shouldFetchProviderSkills(agentType: AgentType): boolean {
@@ -361,6 +363,7 @@ export function ChatInput({
   const [sendToQuery, setSendToQuery] = useState<string | null>(null)
   const [sendToActiveIdx, setSendToActiveIdx] = useState(0)
   const sendToRangeRef = useRef<{ start: number; end: number } | null>(null)
+  const sendToPickRef = useRef<{ sessionId: string; id: string; title: string } | null>(null)
   const [atFiles, setAtFiles] = useState<string[]>([])
   const [atLoading, setAtLoading] = useState(false)
   // Read on demand, not subscribed: `sessions` changes identity on every
@@ -529,6 +532,17 @@ export function ChatInput({
       )
     : 'send'
   const composerErrorColor = recovery?.ambiguous ? 'var(--warning)' : 'var(--error)'
+  const canRestore = Boolean(recovery && (!recovery.restored || recovery.collisionPayload))
+  // `sendError` clears on the next edit. A recovery outlives edits, so its
+  // error shows only while it still offers Restore: once the failed text is
+  // back in the composer, editing it makes the error stale.
+  const bannerError = sendError ?? (canRestore && !recovery?.dismissed ? recovery?.error ?? null : null)
+  const dismissBanner = useCallback(() => {
+    setSendError(null)
+    if (sessionId && recoveriesRef.current[sessionId]) {
+      updateRecoveries((current) => ({ ...current, [sessionId]: { ...current[sessionId], dismissed: true } }))
+    }
+  }, [sessionId, updateRecoveries])
 
   useEffect(() => onUserTurnAccepted((acceptedSessionId, origin) => {
     if (pendingOriginsRef.current.has(origin)) acceptedOriginsRef.current.add(origin)
@@ -721,7 +735,8 @@ export function ChatInput({
     // its full content (path marker + fenced block, terminal block, or
     // chat-message quote) before handing off. Tokens whose pills were
     // already removed get dropped silently.
-    const body = serializeBodyWithPills(trimmed, pillsById)
+    const pick = sendToPickRef.current?.sessionId === submittedSessionId ? sendToPickRef.current : null
+    const body = pinSendToTarget(serializeBodyWithPills(trimmed, pillsById), pick)
     const pillsMeta: Record<string, { label: string; kind: 'file' | 'terminal' | 'chat-message' }> = {}
     for (const p of pills) {
       if (trimmed.includes(`[[pill:${p.id}]]`)) {
@@ -767,6 +782,7 @@ export function ChatInput({
     if (!result.accepted && origin && acceptedOriginsRef.current.delete(origin)) {
       result = { accepted: true }
     }
+    sendToPickRef.current = sendToPickAfterSend(sendToPickRef.current, pick, result.accepted)
     if (origin) {
       pendingOriginsRef.current.delete(origin)
       acceptedOriginsRef.current.delete(origin)
@@ -790,6 +806,7 @@ export function ChatInput({
             [submittedSessionId]: {
               ...priorRecovery,
               error: result.error,
+              dismissed: false,
               ...(!restored ? {
                 collisionPayload: submittedPayload,
                 collisionFingerprint: composerFingerprint,
@@ -1040,11 +1057,13 @@ export function ChatInput({
     const picked = sendToItems.find((i) => i.label === label)
     setSendToQuery(null)
     if (!range || !picked) return
-    // The id goes into the body, not the title: two chats can share a title,
-    // and the picker already resolved which one the user meant.
-    richRef.current?.replaceRange(range.start, range.end, `#${picked.id}: `)
+    // Two chats can share a title, so a title that would not resolve back to
+    // this exact chat goes in as `#<id>` instead.
+    const target = sendToPickInsertion(picked.id, useAgentStore.getState().sessions, sessionId ?? '')
+    if (sessionId) sendToPickRef.current = { sessionId, id: picked.id, title: target }
+    richRef.current?.replaceRange(range.start, range.end, `${target}: `)
     requestAnimationFrame(() => richRef.current?.focus())
-  }, [sendToItems])
+  }, [sendToItems, sessionId])
 
   const runAtMention = useCallback((path: string) => {
     const range = atRangeRef.current
@@ -1314,12 +1333,13 @@ export function ChatInput({
         </div>
       )}
 
-      {(sendError || recovery) && (
+      {bannerError && (
         <div
           data-composer-send-error
           data-composer-recovery={recovery ? '' : undefined}
           role="alert"
           style={{
+            position: 'relative',
             marginBottom: '6px',
             padding: '7px 9px',
             border: `1px solid color-mix(in srgb, ${composerErrorColor} 45%, transparent)`,
@@ -1330,14 +1350,34 @@ export function ChatInput({
             lineHeight: 1.4,
           }}
         >
-          <div>{recovery?.error ?? sendError}</div>
-          {recovery && (!recovery.restored || recovery.collisionPayload) && (
+          <button
+            type="button"
+            className="composer-banner-dismiss"
+            aria-label="Dismiss"
+            onClick={dismissBanner}
+          >
+            x
+          </button>
+          <div style={{ paddingRight: '18px' }}>{bannerError}</div>
+          {canRestore && (
             <button
               type="button"
               className="composer-recovery-action"
               onClick={restoreRecovery}
             >
               Restore
+            </button>
+          )}
+          {bannerError === SEND_TO_EMPTY_MESSAGE && (
+            <button
+              type="button"
+              className="composer-recovery-action"
+              onClick={() => {
+                richRef.current?.replaceRange(value.length, value.length, '')
+                richRef.current?.focus()
+              }}
+            >
+              Write the message
             </button>
           )}
         </div>
