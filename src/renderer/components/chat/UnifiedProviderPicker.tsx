@@ -88,6 +88,8 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
 
   const [open, setOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
+  // Lifted so Escape can back out of the custom model field before it closes the picker.
+  const [showCustom, setShowCustom] = useState(false)
 
   // Terminal tab state
   const [termCommand, setTermCommand] = useState('claude')
@@ -158,7 +160,13 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
 
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setShowCustom(false)
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -194,12 +202,21 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
           e.preventDefault()
           searchRef.current?.focus()
         }}
-        // Escape closes the picker only: the chat behind it must not see it.
-        onEscapeKeyDown={(e) => e.stopPropagation()}
+        // Escape leaves the custom model field, or else closes the picker.
+        // Either way the chat behind it must not see it.
+        onEscapeKeyDown={(e) => {
+          e.stopPropagation()
+          if (!showCustom) return
+          e.preventDefault()
+          setShowCustom(false)
+          searchRef.current?.focus()
+        }}
         className="sb-provider-picker z-[1200] flex max-h-[360px] w-[480px] flex-col overflow-hidden rounded-[8px] border border-[var(--border)]"
       >
         <UnifiedPickerPopover
           searchRef={searchRef}
+          showCustom={showCustom}
+          setShowCustom={setShowCustom}
           agentType={agentType}
           canChangeAgent={canChangeAgent}
           // Stays open so the user sees the instance/model lists swap.
@@ -271,6 +288,8 @@ function accentVar(accent: string): CSSProperties {
 
 interface PopoverProps {
   searchRef: RefObject<HTMLInputElement | null>
+  showCustom: boolean
+  setShowCustom: (show: boolean) => void
   agentType: AgentType
   canChangeAgent: boolean
   onAgentTypeChange: (t: AgentType) => void
@@ -297,14 +316,13 @@ const sectionLabelClass = 'mb-[6px] text-[10px] font-[600] uppercase tracking-[0
 
 function UnifiedPickerPopover(props: PopoverProps) {
   const {
-    searchRef, agentType, canChangeAgent, onAgentTypeChange,
+    searchRef, showCustom, setShowCustom, agentType, canChangeAgent, onAgentTypeChange,
     instances, effectiveInstanceId, showRail, onInstanceChange,
     model, models, onModelChange,
     allInstances, termCommand, setTermCommand, termInstanceId, setTermInstanceId,
     termStarting, termError, onTermStart,
   } = props
   const [query, setQuery] = useState('')
-  const [showCustom, setShowCustom] = useState(false)
   const [customValue, setCustomValue] = useState('')
 
   // Reset filter / custom-input branch when agent kind flips.
@@ -312,7 +330,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
     setQuery('')
     setShowCustom(false)
     setCustomValue('')
-  }, [agentType])
+  }, [agentType, setShowCustom])
 
   const filtered = useMemo(() => filterModels(models, query), [models, query])
   const grouped = useMemo(() => groupModelsByProvider(filtered), [filtered])
@@ -446,11 +464,7 @@ function UnifiedPickerPopover(props: PopoverProps) {
                   onChange={(e) => setCustomValue(e.target.value)}
                   onKeyDown={(e) => {
                     e.stopPropagation()
-                    if (e.key === 'Enter') {
-                      onModelChange(customValue.trim())
-                    } else if (e.key === 'Escape') {
-                      setShowCustom(false)
-                    }
+                    if (e.key === 'Enter') onModelChange(customValue.trim())
                   }}
                   placeholder="provider/model-id"
                   autoFocus

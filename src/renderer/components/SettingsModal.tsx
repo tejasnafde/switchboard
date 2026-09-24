@@ -332,6 +332,11 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
           event.preventDefault()
           contentRef.current?.focus()
         }}
+        // Escape in a launch-config name field cancels that edit (its own
+        // onKeyDown) instead of closing Settings.
+        onEscapeKeyDown={(event) => {
+          if (renamingLaunchConfig !== null || addingLaunchConfig) event.preventDefault()
+        }}
         overlayClassName="z-[1000] backdrop-blur-[4px]"
         // Centred without a transform: a transform would make the provider
         // editor's position: fixed backdrop relative to this box.
