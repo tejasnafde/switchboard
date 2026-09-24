@@ -377,7 +377,8 @@ peer-tools see regular use.
 and have to be recreated or cloned in per-card (see the worktree node_modules
 clone below). An APFS `clonefile()` copy of the whole project folder -
 `node_modules`, build caches and `.env` included - sidesteps that: the copy
-is created in about a second regardless of project size, consumes near-zero
+takes time that grows with the number of files, not their size (measured:
+a 934 MB `node_modules` cloned in 6 to 9 seconds for PR #107), consumes near-zero
 disk until files actually change (copy-on-write at the filesystem level, not
 git's object model), and the card workflow becomes Apply to project / Open
 diff / Discard instead of branch-and-merge. This is macOS APFS only (`cp -c`
