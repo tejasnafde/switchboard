@@ -16,15 +16,3 @@ export function resolveLoadedRecentSessionLimit(
 ): RecentSessionLimit | null {
   return selectedSinceLoadStarted ? null : parseRecentSessionLimit(value)
 }
-
-export function visibleRecentSessions<T>(items: T[], limit: RecentSessionLimit, revealedCount: number): T[] {
-  return items.slice(0, limit + revealedCount)
-}
-
-export function nextRecentSessionRevealCount(
-  total: number,
-  limit: RecentSessionLimit,
-  revealedCount: number,
-): number {
-  return Math.min(Math.max(0, total - limit), revealedCount + RECENT_SESSION_PAGE_SIZE)
-}

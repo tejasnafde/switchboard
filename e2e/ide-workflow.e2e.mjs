@@ -61,6 +61,7 @@ try {
   // Feature Tour auto-opens on first launch and eats pointer events - opt out
   // before reloading, then dismiss any straggler.
   await win.evaluate(() => window.api.settings.set('tour.autoplay', 'false'))
+  await win.evaluate(() => window.api.settings.set('sidebar.localTreeExpanded', 'true'))
   await win.reload()
   await win.waitForFunction(() => !!window.api?.ide?.ensure, null, { timeout: 20_000 })
   await win.keyboard.press('Escape')

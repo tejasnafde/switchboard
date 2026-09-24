@@ -18,10 +18,11 @@ const item: RecentSessionItem = {
   projectName: 'repo',
   machineId: 'vm',
   status: 'approval',
+  statusLine: 'Waiting on your approval: Bash',
 }
 
 describe('RecentSessionsSection', () => {
-  it('renders a semantic icon and label without blinking status dots', () => {
+  it('renders a two-line row with a labelled dot and no blinking status', () => {
     const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
       items: [item],
       activeSessionId: null,
@@ -30,72 +31,30 @@ describe('RecentSessionsSection', () => {
 
     expect(markup).toContain('<button')
     expect(markup).toContain('Fix auth retry race')
-    expect(markup).toContain('Approval')
-    expect(markup).toContain('sidebar-recent-status approval')
+    expect(markup).toContain('Waiting on your approval: Bash')
+    expect(markup).toContain('data-dot="needs-you"')
+    expect(markup).toContain('aria-label="Needs you"')
     expect(markup).not.toContain('sidebar-thread-dot')
     expect(markup).not.toContain('pulse')
     expect(markup).not.toContain('blink')
   })
 
-  it('shows the digest preview instead of the "Working" label for a working session', () => {
-    const workingItem: RecentSessionItem = {
-      ...item,
-      status: 'working',
-      previewLine: 'Writing cost-per-model table, 2 of 4 providers done',
-    }
+  it('heads each group with its label and counts only the urgent ones', () => {
     const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
-      items: [workingItem],
+      items: [
+        item,
+        { ...item, session: { ...item.session, id: 'working', title: 'Working chat' }, status: 'working', statusLine: 'Writing tests' },
+        { ...item, session: { ...item.session, id: 'idle', title: 'Idle chat' }, status: undefined, statusLine: 'repo' },
+      ],
       activeSessionId: null,
       onSelect: () => {},
     }))
 
-    expect(markup).toContain('Writing cost-per-model table, 2 of 4 providers done')
-    expect(markup).not.toContain('>Working<')
-    expect(markup).toContain('sidebar-recent-status working')
-  })
-
-  it('keeps the plain status word for approval/input/failed even with a previewLine', () => {
-    const approvalWithPreview: RecentSessionItem = {
-      ...item,
-      status: 'approval',
-      previewLine: 'Done: ready for review',
-    }
-    const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
-      items: [approvalWithPreview],
-      activeSessionId: null,
-      onSelect: () => {},
-    }))
-
-    expect(markup).toContain('Approval')
-    expect(markup).not.toContain('Done: ready for review')
-  })
-
-  it('shows the raw preview in the detail slot when there is no status', () => {
-    const idleWithPreview: RecentSessionItem = {
-      ...item,
-      status: undefined,
-      previewLine: 'Done: 6 review fixes pushed, tests green',
-    }
-    const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
-      items: [idleWithPreview],
-      activeSessionId: null,
-      onSelect: () => {},
-    }))
-
-    expect(markup).toContain('Done: 6 review fixes pushed, tests green')
-    expect(markup).toContain('sidebar-recent-preview')
-  })
-
-  it('falls back to the relative time when there is no status and no previewLine', () => {
-    const idleNoPreview: RecentSessionItem = { ...item, status: undefined }
-    const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
-      items: [idleNoPreview],
-      activeSessionId: null,
-      onSelect: () => {},
-    }))
-
-    expect(markup).not.toContain('sidebar-recent-preview')
-    expect(markup).toContain('sidebar-recent-detail')
+    expect(markup.indexOf('Needs you')).toBeLessThan(markup.indexOf('>Working<'))
+    expect(markup.indexOf('>Working<')).toBeLessThan(markup.indexOf('Done recently'))
+    expect(markup).toContain('data-group="needs-you">1</span>')
+    expect(markup).toContain('data-group="working">1</span>')
+    expect(markup).toContain('data-dot="idle"')
   })
 
   it('collapses to the configured baseline and offers only the next five rows', () => {
@@ -103,6 +62,7 @@ describe('RecentSessionsSection', () => {
       ...item,
       session: { ...item.session, id: `session-${index}`, title: `Session ${index}` },
       status: undefined,
+      statusLine: 'repo',
     }))
     const markup = renderToStaticMarkup(createElement(RecentSessionsSection, {
       items,

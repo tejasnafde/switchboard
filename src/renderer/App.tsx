@@ -30,7 +30,7 @@ import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureR
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
 import { sessionExecutionRootPath } from './services/executionRoot'
-import { emitSessionCreated, onSessionRename } from './services/session-events'
+import { emitSessionCreated, onProviderEvent, onSessionRename } from './services/session-events'
 import { initSharedReadState } from './services/readState'
 import { getDefaultSessionEnvMode } from './services/sessionEnvMode'
 import {
@@ -296,6 +296,14 @@ export function App() {
     return useAgentStore.subscribe(sync)
   }, [])
 
+  // Open approval/question/plan cards per thread, for the sidebar's "Needs
+  // you". Here rather than in ChatPanel: it must see events for chats no
+  // panel shows.
+  useEffect(() => {
+    if (!window.api.provider?.onEvent) return
+    return onProviderEvent((event) => useAgentStore.getState().trackPendingRequestEvent(event))
+  }, [])
+
   // Machine registry (remote SSH hosts) - hydrate once on launch.
   useEffect(() => {
     void useMachineStore.getState().hydrate()
@@ -335,7 +343,10 @@ export function App() {
     void (async () => {
       try {
         const live = await window.api?.provider?.listSessions?.()
-        if (live?.length) useAgentStore.getState().adoptLiveSessions(live)
+        if (live?.length) {
+          useAgentStore.getState().adoptLiveSessions(live)
+          for (const session of live) void recoverPendingRequests(session.threadId, { cards: false })
+        }
       } catch (err) {
         log.warn('could not adopt running backend sessions', err)
       }
@@ -349,11 +360,13 @@ export function App() {
   // is a candidate rather than trying to filter by one.
   useEffect(() => {
     return window.api.routing?.onResumeGap?.((machineId) => {
-      for (const sessionId of useLayoutStore.getState().displayedChatSessionIds()) {
-        const session = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
-        if (!session || session.type === 'terminal') continue
+      const displayed = new Set(useLayoutStore.getState().displayedChatSessionIds())
+      // Every chat, not only the displayed ones: the sidebar's "Needs you"
+      // reads them all. Cards are appended only where a chat is on screen.
+      for (const session of useAgentStore.getState().sessions) {
+        if (session.type === 'terminal') continue
         if (machineId !== null && session.machineId !== machineId) continue
-        void recoverPendingRequests(sessionId)
+        void recoverPendingRequests(session.id, { cards: displayed.has(session.id) })
       }
     })
   }, [])

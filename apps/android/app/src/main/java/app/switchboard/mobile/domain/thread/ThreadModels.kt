@@ -161,25 +161,11 @@ sealed interface ThreadEventPayload {
 }
 
 object UserMessageVisibility {
-    private val blocks = listOf(
-        "<recommended_plugins>" to "</recommended_plugins>",
-        "# AGENTS.md instructions for " to "</INSTRUCTIONS>",
-        "<environment_context>" to "</environment_context>",
-    )
-
+    /** Null only for a message made entirely of generated context blocks. */
     fun visibleText(text: String, displayBody: String?): String? {
         if (displayBody != null) return displayBody
-        var remaining = text.trim()
-        if (remaining.isEmpty()) return text
-        var matched = false
-        while (remaining.isNotEmpty()) {
-            val block = blocks.firstOrNull { remaining.startsWith(it.first) } ?: return text
-            val end = remaining.indexOf(block.second)
-            if (end < 0) return text
-            matched = true
-            remaining = remaining.substring(end + block.second.length).trimStart()
-        }
-        return if (matched) null else text
+        val split = SyntheticUserMessage.split(text) ?: return text
+        return if (split.parts.isEmpty() && split.userText.isEmpty()) null else text
     }
 }
 
@@ -224,6 +210,12 @@ sealed interface FeedItem {
         val at: Long,
         val images: List<MessageImage> = emptyList(),
         val pillsMeta: Map<String, MessagePill> = emptyMap(),
+        /**
+         * Raw provider transcript text (history content with no typed displayBody).
+         * Only this is split into synthetic rows, so a typed message that starts
+         * with a marker such as "[Request interrupted by user]" stays a bubble.
+         */
+        val fromTranscript: Boolean = false,
     ) : FeedItem
     data class Text(
         override val id: String,

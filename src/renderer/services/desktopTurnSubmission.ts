@@ -40,12 +40,14 @@ export function pendingDesktopUserMessage(
 
 export function acceptedDesktopUserMessage(event: RuntimeUserMessageEvent): ChatMessage | null {
   const visibleText = visibleUserMessageText(event.text, event.displayBody)
-  if (visibleText === null) return null
+  // Context-only text is hidden, but images sent with it still show:
+  // MessageBubble splits the context off the content and renders the images.
+  if (visibleText === null && !event.images?.length) return null
   return {
     id: echoMessageId(event.origin ?? String(event.at)),
     role: 'user',
     content: event.text,
-    displayBody: visibleText === event.text ? undefined : visibleText,
+    displayBody: visibleText === null || visibleText === event.text ? undefined : visibleText,
     pillsMeta: event.pillsMeta,
     images: event.images,
     timestamp: event.at,

@@ -165,12 +165,18 @@ function RemoteProject({
 
 export function MachineLayer({
   children,
+  localSummary,
+  forceLocalExpanded = false,
   onEditMachine,
   onOpenRemoteSession,
   onNewRemoteChat,
   onSessionContextMenu,
 }: {
   children: ReactNode
+  /** Shown beside "This Mac", e.g. "7 workspaces, 69 projects". */
+  localSummary?: string
+  /** Search open: the tree must show whatever it matched. */
+  forceLocalExpanded?: boolean
   onEditMachine?: (machine: Machine) => void
   onOpenRemoteSession?: (machineId: string, projectPath: string, session: SessionSummary) => void
   onNewRemoteChat?: (machineId: string, projectPath: string) => void
@@ -190,6 +196,10 @@ export function MachineLayer({
   const lastError = useMachineStore((s) => s.lastError)
   const progress = useMachineStore((s) => s.progress)
   const reconnecting = useMachineStore((s) => s.reconnecting)
+  const localExpanded = useLayoutStore((s) => s.sidebarLocalTreeExpanded)
+  const toggleLocalTree = useLayoutStore((s) => s.toggleSidebarLocalTree)
+  const offlineExpanded = useLayoutStore((s) => s.sidebarOfflineMachinesExpanded)
+  const toggleOfflineMachines = useLayoutStore((s) => s.toggleSidebarOfflineMachines)
   const activeSessionId = useLayoutStore((s) =>
     s.focusedChatSlot === 'secondary' && s.secondarySessionId
       ? s.secondarySessionId
@@ -222,6 +232,11 @@ export function MachineLayer({
   const nodes = buildMachineList(remotes, { localName: 'This Mac', connections })
   const local = nodes[0]
   const remoteNodes = nodes.slice(1)
+  // A failed or reconnecting machine stays in view; only a plain "Offline"
+  // one folds away.
+  const isFolded = (node: MachineNode) => node.status === 'offline' && !reconnecting[node.id]
+  const onlineNodes = remoteNodes.filter((node) => !isFolded(node))
+  const offlineNodes = remoteNodes.filter(isFolded)
 
   const handleDragEnd = (e: DragEndEvent) => {
     const { active, over } = e
@@ -375,7 +390,8 @@ export function MachineLayer({
   }
 
   const renderNode = (node: MachineNode, dragHandleProps?: Record<string, unknown>) => {
-    const isCollapsed = collapsed.has(node.id)
+    const isLocal = node.kind === 'local'
+    const isCollapsed = isLocal ? !(localExpanded || forceLocalExpanded) : collapsed.has(node.id)
     const machineState = reconnecting[node.id]
       ? 'Reconnecting…'
       : node.status === 'connecting'
@@ -398,11 +414,16 @@ export function MachineLayer({
           <button
             type="button"
             className="sidebar-machine-toggle"
-            onClick={() => toggleCollapsed(node.id)}
+            onClick={() => {
+              if (!isLocal) toggleCollapsed(node.id)
+              // A search holds the tree open; the click must not flip the saved state unseen.
+              else if (!forceLocalExpanded) toggleLocalTree()
+            }}
             aria-expanded={!isCollapsed}
           >
             <span className="sidebar-chevron">{isCollapsed ? '▶' : '▼'}</span>
             <span className="sidebar-machine-name">{node.name}</span>
+            {isLocal && localSummary && <span className="machine-summary" title={localSummary}>{localSummary}</span>}
             {node.kind === 'remote' && (
               <span className="machine-host">
                 {node.sshUser ? `${node.sshUser}@` : ''}
@@ -449,17 +470,38 @@ export function MachineLayer({
     )
   }
 
+  const renderSortable = (list: MachineNode[]) => (
+    <SortableContext items={list.map((n) => n.id)} strategy={verticalListSortingStrategy}>
+      {list.map((node) => (
+        <SortableMachine key={node.id} id={node.id}>
+          {(dragHandleProps) => renderNode(node, dragHandleProps)}
+        </SortableMachine>
+      ))}
+    </SortableContext>
+  )
+
   return (
     <>
       {renderNode(local)}
       <DndContext sensors={sensors} modifiers={[restrictToVerticalAxis]} onDragEnd={handleDragEnd}>
-        <SortableContext items={remoteNodes.map((n) => n.id)} strategy={verticalListSortingStrategy}>
-          {remoteNodes.map((node) => (
-            <SortableMachine key={node.id} id={node.id}>
-              {(dragHandleProps) => renderNode(node, dragHandleProps)}
-            </SortableMachine>
-          ))}
-        </SortableContext>
+        {renderSortable(onlineNodes)}
+        {offlineNodes.length > 0 && (
+          <section className="sidebar-machine">
+            <header className="sidebar-machine-header">
+              <button
+                type="button"
+                className="sidebar-machine-toggle"
+                onClick={toggleOfflineMachines}
+                aria-expanded={offlineExpanded}
+              >
+                <span className="sidebar-chevron">{offlineExpanded ? '▼' : '▶'}</span>
+                <span className="sidebar-machine-name">Remote machines</span>
+                <span className="machine-state">{offlineNodes.length} offline</span>
+              </button>
+            </header>
+          </section>
+        )}
+        {offlineExpanded && renderSortable(offlineNodes)}
       </DndContext>
       {addProjectFor && (
         <AddRemoteProjectModal machineId={addProjectFor} onClose={() => setAddProjectFor(null)} />

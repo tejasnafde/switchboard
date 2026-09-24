@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { deriveRecentSessions } from '../../src/renderer/components/sidebar/recentSessions'
+import { deriveRecentSessions, recentLiveSignal } from '../../src/renderer/components/sidebar/recentSessions'
 import type { Project } from '@shared/types'
+import type { PendingBlockingEvent } from '@shared/pending-requests'
+
+function approvalOpened(threadId: string): PendingBlockingEvent {
+  return { type: 'request.opened', threadId, requestId: `req-${threadId}`, requestType: 'command', toolName: 'Bash', detail: 'npm test' }
+}
 
 function project(): Project {
   return {
@@ -30,15 +35,8 @@ describe('deriveRecentSessions', () => {
           id: 'approval',
           machineId: 'local',
           status: 'idle',
-          messages: [
-            {
-              id: 'request',
-              role: 'system',
-              content: '',
-              timestamp: 50,
-              approval: { toolName: 'Bash', detail: 'npm test', status: 'pending' },
-            },
-          ],
+          messages: [],
+          pendingRequests: [approvalOpened('approval')],
         },
       ],
     })
@@ -59,25 +57,15 @@ describe('deriveRecentSessions', () => {
           id: 'approval',
           machineId: 'local',
           status: 'idle',
-          messages: [{
-            id: 'approval-request',
-            role: 'system',
-            content: '',
-            timestamp: 50,
-            approval: { toolName: 'Bash', detail: 'npm test', status: 'pending' },
-          }],
+          messages: [],
+          pendingRequests: [approvalOpened('approval')],
         },
         {
           id: 'input',
           machineId: 'local',
           status: 'idle',
-          messages: [{
-            id: 'question-request',
-            role: 'system',
-            content: '',
-            timestamp: 500,
-            question: { requestId: 'question', questions: [], status: 'pending' },
-          }],
+          messages: [],
+          pendingRequests: [{ type: 'question.asked', threadId: 'input', requestId: 'question', questions: [] }],
         },
       ],
     })
@@ -113,8 +101,8 @@ describe('deriveRecentSessions', () => {
     })
 
     expect(result.map((item) => [item.session.id, item.status])).toEqual([
-      ['running', 'working'],
       ['approval', 'failed'],
+      ['running', 'working'],
       ['recent', 'done'],
     ])
   })
@@ -198,5 +186,99 @@ describe('deriveRecentSessions', () => {
     expect(result.find((item) => item.session.id === 'recoverable')).toMatchObject({
       status: 'failed',
     })
+  })
+
+  it('takes needs-you from the backend pending requests, not from transcript cards', () => {
+    const result = deriveRecentSessions({
+      localProjects: [project()],
+      remoteProjects: {},
+      liveSessions: [
+        {
+          id: 'recent',
+          machineId: 'local',
+          status: 'idle',
+          messages: [{
+            id: 'approval_old',
+            role: 'assistant',
+            content: '',
+            timestamp: 1,
+            approval: { toolName: 'Bash', detail: 'npm test', status: 'pending' },
+          }],
+        },
+        {
+          id: 'running',
+          machineId: 'local',
+          status: 'idle',
+          messages: [],
+          pendingRequests: [{ type: 'plan.proposed', threadId: 'running', planId: 'p1', planMarkdown: '# Plan' }],
+        },
+      ],
+    })
+
+    expect(result.find((item) => item.session.id === 'recent')?.status).toBeUndefined()
+    expect(result.find((item) => item.session.id === 'running')?.status).toBe('plan')
+  })
+
+  it('writes line 2 from what the chat waits on, then the preview, then the project', () => {
+    const result = deriveRecentSessions({
+      localProjects: [project()],
+      remoteProjects: {},
+      liveSessions: [
+        { id: 'approval', machineId: 'local', status: 'idle', messages: [], pendingRequests: [approvalOpened('approval')] },
+        {
+          id: 'running',
+          machineId: 'local',
+          status: 'idle',
+          messages: [],
+          pendingRequests: [{
+            type: 'question.asked',
+            threadId: 'running',
+            requestId: 'q1',
+            questions: [{ id: 'q', header: 'Region', question: 'Which region is the default?', options: [], multiSelect: false }],
+          }],
+        },
+        {
+          id: 'recent',
+          machineId: 'local',
+          status: 'idle',
+          messages: [{ id: 'm1', role: 'assistant', content: '<agent_digest>Done: tests green</agent_digest>', timestamp: 1 }],
+        },
+      ],
+    })
+    const line = (id: string) => result.find((item) => item.session.id === id)?.statusLine
+
+    expect(line('approval')).toBe('Waiting on your approval: Bash')
+    expect(line('running')).toBe('Question: Which region is the default?')
+    expect(line('recent')).toBe('Done: tests green')
+
+    const unopened = deriveRecentSessions({ localProjects: [project()], remoteProjects: {}, liveSessions: [] })
+    expect(unopened.every((item) => item.statusLine === 'repo')).toBe(true)
+  })
+
+  it('changes the refresh signal when a card keeps its id but shows a new tool or question', () => {
+    const base = { id: 'a', machineId: 'local', status: 'idle' as const, messages: [] }
+    const approval = approvalOpened('a')
+    const signal = (pendingRequests: PendingBlockingEvent[]) => recentLiveSignal([{ ...base, pendingRequests }])
+    const question = (text: string): PendingBlockingEvent => ({
+      type: 'question.asked',
+      threadId: 'a',
+      requestId: 'q',
+      questions: [{ id: 'q', header: 'h', question: text, options: [], multiSelect: false }],
+    })
+
+    expect(signal([approval])).not.toBe(signal([{ ...approval, toolName: 'Write' } as PendingBlockingEvent]))
+    expect(signal([question('Which region?')])).not.toBe(signal([question('Which bucket?')]))
+    expect(signal([approval])).toBe(signal([{ ...approval, detail: 'other' } as PendingBlockingEvent]))
+  })
+
+  it('changes the refresh signal when history hydrates, but not while a message streams', () => {
+    const base = { id: 'a', machineId: 'local', status: 'idle' as const, unreadCount: 0 }
+    const message = (id: string, content: string) => ({ id, role: 'assistant' as const, content, timestamp: 1 })
+    const empty = recentLiveSignal([{ ...base, messages: [] }])
+    const hydrated = recentLiveSignal([{ ...base, messages: [message('m1', 'Hi'), message('m2', 'Done')] }])
+    const streamed = recentLiveSignal([{ ...base, messages: [message('m1', 'Hi'), message('m2', 'Done, and more')] }])
+
+    expect(hydrated).not.toBe(empty)
+    expect(streamed).toBe(hydrated)
   })
 })

@@ -65,6 +65,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { ThreadHeaderStatus } from '../components/ThreadHeaderStatus'
 import { VoiceNoteBar } from '../components/MicButton'
 import { SendMicButton } from '../components/SendMicButton'
+import { SyntheticRow } from '../components/SyntheticRow'
 import { useDictation, type VoiceNote } from '../hooks/useDictation'
 import { useEdgeSwipeBack } from '../hooks/useEdgeSwipeBack'
 import { AttachButton, AttachmentStrip, type Attachment } from '../components/ImageAttachments'
@@ -761,6 +762,8 @@ export default function ThreadScreen({ route, navigation }: Props) {
               <Text style={styles.noticeText}>{item.text}</Text>
             </View>
           )
+        case 'synthetic':
+          return <SyntheticRow part={item.part} />
         case 'error':
           return <Text style={styles.errorText}>{item.message}</Text>
       }

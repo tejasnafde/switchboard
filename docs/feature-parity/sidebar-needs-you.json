@@ -1,0 +1,85 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "sidebar-needs-you",
+  "summary": "Redesign the desktop sidebar around what each chat needs from the user (option C of the sidebar mock). Recents rows become two lines: a status dot, the title and the time, then a full-width muted status line. Recents is grouped into Needs you (an open approval, question or plan, or an error), Working and Done recently, with Needs you and Working always shown in full above Show N more. Needs you comes from the backend's own record of open cards (provider:get-pending-requests plus the live request/question/plan events), not from the transcript. The This Mac workspace tree folds behind one summary row and offline remote machines behind one Remote machines row, both persisted through the settings table, and the workspace count reads \"14 projects\" with the thread count in a tooltip.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/sidebar/RecentSessionsSection.tsx",
+        "src/renderer/components/sidebar/recentGroups.ts",
+        "src/renderer/components/sidebar/recentSessions.ts",
+        "src/renderer/components/sidebar/recentSessionLimit.ts",
+        "src/renderer/components/sidebar/MachineLayer.tsx",
+        "src/renderer/components/sidebar/Sidebar.tsx",
+        "src/renderer/stores/agent-store.ts",
+        "src/renderer/stores/layout-store.ts",
+        "src/renderer/services/pendingRequestRecovery.ts",
+        "src/renderer/App.tsx",
+        "src/renderer/styles/global.css",
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/snapshots",
+        "e2e/fixtures/demo-workspace.mjs",
+        "e2e/dual-chat-workspace.e2e.mjs",
+        "e2e/drift.e2e.mjs",
+        "e2e/ds-flow.e2e.mjs",
+        "e2e/ide-syntax.e2e.mjs",
+        "e2e/ide-workflow.e2e.mjs",
+        "tests/unit/sidebar-recent-groups.test.ts",
+        "tests/unit/sidebar-recents.test.ts",
+        "tests/unit/sidebar-recents-render.test.ts",
+        "tests/unit/sidebar-recent-limit.test.ts",
+        "tests/unit/layout-store.test.ts",
+        "tests/unit/pending-request-recovery-orchestration.test.ts",
+        "tests/unit/visual-regressions-source.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "staged",
+      "flag": "mobile_conversations_needs_you",
+      "followUpRelease": "mobile-v0.5.0. The phone's ConversationsScreen already renders the two-line row this change brings to desktop (status dot and title on line 1, the turnPreviewLine preview on line 2), so only the Needs you group is missing. It is not small: the list is per project and knows a thread's state only once that thread has been opened in the chat store, so grouping by pending cards needs a per-row pending-request fetch (or a batched channel) and a SectionList. It ships in mobile-v0.5.0 behind the local mobile_conversations_needs_you flag, reusing applyPendingRequestEvent from src/shared/pending-requests.ts for the live updates."
+    },
+    "nativeAndroid": {
+      "status": "staged",
+      "flag": "android_conversations_needs_you",
+      "followUpRelease": "Android 0.6.0. BrowseScreen's conversation list has the same gap as the React Native one: pending cards are recovered only for the open thread (the pending-request-recovery work), so a Needs you group needs per-row pending state from the backend first. It ships with Android 0.6.0 behind the android_conversations_needs_you preference, with the same open, close, error or stop, and next-user-message rules as the shared reducer, ported to Kotlin and checked against the same cases."
+    },
+    "sharedBackendApi": {
+      "status": "implemented",
+      "evidence": [
+        "src/shared/pending-requests.ts",
+        "tests/unit/pending-requests.test.ts"
+      ]
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema change and no migration. The two disclosures are new rows in the existing key-value settings table, sidebar.localTreeExpanded and sidebar.offlineMachinesExpanded, read by hydrateSidebarCollapse in layout-store.ts; an absent key means collapsed, so an older database needs no backfill and an older client never reads them. This Mac used to be expanded unless its id was in sidebar.collapsed.machines; that key still drives each remote machine's own disclosure, and a stale 'local' entry in it is now ignored, so an existing user sees This Mac folded once after upgrading and one click restores it for good. Pending cards are held in memory only, as before."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Renderer and shared-contract change only. No package identity, signing, deep link, update channel or wire-protocol change: the sidebar reads the existing provider:get-pending-requests channel (capability pending_requests_v1) and the existing runtime events."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed (main + renderer).",
+      "npm test passed: 407 files, 4022 tests. New or rewritten: sidebar-recent-groups.test.ts (dot rule, grouping and the Show N more rule, count labels), sidebar-recents.test.ts (status from pendingRequests, not transcript cards; line 2 text), sidebar-recents-render.test.ts (two-line row, labelled dot, group heads and counts), pending-requests.test.ts (applyPendingRequestEvent), pending-request-recovery-orchestration.test.ts (cards: false seeding, live tracking), agent-store.test.ts (a lost machine drops its open cards), layout-store.test.ts (both disclosures default folded and persist).",
+      "npm test --prefix apps/mobile passed (6 suites, 37 tests); no mobile file changed.",
+      "SB_VISUAL_SCOPE=screens e2e/visual-regressions.e2e.mjs: before the change it passed on the unchanged code. After it, command-palette, provider-picker, settings, approval and composer-running matched their untouched baselines in Dark, Light and Translucent. chat and kanban now mask the sidebar (it has baselines of its own); a pixel diff of their new captures against the old baselines put every changed pixel inside the sidebar box (x 0-218), in all three themes. Only sidebar, the new sidebar-needs-you, chat and kanban baselines were rewritten. Final gate: 3 of 4 runs passed with zero changed screens; the other failed in Playwright's clock.setFixedTime before any capture.",
+      "SB_VISUAL_SCOPE=behaviour passed end to end: Recents paging (6, Show 5 more x2, Show 2 more, Show less), no blinking dot, Saved view, workspace organizer in 3 themes, native glass, This Mac starting folded, expanding it, and the expanded state surviving a relaunch. It needed a .first() on the pre-existing .runtime-mode-select locator, which failed identically on the unchanged code.",
+      "e2e/dual-chat-workspace.e2e.mjs passed (sidebar session click, open beside, forwarding).",
+      "All 13 feature-tour clips re-recorded with videos/capture-tour.mjs; frames of welcome, workspaces (search auto-expands This Mac), remote-machines (the offline fold opens to the old list) and chats-and-board checked by eye."
+    ],
+    "hardware": [
+      "Every new sidebar and sidebar-needs-you baseline PNG was opened and inspected by eye in Dark, Light and Translucent on this Mac before commit. Translucent first showed the red dot and the count pill vanishing over the warm half of the backdrop; a translucent-only white ring and solid pills fixed it."
+    ],
+    "notExercised": [
+      "e2e/machine-layer.e2e.mjs fails at its Add-machine step on a .sidebar-add-machine selector that was removed from the app in 4ee2cb3, before this branch; not fixed here.",
+      "drift, ds-flow, ide-syntax and ide-workflow e2e were not run (they need code-server); each only gained a setting that pre-expands This Mac.",
+      "No live remote machine: the offline fold, a remote chat under Needs you, and the machine-lost clearing were checked by unit tests and the tour fixture's offline machines only.",
+      "No live Claude, Codex or OpenCode turn; Needs you was exercised with the demo adapter's approval hold.",
+      "React Native and native Android are staged; nothing was run on a phone."
+    ]
+  }
+}
