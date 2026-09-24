@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { groupModelsByProvider, splitModelVariant } from '../../src/renderer/components/chat/ChatInput'
+import { groupModelsByProvider, splitModelVariant } from '../../src/renderer/components/chat/modelVariants'
 
 describe('groupModelsByProvider', () => {
   it('keeps slashless ids in ungrouped (Claude/Codex static lists)', () => {

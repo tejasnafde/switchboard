@@ -29,6 +29,8 @@ import { useSkillStore } from '../../stores/skill-store'
 import { useSpendBlockStore } from '../../stores/spend-block-store'
 import { describeSpendBlock, findSpendBlock } from '@shared/spend-block'
 import { SlashCommandMenu } from './SlashCommandMenu'
+import { resolvePickerKeydown } from './pickerKeydown'
+import { VariantChips } from './modelVariants'
 import {
   detectSlashTrigger,
   filterSlashCommands,
@@ -1166,82 +1168,39 @@ export function ChatInput({
   // RichChatTextarea's `onEnter` prop instead.
   const handleEditorKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
-      // Target picker first: it only opens inside `/send-to`, where the other
-      // two triggers cannot be live.
-      if (sendToQuery !== null && sendToMatches.length > 0) {
-        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-          e.preventDefault()
-          const delta = e.key === 'ArrowDown' ? 1 : -1
+      const slashMatches = slashQuery === null ? null : filterSlashCommands(slashQuery, mergedCommands)
+      const action = resolvePickerKeydown(e, {
+        sendToMatches: sendToQuery === null ? null : sendToMatches.length,
+        atMatches: atQuery === null ? null : atMatches.length,
+        slashMatches: slashMatches?.length ?? null,
+      })
+      if (!action) return
+      e.preventDefault()
+      if (action.op === 'pick' && action.menu !== 'send-to') e.stopPropagation()
+      if (action.menu === 'send-to') {
+        if (action.op === 'move') {
+          const delta = action.delta
           setSendToActiveIdx((i) => (i + delta + sendToMatches.length) % sendToMatches.length)
-          return
-        }
-        if ((e.key === 'Enter' && !e.altKey) || e.key === 'Tab') {
-          e.preventDefault()
+        } else if (action.op === 'pick') {
           runSendToPick(sendToMatches[sendToActiveIdx] ?? sendToMatches[0])
-          return
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault()
+        } else {
           setSendToQuery(null)
-          return
         }
-      }
-
-      // @-mention branch takes precedence over the slash menu when open.
-      if (atQuery !== null) {
-        // Empty match list: only Escape is meaningful. Letting Enter fall
-        // through means the user can still send the typed `@query` literally
-        // (matches the slash menu's behaviour at the same code path).
-        if (atMatches.length === 0 && e.key !== 'Escape') return
-        if (e.key === 'ArrowDown') {
-          e.preventDefault()
-          setAtActiveIdx((i) => i + 1)
-          return
-        }
-        if (e.key === 'ArrowUp') {
-          e.preventDefault()
-          setAtActiveIdx((i) => Math.max(0, i - 1))
-          return
-        }
-        if (e.key === 'Escape') {
-          e.preventDefault()
-          dismissAt()
-          return
-        }
-        // Swallow Enter/Tab so they don't fire Send / move focus; commit
-        // the highlighted row instead.
-        if ((e.key === 'Enter' && !e.altKey) || e.key === 'Tab') {
-          e.preventDefault()
-          e.stopPropagation()
+      } else if (action.menu === 'at') {
+        if (action.op === 'next') setAtActiveIdx((i) => i + 1)
+        else if (action.op === 'prev') setAtActiveIdx((i) => Math.max(0, i - 1))
+        else if (action.op === 'dismiss') dismissAt()
+        else {
           const pick = atMatches[atActiveIdx] ?? atMatches[0]
           if (pick) runAtMention(pick)
-          return
         }
-        // Other keys fall through to the editor (typing extends the query).
-        return
-      }
-      if (slashQuery === null) return
-      const matches = filterSlashCommands(slashQuery, mergedCommands)
-      if (matches.length === 0 && e.key !== 'Escape') return
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setSlashActiveIdx((i) => (i + 1) % Math.max(matches.length, 1))
-        return
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setSlashActiveIdx((i) => (i - 1 + Math.max(matches.length, 1)) % Math.max(matches.length, 1))
-        return
-      }
-      if ((e.key === 'Enter' && !e.altKey) || e.key === 'Tab') {
-        e.preventDefault()
-        e.stopPropagation()
-        if (matches.length > 0) runSlashCommand(matches[slashActiveIdx] ?? matches[0])
-        return
-      }
-      if (e.key === 'Escape') {
-        e.preventDefault()
-        dismissSlash()
+      } else {
+        const matches = slashMatches ?? []
+        const count = Math.max(matches.length, 1)
+        if (action.op === 'next') setSlashActiveIdx((i) => (i + 1) % count)
+        else if (action.op === 'prev') setSlashActiveIdx((i) => (i - 1 + count) % count)
+        else if (action.op === 'dismiss') dismissSlash()
+        else if (matches.length > 0) runSlashCommand(matches[slashActiveIdx] ?? matches[0])
       }
     },
     [slashQuery, slashActiveIdx, runSlashCommand, dismissSlash, mergedCommands, atQuery, atMatches, atActiveIdx, dismissAt, runAtMention, sendToQuery, sendToMatches, sendToActiveIdx, runSendToPick],
@@ -1833,115 +1792,3 @@ export function ChatInput({
     </div>
   )
 }
-
-/**
- * Split a flat model list into provider-prefix groups.
- * IDs without a `/` go into `ungrouped` (Claude/Codex static lists). Order
- * is stable: groups appear in the order their first member shows up in the
- * input array.
- *
- * Exported for unit tests.
- */
-export function groupModelsByProvider<T extends { id: string }>(
-  models: T[],
-): { ungrouped: T[]; groups: Array<{ provider: string; models: T[] }> } {
-  const ungrouped: T[] = []
-  const groupMap = new Map<string, T[]>()
-  const order: string[] = []
-  for (const m of models) {
-    const slash = m.id.indexOf('/')
-    if (slash === -1) {
-      ungrouped.push(m)
-      continue
-    }
-    const provider = m.id.slice(0, slash)
-    if (!groupMap.has(provider)) {
-      groupMap.set(provider, [])
-      order.push(provider)
-    }
-    groupMap.get(provider)!.push(m)
-  }
-  return {
-    ungrouped,
-    groups: order.map((p) => ({ provider: p, models: groupMap.get(p)! })),
-  }
-}
-
-// ─── Variant chips (OpenCode ACP) ───────────────────────────────
-
-/**
- * Renders a small chip group next to the model picker showing the variants
- * (`low` / `medium` / `high` / `max`, etc.) the agent has advertised for the
- * currently selected model. Hidden when the model has no variants.
- *
- * The base model id is the current `model` prop with any trailing variant
- * stripped - variants are the third path segment for OpenCode-style ids
- * (`provider/model/<variant>`). When the user clicks a chip, we rewrite the
- * model to `<base>/<variant>` and bubble through `onChange`.
- */
-function VariantChips({
-  sessionId,
-  model,
-  onChange,
-}: {
-  sessionId: string | null
-  model: string
-  onChange: (model: string) => void
-}) {
-  const session = useAgentStore((s) =>
-    sessionId ? s.sessions.find((x) => x.id === sessionId) : undefined,
-  )
-  const available = session?.availableVariants ?? []
-  const current = session?.currentVariant ?? ''
-  if (available.length === 0) return null
-
-  const { base } = splitModelVariant(model, available)
-
-  const chip = (label: string, variant: string, active: boolean) => (
-    <button
-      key={variant || '__base__'}
-      onClick={() => onChange(variant ? `${base}/${variant}` : base)}
-      style={{
-        background: active ? 'var(--accent)' : 'var(--bg-tertiary)',
-        color: active ? 'white' : 'var(--text-secondary)',
-        border: '1px solid var(--border)',
-        borderRadius: '4px',
-        padding: '2px 6px',
-        fontSize: '10px',
-        fontFamily: 'var(--font-mono)',
-        cursor: 'pointer',
-        outline: 'none',
-      }}
-      title={`thinking budget: ${label}`}
-    >
-      {label}
-    </button>
-  )
-
-  return (
-    <span style={{ display: 'inline-flex', gap: '3px', alignItems: 'center' }}>
-      {available.map((v) => chip(v || 'base', v, v === current))}
-    </span>
-  )
-}
-
-/**
- * Strip a variant suffix (e.g. `/low` / `/high`) from a model id, given the
- * set of variants the agent advertises. Returns the base id and the
- * detected variant (empty string when the id is already a base model).
- *
- * Exported for unit tests.
- */
-export function splitModelVariant(
-  id: string,
-  variants: string[],
-): { base: string; variant: string } {
-  for (const v of variants) {
-    if (v && id.endsWith(`/${v}`)) {
-      return { base: id.slice(0, -v.length - 1), variant: v }
-    }
-  }
-  return { base: id, variant: '' }
-}
-
-
