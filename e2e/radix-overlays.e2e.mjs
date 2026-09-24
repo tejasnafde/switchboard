@@ -276,6 +276,23 @@ async function workspaceOrganizer() {
   check('organizer: focus returns to its button', await focusSettlesOn(`document.activeElement?.getAttribute('aria-label') === 'Organize workspaces and projects'`))
 }
 
+async function settingsDialog() {
+  const opener = win.getByTitle('Settings')
+  await opener.click()
+  const settings = win.getByRole('dialog', { name: 'Settings' })
+  await settings.waitFor({ state: 'visible' })
+  check('settings: focus moves into it', await focusSettlesOn(`!!document.activeElement?.closest('.settings-modal-content')`))
+  for (let i = 0; i < 12; i++) await win.keyboard.press('Tab')
+  check('settings: Tab stays inside it', await win.evaluate(() => !!document.activeElement?.closest('.settings-modal-content')))
+  await win.keyboard.press('Escape')
+  check('settings: Escape closes it', await hidden(settings))
+  check('settings: focus returns to its button', await focusIsTrigger('Settings'))
+  await opener.click()
+  await settings.waitFor({ state: 'visible' })
+  await clickOutside(640, 700)
+  check('settings: an outside click closes it', await hidden(settings))
+}
+
 await openConversation('Debug auth callback')
 await providerPicker()
 await branchPicker()
@@ -285,6 +302,7 @@ await searchModal()
 await quickPrompt()
 await kanbanModals()
 await workspaceOrganizer()
+await settingsDialog()
 
 await app.close()
 const failed = results.filter((ok) => !ok).length

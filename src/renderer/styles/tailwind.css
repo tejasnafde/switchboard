@@ -27,6 +27,7 @@
 @source '../components/kanban/CardModal.tsx';
 @source '../components/kanban/WorktreeManagerModal.tsx';
 @source '../components/kanban/kanbanModalClasses.ts';
+@source '../components/SettingsModal.tsx';
 
 @theme inline {
   --spacing: 0.25rem;
