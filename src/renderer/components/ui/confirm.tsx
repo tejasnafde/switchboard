@@ -38,6 +38,9 @@ const current = (): PendingConfirm | undefined => queue[0]
 let returnFocus: HTMLElement | null = null
 
 function restoreFocus(): void {
+  // Radix calls this a task after the dialog closes. A confirm opened in that
+  // gap owns returnFocus now and will restore it when it closes.
+  if (queue.length > 0) return
   const target = returnFocus?.isConnected
     ? returnFocus
     : document.querySelector<HTMLElement>('[data-chat-panel] [contenteditable="true"]')
@@ -77,7 +80,8 @@ if (typeof window !== 'undefined') window.addEventListener('keydown', holdKeysWh
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     if (queue.length === 0 && typeof document !== 'undefined') {
-      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      const active = document.activeElement
+      returnFocus = active instanceof HTMLElement && active !== document.body ? active : null
     }
     queue.push({ ...options, resolve })
     for (const listener of listeners) listener()

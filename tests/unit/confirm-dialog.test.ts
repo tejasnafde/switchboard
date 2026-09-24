@@ -62,6 +62,25 @@ describe('confirm', () => {
     opener.remove()
   })
 
+  it('returns focus to the second opener when a confirm opens right after another closes', async () => {
+    const first = document.createElement('button')
+    const second = document.createElement('button')
+    document.body.append(first, second)
+    first.focus()
+    const a = await ask({ title: 'First?' })
+    // Cancel and open the next one before Radix's deferred close runs.
+    act(() => button('Cancel').click())
+    second.focus()
+    const b = await ask({ title: 'Second?' })
+    await a.answer
+    await new Promise((done) => setTimeout(done, 20))
+    await act(async () => button('Cancel').click())
+    await b.answer
+    await vi.waitFor(() => expect(document.activeElement).toBe(second))
+    first.remove()
+    second.remove()
+  })
+
   it('falls back to the composer when the opener was removed', async () => {
     const opener = document.createElement('button')
     document.body.append(opener)
