@@ -1,0 +1,52 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "message-list-bottom-anchor",
+  "summary": "The desktop chat list now follows to its real bottom, and an open popover survives switching to another app. The list used to stop 17 px short, with the last row clipped by 9 px, because the virtualizer did not know about the list's CSS padding. While a turn ran it also stayed put when the last row grew after it was measured (a queued message's footer arriving a frame later), because it only followed changes in the message count; growth while idle is the user expanding a section, so that still does not scroll. Separately, switching apps moved focus onto a Radix focus guard, which every popover built on ui/popover read as focus outside and closed on. Together these made the macOS visual regression job flaky: queued-message landed on one of two scroll positions, and provider-picker timed out whenever another app took focus mid-capture.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/renderer/components/chat/ChatPanel.tsx",
+        "src/renderer/components/ui/popover.tsx",
+        "tests/unit/popover-focus-guard.test.ts",
+        "e2e/snapshots"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile/src/screens/ThreadScreen.tsx renders the feed as an inverted FlatList, so the newest row is anchored at offset 0 by the list itself. There is no virtualizer padding math and no follow-on-count effect to get wrong. Its overlays are React Native modals, not Radix popovers."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android ThreadScreen.kt uses a LazyColumn with reverseLayout = true, which anchors the newest item at the bottom natively, for the same reason as the React Native app. Its overlays are Compose dialogs and menus, not Radix popovers."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer layout only. No channel, event or wire-format change."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, settings key or stored-data change."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link or update-channel change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test pass. tests/unit/popover-focus-guard.test.ts fails without the popover change (focus on the guard closes it) and passes with it; focus on a real outside element still closes the popover.",
+      "The picker flake was reproduced on demand by calling BrowserWindow.blur() while the picker was open: the screenshot failed with the same 'waiting for getByRole' timeout, and an event trace showed focus moving to a data-radix-focus-guard span just before the popover unmounted. With the fix the picker stays open and still matches its baseline in all three themes.",
+      "SB_VISUAL_SCOPE=screens node e2e/visual-regressions.e2e.mjs passed 10 runs in a row on this Mac on the final build, each with a private TMPDIR, against the regenerated queued-message baselines."
+    ],
+    "hardware": [
+      "The three regenerated queued-message baselines (Dark, Light, Translucent) were opened and inspected on this Mac: the Queued bubble is fully visible above the list's bottom padding."
+    ],
+    "notExercised": [
+      "No automated check covers the idle case: expanding a tool or changed-files section at the bottom of a finished turn should not scroll. It follows from the busy gate in MessageList but was not driven in the app.",
+      "Mobile and Android were not exercised; no files there changed."
+    ]
+  }
+}

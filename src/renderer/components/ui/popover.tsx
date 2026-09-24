@@ -12,13 +12,20 @@ export const PopoverAnchor = PopoverPrimitive.Anchor
 export const PopoverContent = forwardRef<
   ElementRef<typeof PopoverPrimitive.Content>,
   ComponentPropsWithoutRef<typeof PopoverPrimitive.Content>
->(({ className, sideOffset = 6, collisionPadding = 8, ...props }, ref) => (
+>(({ className, sideOffset = 6, collisionPadding = 8, onFocusOutside, ...props }, ref) => (
   <PopoverPrimitive.Portal>
     <PopoverPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
       collisionPadding={collisionPadding}
       className={cn('outline-none', className)}
+      // Switching to another app moves focus onto one of the focus guards
+      // Radix puts at the edges of <body>, which reads as focus outside and
+      // closed the popover. Only focus on a real element may dismiss it.
+      onFocusOutside={(event) => {
+        onFocusOutside?.(event)
+        if (event.target instanceof Element && event.target.hasAttribute('data-radix-focus-guard')) event.preventDefault()
+      }}
       {...props}
     />
   </PopoverPrimitive.Portal>
