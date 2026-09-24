@@ -119,6 +119,17 @@ describe('plainPreviewText', () => {
     expect(plainPreviewText('Running:\n```sh\nnpm te')).toBe('Running:')
   })
 
+  it('closes a fence only at a matching fence line, and handles tilde fences', () => {
+    expect(plainPreviewText('Before\n```md\nsee ```not-a-close here\n```\nAfter')).toBe('Before After')
+    expect(plainPreviewText('Before\n~~~\ncode\n~~~\nAfter')).toBe('Before After')
+    expect(plainPreviewText('Before\n````\n```\ninner\n```\n````\nAfter')).toBe('Before After')
+  })
+
+  it('falls back to the raw text when a digest is only a code block', () => {
+    const msg = { text: 'Real text here <agent_digest>\n```\ncode\n```\n</agent_digest>', isAssistant: true, isUser: false }
+    expect(turnPreviewLine([msg])).toBe('Real text here')
+  })
+
   it('drops heading, quote and list markers and joins lines', () => {
     expect(plainPreviewText('## Summary\n> note\n- one\n1. two')).toBe('Summary note one two')
   })
