@@ -234,6 +234,16 @@ object RemoteDecoders {
         },
         displayBody = raw.string("displayBody"),
         pillsMeta = decodeMessagePills(raw.values["pillsMeta"]),
+        fileDiff = (raw.values["fileDiff"] as? JsonObject)?.let { diff ->
+            MessageFileDiff(
+                fileEditId = diff.stringRequired("fileEditId"),
+                repoRoot = diff.stringRequired("repoRoot"),
+                relPath = diff.stringRequired("relPath"),
+                changeKind = diff.stringRequired("changeKind"),
+                oldContent = diff.stringRequired("oldContent"),
+                newContent = diff.stringRequired("newContent"),
+            )
+        },
     )
 
     private fun sessionMeta(raw: JsonObject) = SessionMeta(

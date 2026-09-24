@@ -2,6 +2,7 @@ package app.switchboard.mobile.data.thread
 
 import app.switchboard.mobile.domain.remote.ChatMessage
 import app.switchboard.mobile.domain.remote.LoadedSession
+import app.switchboard.mobile.domain.remote.MessageFileDiff
 import app.switchboard.mobile.domain.remote.MessageImage
 import app.switchboard.mobile.domain.remote.MessageToolCall
 import app.switchboard.mobile.domain.thread.FeedItem
@@ -130,6 +131,25 @@ class LoadedSessionSnapshotMapperTest {
         assertTrue(tool.state == "done")
     }
 
+    @Test
+    fun `mirrored changed-file history becomes the same row the live event builds`() {
+        val diff = MessageFileDiff("ab-1:src/a.ts", "/repo", "src/a.ts", "modify", "a", "b")
+        val loaded = LoadedSession(
+            messages = listOf(message("filediff_ab-1:src/a.ts", "assistant", "", fileDiff = diff)),
+            meta = null,
+            total = 1,
+            truncated = false,
+            raw = JsonObject(linkedMapOf()),
+        )
+
+        val feed = LoadedSessionSnapshotMapper.map("thread", loaded).feed
+
+        assertEquals(
+            listOf(FeedItem.FileEdit("f-ab-1:src/a.ts", "ab-1:src/a.ts", "/repo", "src/a.ts", "modify", "a", "b")),
+            feed,
+        )
+    }
+
     private fun message(
         id: String,
         role: String,
@@ -138,6 +158,7 @@ class LoadedSessionSnapshotMapperTest {
         toolCalls: List<MessageToolCall> = emptyList(),
         displayBody: String? = null,
         pillsMeta: Map<String, MessagePill> = emptyMap(),
+        fileDiff: MessageFileDiff? = null,
     ) = ChatMessage(
         id = id,
         role = role,
@@ -148,5 +169,6 @@ class LoadedSessionSnapshotMapperTest {
         toolCalls = toolCalls,
         displayBody = displayBody,
         pillsMeta = pillsMeta,
+        fileDiff = fileDiff,
     )
 }

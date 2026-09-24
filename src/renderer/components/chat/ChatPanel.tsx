@@ -19,6 +19,7 @@ import { CompactionOfferBanner } from './CompactionOfferBanner'
 import { shouldOfferCompaction } from '@shared/compaction-offer'
 import { isDraftSessionId } from '@shared/new-chat-draft'
 import { canSteer } from '@shared/turn-delivery'
+import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
 import { materializeDraft, takeFirstSend } from '../../services/draftChat'
 import { ContextWindowMeter } from './ContextWindowMeter'
 import { SLASH_COMMANDS } from './slashCommands'
@@ -592,19 +593,19 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
           if (existing) {
             updateMessage(tid, existing.id, {
               toolCalls: existing.toolCalls?.map((tc) => tc.id === event.toolId
-                ? { ...tc, name: event.toolName, input: typeof event.input === 'string' ? event.input : JSON.stringify(event.input, null, 2) }
+                ? { ...tc, name: event.toolName, input: toolInputText(event.input) }
                 : tc),
             })
             break
           }
           appendMessage(tid, {
-            id: `tool_${event.toolId}`,
+            id: toolRowId(event.toolId),
             role: 'assistant',
             content: '',
             toolCalls: [{
               id: event.toolId,
               name: event.toolName,
-              input: typeof event.input === 'string' ? event.input : JSON.stringify(event.input, null, 2),
+              input: toolInputText(event.input),
             }],
             timestamp: Date.now(),
           })
@@ -853,7 +854,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         case 'file.edited': {
           // One diff card per file changed during the turn (git-checkpoint
           // derived). Coalesce re-edits of the same file within a turn by id.
-          const id = `filediff_${event.fileEditId}`
+          const id = fileDiffRowId(event.fileEditId)
           const sessions = useAgentStore.getState().sessions
           const session = sessions.find((s) => s.id === tid)
           const existing = session?.messages.find((m) => m.id === id)
@@ -977,7 +978,12 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       const sess = useAgentStore.getState().sessions.find((s) => s.id === sessionId)
       const fd = sess?.messages.find((m) => m.id === messageId)?.fileDiff
       if (!fd) return
-      const persist = () => updateMessage(sessionId, messageId, { fileDiff: { ...fd, status } })
+      const persist = () => {
+        updateMessage(sessionId, messageId, { fileDiff: { ...fd, status } })
+        window.api.app.setFileDiffStatus(sessionId, messageId, status).catch((err) => {
+          log.warn('failed to store the file-diff decision', { relPath: fd.relPath, err })
+        })
+      }
       // 'accepted' = keep the agent's changes; disk already holds them.
       if (contentToWrite === null) {
         persist()

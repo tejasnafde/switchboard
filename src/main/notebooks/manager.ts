@@ -15,6 +15,7 @@
  * One watcher + sync engine per repo root, refcounted across the threads
  * attached to it.
  */
+import { randomUUID } from 'node:crypto'
 import { join, relative } from 'node:path'
 import { mkdirSync } from 'node:fs'
 import { watch } from 'chokidar'
@@ -87,6 +88,8 @@ export class NotebookManager {
   private readonly watch: NotebookWatchFactory
   private publish: (event: RuntimeEvent) => void = () => {}
   private turnSeq = 0
+  // Cards are stored by fileEditId, so a restart must not reuse nb1.
+  private readonly launch = randomUUID().slice(0, 8)
 
   constructor(deps: { watch?: NotebookWatchFactory } = {}) {
     this.watch = deps.watch ?? chokidarWatchFactory
@@ -139,7 +142,7 @@ export class NotebookManager {
     const thread = this.threads.get(threadId)
     if (!thread) return
     thread.turnActive = true
-    thread.turnId = `nb${++this.turnSeq}`
+    thread.turnId = `nb${this.launch}-${++this.turnSeq}`
   }
 
   /**

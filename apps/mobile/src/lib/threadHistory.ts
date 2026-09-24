@@ -32,6 +32,14 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
         toolName: tool.name, input: tool.input, output: tool.output, state: 'done',
       })
     }
+    const diff = message.fileDiff
+    if (diff) {
+      // Same id as the live row, so a reload and a live event coalesce.
+      items.push({
+        kind: 'fileEdit', id: `f-${diff.fileEditId}`, relPath: diff.relPath,
+        changeKind: diff.changeKind, oldContent: diff.oldContent, newContent: diff.newContent,
+      })
+    }
   }
   return items
 }

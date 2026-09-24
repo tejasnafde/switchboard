@@ -15,6 +15,7 @@ import type {
   CreateConversationParams,
   SaveMessageParams,
   MobilePairingStatus,
+  FileDiffAttachment,
 } from '@shared/types'
 import type {
   RuntimeEvent,
@@ -198,6 +199,8 @@ const api = {
     relaunch: () => transport.invoke(AppChannels.RELAUNCH),
     saveMessage: (params: SaveMessageParams) =>
       transport.invoke(AppChannels.SAVE_MESSAGE, params),
+    setFileDiffStatus: (conversationId: string, messageId: string, status: FileDiffAttachment['status']): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.SET_FILE_DIFF_STATUS, conversationId, messageId, status),
     renameConversation: (id: string, title: string) =>
       transport.invoke(AppChannels.RENAME_CONVERSATION, id, title),
     getConversationRuntimeMode: (id: string): Promise<{ mode: RuntimeMode | null }> =>

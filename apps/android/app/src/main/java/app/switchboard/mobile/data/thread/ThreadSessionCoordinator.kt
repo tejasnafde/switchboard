@@ -382,6 +382,15 @@ object LoadedSessionSnapshotMapper {
                             ),
                         )
                     }
+                    message.fileDiff?.let { diff ->
+                        // Same id as the live row, so a reload and a live event coalesce.
+                        add(
+                            FeedItem.FileEdit(
+                                "f-${diff.fileEditId}", diff.fileEditId, diff.repoRoot, diff.relPath,
+                                diff.changeKind, diff.oldContent, diff.newContent,
+                            ),
+                        )
+                    }
                 }
 
                 else -> listOf(

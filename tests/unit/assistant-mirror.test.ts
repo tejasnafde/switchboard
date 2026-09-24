@@ -18,7 +18,12 @@ vi.mock('../../src/main/db/providerInstances', () => ({
 
 const saved: Array<{ id: string; conversationId: string; role: string; content: string }> = []
 const savedAt: Array<number | undefined> = []
+const activity: Array<{ id: string; conversationId: string; timestamp: number; toolCalls?: unknown; fileDiff?: { status: string } }> = []
 vi.mock('../../src/main/db/database', () => ({
+  saveActivityMessageIfAbsent: (row: (typeof activity)[number]) => {
+    activity.push(row)
+    return true
+  },
   recordThreadSession: () => {},
   updateConversationSessionId: () => {},
   saveMessageIfAbsent: (
@@ -51,7 +56,7 @@ const content = (threadId: string, messageId: string, text: string, append?: boo
 const turnEnd = (threadId: string): RuntimeEvent => ({ type: 'turn.completed', threadId } as RuntimeEvent)
 
 describe('live assistant mirror', () => {
-  beforeEach(() => { saved.length = 0; savedAt.length = 0 })
+  beforeEach(() => { saved.length = 0; savedAt.length = 0; activity.length = 0 })
 
   it('persists the folded reply once the turn completes', () => {
     const { publish } = makeRegistry()
@@ -116,5 +121,49 @@ describe('live assistant mirror', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('mirrors each tool call with its input, output and start time', () => {
+    // The renderer never saves tool rows, and only Claude's transcript keeps
+    // them, so without this a reopened Codex or OpenCode turn lost them.
+    vi.useFakeTimers()
+    try {
+      const { publish } = makeRegistry()
+      vi.setSystemTime(1_000)
+      publish({ type: 'tool.started', threadId: 't1', toolId: 'call_1', toolName: 'Bash', input: { command: 'ls' } })
+      vi.setSystemTime(2_000)
+      // Codex announces a file change on item/started and again on item/completed.
+      publish({ type: 'tool.started', threadId: 't1', toolId: 'call_1', toolName: 'Bash', input: { command: 'ls' } })
+      publish({ type: 'tool.completed', threadId: 't1', toolId: 'call_1', output: 'a.ts' })
+      expect(activity).toHaveLength(0)
+      publish(turnEnd('t1'))
+      expect(activity).toEqual([{
+        id: 'tool_call_1',
+        conversationId: 't1',
+        timestamp: 1_000,
+        toolCalls: [{ id: 'call_1', name: 'Bash', input: '{\n  "command": "ls"\n}', output: 'a.ts' }],
+      }])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('mirrors a changed-file card as it is published, and skips an oversized one', async () => {
+    const { publish, registry } = makeRegistry()
+    const edit = (relPath: string, newContent: string) => ({
+      type: 'file.edited' as const, threadId: 't1', turnId: 'ab-1', fileEditId: `ab-1:${relPath}`,
+      repoRoot: '/repo', relPath, changeKind: 'modify' as const, oldContent: 'old', newContent,
+    })
+    ;(registry as unknown as { checkpoints: unknown }).checkpoints = {
+      finishTurn: async () => [edit('a.ts', 'new'), edit('huge.bin', 'x'.repeat(3 * 1024 * 1024))],
+      clear: () => {},
+    }
+    publish(turnEnd('t1'))
+    await vi.waitFor(() => expect(activity).toHaveLength(1))
+    expect(activity[0]).toMatchObject({
+      id: 'filediff_ab-1:a.ts',
+      conversationId: 't1',
+      fileDiff: { relPath: 'a.ts', oldContent: 'old', newContent: 'new', status: 'pending' },
+    })
   })
 })

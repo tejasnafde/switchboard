@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@shared/types'
+import type { ChatMessage, ToolCall } from '@shared/types'
 
 /**
  * Collapse the same message arriving from more than one source. `load-by-id`
@@ -66,6 +66,10 @@ export function mergeConversationMessages(
   for (const candidates of semanticCandidates.values()) {
     candidates.sort((a, b) => a.timestamp - b.timestamp)
   }
+  const diskIndexesByToolId = new Map<string, number>()
+  disk.forEach((message, index) => {
+    for (const call of message.toolCalls ?? []) diskIndexesByToolId.set(call.id, index)
+  })
   const candidateCursor = new Map<string, number>()
   const matchedDiskIndexes = new Set<number>()
   const databaseOnly: ChatMessage[] = []
@@ -92,6 +96,17 @@ export function mergeConversationMessages(
       matchedDiskIndexes.add(exactIndex)
       continue
     }
+    if (isActivityRow(message)) {
+      // Tool ids are unique, so they match exactly. Every such row has empty
+      // content, which would otherwise pair any two of them inside the window.
+      const diskIndex = sameToolCallsOnDisk(message, diskIndexesByToolId)
+      if (diskIndex === undefined) {
+        databaseOnly.push(message)
+      } else {
+        disk[diskIndex] = { ...disk[diskIndex], toolCalls: withToolOutputs(disk[diskIndex].toolCalls ?? [], message.toolCalls ?? []) }
+      }
+      continue
+    }
     const key = semanticMessageKey(message)
     const candidates = semanticCandidates.get(key) ?? []
     let cursor = candidateCursor.get(key) ?? 0
@@ -113,6 +128,28 @@ export function mergeConversationMessages(
   }
 
   return [...disk, ...databaseOnly].sort((a, b) => a.timestamp - b.timestamp)
+}
+
+/** A mirrored tool or changed-file row: no text of its own. */
+function isActivityRow(message: ChatMessage): boolean {
+  return !message.content && (!!message.toolCalls?.length || !!message.fileDiff)
+}
+
+/** The disk message already holding every one of this row's tool calls. */
+function sameToolCallsOnDisk(message: ChatMessage, diskIndexesByToolId: Map<string, number>): number | undefined {
+  const calls = message.toolCalls ?? []
+  if (calls.length === 0) return undefined
+  const index = diskIndexesByToolId.get(calls[0].id)
+  return calls.every((call) => diskIndexesByToolId.get(call.id) === index) ? index : undefined
+}
+
+/** Claude's transcript keeps the tool_use and not its result, which the mirror has. */
+function withToolOutputs(calls: ToolCall[], mirrored: ToolCall[]): ToolCall[] {
+  const outputs = new Map(mirrored.map((call) => [call.id, call.output]))
+  return calls.map((call) => {
+    const output = outputs.get(call.id)
+    return call.output === undefined && output !== undefined ? { ...call, output } : call
+  })
 }
 
 function cloneMessage(message: ChatMessage): ChatMessage {

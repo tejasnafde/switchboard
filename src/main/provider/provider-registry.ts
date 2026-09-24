@@ -33,7 +33,7 @@ import { CheckpointTracker } from './checkpoint-tracker'
 import { notebookManager } from '../notebooks/manager'
 import { filterNotebookFileEdits } from '../notebooks/file-edit-filter'
 import { getProviderInstanceFull, resolveProviderInstance, listOauthDirsForAgent } from '../db/providerInstances'
-import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
+import { commitConversationProviderSwitch, recordConversationSegment, recordThreadSession, updateConversationSessionId, saveMessageIfAbsent, saveActivityMessageIfAbsent, getConversationById, getConversationTitle, resolveRootThreadId, getDb, getConversationExecutionRoot, commitConversationExecutionRoot } from '../db/database'
 import { SqliteTurnAcceptanceStore } from '../db/turn-acceptance'
 import { currentBackendRequestContext, hashClientScope } from '../backend/request-context'
 import {
@@ -56,7 +56,8 @@ import type { PeerSessionSummary, PeerToolHost } from './peer-tools'
 import { defaultClaudeDir, prepareClaudeProfileSwitch } from './claude-session-migrate'
 import { prepareCodexProfileSwitch } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
-import type { AgentType } from '@shared/types'
+import type { AgentType, FileDiffAttachment, ToolCall } from '@shared/types'
+import { fileDiffRowId, toolInputText, toolRowId } from '@shared/turn-activity'
 import type {
   ProviderAdapter,
   ProviderKind,
@@ -72,12 +73,16 @@ import {
   type UserTurnSubmissionResult,
   type UserTurnSubmissionV1,
   type UserTurnResolutionV1,
+  type RuntimeFileEditedEvent,
 } from '@shared/provider-events'
 import { isAgentProvider, toAgentProvider } from '@shared/types'
 import { peekCatalog, probeCatalog } from './catalog-probe'
 import { pendingRequestKey, type PendingBlockingEvent } from '@shared/pending-requests'
 
 const log = createLogger('provider:registry')
+
+/** Old plus new content. A bigger card still streams live, but is not stored. */
+const MIRRORED_FILE_DIFF_MAX_CHARS = 2 * 1024 * 1024
 
 /** Realpath, or the input when the path does not exist (a deleted worktree). */
 function realpathSyncOr(p: string): string {
@@ -313,18 +318,74 @@ export class ProviderRegistry implements PeerToolHost {
     })
   }
 
-  /** Mirror the finished turn's assistant messages, then drop the buffer. */
-  private flushAssistantText(threadId: string): void {
+  /**
+   * In-flight tool calls per thread, mirrored beside the text. Only Claude's
+   * transcript keeps them, so a Codex, OpenCode or demo chat came back from a
+   * reload with no "Used N tools" row.
+   */
+  private pendingToolCalls = new Map<string, Map<string, { call: ToolCall; at: number }>>()
+
+  private bufferToolCall(event: RuntimeEvent): void {
+    if (event.type === 'tool.started') {
+      let byTool = this.pendingToolCalls.get(event.threadId)
+      if (!byTool) {
+        byTool = new Map()
+        this.pendingToolCalls.set(event.threadId, byTool)
+      }
+      const pending = byTool.get(event.toolId)
+      byTool.set(event.toolId, {
+        call: { ...pending?.call, id: event.toolId, name: event.toolName, input: toolInputText(event.input) },
+        at: pending?.at ?? Date.now(),
+      })
+    } else if (event.type === 'tool.completed') {
+      const pending = this.pendingToolCalls.get(event.threadId)?.get(event.toolId)
+      if (pending && event.output !== undefined) pending.call = { ...pending.call, output: event.output }
+    }
+  }
+
+  /** Mirror the finished turn's assistant messages and tool calls, then drop the buffers. */
+  private flushTurnMirror(threadId: string): void {
     const byMessage = this.pendingAssistantText.get(threadId)
     this.pendingAssistantText.delete(threadId)
-    if (!byMessage) return
-    for (const [messageId, { text, at }] of byMessage) {
+    for (const [messageId, { text, at }] of byMessage ?? []) {
       if (!text.trim()) continue
       try {
         saveMessageIfAbsent(messageId, threadId, 'assistant', text, undefined, undefined, at)
       } catch (err) {
         log.warn(`failed to mirror assistant message ${messageId} for ${threadId}: ${err}`)
       }
+    }
+    const byTool = this.pendingToolCalls.get(threadId)
+    this.pendingToolCalls.delete(threadId)
+    for (const { call, at } of byTool?.values() ?? []) {
+      try {
+        saveActivityMessageIfAbsent({ id: toolRowId(call.id), conversationId: threadId, timestamp: at, toolCalls: [call] })
+      } catch (err) {
+        log.warn(`failed to mirror tool call ${call.id} for ${threadId}: ${err}`)
+      }
+    }
+  }
+
+  /** Mirror one changed-file card as it is published. */
+  private mirrorFileEdit(event: RuntimeFileEditedEvent): void {
+    const fileDiff: FileDiffAttachment = {
+      fileEditId: event.fileEditId,
+      repoRoot: event.repoRoot,
+      relPath: event.relPath,
+      changeKind: event.changeKind,
+      oldContent: event.oldContent,
+      newContent: event.newContent,
+      status: 'pending',
+    }
+    const bytes = fileDiff.oldContent.length + fileDiff.newContent.length
+    if (bytes > MIRRORED_FILE_DIFF_MAX_CHARS) {
+      log.info(`not mirroring the ${event.relPath} diff card for ${event.threadId}: ${bytes} chars`)
+      return
+    }
+    try {
+      saveActivityMessageIfAbsent({ id: fileDiffRowId(event.fileEditId), conversationId: event.threadId, timestamp: Date.now(), fileDiff })
+    } catch (err) {
+      log.warn(`failed to mirror file edit ${event.fileEditId} for ${event.threadId}: ${err}`)
     }
   }
 
@@ -621,6 +682,7 @@ export class ProviderRegistry implements PeerToolHost {
       this.pendingRequests.delete(event.threadId)
     }
     this.bufferAssistantText(event)
+    this.bufferToolCall(event)
     if (event.type === 'turn.completed') this.finishOutstandingTurn(event.threadId)
     this.bus.publish(event)
 
@@ -628,7 +690,7 @@ export class ProviderRegistry implements PeerToolHost {
     // working tree and stream one file.edited event per changed file. Fire
     // and forget; the cards land right after the turn.completed marker.
     if (event.type === 'turn.completed') {
-      this.flushAssistantText(event.threadId)
+      this.flushTurnMirror(event.threadId)
       void this.emitFileEdits(event.threadId)
     }
 
@@ -794,7 +856,10 @@ export class ProviderRegistry implements PeerToolHost {
       const events = filterNotebookFileEdits(await this.checkpoints.finishTurn(threadId), (ev) =>
         notebookManager.explainsFileEdit(ev)
       )
-      for (const ev of [...events, ...notebookManager.drainTurnEdits(threadId)]) this.bus.publish(ev)
+      for (const ev of [...events, ...notebookManager.drainTurnEdits(threadId)]) {
+        this.mirrorFileEdit(ev)
+        this.bus.publish(ev)
+      }
     } catch (err) {
       log.warn(`emitFileEdits failed for ${threadId}: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -938,7 +1003,7 @@ export class ProviderRegistry implements PeerToolHost {
         throw new Error('Provider stopped without a recoverable session snapshot')
       }
       this.sessionEpochs.delete(threadId)
-      this.flushAssistantText(threadId)
+      this.flushTurnMirror(threadId)
       this.sessionAdapters.delete(threadId)
       this.sessionCwd.delete(threadId)
       this.sessionStatus.delete(threadId)

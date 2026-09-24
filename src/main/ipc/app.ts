@@ -23,6 +23,7 @@ import {
   listBookmarks,
   updateConversationTitle,
   saveMessage,
+  setFileDiffStatus,
   getManagedRootConversationsForProject,
   getManagedRootConversationsForProjects,
   saveSessionLayout,
@@ -77,7 +78,7 @@ import { getConversationForkCoordinator } from '../conversations/conversation-fo
 import type { ConversationForkCoordinator } from '../conversations/conversation-fork-coordinator'
 import { parseForkConversationRequest, type ForkConversationOutcome } from '@shared/conversation-fork'
 import { readLaunchConfig, writeLaunchConfig, watchLaunchConfig, setLaunchConfigEmitter } from '../launch-config/launch-config-store'
-import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary } from '@shared/types'
+import type { Project, CreateConversationParams, SaveMessageParams, ChatMessage, SessionSummary, FileDiffAttachment } from '@shared/types'
 import { logicalImportConversationId, recoveryCandidateTitle } from '../db/conversationSidebarRole'
 import { loadCursorConversation } from '../cursor/store'
 import { importCursorSnapshot } from '../db/cursor-import'
@@ -488,6 +489,17 @@ export function registerAppHandlers(host: BackendHost, deps: AppHandlerDependenc
       log.info(`saveMessage marker → ${result.ok ? 'ok' : `skipped(${result.reason})`} conv=${params.conversationId} content=${JSON.stringify(params.content)}`)
     }
     return result
+  })
+
+  // The user accepted or rejected a changed-file card. Stored so a reload
+  // shows the decision rather than a card asking again.
+  host.handle(AppChannels.SET_FILE_DIFF_STATUS, (
+    conversationId: string,
+    messageId: string,
+    status: FileDiffAttachment['status'],
+  ) => {
+    if (!['pending', 'accepted', 'rejected', 'partial'].includes(status)) return { ok: false }
+    return { ok: setFileDiffStatus(conversationId, messageId, status) }
   })
 
   // A client opened a thread. Persist the read point, then broadcast so the

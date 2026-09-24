@@ -26,4 +26,24 @@ describe('mobile thread history', () => {
       },
     ])
   })
+
+  it('rebuilds tool rows and changed-file rows from mirrored history', () => {
+    const items = historyToItems([
+      message({
+        id: 'tool_call_1', role: 'assistant',
+        toolCalls: [{ id: 'call_1', name: 'Bash', input: '{}', output: 'ok' }],
+      }),
+      message({
+        id: 'filediff_ab-1:src/a.ts', role: 'assistant',
+        fileDiff: {
+          fileEditId: 'ab-1:src/a.ts', repoRoot: '/repo', relPath: 'src/a.ts',
+          changeKind: 'modify', oldContent: 'a', newContent: 'b', status: 'pending',
+        },
+      }),
+    ])
+    expect(items).toEqual([
+      { kind: 'tool', id: 'h-tool_call_1-t-call_1', toolName: 'Bash', input: '{}', output: 'ok', state: 'done' },
+      { kind: 'fileEdit', id: 'f-ab-1:src/a.ts', relPath: 'src/a.ts', changeKind: 'modify', oldContent: 'a', newContent: 'b' },
+    ])
+  })
 })
