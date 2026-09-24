@@ -19,6 +19,7 @@ import { formatRelativeTime } from './sidebar-helpers'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { ProjectFavicon } from './ProjectFavicon'
 import { AddRemoteProjectModal } from './AddRemoteProjectModal'
+import { confirm } from '../ui/confirm'
 
 function SortableMachine({
   id,
@@ -429,10 +430,10 @@ export function MachineLayer({
             <button
               className="machine-remove"
               title="Remove machine"
-              onClick={(e) => {
+              onClick={async (e) => {
                 e.stopPropagation()
                 // Deleting also drops the offline snapshot; not undoable.
-                if (window.confirm(`Remove machine "${node.name}"?`)) void remove(node.id)
+                if (await confirm({ title: `Remove machine "${node.name}"?`, confirmLabel: 'Remove', destructive: true })) void remove(node.id)
               }}
             >
               ×

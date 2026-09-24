@@ -22,6 +22,7 @@ import {
 } from '../../shared/providerInstanceDisplay'
 import type { AgentProvider } from '@shared/types'
 import { AGENT_PROVIDERS } from '@shared/types'
+import { confirm } from '../ui/confirm'
 
 const AGENT_KINDS = AGENT_PROVIDERS
 
@@ -342,8 +343,8 @@ function ProviderInstanceCard({
       </button>
       {!def && (
         <button
-          onClick={() => {
-            if (confirm(`Delete instance "${instance.displayName}"?`)) {
+          onClick={async () => {
+            if (await confirm({ title: `Delete instance "${instance.displayName}"?`, confirmLabel: 'Delete', destructive: true })) {
               void remove(instance.id)
             }
           }}

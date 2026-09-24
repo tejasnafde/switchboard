@@ -21,6 +21,7 @@ import {
   reorderWorkspacesById,
 } from '@shared/workspaceOrganization'
 import { colorTokenForWorkspace } from './sidebar-helpers'
+import { confirm } from '../ui/confirm'
 
 const WORKSPACE_COLORS = [1, 2, 3, 4, 5, 6].map(
   (index) => `var(--workspace-color-${index})`,
@@ -339,7 +340,12 @@ export function WorkspaceManager({
 
   const handleDelete = async () => {
     if (!selectedWorkspace) return
-    if (!window.confirm(`Delete workspace "${selectedWorkspace.name}"? Its projects will move to Ungrouped.`)) return
+    if (!(await confirm({
+      title: `Delete workspace "${selectedWorkspace.name}"?`,
+      body: 'Its projects will move to Ungrouped.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    }))) return
     await window.api.app.workspaces.delete(selectedWorkspace.id)
     const nextWorkspaces = localWorkspaces.filter((workspace) => workspace.id !== selectedWorkspace.id)
     const nextProjects = localProjects.map((project) => (

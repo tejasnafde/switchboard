@@ -5,7 +5,7 @@
  * Two phases, both on by default (SB_VISUAL_SCOPE=behaviour|screens runs one):
  *   - behaviour: translucent-theme assertions (native glass transmission,
  *     fullscreen fallback, sidebar Recents/Saved/organizer) on its own fixture.
- *   - screens: eight key screens in Dark, Light and Translucent, captured
+ *   - screens: nine key screens in Dark, Light and Translucent, captured
  *     against the seeded tour workspace with the scripted demo provider
  *     (SB_DEMO_ADAPTER=1) and pixel-compared with the baselines in
  *     e2e/snapshots/<screen>-<theme>-<platform>.png.
@@ -504,6 +504,20 @@ async function captureThemeScreens(win, theme) {
   await snapScreen(win, 'settings', theme, settings)
   await win.keyboard.press('Escape')
   await settings.waitFor({ state: 'hidden' })
+
+  // The in-app confirm that replaced window.confirm, reachable by role and name.
+  await win.locator('.sidebar-project-header').filter({ hasText: 'notes-cli' }).click({ button: 'right' })
+  await win.getByText('Remove project', { exact: true }).click()
+  const confirmDialog = win.getByRole('alertdialog', { name: 'Remove "notes-cli"?' })
+  await confirmDialog.waitFor({ state: 'visible' })
+  // A mask paints above everything, dialog included, so hide the real-clock
+  // turn times for this shot instead.
+  const hideTurnTimes = await win.addStyleTag({ content: '.turn-timestamp { visibility: hidden !important; }' })
+  await snapScreen(win, 'confirm-dialog', theme, win)
+  await hideTurnTimes.evaluate((node) => node.remove())
+  await confirmDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await confirmDialog.waitFor({ state: 'hidden' })
+  await win.locator('.sidebar-project-header').filter({ hasText: 'notes-cli' }).waitFor({ state: 'visible' })
 
   await win.getByRole('button', { name: 'Board', exact: true }).click()
   await win.getByText('Trace webhook retries', { exact: true }).first().waitFor({ state: 'visible' })

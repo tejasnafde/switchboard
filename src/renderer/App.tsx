@@ -25,6 +25,7 @@ import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
+import { ConfirmHost } from './components/ui/confirm'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
@@ -1601,6 +1602,7 @@ export function App() {
       )}
       <UpdateToast />
       <AnalyticsNotice />
+      <ConfirmHost />
     </div>
   )
 }

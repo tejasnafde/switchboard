@@ -58,6 +58,7 @@ import {
 } from './recentSessionLimit'
 
 import type { Project, SessionSummary, Bookmark, ChatMessage } from '@shared/types'
+import { confirm } from '../ui/confirm'
 
 interface SidebarProps {
   onSessionSelect?: (session: SessionSummary, projectPath: string, machineId?: string) => void
@@ -573,7 +574,12 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
   }, [editValue])
 
   const handleRemoveProject = useCallback(async (project: { path: string; name: string }) => {
-    if (!window.confirm(`Remove "${project.name}"? This also deletes its conversations and kanban cards from Switchboard (the folder on disk is untouched).`)) return
+    if (!(await confirm({
+      title: `Remove "${project.name}"?`,
+      body: 'This also deletes its conversations and kanban cards from Switchboard (the folder on disk is untouched).',
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) return
     setProjects((prev) => prev.filter((p) => p.path !== project.path))
     // Tear down any open sessions rooted in this project before the cascade
     // delete lands - otherwise activeSessionId points at a conversation row

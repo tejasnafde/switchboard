@@ -54,6 +54,7 @@ import {
   resolveLoadedRecentSessionLimit,
   type RecentSessionLimit,
 } from './sidebar/recentSessionLimit'
+import { confirm } from './ui/confirm'
 
 const log = createRendererLogger('component:settings')
 
@@ -668,8 +669,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
                               )}
                               {!isRenaming && name !== 'default' && (
                                 <button
-                                  onClick={() => {
-                                    if (confirm(`Delete launch config "${name}"?`)) handleDeleteLaunchConfig(name)
+                                  onClick={async () => {
+                                    if (await confirm({ title: `Delete launch config "${name}"?`, confirmLabel: 'Delete', destructive: true })) handleDeleteLaunchConfig(name)
                                   }}
                                   title="Delete launch config"
                                   style={{

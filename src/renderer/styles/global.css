@@ -191,10 +191,14 @@ html[data-fullscreen="true"].theme-translucent .titlebar-drag {
    Base Reset & Defaults
    ═══════════════════════════════════════════════════════════════════ */
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+/* Layered so Tailwind utilities (components/ui) can override it. Nothing
+   else here has zero specificity, so no existing rule changes order. */
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
 }
 
 html, body, #root {

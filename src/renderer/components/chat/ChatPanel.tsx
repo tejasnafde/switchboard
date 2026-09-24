@@ -66,6 +66,7 @@ import {
   withDraftProvenance,
 } from '../../services/draftTransfer'
 import { providerKindFor } from '@shared/types'
+import { confirm } from '../ui/confirm'
 
 interface ChatPanelProps {
   /**
@@ -160,7 +161,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     if (chatSlot) focusChatSlot(chatSlot)
   }, [chatSlot, focusChatSlot])
   const isVisiblyFocused = showFocusIndicator && chatSlot === focusedChatSlot
-  const copyPromptToOtherChat = useCallback(() => {
+  const copyPromptToOtherChat = useCallback(async () => {
     if (!sessionId || !otherSessionId || !activeSession) return
     const draftStore = useDraftStore.getState()
     const source = {
@@ -177,10 +178,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       || draftStore.imagesBySession[otherSessionId]?.length,
     )
     const crossesBoundary = requiresDraftTransferConfirmation(activeSession, targetSession)
-    if ((targetHasDraft || crossesBoundary) && !window.confirm([
+    const [title, body] = [
       targetHasDraft ? 'Replace the other chat’s existing draft?' : '',
       crossesBoundary ? 'This copies prompt context across a machine or provider profile boundary.' : '',
-    ].filter(Boolean).join('\n\n'))) return
+    ].filter(Boolean)
+    if (title && !(await confirm({ title, body, confirmLabel: 'Copy' }))) return
     const clone = cloneDraftPayload(source, {
       nextId: () => crypto.randomUUID(),
       createPreviewUrl: (file) => URL.createObjectURL(file),
@@ -322,9 +324,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         expectedCurrentInstanceId: prevInstanceId ?? null,
       })
       if (!result.ok && result.code === 'context-conflict') {
-        const startFresh = window.confirm(
-          `${result.message}\n\nThe current profile is still active. Start the selected profile as a fresh native session and carry the visible conversation into the next turn?`,
-        )
+        const startFresh = await confirm({
+          title: result.message,
+          body: 'The current profile is still active. Start the selected profile as a fresh native session and carry the visible conversation into the next turn?',
+          confirmLabel: 'Start fresh',
+        })
         if (!startFresh) return
         result = await window.api.provider.switchInstance(sessionId, {
           targetInstanceId: nextInstanceId,
@@ -901,9 +905,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       let outcome = await submitDesktopUserTurn(turn, submissionDependencies)
       if (!outcome.accepted && outcome.recoveryOrigin && outcome.recoveryOrigin !== origin) {
         const recoveryOrigin = outcome.recoveryOrigin
-        const confirmed = extras?.confirmedRecoveryOrigin === recoveryOrigin || window.confirm(
-          'An earlier message has unconfirmed delivery and is blocking this send. Continue without resending the earlier message?',
-        )
+        const confirmed = extras?.confirmedRecoveryOrigin === recoveryOrigin || await confirm({
+          title: 'An earlier message has unconfirmed delivery and is blocking this send.',
+          body: 'Continue without resending the earlier message?',
+          confirmLabel: 'Continue',
+        })
         if (confirmed) {
           let resolution
           try {

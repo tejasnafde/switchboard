@@ -58,6 +58,8 @@ import {
 import { onUserTurnAccepted } from '../../services/session-events'
 import { registerComposer } from '../../services/composerRegistry'
 import type { RuntimeMode } from '@shared/provider-events'
+import { Button } from '../ui/button'
+import { confirm } from '../ui/confirm'
 
 
 export type ChatSendResult =
@@ -697,12 +699,19 @@ export function ChatInput({
           priorRecovery.restored,
         )
       : 'send'
-    if (action === 'send-with-warning' && !window.confirm(
-      'The previous delivery could not be confirmed and may already have arrived. Send this edited message as a new turn?',
-    )) return
-    if (action === 'send-with-discard-warning' && !window.confirm(
-      'A failed message is still available to restore. Send this newer draft and discard the failed message?',
-    )) return
+    if (action === 'send-with-warning' && !(await confirm({
+      title: 'The previous delivery could not be confirmed and may already have arrived.',
+      body: 'Send this edited message as a new turn?',
+      confirmLabel: 'Send',
+    }))) return
+    if (action === 'send-with-discard-warning' && !(await confirm({
+      title: 'A failed message is still available to restore.',
+      body: 'Send this newer draft and discard the failed message?',
+      confirmLabel: 'Send',
+      destructive: true,
+    }))) return
+    // The dialog is modal, but a global shortcut can still switch chats under it.
+    if (sessionIdRef.current !== submittedSessionId) return
     const origin = (action === 'retry' || action === 'retry-safe') && priorRecovery?.origin
       ? priorRecovery.origin
       : submittedSessionId
@@ -839,7 +848,7 @@ export function ChatInput({
     insertedPillsRef.current.clear()
   }, [value, pills, pillsById, images, disabled, onSend, sessionId, composerFingerprint, recovery, updateRecoveries, agentType, isRunning])
 
-  const restoreRecovery = useCallback(() => {
+  const restoreRecovery = useCallback(async () => {
     if (!sessionId || !recovery || (recovery.restored && !recovery.collisionPayload)) return
     const draftStore = useDraftStore.getState()
     const hasNewerDraft = Boolean(
@@ -847,7 +856,7 @@ export function ChatInput({
       || draftStore.pillsBySession[sessionId]?.length
       || draftStore.imagesBySession[sessionId]?.length,
     )
-    if (hasNewerDraft && !window.confirm('Replace the current draft with the failed message?')) return
+    if (hasNewerDraft && !(await confirm({ title: 'Replace the current draft with the failed message?', confirmLabel: 'Replace', destructive: true }))) return
     const payload = recovery.collisionPayload ?? recovery.payload
     draftStore.replaceDraftPayload(sessionId, payload)
     setValue(payload.text)
@@ -1490,69 +1499,26 @@ export function ChatInput({
           />
         </div>
         {isRunning && onInterrupt && (
-          <button
-            onClick={onInterrupt}
-            title="Stop the current turn (⌘⌫)"
-            style={{
-              padding: '10px 12px',
-              borderRadius: 'var(--radius)',
-              border: '1px solid var(--error)',
-              background: 'transparent',
-              color: 'var(--error)',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 600,
-              flexShrink: 0,
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              transition: 'all 0.12s',
-            }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'rgba(248, 81, 73, 0.12)' }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'transparent' }}
-          >
+          <Button variant="destructive" onClick={onInterrupt} title="Stop the current turn (⌘⌫)">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="6" width="12" height="12" rx="1" />
             </svg>
             Stop
-          </button>
+          </Button>
         )}
         {isRunning && canSteer(agentType) && (
-          <button
-            type="button"
+          <Button
+            variant="secondary"
             onClick={() => { void handleSend('queue') }}
             disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
             title="Send after this turn ends (⌥Enter)"
-            style={{
-              padding: '10px 12px',
-              borderRadius: 'var(--radius)',
-              border: '1px solid var(--border)',
-              background: 'transparent',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontSize: '13px',
-              fontWeight: 600,
-              flexShrink: 0,
-            }}
           >
             Queue
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           onClick={() => { void handleSend('steer') }}
           disabled={disabled || isSubmitting || (!value.trim() && images.length === 0 && pills.length === 0)}
-          style={{
-            padding: '10px 16px',
-            borderRadius: 'var(--radius)',
-            border: 'none',
-            background: !disabled && !isSubmitting && (value.trim() || images.length > 0 || pills.length > 0) ? 'var(--accent)' : 'var(--bg-tertiary)',
-            color: !disabled && !isSubmitting && (value.trim() || images.length > 0 || pills.length > 0) ? '#fff' : 'var(--text-muted)',
-            cursor: !disabled && !isSubmitting && (value.trim() || images.length > 0 || pills.length > 0) ? 'pointer' : 'default',
-            fontSize: '13px',
-            fontWeight: 600,
-            flexShrink: 0,
-            transition: 'all 0.12s',
-          }}
           title={isRunning ? (canSteer(agentType) ? 'Steer: the agent reads this at its next step (Enter)' : 'Sends after this turn ends') : undefined}
         >
           {isSubmitting
@@ -1562,7 +1528,7 @@ export function ChatInput({
               : recoveryAction === 'retry'
                 ? 'Retry'
                 : isRunning ? (canSteer(agentType) ? 'Steer' : 'Queue') : 'Send'}
-        </button>
+        </Button>
       </div>
 
       {/* Footer bar: agent selector + mode toggle + hints. Wraps instead of
