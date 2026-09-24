@@ -5,7 +5,7 @@
  * Two phases, both on by default (SB_VISUAL_SCOPE=behaviour|screens runs one):
  *   - behaviour: translucent-theme assertions (native glass transmission,
  *     fullscreen fallback, sidebar Recents/Saved/organizer) on its own fixture.
- *   - screens: eight key screens in Dark, Light and Translucent, captured
+ *   - screens: nine key screens in Dark, Light and Translucent, captured
  *     against the seeded tour workspace with the scripted demo provider
  *     (SB_DEMO_ADAPTER=1) and pixel-compared with the baselines in
  *     e2e/snapshots/<screen>-<theme>-<platform>.png.
@@ -451,7 +451,7 @@ async function prepareScreensFixture() {
   makeSideRepo(sidePath)
   await launchSwitchboard({ userData: live.userData, demo: true })
   await closeApp()
-  seedDatabase(join(live.userData, 'data', 'switchboard.db'), projectPath, sidePath, { now: FROZEN_NOW, showFileDiffs: false })
+  seedDatabase(join(live.userData, 'data', 'switchboard.db'), projectPath, sidePath, { now: FROZEN_NOW, showFileDiffs: false, expandLocalTree: false })
   const pristine = makeTemp('sb-visual-screens-pristine-')
   for (const [key, path] of Object.entries(live)) cpSync(path, join(pristine, key), { recursive: true })
   return {
@@ -481,8 +481,11 @@ async function captureThemeScreens(win, theme) {
   await win.keyboard.press('Enter')
   await win.getByRole('button', { name: /Changed 1 file/ }).waitFor({ state: 'visible', timeout: 20_000 })
   await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
-  await snapScreen(win, 'chat', theme, win, [turnTimes])
-  await snapScreen(win, 'sidebar', theme, win.locator('.sidebar-root'))
+  // The sidebar has baselines of its own, so the full-window screens mask
+  // it: a sidebar change then moves only the sidebar baselines.
+  const sidebar = win.locator('.sidebar-root')
+  await snapScreen(win, 'chat', theme, win, [turnTimes, sidebar])
+  await snapScreen(win, 'sidebar', theme, sidebar)
 
   await win.keyboard.press('Meta+Shift+P')
   const palette = win.locator('.palette-modal-content')
@@ -507,7 +510,7 @@ async function captureThemeScreens(win, theme) {
 
   await win.getByRole('button', { name: 'Board', exact: true }).click()
   await win.getByText('Trace webhook retries', { exact: true }).first().waitFor({ state: 'visible' })
-  await snapScreen(win, 'kanban', theme, win)
+  await snapScreen(win, 'kanban', theme, win, [sidebar])
   await win.getByRole('button', { name: 'Chats', exact: true }).click()
 
   // A turn held open on an approval, with a draft in the composer so it
@@ -521,6 +524,9 @@ async function captureThemeScreens(win, theme) {
   await win.keyboard.type('Also cover the retry path.')
   await win.getByRole('button', { name: 'Steer', exact: true }).waitFor({ state: 'visible' })
   await snapScreen(win, 'approval', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+  // The chat held on that approval heads the sidebar under "Needs you".
+  await sidebar.locator('.sidebar-recent-group[data-group="needs-you"]').waitFor({ state: 'visible' })
+  await snapScreen(win, 'sidebar-needs-you', theme, sidebar)
   await snapScreen(win, 'composer-running', theme, win.locator('.chat-composer').first())
 }
 
@@ -684,7 +690,7 @@ async function runBehaviourChecks() {
   await assertNativeGlassTransmitsColor(win)
   await assertFullscreenFallback(win)
 
-  const runtimeMode = win.locator('.runtime-mode-select')
+  const runtimeMode = win.locator('.runtime-mode-select').first()
   await runtimeMode.evaluate((element) => { element.dataset.runtimeMode = 'full-access' })
 
   const theme = await win.evaluate(() => {
@@ -782,19 +788,24 @@ async function runBehaviourChecks() {
   await win.keyboard.press('Escape')
   await win.locator('.settings-modal-content').waitFor({ state: 'hidden' })
 
+  // This Mac starts folded behind its summary row; expanding it must stick.
   const localMachine = win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' })
-  await localMachine.click()
   if (await localMachine.getAttribute('aria-expanded') !== 'false') {
-    throw new Error('This Mac did not collapse before relaunch')
+    throw new Error('This Mac did not start collapsed')
+  }
+  await localMachine.click()
+  if (await localMachine.getAttribute('aria-expanded') !== 'true') {
+    throw new Error('This Mac did not expand before relaunch')
   }
 
   await closeApp()
   const relaunched = await launchSwitchboard()
   const relaunchedLocalMachine = relaunched.win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' })
-  await relaunchedLocalMachine.waitFor({ state: 'visible' })
-  if (await relaunchedLocalMachine.getAttribute('aria-expanded') !== 'false') {
-    throw new Error('machine disclosure did not persist across relaunch')
-  }
+  // hydrateSidebarCollapse restores the saved state after first paint, so
+  // the button can be visible and still collapsed for a moment.
+  await relaunchedLocalMachine.and(relaunched.win.locator('[aria-expanded="true"]'))
+    .waitFor({ state: 'visible', timeout: 10_000 })
+    .catch(() => { throw new Error('machine disclosure did not persist across relaunch') })
   if (hasSeededRecents) {
     await relaunched.win.waitForFunction(
       () => document.querySelectorAll('.sidebar-recent-row').length === 6,

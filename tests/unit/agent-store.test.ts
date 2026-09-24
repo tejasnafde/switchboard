@@ -208,6 +208,20 @@ describe('agent-store', () => {
     expect(byId).toEqual({ a: 'idle', b: 'idle', c: 'idle', d: 'running', e: 'running' })
   })
 
+  it('resetRunningSessionsForMachine drops the open cards of every session on the lost machine', () => {
+    const { addSession, setPendingRequests, resetRunningSessionsForMachine } = useAgentStore.getState()
+    const card = { type: 'request.opened' as const, threadId: 'a', requestId: 'r', requestType: 'command' as const, toolName: 'Bash', detail: 'ls' }
+    addSession({ id: 'a', type: 'claude-code', status: 'running', machineId: 'm1' })
+    addSession({ id: 'b', type: 'claude-code', status: 'running', machineId: 'm2' })
+    setPendingRequests('a', [card])
+    setPendingRequests('b', [{ ...card, threadId: 'b' }])
+
+    resetRunningSessionsForMachine('m1')
+
+    const byId = Object.fromEntries(useAgentStore.getState().sessions.map((s) => [s.id, s.pendingRequests?.length]))
+    expect(byId).toEqual({ a: 0, b: 1 })
+  })
+
   it('setTokenUsage stores per-session usage so switching sessions shows the right meter', () => {
     // Regression: contextUsage used to live as ChatPanel-local useState, so
     // hopping between sessions briefly showed the previous session's value

@@ -1,4 +1,5 @@
 import type { AgentStatus, ChatMessage, Project, SessionSummary } from '@shared/types'
+import type { PendingBlockingEvent } from '@shared/pending-requests'
 import { sessionPreviewLine } from '../../services/sessionPreview'
 
 export interface RecentLiveSession {
@@ -7,16 +8,19 @@ export interface RecentLiveSession {
   status: AgentStatus
   messages: ChatMessage[]
   unreadCount?: number
+  /** The backend's open cards for the thread - see `AgentSession.pendingRequests`. */
+  pendingRequests?: readonly PendingBlockingEvent[]
 }
 
-export type RecentSessionStatus = 'approval' | 'input' | 'working' | 'failed' | 'done'
+export type RecentSessionStatus = 'approval' | 'input' | 'plan' | 'failed' | 'working' | 'done'
 
 const STATUS_PRIORITY: Record<RecentSessionStatus, number> = {
   approval: 6,
   input: 5,
-  working: 4,
+  plan: 4,
   failed: 3,
-  done: 2,
+  working: 2,
+  done: 1,
 }
 
 function recentSessionStatus(
@@ -24,12 +28,71 @@ function recentSessionStatus(
   live: RecentLiveSession | undefined,
 ): RecentSessionStatus | undefined {
   if (session.worktreeRecovery?.cleanupDisposition === 'retained') return 'failed'
-  if (live?.messages.some((message) => message.approval?.status === 'pending')) return 'approval'
-  if (live?.messages.some((message) => message.question?.status === 'pending')) return 'input'
-  if (live?.status === 'running' || live?.status === 'thinking') return 'working'
+  const pending = live?.pendingRequests ?? []
+  if (pending.some((event) => event.type === 'request.opened')) return 'approval'
+  if (pending.some((event) => event.type === 'question.asked')) return 'input'
+  if (pending.some((event) => event.type === 'plan.proposed')) return 'plan'
   if (live?.status === 'error') return 'failed'
+  if (live?.status === 'running' || live?.status === 'thinking') return 'working'
   if ((live?.unreadCount ?? 0) > 0) return 'done'
   return undefined
+}
+
+/**
+ * Line 2 of a Recents row. A state that waits on the user says what it waits
+ * for; otherwise the agent's own status line, or the project it belongs to.
+ */
+function recentStatusLine(
+  session: SessionSummary,
+  status: RecentSessionStatus | undefined,
+  live: RecentLiveSession | undefined,
+  previewLine: string | undefined,
+  projectName: string,
+): string {
+  const pending = live?.pendingRequests ?? []
+  switch (status) {
+    case 'approval': {
+      const request = pending.find((event) => event.type === 'request.opened')
+      return `Waiting on your approval: ${request?.type === 'request.opened' ? request.toolName : 'tool call'}`
+    }
+    case 'input': {
+      const question = pending.find((event) => event.type === 'question.asked')
+      const text = question?.type === 'question.asked' ? question.questions[0]?.question : undefined
+      return text ? `Question: ${text}` : 'Waiting on your answer'
+    }
+    case 'plan':
+      return 'Plan ready for your review'
+    case 'failed':
+      return session.worktreeRecovery?.cleanupDisposition === 'retained'
+        ? 'Worktree recovery needs you'
+        : 'Stopped with an error'
+    default:
+      return previewLine ?? projectName
+  }
+}
+
+/**
+ * What a Recents row renders from a live session, as one string. The sidebar
+ * re-derives only when this changes, so it must carry every field line 2 can
+ * show: a re-sent card with a new tool or question must repaint the row.
+ */
+export function recentLiveSignal(sessions: readonly RecentLiveSession[]): string {
+  return sessions.map((session) => {
+    const pending = (session.pendingRequests ?? []).map((event) => {
+      switch (event.type) {
+        case 'request.opened':
+          return `${event.type}:${event.requestId}:${event.toolName}`
+        case 'question.asked':
+          return `${event.type}:${event.requestId}:${event.questions[0]?.question ?? ''}`
+        case 'plan.proposed':
+          return `${event.type}:${event.planId}`
+      }
+    }).join(',')
+    // Message count and newest id change when history hydrates or a message
+    // lands (line 2's preview), not on every streamed token.
+    const newest = session.messages[session.messages.length - 1]?.id ?? ''
+    return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pending}:${session.unreadCount ?? 0}:${session.messages.length}:${newest}`
+  }).join('|')
 }
 
 export interface RecentSessionItem {
@@ -45,6 +108,8 @@ export interface RecentSessionItem {
    * session with no live assistant message yet (e.g. not opened this run).
    */
   previewLine?: string
+  /** Line 2 of the row - see `recentStatusLine`. */
+  statusLine: string
 }
 
 export function deriveRecentSessions(_input: {
@@ -67,13 +132,15 @@ export function deriveRecentSessions(_input: {
       seen.add(key)
       const live = liveById.get(key)
       const status = recentSessionStatus(session, live)
+      const previewLine = live ? sessionPreviewLine(live.messages) : undefined
       return {
         session,
         projectPath: project.path,
         projectName: project.name,
         machineId,
         status,
-        previewLine: live ? sessionPreviewLine(live.messages) : undefined,
+        previewLine,
+        statusLine: recentStatusLine(session, status, live, previewLine, project.name),
         priority: status ? STATUS_PRIORITY[status] : 0,
       }
     })))
