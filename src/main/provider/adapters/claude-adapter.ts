@@ -1298,6 +1298,8 @@ export class ClaudeAdapter implements ProviderAdapter {
    * later send starts a fresh prompt queue.
    */
   private dropQueuedTurns(threadId: string, active: ActiveSession): void {
+    // Nothing is left to start once a withdrawal settles.
+    active.startAfterWithdraw = false
     if (active.queuedTurns.length === 0) return
     const dropped = active.queuedTurns
     const count = dropped.length
@@ -1362,6 +1364,11 @@ export class ClaudeAdapter implements ProviderAdapter {
       turn.withdrawing = true
       try {
         withdrawn = await query.cancelAsyncMessage(turn.uuid)
+      } catch (err) {
+        // Unknown outcome: the CLI keeps what it could not cancel, so the
+        // message still runs, and a turn end waiting on this starts it.
+        log.warn(`cancelAsyncMessage failed on ${threadId}; treating the message as not withdrawn`, err)
+        withdrawn = false
       } finally {
         turn.withdrawing = false
       }
@@ -1507,6 +1514,7 @@ export class ClaudeAdapter implements ProviderAdapter {
   async stopSession(threadId: string): Promise<void> {
     const active = this.sessions.get(threadId)
     if (!active) return
+    active.startAfterWithdraw = false
 
     // Reap the spawned `claude` CLI subprocess - closing the queue + aborting
     // doesn't kill it, so each stopped session would leak an OS process.

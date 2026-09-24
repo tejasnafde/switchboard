@@ -204,6 +204,55 @@ describe('ClaudeAdapter queued turns', () => {
     active.watchdog.turnEnded()
   })
 
+  it('starts the head with its own mode when a cancel racing the turn end rejects', async () => {
+    let failCancel!: (err: Error) => void
+    const cancelAsyncMessage = vi.fn(() => new Promise<boolean>((_resolve, reject) => { failCancel = reject }))
+    const { adapter, active } = running({ cancelAsyncMessage, setPermissionMode: vi.fn(async () => {}) })
+    await adapter.sendTurn('thread-1', 'a', 'plan', undefined, 'queue', 'remote_a')
+    await adapter.sendTurn('thread-1', 'b', 'full-access', undefined, 'queue', 'remote_b')
+    const cancel = adapter.cancelQueuedTurn('thread-1', 'remote_a')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).startQueuedTurn(active)
+    failCancel(new Error('control channel closed'))
+    await expect(cancel).resolves.toBe(false)
+    const dequeued = active.onEvent.mock.calls.map(([e]) => e).filter((e) => e.type === 'turn.dequeued')
+    expect(dequeued).toEqual([{ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_a', reason: 'started' }])
+    expect(active.session.runtimeMode).toBe('plan')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((active as any).startAfterWithdraw).toBe(false)
+    active.watchdog.turnEnded()
+  })
+
+  it('forgets a deferred start when the queue is dropped, so a later cancel starts nothing', async () => {
+    let finishCancel!: (v: boolean) => void
+    const cancelAsyncMessage = vi.fn(() => new Promise<boolean>((resolve) => { finishCancel = resolve }))
+    const { adapter, active } = running({ cancelAsyncMessage, setPermissionMode: vi.fn(async () => {}) })
+    await adapter.sendTurn('thread-1', 'a', undefined, undefined, 'queue', 'remote_a')
+    const cancel = adapter.cancelQueuedTurn('thread-1', 'remote_a')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).startQueuedTurn(active)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).dropQueuedTurns('thread-1', active)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((active as any).startAfterWithdraw).toBe(false)
+    finishCancel(true)
+    await cancel
+    const reasons = active.onEvent.mock.calls.map(([e]) => e).filter((e) => e.type === 'turn.dequeued').map((e) => e.reason)
+    expect(reasons).not.toContain('started')
+    active.watchdog.turnEnded()
+  })
+
+  it('clears a deferred start on stopSession', async () => {
+    const { adapter, active } = running({ close: vi.fn(), cancelAsyncMessage: vi.fn(() => new Promise<boolean>(() => {})) })
+    await adapter.sendTurn('thread-1', 'a', undefined, undefined, 'queue', 'remote_a')
+    void adapter.cancelQueuedTurn('thread-1', 'remote_a')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).startQueuedTurn(active)
+    await adapter.stopSession('thread-1')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((active as any).startAfterWithdraw).toBe(false)
+  })
+
   it('says a queued message started when the turn ahead of it ends', async () => {
     const { adapter, active } = running({ setPermissionMode: vi.fn(async () => {}) })
     await adapter.sendTurn('thread-1', 'next', 'plan', undefined, 'queue', 'remote_q1')
