@@ -33,7 +33,6 @@
       "status": "implemented",
       "evidence": [
         "src/main/db/database.ts",
-        "src/main/agent/dedupe-messages.ts",
         "tests/unit/dedupe-messages.test.ts"
       ]
     },
