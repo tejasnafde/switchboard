@@ -18,6 +18,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createRendererLogger } from '../../logger'
+import { cn } from '../../lib/utils'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
 import { rankAndFilterRefs, decideSwitchAction, type Ref } from './branchPickerPolicy'
 
 const log = createRendererLogger('chat:branch-picker')
@@ -82,59 +84,68 @@ export function BranchPickerTrigger({ cwd, onSwapWorktree, onChanged, onCwdMissi
     }
   }, [refresh, cwd])
 
+  const inputRef = useRef<HTMLInputElement | null>(null)
+
   if (!cwd || !isGitRepo) return null
 
+  const close = (changed: boolean) => {
+    setOpen(false)
+    if (changed) {
+      refresh()
+      onChanged?.()
+    }
+  }
+
   return (
-    <div style={{ position: 'relative', display: 'inline-block' }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Switch branch"
-        style={triggerStyle}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title="Switch branch"
+          className="inline-flex cursor-pointer items-center gap-[4px] rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] py-[3px] text-[11px] text-[var(--text-secondary)] outline-none"
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+            <line x1="6" y1="3" x2="6" y2="15" />
+            <circle cx="18" cy="6" r="3" />
+            <circle cx="6" cy="18" r="3" />
+            <path d="M18 9a9 9 0 0 1-9 9" />
+          </svg>
+          <span className="max-w-[140px] truncate">
+            {current ?? '(detached)'}
+          </span>
+          <span className="text-[9px] opacity-60">▾</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        aria-label="Switch branch"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          inputRef.current?.focus()
+        }}
+        className="sb-floating-surface z-[1200] w-[320px] overflow-hidden rounded-[6px] border border-[var(--border)] shadow-[0_10px_30px_rgba(0,0,0,0.35)]!"
       >
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-          <line x1="6" y1="3" x2="6" y2="15" />
-          <circle cx="18" cy="6" r="3" />
-          <circle cx="6" cy="18" r="3" />
-          <path d="M18 9a9 9 0 0 1-9 9" />
-        </svg>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>
-          {current ?? '(detached)'}
-        </span>
-        <span style={{ opacity: 0.6, fontSize: 9 }}>▾</span>
-      </button>
-      {open && (
-        <BranchPickerPopover
-          cwd={cwd}
-          onSwapWorktree={onSwapWorktree}
-          onClose={(changed) => {
-            setOpen(false)
-            if (changed) {
-              refresh()
-              onChanged?.()
-            }
-          }}
-        />
-      )}
-    </div>
+        <BranchPickerPopover cwd={cwd} inputRef={inputRef} onSwapWorktree={onSwapWorktree} onClose={close} />
+      </PopoverContent>
+    </Popover>
   )
 }
 
 interface PopoverProps {
   cwd: string
+  inputRef: React.RefObject<HTMLInputElement | null>
   onSwapWorktree?: (newCwd: string, branch: string) => void
   onClose: (changed: boolean) => void
 }
 
-function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
+function BranchPickerPopover({ cwd, inputRef, onSwapWorktree, onClose }: PopoverProps) {
   const [refs, setRefs] = useState<Ref[]>([])
   const [query, setQuery] = useState('')
   const [activeIdx, setActiveIdx] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [switching, setSwitching] = useState<string | null>(null)
-  const wrapperRef = useRef<HTMLDivElement | null>(null)
-  const inputRef = useRef<HTMLInputElement | null>(null)
 
   // Initial fetch
   useEffect(() => {
@@ -154,22 +165,6 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
       cancelled = true
     }
   }, [cwd])
-
-  // Focus the input on open
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
-
-  // Click-outside to close
-  useEffect(() => {
-    const onDocMouseDown = (e: MouseEvent) => {
-      if (!wrapperRef.current) return
-      if (wrapperRef.current.contains(e.target as Node)) return
-      onClose(false)
-    }
-    document.addEventListener('mousedown', onDocMouseDown)
-    return () => document.removeEventListener('mousedown', onDocMouseDown)
-  }, [onClose])
 
   const filtered = rankAndFilterRefs(refs, query)
   const notGitRepo = !!error && /not a git repository/i.test(error)
@@ -209,18 +204,11 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
     [cwd, onClose, onSwapWorktree, switching],
   )
 
+  // Escape and outside clicks are the popover's; the list keys stay here.
   return (
     <div
-      ref={wrapperRef}
-      className="sb-floating-surface"
-      style={popoverStyle}
-      role="listbox"
-      aria-label="Branches"
       onKeyDown={(e) => {
-        if (e.key === 'Escape') {
-          e.preventDefault()
-          onClose(false)
-        } else if (e.key === 'ArrowDown') {
+        if (e.key === 'ArrowDown') {
           e.preventDefault()
           setActiveIdx((i) => Math.min(filtered.length - 1, i + 1))
         } else if (e.key === 'ArrowUp') {
@@ -239,17 +227,17 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search branches…"
-        style={inputStyle}
+        className="w-full border-0 border-b border-[var(--border)] bg-transparent px-[12px] py-[8px] text-[12px] text-[var(--text-primary)] outline-none"
       />
-      <div style={{ maxHeight: 280, overflowY: 'auto' }}>
-        {loading && <div style={emptyRowStyle}>Loading…</div>}
+      <div role="listbox" aria-label="Branches" className="max-h-[280px] overflow-y-auto">
+        {loading && <div className={emptyRowClass}>Loading…</div>}
         {!loading && error && (
-          <div style={{ ...emptyRowStyle, color: notGitRepo ? undefined : 'var(--accent-red, #f88)' }}>
+          <div className={cn(emptyRowClass, !notGitRepo && 'text-[var(--accent-red,#f88)]')}>
             {notGitRepo ? 'Not a git repository.' : error}
           </div>
         )}
         {!loading && !error && filtered.length === 0 && (
-          <div style={emptyRowStyle}>No branches match "{query}"</div>
+          <div className={emptyRowClass}>No branches match "{query}"</div>
         )}
         {!loading && !error && filtered.map((ref, i) => (
           <button
@@ -257,21 +245,21 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
             type="button"
             onMouseEnter={() => setActiveIdx(i)}
             onClick={() => select(ref)}
-            style={{
-              ...rowStyle,
-              background: i === activeIdx ? 'var(--bg-active, var(--bg-tertiary))' : 'transparent',
-              opacity: switching && switching !== ref.name ? 0.5 : 1,
-            }}
+            className={cn(
+              'flex w-full cursor-pointer items-center gap-[8px] border-0 px-[12px] py-[6px] text-left text-[12px] text-[var(--text-primary)]',
+              i === activeIdx ? 'bg-[var(--bg-active,var(--bg-tertiary))]' : 'bg-transparent',
+              switching && switching !== ref.name && 'opacity-50',
+            )}
             disabled={switching !== null && switching !== ref.name}
             role="option"
             aria-selected={i === activeIdx}
           >
-            <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              <span style={{ fontWeight: ref.current ? 600 : 400 }}>{ref.name}</span>
+            <span className="flex-1 truncate">
+              <span className={ref.current ? 'font-[600]' : 'font-[400]'}>{ref.name}</span>
             </span>
-            {ref.current && <span style={tagStyle}>current</span>}
-            {ref.isRemote && <span style={tagStyle}>remote</span>}
-            {ref.worktreePath && !ref.current && <span style={tagStyle}>worktree</span>}
+            {ref.current && <span className={tagClass}>current</span>}
+            {ref.isRemote && <span className={tagClass}>remote</span>}
+            {ref.worktreePath && !ref.current && <span className={tagClass}>worktree</span>}
           </button>
         ))}
       </div>
@@ -279,70 +267,5 @@ function BranchPickerPopover({ cwd, onSwapWorktree, onClose }: PopoverProps) {
   )
 }
 
-// ─── styles ────────────────────────────────────────────────────────
-
-const triggerStyle: React.CSSProperties = {
-  display: 'inline-flex',
-  alignItems: 'center',
-  gap: 4,
-  background: 'var(--bg-tertiary)',
-  color: 'var(--text-secondary)',
-  border: '1px solid var(--border)',
-  borderRadius: 4,
-  padding: '3px 8px',
-  fontSize: 11,
-  cursor: 'pointer',
-  outline: 'none',
-}
-
-const popoverStyle: React.CSSProperties = {
-  position: 'absolute',
-  bottom: 'calc(100% + 6px)',
-  left: 0,
-  width: 320,
-  zIndex: 100,
-  borderRadius: 6,
-  boxShadow: '0 10px 30px rgba(0,0,0,0.35)',
-  background: 'var(--bg-secondary)',
-  border: '1px solid var(--border)',
-  overflow: 'hidden',
-}
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  background: 'transparent',
-  color: 'var(--text-primary)',
-  border: 'none',
-  borderBottom: '1px solid var(--border)',
-  padding: '8px 12px',
-  fontSize: 12,
-  outline: 'none',
-}
-
-const rowStyle: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  gap: 8,
-  width: '100%',
-  background: 'transparent',
-  color: 'var(--text-primary)',
-  border: 'none',
-  padding: '6px 12px',
-  fontSize: 12,
-  cursor: 'pointer',
-  textAlign: 'left',
-}
-
-const emptyRowStyle: React.CSSProperties = {
-  padding: '10px 12px',
-  fontSize: 12,
-  color: 'var(--text-muted)',
-  fontStyle: 'italic',
-}
-
-const tagStyle: React.CSSProperties = {
-  fontSize: 9.5,
-  color: 'var(--text-muted)',
-  textTransform: 'uppercase',
-  letterSpacing: 0.5,
-}
+const emptyRowClass = 'px-[12px] py-[10px] text-[12px] italic text-[var(--text-muted)]'
+const tagClass = 'text-[9.5px] uppercase tracking-[0.5px] text-[var(--text-muted)]'

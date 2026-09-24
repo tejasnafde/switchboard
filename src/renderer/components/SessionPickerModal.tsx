@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useAgentStore } from '../stores/agent-store'
 import { useMachineStore } from '../stores/machine-store'
+import { cn } from '../lib/utils'
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
 interface PickerSessionIdentity {
   id: string
@@ -70,80 +72,51 @@ export function SessionPickerModal({
     if (open) setActiveIdx(0)
   }, [open])
 
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault()
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // Escape is the dialog's; focus stays inside it, so the list keys can live
+  // on the content instead of a window listener.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActiveIdx((i) => Math.min(i + 1, candidates.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActiveIdx((i) => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      const pick = candidates[activeIdx]
+      if (pick) {
+        onPick(pick.id)
         onClose()
-      } else if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setActiveIdx((i) => Math.min(i + 1, candidates.length - 1))
-      } else if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setActiveIdx((i) => Math.max(i - 1, 0))
-      } else if (e.key === 'Enter') {
-        e.preventDefault()
-        const pick = candidates[activeIdx]
-        if (pick) {
-          onPick(pick.id)
-          onClose()
-        }
       }
     }
-    // Capture-phase so we beat the global keybinding listener
-    window.addEventListener('keydown', handler, true)
-    return () => window.removeEventListener('keydown', handler, true)
-  }, [open, activeIdx, candidates, onPick, onClose])
-
-  if (!open) return null
+  }
 
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1200,
-        background: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
-        paddingTop: '18vh',
-      }}
-    >
-      <div
-        className="sb-floating-surface"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(520px, 92vw)',
-          maxHeight: '60vh',
-          display: 'flex',
-          flexDirection: 'column',
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.4)',
-          overflow: 'hidden',
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        ref={contentRef}
+        aria-describedby={undefined}
+        onKeyDown={onKeyDown}
+        // Focus the dialog, not the first row: the arrow keys move a highlight,
+        // and a focused row would take Space for itself.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          contentRef.current?.focus()
         }}
+        overlayClassName="z-[1200]"
+        className="sb-floating-surface inset-x-0 top-[18vh] z-[1200] mx-auto flex max-h-[60vh] w-[min(520px,92vw)] flex-col overflow-hidden rounded-[var(--radius)] border border-[var(--border)] shadow-[0_10px_40px_rgba(0,0,0,0.4)]!"
       >
-        <div style={{
-          padding: '10px 14px',
-          borderBottom: '1px solid var(--border)',
-          fontSize: '11px',
-          color: 'var(--text-muted)',
-          textTransform: 'uppercase',
-          letterSpacing: '0.8px',
-          fontWeight: 600,
-        }}>
+        <DialogTitle className="border-b border-[var(--border)] px-[14px] py-[10px] text-[11px] font-[600] uppercase tracking-[0.8px] text-[var(--text-muted)]">
           {title}
-        </div>
+        </DialogTitle>
         {candidates.length === 0 ? (
-          <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '12px', textAlign: 'center' }}>
+          <div className="p-[16px] text-center text-[12px] text-[var(--text-muted)]">
             No other loaded chats are available. Open a chat from the sidebar, then choose Open beside.
           </div>
         ) : (
-          <div style={{ overflowY: 'auto', padding: '4px 0' }}>
+          <div className="overflow-y-auto py-[4px]">
             {candidates.map((s, i) => {
               const selected = i === activeIdx
               const identity = sessionPickerIdentity(
@@ -155,43 +128,19 @@ export function SessionPickerModal({
                   key={s.id}
                   onClick={() => { onPick(s.id); onClose() }}
                   onMouseEnter={() => setActiveIdx(i)}
-                  style={{
-                    display: 'flex',
-                    width: '100%',
-                    padding: '8px 14px',
-                    gap: '8px',
-                    alignItems: 'flex-start',
-                    border: 'none',
-                    background: selected ? 'var(--bg-hover)' : 'transparent',
-                    color: 'var(--text-primary)',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                  }}
+                  className={cn(
+                    'flex w-full cursor-pointer items-start gap-[8px] border-0 px-[14px] py-[8px] text-left text-[var(--text-primary)]',
+                    selected ? 'bg-[var(--bg-hover)]' : 'bg-transparent',
+                  )}
                 >
-                  <span style={{
-                    fontFamily: 'var(--font-mono)',
-                    fontSize: '10px',
-                    color: selected ? 'var(--accent)' : 'var(--text-muted)',
-                    minWidth: '46px',
-                  }}>
+                  <span className={cn('min-w-[46px] text-[10px] [font-family:var(--font-mono)]', selected ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]')}>
                     {identity.provider}
                   </span>
-                  <span style={{
-                    flex: 1,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '2px',
-                    minWidth: 0,
-                  }}>
-                    <span style={{
-                    fontSize: '13px',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    }}>
-                    {identity.title}
+                  <span className="flex min-w-0 flex-1 flex-col gap-[2px]">
+                    <span className="truncate text-[13px]">
+                      {identity.title}
                     </span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '10px', color: 'var(--text-muted)' }}>
+                    <span className="text-[10px] [font-family:var(--font-mono)] text-[var(--text-muted)]">
                       {identity.context}
                     </span>
                   </span>
@@ -200,19 +149,12 @@ export function SessionPickerModal({
             })}
           </div>
         )}
-        <div style={{
-          padding: '6px 14px',
-          borderTop: '1px solid var(--border)',
-          fontSize: '10.5px',
-          color: 'var(--text-muted)',
-          display: 'flex',
-          gap: '10px',
-        }}>
+        <div className="flex gap-[10px] border-t border-[var(--border)] px-[14px] py-[6px] text-[10.5px] text-[var(--text-muted)]">
           <span>↑↓ navigate</span>
           <span>Enter select</span>
           <span>Esc dismiss</span>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

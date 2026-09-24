@@ -24,8 +24,7 @@
  * The instance rail collapses (single-column) when the active agent has
  * fewer than 2 enabled instances.
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { createPortal } from 'react-dom'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from 'react'
 import {
   modelsForAgent,
   type ModelOption,
@@ -50,6 +49,9 @@ import {
   nextTermInstanceId,
 } from '../../shared/terminalLoginAccount'
 import { startTerminalSession } from '../../shared/terminalLoginStart'
+import { cn } from '../../lib/utils'
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover'
+import { filterModels, groupModelsByProvider } from './providerPickerModels'
 
 interface UnifiedProviderPickerProps {
   agentType: AgentType
@@ -85,9 +87,9 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
   } = props
 
   const [open, setOpen] = useState(false)
-  const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null)
-  const triggerRef = useRef<HTMLButtonElement>(null)
-  const popoverRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+  // Lifted so Escape can back out of the custom model field before it closes the picker.
+  const [showCustom, setShowCustom] = useState(false)
 
   // Terminal tab state
   const [termCommand, setTermCommand] = useState('claude')
@@ -136,46 +138,6 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
     ? dynamicModels
     : staticModels
 
-  // Close on outside click + Escape
-  useEffect(() => {
-    if (!open) return
-    const onDocDown = (e: MouseEvent) => {
-      const t = e.target as Node | null
-      if (!t) return
-      if (popoverRef.current?.contains(t)) return
-      if (triggerRef.current?.contains(t)) return
-      setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) }
-    }
-    document.addEventListener('mousedown', onDocDown, true)
-    document.addEventListener('keydown', onKey, true)
-    return () => {
-      document.removeEventListener('mousedown', onDocDown, true)
-      document.removeEventListener('keydown', onKey, true)
-    }
-  }, [open])
-
-  // Track anchor rect so the portal-rendered popover repositions on
-  // scroll/resize (the ChatInput container can scroll when image previews
-  // grow it).
-  useEffect(() => {
-    if (!open) return
-    const update = () => {
-      if (triggerRef.current) {
-        setAnchorRect(triggerRef.current.getBoundingClientRect())
-      }
-    }
-    update()
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
-    return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
-    }
-  }, [open])
-
   const accent = effectiveInstance?.accentColor ?? 'var(--accent)'
   const initials = effectiveInstance ? providerInstanceInitials(effectiveInstance.displayName) : '··'
   // Computed from the RAW requested instanceId (not `effectiveInstance.id`,
@@ -196,99 +158,79 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
     return found?.label ?? effective
   }, [models, model, resolvedModel])
 
-  return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        title={`${agentShortLabel(agentType)}${effectiveInstance ? ' · ' + effectiveInstance.displayName : ''} · ${modelLabel}`}
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          gap: '6px',
-          background: 'var(--bg-tertiary)',
-          color: 'var(--text-secondary)',
-          border: `1px solid ${open ? accent : 'var(--border)'}`,
-          borderRadius: '6px',
-          padding: '3px 8px 3px 4px',
-          fontSize: '11px',
-          cursor: 'pointer',
-          outline: 'none',
-          maxWidth: '280px',
-          lineHeight: 1,
-          transition: 'border-color 120ms ease',
-        }}
-      >
-        <span
-          aria-hidden
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 18,
-            height: 18,
-            borderRadius: '50%',
-            background: accent,
-            color: '#fff',
-            fontSize: '8px',
-            fontWeight: 700,
-            letterSpacing: '0.02em',
-            flexShrink: 0,
-          }}
-        >
-          {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
-        </span>
-        <span
-          style={{
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            fontWeight: 500,
-            color: 'var(--text-primary)',
-          }}
-        >
-          {agentShortLabel(agentType)}
-          {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
-        </span>
-        <span style={{ color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>·</span>
-        <span
-          style={{
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            fontFamily: 'var(--font-mono)',
-            color: 'var(--text-secondary)',
-          }}
-        >
-          {modelLabel}
-        </span>
-        <span style={{ color: 'var(--text-muted)', fontSize: '9px', marginLeft: '2px' }}>▾</span>
-      </button>
 
-      {open && anchorRect && createPortal(
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next)
+        if (next) setShowCustom(false)
+      }}
+    >
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          title={`${agentShortLabel(agentType)}${effectiveInstance ? ' · ' + effectiveInstance.displayName : ''} · ${modelLabel}`}
+          style={accentVar(accent)}
+          className="inline-flex max-w-[280px] cursor-pointer items-center gap-[6px] rounded-[6px] border border-[var(--border)] bg-[var(--bg-tertiary)] py-[3px] pr-[8px] pl-[4px] text-[11px] leading-none text-[var(--text-secondary)] outline-none transition-[border-color] duration-[120ms] ease-[ease] data-[state=open]:border-[var(--pick-accent)]"
+        >
+          <span
+            aria-hidden
+            className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] tracking-[0.02em] text-[#fff]"
+          >
+            {showInstanceBadge ? initials : agentShortLabel(agentType).slice(0, 2).toUpperCase()}
+          </span>
+          <span className="truncate font-[500] text-[var(--text-primary)]">
+            {agentShortLabel(agentType)}
+            {showInstanceBadge && effectiveInstance ? ` · ${effectiveInstance.displayName}` : ''}
+          </span>
+          <span className="whitespace-nowrap text-[var(--text-muted)]">·</span>
+          <span className="truncate [font-family:var(--font-mono)] text-[var(--text-secondary)]">
+            {modelLabel}
+          </span>
+          <span className="ml-[2px] text-[9px] text-[var(--text-muted)]">▾</span>
+        </button>
+      </PopoverTrigger>
+
+      <PopoverContent
+        side="top"
+        align="start"
+        aria-label="Provider, instance, and model picker"
+        // The model search takes focus, as the old autoFocus did; the terminal
+        // tab has no search, so focus stays on the trigger there.
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          searchRef.current?.focus()
+        }}
+        // Escape leaves the custom model field, or else closes the picker.
+        // Either way the chat behind it must not see it.
+        onEscapeKeyDown={(e) => {
+          e.stopPropagation()
+          if (!showCustom) return
+          e.preventDefault()
+          setShowCustom(false)
+          searchRef.current?.focus()
+        }}
+        className="sb-provider-picker z-[1200] flex max-h-[360px] w-[480px] flex-col overflow-hidden rounded-[8px] border border-[var(--border)]"
+      >
         <UnifiedPickerPopover
-          ref={popoverRef}
-          anchorRect={anchorRect}
+          searchRef={searchRef}
+          showCustom={showCustom}
+          setShowCustom={setShowCustom}
           agentType={agentType}
           canChangeAgent={canChangeAgent}
-          onAgentTypeChange={(t) => {
-            onAgentTypeChange(t)
-            // Don't close - let the user see the instance/model lists swap.
-          }}
+          // Stays open so the user sees the instance/model lists swap.
+          onAgentTypeChange={onAgentTypeChange}
           instances={instances}
           effectiveInstanceId={effectiveInstance?.id}
           showRail={showRail}
-          onInstanceChange={(id) => {
-            onInstanceChange(id)
-          }}
+          onInstanceChange={onInstanceChange}
           model={model}
           models={models}
           onModelChange={(m) => {
             onModelChange(m)
             setOpen(false)
           }}
-          onClose={() => setOpen(false)}
           allInstances={allInstances}
           termCommand={termCommand}
           setTermCommand={setTermCommand}
@@ -333,15 +275,21 @@ export function UnifiedProviderPicker(props: UnifiedProviderPickerProps) {
               }
             })
           }}
-        />,
-        document.body,
-      )}
-    </>
+        />
+      </PopoverContent>
+    </Popover>
   )
 }
 
+/** The per-instance accent colour, read by the arbitrary classes below. */
+function accentVar(accent: string): CSSProperties {
+  return { '--pick-accent': accent } as CSSProperties
+}
+
 interface PopoverProps {
-  anchorRect: DOMRect
+  searchRef: RefObject<HTMLInputElement | null>
+  showCustom: boolean
+  setShowCustom: (show: boolean) => void
   agentType: AgentType
   canChangeAgent: boolean
   onAgentTypeChange: (t: AgentType) => void
@@ -352,7 +300,6 @@ interface PopoverProps {
   model: string
   models: ModelOption[]
   onModelChange: (m: string) => void
-  onClose: () => void
   // Terminal tab props
   allInstances: ProviderInstance[]
   termCommand: string
@@ -364,322 +311,186 @@ interface PopoverProps {
   onTermStart: () => void
 }
 
-const UnifiedPickerPopover = (() => {
-  // forwardRef without importing - keeps the component definition flat.
-  return function Inner(props: PopoverProps & { ref?: React.Ref<HTMLDivElement> }) {
-    const {
-      anchorRect, agentType, canChangeAgent, onAgentTypeChange,
-      instances, effectiveInstanceId, showRail, onInstanceChange,
-      model, models, onModelChange,
-      allInstances, termCommand, setTermCommand, termInstanceId, setTermInstanceId,
-      termStarting, termError, onTermStart,
-    } = props
-    const [query, setQuery] = useState('')
-    const [showCustom, setShowCustom] = useState(false)
-    const [customValue, setCustomValue] = useState('')
+const inputClass = 'rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[8px] text-[11px] text-[var(--text-primary)] outline-none'
+const sectionLabelClass = 'mb-[6px] text-[10px] font-[600] uppercase tracking-[0.7px] text-[var(--text-muted)]'
 
-    // Reset filter / custom-input branch when agent kind flips.
-    useEffect(() => {
-      setQuery('')
-      setShowCustom(false)
-      setCustomValue('')
-    }, [agentType])
+function UnifiedPickerPopover(props: PopoverProps) {
+  const {
+    searchRef, showCustom, setShowCustom, agentType, canChangeAgent, onAgentTypeChange,
+    instances, effectiveInstanceId, showRail, onInstanceChange,
+    model, models, onModelChange,
+    allInstances, termCommand, setTermCommand, termInstanceId, setTermInstanceId,
+    termStarting, termError, onTermStart,
+  } = props
+  const [query, setQuery] = useState('')
+  const [customValue, setCustomValue] = useState('')
 
-    // Translucent theme makes `var(--bg-elevated)` undefined and the
-    // other surfaces near-transparent - that's wallpaper-on-wallpaper for
-    // the popover. Detect the theme class once and pick a solid-enough
-    // background per palette; light-mode keeps near-white, dark/translucent
-    // get a near-black surface. Blur layered on top adds the glass feel.
-    const popoverBg = useMemo(() => {
-      // The theme class lives on <html> (theme-store), not <body>.
-      const cls = document.documentElement.classList
-      if (cls.contains('theme-light')) return 'rgba(255, 255, 255, 0.96)'
-      // dark + translucent both get a deep panel
-      return 'rgba(22, 22, 26, 0.94)'
-    }, [])
+  // Reset filter / custom-input branch when agent kind flips.
+  useEffect(() => {
+    setQuery('')
+    setShowCustom(false)
+    setCustomValue('')
+  }, [agentType, setShowCustom])
 
-    const filtered = useMemo(() => {
-      const q = query.trim().toLowerCase()
-      if (!q) return models
-      return models.filter((m) =>
-        m.id.toLowerCase().includes(q) || m.label.toLowerCase().includes(q),
-      )
-    }, [models, query])
+  const filtered = useMemo(() => filterModels(models, query), [models, query])
+  const grouped = useMemo(() => groupModelsByProvider(filtered), [filtered])
 
-    // Group by provider prefix (id before first `/`)
-    const grouped = useMemo(() => {
-      const ungrouped: ModelOption[] = []
-      const groupMap = new Map<string, ModelOption[]>()
-      const order: string[] = []
-      for (const m of filtered) {
-        const slash = m.id.indexOf('/')
-        if (slash === -1) {
-          ungrouped.push(m)
-          continue
-        }
-        const provider = m.id.slice(0, slash)
-        if (!groupMap.has(provider)) { groupMap.set(provider, []); order.push(provider) }
-        groupMap.get(provider)!.push(m)
-      }
-      return { ungrouped, groups: order.map((p) => ({ provider: p, models: groupMap.get(p)! })) }
-    }, [filtered])
+  return (
+    <>
+      {/* Agent tabs */}
+      <div className="flex gap-[2px] border-b border-[var(--border)] bg-[var(--bg-tertiary)] p-[6px]">
+        {AGENTS.map((a) => {
+          const active = a.value === agentType
+          const locked = !canChangeAgent && !active
+          return (
+            <button
+              key={a.value}
+              type="button"
+              disabled={locked}
+              onClick={() => onAgentTypeChange(a.value)}
+              className={cn(
+                'flex-1 rounded-[5px] border px-[8px] py-[5px] text-[11px] outline-none transition-[background,border-color] duration-[120ms] ease-[ease]',
+                active
+                  ? 'border-[var(--accent)] bg-[color-mix(in_srgb,var(--accent)_16%,var(--bg-secondary))] font-[600] text-[var(--text-primary)]'
+                  : 'border-transparent bg-transparent font-[500] text-[var(--text-secondary)]',
+                locked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
+              )}
+            >
+              {a.label}
+            </button>
+          )
+        })}
+      </div>
 
-    // Position: drop-UP. Anchor the popover's BOTTOM 6px above the
-    // trigger's top - this way the gap stays constant regardless of how
-    // tall the popover content actually is (using `top: anchor - max-h`
-    // floats the popover way above the trigger when content is short).
-    const POPOVER_WIDTH = 480
-    const POPOVER_MAX_H = 360
-    const bottom = Math.max(8, window.innerHeight - anchorRect.top + 6)
-    const left = Math.min(
-      Math.max(8, anchorRect.left),
-      window.innerWidth - POPOVER_WIDTH - 8,
-    )
+      {/* Terminal tab body */}
+      {agentType === 'terminal' && (
+        <TerminalTabBody
+          allInstances={allInstances}
+          termCommand={termCommand}
+          setTermCommand={setTermCommand}
+          termInstanceId={termInstanceId}
+          setTermInstanceId={setTermInstanceId}
+          termStarting={termStarting}
+          termError={termError}
+          onStart={onTermStart}
+        />
+      )}
 
-    return (
-      <div
-        ref={props.ref}
-        role="dialog"
-        aria-label="Provider, instance, and model picker"
-        style={{
-          position: 'fixed',
-          bottom,
-          left,
-          width: POPOVER_WIDTH,
-          maxHeight: POPOVER_MAX_H,
-          // Use the theme's elevated surface (solid in dark/light, mostly
-          // solid in translucent) and layer a blur so the wallpaper still
-          // bleeds through subtly without hurting legibility.
-          background: popoverBg,
-          backdropFilter: 'blur(24px) saturate(150%)',
-          WebkitBackdropFilter: 'blur(24px) saturate(150%)',
-          border: '1px solid var(--border)',
-          borderRadius: '8px',
-          boxShadow: '0 12px 32px rgba(0, 0, 0, 0.45)',
-          zIndex: 1200,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Agent tabs */}
-        <div style={{
-          display: 'flex',
-          gap: '2px',
-          padding: '6px',
-          borderBottom: '1px solid var(--border)',
-          background: 'var(--bg-tertiary)',
-        }}>
-          {AGENTS.map((a) => {
-            const active = a.value === agentType
-            return (
-              <button
-                key={a.value}
-                type="button"
-                disabled={!canChangeAgent && !active}
-                onClick={() => onAgentTypeChange(a.value)}
-                style={{
-                  flex: 1,
-                  padding: '5px 8px',
-                  borderRadius: '5px',
-                  border: '1px solid ' + (active ? 'var(--accent)' : 'transparent'),
-                  background: active ? 'color-mix(in srgb, var(--accent) 16%, var(--bg-secondary))' : 'transparent',
-                  color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  fontSize: '11px',
-                  fontWeight: active ? 600 : 500,
-                  cursor: canChangeAgent || active ? 'pointer' : 'not-allowed',
-                  opacity: !canChangeAgent && !active ? 0.5 : 1,
-                  outline: 'none',
-                  transition: 'background 120ms ease, border-color 120ms ease',
-                }}
-              >
-                {a.label}
-              </button>
-            )
-          })}
-        </div>
-
-        {/* Terminal tab body */}
-        {agentType === 'terminal' && (
-          <TerminalTabBody
-            allInstances={allInstances}
-            termCommand={termCommand}
-            setTermCommand={setTermCommand}
-            termInstanceId={termInstanceId}
-            setTermInstanceId={setTermInstanceId}
-            termStarting={termStarting}
-            termError={termError}
-            onStart={onTermStart}
-          />
+      {/* Body - split rail (when 2+ instances) + model list */}
+      <div className={cn('min-h-0 flex-1', agentType === 'terminal' ? 'hidden' : 'flex')}>
+        {showRail && (
+          <div
+            role="radiogroup"
+            aria-label="Provider instance"
+            className="flex w-[132px] flex-col gap-[3px] overflow-y-auto border-r border-[var(--border)] bg-[var(--bg-secondary)] p-[6px]"
+          >
+            {instances.map((inst) => (
+              <InstanceRailItem
+                key={inst.id}
+                instance={inst}
+                active={inst.id === effectiveInstanceId}
+                onSelect={() => onInstanceChange(inst.id)}
+              />
+            ))}
+          </div>
         )}
 
-        {/* Body - split rail (when 2+ instances) + model list */}
-        <div style={{ display: agentType === 'terminal' ? 'none' : 'flex', flex: 1, minHeight: 0 }}>
-          {showRail && (
-            <div
-              role="radiogroup"
-              aria-label="Provider instance"
-              style={{
-                width: 132,
-                borderRight: '1px solid var(--border)',
-                padding: '6px',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '3px',
-                overflowY: 'auto',
-                background: 'var(--bg-secondary)',
-              }}
-            >
-              {instances.map((inst) => (
-                <InstanceRailItem
-                  key={inst.id}
-                  instance={inst}
-                  active={inst.id === effectiveInstanceId}
-                  onSelect={() => onInstanceChange(inst.id)}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Search */}
+          <div className="border-b border-[var(--border)] p-[6px]">
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search models..."
+              onKeyDown={(e) => e.stopPropagation()}
+              className={cn(inputClass, 'w-full py-[4px]')}
+            />
+          </div>
+
+          {/* Model list */}
+          <div className="flex-1 overflow-y-auto py-[4px]">
+            {!showCustom && (
+              <>
+                <ModelRow
+                  label="Default"
+                  monoId=""
+                  active={!model}
+                  onSelect={() => onModelChange('')}
                 />
-              ))}
-            </div>
-          )}
-
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-            {/* Search */}
-            <div style={{ padding: '6px', borderBottom: '1px solid var(--border)' }}>
-              <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search models..."
-                autoFocus
-                onKeyDown={(e) => e.stopPropagation()}
-                style={{
-                  width: '100%',
-                  background: 'var(--bg-tertiary)',
-                  color: 'var(--text-primary)',
-                  border: '1px solid var(--border)',
-                  borderRadius: '4px',
-                  padding: '4px 8px',
-                  fontSize: '11px',
-                  outline: 'none',
-                  boxSizing: 'border-box',
-                }}
-              />
-            </div>
-
-            {/* Model list */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
-              {!showCustom && (
-                <>
+                {grouped.ungrouped.map((m) => (
                   <ModelRow
-                    label="Default"
-                    monoId=""
-                    active={!model}
-                    onSelect={() => onModelChange('')}
+                    key={m.id}
+                    label={m.label}
+                    monoId={m.id}
+                    active={m.id === model}
+                    onSelect={() => onModelChange(m.id)}
                   />
-                  {grouped.ungrouped.map((m) => (
-                    <ModelRow
-                      key={m.id}
-                      label={m.label}
-                      monoId={m.id}
-                      active={m.id === model}
-                      onSelect={() => onModelChange(m.id)}
-                    />
-                  ))}
-                  {grouped.groups.map((g) => (
-                    <div key={g.provider}>
-                      <div style={{
-                        padding: '6px 12px 2px',
-                        fontSize: '9px',
-                        fontWeight: 700,
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.06em',
-                        color: 'var(--text-muted)',
-                      }}>
-                        {g.provider}
-                      </div>
-                      {g.models.map((m) => (
-                        <ModelRow
-                          key={m.id}
-                          label={m.label}
-                          monoId={m.id}
-                          active={m.id === model}
-                          onSelect={() => onModelChange(m.id)}
-                        />
-                      ))}
+                ))}
+                {grouped.groups.map((g) => (
+                  <div key={g.provider}>
+                    <div className="px-[12px] pt-[6px] pb-[2px] text-[9px] font-[700] uppercase tracking-[0.06em] text-[var(--text-muted)]">
+                      {g.provider}
                     </div>
-                  ))}
-                  {filtered.length === 0 && (
-                    <div style={{ padding: '12px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '11px' }}>
-                      No matches.
-                    </div>
-                  )}
+                    {g.models.map((m) => (
+                      <ModelRow
+                        key={m.id}
+                        label={m.label}
+                        monoId={m.id}
+                        active={m.id === model}
+                        onSelect={() => onModelChange(m.id)}
+                      />
+                    ))}
+                  </div>
+                ))}
+                {filtered.length === 0 && (
+                  <div className="p-[12px] text-center text-[11px] text-[var(--text-muted)]">
+                    No matches.
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setShowCustom(true); setCustomValue(model) }}
+                  className="mt-[4px] block w-full cursor-pointer border-x-0 border-b-0 border-t border-[var(--border)] bg-transparent px-[12px] py-[6px] text-left text-[11px] text-[var(--accent)]"
+                >
+                  Custom model id…
+                </button>
+              </>
+            )}
+            {showCustom && (
+              <div className="flex flex-col gap-[6px] px-[10px] py-[8px]">
+                <input
+                  value={customValue}
+                  onChange={(e) => setCustomValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation()
+                    if (e.key === 'Enter') onModelChange(customValue.trim())
+                  }}
+                  placeholder="provider/model-id"
+                  autoFocus
+                  className={cn(inputClass, 'py-[5px] [font-family:var(--font-mono)]')}
+                />
+                <div className="flex justify-end gap-[6px]">
                   <button
                     type="button"
-                    onClick={() => { setShowCustom(true); setCustomValue(model) }}
-                    style={{
-                      display: 'block',
-                      width: '100%',
-                      textAlign: 'left',
-                      padding: '6px 12px',
-                      background: 'transparent',
-                      border: 'none',
-                      color: 'var(--accent)',
-                      fontSize: '11px',
-                      cursor: 'pointer',
-                      borderTop: '1px solid var(--border)',
-                      marginTop: '4px',
-                    }}
-                  >
-                    Custom model id…
-                  </button>
-                </>
-              )}
-              {showCustom && (
-                <div style={{ padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                  <input
-                    value={customValue}
-                    onChange={(e) => setCustomValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      e.stopPropagation()
-                      if (e.key === 'Enter') {
-                        onModelChange(customValue.trim())
-                      } else if (e.key === 'Escape') {
-                        setShowCustom(false)
-                      }
-                    }}
-                    placeholder="provider/model-id"
-                    autoFocus
-                    style={{
-                      background: 'var(--bg-tertiary)',
-                      color: 'var(--text-primary)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '4px',
-                      padding: '5px 8px',
-                      fontSize: '11px',
-                      fontFamily: 'var(--font-mono)',
-                      outline: 'none',
-                    }}
-                  />
-                  <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      onClick={() => setShowCustom(false)}
-                      style={pillBtn(false)}
-                    >Cancel</button>
-                    <button
-                      type="button"
-                      onClick={() => onModelChange(customValue.trim())}
-                      disabled={!customValue.trim()}
-                      style={pillBtn(true)}
-                    >Use</button>
-                  </div>
+                    onClick={() => setShowCustom(false)}
+                    className={pillButtonClass(false)}
+                  >Cancel</button>
+                  <button
+                    type="button"
+                    onClick={() => onModelChange(customValue.trim())}
+                    disabled={!customValue.trim()}
+                    className={pillButtonClass(true)}
+                  >Use</button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
       </div>
-    )
-  }
-})()
+    </>
+  )
+}
 
 function TerminalTabBody({
   allInstances,
@@ -717,30 +528,22 @@ function TerminalTabBody({
     : undefined
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+    <div className="flex flex-1 flex-col overflow-hidden">
       {/* CLI selector */}
-      <div style={{ padding: '8px 8px 6px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.7px', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
-          CLI Binary
-        </div>
-        <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+      <div className="border-b border-[var(--border)] px-[8px] pt-[8px] pb-[6px]">
+        <div className={sectionLabelClass}>CLI Binary</div>
+        <div className="flex items-center gap-[4px]">
           {(['claude', 'codex'] as const).map((cmd) => (
             <button
               key={cmd}
               type="button"
               onClick={() => setTermCommand(cmd)}
-              style={{
-                padding: '4px 12px',
-                borderRadius: '5px',
-                border: `1px solid ${termCommand === cmd ? 'var(--warning)' : 'var(--border)'}`,
-                background: termCommand === cmd ? 'rgba(210,153,34,0.1)' : 'var(--bg-tertiary)',
-                color: termCommand === cmd ? 'var(--warning)' : 'var(--text-secondary)',
-                fontSize: '11px',
-                fontFamily: 'var(--font-mono)',
-                cursor: 'pointer',
-                outline: 'none',
-                transition: 'background 120ms, border-color 120ms',
-              }}
+              className={cn(
+                'cursor-pointer rounded-[5px] border px-[12px] py-[4px] text-[11px] [font-family:var(--font-mono)] outline-none transition-[background,border-color] duration-[120ms]',
+                termCommand === cmd
+                  ? 'border-[var(--warning)] bg-[rgba(210,153,34,0.1)] text-[var(--warning)]'
+                  : 'border-[var(--border)] bg-[var(--bg-tertiary)] text-[var(--text-secondary)]',
+              )}
             >{cmd}</button>
           ))}
           <input
@@ -748,27 +551,18 @@ function TerminalTabBody({
             onChange={(e) => setTermCommand(e.target.value || 'claude')}
             placeholder="custom path…"
             onKeyDown={(e) => e.stopPropagation()}
-            style={{
-              flex: 1,
-              background: 'var(--bg-tertiary)',
-              border: `1px solid ${isCustom ? 'var(--border-focus)' : 'var(--border)'}`,
-              borderRadius: '5px',
-              padding: '4px 8px',
-              fontSize: '11px',
-              fontFamily: 'var(--font-mono)',
-              color: 'var(--text-primary)',
-              outline: 'none',
-            }}
+            className={cn(
+              'flex-1 rounded-[5px] border bg-[var(--bg-tertiary)] px-[8px] py-[4px] text-[11px] [font-family:var(--font-mono)] text-[var(--text-primary)] outline-none',
+              isCustom ? 'border-[var(--border-focus)]' : 'border-[var(--border)]',
+            )}
           />
         </div>
       </div>
 
       {/* Account - shown for claude/codex binaries, not a custom command */}
       {loginAgentType && loginInstances.length > 0 && (
-        <div style={{ padding: '8px 8px 6px', borderBottom: '1px solid var(--border)', overflowY: 'auto', maxHeight: 140 }}>
-          <div style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.7px', textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: '6px' }}>
-            Account
-          </div>
+        <div className="max-h-[140px] overflow-y-auto border-b border-[var(--border)] px-[8px] pt-[8px] pb-[6px]">
+          <div className={sectionLabelClass}>Account</div>
           {loginInstances.map((inst) => {
             const active = visibleInstanceId === inst.id
             return (
@@ -776,21 +570,17 @@ function TerminalTabBody({
                 key={inst.id}
                 type="button"
                 onClick={() => setTermInstanceId(inst.id)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  width: '100%', padding: '6px 8px',
-                  borderRadius: '5px',
-                  border: `1px solid ${active ? 'var(--border-focus)' : 'transparent'}`,
-                  background: active ? 'var(--bg-active)' : 'transparent',
-                  color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                  fontSize: '12px', cursor: 'pointer', textAlign: 'left', outline: 'none',
-                  transition: 'background 120ms, border-color 120ms',
-                }}
+                className={cn(
+                  'flex w-full cursor-pointer items-center gap-[8px] rounded-[5px] border px-[8px] py-[6px] text-left text-[12px] outline-none transition-[background,border-color] duration-[120ms]',
+                  active
+                    ? 'border-[var(--border-focus)] bg-[var(--bg-active)] text-[var(--text-primary)]'
+                    : 'border-transparent bg-transparent text-[var(--text-secondary)]',
+                )}
               >
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: active ? 'var(--accent)' : 'var(--text-muted)', flexShrink: 0 }} />
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{inst.displayName}</span>
+                <span className={cn('size-[6px] shrink-0 rounded-full', active ? 'bg-[var(--accent)]' : 'bg-[var(--text-muted)]')} />
+                <span className="flex-1 truncate">{inst.displayName}</span>
                 {inst.id.endsWith('-default') && (
-                  <span style={{ fontSize: '9px', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>default</span>
+                  <span className="text-[9px] [font-family:var(--font-mono)] text-[var(--text-muted)]">default</span>
                 )}
               </button>
             )
@@ -799,19 +589,10 @@ function TerminalTabBody({
       )}
 
       {/* Billing note */}
-      <div style={{ padding: '8px', borderBottom: '1px solid var(--border)' }}>
-        <div style={{
-          padding: '7px 10px',
-          background: 'rgba(63,185,80,0.05)',
-          border: '1px solid rgba(63,185,80,0.15)',
-          borderRadius: 'var(--radius)',
-          fontSize: '11px',
-          color: 'var(--text-secondary)',
-          lineHeight: 1.5,
-          display: 'flex', gap: '7px',
-        }}>
-          <span style={{ color: 'var(--success)', flexShrink: 0 }}>●</span>
-          Runs <code style={{ fontFamily: 'var(--font-mono)', fontSize: '10.5px', color: 'var(--success)', background: 'rgba(63,185,80,0.1)', padding: '0 4px', borderRadius: '3px' }}>{termCommand}</code> directly - billed from your subscription, not API credits.
+      <div className="border-b border-[var(--border)] p-[8px]">
+        <div className="flex gap-[7px] rounded-[var(--radius)] border border-[rgba(63,185,80,0.15)] bg-[rgba(63,185,80,0.05)] px-[10px] py-[7px] text-[11px] leading-[1.5] text-[var(--text-secondary)]">
+          <span className="shrink-0 text-[var(--success)]">●</span>
+          Runs <code className="rounded-[3px] bg-[rgba(63,185,80,0.1)] px-[4px] text-[10.5px] [font-family:var(--font-mono)] text-[var(--success)]">{termCommand}</code> directly - billed from your subscription, not API credits.
         </div>
       </div>
 
@@ -819,39 +600,23 @@ function TerminalTabBody({
           missing/disabled/wrong-kind login instance) before any PTY spawned.
           Surfaced here instead of silently dropping an unhandled rejection. */}
       {termError && (
-        <div style={{ padding: '0 8px 8px' }}>
-          <div style={{
-            padding: '7px 10px',
-            background: 'rgba(248,81,73,0.08)',
-            border: '1px solid rgba(248,81,73,0.25)',
-            borderRadius: 'var(--radius)',
-            fontSize: '11px',
-            color: 'var(--danger, #f85149)',
-            lineHeight: 1.5,
-          }}>
+        <div className="px-[8px] pb-[8px]">
+          <div className="rounded-[var(--radius)] border border-[rgba(248,81,73,0.25)] bg-[rgba(248,81,73,0.08)] px-[10px] py-[7px] text-[11px] leading-[1.5] text-[var(--danger,#f85149)]">
             {termError}
           </div>
         </div>
       )}
 
       {/* Start button */}
-      <div style={{ padding: '8px', display: 'flex', justifyContent: 'flex-end' }}>
+      <div className="flex justify-end p-[8px]">
         <button
           type="button"
           onClick={onStart}
           disabled={termStarting}
-          style={{
-            padding: '6px 14px',
-            borderRadius: 'var(--radius)',
-            border: 'none',
-            background: 'var(--warning)',
-            color: '#000',
-            fontWeight: 600,
-            fontSize: '12px',
-            cursor: termStarting ? 'default' : 'pointer',
-            opacity: termStarting ? 0.6 : 1,
-            transition: 'opacity 120ms',
-          }}
+          className={cn(
+            'rounded-[var(--radius)] border-0 bg-[var(--warning)] px-[14px] py-[6px] text-[12px] font-[600] text-[#000] transition-opacity duration-[120ms]',
+            termStarting ? 'cursor-default opacity-60' : 'cursor-pointer',
+          )}
         >
           {termStarting ? 'Starting…' : 'Start Terminal Session'}
         </button>
@@ -869,11 +634,6 @@ function InstanceRailItem({
   active: boolean
   onSelect: () => void
 }) {
-  const [hover, setHover] = useState(false)
-  const accent = instance.accentColor ?? 'var(--accent)'
-  const bg = active
-    ? `color-mix(in srgb, ${accent} 22%, var(--bg-secondary))`
-    : (hover ? `color-mix(in srgb, ${accent} 10%, var(--bg-secondary))` : 'transparent')
   return (
     <button
       type="button"
@@ -881,49 +641,21 @@ function InstanceRailItem({
       aria-checked={active}
       title={instance.displayName}
       onClick={onSelect}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '5px 7px',
-        borderRadius: '5px',
-        border: `1px solid ${active ? accent : 'transparent'}`,
-        background: bg,
-        color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-        fontSize: '11px',
-        fontWeight: active ? 600 : 500,
-        cursor: 'pointer',
-        textAlign: 'left',
-        outline: 'none',
-        lineHeight: 1.1,
-        transition: 'background 120ms ease, border-color 120ms ease',
-      }}
+      style={accentVar(instance.accentColor ?? 'var(--accent)')}
+      className={cn(
+        'flex cursor-pointer items-center gap-[6px] rounded-[5px] border px-[7px] py-[5px] text-left text-[11px] leading-[1.1] outline-none transition-[background,border-color] duration-[120ms] ease-[ease]',
+        active
+          ? 'border-[var(--pick-accent)] bg-[color-mix(in_srgb,var(--pick-accent)_22%,var(--bg-secondary))] font-[600] text-[var(--text-primary)]'
+          : 'border-transparent bg-transparent font-[500] text-[var(--text-secondary)] hover:bg-[color-mix(in_srgb,var(--pick-accent)_10%,var(--bg-secondary))]',
+      )}
     >
       <span
         aria-hidden
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          width: 18,
-          height: 18,
-          borderRadius: '50%',
-          background: accent,
-          color: '#fff',
-          fontSize: '8px',
-          fontWeight: 700,
-          flexShrink: 0,
-        }}
+        className="inline-flex size-[18px] shrink-0 items-center justify-center rounded-full bg-[var(--pick-accent)] text-[8px] font-[700] text-[#fff]"
       >
         {providerInstanceInitials(instance.displayName)}
       </span>
-      <span style={{
-        whiteSpace: 'nowrap',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-      }}>{instance.displayName}</span>
+      <span className="truncate">{instance.displayName}</span>
     </button>
   )
 }
@@ -939,57 +671,30 @@ function ModelRow({
   active: boolean
   onSelect: () => void
 }) {
-  const [hover, setHover] = useState(false)
   return (
     <button
       type="button"
       onClick={onSelect}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        display: 'flex',
-        alignItems: 'baseline',
-        justifyContent: 'space-between',
-        width: '100%',
-        padding: '5px 12px',
-        background: active ? 'color-mix(in srgb, var(--accent) 14%, transparent)'
-          : (hover ? 'var(--bg-tertiary)' : 'transparent'),
-        border: 'none',
-        textAlign: 'left',
-        cursor: 'pointer',
-        outline: 'none',
-        color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-        fontSize: '11px',
-        fontWeight: active ? 600 : 500,
-        gap: '8px',
-      }}
+      className={cn(
+        'flex w-full cursor-pointer items-baseline justify-between gap-[8px] border-0 px-[12px] py-[5px] text-left text-[11px] outline-none',
+        active
+          ? 'bg-[color-mix(in_srgb,var(--accent)_14%,transparent)] font-[600] text-[var(--text-primary)]'
+          : 'bg-transparent font-[500] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]',
+      )}
     >
-      <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</span>
+      <span className="truncate">{label}</span>
       {monoId && (
-        <span style={{
-          fontFamily: 'var(--font-mono)',
-          fontSize: '10px',
-          color: 'var(--text-muted)',
-          whiteSpace: 'nowrap',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          maxWidth: '50%',
-        }}>{monoId}</span>
+        <span className="max-w-[50%] truncate text-[10px] [font-family:var(--font-mono)] text-[var(--text-muted)]">{monoId}</span>
       )}
     </button>
   )
 }
 
-function pillBtn(primary: boolean): React.CSSProperties {
-  return {
-    padding: '4px 10px',
-    borderRadius: '4px',
-    border: '1px solid ' + (primary ? 'var(--accent)' : 'var(--border)'),
-    background: primary ? 'var(--accent)' : 'transparent',
-    color: primary ? '#fff' : 'var(--text-secondary)',
-    fontSize: '11px',
-    fontWeight: 600,
-    cursor: 'pointer',
-    outline: 'none',
-  }
+function pillButtonClass(primary: boolean): string {
+  return cn(
+    'cursor-pointer rounded-[4px] border px-[10px] py-[4px] text-[11px] font-[600] outline-none',
+    primary
+      ? 'border-[var(--accent)] bg-[var(--accent)] text-[#fff]'
+      : 'border-[var(--border)] bg-transparent text-[var(--text-secondary)]',
+  )
 }

@@ -21,7 +21,8 @@ import {
   reorderWorkspacesById,
 } from '@shared/workspaceOrganization'
 import { colorTokenForWorkspace } from './sidebar-helpers'
-import { confirm, isConfirmOpen } from '../ui/confirm'
+import { confirm } from '../ui/confirm'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 
 const WORKSPACE_COLORS = [1, 2, 3, 4, 5, 6].map(
   (index) => `var(--workspace-color-${index})`,
@@ -203,49 +204,16 @@ export function WorkspaceManager({
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const dialogRef = useRef<HTMLDivElement>(null)
+  const createInputRef = useRef<HTMLInputElement>(null)
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
 
   useEffect(() => setLocalWorkspaces(workspaces), [workspaces])
   useEffect(() => setLocalProjects(projects), [projects])
+  // Focus on open and on "New" goes to the name field; it is not autoFocus,
+  // which on open would run before Radix records where focus came from.
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      if (creating) { setCreating(false); setNewName(''); return }
-      if (renaming) { setRenaming(false); return }
-      onClose()
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [creating, onClose, renaming])
-
-  useEffect(() => {
-    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    const frame = requestAnimationFrame(() => {
-      dialogRef.current
-        ?.querySelector<HTMLButtonElement>('.workspace-organizer-nav-row[data-selected] .workspace-organizer-nav-main, .workspace-organizer-ungrouped[data-selected]')
-        ?.focus()
-    })
-    const trapFocus = (event: KeyboardEvent) => {
-      // The delete confirm keeps its own focus trap.
-      if (event.key !== 'Tab' || !dialogRef.current || isConfirmOpen()) return
-      const controls = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
-        'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
-      ))
-      if (controls.length === 0) return
-      const current = controls.indexOf(document.activeElement as HTMLElement)
-      const next = event.shiftKey
-        ? (current <= 0 ? controls.length - 1 : current - 1)
-        : (current === controls.length - 1 ? 0 : current + 1)
-      event.preventDefault()
-      controls[next].focus()
-    }
-    document.addEventListener('keydown', trapFocus, true)
-    return () => {
-      cancelAnimationFrame(frame)
-      document.removeEventListener('keydown', trapFocus, true)
-      previous?.focus()
-    }
-  }, [])
+    if (creating) createInputRef.current?.focus()
+  }, [creating])
 
   const selectedWorkspace = localWorkspaces.find((workspace) => workspace.id === selectedId) ?? null
   const detailStyle = {
@@ -364,20 +332,37 @@ export function WorkspaceManager({
   }
 
   return (
-    <div className="workspace-organizer-overlay" onMouseDown={(event) => {
-      if (event.target === event.currentTarget) onClose()
-    }}>
-      <div
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
         ref={dialogRef}
+        overlayClassName="workspace-organizer-overlay"
         className="workspace-organizer sb-floating-surface"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="workspace-organizer-title"
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          if (creating) {
+            createInputRef.current?.focus()
+            return
+          }
+          dialogRef.current
+            ?.querySelector<HTMLButtonElement>('.workspace-organizer-nav-row[data-selected] .workspace-organizer-nav-main, .workspace-organizer-ungrouped[data-selected]')
+            ?.focus()
+        }}
+        // Escape backs out of an open name field before it closes the organizer.
+        onEscapeKeyDown={(event) => {
+          if (creating) {
+            event.preventDefault()
+            setCreating(false)
+            setNewName('')
+          } else if (renaming) {
+            event.preventDefault()
+            setRenaming(false)
+          }
+        }}
       >
         <header className="workspace-organizer-header">
           <div>
-            <h2 id="workspace-organizer-title">Organize sidebar</h2>
-            <p>Reorder workspaces and decide where projects live.</p>
+            <DialogTitle>Organize sidebar</DialogTitle>
+            <DialogDescription>Reorder workspaces and decide where projects live.</DialogDescription>
           </div>
           <button type="button" className="workspace-organizer-close" onClick={onClose} aria-label="Close organizer">
             <CloseIcon />
@@ -397,7 +382,7 @@ export function WorkspaceManager({
                   void handleCreate()
                 }}>
                   <input
-                    autoFocus
+                    ref={createInputRef}
                     aria-label="Workspace name"
                     name="workspace-name"
                     autoComplete="off"
@@ -536,7 +521,7 @@ export function WorkspaceManager({
           <span>Drag to reorder · Option + ↑/↓ also works</span>
           <button type="button" onClick={onClose}>Done</button>
         </footer>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

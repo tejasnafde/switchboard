@@ -13,7 +13,9 @@ const sidebar = readFileSync(
 
 describe('workspace organizer production structure', () => {
   it('uses a two-pane dialog with sortable workspace and project lists', () => {
-    expect(manager).toContain('role="dialog"')
+    // Radix DialogContent supplies role="dialog", labelled by its DialogTitle.
+    expect(manager).toContain('<DialogContent')
+    expect(manager).toContain('<DialogTitle>Organize sidebar</DialogTitle>')
     expect(manager).toContain('className="workspace-organizer-nav"')
     expect(manager).toContain('className="workspace-organizer-detail"')
     expect(manager).toContain('reorderWorkspacesById')

@@ -10,7 +10,7 @@
  * button commits.
  */
 
-import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent } from 'react'
+import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react'
 import { useKanbanStore } from '../../stores/kanban-store'
 import { downscaleImage } from '../../services/imageDownscale'
 import { insertSnippetWithNewlineGuards } from '../../services/insertSnippet'
@@ -24,6 +24,17 @@ import {
 } from '@shared/kanban'
 import type { RuntimeMode } from '@shared/provider-events'
 import { confirm } from '../ui/confirm'
+import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
+import { cn } from '../../lib/utils'
+import {
+  closeButtonClass,
+  dangerButtonClass,
+  footerClass,
+  headerClass,
+  modalClass,
+  primaryButtonClass,
+  secondaryButtonClass,
+} from './kanbanModalClasses'
 
 const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; hint: string }> = [
   { value: 'plan', label: 'Plan', hint: 'Read-only - agent proposes but does not edit' },
@@ -92,6 +103,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   const [selectedProjectPath, setSelectedProjectPath] = useState(projectPath)
   const showProjectPicker = mode === 'create' && (availableProjects?.length ?? 0) > 1
   const descriptionRef = useRef<HTMLTextAreaElement>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
 
   // Paste/drop image → downscale (≤1920px longest edge) and embed at the caret
   // as `![](data:image/...;base64,…)`.
@@ -138,18 +150,6 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     availableProjects?.find((p) => p.path === selectedProjectPath)?.name
     ?? selectedProjectPath.split('/').pop()
     ?? selectedProjectPath
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault()
-        void handleSubmit()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [title, description, tagsInput, status, costCapInput, withWorktree, runtimeMode])
 
   const handleSubmit = async () => {
     if (submittingRef.current) return
@@ -252,48 +252,66 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
     }
   }
 
+  // Escape is the dialog's. Focus stays inside it, so ⌘Enter can live on the
+  // content; the confirm dialog holds it back while one is open.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault()
+      void handleSubmit()
+    }
+  }
+
   return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div style={modalStyle} onClick={(e) => e.stopPropagation()}>
-        <div style={headerStyle}>
-          <span>{mode === 'create' ? 'New card' : 'Edit card'}</span>
-          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+    <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
+      <DialogContent
+        aria-describedby={undefined}
+        onKeyDown={onKeyDown}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          titleRef.current?.focus()
+        }}
+        overlayClassName="z-[1000] bg-[rgba(0,0,0,0.4)]"
+        className={modalClass('w-[480px] max-w-[92vw]')}
+      >
+        <div className={headerClass}>
+          <DialogTitle className="text-[13px] font-[600]">{mode === 'create' ? 'New card' : 'Edit card'}</DialogTitle>
+          <button onClick={onClose} className={closeButtonClass} aria-label="Close">&times;</button>
         </div>
-        <div style={bodyStyle}>
+        <div className="flex flex-col gap-[10px] overflow-auto p-[14px]">
           {/* Project association - visible up front so the user always
               knows where the card lands. Switches to a dropdown when
               the create scope spans multiple projects. */}
-          <label style={labelStyle}>
+          <label className={labelClass}>
             Project
             {showProjectPicker ? (
               <select
                 value={selectedProjectPath}
                 onChange={(e) => setSelectedProjectPath(e.target.value)}
-                style={inputStyle}
+                className={inputClass}
               >
                 {availableProjects!.map((p) => (
                   <option key={p.path} value={p.path}>{p.name}</option>
                 ))}
               </select>
             ) : (
-              <div style={projectChipStyle} title={selectedProjectPath}>
+              <div className={chipClass} title={selectedProjectPath}>
                 {projectLabel}
               </div>
             )}
           </label>
 
-          <label style={labelStyle}>
+          <label className={labelClass}>
             Title
             <input
-              autoFocus
+              ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="What needs doing?"
-              style={inputStyle}
+              className={inputClass}
             />
           </label>
 
-          <label style={labelStyle}>
+          <label className={labelClass}>
             Description
             <textarea
               ref={descriptionRef}
@@ -304,28 +322,28 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
               onDragOver={handleDescriptionDragOver}
               placeholder="Context, links, acceptance criteria… (paste images to embed)"
               rows={5}
-              style={{ ...inputStyle, fontFamily: 'inherit', resize: 'vertical' }}
+              className={cn(inputClass, 'resize-y [font-family:inherit]')}
             />
           </label>
 
-          <label style={labelStyle}>
+          <label className={labelClass}>
             Tags (comma-separated)
             <input
               value={tagsInput}
               onChange={(e) => setTagsInput(e.target.value)}
               placeholder="bug, auth, p0"
-              style={inputStyle}
+              className={inputClass}
             />
           </label>
 
-          <div style={rowStyle}>
+          <div className="flex gap-[10px]">
             {mode === 'edit' && (
-              <label style={{ ...labelStyle, flex: 1 }}>
+              <label className={cn(labelClass, 'flex-1')}>
                 Status
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as KanbanStatus)}
-                  style={inputStyle}
+                  className={inputClass}
                 >
                   {KANBAN_COLUMNS.map((col) => (
                     <option key={col.id} value={col.id}>{col.label}</option>
@@ -333,7 +351,7 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
                 </select>
               </label>
             )}
-            <label style={{ ...labelStyle, flex: 1 }}>
+            <label className={cn(labelClass, 'flex-1')}>
               Cost cap (USD, optional)
               <input
                 type="number"
@@ -342,38 +360,38 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
                 value={costCapInput}
                 onChange={(e) => setCostCapInput(e.target.value)}
                 placeholder="5.00"
-                style={inputStyle}
+                className={inputClass}
               />
             </label>
           </div>
 
           {/* Picked at create time only - see `runtimeMode` state comment. */}
-          <label style={labelStyle}>
+          <label className={labelClass}>
             Runtime mode
             {mode === 'create' ? (
               <>
                 <select
                   value={runtimeMode}
                   onChange={(e) => setRuntimeMode(e.target.value as RuntimeMode)}
-                  style={inputStyle}
+                  className={inputClass}
                 >
                   {RUNTIME_MODE_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
-                <span style={runtimeHintStyle}>
+                <span className={hintClass}>
                   {RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.hint}
                 </span>
               </>
             ) : (
-              <div style={projectChipStyle} title="Change the live mode from the chat panel's runtime selector">
+              <div className={chipClass} title="Change the live mode from the chat panel's runtime selector">
                 {RUNTIME_MODE_OPTIONS.find((o) => o.value === runtimeMode)?.label ?? runtimeMode}
               </div>
             )}
           </label>
 
           {mode === 'create' && (
-            <label style={{ ...labelStyle, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <label className={cn(labelClass, 'flex-row items-center gap-[6px]')}>
               <input
                 type="checkbox"
                 checked={withWorktree}
@@ -384,98 +402,49 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
           )}
 
           {mode === 'edit' && card && (
-            <div style={worktreeRowStyle}>
+            <div className="flex items-center gap-[8px] rounded-[4px] bg-[rgba(0,0,0,0.03)] px-[8px] py-[6px] text-[11px]">
               {card.worktreePath ? (
                 <>
-                  <span>Worktree: <code style={codeStyle}>{card.worktreePath}</code></span>
+                  <span>Worktree: <code className="text-[11px] [font-family:monospace] opacity-[0.85]">{card.worktreePath}</code></span>
                   <button
                     onClick={() => { void handleDetachWorktree() }}
                     disabled={worktreeBusy !== null || submitting}
-                    style={dangerBtnStyle}
+                    className={dangerButtonClass}
                   >{worktreeBusy === 'detach' ? 'Detaching…' : 'Detach'}</button>
                 </>
               ) : card.conversationId ? (
-                <span style={runtimeHintStyle}>
+                <span className={hintClass}>
                   This card already has a conversation. Continue there; attaching a worktree would replace its execution context.
                 </span>
               ) : (
                 <button
                   onClick={() => { void handleAttachWorktree() }}
                   disabled={worktreeBusy !== null || submitting}
-                  style={secondaryBtnStyle}
+                  className={secondaryButtonClass}
                 >{worktreeBusy === 'attach' ? 'Attaching…' : 'Attach worktree'}</button>
               )}
             </div>
           )}
 
-          {error && <div style={errStyle}>{error}</div>}
+          {error && <div className="text-[12px] text-[var(--red,#d73a49)]">{error}</div>}
         </div>
 
-        <div style={footerStyle}>
+        <div className={footerClass}>
           {mode === 'edit' && (
-            <button onClick={handleDelete} disabled={submitting || worktreeBusy !== null} style={dangerBtnStyle}>Delete</button>
+            <button onClick={handleDelete} disabled={submitting || worktreeBusy !== null} className={dangerButtonClass}>Delete</button>
           )}
-          <div style={{ flex: 1 }} />
-          <button onClick={onClose} disabled={submitting} style={secondaryBtnStyle}>Cancel</button>
-          <button onClick={handleSubmit} disabled={submitting || worktreeBusy !== null} style={primaryBtnStyle}>
+          <div className="flex-1" />
+          <button onClick={onClose} disabled={submitting} className={secondaryButtonClass}>Cancel</button>
+          <button onClick={handleSubmit} disabled={submitting || worktreeBusy !== null} className={primaryButtonClass}>
             {mode === 'create' ? 'Create' : 'Save'} {submitting && '…'}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-const overlayStyle: CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
-}
-const modalStyle: CSSProperties = {
-  width: 480, maxWidth: '92vw', maxHeight: '88vh',
-  background: 'var(--bg)', color: 'var(--fg)',
-  border: '1px solid var(--border)', borderRadius: 8,
-  display: 'flex', flexDirection: 'column', overflow: 'hidden',
-  boxShadow: '0 12px 48px rgba(0,0,0,0.4)',
-}
-const headerStyle: CSSProperties = {
-  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-  padding: '10px 14px', borderBottom: '1px solid var(--border)', fontWeight: 600,
-}
-const closeBtnStyle: CSSProperties = {
-  background: 'transparent', border: 'none', color: 'var(--fg)', cursor: 'pointer', fontSize: 14,
-}
-const bodyStyle: CSSProperties = { padding: 14, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto' }
-const labelStyle: CSSProperties = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, opacity: 0.85 }
-const inputStyle: CSSProperties = {
-  fontSize: 13, padding: '6px 8px', background: 'var(--bg-elev1, var(--bg))',
-  color: 'var(--fg)', border: '1px solid var(--border)', borderRadius: 4,
-}
-const rowStyle: CSSProperties = { display: 'flex', gap: 10 }
-const worktreeRowStyle: CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 8, fontSize: 11,
-  padding: '6px 8px', background: 'var(--bg-elev1, rgba(0,0,0,0.03))', borderRadius: 4,
-}
-const codeStyle: CSSProperties = { fontFamily: 'monospace', fontSize: 11, opacity: 0.85 }
-const projectChipStyle: CSSProperties = {
-  fontSize: 12, padding: '5px 10px', borderRadius: 4,
-  background: 'rgba(37,99,235,0.10)', color: 'var(--accent, #2563eb)',
-  fontFamily: 'monospace', alignSelf: 'flex-start',
-  border: '1px solid rgba(37,99,235,0.25)',
-}
-const runtimeHintStyle: CSSProperties = { fontSize: 10, opacity: 0.65, marginTop: 2 }
-const errStyle: CSSProperties = { color: 'var(--red, #d73a49)', fontSize: 12 }
-const footerStyle: CSSProperties = {
-  display: 'flex', gap: 6, padding: 10, borderTop: '1px solid var(--border)',
-}
-const primaryBtnStyle: CSSProperties = {
-  fontSize: 12, padding: '6px 14px', background: 'var(--accent, #2563eb)', color: 'white',
-  border: 'none', borderRadius: 4, cursor: 'pointer',
-}
-const secondaryBtnStyle: CSSProperties = {
-  fontSize: 12, padding: '6px 14px', background: 'transparent', color: 'var(--fg)',
-  border: '1px solid var(--border)', borderRadius: 4, cursor: 'pointer',
-}
-const dangerBtnStyle: CSSProperties = {
-  fontSize: 12, padding: '6px 14px', background: 'transparent', color: 'var(--red, #d73a49)',
-  border: '1px solid var(--red, #d73a49)', borderRadius: 4, cursor: 'pointer',
-}
+const labelClass = 'flex flex-col gap-[4px] text-[11px] opacity-[0.85]'
+const inputClass = 'rounded-[4px] border border-[var(--border)] bg-transparent px-[8px] py-[6px] text-[13px] text-inherit'
+const chipClass = 'self-start rounded-[4px] border border-[rgba(37,99,235,0.25)] bg-[rgba(37,99,235,0.10)] px-[10px] py-[5px] text-[12px] [font-family:monospace] text-[var(--accent,#2563eb)]'
+const hintClass = 'mt-[2px] text-[10px] opacity-[0.65]'

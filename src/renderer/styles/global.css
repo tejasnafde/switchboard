@@ -175,6 +175,18 @@ html[data-fullscreen="true"].theme-translucent .titlebar-drag {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 
+/* Provider picker: a near-opaque panel with a blur, so in translucent mode
+   the wallpaper only tints it. Light keeps near-white. */
+.sb-provider-picker {
+  background: rgba(22, 22, 26, 0.94);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.theme-light .sb-provider-picker {
+  background: rgba(255, 255, 255, 0.96);
+}
+
 /* Translucent mode: bump blur + opacity so popovers don't show the
    wallpaper through themselves. */
 .theme-translucent .settings-modal-content,
@@ -1869,13 +1881,16 @@ html, body, #root {
   position: fixed;
   inset: 0;
   z-index: 1200;
-  display: grid;
-  place-items: center;
-  padding: 32px;
   background: rgba(0, 0, 0, 0.42);
 }
 
+/* A Radix dialog: the overlay is its sibling, not its container, so it
+   centres itself. Its size is fixed, so this matches the old grid centring. */
 .workspace-organizer {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  margin: auto;
   display: flex;
   flex-direction: column;
   width: min(760px, 94vw);
@@ -2337,10 +2352,6 @@ html, body, #root {
 }
 
 @media (max-width: 620px) {
-  .workspace-organizer-overlay {
-    padding: 14px;
-  }
-
   .workspace-organizer-content {
     grid-template-columns: 154px minmax(0, 1fr);
   }
