@@ -21,7 +21,7 @@
  */
 import React, { useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
-import { ToolItem, TextItem } from './ThreadScreen'
+import { ToolItem, TextItem } from './ThreadFeedItems'
 import { SendMicButton } from '../components/SendMicButton'
 import { SlashMenu } from '../components/SlashMenu'
 import { BuildStamp } from '../components/BuildStamp'

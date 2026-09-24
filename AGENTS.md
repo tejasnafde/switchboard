@@ -187,7 +187,9 @@ Connections) renders assistant text, tool calls and composer states on one
 screen, for states that are awkward to reach on purpose. It is NOT every feed
 row: `user`, `approval`, `question`, `plan`, `fileEdit`, `denial`, `error` and
 `notice` are absent, and `approval`/`question` are the two most stateful.
-Adding them means lifting their handlers out of `ThreadScreen` first. Its
+Adding them means lifting their handlers out of `ThreadScreen` first (the
+row components themselves live in `src/screens/ThreadFeedItems.tsx`, the
+screen's styles in `ThreadScreen.styles.ts`). Its
 loading and empty tiles are replicas against the gallery's own stylesheet, not
 the production path, so they would not have caught the upside-down loader
 (a `scaleY: -1` on `ThreadScreen`'s `emptyWrap` under the inverted `FlatList`).
@@ -489,7 +491,8 @@ src/
 │   │   └── jsonl-truncate.ts          # Pure fork truncation (assembleClaudeFork, truncate*Jsonl)
 │   ├── conversations/fork.ts          # Fork-from-message orchestration (per-provider resume)
 │   ├── db/
-│   │   ├── database.ts                # SQLite schema, archive, FTS, settings, kanban, fork lineage
+│   │   ├── database.ts                # getDb + migrate(); re-exports the domain modules below, so import from here
+│   │   ├── projects.ts · conversations.ts (+ thread ancestry, archive) · messages.ts · settings.ts (+ session layouts) · kanban.ts · bookmarks.ts
 │   │   └── providerInstances.ts       # provider_instances CRUD (safeStorage-encrypted env)
 │   ├── files/                         # listing (gitignore-annotated) · writing (atomic+conflict) · gitignore matcher
 │   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review) · legacy-session-worktree-lease (session worktree creation)
@@ -508,6 +511,7 @@ src/
 │   ├── protocol/sb-favicon.ts         # sb-favicon:// custom protocol handler
 │   ├── provider/
 │   │   ├── provider-registry.ts       # IPC handlers, instance resolution, event forwarding
+│   │   ├── turn-submission-results.ts # pure turn-result helpers (legacyAcceptanceResult, rejectedAtomicTurn, ...)
 │   │   ├── policy.ts                  # decidePermission/denialMessage/PLAN_READ_ONLY_TOOLS/CUSTOM_UI_TOOLS
 │   │   ├── event-bus.ts               # RuntimeEventBus (decoupled fan-out)
 │   │   ├── env-overlay.ts             # instance env merge · claude-session-migrate.ts # oauth_dir rotation
@@ -527,16 +531,22 @@ src/
 ├── preload/index.ts                   # Typed window.api (SwitchboardAPI), strongly-typed provider.onEvent
 ├── renderer/
 │   ├── App.tsx                        # Flat flex-row layout, all keybindings, view switching
+│   ├── services/globalKeybindings.ts  # resolveGlobalKeydown: pure keydown → app shortcut action (App dispatches)
 │   ├── components/
 │   │   ├── CommandPalette.tsx (⌘⇧P) · QuickPromptModal.tsx (⌘K) · SearchModal.tsx (⌘⇧F)
 │   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · settings/ProviderUsagePanel.tsx · SessionPickerModal.tsx
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
+│   │   │   ├── providerEventReducer.ts # desktop provider event → agent-store reducer (ChatPanel's listener)
+│   │   │   ├── ChatWorkspacePanels.tsx # primary/secondary ChatPanel slots + ChatSplitHandle
+│   │   │   ├── useChatSearch.ts (in-pane ⌘F) · SlashHelpOverlay.tsx · chatSessionSettings.ts (mode/model/effort writes)
+│   │   │   ├── pickerKeydown.ts (send-to/@/slash picker keys) · modelVariants.tsx (VariantChips, model id helpers)
 │   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slashCommands.ts
 │   │   │   ├── UnifiedProviderPicker.tsx # agent tabs → instance rail → model search
 │   │   │   ├── BranchPicker.tsx + branchPickerPolicy.ts · SkillChip · FileChip
 │   │   │   ├── AtMentionMenu.tsx + atMention.ts · renderPillBody.tsx · rotationMarker.ts
 │   │   │   └── lexical/               # RichChatTextarea · PillNode · PillChipVisual
+│   │   ├── layout/                    # ResizeHandle · ViewToggle (Chats/Board title-bar toggle)
 │   │   ├── ide/                       # IdePane (code-server <webview>)
 │   │   ├── kanban/                    # KanbanView (⌘⇧K) · CardModal · WorktreeManagerModal · cardLaunch.ts
 │   │   ├── sidebar/                   # Sidebar · ProjectFavicon · WorkspaceManager · dragLogic
