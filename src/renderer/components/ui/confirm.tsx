@@ -41,7 +41,8 @@ let returnFocus: HTMLElement | null = null
 let restorePending = false
 
 function restoreFocus(): void {
-  if (!restorePending) return
+  // A confirm chained from the last one's answer is on screen: its own close restores.
+  if (!restorePending || queue.length > 0) return
   restorePending = false
   const target = returnFocus?.isConnected
     ? returnFocus
@@ -87,7 +88,13 @@ if (typeof window !== 'undefined') window.addEventListener('keydown', holdKeysWh
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     if (queue.length === 0 && typeof document !== 'undefined') {
-      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      if (restorePending) {
+        // Chained from the previous answer before its restore ran: keep the
+        // original return target, and let this confirm's close restore it.
+        restorePending = false
+      } else {
+        returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      }
     }
     queue.push({ ...options, resolve })
     for (const listener of listeners) listener()
