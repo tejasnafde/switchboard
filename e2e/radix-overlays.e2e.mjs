@@ -302,6 +302,14 @@ async function settingsDialog() {
   await win.keyboard.press('Escape')
   check('settings: Escape cancels a launch-config name field, not Settings',
     await settings.getByPlaceholder('launch config name').count() === 0 && await settings.isVisible())
+  // The provider editor sits inside Settings; Escape closes only the editor.
+  await settings.getByRole('button', { name: /^providers$/i }).click()
+  await settings.getByRole('button', { name: '+ Add Instance' }).first().click()
+  const editor = settings.getByText(/^New Instance - /)
+  await editor.waitFor({ state: 'visible' })
+  await win.keyboard.press('Escape')
+  check('settings: Escape closes the provider editor, not Settings',
+    await editor.waitFor({ state: 'hidden', timeout: 2000 }).then(() => true, () => false) && await settings.isVisible())
   for (let i = 0; i < 12; i++) await win.keyboard.press('Tab')
   check('settings: Tab stays inside it', await win.evaluate(() => !!document.activeElement?.closest('.settings-modal-content')))
   await win.keyboard.press('Escape')

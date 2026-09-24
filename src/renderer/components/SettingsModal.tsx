@@ -56,6 +56,7 @@ import {
 } from './sidebar/recentSessionLimit'
 import { confirm } from './ui/confirm'
 import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
+import { onEscapeFirst } from './ui/escape-first'
 import { cn } from '../lib/utils'
 
 const log = createRendererLogger('component:settings')
@@ -1787,19 +1788,12 @@ function UpdateCheckRow() {
     const closeOnPointerDown = (event: PointerEvent) => {
       if (!helpRef.current?.contains(event.target as Node)) setHelpOpen(false)
     }
-    // Window capture, so this answers Escape before the Settings dialog's
-    // document listener would close Settings along with the help.
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      setHelpOpen(false)
-    }
+    // Escape dismisses only the help, not Settings around it.
+    const offEscape = onEscapeFirst(() => setHelpOpen(false))
     document.addEventListener('pointerdown', closeOnPointerDown)
-    window.addEventListener('keydown', closeOnEscape, true)
     return () => {
       document.removeEventListener('pointerdown', closeOnPointerDown)
-      window.removeEventListener('keydown', closeOnEscape, true)
+      offEscape()
     }
   }, [helpOpen])
 
