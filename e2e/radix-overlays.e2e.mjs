@@ -116,9 +116,66 @@ async function branchPicker() {
   check('branch picker: focus returns to the trigger', await focusIsTrigger('Switch branch'))
 }
 
+async function commandPalette() {
+  const editor = win.locator('.chat-composer [aria-label="Chat message"]').first()
+  await editor.click()
+  await win.keyboard.press('Meta+Shift+P')
+  const palette = win.getByRole('dialog', { name: 'Command Palette' })
+  await palette.waitFor({ state: 'visible' })
+  check('palette: input has focus', (await focused())?.placeholder === 'Type a command...')
+  await win.keyboard.type('toggle sideb')
+  check('palette: fuzzy filter keeps the match selected',
+    await palette.locator('[cmdk-item][data-selected="true"]').textContent().then((t) => t?.includes('Toggle Sidebar')))
+  await win.keyboard.press('Escape')
+  check('palette: Escape closes it', await hidden(palette))
+  check('palette: focus returns to the composer', await focusSettlesOn(`document.activeElement?.getAttribute('aria-label') === 'Chat message'`))
+
+  await win.keyboard.press('Meta+Shift+P')
+  await palette.waitFor({ state: 'visible' })
+  await win.keyboard.press('Meta+Shift+P')
+  check('palette: its shortcut toggles it closed', await hidden(palette))
+
+  await win.keyboard.press('Meta+Shift+P')
+  await palette.waitFor({ state: 'visible' })
+  await win.keyboard.type('open settings')
+  await win.keyboard.press('Enter')
+  const settings = win.locator('.settings-modal-content')
+  await settings.waitFor({ state: 'visible' })
+  check('palette: a command that opens Settings does not pull focus back to the composer',
+    await win.waitForTimeout(300).then(() => win.evaluate(() => document.activeElement?.getAttribute('aria-label') !== 'Chat message')))
+  await win.keyboard.press('Escape')
+  check('palette: Escape then closes Settings', await hidden(settings))
+}
+
+async function sessionPicker() {
+  // Open beside offers only chats that are already loaded.
+  await openConversation('Compare retry strategies')
+  await openConversation('Debug auth callback')
+  const primary = win.locator('[data-chat-panel]').first()
+  const openBeside = primary.getByRole('button', { name: 'Open beside' })
+  await openBeside.click()
+  const picker = win.getByRole('dialog', { name: 'Open a loaded chat beside this one' })
+  await picker.waitFor({ state: 'visible' })
+  const rows = picker.getByRole('button')
+  check('session picker: lists the other loaded chat', await rows.filter({ hasText: 'Compare retry strategies' }).count() === 1)
+  await win.keyboard.press('Escape')
+  check('session picker: Escape closes it', await hidden(picker))
+  check('session picker: focus returns to Open beside', await focusSettlesOn(`document.activeElement?.textContent?.includes('Open beside') || document.activeElement?.getAttribute('aria-label') === 'Open beside'`))
+
+  await openBeside.click()
+  await picker.waitFor({ state: 'visible' })
+  await win.keyboard.press('ArrowDown')
+  await win.keyboard.press('ArrowUp')
+  await win.keyboard.press('Enter')
+  check('session picker: Enter picks the highlighted chat', await hidden(picker))
+  check('session picker: the pick opens beside', await win.locator('.chat-identity-title').filter({ hasText: 'Compare retry strategies' }).first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false))
+}
+
 await openConversation('Debug auth callback')
 await providerPicker()
 await branchPicker()
+await commandPalette()
+await sessionPicker()
 
 await app.close()
 const failed = results.filter((ok) => !ok).length
