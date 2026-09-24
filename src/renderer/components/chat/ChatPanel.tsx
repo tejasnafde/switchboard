@@ -1199,6 +1199,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         messages={messages}
         sessionId={sessionId}
         visible={visible}
+        busy={status === 'running' || status === 'thinking'}
         agentType={activeSession?.type ?? agentType}
         onApproval={handleApproval}
         onAnswerQuestion={handleAnswerQuestion}
