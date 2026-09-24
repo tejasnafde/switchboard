@@ -71,6 +71,27 @@ function recentStatusLine(
   }
 }
 
+/**
+ * What a Recents row renders from a live session, as one string. The sidebar
+ * re-derives only when this changes, so it must carry every field line 2 can
+ * show: a re-sent card with a new tool or question must repaint the row.
+ */
+export function recentLiveSignal(sessions: readonly RecentLiveSession[]): string {
+  return sessions.map((session) => {
+    const pending = (session.pendingRequests ?? []).map((event) => {
+      switch (event.type) {
+        case 'request.opened':
+          return `${event.type}:${event.requestId}:${event.toolName}`
+        case 'question.asked':
+          return `${event.type}:${event.requestId}:${event.questions[0]?.question ?? ''}`
+        case 'plan.proposed':
+          return `${event.type}:${event.planId}`
+      }
+    }).join(',')
+    return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pending}:${session.unreadCount ?? 0}`
+  }).join('|')
+}
+
 export interface RecentSessionItem {
   session: SessionSummary
   projectPath: string

@@ -801,10 +801,11 @@ async function runBehaviourChecks() {
   await closeApp()
   const relaunched = await launchSwitchboard()
   const relaunchedLocalMachine = relaunched.win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' })
-  await relaunchedLocalMachine.waitFor({ state: 'visible' })
-  if (await relaunchedLocalMachine.getAttribute('aria-expanded') !== 'true') {
-    throw new Error('machine disclosure did not persist across relaunch')
-  }
+  // hydrateSidebarCollapse restores the saved state after first paint, so
+  // the button can be visible and still collapsed for a moment.
+  await relaunchedLocalMachine.and(relaunched.win.locator('[aria-expanded="true"]'))
+    .waitFor({ state: 'visible', timeout: 10_000 })
+    .catch(() => { throw new Error('machine disclosure did not persist across relaunch') })
   if (hasSeededRecents) {
     await relaunched.win.waitForFunction(
       () => document.querySelectorAll('.sidebar-recent-row').length === 6,

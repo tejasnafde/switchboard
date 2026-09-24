@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { deriveRecentSessions } from '../../src/renderer/components/sidebar/recentSessions'
+import { deriveRecentSessions, recentLiveSignal } from '../../src/renderer/components/sidebar/recentSessions'
 import type { Project } from '@shared/types'
 import type { PendingBlockingEvent } from '@shared/pending-requests'
 
@@ -253,5 +253,21 @@ describe('deriveRecentSessions', () => {
 
     const unopened = deriveRecentSessions({ localProjects: [project()], remoteProjects: {}, liveSessions: [] })
     expect(unopened.every((item) => item.statusLine === 'repo')).toBe(true)
+  })
+
+  it('changes the refresh signal when a card keeps its id but shows a new tool or question', () => {
+    const base = { id: 'a', machineId: 'local', status: 'idle' as const, messages: [] }
+    const approval = approvalOpened('a')
+    const signal = (pendingRequests: PendingBlockingEvent[]) => recentLiveSignal([{ ...base, pendingRequests }])
+    const question = (text: string): PendingBlockingEvent => ({
+      type: 'question.asked',
+      threadId: 'a',
+      requestId: 'q',
+      questions: [{ id: 'q', header: 'h', question: text, options: [], multiSelect: false }],
+    })
+
+    expect(signal([approval])).not.toBe(signal([{ ...approval, toolName: 'Write' } as PendingBlockingEvent]))
+    expect(signal([question('Which region?')])).not.toBe(signal([question('Which bucket?')]))
+    expect(signal([approval])).toBe(signal([{ ...approval, detail: 'other' } as PendingBlockingEvent]))
   })
 })

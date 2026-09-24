@@ -48,9 +48,8 @@ const log = createRendererLogger('sidebar')
 import type { Machine } from '@shared/machines'
 import { UnreadBadge, GroupUnreadBadge } from './UnreadBadge'
 import { RecentSessionsSection } from './RecentSessionsSection'
-import { deriveRecentSessions, type RecentLiveSession } from './recentSessions'
+import { deriveRecentSessions, recentLiveSignal, type RecentLiveSession } from './recentSessions'
 import { countLabel, localMachineSummary } from './recentGroups'
-import { pendingRequestKey } from '@shared/pending-requests'
 import {
   DEFAULT_RECENT_SESSION_LIMIT,
   RECENT_SESSION_LIMIT_CHANGED,
@@ -163,10 +162,7 @@ export function Sidebar({ onSessionSelect, onOpenBeside, onNewChat, onPickNewCha
       unreadCount,
       pendingRequests,
     }))
-    const signal = next.map((session) => {
-      const pending = (session.pendingRequests ?? []).map(pendingRequestKey).join(',')
-      return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pending}:${session.unreadCount ?? 0}`
-    }).join('|')
+    const signal = recentLiveSignal(next)
     if (signal === recentSignalRef.current) return
     recentSignalRef.current = signal
     setRecentLiveSessions(next)
