@@ -1,0 +1,61 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "theme-screenshot-regressions",
+  "summary": "Screenshot regression tests for eight desktop screens (chat after a finished turn, running composer, sidebar, kanban, Settings, command palette, provider picker, approval card) in Dark, Light and Translucent, run in CI on macos-14. Building them surfaced and fixed three desktop defects: the xterm viewport painted black under the translucent terminal (a solid black pane) and under the light terminal's last row, the provider picker read the theme class from <body> and so rendered its dark panel in the light theme, and demo-adapter mode probed the real model catalog with the machine's credentials. The scripted demo adapter gains an approval script and a deterministic turn duration so these states can be reached and captured.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "e2e/visual-regressions.e2e.mjs",
+        "e2e/lib/visual-compare.mjs",
+        "e2e/fixtures/demo-workspace.mjs",
+        "e2e/snapshots",
+        "src/renderer/styles/global.css",
+        "src/renderer/components/chat/UnifiedProviderPicker.tsx",
+        "src/renderer/components/chat/MessageList.tsx",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "src/main/provider/provider-registry.ts",
+        "tests/unit/visual-compare.test.ts",
+        "tests/unit/visual-regressions-source.test.ts",
+        "tests/unit/demo-adapter.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Every product fix is in desktop-only code: the xterm terminal pane and its CSS, the UnifiedProviderPicker popover, a class name on the desktop MessageList, and the Electron main process's demo adapter and catalog handler. The React Native app has no xterm terminal, no UnifiedProviderPicker, no translucent theme and never runs SB_DEMO_ADAPTER. The screenshot suite drives the Electron build only; mobile components are covered by the jest suite in apps/mobile, which this change does not touch."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "Same as reactNativeIos: the Android app renders its own Compose UI with no xterm pane, no provider picker popover and no translucent theme, and none of the changed files are in apps/android. Its visual coverage is the existing ThreadScreenRegressionTest lane."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "No channel, event or wire-format change. provider:list-catalog keeps its contract; it only returns an empty list when the backend runs with SB_DEMO_ADAPTER=1, an environment variable set by the tour recorder and the visual suite and never by a normal launch or the headless server. The demo adapter's request.opened / request.closed events use the existing RuntimeEvent shapes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, settings key or stored-data change. The fixture database the suite seeds lives in a temp dir and is deleted on exit."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "No package identity, signing, deep link or update-channel change. The only pipeline change is a new CI job on PRs and main (which release.yml's gate also runs through ci.yml); it builds with build:fast and ships nothing."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck and npm test pass, including new unit tests for the pixel comparison (tolerance, changed-pixel ratio, diff image, backdrop flattening, baseline update), the harness source (screen list, per-theme pristine restore, clock/scale/animation freezing, temp-dir cleanup) and the demo adapter (approval hold, interrupt closes the approval, a steer's second approval, deterministic duration).",
+      "SB_VISUAL_SCOPE=screens npm run test:e2e:visual passed twice in a row on this Mac (about 39s each) with zero changed pixels between runs.",
+      "Reverting the xterm viewport fix fails the suite: chat-translucent 25.7% and chat-light 0.25% of pixels changed against the 0.1% limit. Swapping one baseline fails with actual and diff PNGs written.",
+      "CI probe on macos-14 (three runs of a temporary workflow): the runner matched itself exactly across two runs, and after pinning sRGB, the fixture's git branch name and the demo model catalog it matched baselines generated on this Mac within tolerance."
+    ],
+    "hardware": [
+      "Every committed baseline PNG was opened and inspected by eye on this Mac (macOS 26, Apple Silicon) before commit, in all three themes."
+    ],
+    "notExercised": [
+      "The behaviour phase's native-glass check could not run in this session: the terminal lacks Screen Recording permission, so screencapture fails. On the CI runner screencapture works but the window server does not transmit the backdrop, so that phase stays a local check.",
+      "Real vibrancy blur is not part of the screenshot baselines; the Translucent captures are the app's own pixels over a synthetic backdrop.",
+      "Mobile and Android were not exercised; no files there changed."
+    ]
+  }
+}

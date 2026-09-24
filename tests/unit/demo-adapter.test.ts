@@ -56,6 +56,101 @@ describe('DemoAdapter (tour recorder script)', () => {
     expect(content.map((c) => c.text).join('')).toMatch(/^Two focused tests/)
   }, 20_000)
 
+  it('reports the scripted duration, identical on every run', async () => {
+    const duration = (events: RuntimeEvent[]) => events.find((e) => e.type === 'turn.completed')
+    const [first, second] = await Promise.all([
+      runTurn('sandbox', 'What do the tests cover?', cwd),
+      runTurn('sandbox', 'What do the tests cover?', cwd),
+    ])
+    expect(duration(first)).toMatchObject({ durationMs: expect.any(Number) })
+    expect(duration(first)).toEqual(duration(second))
+  }, 20_000)
+
+  it('a run request holds the turn on an approval until it is answered', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
+    const opened = await vi.waitFor(() => {
+      const event = events.find((e) => e.type === 'request.opened')
+      if (!event || event.type !== 'request.opened') throw new Error('no approval yet')
+      return event
+    }, { timeout: 5_000, interval: 50 })
+    expect(opened).toMatchObject({ requestType: 'command', toolName: 'Bash', detail: 'npm test' })
+    expect(events.some((e) => e.type === 'turn.completed')).toBe(false)
+    await adapter.respondToRequest('t1', opened.requestId, 'approve')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('turn still running')
+    }, { timeout: 10_000, interval: 50 })
+    expect(events.some((e) => e.type === 'request.closed' && e.decision === 'approve')).toBe(true)
+    expect(events.some((e) => e.type === 'tool.started' && e.toolName === 'Bash')).toBe(true)
+  }, 20_000)
+
+  it('interrupting a turn blocked on an approval closes the approval without completing', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no approval yet')
+    }, { timeout: 5_000, interval: 50 })
+    await adapter.interruptTurn('t1')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    expect(events.some((e) => e.type === 'turn.completed')).toBe(false)
+    expect(events.some((e) => e.type === 'request.closed' && e.decision === 'deny')).toBe(true)
+  }, 20_000)
+
+  it('a steer that opens a second approval leaves the first one answerable', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    const opened = (): string[] => events.flatMap((e) => (e.type === 'request.opened' ? [e.requestId] : []))
+    await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
+    await vi.waitFor(() => { if (opened().length < 1) throw new Error('no approval yet') }, { timeout: 5_000, interval: 50 })
+    await adapter.sendTurn('t1', 'Run them again', 'sandbox', undefined, 'steer')
+    await vi.waitFor(() => { if (opened().length < 2) throw new Error('no second approval yet') }, { timeout: 5_000, interval: 50 })
+    await adapter.respondToRequest('t1', opened()[0], 'approve')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('first turn still running')
+    }, { timeout: 10_000, interval: 50 })
+    // The second approval is still open, so the session must not read idle.
+    const lastStatus = (): string | undefined => events.filter((e) => e.type === 'status').at(-1)?.status
+    expect(lastStatus()).toBe('running')
+    await adapter.respondToRequest('t1', opened()[1], 'deny')
+    await vi.waitFor(() => {
+      if (events.filter((e) => e.type === 'turn.completed').length < 2) throw new Error('second turn still running')
+    }, { timeout: 10_000, interval: 50 })
+    expect(lastStatus()).toBe('idle')
+  }, 30_000)
+
+  it('an explicit run request wins over edit keywords in the same message', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Run the tests to validate the state fix', 'sandbox')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'request.opened')) throw new Error('no approval yet')
+    }, { timeout: 5_000, interval: 50 })
+    expect(events.some((e) => e.type === 'tool.started' && e.toolName === 'Edit')).toBe(false)
+    expect(readFileSync(join(cwd, 'src', 'api', 'auth.ts'), 'utf8')).toContain('exchangeCode() {}')
+    await adapter.interruptTurn('t1')
+  }, 20_000)
+
+  it('an interrupt before the approval opens never registers it, so a queued turn still runs', async () => {
+    const adapter = new DemoAdapter('claude')
+    const events: RuntimeEvent[] = []
+    await adapter.startSession({ threadId: 't1', provider: 'claude', cwd, runtimeMode: 'sandbox' }, (e) => events.push(e))
+    await adapter.sendTurn('t1', 'Run the auth tests', 'sandbox')
+    // Still inside the opening pause, before the approval exists.
+    await adapter.interruptTurn('t1')
+    await adapter.sendTurn('t1', 'What do the tests cover?', 'sandbox', undefined, 'queue')
+    await vi.waitFor(() => {
+      if (!events.some((e) => e.type === 'turn.completed')) throw new Error('queued turn never ran')
+    }, { timeout: 15_000, interval: 50 })
+    expect(events.some((e) => e.type === 'request.opened')).toBe(false)
+    expect(events.filter((e) => e.type === 'turn.completed')).toHaveLength(1)
+  }, 20_000)
+
   it('exposes one scripted adapter per provider kind', () => {
     const map = demoAdapters()
     expect([...map.keys()].sort()).toEqual(['claude', 'codex', 'opencode'])
