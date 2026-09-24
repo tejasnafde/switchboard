@@ -219,7 +219,7 @@ how this app reaches `src/shared`, and it surfaced only as a failed
 
 - `types.ts` re-exports from `src/shared/provider-events.ts` so renderer can type the IPC boundary
 - `ProviderKind = 'claude' | 'codex' | 'opencode'`
-- `ProviderAdapter` interface - required: `startSession(opts, onEvent)`, `sendTurn(threadId, message, runtimeMode?, images?)`, `interruptTurn`, `respondToRequest`, `stopSession`, `setRuntimeMode`, `isAvailable`. Optional: `setModel?`, `answerQuestion?`, `listSkills?`
+- `ProviderAdapter` interface - required: `startSession(opts, onEvent)`, `sendTurn(threadId, message, runtimeMode?, images?)`, `interruptTurn`, `respondToRequest`, `stopSession`, `setRuntimeMode`, `isAvailable`. Optional: `setModel?`, `answerQuestion?`, `listSkills?`, `cancelQueuedTurn?`, `promoteQueuedTurn?`
 - **`policy.ts` is the shared policy module** (2026-04/05 - was previously inlined in claude-adapter). All three adapters import from it:
   - `decidePermission(mode, toolName) → 'allow' | 'deny' | 'prompt'` - pure, unit-tested
   - `denialMessage(mode, toolName)` - human-readable denial reason
@@ -239,6 +239,7 @@ Defined in `src/shared/provider-events.ts`. Discriminated union:
 - `tool.denied` · **2026-04-20**: `canUseTool` hard-denied (e.g. Plan mode blocked Write) - UI renders denial pill
 - `request.opened` / `request.closed` · approval prompt flow (`requestType: 'command' | 'file' | 'tool'`)
 - `turn.completed` · turn ended, with `costUsd? / usedTokens? / maxTokens? / numTurns? / durationMs?`
+- `turn.queued` / `turn.dequeued` · a `delivery: 'queue'` message is held until the running turn ends / left the queue (`started | promoted | cancelled | dropped`), keyed by its chat row id (`echoMessageId(origin)`). The registry's `QueuedTurnLedger` fills in the text and serves list / promote / cancel (`turn_queue_controls_v1`); outstanding-turn accounting for a queued message is settled on `turn.dequeued` only, never in the IPC handlers
 - `status` · session status change · `session` · sessionId recorded
 - `context_window` · live token count (polled after each turn)
 - `model.variants` · available model variants + current selection
@@ -408,6 +409,7 @@ Traps:
 - **Bookmarks** (`bookmark-store` + `bookmarks` DB table) - bookmark messages/sessions
 - **In-chat diff review** (2026-06-02): after each turn, changed files surface as Cursor-style diff cards in chat with per-hunk accept/reject. Git checkpoint at turn start (`src/main/git/checkpoint.ts` + `checkpoint-tracker.ts`); `fileDiffResolve.ts` applies/reverts hunks; `file.edited` events are provider-agnostic (git is the source of truth). `FileDiffCard.tsx` renders the cards.
 - **Cross-session messaging**: `/send-to <session>: <message>`, plus two Claude-only SDK MCP tools (`list_agent_sessions` / `send_agent_message`) that let the model hand a finding to a sibling session itself, behind the ordinary approval gate and two extra guards (hop depth, per-sender budget) - see Cross-session messaging above
+- **Queued messages you can act on** (2026-09-24): a held follow-up renders as a dashed Queued bubble with Send now / Cancel on desktop and phone; the composer is two round icon buttons driven by the `chat.followUpDefault` setting (Steer / Queue), and the drift chip can be muted per conversation (`conversations.follow_suggestions`, auto-off past two worked worktrees). See `docs/feature-parity/composer-follow-ups.json`
 - **Rate-limit event handling** (2026-06-10): Claude SDK `rate_limit_event` surfaced as a chat status message with window type + reset time; subprocess leak on `stopSession` fixed (6 new tests in `claude-adapter-stop-session.test.ts`)
 - Single-instance lock
 - Native app menu (`⌘,` for settings, standard Edit/View/Window)
