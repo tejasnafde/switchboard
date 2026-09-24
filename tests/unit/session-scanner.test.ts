@@ -90,6 +90,28 @@ describe('session scanner - Claude Code paths', () => {
     expect(sessions[0].filePath).toBe(join(completeDir, 'native-v0.jsonl'))
   })
 
+  it('titles a session from the typed prompt when an earlier text block is a task notification', async () => {
+    const projectPath = '/repo/title-blocks'
+    const home = await mkdtemp(join(tmpdir(), 'sb-claude-title-'))
+    tempDirs.push(home)
+    const dir = join(home, 'projects', encodeClaudeProjectPath(projectPath))
+    await mkdir(dir, { recursive: true })
+    const record = JSON.stringify({
+      type: 'user',
+      message: {
+        content: [
+          { type: 'text', text: '<task-notification>\n<status>completed</status>\n<summary>done</summary>\n</task-notification>' },
+          { type: 'text', text: 'Fix the login redirect' },
+        ],
+      },
+    })
+    await writeFile(join(dir, 'titled.jsonl'), `${record}\n`)
+
+    const sessions = await scanClaudeCodeSessions(projectPath, [home])
+
+    expect(sessions[0].title).toContain('login redirect')
+  })
+
   it('stats indexed Claude copies concurrently instead of serializing large recovery inventories', async () => {
     const source = readFileSync(new URL('../../src/main/projects/session-scanner.ts', import.meta.url), 'utf8')
     expect(source).toMatch(/await Promise\.all\(index\.map\(async \(entry/)

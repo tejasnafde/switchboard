@@ -148,7 +148,10 @@ async function scanClaudeProjectsDir(
           if (!(obj.type === 'human' || obj.type === 'user') || obj.isMeta === true) continue
           const content = obj.message?.content
           const raw = typeof content === 'string' ? content
-            : Array.isArray(content) ? content.find((b: { type?: string; text?: string }) => b.type === 'text')?.text ?? ''
+            : Array.isArray(content) ? content
+                .filter((b: { type?: string; text?: string }) => b.type === 'text')
+                .map((b: { type?: string; text?: string }) => b.text ?? '')
+                .join('\n')
             : ''
           // A background-task notification or interrupt marker is not a title.
           const text = userTypedText(raw)
