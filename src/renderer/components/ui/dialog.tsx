@@ -1,6 +1,7 @@
 import { forwardRef, useRef, type ComponentPropsWithoutRef, type ElementRef } from 'react'
 import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { cn } from '../../lib/utils'
+import { focusReturnTarget } from './focus-return'
 
 export const Dialog = DialogPrimitive.Root
 export const DialogTitle = DialogPrimitive.Title
@@ -33,12 +34,12 @@ export const DialogContent = forwardRef<ElementRef<typeof DialogPrimitive.Conten
           // another must leave focus in the new one.
           onCloseAutoFocus={(event) => {
             onCloseAutoFocus?.(event)
-            const target = returnFocusTo.current
+            const saved = returnFocusTo.current
             returnFocusTo.current = null
             if (event.defaultPrevented) return
             event.preventDefault()
             const active = document.activeElement
-            if ((!active || active === document.body) && target instanceof HTMLElement && target.isConnected) target.focus()
+            if (!active || active === document.body) focusReturnTarget(saved)?.focus()
           }}
           {...props}
         />

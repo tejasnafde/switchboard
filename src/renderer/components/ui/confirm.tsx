@@ -8,6 +8,7 @@ import {
   AlertDialogTitle,
 } from './alert-dialog'
 import { Button } from './button'
+import { focusReturnTarget } from './focus-return'
 
 export interface ConfirmOptions {
   title: string
@@ -41,9 +42,7 @@ function restoreFocus(): void {
   // Radix calls this a task after the dialog closes. A confirm opened in that
   // gap owns returnFocus now and will restore it when it closes.
   if (queue.length > 0) return
-  const target = returnFocus?.isConnected
-    ? returnFocus
-    : document.querySelector<HTMLElement>('[data-chat-panel] [contenteditable="true"]')
+  const target = focusReturnTarget(returnFocus)
   returnFocus = null
   target?.focus()
 }
@@ -80,15 +79,14 @@ if (typeof window !== 'undefined') window.addEventListener('keydown', holdKeysWh
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     if (queue.length === 0 && typeof document !== 'undefined') {
-      const active = document.activeElement
-      returnFocus = active instanceof HTMLElement && active !== document.body ? active : null
+      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
     }
     queue.push({ ...options, resolve })
     for (const listener of listeners) listener()
   })
 }
 
-/** True while a confirm dialog is on screen, for host modals that trap keys on the document. */
+/** True while a confirm dialog is on screen. */
 export function isConfirmOpen(): boolean {
   return queue.length > 0
 }

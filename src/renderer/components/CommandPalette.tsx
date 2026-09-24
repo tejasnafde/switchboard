@@ -188,14 +188,6 @@ export function CommandPalette({
   }
 
   const inputRef = useRef<HTMLInputElement>(null)
-  // Dismissing the palette returns focus to where it was. Running a command
-  // does not: the command decides, and one that opens Settings or a picker
-  // must not have focus pulled back to the composer behind it.
-  const ranCommand = useRef(false)
-  const runCommand = (fn: () => void) => () => {
-    ranCommand.current = true
-    fn()
-  }
 
   const groupHeadingClass = 'px-[8px] py-[4px] text-[10px] font-[600] text-[var(--text-muted)]'
 
@@ -207,10 +199,8 @@ export function CommandPalette({
         overlayClassName="z-[1000] bg-[rgba(0,0,0,0.4)]"
         onOpenAutoFocus={(e) => {
           e.preventDefault()
-          ranCommand.current = false
           inputRef.current?.focus()
         }}
-        onCloseAutoFocus={(e) => { if (ranCommand.current) e.preventDefault() }}
         className="palette-modal-content inset-x-0 top-[20vh] z-[1000] mx-auto flex max-h-[520px] w-[540px] flex-col overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[0_16px_48px_rgba(0,0,0,0.3)]"
       >
         <Command label="Command Palette">
@@ -228,7 +218,7 @@ export function CommandPalette({
             {Object.entries(groups).map(([group, items]) => (
               <Command.Group key={group} heading={group} className={groupHeadingClass}>
                 {items.map((c) => (
-                  <PaletteItem key={c.id} onSelect={runCommand(c.run)} shortcut={c.shortcut}>
+                  <PaletteItem key={c.id} onSelect={c.run} shortcut={c.shortcut}>
                     {c.label}
                   </PaletteItem>
                 ))}
@@ -240,7 +230,7 @@ export function CommandPalette({
               {(['dark', 'light', 'translucent'] as ThemeName[]).map((t) => (
                 <PaletteItem
                   key={t}
-                  onSelect={runCommand(() => { setTheme(t); onClose() })}
+                  onSelect={() => { setTheme(t); onClose() }}
                 >
                   Theme: {t.charAt(0).toUpperCase() + t.slice(1)}
                 </PaletteItem>
@@ -252,7 +242,7 @@ export function CommandPalette({
                 {sessions.map((s) => (
                   <PaletteItem
                     key={s.id}
-                    onSelect={runCommand(() => { selectChatSession(s.id); onClose() })}
+                    onSelect={() => { selectChatSession(s.id); onClose() }}
                   >
                     Switch to: {s.title ?? s.projectPath?.split('/').pop() ?? s.id.slice(0, 12)}
                   </PaletteItem>
