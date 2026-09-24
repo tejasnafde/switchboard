@@ -61,4 +61,16 @@ describe('mobile thread history', () => {
       live,
     ])
   })
+
+  it('keeps the images of a context-only record, with empty text', () => {
+    const items = historyToItems([
+      message({
+        content: '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>',
+        images: [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }],
+      }),
+    ])
+    expect(items).toEqual([
+      { kind: 'user', id: 'h-user-1', text: '', at: 1, images: ['data:image/png;base64,AAA'] },
+    ])
+  })
 })

@@ -36,11 +36,12 @@ export function historyToItems(messages: ChatMessage[]): FeedItem[] {
     if (message.role === 'user') {
       const urls = (message.images ?? []).map((image) => image.url).filter(Boolean)
       const text = visibleUserMessageText(message.content, message.displayBody)
-      if (text === null) continue
+      // Context-only text is hidden, but images sent with it still show.
+      if (text === null && urls.length === 0) continue
       const item: UserItem = {
         kind: 'user',
         id: `h-${message.id}`,
-        text,
+        text: text ?? '',
         at: message.timestamp,
         images: urls.length > 0 ? urls : undefined,
       }

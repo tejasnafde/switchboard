@@ -54,6 +54,23 @@ describe('Desktop pending user-turn presentation', () => {
     })
   })
 
+  it('keeps the images of a context-only turn and drops one with nothing to show', () => {
+    const base: RuntimeUserMessageEvent = {
+      type: 'user.message',
+      threadId: 'thread-1',
+      origin: 'origin-2',
+      text: '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>',
+      at: 1,
+    }
+    const images = [{ url: 'data:image/png;base64,AAA', mimeType: 'image/png' }]
+    expect(acceptedDesktopUserMessage(base)).toBeNull()
+    expect(acceptedDesktopUserMessage({ ...base, images })).toMatchObject({
+      content: base.text,
+      displayBody: undefined,
+      images,
+    })
+  })
+
   it('labels an unchanged ambiguous recovery as a safe retry', () => {
     const recoveryAction = (submissionModule as unknown as Record<string, unknown>)
       .desktopComposerRecoveryAction

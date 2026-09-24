@@ -28,6 +28,12 @@ describe('synthetic user rows', () => {
     expect(idCount(render(user({ images: [IMAGE] })))).toBe(1)
   })
 
+  it('a context-only message with images renders the images without the context text', () => {
+    const markup = render(user({ content: '<environment_context>\n<cwd>/repo</cwd>\n</environment_context>', images: [IMAGE] }))
+    expect(markup).toContain(IMAGE.url)
+    expect(markup).not.toContain('environment_context')
+  })
+
   it('images keep a synthetic message out of the synthetic-only set, so its You label shows', () => {
     expect(isSyntheticOnlyMessage(user({}))).toBe(true)
     expect(isSyntheticOnlyMessage(user({ images: [IMAGE] }))).toBe(false)

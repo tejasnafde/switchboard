@@ -10,7 +10,8 @@
         "src/renderer/components/chat/SyntheticUserRow.tsx",
         "src/renderer/components/chat/MessageBubble.tsx",
         "src/renderer/components/chat/MessageList.tsx",
-        "src/renderer/services/sessionPreview.ts"
+        "src/renderer/services/sessionPreview.ts",
+        "src/renderer/services/desktopTurnSubmission.ts"
       ]
     },
     "reactNativeIos": {
@@ -35,7 +36,8 @@
         "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSessionCoordinator.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadSnapshotStore.kt",
         "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/CachedThreadStateMapper.kt",
-        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/LoadedSessionSnapshotMapperTest.kt"
+        "apps/android/app/src/test/java/app/switchboard/mobile/data/thread/LoadedSessionSnapshotMapperTest.kt",
+        "apps/android/app/src/main/java/app/switchboard/mobile/data/thread/ThreadStoreReducer.kt"
       ]
     },
     "sharedBackendApi": {
@@ -73,7 +75,8 @@
       "apps/mobile jest: SyntheticRow renders the label, never the XML, and shows ids on tap.",
       "apps/android JUnit: SyntheticUserMessageTest covers the Kotlin port and that ThreadPresenter.rows turns a notification into a Synthetic row instead of a user bubble.",
       "An independent review of the diff found three confirmed bugs, all fixed: forking from the typed part of a mixed message failed the anchor digest (the remainder is now a render-only prop), an image on a generated-only message was hidden on desktop, and multi-line command output was clamped to two lines with no way to expand on the phone and Android.",
-      "CodeRabbit follow-up: only provider transcript text is classified. Android FeedItem.User carries fromTranscript (set for history content with no typed displayBody, persisted in the offline cache), and mobile splits only when displayBody is absent; tests on both surfaces pin that a typed \"[Request interrupted by user] ...\" stays a user bubble. Mobile caches written before synthetic rows are migrated (tests/unit/mobile-thread-history.test.ts)."
+      "CodeRabbit follow-up: only provider transcript text is classified. Android FeedItem.User carries fromTranscript (set for history content with no typed displayBody, persisted in the offline cache), and mobile splits only when displayBody is absent; tests on both surfaces pin that a typed \"[Request interrupted by user] ...\" stays a user bubble. Mobile caches written before synthetic rows are migrated (tests/unit/mobile-thread-history.test.ts).",
+      "CodeRabbit follow-up: a user record whose text is context-only but carries images keeps the images with empty text on every path: mobile history (historyToItems) and live (user.message reducer), desktop live (acceptedDesktopUserMessage; MessageBubble splits the context off and renders the images), and Android live (ThreadStoreReducer). Desktop reload and Android history already kept them. Tests: mobile-thread-history, mobile-chat-store, desktop-pending-turn, synthetic-user-row, ThreadStoreReducerTest."
     ],
     "hardware": [],
     "notExercised": [

@@ -286,12 +286,13 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
           const id = echoMessageId(event.origin ?? String(event.at))
           if (t.items.some((i) => i.id === id)) return {}
           const text = visibleUserMessageText(event.text, event.displayBody)
-          if (text === null) return {}
           const images = event.images?.map((image) => image.url)
+          // Context-only text is hidden, but images sent with it still show.
+          if (text === null && !images?.length) return {}
           return {
             items: [
               ...t.items,
-              { kind: 'user', id, text, at: event.at, images: images?.length ? images : undefined },
+              { kind: 'user', id, text: text ?? '', at: event.at, images: images?.length ? images : undefined },
             ],
           }
         }
