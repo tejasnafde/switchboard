@@ -11,6 +11,7 @@ Electron workspace that multiplexes terminals, agent chats (Claude Code + Codex 
 - **Build**: electron-vite + Vite 6
 - **Terminal**: `@xterm/xterm` 6 + `node-pty` (native, rebuild after install)
 - **IDE**: embedded VS Code workbench via code-server (Coder, MIT) in a single reused `<webview>`; binary downloaded on demand to userData, never bundled
+- **UI primitives**: shadcn/ui (Radix) in `src/renderer/components/ui/` on Tailwind 4 utilities only (`styles/tailwind.css`: no preflight, no default theme, scanned from `components/ui` alone, tokens mapped onto the theme variables). Never `window.confirm`: it is a native alert that blocks the renderer and Playwright cannot click it. Use `if (!(await confirm({ title, body, confirmLabel, destructive }))) return` from `components/ui/confirm` (`ConfirmHost` is mounted in `App`)
 - **Chat input**: Lexical (`@lexical/react`) rich textarea with inline pill chips + `@`-mention file autocomplete
 - **Agents** (3, all behind the `ProviderAdapter` interface):
   - Claude Code via `@anthropic-ai/claude-agent-sdk` (streaming-input mode, AsyncIterable prompt queue, `canUseTool` callback)

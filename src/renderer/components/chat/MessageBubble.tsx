@@ -30,6 +30,7 @@ import { useMessageMutable } from '../../services/messageLifecycle'
 import { buildForwardedContext, forwardingSource, forwardingTargets } from '../../services/chatForwarding'
 import { focusComposer } from '../../services/composerRegistry'
 import { createRendererLogger } from '../../logger'
+import { confirm } from '../ui/confirm'
 
 const log = createRendererLogger('chat:message-bubble')
 
@@ -323,10 +324,11 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
       )
       if (!res.ok) {
         if (res.dirtySource) {
-          const proceed = window.confirm(
-            `Create the worktree from committed HEAD ${res.dirtySource.headSha.slice(0, 12)}?\n\n`
-            + `${res.dirtySource.omittedChangeSummary}\n\nUncommitted and untracked changes will not be copied.`,
-          )
+          const proceed = await confirm({
+            title: `Create the worktree from committed HEAD ${res.dirtySource.headSha.slice(0, 12)}?`,
+            body: `${res.dirtySource.omittedChangeSummary}\n\nUncommitted and untracked changes will not be copied.`,
+            confirmLabel: 'Create worktree',
+          })
           if (proceed) {
             await handleForkRequest(true, {
               headSha: res.dirtySource.headSha,

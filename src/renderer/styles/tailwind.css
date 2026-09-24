@@ -1,0 +1,37 @@
+/* Tailwind for the shadcn/ui primitives in components/ui only.
+ *
+ * - No preflight: the app keeps its own reset in global.css.
+ * - No default theme: its variables (--font-sans, --radius-lg, --shadow-md)
+ *   would collide with ours. Only the tokens below exist.
+ * - Classes are scanned from components/ui only, so a class name used
+ *   elsewhere ("hidden", "truncate") only becomes a utility if ui/ uses it
+ *   too. The generated ones still apply app-wide: do not reuse utility names
+ *   ("flex", "fixed", "border", "outline") as plain class names.
+ *
+ * The tokens point at the theme variables in global.css, so every primitive
+ * follows the theme picker (.theme-dark / .theme-light / .theme-translucent).
+ */
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source '../components/ui';
+
+@theme inline {
+  --spacing: 0.25rem;
+  --radius-md: var(--radius);
+
+  --color-foreground: var(--text-primary);
+  --color-muted: var(--bg-tertiary);
+  --color-muted-foreground: var(--text-secondary);
+  --color-primary: var(--accent);
+  --color-primary-hover: var(--accent-hover);
+  --color-primary-foreground: #fff;
+  --color-secondary: var(--bg-tertiary);
+  --color-secondary-foreground: var(--text-primary);
+  --color-accent: var(--bg-hover);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--error);
+  --color-destructive-foreground: #fff;
+  --color-border: var(--border);
+  --color-ring: var(--border-focus);
+}

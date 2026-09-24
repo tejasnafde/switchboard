@@ -1,4 +1,5 @@
 import { createMainLogger as createLogger } from '../logger'
+import { parseErrorKind } from './parse-error'
 import type { KanbanCard, KanbanCardCreate, KanbanCardUpdate, KanbanStatus } from '@shared/kanban'
 import { KANBAN_DEFAULT_RUNTIME_MODE } from '@shared/kanban'
 import { applyKanbanArchiveSideEffect } from '@shared/kanbanArchive'
@@ -41,7 +42,7 @@ function rowToCard(r: KanbanRow): KanbanCard {
     const parsed = JSON.parse(r.tags)
     if (Array.isArray(parsed)) tags = parsed.map(String)
   } catch (err) {
-    log.debug('kanban card tags JSON malformed - showing as empty', { cardId: r.id, err })
+    log.debug('kanban card tags JSON malformed - showing as empty', { cardId: r.id, error: parseErrorKind(err) })
   }
   return {
     id: r.id,

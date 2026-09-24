@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import type { WorktreeInfo } from '@shared/kanban'
 import { createRendererLogger } from '../../logger'
+import { confirm } from '../ui/confirm'
 
 const log = createRendererLogger('kanban:worktree-manager')
 
@@ -81,7 +82,12 @@ export function WorktreeManagerModal({ projectPath, onClose }: Props): React.Rea
     const api = window.api?.kanban
     if (!api) return
     if (stale.length === 0) return
-    if (!confirm(`Remove ${stale.length} stale worktree${stale.length === 1 ? '' : 's'}? Uncommitted work will be lost.`)) return
+    if (!(await confirm({
+      title: `Remove ${stale.length} stale worktree${stale.length === 1 ? '' : 's'}?`,
+      body: 'Uncommitted work will be lost.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    }))) return
     setBusy('__all__')
     setError(null)
     try {

@@ -265,6 +265,9 @@ describe('mergeConversationMessages', () => {
     const merged = merge(disk, database)
 
     expect(merged).toHaveLength(disk.length)
-    expect(performance.now() - startedAt).toBeLessThan(1_000)
+    // Measured 2026-09-24: 70-1000 ms at 20k rows on a loaded dev Mac, about
+    // n^1.3 across 2.5k-40k. A per-row scan of the disk list is quadratic and
+    // takes many seconds here, so 5 s still catches it; 1 s failed under load.
+    expect(performance.now() - startedAt).toBeLessThan(5_000)
   })
 })

@@ -508,6 +508,26 @@ async function captureThemeScreens(win, theme) {
   await win.keyboard.press('Escape')
   await settings.waitFor({ state: 'hidden' })
 
+  // The in-app confirm that replaced window.confirm, reachable by role and name.
+  // Its project sits inside This Mac, which the fixture seeds folded; unfold
+  // it for this shot and fold it back so the later sidebar shot starts folded.
+  const localTree = win.locator('.sidebar-machine-toggle').filter({ hasText: 'This Mac' })
+  await localTree.click()
+  await win.locator('.sidebar-project-header').filter({ hasText: 'notes-cli' }).click({ button: 'right' })
+  await win.getByText('Remove project', { exact: true }).click()
+  const confirmDialog = win.getByRole('alertdialog', { name: 'Remove "notes-cli"?' })
+  await confirmDialog.waitFor({ state: 'visible' })
+  // A mask paints above everything, dialog included, so hide the real-clock
+  // turn times for this shot instead.
+  const hideTurnTimes = await win.addStyleTag({ content: '.turn-timestamp { visibility: hidden !important; }' })
+  await snapScreen(win, 'confirm-dialog', theme, win)
+  await hideTurnTimes.evaluate((node) => node.remove())
+  await confirmDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await confirmDialog.waitFor({ state: 'hidden' })
+  await win.locator('.sidebar-project-header').filter({ hasText: 'notes-cli' }).waitFor({ state: 'visible' })
+  await localTree.click()
+  await localTree.and(win.locator('[aria-expanded="false"]')).waitFor({ state: 'visible' })
+
   await win.getByRole('button', { name: 'Board', exact: true }).click()
   await win.getByText('Trace webhook retries', { exact: true }).first().waitFor({ state: 'visible' })
   await snapScreen(win, 'kanban', theme, win, [sidebar])
@@ -591,11 +611,6 @@ async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) 
   })
   app = instance
   const win = await instance.firstWindow({ timeout: 20_000 })
-  // Electron shows window.confirm as a native macOS alert, which Playwright can
-  // neither see nor click, so a run that reaches one hangs for ever. Accept it.
-  const acceptConfirm = () => { window.confirm = () => true }
-  await instance.context().addInitScript(acceptConfirm)
-  await win.evaluate(acceptConfirm)
   if (demo) {
     await instance.evaluate(({ BrowserWindow }, size) => {
       BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size })
