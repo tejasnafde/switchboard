@@ -303,4 +303,13 @@ describe('agent store queued messages', () => {
     useAgentStore.getState().setQueuedTurns(T, [{ threadId: T, messageId: 'remote_x', text: 'x', queuedAt: 2 }])
     expect(Object.keys(session().queuedTurns ?? {})).toEqual(['remote_x'])
   })
+
+  it('counts queued-turn events so a recovery can tell it raced one, and ignores the rest', () => {
+    const before = session().queuedTurnRevision ?? 0
+    track({ type: 'content', messageId: 'm', streamKind: 'assistant', text: 'x' })
+    expect(session().queuedTurnRevision ?? 0).toBe(before)
+    track({ type: 'turn.queued', messageId: 'remote_r', text: 'r', queuedAt: 1 })
+    track({ type: 'turn.dequeued', messageId: 'remote_r', reason: 'promoted' })
+    expect(session().queuedTurnRevision).toBe(before + 2)
+  })
 })

@@ -206,9 +206,13 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
   }, [markdownContent, isMutable, sessionId])
 
   // Held by the backend until the running turn ends (see QueuedTurnBar).
-  const queued = useAgentStore((st) => message.role === 'user' && sessionId !== undefined
-    && st.sessions.find((x) => x.id === sessionId)?.queuedTurns?.[message.id] !== undefined)
-  const provider = useAgentStore((st) => queued ? st.sessions.find((x) => x.id === sessionId)?.type : undefined)
+  // The provider of the session holding it, or null when it is not held.
+  const queuedProvider = useAgentStore((st) => {
+    if (message.role !== 'user' || sessionId === undefined) return null
+    const session = st.sessions.find((x) => x.id === sessionId)
+    return session?.queuedTurns?.[message.id] ? session.type : null
+  })
+  const queued = queuedProvider !== null
 
   const isUser = message.role === 'user'
   const isSystem = message.role === 'system'
@@ -638,7 +642,7 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
             </button>
           </div>
         )}
-        {queued && sessionId && <QueuedTurnBar sessionId={sessionId} messageId={message.id} provider={provider} />}
+        {queued && sessionId && <QueuedTurnBar sessionId={sessionId} messageId={message.id} provider={queuedProvider} />}
       </div>
 
       {message.deliveryState && (

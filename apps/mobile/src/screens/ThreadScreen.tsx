@@ -288,7 +288,16 @@ export default function ThreadScreen({ route, navigation }: Props) {
       // Queued rows survive a reload or a resume gap.
       if (client.supportsCapability('turn_queue_controls_v1') === true) {
         try {
-          useChatStore.getState().setHeldTurns(key, await client.listQueuedTurns(threadId))
+          // A live event that lands while the backend answers makes the answer
+          // stale; ask again rather than undo it.
+          const revisionOf = () => useChatStore.getState().threads[key]?.heldRevision ?? 0
+          for (let attempt = 0; attempt < 3; attempt++) {
+            const revision = revisionOf()
+            const held = await client.listQueuedTurns(threadId)
+            if (revisionOf() !== revision) continue
+            useChatStore.getState().setHeldTurns(key, held)
+            break
+          }
         } catch (err) {
           reportError(err)
         }

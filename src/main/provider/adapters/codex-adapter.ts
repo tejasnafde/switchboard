@@ -696,6 +696,7 @@ export class CodexAdapter implements ProviderAdapter {
         pending.reject(new Error('Codex process exited'))
       }
       active.pendingRpcs.clear()
+      this.dropQueuedOnExit(opts.threadId, active)
       onEvent({ type: 'status', threadId: opts.threadId, status: active.session.status })
     })
 
@@ -1067,6 +1068,25 @@ export class CodexAdapter implements ProviderAdapter {
     })
   }
 
+  /**
+   * The process is gone, so nothing queued can run. Announce each message as
+   * dropped and end its accepted turn, so the registry does not wait on it.
+   */
+  private dropQueuedOnExit(threadId: string, active: ActiveSession): void {
+    const dropped = active.queuedTurns.splice(0)
+    if (dropped.length === 0) return
+    log.warn(`dropping ${dropped.length} queued message(s): the process exited before they ran`, { threadId })
+    active.onEvent({
+      type: 'error',
+      threadId,
+      message: `${dropped.length === 1 ? 'A queued message was' : `${dropped.length} queued messages were`} not sent because the session stopped. Send again.`,
+    })
+    for (const turn of dropped) {
+      if (turn.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: turn.id, reason: 'dropped' })
+      active.onEvent({ type: 'turn.completed', threadId })
+    }
+  }
+
   async cancelQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
     const active = this.sessions.get(threadId)
     const index = active?.queuedTurns.findIndex((turn) => turn.id === queuedId) ?? -1
@@ -1085,12 +1105,17 @@ export class CodexAdapter implements ProviderAdapter {
   async promoteQueuedTurn(threadId: string, queuedId: string): Promise<boolean> {
     const active = this.sessions.get(threadId)
     if (!active) return false
-    if (active.turnStartPromise) await active.turnStartPromise.catch(() => undefined)
+    if (active.turnStartPromise) {
+      await active.turnStartPromise.catch((err: unknown) => {
+        log.debug(`turn start ahead of a promote failed on ${threadId}; its own caller reports it`, err)
+      })
+    }
     const index = active.queuedTurns.findIndex((turn) => turn.id === queuedId)
     if (index < 0 || !active.activeTurnId) return false
     const [turn] = active.queuedTurns.splice(index, 1)
     try {
-      await this.deliverTurn(threadId, turn.message, turn.runtimeMode, turn.images, 'steer', undefined, true)
+      // No runtime mode: the steer joins the running turn, whose mode stands.
+      await this.deliverTurn(threadId, turn.message, undefined, turn.images, 'steer', undefined, true)
     } catch (err) {
       log.warn(`could not steer queued message into ${threadId}, keeping it queued: ${err instanceof Error ? err.message : String(err)}`)
       active.queuedTurns.splice(Math.min(index, active.queuedTurns.length), 0, turn)

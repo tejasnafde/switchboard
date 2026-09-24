@@ -147,10 +147,7 @@ interface ChatInputProps {
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB
 
-// Module-level constant - referential equality across renders so the
-// `pills` selector doesn't fabricate a new array when a session has
-// no pills yet. Without this, every render produced a fresh `[]` and
-// downstream memos invalidated.
+/** The text-link buttons in the drift chip and its "off" line. */
 const driftLinkStyle = {
   cursor: 'pointer',
   border: 'none',
@@ -160,6 +157,10 @@ const driftLinkStyle = {
   fontSize: 11,
 } as const
 
+// Module-level constant - referential equality across renders so the
+// `pills` selector doesn't fabricate a new array when a session has
+// no pills yet. Without this, every render produced a fresh `[]` and
+// downstream memos invalidated.
 const EMPTY_PILLS: import('../../stores/draft-store').DraftPill[] = []
 const EMPTY_IMAGES: import('../../stores/draft-store').ImageAttachment[] = []
 

@@ -1797,6 +1797,23 @@ describe('CodexAdapter', () => {
     expect(onEvent).toHaveBeenCalledWith({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'promoted' })
   })
 
+  it('drops what it holds, and ends each accepted turn, when the process exits', async () => {
+    const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
+    const adapter = new CodexAdapter()
+    const onEvent = vi.fn()
+
+    await adapter.startSession({ threadId: 'thread-1', provider: 'codex', cwd: '/tmp/project' }, onEvent)
+    await adapter.sendTurn('thread-1', 'hello codex')
+    await adapter.sendTurn('thread-1', 'never runs', undefined, undefined, 'queue', 'remote_q1')
+    onEvent.mockClear()
+    lastChild?.emit('close', 1)
+
+    const events = onEvent.mock.calls.map(([e]) => e)
+    expect(events).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'dropped' })
+    expect(events.filter((e) => e.type === 'turn.completed')).toHaveLength(1)
+    await expect(adapter.cancelQueuedTurn('thread-1', 'remote_q1')).resolves.toBe(false)
+  })
+
   it('says a queued message started when the turn ahead of it ends', async () => {
     const { CodexAdapter } = await import('../../src/main/provider/adapters/codex-adapter')
     const adapter = new CodexAdapter()

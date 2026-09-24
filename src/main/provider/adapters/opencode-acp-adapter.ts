@@ -409,6 +409,7 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
         active.onEvent({ type: 'request.closed', threadId: opts.threadId, requestId: reqId, decision: 'deny' })
       }
       active.pendingPermissions.clear()
+      this.dropQueuedOnExit(opts.threadId, active)
       if (wasActive) {
         active.session.status = code === 0 ? 'stopped' : 'error'
         onEvent({ type: 'status', threadId: opts.threadId, status: active.session.status })
@@ -538,6 +539,25 @@ export class OpencodeAcpAdapter implements ProviderAdapter {
     queuedId?: string,
   ): Promise<void> {
     return this.deliverTurn(threadId, message, runtimeMode, images, delivery, queuedId, false)
+  }
+
+  /**
+   * The process is gone, so nothing queued can run. Announce each message as
+   * dropped and end its accepted turn, so the registry does not wait on it.
+   */
+  private dropQueuedOnExit(threadId: string, active: ActiveSession): void {
+    const dropped = active.queuedTurns.splice(0)
+    if (dropped.length === 0) return
+    log.warn(`dropping ${dropped.length} queued message(s): the process exited before they ran`, { threadId })
+    active.onEvent({
+      type: 'error',
+      threadId,
+      message: `${dropped.length === 1 ? 'A queued message was' : `${dropped.length} queued messages were`} not sent because the session stopped. Send again.`,
+    })
+    for (const turn of dropped) {
+      if (turn.id) active.onEvent({ type: 'turn.dequeued', threadId, messageId: turn.id, reason: 'dropped' })
+      active.onEvent({ type: 'turn.completed', threadId })
+    }
   }
 
   /** OpenCode has no steer, so a queued message can only be taken back. */

@@ -65,6 +65,8 @@ export interface ThreadState {
   cached?: boolean
   /** Messages the backend holds until the running turn ends, by feed row id. Not cached. */
   heldTurns?: QueuedTurnsByMessage
+  /** Bumped by every held-message event, so a re-list can tell it raced one. */
+  heldRevision?: number
 }
 
 /** The cache shows the last thing you were reading offline; it is not an
@@ -83,7 +85,7 @@ export function prunePersistedThreads(
     .slice(0, maxThreads)
   const out: Record<string, ThreadState> = {}
   for (const [key, thread] of keep) {
-    const { heldTurns: _held, ...rest } = thread
+    const { heldTurns: _held, heldRevision: _revision, ...rest } = thread
     out[key] = {
       ...rest,
       // The tail, because a feed renders newest-last and that is what the user
@@ -410,14 +412,15 @@ function reduceEvent(t: ThreadState, event: RuntimeEvent, isActive: boolean): Pa
         case 'status':
           return { status: event.status, heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event) }
         case 'turn.queued':
-          return { heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event) }
+          return { heldTurns: applyQueuedTurnEvent(t.heldTurns ?? {}, event), heldRevision: (t.heldRevision ?? 0) + 1 }
         case 'turn.dequeued': {
           const heldTurns = applyQueuedTurnEvent(t.heldTurns ?? {}, event)
+          const heldRevision = (t.heldRevision ?? 0) + 1
           // A cancelled message never reached the agent: its bubble goes, on
           // every client, live or reloaded from history.
-          if (event.reason !== 'cancelled') return { heldTurns }
+          if (event.reason !== 'cancelled') return { heldTurns, heldRevision }
           const gone = new Set([event.messageId, `h-${event.messageId}`])
-          return { heldTurns, items: t.items.filter((i) => !(i.kind === 'user' && gone.has(i.id))) }
+          return { heldTurns, heldRevision, items: t.items.filter((i) => !(i.kind === 'user' && gone.has(i.id))) }
         }
         case 'session.provider':
           return {

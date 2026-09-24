@@ -111,6 +111,8 @@ interface AgentSession {
    * `turn.queued` / `turn.dequeued`.
    */
   queuedTurns?: QueuedTurnsByMessage
+  /** Bumped by every queued-turn event, so a recovery can tell it raced one. */
+  queuedTurnRevision?: number
   /** Display title (user-editable, auto-generated from first message) */
   title?: string
   /** Permission mode for this session (sandbox / accept-edits / full-access / plan) */
@@ -449,27 +451,31 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       ),
     })),
 
-  trackQueuedTurnEvent: (event) =>
+  trackQueuedTurnEvent: (event) => {
+    if (event.type !== 'turn.queued' && event.type !== 'turn.dequeued' && event.type !== 'status') return
     set((state) => {
       let changed = false
       const sessions = state.sessions.map((s) => {
         if (s.id !== event.threadId) return s
+        const revision = event.type === 'status' ? s.queuedTurnRevision : (s.queuedTurnRevision ?? 0) + 1
         const current = s.queuedTurns ?? NO_QUEUED_TURNS
         const next = applyQueuedTurnEvent(current, event)
         // A cancelled message never reached the agent, so its row goes too,
         // on every client (the backend deleted the stored copy).
         const cancelled = event.type === 'turn.dequeued' && event.reason === 'cancelled'
           && s.messages.some((m) => m.id === event.messageId)
-        if (next === current && !cancelled) return s
+        if (next === current && !cancelled && revision === s.queuedTurnRevision) return s
         changed = true
         return {
           ...s,
           queuedTurns: next,
+          queuedTurnRevision: revision,
           ...(cancelled ? { messages: s.messages.filter((m) => m.id !== event.messageId) } : {}),
         }
       })
       return changed ? { sessions } : state
-    }),
+    })
+  },
 
   setPendingRequests: (sessionId, pending) =>
     set((state) => ({

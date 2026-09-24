@@ -137,6 +137,47 @@ describe('ClaudeAdapter queued turns', () => {
     active.watchdog.turnEnded()
   })
 
+  it('promotes without changing the running turn\'s mode', async () => {
+    const setPermissionMode = vi.fn(async () => {})
+    const { adapter, active } = running({ cancelAsyncMessage: vi.fn(async () => true), setPermissionMode })
+    await adapter.sendTurn('thread-1', 'written in full access', 'full-access', undefined, 'queue', 'remote_q1')
+    await adapter.promoteQueuedTurn('thread-1', 'remote_q1')
+    expect(setPermissionMode).not.toHaveBeenCalled()
+    expect(active.session.runtimeMode).toBe('sandbox')
+    active.watchdog.turnEnded()
+  })
+
+  it('reports a promote whose steer fails as dropped, and ends its turn', async () => {
+    const { adapter, active } = running({ cancelAsyncMessage: vi.fn(async () => true) })
+    await adapter.sendTurn('thread-1', 'lost', undefined, undefined, 'queue', 'remote_q1')
+    active.prompt.push.mockImplementationOnce(() => { throw new Error('queue closed') })
+    await expect(adapter.promoteQueuedTurn('thread-1', 'remote_q1')).rejects.toThrow('queue closed')
+    const events = active.onEvent.mock.calls.map(([e]) => e)
+    expect(events).toContainEqual({ type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_q1', reason: 'dropped' })
+    expect(events.some((e) => e.type === 'turn.completed')).toBe(true)
+    expect(events.some((e) => e.type === 'turn.dequeued' && e.reason === 'promoted')).toBe(false)
+    active.watchdog.turnEnded()
+  })
+
+  it('does not count a message being cancelled as the one that starts next', async () => {
+    let finishCancel!: (v: boolean) => void
+    const cancelAsyncMessage = vi.fn(() => new Promise<boolean>((resolve) => { finishCancel = resolve }))
+    const { adapter, active } = running({ cancelAsyncMessage, setPermissionMode: vi.fn(async () => {}) })
+    await adapter.sendTurn('thread-1', 'a', undefined, undefined, 'queue', 'remote_a')
+    await adapter.sendTurn('thread-1', 'b', undefined, undefined, 'queue', 'remote_b')
+    const cancel = adapter.cancelQueuedTurn('thread-1', 'remote_a')
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(adapter as any).startQueuedTurn(active)
+    finishCancel(true)
+    await expect(cancel).resolves.toBe(true)
+    const dequeued = active.onEvent.mock.calls.map(([e]) => e).filter((e) => e.type === 'turn.dequeued')
+    expect(dequeued).toEqual([
+      { type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_b', reason: 'started' },
+      { type: 'turn.dequeued', threadId: 'thread-1', messageId: 'remote_a', reason: 'cancelled' },
+    ])
+    active.watchdog.turnEnded()
+  })
+
   it('says a queued message started when the turn ahead of it ends', async () => {
     const { adapter, active } = running({ setPermissionMode: vi.fn(async () => {}) })
     await adapter.sendTurn('thread-1', 'next', 'plan', undefined, 'queue', 'remote_q1')

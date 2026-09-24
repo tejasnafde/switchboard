@@ -151,6 +151,8 @@ interface QueuedClaudeTurn {
   images?: Array<{ url: string; mimeType?: string }>
   /** The pushed message itself, to take it back while the SDK has not read it. */
   sdkMessage: SDKUserMessage
+  /** A cancel is in flight; the turn end must not count this one as started. */
+  withdrawing?: boolean
 }
 type SDKMessage = import('@anthropic-ai/claude-agent-sdk').SDKMessage
 type SDKUserMessage = import('@anthropic-ai/claude-agent-sdk').SDKUserMessage
@@ -1328,8 +1330,17 @@ export class ClaudeAdapter implements ProviderAdapter {
     const active = this.sessions.get(threadId)
     const turn = active?.queuedTurns.find((t) => t.id === queuedId)
     if (!active || !turn || !(await this.withdrawQueuedTurn(threadId, active, turn))) return false
+    try {
+      // No runtime mode: the steer joins the running turn, whose mode stands.
+      await this.sendTurn(threadId, turn.message, undefined, turn.images)
+    } catch (err) {
+      // Withdrawn from both queues and not sent: say so, and end its turn.
+      active.onEvent({ type: 'error', threadId, message: 'A queued message could not be sent now. Send it again.' })
+      active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'dropped' })
+      active.onEvent({ type: 'turn.completed', threadId })
+      throw err
+    }
     active.onEvent({ type: 'turn.dequeued', threadId, messageId: queuedId, reason: 'promoted' })
-    await this.sendTurn(threadId, turn.message, turn.runtimeMode, turn.images)
     return true
   }
 
@@ -1346,7 +1357,12 @@ export class ClaudeAdapter implements ProviderAdapter {
         log.warn(`cannot withdraw a queued message on ${threadId}: the query offers no cancelAsyncMessage`)
         return false
       }
-      withdrawn = await query.cancelAsyncMessage(turn.uuid)
+      turn.withdrawing = true
+      try {
+        withdrawn = await query.cancelAsyncMessage(turn.uuid)
+      } finally {
+        turn.withdrawing = false
+      }
     }
     if (!withdrawn) return false
     const index = active.queuedTurns.indexOf(turn)
@@ -1360,8 +1376,11 @@ export class ClaudeAdapter implements ProviderAdapter {
    * runtime mode it was sent with. Called from every path that ends a turn.
    */
   private startQueuedTurn(active: ActiveSession): void {
-    const next = active.queuedTurns.shift()
-    if (!next) return
+    // One being cancelled is not what runs next if the cancel lands; if it
+    // does not, the CLI runs it and it shows as queued until its own turn ends.
+    const index = active.queuedTurns.findIndex((t) => !t.withdrawing)
+    if (index < 0) return
+    const [next] = active.queuedTurns.splice(index, 1)
     const mode = next.runtimeMode
     if (next.id) active.onEvent({ type: 'turn.dequeued', threadId: active.session.threadId, messageId: next.id, reason: 'started' })
     active.turnStartedAt = Date.now()
