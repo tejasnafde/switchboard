@@ -96,6 +96,7 @@ try {
   const added = await win.evaluate((dir) => window.api.routing.invokeOn('local', 'app:add-project-path', dir), project)
   check(added && !added.error, 'project added')
   await win.evaluate(() => window.api.settings.set('tour.autoplay', 'false'))
+  await win.evaluate(() => window.api.settings.set('sidebar.localTreeExpanded', 'true'))
   await win.reload()
   await win.waitForFunction(() => !!window.api?.ide?.ensure, null, { timeout: 20_000 })
   await win.keyboard.press('Escape')

@@ -89,6 +89,9 @@ try {
 
   const seededProjects = await win.evaluate(async ({ projectAPath, projectBPath }) => {
     await window.api.settings.set('tour.autoplay', 'false')
+    await window.api.settings.set('sidebar.localTreeExpanded', 'true')
+    // The first-run analytics notice covers the bottom of the sidebar.
+    await window.api.settings.set('analytics.noticeSeen', 'true')
     await window.api.routing.invokeOn('local', 'app:add-project-path', projectAPath)
     await window.api.routing.invokeOn('local', 'app:add-project-path', projectBPath)
     await window.api.app.createConversation({ id: 'dual-a', projectPath: projectAPath, agentType: 'claude-code', title: 'Dual A' })

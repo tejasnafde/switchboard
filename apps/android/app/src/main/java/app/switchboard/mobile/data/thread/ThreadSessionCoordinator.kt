@@ -354,6 +354,7 @@ object LoadedSessionSnapshotMapper {
                         at = message.timestamp,
                         images = message.images,
                         pillsMeta = message.pillsMeta,
+                        fromTranscript = message.displayBody == null,
                     )) else emptyList()
                 }
 

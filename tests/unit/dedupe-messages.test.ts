@@ -198,6 +198,64 @@ describe('mergeConversationMessages', () => {
     expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'turn_2', 'msg_b'])
   })
 
+  it('keeps a new turn\'s reply when the previous turn gave the same reply under 60s earlier', () => {
+    const disk = [
+      msg('u1', { role: 'user', content: 'first', timestamp: 0 }),
+      msg('d1', { content: 'ok', timestamp: 1_000 }),
+      msg('u2', { role: 'user', content: 'second', timestamp: 10_000 }),
+    ]
+    const database = [msg('msg_b', { content: 'ok', timestamp: 20_000 })]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'u2', 'msg_b'])
+  })
+
+  it('keeps a new turn\'s reply when the previous turn\'s equal reply ended just before it', () => {
+    const disk = [
+      msg('u1', { role: 'user', content: 'first', timestamp: 0 }),
+      msg('d1', { content: 'ok', timestamp: 9_000 }),
+      msg('u2', { role: 'user', content: 'second', timestamp: 10_000 }),
+    ]
+    const database = [msg('msg_b', { content: 'ok', timestamp: 12_000 })]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'u2', 'msg_b'])
+  })
+
+  it('keeps a turn\'s reply when only the next turn\'s equal reply is on disk, under 60s later', () => {
+    const disk = [
+      msg('u1', { role: 'user', content: 'first', timestamp: 0 }),
+      msg('u2', { role: 'user', content: 'second', timestamp: 10_000 }),
+      msg('d2', { content: 'ok', timestamp: 20_000 }),
+    ]
+    const database = [msg('msg_a', { content: 'ok', timestamp: 1_000 })]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'msg_a', 'u2', 'd2'])
+  })
+
+  it('keeps equal user messages with another user message between them as separate turns', () => {
+    const disk = [
+      msg('u1', { role: 'user', content: 'go', timestamp: 0 }),
+      msg('d1', { content: 'ok', timestamp: 500 }),
+      msg('u2', { role: 'user', content: 'stop', timestamp: 1_000 }),
+      msg('u3', { role: 'user', content: 'go', timestamp: 2_000 }),
+    ]
+    const database = [msg('msg_c', { content: 'ok', timestamp: 2_500 })]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'u2', 'u3', 'msg_c'])
+  })
+
+  it('still matches a reply to its own turn when the two user copies are stamped apart', () => {
+    const disk = [
+      msg('u1', { role: 'user', content: 'go', timestamp: 10_000 }),
+      msg('d1', { content: 'ok', timestamp: 10_500 }),
+    ]
+    const database = [
+      msg('turn_1', { role: 'user', content: 'go', timestamp: 11_000 }),
+      msg('msg_a', { content: 'ok', timestamp: 12_000 }),
+    ]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1'])
+  })
+
   it('reconciles a large legacy transcript without scanning the full disk list per row', () => {
     const disk = Array.from({ length: 20_000 }, (_, index) =>
       msg(`disk-${index}`, { content: `turn-${index}`, timestamp: index * 100_000 }))

@@ -228,7 +228,7 @@ export class DemoAdapter implements ProviderAdapter {
       )
     } else if (/render order/i.test(message)) {
       emit({ type: 'content', threadId, messageId: `demo_think_${++this.seq}`, streamKind: 'reasoning', text: 'Weighing where the order could break.' })
-      await this.pause(turn, 300)
+      await sleep(300)
       await this.say(threadId, turn, 'Interim note: checking the reload path first.')
       await this.tool(threadId, turn, 'Bash', { command: 'sleep 61' }, 'ok', undefined, LONG_TOOL_MS)
       await this.say(threadId, turn, 'Final answer: the order holds.')
@@ -281,6 +281,8 @@ export class DemoAdapter implements ProviderAdapter {
     session.onEvent({ type: 'tool.started', threadId, toolId, toolName, input })
     this.record(session, 'assistant', [{ type: 'tool_use', id: toolId, name: toolName, input }])
     await this.pause(turn, durationMs)
+    // An interrupt during the wait ends the tool here, not after its effect.
+    if (turn.cancelled) return
     sideEffect?.()
     session.onEvent({ type: 'tool.completed', threadId, toolId, output })
     await this.pause(turn, 260)

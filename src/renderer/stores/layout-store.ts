@@ -155,6 +155,16 @@ interface LayoutStore {
    */
   showFileDiffCards: boolean
   setShowFileDiffCards: (value: boolean) => void
+
+  /**
+   * Sidebar disclosure for the "This Mac" workspace tree and the folded
+   * offline remote machines. Both default collapsed, so the sidebar opens on
+   * Recents. Persisted via settings DB.
+   */
+  sidebarLocalTreeExpanded: boolean
+  toggleSidebarLocalTree: () => void
+  sidebarOfflineMachinesExpanded: boolean
+  toggleSidebarOfflineMachines: () => void
 }
 
 // Persistence keys for sidebar collapse state - kept tight so we don't
@@ -167,6 +177,8 @@ const DATA_SCIENCE_MODE_KEY = 'layout.dataScienceMode'
 const KANBAN_WS_FILTER_KEY = 'layout.kanbanWorkspaceFilter'
 const KANBAN_PROJECT_FILTER_KEY = 'layout.kanbanProjectFilter'
 const SHOW_FILE_DIFF_CARDS_KEY = 'chat.showFileDiffs'
+const LOCAL_TREE_EXPANDED_KEY = 'sidebar.localTreeExpanded'
+const OFFLINE_MACHINES_EXPANDED_KEY = 'sidebar.offlineMachinesExpanded'
 
 function currentChatWorkspace(): ChatWorkspaceState {
   const state = useLayoutStore.getState()
@@ -431,6 +443,19 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     }
     set({ showFileDiffCards: value })
   },
+
+  sidebarLocalTreeExpanded: false,
+  toggleSidebarLocalTree: () => {
+    const next = !get().sidebarLocalTreeExpanded
+    persistSetting(LOCAL_TREE_EXPANDED_KEY, String(next))
+    set({ sidebarLocalTreeExpanded: next })
+  },
+  sidebarOfflineMachinesExpanded: false,
+  toggleSidebarOfflineMachines: () => {
+    const next = !get().sidebarOfflineMachinesExpanded
+    persistSetting(OFFLINE_MACHINES_EXPANDED_KEY, String(next))
+    set({ sidebarOfflineMachinesExpanded: next })
+  },
 }))
 
 registerChatWorkspaceController({
@@ -447,7 +472,7 @@ registerChatWorkspaceController({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr, dsModeStr, showFileDiffsStr] = await Promise.all([
+    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr, dsModeStr, showFileDiffsStr, localTreeStr, offlineMachinesStr] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
       window.api.settings.get(RIGHT_PANE_MODE_KEY),
@@ -456,6 +481,8 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       window.api.settings.get(KANBAN_PROJECT_FILTER_KEY),
       window.api.settings.get(DATA_SCIENCE_MODE_KEY),
       window.api.settings.get(SHOW_FILE_DIFF_CARDS_KEY),
+      window.api.settings.get(LOCAL_TREE_EXPANDED_KEY),
+      window.api.settings.get(OFFLINE_MACHINES_EXPANDED_KEY),
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
@@ -476,6 +503,8 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       kanbanProjectFilter: kanbanProjStr || null,
       dataScienceMode,
       showFileDiffCards: showFileDiffsStr === 'true',
+      sidebarLocalTreeExpanded: localTreeStr === 'true',
+      sidebarOfflineMachinesExpanded: offlineMachinesStr === 'true',
     })
   } catch (err) {
     log.warn('failed to hydrate layout settings from disk - keeping in-memory defaults', err)

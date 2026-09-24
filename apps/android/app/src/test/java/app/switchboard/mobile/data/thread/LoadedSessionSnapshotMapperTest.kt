@@ -150,6 +150,22 @@ class LoadedSessionSnapshotMapperTest {
         )
     }
 
+    @Test
+    fun `only history content without a typed displayBody is marked as transcript`() {
+        val loaded = LoadedSession(
+            messages = listOf(
+                message("a", "user", "[Request interrupted by user]"),
+                message("b", "user", "raw wire", displayBody = "[Request interrupted by user] typed"),
+            ),
+            meta = null,
+            total = null,
+            truncated = false,
+            raw = JsonObject(linkedMapOf()),
+        )
+        val users = LoadedSessionSnapshotMapper.map("thread", loaded).feed.filterIsInstance<FeedItem.User>()
+        assertEquals(listOf(true, false), users.map { it.fromTranscript })
+    }
+
     private fun message(
         id: String,
         role: String,

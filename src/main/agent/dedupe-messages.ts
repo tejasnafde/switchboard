@@ -42,6 +42,8 @@ export function dedupeMessagesById(messages: ChatMessage[]): DedupeResult {
 }
 
 export const LEGACY_ID_MATCH_WINDOW_MS = 60_000
+/** How far the SQLite and transcript copies of one user message can disagree. */
+const USER_COPY_SKEW_MS = 5_000
 
 /**
  * Merge provider-owned history with Switchboard's SQLite mirror.
@@ -76,21 +78,27 @@ export function mergeConversationMessages(
   const databaseOnly: ChatMessage[] = []
   // SQLite too: a user line the transcript lost or hides must still end the
   // previous turn, or the range below would reach into it.
-  const userTimes = [...disk, ...databaseMessages]
-    .filter((message) => message.role === 'user')
-    .map((message) => message.timestamp)
-    .sort((a, b) => a - b)
+  const turnStarts = userTurnStarts([...disk, ...databaseMessages])
   let userCursor = 0
 
   for (const message of [...databaseMessages].sort((a, b) => a.timestamp - b.timestamp)) {
-    while (userCursor < userTimes.length && userTimes[userCursor] <= message.timestamp) userCursor++
-    // Assistant mirror rows written before 2026-09-24 carry the TURN END time,
-    // so an interim text can sit minutes before its row. Anywhere in the same
-    // turn (after the last user message) still counts as the same message.
-    const turnStart = message.role === 'assistant' && userCursor > 0
-      ? userTimes[userCursor - 1]
-      : Infinity
-    const lowerBound = Math.min(message.timestamp - LEGACY_ID_MATCH_WINDOW_MS, turnStart)
+    while (userCursor < turnStarts.length && turnStarts[userCursor].timestamp <= message.timestamp) userCursor++
+    // An assistant row belongs to the turn opened by the last user message
+    // before it, and matches only inside that turn. Rows written before
+    // 2026-09-24 carry the TURN END time, so an interim text can sit minutes
+    // before its row; the 60s window alone would also let a turn claim the
+    // previous or the next turn's equal reply when they are under 60s apart.
+    const windowEnd = message.timestamp + LEGACY_ID_MATCH_WINDOW_MS
+    let lowerBound = message.timestamp - LEGACY_ID_MATCH_WINDOW_MS
+    let upperBound = windowEnd
+    if (message.role === 'assistant') {
+      const turnStart = userCursor > 0 ? turnStarts[userCursor - 1].turnStart : -Infinity
+      if (userCursor > 0) lowerBound = turnStart
+      // A later copy of this turn's own user message does not open a new turn.
+      let next = userCursor
+      while (next < turnStarts.length && turnStarts[next].turnStart === turnStart) next++
+      if (next < turnStarts.length) upperBound = Math.min(windowEnd, turnStarts[next].turnStart)
+    }
     const exactIndex = diskIndexesById.get(message.id)
     if (exactIndex !== undefined) {
       disk[exactIndex] = enrichDiskMessage(disk[exactIndex], message)
@@ -117,7 +125,7 @@ export function mergeConversationMessages(
     )) {
       cursor++
     }
-    if (cursor < candidates.length && candidates[cursor].timestamp <= message.timestamp + LEGACY_ID_MATCH_WINDOW_MS) {
+    if (cursor < candidates.length && candidates[cursor].timestamp <= upperBound) {
       const diskIndex = candidates[cursor].index
       disk[diskIndex] = enrichDiskMessage(disk[diskIndex], message)
       matchedDiskIndexes.add(diskIndex)
@@ -146,6 +154,30 @@ function withToolOutputs(calls: ToolCall[], mirrored: ToolCall[]): ToolCall[] {
     const output = outputs.get(call.id)
     return call.output === undefined && output !== undefined ? { ...call, output } : call
   })
+}
+
+/**
+ * Every user message's time, paired with the start of the turn it opens. The
+ * SQLite and transcript copies of one user message are stamped apart, so a
+ * copy that directly follows an equal one within the skew opens the same
+ * turn, which starts at the earlier copy. Any other user message between the
+ * two makes them separate turns.
+ */
+function userTurnStarts(messages: ChatMessage[]): Array<{ timestamp: number; turnStart: number }> {
+  const users = messages
+    .filter((message) => message.role === 'user')
+    .sort((a, b) => a.timestamp - b.timestamp)
+  const entries: Array<{ timestamp: number; turnStart: number }> = []
+  users.forEach((message, index) => {
+    const previous = users[index - 1]
+    const turnStart = previous
+      && previous.content === message.content
+      && message.timestamp - previous.timestamp <= USER_COPY_SKEW_MS
+      ? entries[index - 1].turnStart
+      : message.timestamp
+    entries.push({ timestamp: message.timestamp, turnStart })
+  })
+  return entries
 }
 
 function cloneMessage(message: ChatMessage): ChatMessage {

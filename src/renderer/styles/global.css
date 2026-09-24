@@ -757,19 +757,45 @@ html, body, #root {
 }
 
 .sidebar-section-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 5px 6px;
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 500;
 }
 
+.sidebar-recent-group + .sidebar-recent-group {
+  margin-top: 4px;
+}
+
+.sidebar-recent-count {
+  min-width: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-recent-count[data-group='needs-you'] {
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 16%, transparent);
+}
+
+.sidebar-recent-count[data-group='working'] {
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+}
+
 .sidebar-recent-row {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 1px;
   width: 100%;
-  height: 32px;
-  padding: 0 7px;
+  padding: 5px 7px;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
@@ -794,6 +820,44 @@ html, body, #root {
   outline-offset: -2px;
 }
 
+.sidebar-recent-line {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.sidebar-recent-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+}
+
+.sidebar-recent-dot[data-dot='needs-you'] { background: var(--error); }
+.sidebar-recent-dot[data-dot='working'] { background: var(--warning); }
+.sidebar-recent-dot[data-dot='finished'] { background: var(--success); }
+
+/* Translucent shows whatever sits behind the window, and a red or amber dot
+   on a warm wallpaper disappears. A light ring and solid count pills keep
+   both readable on any backdrop. */
+.theme-translucent .sidebar-recent-dot:not([data-dot='idle']) {
+  box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.85);
+}
+
+.theme-translucent .sidebar-recent-count[data-group] {
+  color: #fff;
+}
+
+.theme-translucent .sidebar-recent-count[data-group='needs-you'] {
+  background: var(--error);
+}
+
+.theme-translucent .sidebar-recent-count[data-group='working'] {
+  background: color-mix(in srgb, var(--warning) 85%, #000);
+}
+
 .sidebar-recent-title {
   flex: 1;
   min-width: 0;
@@ -806,44 +870,20 @@ html, body, #root {
   flex: none;
   color: var(--text-muted);
   font-size: 10.5px;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
-/* A digest/raw-text preview can run much longer than a timestamp, so
-   (unlike the plain relative-time case above) it needs to shrink and
-   truncate instead of pushing the row title off. */
-.sidebar-recent-detail.sidebar-recent-preview {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* Line 2 lines up under the title, past the dot (7px) and its gap (7px). */
 .sidebar-recent-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 60%;
-  font-size: 10.5px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-
-.sidebar-recent-status-text {
+  padding-left: 14px;
   overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.sidebar-recent-status.approval { color: var(--warning); }
-.sidebar-recent-status.input { color: var(--workspace-color-2); }
-.sidebar-recent-status.working { color: var(--accent); }
-.sidebar-recent-status.failed { color: var(--error); }
-.sidebar-recent-status.done { color: var(--success); }
 
 .sidebar-recents-actions {
   display: flex;
@@ -972,11 +1012,11 @@ html, body, #root {
   white-space: nowrap;
 }
 .sidebar-workspace-header .sidebar-workspace-count {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
   color: var(--text-muted);
-  font-family: var(--font-mono);
   flex-shrink: 0;
 }
 
@@ -2693,6 +2733,19 @@ mark.sb-search-mark.active {
 }
 .sidebar-machine-name {
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The name is short ("This Mac"); the summary is what gives way. */
+.sidebar-machine-name:has(+ .machine-summary) {
+  flex: none;
+}
+.machine-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

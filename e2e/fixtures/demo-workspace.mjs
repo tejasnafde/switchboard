@@ -86,7 +86,7 @@ export function makeSideRepo(projectPath) {
   gitCommitAll(projectPath, 'Seed side project')
 }
 
-export function seedDatabase(dbPath, projectPath, sidePath, { now = Date.now(), showFileDiffs = true } = {}) {
+export function seedDatabase(dbPath, projectPath, sidePath, { now = Date.now(), showFileDiffs = true, expandLocalTree = true } = {}) {
   const messagePills = JSON.stringify({
     auth_file: { label: 'src/api/auth.ts:1-7', kind: 'file' },
     api_log: { label: 'api · oauth callback', kind: 'terminal' },
@@ -136,6 +136,9 @@ export function seedDatabase(dbPath, projectPath, sidePath, { now = Date.now(), 
     // Diff cards are opt-in and off by default; the 'diff-review' scene needs
     // them expanded to record the accept/reject UI.
     `INSERT OR REPLACE INTO settings (key, value) VALUES ('chat.showFileDiffs', ${sql(String(showFileDiffs))});`,
+    // The tour's scenes open chats from the project tree, which is folded by
+    // default behind the "This Mac" row.
+    `INSERT OR REPLACE INTO settings (key, value) VALUES ('sidebar.localTreeExpanded', ${sql(String(expandLocalTree))});`,
   ]
   execFileSync('sqlite3', [dbPath, statements.join('\n')])
 }
