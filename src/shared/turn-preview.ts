@@ -23,6 +23,25 @@ export interface PreviewMessage {
 const RAW_PREVIEW_MAX_LENGTH = 70
 
 /**
+ * A preview is one line of plain text, so markdown syntax would show as raw
+ * backticks and asterisks. Keeps the words, drops the markup.
+ * ponytail: regex pass, not a markdown parser; nested or unusual syntax may
+ * leave a stray marker, which is harmless in a truncated one-liner.
+ */
+export function plainPreviewText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?(```|$)/g, ' ')       // fenced code blocks, closed or still streaming
+    .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')    // images -> alt text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')     // links -> link text
+    .replace(/`([^`]*)`/g, '$1')                 // inline code
+    .replace(/(\*\*|__)(.+?)\1/g, '$2')           // bold
+    .replace(/(^|[^\w*])[*_]([^*_\n]+)[*_](?=[^\w*]|$)/g, '$1$2') // italic
+    .replace(/^\s{0,3}(#{1,6}|>|[-*+]|\d+\.)\s+/gm, '') // headings, quotes, list markers
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
  * Index of the first message in the current turn: right after the last
  * user message, or 0 (the whole array) when there is none.
  */
@@ -43,7 +62,7 @@ export function turnPreviewLine(messages: PreviewMessage[]): string | undefined 
     const message = messages[i]
     if (!message.isAssistant || !message.text) continue
     const digest = extractDigest(message.text)
-    if (digest) return digest
+    if (digest) return plainPreviewText(digest)
   }
 
   // No digest anywhere in the turn - fall back to a truncated raw preview
@@ -55,7 +74,7 @@ export function turnPreviewLine(messages: PreviewMessage[]): string | undefined 
   for (let i = messages.length - 1; i >= turnStart; i--) {
     const message = messages[i]
     if (!message.isAssistant || !message.text) continue
-    const raw = stripDigest(message.text, { streaming: true }).trim()
+    const raw = plainPreviewText(stripDigest(message.text, { streaming: true }))
     if (!raw) continue
     return raw.length > RAW_PREVIEW_MAX_LENGTH
       ? `${raw.slice(0, RAW_PREVIEW_MAX_LENGTH - 1)}…`
