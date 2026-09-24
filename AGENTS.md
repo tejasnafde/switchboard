@@ -490,6 +490,7 @@ src/
 │   ├── protocol/sb-favicon.ts         # sb-favicon:// custom protocol handler
 │   ├── provider/
 │   │   ├── provider-registry.ts       # IPC handlers, instance resolution, event forwarding
+│   │   ├── turn-submission-results.ts # pure turn-result helpers (legacyAcceptanceResult, rejectedAtomicTurn, ...)
 │   │   ├── policy.ts                  # decidePermission/denialMessage/PLAN_READ_ONLY_TOOLS/CUSTOM_UI_TOOLS
 │   │   ├── event-bus.ts               # RuntimeEventBus (decoupled fan-out)
 │   │   ├── env-overlay.ts             # instance env merge · claude-session-migrate.ts # oauth_dir rotation
