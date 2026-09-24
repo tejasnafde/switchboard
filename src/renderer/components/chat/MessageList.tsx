@@ -12,6 +12,8 @@ interface MessageListProps {
   messages: ChatMessage[]
   sessionId?: string | null
   visible?: boolean
+  /** A turn is running, so rows can still grow on their own. */
+  busy?: boolean
   agentType?: AgentType
   // Promise-returning so the cards downstream can re-enable themselves when
   // the underlying IPC rejects.
@@ -139,8 +141,11 @@ export function roleLabel(role: ChatMessage['role'], agentType: AgentType = 'cla
  * matches the pre-virtualized layout exactly; tests for `groupIntoTurns`
  * still pass since the grouping is the same.
  */
-export function MessageList({ messages, sessionId, visible = true, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
+export function MessageList({ messages, sessionId, visible = true, busy = false, agentType = 'claude-code', onApproval, onAnswerQuestion, onPlanAction, onFileDiffResolve }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const busyRef = useRef(busy)
+  busyRef.current = busy
   const isScrollLockedRef = useRef(false)
   const programmaticScrollRef = useRef(false)
   const prevSessionIdRef = useRef<string | null | undefined>(sessionId)
@@ -174,6 +179,12 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
     // Rough estimate - the measurer corrects this on mount via the ref.
     // 120px covers a short chat bubble + role label + timestamp.
     estimateSize: () => 120,
+    // The list's vertical padding lives here, not in CSS, so an end-aligned
+    // scroll lands on the real bottom. With CSS padding the virtualizer
+    // stopped 17 px short and clipped the last row.
+    paddingStart: 8,
+    paddingEnd: 8,
+    scrollPaddingEnd: 8,
     overscan: 6,
     // Track by first message id in a group so streaming updates to the
     // LAST turn don't invalidate earlier virtualized rows' measurements.
@@ -323,6 +334,19 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
     }
   }, [messages.length, beginProgrammaticFollow, finishProgrammaticFollow, measureMountedTurns, scrollToLatestIfFollowing, sessionId, turns.length])
 
+  // The effect above follows new messages only. While a turn runs, a row can
+  // grow after it was measured (a queued message's footer, streamed text, an
+  // approval card) without the message count changing, so follow that too or
+  // the list stops short of the new bottom. Not while idle: then growth is
+  // the user expanding a section, which must stay where they clicked.
+  useEffect(() => {
+    const content = contentRef.current
+    if (!content || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => { if (busyRef.current) scrollToLatestIfFollowing() })
+    observer.observe(content)
+    return () => observer.disconnect()
+  }, [turns.length > 0, scrollToLatestIfFollowing])
+
   // Honor "scroll to message" requests (from SearchModal). Finds the turn
   // containing the target message, jumps the virtualizer there, then
   // briefly highlights the bubble. Clears the request so re-clicks work.
@@ -457,7 +481,6 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
       style={{
         flex: 1,
         overflowY: 'auto',
-        padding: '8px 0',
         // NOTE: deliberately NOT using `contain: strict` - it creates a new
         // containing block for `position: fixed` descendants, which breaks
         // the MessageBubble image lightbox (clips to the scroll container
@@ -466,6 +489,7 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
       }}
     >
       <div
+        ref={contentRef}
         style={{
           height: `${totalSize}px`,
           width: '100%',
