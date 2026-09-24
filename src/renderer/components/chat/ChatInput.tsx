@@ -857,6 +857,8 @@ export function ChatInput({
       || draftStore.imagesBySession[sessionId]?.length,
     )
     if (hasNewerDraft && !(await confirm({ title: 'Replace the current draft with the failed message?', confirmLabel: 'Replace', destructive: true }))) return
+    // A global shortcut can switch chats while the dialog is open.
+    if (sessionIdRef.current !== sessionId) return
     const payload = recovery.collisionPayload ?? recovery.payload
     draftStore.replaceDraftPayload(sessionId, payload)
     setValue(payload.text)

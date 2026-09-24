@@ -65,6 +65,31 @@ describe('confirm', () => {
     expect(dialog()).toBeNull()
   })
 
+  it('keeps Escape from the modal that opened it', async () => {
+    // Registered after ConfirmHost, like a Settings or WorkspaceManager modal
+    // opened later, in both phases those modals use.
+    const hostSaw: string[] = []
+    const onCapture = () => hostSaw.push('window capture')
+    const onBubble = () => hostSaw.push('window bubble')
+    window.addEventListener('keydown', onCapture, true)
+    window.addEventListener('keydown', onBubble)
+    try {
+      const { answer } = await ask({ title: 'Delete launch config "dev"?' })
+      await act(async () => {
+        document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      })
+      await expect(answer).resolves.toBe(false)
+      expect(hostSaw).toEqual([])
+
+      // With no dialog open, Escape belongs to the host again.
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+      expect(hostSaw).toEqual(['window capture', 'window bubble'])
+    } finally {
+      window.removeEventListener('keydown', onCapture, true)
+      window.removeEventListener('keydown', onBubble)
+    }
+  })
+
   it('shows one dialog at a time and answers each request on its own', async () => {
     const { answer: first } = await ask({ title: 'First?', confirmLabel: 'Yes' })
     const { answer: second } = await ask({ title: 'Second?', confirmLabel: 'Yes' })

@@ -21,7 +21,7 @@ import {
   reorderWorkspacesById,
 } from '@shared/workspaceOrganization'
 import { colorTokenForWorkspace } from './sidebar-helpers'
-import { confirm } from '../ui/confirm'
+import { confirm, isConfirmOpen } from '../ui/confirm'
 
 const WORKSPACE_COLORS = [1, 2, 3, 4, 5, 6].map(
   (index) => `var(--workspace-color-${index})`,
@@ -226,7 +226,8 @@ export function WorkspaceManager({
         ?.focus()
     })
     const trapFocus = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab' || !dialogRef.current) return
+      // The delete confirm keeps its own focus trap.
+      if (event.key !== 'Tab' || !dialogRef.current || isConfirmOpen()) return
       const controls = Array.from(dialogRef.current.querySelectorAll<HTMLElement>(
         'button:not(:disabled), input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
       ))

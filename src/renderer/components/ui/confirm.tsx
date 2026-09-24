@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,8 +49,28 @@ export function confirm(options: ConfirmOptions): Promise<boolean> {
   })
 }
 
+/** True while a confirm dialog is on screen, for host modals that trap keys on the document. */
+export function isConfirmOpen(): boolean {
+  return queue.length > 0
+}
+
 export function ConfirmHost() {
   const request = useSyncExternalStore(subscribe, current)
+  // The modals that open a confirm close on any Escape, some from a window
+  // capture listener that runs before Radix's document one. This listener is
+  // registered at app mount, ahead of theirs, so the dialog answers Escape and
+  // the event ends here.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const open = current()
+      if (event.key !== 'Escape' || !open) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      settle(open, false)
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [])
   return (
     <AlertDialog open={!!request} onOpenChange={(open) => { if (!open && request) settle(request, false) }}>
       {request && (

@@ -183,6 +183,14 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       crossesBoundary ? 'This copies prompt context across a machine or provider profile boundary.' : '',
     ].filter(Boolean)
     if (title && !(await confirm({ title, body, confirmLabel: 'Copy' }))) return
+    // Either panel can switch chats while the dialog is open.
+    if (title) {
+      const { primarySessionId, secondarySessionId } = useLayoutStore.getState()
+      const [slotNow, otherNow] = chatSlot === 'primary'
+        ? [primarySessionId, secondarySessionId]
+        : [secondarySessionId, primarySessionId]
+      if ((sessionIdOverride ?? slotNow) !== sessionId || otherNow !== otherSessionId) return
+    }
     const clone = cloneDraftPayload(source, {
       nextId: () => crypto.randomUUID(),
       createPreviewUrl: (file) => URL.createObjectURL(file),
@@ -196,7 +204,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     })
     useLayoutStore.getState().selectChatSession(otherSessionId)
     setTimeout(() => focusComposer(otherSessionId), 0)
-  }, [activeSession, chatTitle, otherSessionId, sessionId])
+  }, [activeSession, chatSlot, chatTitle, otherSessionId, sessionId, sessionIdOverride])
   const remoteMachineName = useMachineStore((state) =>
     state.remotes.find((machine) => machine.id === activeSession?.machineId)?.name,
   )
