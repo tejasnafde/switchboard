@@ -517,6 +517,7 @@ src/
 │   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
 │   │   │   ├── providerEventReducer.ts # desktop provider event → agent-store reducer (ChatPanel's listener)
 │   │   │   ├── ChatWorkspacePanels.tsx # primary/secondary ChatPanel slots + ChatSplitHandle
+│   │   │   ├── useChatSearch.ts (in-pane ⌘F) · SlashHelpOverlay.tsx · chatSessionSettings.ts (mode/model/effort writes)
 │   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slashCommands.ts
 │   │   │   ├── UnifiedProviderPicker.tsx # agent tabs → instance rail → model search
 │   │   │   ├── BranchPicker.tsx + branchPickerPolicy.ts · SkillChip · FileChip

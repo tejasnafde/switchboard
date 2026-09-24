@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
-import { useAgentStore, setStoreDefaultRuntimeMode, type RuntimeMode } from '../../stores/agent-store'
+import { useAgentStore, type RuntimeMode } from '../../stores/agent-store'
 import { useDraftStore } from '../../stores/draft-store'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useKanbanStore } from '../../stores/kanban-store'
@@ -10,6 +10,9 @@ import { buildHandoffPreamble, nextPendingHandoffFrom } from '@shared/handoff'
 import { parseSendTo, resolveSendToTarget } from './sendToCommand'
 import { reduceProviderEvent, upsertAssistantContent } from './providerEventReducer'
 import { MessageList } from './MessageList'
+import { changeModel, changeReasoningEffort, changeRuntimeMode } from './chatSessionSettings'
+import { useChatSearch } from './useChatSearch'
+import { SlashHelpOverlay } from './SlashHelpOverlay'
 import { ChatInput, type ChatSendResult } from './ChatInput'
 import { chatIdentity } from './chatIdentity'
 import { RemoteAuthBanner, invalidateRemoteAuthCache } from './RemoteAuthBanner'
@@ -20,7 +23,6 @@ import { isDraftSessionId } from '@shared/new-chat-draft'
 import { canSteer } from '@shared/turn-delivery'
 import { materializeDraft, takeFirstSend } from '../../services/draftChat'
 import { ContextWindowMeter } from './ContextWindowMeter'
-import { SLASH_COMMANDS } from './slashCommands'
 import {
   onSessionRename,
   emitSessionRename,
@@ -54,11 +56,7 @@ import {
 import { downscaleImage } from '../../services/imageDownscale'
 import { InPaneSearchBar } from '../InPaneSearchBar'
 import { defaultInstanceId, agentLabel, type AgentType, type ChatMessage } from '@shared/types'
-import {
-  defaultInstanceSettingKey,
-  defaultModelSettingKey,
-  SETTING_DEFAULT_RUNTIME_MODE,
-} from '@shared/session-defaults'
+import { defaultInstanceSettingKey } from '@shared/session-defaults'
 import { useLayoutStore } from '../../stores/layout-store'
 import type { ChatSlot } from '../../services/chatWorkspace'
 import { focusComposer } from '../../services/composerRegistry'
@@ -108,8 +106,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const updateStatus = useAgentStore((s) => s.updateStatus)
   const setTitle = useAgentStore((s) => s.setTitle)
   const storeSetRuntimeMode = useAgentStore((s) => s.setRuntimeMode)
-  const storeSetModel = useAgentStore((s) => s.setModel)
-  const storeSetReasoningEffort = useAgentStore((s) => s.setReasoningEffort)
   const storeSetAgentType = useAgentStore((s) => s.setAgentType)
   const storeSetInstanceId = useAgentStore((s) => s.setInstanceId)
   const clearMessages = useAgentStore((s) => s.clearMessages)
@@ -119,14 +115,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const agentStartedRef = useRef<Set<string>>(new Set())
   const [slashHelpOpen, setSlashHelpOpen] = useState(false)
 
-  // ── In-pane ⌘F search ────────────────────────────────────────────
-  // Filters this panel's messages by substring and steps through them.
-  // Reuses `requestScrollToMessage` (the same plumbing ⌘⇧F uses) so
-  // the virtualizer can land on the right row + flash-highlight it.
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchIdx, setSearchIdx] = useState(0)
-  const requestScrollToMessage = useAgentStore((s) => s.requestScrollToMessage)
 
   const messages = activeSession?.messages ?? []
   const status = activeSession?.status ?? 'idle'
@@ -225,58 +213,21 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
 
   const handleRuntimeModeChange = useCallback((mode: RuntimeMode) => {
     if (!sessionId) return
-    storeSetRuntimeMode(sessionId, mode)
-    // Propagate to active provider session if running
-    ;window.api.provider?.setRuntimeMode?.(sessionId, mode).catch((err: unknown) => {
-      log.warn(`setRuntimeMode failed for ${sessionId} - live provider session may not have applied it`, err)
-    })
-    // Persist as the per-conversation source of truth so reopening this
-    // chat (sidebar, kanban card click, ⌘⇧F search jump) restores the
-    // selection instead of falling back to the hardcoded default.
-    window.api.app?.setConversationRuntimeMode?.(sessionId, mode).catch((err: unknown) => {
-      log.warn(`setConversationRuntimeMode failed for ${sessionId}`, err)
-    })
-    // Also remember as the user-level default so brand-new sessions seed
-    // with this mode instead of always reverting to 'sandbox'.
-    setStoreDefaultRuntimeMode(mode)
-    window.api.settings
-      ?.set?.(SETTING_DEFAULT_RUNTIME_MODE, mode)
-      .catch((err: unknown) => log.warn('could not save the default runtime mode', err))
-  }, [sessionId, storeSetRuntimeMode])
+    changeRuntimeMode(sessionId, mode)
+  }, [sessionId])
 
   const handleModelChange = useCallback((m: string) => {
     if (!sessionId) return
-    storeSetModel(sessionId, m)
-    // Propagate to the running provider session (opencode reads this per
-    // turn; Claude/Codex no-op). Without this, the adapter keeps using
-    // whatever model was passed at startSession forever.
-    window.api.provider.setModel?.(sessionId, m).catch((err: unknown) => {
-      log.warn(`setModel failed for ${sessionId} - live provider session may not have applied it`, err)
-    })
-    // Persist as the per-conversation source of truth so reopening this
-    // chat (sidebar, kanban card click) restores the pin instead of losing
-    // it the moment the live session object stops matching session.id.
-    window.api.app?.setConversationModel?.(sessionId, m).catch((err: unknown) => {
-      log.warn(`setConversationModel failed for ${sessionId}`, err)
-    })
-    // And as the machine default, so a session started from anywhere else -
-    // notably the phone, which cannot see this window - opens on the same
-    // model instead of whatever the provider CLI picks.
-    window.api.settings
-      ?.set?.(defaultModelSettingKey(agentType), m)
-      .catch((err: unknown) => log.warn('could not save the default model', err))
+    changeModel(sessionId, agentType, m)
     // `agentType` is read above, so it belongs here: without it the callback
     // keeps the agent it was created with and files the model under the wrong
     // one after a provider switch.
-  }, [sessionId, storeSetModel, agentType])
+  }, [sessionId, agentType])
 
   const handleReasoningEffortChange = useCallback((effort: 'low' | 'medium' | 'high') => {
     if (!sessionId) return
-    storeSetReasoningEffort(sessionId, effort)
-    window.api.app.setConversationReasoningEffort(sessionId, effort).catch((err: unknown) => {
-      log.warn(`setConversationReasoningEffort failed for ${sessionId}`, err)
-    })
-  }, [sessionId, storeSetReasoningEffort])
+    changeReasoningEffort(sessionId, effort)
+  }, [sessionId])
 
   useEffect(() => {
     if (activeSession?.type) {
@@ -1023,114 +974,15 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   )
   handleSendRef.current = handleSend
 
-  // ── In-pane search: compute matching message ids (substring on text) ──
-  const searchMatches = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return [] as string[]
-    return messages
-      .filter((m) => {
-        // Search the user-visible text content. Tool calls / images aren't
-        // included; the global ⌘⇧F covers FTS over the full DB.
-        if (typeof m.content === 'string' && m.content.toLowerCase().includes(q)) return true
-        return false
-      })
-      .map((m) => m.id)
-  }, [searchQuery, messages])
-
-  // Whenever the query or message list changes, clamp the cursor and
-  // ask MessageList to jump to the current match.
-  useEffect(() => {
-    if (!searchOpen) return
-    if (searchMatches.length === 0) return
-    const safe = ((searchIdx % searchMatches.length) + searchMatches.length) % searchMatches.length
-    if (safe !== searchIdx) {
-      setSearchIdx(safe)
-      return
-    }
-    if (sessionId) requestScrollToMessage(sessionId, searchMatches[safe], searchQuery)
-  }, [searchOpen, searchMatches, searchIdx, sessionId, searchQuery, requestScrollToMessage])
-
-  const handleChatSearchQuery = useCallback((q: string) => {
-    setSearchQuery(q)
-    setSearchIdx(0)
-  }, [])
-  const handleChatSearchNext = useCallback(() => {
-    setSearchIdx((i) => i + 1)
-  }, [])
-  const handleChatSearchPrev = useCallback(() => {
-    setSearchIdx((i) => i - 1)
-  }, [])
-  const handleChatSearchClose = useCallback(() => {
-    setSearchOpen(false)
-    setSearchQuery('')
-    setSearchIdx(0)
-    // Strip any <mark class="sb-search-mark"> we injected so the chat
-    // returns to its normal rendering.
-    document.querySelectorAll('mark.sb-search-mark').forEach((m) => {
-      const parent = m.parentNode
-      if (!parent) return
-      while (m.firstChild) parent.insertBefore(m.firstChild, m)
-      parent.removeChild(m)
-      parent.normalize()
-    })
-  }, [])
-
-  // ⌘F intercept - uses a document-level capture listener instead of an
-  // onKeyDownCapture on the wrapper, because the wrapper is only on the
-  // capture path when document.activeElement is INSIDE this panel. After
-  // the user clicks the chat title, sidebar, or anywhere ambiguous the
-  // active element falls back to <body> and a wrapper-attached handler
-  // never fires. Document-level lets us scope via a ref check + a
-  // "default panel" fallback (matches activeSessionId).
-  const panelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      // Accept ⌘F on macOS or Ctrl+F on Windows/Linux. Reject combos
-      // that include both (Ctrl+Cmd+F is the macOS fullscreen toggle).
-      const cmd = e.metaKey && !e.ctrlKey
-      const ctrl = e.ctrlKey && !e.metaKey
-      if (!((cmd || ctrl) && !e.altKey && !e.shiftKey)) return
-      if (e.key !== 'f' && e.key !== 'F') return
-      const el = panelRef.current
-      if (!el) return
-      const active = document.activeElement as Element | null
-      const inThisPanel = !!active && el.contains(active)
-      // If focus is inside ANOTHER chat panel (dual-chat mode), don't
-      // steal - that panel's listener will handle it.
-      const inAnyChatPanel = !!active && !!active.closest('[data-chat-panel="true"]')
-      // If focus is inside a terminal (xterm), the terminal pane will
-      // claim ⌘F via its own listener - bail so we don't double-trigger.
-      const inTerminal = !!active && (
-        active.classList.contains('xterm-helper-textarea') ||
-        !!active.closest('.xterm') ||
-        !!active.closest('[data-terminal-pane="true"]')
-      )
-      // If focus is inside the CM6 file editor, let it handle ⌘F natively
-      // via its own searchKeymap binding - bail so we don't steal it.
-      const inFileViewer = !!active && !!active.closest('[data-context-source="file-viewer"]')
-      if (inTerminal || inFileViewer) return
-      if (!inThisPanel) {
-        if (inAnyChatPanel) return
-        // Focus is somewhere neutral (body, sidebar, etc). Only the
-        // "default" (active-session) panel should claim ⌘F so dual-chat
-        // doesn't double-trigger.
-        const isDefault = chatSlot === 'primary' || (chatSlot == null && sessionIdOverride == null)
-        if (!isDefault) return
-      }
-      e.preventDefault()
-      e.stopPropagation()
-      setSearchOpen(true)
-    }
-    document.addEventListener('keydown', onKey, true)
-    return () => document.removeEventListener('keydown', onKey, true)
-  }, [sessionIdOverride, chatSlot])
-
-  const chatSearchMatchInfo = searchOpen
-    ? {
-        current: searchMatches.length === 0 ? 0 : (searchIdx % searchMatches.length + searchMatches.length) % searchMatches.length + 1,
-        total: searchMatches.length,
-      }
-    : null
+  const {
+    panelRef,
+    searchOpen,
+    chatSearchMatchInfo,
+    handleChatSearchQuery,
+    handleChatSearchNext,
+    handleChatSearchPrev,
+    handleChatSearchClose,
+  } = useChatSearch({ messages, sessionId, sessionIdOverride, chatSlot })
 
   return (
     <div
@@ -1451,106 +1303,6 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       {slashHelpOpen && (
         <SlashHelpOverlay onClose={() => setSlashHelpOpen(false)} />
       )}
-    </div>
-  )
-}
-
-function SlashHelpOverlay({ onClose }: { onClose: () => void }) {
-  useEffect(() => {
-    const onKey = (e: globalThis.KeyboardEvent) => { if (e.key === 'Escape') onClose() }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1200,
-        background: 'rgba(0, 0, 0, 0.55)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '40px',
-      }}
-    >
-      <div
-        className="sb-floating-surface"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: '520px',
-          maxWidth: '100%',
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius)',
-          boxShadow: '0 16px 48px rgba(0, 0, 0, 0.5)',
-          overflow: 'hidden',
-        }}
-      >
-        <div style={{
-          padding: '10px 14px',
-          borderBottom: '1px solid var(--border)',
-          fontSize: '12px',
-          fontWeight: 600,
-          color: 'var(--text-primary)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          <span>Slash Commands</span>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              fontSize: '14px',
-              cursor: 'pointer',
-            }}
-          >
-            ×
-          </button>
-        </div>
-        <div style={{ padding: '6px 0' }}>
-          {SLASH_COMMANDS.map((cmd) => (
-            <div key={cmd.name} style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: '12px',
-              padding: '7px 14px',
-              fontSize: '12.5px',
-            }}>
-              <span style={{
-                fontFamily: 'var(--font-mono)',
-                fontWeight: 600,
-                color: 'var(--accent)',
-                minWidth: '80px',
-              }}>
-                /{cmd.name}
-              </span>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                {cmd.description}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div style={{
-          padding: '8px 14px',
-          borderTop: '1px solid var(--border)',
-          fontSize: '10.5px',
-          color: 'var(--text-muted)',
-        }}>
-          Type <kbd style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '10px',
-            padding: '0 4px',
-            background: 'var(--bg-tertiary)',
-            borderRadius: '3px',
-          }}>/</kbd> at the start of a line to open the inline menu.
-        </div>
-      </div>
     </div>
   )
 }
