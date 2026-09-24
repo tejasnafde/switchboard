@@ -59,9 +59,11 @@ export const PENDING_REQUEST_EVENT_TYPES: ReadonlySet<RuntimeEvent['type']> = ne
  * plan stays until the user sends the next turn. Returns `current` itself
  * when the event changes nothing.
  *
- * ponytail: any `user.message` clears plans, where the registry clears them
- * only for a human-initiated turn. A queued follow-up sent while a plan is
- * open would hide it here until the next `GET_PENDING_REQUESTS` re-seed.
+ * `user.message` is exactly the set of turns the registry clears plans for:
+ * it is published only by the two submit paths whose preparation calls
+ * `clearPendingPlans`, and that preparation runs for a queued or steered send
+ * too, clearing plans but never an open approval or question. A peer message
+ * publishes `peer.message` instead and leaves plans open, here as there.
  */
 export function applyPendingRequestEvent(
   current: readonly PendingBlockingEvent[],

@@ -88,7 +88,10 @@ export function recentLiveSignal(sessions: readonly RecentLiveSession[]): string
           return `${event.type}:${event.planId}`
       }
     }).join(',')
-    return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pending}:${session.unreadCount ?? 0}`
+    // Message count and newest id change when history hydrates or a message
+    // lands (line 2's preview), not on every streamed token.
+    const newest = session.messages[session.messages.length - 1]?.id ?? ''
+    return `${session.machineId ?? 'local'}:${session.id}:${session.status}:${pending}:${session.unreadCount ?? 0}:${session.messages.length}:${newest}`
   }).join('|')
 }
 

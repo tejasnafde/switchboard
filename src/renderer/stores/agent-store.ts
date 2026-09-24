@@ -87,6 +87,12 @@ interface AgentSession {
    * without gaining messages, which would skip its history load.
    */
   pendingRequests?: readonly PendingBlockingEvent[]
+  /**
+   * Bumped by every tracked pending-request event for the thread, changed or
+   * not, so a recovery can tell a live event arrived while it was waiting on
+   * the backend and must not overwrite it with an older snapshot.
+   */
+  pendingRequestRevision?: number
   /** Display title (user-editable, auto-generated from first message) */
   title?: string
   /** Permission mode for this session (sandbox / accept-edits / full-access / plan) */
@@ -429,11 +435,13 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
       let changed = false
       const sessions = state.sessions.map((s) => {
         if (s.id !== event.threadId) return s
+        changed = true
+        const pendingRequestRevision = (s.pendingRequestRevision ?? 0) + 1
         const current = s.pendingRequests ?? []
         const next = applyPendingRequestEvent(current, event)
-        if (next === current) return s
-        changed = true
-        return { ...s, pendingRequests: next }
+        return next === current
+          ? { ...s, pendingRequestRevision }
+          : { ...s, pendingRequestRevision, pendingRequests: next }
       })
       return changed ? { sessions } : state
     })

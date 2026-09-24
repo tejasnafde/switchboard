@@ -70,4 +70,14 @@ describe('applyPendingRequestEvent', () => {
     const current = [approval]
     expect(applyPendingRequestEvent(current, { type: 'status', threadId: 't1', status: 'running' })).toBe(current)
   })
+
+  it('matches the registry on queued sends and peer messages: plans close on user.message only, approvals never', () => {
+    const queued = applyPendingRequestEvent([approval, question, plan], { type: 'user.message', threadId: 't1', text: 'next', origin: 'o1', at: 2 })
+    expect(queued).toEqual([approval, question])
+    const current = [plan]
+    expect(applyPendingRequestEvent(current, {
+      type: 'peer.message', threadId: 't1', direction: 'received', initiator: 'agent',
+      messageId: 'pm_1', peerThreadId: 't2', peerLabel: 'Sibling', text: 'hi', at: 3,
+    })).toBe(current)
+  })
 })

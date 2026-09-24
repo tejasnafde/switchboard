@@ -41,6 +41,27 @@ describe('recoverPendingRequests (desktop orchestration)', () => {
     expect(store().sessions[0].pendingRequests).toEqual([])
   })
 
+  it('discards a snapshot that a live event overtook while it was in flight, and asks again', async () => {
+    const opened: PendingBlockingEvent = { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' }
+    const answers: PendingBlockingEvent[][] = [[opened], []]
+    const getPendingRequests = vi.fn(async () => {
+      const answer = answers.shift() ?? []
+      // The close lands while the first request is still on the wire. Nothing
+      // is recorded yet, so it changes no card - only the revision.
+      if (answer.length) useAgentStore.getState().trackPendingRequestEvent({ type: 'request.closed', threadId: 't1', requestId: 'r1', decision: 'approve' })
+      return answer
+    })
+    setWindowApi(getPendingRequests)
+    useAgentStore.getState().addSession({ id: 't1', type: 'claude-code', status: 'idle' })
+
+    await recoverPendingRequests('t1')
+
+    expect(getPendingRequests).toHaveBeenCalledTimes(2)
+    const session = useAgentStore.getState().sessions.find((s) => s.id === 't1')
+    expect(session?.pendingRequests ?? []).toEqual([])
+    expect(session?.messages).toEqual([])
+  })
+
   it('appends a missing card to an already-loaded session', async () => {
     const getPendingRequests = vi.fn(() => Promise.resolve<PendingBlockingEvent[]>([
       { type: 'request.opened', threadId: 't1', requestId: 'r1', requestType: 'command', toolName: 'Bash', detail: 'ls' },

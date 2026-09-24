@@ -270,4 +270,15 @@ describe('deriveRecentSessions', () => {
     expect(signal([question('Which region?')])).not.toBe(signal([question('Which bucket?')]))
     expect(signal([approval])).toBe(signal([{ ...approval, detail: 'other' } as PendingBlockingEvent]))
   })
+
+  it('changes the refresh signal when history hydrates, but not while a message streams', () => {
+    const base = { id: 'a', machineId: 'local', status: 'idle' as const, unreadCount: 0 }
+    const message = (id: string, content: string) => ({ id, role: 'assistant' as const, content, timestamp: 1 })
+    const empty = recentLiveSignal([{ ...base, messages: [] }])
+    const hydrated = recentLiveSignal([{ ...base, messages: [message('m1', 'Hi'), message('m2', 'Done')] }])
+    const streamed = recentLiveSignal([{ ...base, messages: [message('m1', 'Hi'), message('m2', 'Done, and more')] }])
+
+    expect(hydrated).not.toBe(empty)
+    expect(streamed).toBe(hydrated)
+  })
 })
