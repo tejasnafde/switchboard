@@ -18,6 +18,7 @@
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
 @source '../components/ui';
 @source '../components/chat/UnifiedProviderPicker.tsx';
+@source '../components/chat/BranchPicker.tsx';
 
 @theme inline {
   --spacing: 0.25rem;
