@@ -32,6 +32,19 @@ function subscribe(listener: () => void): () => void {
 
 const current = (): PendingConfirm | undefined => queue[0]
 
+// The host has no trigger element, so Radix has nothing to hand focus back to.
+// Remember what was focused when the first request opened, and restore it when
+// the last one closes. If that element is gone, fall back to the composer.
+let returnFocus: HTMLElement | null = null
+
+function restoreFocus(): void {
+  const target = returnFocus?.isConnected
+    ? returnFocus
+    : document.querySelector<HTMLElement>('[data-chat-panel] [contenteditable="true"]')
+  returnFocus = null
+  target?.focus()
+}
+
 function settle(request: PendingConfirm, confirmed: boolean): void {
   // Action fires onClick and then onOpenChange(false); the second call must
   // not answer the request that has just moved to the front.
@@ -63,6 +76,9 @@ if (typeof window !== 'undefined') window.addEventListener('keydown', holdKeysWh
 /** In-app replacement for window.confirm. Resolves true on confirm, false on cancel or Escape. Needs <ConfirmHost /> mounted. */
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
+    if (queue.length === 0 && typeof document !== 'undefined') {
+      returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    }
     queue.push({ ...options, resolve })
     for (const listener of listeners) listener()
   })
@@ -90,7 +106,11 @@ export function ConfirmHost() {
     <AlertDialog open={!!request} onOpenChange={(open) => { if (!open && request) settle(request, false) }}>
       {request && (
         // Radix wires aria-describedby to the description; with no body there is none to point at.
-        <AlertDialogContent {...(request.body ? {} : { 'aria-describedby': undefined })}>
+        <AlertDialogContent
+          {...(request.body ? {} : { 'aria-describedby': undefined })}
+          // Fires only when the dialog closes, i.e. after the last queued request.
+          onCloseAutoFocus={(event) => { event.preventDefault(); restoreFocus() }}
+        >
           <AlertDialogTitle>{request.title}</AlertDialogTitle>
           {request.body && <AlertDialogDescription>{request.body}</AlertDialogDescription>}
           <div className="mt-5 flex justify-end gap-2">
