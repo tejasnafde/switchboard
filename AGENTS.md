@@ -472,7 +472,8 @@ src/
 │   │   └── jsonl-truncate.ts          # Pure fork truncation (assembleClaudeFork, truncate*Jsonl)
 │   ├── conversations/fork.ts          # Fork-from-message orchestration (per-provider resume)
 │   ├── db/
-│   │   ├── database.ts                # SQLite schema, archive, FTS, settings, kanban, fork lineage
+│   │   ├── database.ts                # getDb + migrate(); re-exports the domain modules below, so import from here
+│   │   ├── projects.ts · conversations.ts (+ thread ancestry, archive) · messages.ts · settings.ts (+ session layouts) · kanban.ts · bookmarks.ts
 │   │   └── providerInstances.ts       # provider_instances CRUD (safeStorage-encrypted env)
 │   ├── files/                         # listing (gitignore-annotated) · writing (atomic+conflict) · gitignore matcher
 │   ├── git/                           # diffHunks (gutter) · refs · worktreePaths · checkpoint (diff review)

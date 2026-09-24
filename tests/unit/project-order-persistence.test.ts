@@ -44,18 +44,16 @@ describe('deriveProjectPositions', () => {
 
 describe('project ordering database contract', () => {
   const source = readFileSync(new URL('../../src/main/db/database.ts', import.meta.url), 'utf8')
+  const projects = readFileSync(new URL('../../src/main/db/projects.ts', import.meta.url), 'utf8')
 
   it('migrates the compatibility setting and serves canonical database order', () => {
     expect(source).toContain("SELECT value FROM settings WHERE key = 'projectOrder'")
     expect(source).toMatch(/ALTER TABLE projects ADD COLUMN sort_order/)
-    expect(source).toMatch(/ORDER BY CASE WHEN p\.workspace_id IS NULL[\s\S]*?p\.sort_order ASC/)
+    expect(projects).toMatch(/ORDER BY CASE WHEN p\.workspace_id IS NULL[\s\S]*?p\.sort_order ASC/)
   })
 
   it('validates and rewrites the complete project organization in one transaction', () => {
-    const organizer = source.slice(
-      source.indexOf('export function organizeProjects'),
-      source.indexOf('// ─── Conversation CRUD'),
-    )
+    const organizer = projects.slice(projects.indexOf('export function organizeProjects'))
     expect(organizer).toContain('db.transaction')
     expect(organizer).toContain('Project list changed while it was being reordered')
     expect(organizer).toContain('UPDATE projects SET workspace_id = ?, sort_order = ?')
