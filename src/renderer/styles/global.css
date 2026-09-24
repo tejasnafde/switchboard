@@ -2602,6 +2602,12 @@ html, body, #root {
   margin: 4px 0;
 }
 
+/* Markers sit outside the list's padding and .markdown-content clips its
+ * overflow, so 20px cut "10." down to "0.". 2.5em fits three digits. */
+.markdown-content ol {
+  padding-left: 2.5em;
+}
+
 .markdown-content a {
   color: var(--accent);
   text-decoration: none;

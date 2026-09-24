@@ -1,0 +1,53 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "message-overflow",
+  "summary": "Keep a long assistant markdown reply inside its bubble in a narrow desktop chat pane: two-digit ordered-list markers are no longer clipped, the message action row wraps, and pill chips truncate to the line instead of widening the message list.",
+  "surfaces": {
+    "desktop": {
+      "status": "implemented",
+      "evidence": [
+        "src/renderer/styles/global.css",
+        "src/renderer/components/chat/MessageBubble.tsx",
+        "src/renderer/components/chat/lexical/PillChipVisual.tsx",
+        "src/main/provider/adapters/demo-adapter.ts",
+        "e2e/message-overflow.e2e.mjs",
+        "e2e/visual-regressions.e2e.mjs",
+        "tests/unit/visual-regressions-source.test.ts"
+      ]
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "apps/mobile/src/components/Markdown.tsx renders inline code as a nested Text inside the paragraph Text, which the native text layout wraps, and a list marker is its own Text in a row beside a flex: 1 body, so nothing can widen or clip the message. Code blocks and tables already scroll horizontally."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "ThreadRichTextRenderer.kt builds inline code into the paragraph's single AnnotatedString, which wraps, and a list marker is its own Text next to a weight(1f) body, so there is no clipping. The marker is a fixed 28.dp wide, so a four-character marker such as \"100.\" or a large font scale wraps the marker onto two lines. That is a separate cosmetic issue, not overflow, and was left for a change that can be built and checked on a device."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "Renderer CSS and layout only. Only the demo adapter, which a normal launch cannot reach, gets a new scripted reply. No wire contract changes."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No stored data changes. Messages already saved render with the new styles."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "An unconditional desktop renderer fix with no flag, package identity, signing, update-channel or rollout change."
+    }
+  },
+  "verification": {
+    "automated": [
+      "e2e/message-overflow.e2e.mjs replays the real reply from the report (27 numbered items, inline code, a branch name that resolves to a file pill, a fenced command) at the 800px minimum window, where the chat pane is about 160px wide. It asserts that no bubble descendant outside a code block extends past the bubble, that every ordered list's widest marker fits the list's left padding, that the message list does not scroll sideways, and that the code block still scrolls with white-space: pre. The prompt @-mentions a file with a long name, and the test asserts that its pill chip (PillChipVisual) in the sent user bubble stays inside that bubble. Before the fix it failed on the markers (\"27. needs 21px\" against 20px) and on 40px of sideways scroll.",
+      "e2e/visual-regressions.e2e.mjs has a new chat-narrow screen in Dark, Light and Translucent, and fails if the seeded chat's message list scrolls sideways. Before the pill fix that list scrolled 59px because of the user bubble's pill chips. Every existing baseline still matches.",
+      "npm run typecheck",
+      "npm test"
+    ],
+    "hardware": [],
+    "notExercised": [
+      "The phone and Android renderers were checked by reading the code, not run on a device.",
+      "The reported right-edge clipping of plain text did not reproduce at any pane width with the exact message from the user's database. The defects that did reproduce are the clipped two-digit markers and the sideways scroll."
+    ]
+  }
+}
