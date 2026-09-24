@@ -1,0 +1,44 @@
+{
+  "$schema": "../schemas/feature-parity.schema.json",
+  "schemaVersion": 1,
+  "feature": "dead-worktree-code-removal",
+  "summary": "Delete createWorktree, createForkWorktree, createSessionWorktree and their only-used-there helpers from src/main/worktree.ts: a repo-wide search found no production caller left, since kanban/fork worktree creation now runs through src/main/worktree-creation/git-adapter.ts and session worktree creation through src/main/git/legacy-session-worktree-lease.ts. No behavior changes: the deleted functions were already unreachable from any IPC handler, preload API, or script.",
+  "surfaces": {
+    "desktop": {
+      "status": "not_applicable",
+      "reason": "src/main/ipc/kanban.ts is the only remaining importer of src/main/worktree.ts, and it only imports removeWorktree, listWorktrees, and findStaleWorktrees, none of which were touched. The three deleted functions had zero callers in src/main, src/preload, or src/renderer before this change: kanban card creation and fork-to-worktree already went through the transactional worktree-creation/git-adapter.ts path (behind KanbanChannels.CREATE_WORKTREE), and session worktree creation already went through git/legacy-session-worktree-lease.ts (behind GitChannels.CREATE_SESSION_WORKTREE). The Desktop UI, IPC surface, and preload API are byte-for-byte unchanged."
+    },
+    "reactNativeIos": {
+      "status": "not_applicable",
+      "reason": "Nothing under apps/mobile imports src/main/worktree.ts or any of the deleted exports; mobile worktree creation already goes through the shared WorktreeCreationRequest/Snapshot contract in src/shared/worktree-creation.ts and apps/mobile/src/lib/newSessionCreation.ts, which call the same live IPC channels the desktop client uses. Verified with a repo-wide grep for createWorktree/createForkWorktree/createSessionWorktree across apps/mobile: no matches."
+    },
+    "nativeAndroid": {
+      "status": "not_applicable",
+      "reason": "apps/android has no worktree creation code of its own; there is no apps/android directory in this repo, and the native Android client is not built from this codebase."
+    },
+    "sharedBackendApi": {
+      "status": "not_applicable",
+      "reason": "The removed functions were never exposed over the wire protocol, IPC channels, or the WsHost/ElectronIpcHost seam - they were exported helpers with no production caller. GitChannels and KanbanChannels, and every handler in src/main/ipc/git.ts and src/main/ipc/kanban.ts, are unchanged."
+    },
+    "storageDataMigration": {
+      "status": "not_applicable",
+      "reason": "No schema, column, or migration touched. Deleting unreachable functions does not change what is read from or written to kanban_cards, provider_instances, or any other table."
+    },
+    "updateRelease": {
+      "status": "not_applicable",
+      "reason": "Pure internal cleanup with no change to package identity, signing, deep links, update channels, or release packaging. electron-builder.yml, app-update.yml, and package.json are untouched."
+    }
+  },
+  "verification": {
+    "automated": [
+      "npm run typecheck passed clean for both the main and renderer tsconfig projects after the deletion.",
+      "npm test passed the full suite: 404 test files, 3980 tests passed, 3 skipped, 0 failed - including tests/unit/worktree.test.ts (trimmed to the still-live parseWorktreeList/removeWorktree/findStaleWorktrees coverage), tests/unit/kanban-worktree-transaction-handler.test.ts (mock for src/main/worktree updated to drop the now-nonexistent createWorktree/rmWorktreeDir exports), and tests/unit/git-legacy-worktree-handler.test.ts (unchanged, already asserts the production git.ts handler never calls the legacy createSessionWorktree helper).",
+      "Repo-wide grep across src, src/server, src/preload, scripts, e2e, videos, and apps/mobile for createWorktree, createForkWorktree, and createSessionWorktree confirmed the only remaining references after deletion are in the two live replacement modules (worktree-creation/git-adapter.ts, git/legacy-session-worktree-lease.ts) and their own tests.",
+      "The pre-commit hook (eslint --max-warnings=0 on staged files, then the full vitest suite) passed on both commits in this branch."
+    ],
+    "hardware": [],
+    "notExercised": [
+      "No manual run of the Electron app or the mobile app: this change removes unreachable code paths, so there is no new user-visible behavior to click through. The existing kanban worktree creation, fork-to-worktree, and session worktree creation flows were not manually re-verified beyond their existing automated coverage, since none of their source files changed."
+    ]
+  }
+}

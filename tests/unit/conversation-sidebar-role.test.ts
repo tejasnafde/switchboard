@@ -5,7 +5,7 @@ import {
   logicalImportConversationId,
   recoveryCandidateTitle,
 } from '../../src/main/db/conversationSidebarRole'
-const databaseSource = readFileSync(new URL('../../src/main/db/database.ts', import.meta.url), 'utf8')
+const conversationsSource = readFileSync(new URL('../../src/main/db/conversations.ts', import.meta.url), 'utf8')
 const appSource = readFileSync(new URL('../../src/main/ipc/app.ts', import.meta.url), 'utf8')
 
 describe('classifyLegacyConversationSidebarRole', () => {
@@ -50,9 +50,9 @@ describe('recoveryCandidateTitle', () => {
 
 describe('existing conversation recovery contract', () => {
   it('revives an existing root without overwriting its active provider selection', () => {
-    expect(databaseSource).toMatch(/export function reviveConversationForRecovery[\s\S]*?\): RecoveryReviveResult/)
-    expect(databaseSource).toMatch(/export function reviveConversationForRecovery[\s\S]*?UPDATE conversations[\s\S]*?sidebar_role = 'managed'[\s\S]*?archived = 0[\s\S]*?title = \?[\s\S]*?WHERE id = \?[\s\S]*?changes > 0/)
-    const body = databaseSource.match(/export function reviveConversationForRecovery[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(conversationsSource).toMatch(/export function reviveConversationForRecovery[\s\S]*?\): RecoveryReviveResult/)
+    expect(conversationsSource).toMatch(/export function reviveConversationForRecovery[\s\S]*?UPDATE conversations[\s\S]*?sidebar_role = 'managed'[\s\S]*?archived = 0[\s\S]*?title = \?[\s\S]*?WHERE id = \?[\s\S]*?changes > 0/)
+    const body = conversationsSource.match(/export function reviveConversationForRecovery[\s\S]*?\n\}/)?.[0] ?? ''
     expect(body).not.toMatch(/agent_type\s*=/)
     expect(body).not.toMatch(/session_id\s*=/)
     expect(body).not.toMatch(/provider_instance_id\s*=/)
@@ -69,7 +69,7 @@ describe('existing conversation recovery contract', () => {
   })
 
   it('distinguishes missing lineage from a cross-project collision', () => {
-    expect(databaseSource).toMatch(/export type RecoveryReviveResult = 'revived' \| 'missing' \| 'project-mismatch'/)
+    expect(conversationsSource).toMatch(/export type RecoveryReviveResult = 'revived' \| 'missing' \| 'project-mismatch'/)
     expect(appSource).toContain("reviveResult === 'project-mismatch'")
     expect(appSource).toContain('The stored conversation no longer exists')
   })

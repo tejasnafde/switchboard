@@ -6,7 +6,7 @@
  * "the state is right in the store but wrong on screen".
  */
 import React from 'react'
-import { ToolItem, TextItem } from '../ThreadScreen'
+import { ToolItem, TextItem } from '../ThreadFeedItems'
 import type { FeedItem } from '../../stores/chat'
 import { renderComponent } from '../../test/render'
 
