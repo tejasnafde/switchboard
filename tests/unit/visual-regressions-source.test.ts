@@ -33,4 +33,28 @@ describe('visual regression harness safety', () => {
     expect(source).toContain('workspace order did not persist across relaunch')
     expect(source).toContain("getByRole('button', { name: 'Skip tour' })")
   })
+
+  it('captures the key screens in every theme, each from a pristine fixture', () => {
+    expect(source).toContain("const THEMES = ['Dark', 'Light', 'Translucent']")
+    const screens = [...source.matchAll(/snapScreen\(win, '([a-z-]+)'/g)].map((match) => match[1])
+    expect(new Set(screens)).toEqual(new Set([
+      'chat', 'sidebar', 'command-palette', 'provider-picker', 'settings', 'kanban', 'approval', 'composer-running',
+    ]))
+    const run = source.slice(source.indexOf('async function runThemeScreens'))
+    expect(run).toMatch(/for \(const theme of THEMES\) \{\s*fixture\.restore\(\)/)
+  })
+
+  it('freezes what varies between runs before capturing', () => {
+    expect(source).toContain('win.clock.setFixedTime(FROZEN_NOW)')
+    expect(source).toContain("TZ: 'UTC'")
+    expect(source).toContain('--force-device-scale-factor=1')
+    expect(source).toMatch(/animation: none !important/)
+    expect(source).toContain("caret: 'hide'")
+  })
+
+  it('removes every temp dir it creates on exit', () => {
+    expect(source).not.toMatch(/mkdtempSync\(join\(tmpdir\(\), 'sb-/)
+    expect(source).toContain("process.once('exit', cleanup)")
+    expect(source).toMatch(/for \(const path of tempPaths\.splice\(0\)\) rmSync/)
+  })
 })

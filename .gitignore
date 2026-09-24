@@ -62,3 +62,6 @@ apps/mobile/node_modules/
 # Local scratch: drafts and promo mockups, not part of the app
 docs/articles/
 promo-mocks/
+
+# Visual regression output (actual + diff PNGs), rewritten on every run.
+e2e/artifacts/

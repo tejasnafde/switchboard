@@ -1,11 +1,38 @@
 #!/usr/bin/env node
+/**
+ * Visual regression suite for the built app (npm run build:fast first).
+ *
+ * Two phases, both on by default (SB_VISUAL_SCOPE=behaviour|screens runs one):
+ *   - behaviour: translucent-theme assertions (native glass transmission,
+ *     fullscreen fallback, sidebar Recents/Saved/organizer) on its own fixture.
+ *   - screens: eight key screens in Dark, Light and Translucent, captured
+ *     against the seeded tour workspace with the scripted demo provider
+ *     (SB_DEMO_ADAPTER=1) and pixel-compared with the baselines in
+ *     e2e/snapshots/<screen>-<theme>-<platform>.png.
+ *
+ * Translucent: the real window shows whatever desktop is behind it, blurred by
+ * native vibrancy, so an on-screen capture can never be a stable baseline.
+ * Playwright's capture holds only the app's own pixels with their alpha, and
+ * every screen is flattened over one fixed two-colour backdrop
+ * (flattenOverBackdrop), which makes a surface that turns opaque, or one
+ * that turns see-through, change pixels. The behaviour phase keeps the native
+ * check that the desktop colour actually comes through (needs Screen
+ * Recording permission).
+ *
+ * SB_UPDATE_SNAPSHOTS=1 rewrites every baseline instead of comparing. Failed
+ * comparisons write <name>-actual.png and <name>-diff.png to the artifact dir
+ * (SB_VISUAL_ARTIFACT_DIR, default e2e/artifacts/visual, which is emptied per
+ * run).
+ */
 
 import { _electron as electron } from 'playwright'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { PNG } from 'pngjs'
+import { checkBaseline, flattenOverBackdrop } from './lib/visual-compare.mjs'
+import { makeDemoRepo, makeSideRepo, seedDatabase } from './fixtures/demo-workspace.mjs'
 
 const repoRoot = process.cwd()
 const packagedExecutable = process.env.SB_PACKAGED_EXECUTABLE
@@ -14,8 +41,26 @@ if (!packagedExecutable && !existsSync(join(repoRoot, 'out/main/index.js'))) {
   process.exit(1)
 }
 
-const userDataDir = mkdtempSync(join(tmpdir(), 'sb-visual-e2e-'))
-const artifactDir = mkdtempSync(join(tmpdir(), 'sb-visual-artifacts-'))
+const scope = process.env.SB_VISUAL_SCOPE ?? 'all'
+if (!['all', 'behaviour', 'screens'].includes(scope)) {
+  console.error(`SB_VISUAL_SCOPE must be all, behaviour or screens (got ${scope})`)
+  process.exit(1)
+}
+// SB_UPDATE_VISUAL_SNAPSHOTS is the name this flag had before the screens phase.
+const updateSnapshots = process.env.SB_UPDATE_SNAPSHOTS === '1' || process.env.SB_UPDATE_VISUAL_SNAPSHOTS === '1'
+const snapshotDir = join(repoRoot, 'e2e', 'snapshots')
+const tempPaths = []
+const makeTemp = (prefix) => {
+  const path = mkdtempSync(join(tmpdir(), prefix))
+  tempPaths.push(path)
+  return path
+}
+const userDataDir = makeTemp('sb-visual-e2e-')
+const artifactDir = resolve(process.env.SB_VISUAL_ARTIFACT_DIR ?? join(repoRoot, 'e2e', 'artifacts', 'visual'))
+// Only the default dir is ours to empty; a directory passed in may hold
+// anything.
+if (!process.env.SB_VISUAL_ARTIFACT_DIR) rmSync(artifactDir, { recursive: true, force: true })
+mkdirSync(artifactDir, { recursive: true })
 const screenshotPath = join(artifactDir, 'translucent.png')
 const windowScreenshotPath = join(artifactDir, 'translucent-window.png')
 const settingsScreenshotPath = join(artifactDir, 'update-help.png')
@@ -24,43 +69,24 @@ const nativeWorkspaceScreenshotPath = join(artifactDir, 'native-workspace.png')
 const nativeDarkScreenshotPath = join(artifactDir, 'native-dark.png')
 const savedScreenshotPath = join(artifactDir, 'saved-sidebar.png')
 const organizerScreenshotPath = (theme) => join(artifactDir, `workspace-organizer-${theme.toLowerCase()}.png`)
-const snapshotPath = join(repoRoot, 'e2e', 'snapshots', `visual-regressions-translucent-${process.platform}.png`)
 let app
 
 const cleanup = () => {
-  rmSync(userDataDir, { recursive: true, force: true })
-  if (process.env.SB_KEEP_VISUAL_ARTIFACTS !== '1') {
-    rmSync(artifactDir, { recursive: true, force: true })
-  }
+  for (const path of tempPaths.splice(0)) rmSync(path, { recursive: true, force: true })
 }
 process.once('exit', cleanup)
 process.once('SIGINT', () => process.exit(130))
 process.once('SIGTERM', () => process.exit(143))
 
 function compareScreenshot(actual) {
-  if (process.env.SB_UPDATE_VISUAL_SNAPSHOTS === '1') {
-    mkdirSync(join(repoRoot, 'e2e', 'snapshots'), { recursive: true })
-    writeFileSync(snapshotPath, actual)
-    return
-  }
-  if (!existsSync(snapshotPath)) throw new Error(`missing visual baseline: ${snapshotPath}`)
-  const expectedPng = PNG.sync.read(readFileSync(snapshotPath))
-  const actualPng = PNG.sync.read(actual)
-  if (actualPng.width !== expectedPng.width || actualPng.height !== expectedPng.height) {
-    throw new Error(`visual size changed: ${actualPng.width}x${actualPng.height}`)
-  }
-  let changed = 0
-  for (let i = 0; i < actualPng.data.length; i += 4) {
-    const delta = Math.max(
-      Math.abs(actualPng.data[i] - expectedPng.data[i]),
-      Math.abs(actualPng.data[i + 1] - expectedPng.data[i + 1]),
-      Math.abs(actualPng.data[i + 2] - expectedPng.data[i + 2]),
-      Math.abs(actualPng.data[i + 3] - expectedPng.data[i + 3]),
-    )
-    if (delta > 12) changed++
-  }
-  const ratio = changed / (actualPng.width * actualPng.height)
-  if (ratio > 0.005) throw new Error(`visual mismatch: ${(ratio * 100).toFixed(2)}% of pixels changed`)
+  const error = checkBaseline({
+    name: `visual-regressions-translucent-${process.platform}`,
+    actual,
+    snapshotDir,
+    artifactDir,
+    update: updateSnapshots,
+  })
+  if (error) throw new Error(`visual mismatch: ${error}`)
 }
 
 function averageColor(png, xStart, xEnd, yStart, yEnd) {
@@ -359,21 +385,203 @@ async function closeApp() {
   if (!closed) closing.process().kill('SIGKILL')
 }
 
-async function launchSwitchboard() {
+// ─── Theme screens ───────────────────────────────────────────────────────
+
+const THEMES = ['Dark', 'Light', 'Translucent']
+const SCREEN_SIZE = { width: 1280, height: 720 }
+const FINISHED_CHAT = 'Debug auth callback'
+const RUNNING_CHAT = 'Compare retry strategies'
+// Seeded ages count back from this instant and the renderer clock is pinned
+// to it (in UTC), so relative ages ("12m") and message times ("10:28") read
+// the same on every run and every machine.
+const FROZEN_NOW = Date.parse('2026-03-02T10:30:00Z')
+// Two runs on one machine match exactly, so this only absorbs antialiasing
+// jitter. A surface that changes colour or opacity moves far more pixels.
+const SCREEN_MAX_CHANGED_RATIO = 0.001
+// Leaves every pixel at its final state: no animation or transition mid-way,
+// no blinking caret, no spinner frame that depends on when the shot fired.
+const FREEZE_CSS = `
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    caret-color: transparent !important;
+    scroll-behavior: auto !important;
+  }
+`
+
+async function openConversation(win, title) {
+  await win.locator('.sidebar-recent-row').filter({ hasText: title }).first().click()
+  await win.locator('.chat-identity-title').filter({ hasText: title }).waitFor({ state: 'visible' })
+}
+
+async function settle(win) {
+  // Park the pointer where nothing has a hover state, then wait for fonts
+  // and two frames so layout and paint have caught up.
+  await win.mouse.move(SCREEN_SIZE.width / 2, 2)
+  await win.evaluate(() => document.fonts.ready.then(() => new Promise((done) => {
+    requestAnimationFrame(() => requestAnimationFrame(done))
+  })))
+  await win.waitForTimeout(250)
+}
+
+async function snapScreen(win, screen, theme, target, mask = []) {
+  await settle(win)
+  const shot = await target.screenshot({ animations: 'disabled', caret: 'hide', scale: 'css', mask, maskColor: '#808080' })
+  const error = checkBaseline({
+    name: `${screen}-${theme.toLowerCase()}-${process.platform}`,
+    actual: flattenOverBackdrop(shot),
+    snapshotDir,
+    artifactDir,
+    update: updateSnapshots,
+    maxChangedRatio: SCREEN_MAX_CHANGED_RATIO,
+  })
+  if (error) screenFailures.push(error)
+}
+
+/**
+ * Seed the tour workspace once and keep a pristine copy of it. Each theme
+ * restores that copy before it launches, because its turns edit the repo and
+ * the database, and the next theme must start from the same content.
+ */
+async function prepareScreensFixture() {
+  const live = { userData: makeTemp('sb-visual-screens-data-'), project: makeTemp('sb-visual-screens-project-') }
+  const projectPath = join(live.project, 'acme-console')
+  const sidePath = join(live.project, 'notes-cli')
+  makeDemoRepo(projectPath)
+  makeSideRepo(sidePath)
+  await launchSwitchboard({ userData: live.userData, demo: true })
+  await closeApp()
+  seedDatabase(join(live.userData, 'data', 'switchboard.db'), projectPath, sidePath, { now: FROZEN_NOW, showFileDiffs: false })
+  const pristine = makeTemp('sb-visual-screens-pristine-')
+  for (const [key, path] of Object.entries(live)) cpSync(path, join(pristine, key), { recursive: true })
+  return {
+    userData: live.userData,
+    restore() {
+      for (const [key, path] of Object.entries(live)) {
+        rmSync(path, { recursive: true, force: true })
+        cpSync(join(pristine, key), path, { recursive: true })
+      }
+    },
+  }
+}
+
+async function captureThemeScreens(win, theme) {
+  await chooseTheme(win, theme)
+  // Each turn's time is stamped by the main process when it is saved, and
+  // the main clock is real. The renderer's frozen clock cannot reach it.
+  const turnTimes = win.locator('.turn-timestamp')
+  const editor = win.locator('.chat-composer [aria-label="Chat message"]').first()
+
+  // A finished turn: text, an Edit tool call and the collapsed "Changed 1
+  // file" group. Captured before switching threads, since reopening a thread
+  // reloads it from the database.
+  await openConversation(win, FINISHED_CHAT)
+  await editor.click()
+  await win.keyboard.type('Move the state check ahead of the token exchange.')
+  await win.keyboard.press('Enter')
+  await win.getByRole('button', { name: /Changed 1 file/ }).waitFor({ state: 'visible', timeout: 20_000 })
+  await win.getByRole('button', { name: 'Send', exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await snapScreen(win, 'chat', theme, win, [turnTimes])
+  await snapScreen(win, 'sidebar', theme, win.locator('.sidebar-root'))
+
+  await win.keyboard.press('Meta+Shift+P')
+  const palette = win.locator('.palette-modal-content')
+  await palette.waitFor({ state: 'visible' })
+  await snapScreen(win, 'command-palette', theme, palette)
+  await win.keyboard.press('Escape')
+  await palette.waitFor({ state: 'hidden' })
+
+  await win.locator('.chat-composer button[title*="Claude"]').first().click()
+  const picker = win.getByRole('dialog', { name: 'Provider, instance, and model picker' })
+  await picker.waitFor({ state: 'visible' })
+  await snapScreen(win, 'provider-picker', theme, picker)
+  await win.keyboard.press('Escape')
+  await picker.waitFor({ state: 'hidden' })
+
+  await win.getByTitle('Settings').click()
+  const settings = win.locator('.settings-modal-content')
+  await settings.waitFor({ state: 'visible' })
+  await snapScreen(win, 'settings', theme, settings)
+  await win.keyboard.press('Escape')
+  await settings.waitFor({ state: 'hidden' })
+
+  await win.getByRole('button', { name: 'Board', exact: true }).click()
+  await win.getByText('Trace webhook retries', { exact: true }).first().waitFor({ state: 'visible' })
+  await snapScreen(win, 'kanban', theme, win)
+  await win.getByRole('button', { name: 'Chats', exact: true }).click()
+
+  // A turn held open on an approval, with a draft in the composer so it
+  // offers Stop, Queue and Steer.
+  await openConversation(win, RUNNING_CHAT)
+  await editor.click()
+  await win.keyboard.type('Run the auth tests.')
+  await win.keyboard.press('Enter')
+  await win.getByText('Approval needed', { exact: true }).waitFor({ state: 'visible', timeout: 20_000 })
+  await editor.click()
+  await win.keyboard.type('Also cover the retry path.')
+  await win.getByRole('button', { name: 'Steer', exact: true }).waitFor({ state: 'visible' })
+  await snapScreen(win, 'approval', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
+  await snapScreen(win, 'composer-running', theme, win.locator('.chat-composer').first())
+}
+
+async function runThemeScreens() {
+  const fixture = await prepareScreensFixture()
+  for (const theme of THEMES) {
+    fixture.restore()
+    const { win } = await launchSwitchboard({ userData: fixture.userData, demo: true })
+    win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
+    // The fixed clock applies from the next navigation, so reload: every
+    // label, memoised or not, is then first computed from FROZEN_NOW.
+    // Playwright registers the clock as init scripts before it evaluates in
+    // the current page, and that evaluate can hit a page mid-navigation
+    // ("reading 'controller'"). The reload runs the init scripts anyway and
+    // the wait below proves the clock took.
+    await win.clock.setFixedTime(FROZEN_NOW).catch((error) => {
+      console.warn(`clock not applied to the current page, the reload applies it: ${error.message}`)
+    })
+    await win.reload()
+    await win.waitForFunction((now) => !!window.api?.settings && Date.now() === now, FROZEN_NOW, { timeout: 20_000 })
+    await win.addStyleTag({ content: FREEZE_CSS })
+    await captureThemeScreens(win, theme)
+    await closeApp()
+  }
+}
+
+async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) {
+  // The screens phase pins what changes pixels between machines: a 1x device
+  // scale (Retina or not), sRGB output whatever the display's colour profile,
+  // the window size, the terminal's shell prompt and the time zone.
+  const demoEnv = demo
+    ? { SB_DEMO_ADAPTER: '1', TZ: 'UTC', SHELL: '/bin/sh', PS1: 'demo@acme:$ ', ENV: '/dev/null', USER: 'developer', LOGNAME: 'developer' }
+    : {}
+  const args = demo ? ['--force-device-scale-factor=1', '--force-color-profile=srgb'] : []
   const instance = await electron.launch({
-    ...(packagedExecutable ? { executablePath: packagedExecutable, args: [] } : { args: ['.'] }),
+    ...(packagedExecutable ? { executablePath: packagedExecutable, args } : { args: ['.', ...args] }),
     cwd: repoRoot,
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: '',
       ELECTRON_DISABLE_SECURITY_WARNINGS: '1',
-      SB_USER_DATA: userDataDir,
+      SB_USER_DATA: userData,
+      ...demoEnv,
     },
   })
   app = instance
   const win = await instance.firstWindow({ timeout: 20_000 })
+  if (demo) {
+    await instance.evaluate(({ BrowserWindow }, size) => {
+      BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size })
+    }, SCREEN_SIZE)
+  }
   await win.waitForLoadState('domcontentloaded')
   await win.waitForFunction(() => !!window.api?.settings, null, { timeout: 20_000 })
+  // The first-launch analytics notice sits over the bottom of the sidebar and
+  // swallows clicks meant for it.
+  await win.evaluate(() => Promise.all([
+    window.api.settings.set('tour.autoplay', 'false'),
+    window.api.settings.set('analytics.enabled', 'false'),
+    window.api.settings.set('analytics.noticeSeen', 'true'),
+  ]))
   return { instance, win }
 }
 
@@ -402,7 +610,7 @@ function seedRecentConversations() {
   return true
 }
 
-try {
+async function runBehaviourChecks() {
   const bootstrap = await launchSwitchboard()
   await bootstrap.win.waitForTimeout(600)
   const bootstrapTour = bootstrap.win.getByRole('button', { name: 'Skip tour' })
@@ -594,11 +802,24 @@ try {
     await assertWorkspaceOrderPersisted(relaunched.win)
   }
   await assertNativeGlassTransmitsColor(relaunched.win, 'relaunch')
+}
 
-  console.log(`E2E PASSED${packagedExecutable ? ' (packaged)' : ''} - visual artifacts: ${artifactDir}`)
+const screenFailures = []
+try {
+  if (scope !== 'screens') await runBehaviourChecks()
+  if (scope !== 'behaviour') await runThemeScreens()
+  if (screenFailures.length) {
+    throw new Error(`${screenFailures.length} screen(s) changed; actual + diff PNGs in ${artifactDir}\n  ${screenFailures.join('\n  ')}`)
+  }
+  console.log(`E2E PASSED${packagedExecutable ? ' (packaged)' : ''}${updateSnapshots ? ' (baselines rewritten)' : ''} - visual artifacts: ${artifactDir}`)
 } catch (error) {
   console.error(`E2E FAILED - ${error instanceof Error ? error.message : String(error)}`)
   process.exitCode = 1
+  const failurePath = join(artifactDir, 'failure.png')
+  await app?.windows()[0]?.screenshot({ path: failurePath, timeout: 3_000 }).then(
+    () => console.error(`window at failure: ${failurePath}`),
+    (shotError) => console.error(`could not capture the window at failure: ${shotError}`),
+  )
 } finally {
   await closeApp()
   cleanup()
