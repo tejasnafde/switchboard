@@ -22,6 +22,7 @@
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
 @source '../components/SearchModal.tsx';
+@source '../components/QuickPromptModal.tsx';
 
 @theme inline {
   --spacing: 0.25rem;
