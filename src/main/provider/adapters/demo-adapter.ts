@@ -10,12 +10,12 @@
  * The scripts are keyed on runtime mode and on the user text so each tour
  * scene can steer the reply without a side channel:
  *   - plan mode          -> two reads, then a denied Write (denial pill)
- *   - text mentions the state check -> a real edit to src/api/auth.ts in the
- *                           session cwd, so the registry's git checkpoint
- *                           emits a genuine `file.edited` (FileDiffCard)
  *   - text says "run"    -> asks approval for `npm test` and holds the turn
  *                           open until it is answered (ApprovalCard, and the
  *                           running composer for the visual regression suite)
+ *   - text mentions the state check -> a real edit to src/api/auth.ts in the
+ *                           session cwd, so the registry's git checkpoint
+ *                           emits a genuine `file.edited` (FileDiffCard)
  *   - anything else      -> a short two-sentence reply
  */
 import type { TurnDelivery } from '@shared/turn-delivery'
@@ -68,16 +68,19 @@ interface DemoSession {
   onEvent: (event: RuntimeEvent) => void
   cwd: string
   runtimeMode: RuntimeMode
-  cancelled: boolean
+  /** Runs still going. A steer starts a second one beside the first. */
+  turns: Set<DemoTurn>
   /** Approvals a script is blocked on, by request id. */
   approvals: Map<string, (decision: ApprovalDecision | 'cancelled') => void>
 }
 
-/** One script run. A steer starts a second run beside the first. */
+/** One script run. */
 interface DemoTurn {
   session: DemoSession
   /** Time this run has paused for; reported as the turn duration. */
   scriptedMs: number
+  /** Set by interrupt or stop; a later message does not clear it. */
+  cancelled: boolean
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -94,7 +97,7 @@ export class DemoAdapter implements ProviderAdapter {
       cwd: opts.cwd,
       runtimeMode: opts.runtimeMode ?? 'sandbox',
       running: Promise.resolve(),
-      cancelled: false,
+      turns: new Set(),
       approvals: new Map(),
     }
     this.sessions.set(opts.threadId, session)
@@ -124,7 +127,6 @@ export class DemoAdapter implements ProviderAdapter {
     const session = this.sessions.get(threadId)
     if (!session) throw new Error(`No demo session: ${threadId}`)
     if (runtimeMode) session.runtimeMode = runtimeMode
-    session.cancelled = false
     // Like the real adapters: a queued message runs after the current script.
     const previous = delivery === 'queue' ? session.running : Promise.resolve()
     const task = previous.then(() => this.run(threadId, session, message)).catch((err) => {
@@ -136,9 +138,23 @@ export class DemoAdapter implements ProviderAdapter {
   }
 
   private async run(threadId: string, session: DemoSession, message: string): Promise<void> {
-    const turn: DemoTurn = { session, scriptedMs: 0 }
+    const turn: DemoTurn = { session, scriptedMs: 0, cancelled: false }
+    session.turns.add(turn)
+    try {
+      await this.script(threadId, turn, message)
+    } finally {
+      session.turns.delete(turn)
+    }
+    if (turn.cancelled) return
+    session.onEvent({ type: 'turn.completed', threadId, durationMs: turn.scriptedMs, numTurns: 1 })
+    // Another run (a steer) may still be going, or blocked on an approval.
+    if (session.turns.size === 0) session.onEvent({ type: 'status', threadId, status: 'idle' })
+  }
+
+  private async script(threadId: string, turn: DemoTurn, message: string): Promise<void> {
+    const { session } = turn
     const emit = (event: RuntimeEvent): void => {
-      if (!session.cancelled) session.onEvent(event)
+      if (!turn.cancelled) session.onEvent(event)
     }
     emit({ type: 'status', threadId, status: 'running' })
     await this.pause(turn, 500)
@@ -156,19 +172,11 @@ export class DemoAdapter implements ProviderAdapter {
       emit({ type: 'tool.denied', threadId, toolName: 'Write', reason: denialMessage('plan', 'Write'), mode: 'plan' })
       await this.pause(turn, 600)
       await this.say(threadId, turn, 'Plan mode blocks writes. Switch to Sandbox or Accept Edits and I will apply the change.')
-    } else if (/state|validat|fix|apply|move/i.test(message)) {
-      await this.say(threadId, turn, 'Moving the state check ahead of the token exchange.')
-      await this.tool(threadId, turn, 'Edit', { file_path: 'src/api/auth.ts' }, undefined, () => {
-        const target = join(session.cwd, 'src', 'api', 'auth.ts')
-        if (existsSync(target)) writeFileSync(target, FIXED_AUTH_TS)
-      })
-      await this.say(
-        threadId,
-        turn,
-        'Done. The callback now rejects an expired state before any network call. Review the diff below and accept or reject each hunk.',
-      )
     } else if (/\brun\b/i.test(message)) {
       await this.say(threadId, turn, 'Running the auth tests to confirm the fix.')
+      // Interrupted before the approval opened: registering it now would
+      // leave a promise nothing resolves, and a queued turn behind it.
+      if (turn.cancelled) return
       const requestId = `demo_req_${++this.seq}`
       const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
         session.approvals.set(requestId, resolve)
@@ -185,6 +193,17 @@ export class DemoAdapter implements ProviderAdapter {
       } else {
         await this.say(threadId, turn, 'Skipped the test run.')
       }
+    } else if (/state|validat|fix|apply|move/i.test(message)) {
+      await this.say(threadId, turn, 'Moving the state check ahead of the token exchange.')
+      await this.tool(threadId, turn, 'Edit', { file_path: 'src/api/auth.ts' }, undefined, () => {
+        const target = join(session.cwd, 'src', 'api', 'auth.ts')
+        if (existsSync(target)) writeFileSync(target, FIXED_AUTH_TS)
+      })
+      await this.say(
+        threadId,
+        turn,
+        'Done. The callback now rejects an expired state before any network call. Review the diff below and accept or reject each hunk.',
+      )
     } else {
       await this.say(
         threadId,
@@ -192,9 +211,6 @@ export class DemoAdapter implements ProviderAdapter {
         'Two focused tests cover it: reject an expired state before network I/O, and exchange a valid code exactly once.',
       )
     }
-
-    emit({ type: 'turn.completed', threadId, durationMs: turn.scriptedMs, numTurns: 1 })
-    emit({ type: 'status', threadId, status: 'idle' })
   }
 
   /**
@@ -213,7 +229,7 @@ export class DemoAdapter implements ProviderAdapter {
     const messageId = `demo_${Date.now()}_${++this.seq}`
     const words = text.split(' ')
     for (let i = 0; i < words.length; i++) {
-      if (session.cancelled) return
+      if (turn.cancelled) return
       const chunk = (i === 0 ? '' : ' ') + words[i]
       session.onEvent({ type: 'content', threadId, messageId, streamKind: 'assistant', text: chunk, append: i > 0 })
       await this.pause(turn, 28)
@@ -230,7 +246,7 @@ export class DemoAdapter implements ProviderAdapter {
     sideEffect?: () => void,
   ): Promise<void> {
     const { session } = turn
-    if (session.cancelled) return
+    if (turn.cancelled) return
     const toolId = `demo_tool_${++this.seq}`
     session.onEvent({ type: 'tool.started', threadId, toolId, toolName, input })
     await this.pause(turn, 520)
@@ -242,7 +258,7 @@ export class DemoAdapter implements ProviderAdapter {
   async interruptTurn(threadId: string): Promise<void> {
     const session = this.sessions.get(threadId)
     if (!session) return
-    session.cancelled = true
+    for (const turn of session.turns) turn.cancelled = true
     for (const resolve of session.approvals.values()) resolve('cancelled')
     session.onEvent({ type: 'status', threadId, status: 'idle' })
   }
@@ -253,7 +269,7 @@ export class DemoAdapter implements ProviderAdapter {
 
   async stopSession(threadId: string): Promise<void> {
     const session = this.sessions.get(threadId)
-    if (session) session.cancelled = true
+    for (const turn of session?.turns ?? []) turn.cancelled = true
     for (const resolve of session?.approvals.values() ?? []) resolve('cancelled')
     this.sessions.delete(threadId)
   }
