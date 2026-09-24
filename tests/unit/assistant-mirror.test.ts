@@ -17,11 +17,16 @@ vi.mock('../../src/main/db/providerInstances', () => ({
 }))
 
 const saved: Array<{ id: string; conversationId: string; role: string; content: string }> = []
+const savedAt: Array<number | undefined> = []
 vi.mock('../../src/main/db/database', () => ({
   recordThreadSession: () => {},
   updateConversationSessionId: () => {},
-  saveMessageIfAbsent: (id: string, conversationId: string, role: string, content: string) => {
+  saveMessageIfAbsent: (
+    id: string, conversationId: string, role: string, content: string,
+    _images?: string, _displayBody?: string, timestamp?: number,
+  ) => {
     saved.push({ id, conversationId, role, content })
+    savedAt.push(timestamp)
     return true
   },
 }))
@@ -46,7 +51,7 @@ const content = (threadId: string, messageId: string, text: string, append?: boo
 const turnEnd = (threadId: string): RuntimeEvent => ({ type: 'turn.completed', threadId } as RuntimeEvent)
 
 describe('live assistant mirror', () => {
-  beforeEach(() => { saved.length = 0 })
+  beforeEach(() => { saved.length = 0; savedAt.length = 0 })
 
   it('persists the folded reply once the turn completes', () => {
     const { publish } = makeRegistry()
@@ -90,5 +95,26 @@ describe('live assistant mirror', () => {
     publish(turnEnd('t1'))
     publish(turnEnd('t1'))
     expect(saved).toHaveLength(1)
+  })
+
+  it('stamps each message with its last chunk, not the turn end', () => {
+    // A reload sorts by this timestamp. Stamping the whole turn at its end put
+    // interim text below the final answer after a chat switch.
+    vi.useFakeTimers()
+    try {
+      const { publish } = makeRegistry()
+      vi.setSystemTime(1_000)
+      publish(content('t1', 'interim', 'Looking'))
+      vi.setSystemTime(90_000)
+      publish(content('t1', 'interim', ' around', true))
+      vi.setSystemTime(200_000)
+      publish(content('t1', 'final', 'Done'))
+      vi.setSystemTime(300_000)
+      publish(turnEnd('t1'))
+      expect(saved.map((s) => s.id)).toEqual(['interim', 'final'])
+      expect(savedAt).toEqual([90_000, 200_000])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

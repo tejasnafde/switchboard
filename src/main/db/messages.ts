@@ -50,7 +50,8 @@ function saveMessageStmts(db: Database.Database) {
     })
     const fill = db.transaction((a: SaveMessageArgs): boolean => {
       const changed = run(insertIfAbsent, a).changes > 0
-      if (changed) touch.run(a.now, a.conversationId)
+      // Wall clock, not `a.now`: a backdated row must not age the conversation.
+      if (changed) touch.run(Date.now(), a.conversationId)
       return changed
     })
     saveMsg = { db, convExists, write, fill }
@@ -196,6 +197,7 @@ export function saveMessageIfAbsent(
   content: string,
   images?: string,
   displayBody?: string,
+  timestamp?: number,
 ): boolean {
   const stmts = saveMessageStmts(getDb())
   if (!stmts.convExists.get(conversationId)) {
@@ -209,7 +211,7 @@ export function saveMessageIfAbsent(
     content,
     toolCalls: null,
     images: images ?? null,
-    now: Date.now(),
+    now: timestamp ?? Date.now(),
     displayBody: displayBody ?? null,
     pillsMeta: null,
   })
