@@ -21,6 +21,7 @@ export const AppChannels = {
   CREATE_CONVERSATION: 'app:create-conversation',
   LOAD_SESSION: 'app:load-session',
   SAVE_MESSAGE: 'app:save-message',
+  SET_FILE_DIFF_STATUS: 'app:set-file-diff-status',
   RENAME_CONVERSATION: 'app:rename-conversation',
   GET_CONVERSATIONS: 'app:get-conversations',
   SET_VIBRANCY: 'app:set-vibrancy',

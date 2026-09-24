@@ -277,7 +277,7 @@ export class DemoAdapter implements ProviderAdapter {
   ): Promise<void> {
     const { session } = turn
     if (turn.cancelled) return
-    const toolId = `demo_tool_${++this.seq}`
+    const toolId = `demo_tool_${Date.now()}_${++this.seq}`
     session.onEvent({ type: 'tool.started', threadId, toolId, toolName, input })
     this.record(session, 'assistant', [{ type: 'tool_use', id: toolId, name: toolName, input }])
     await this.pause(turn, durationMs)

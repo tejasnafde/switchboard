@@ -15,6 +15,7 @@ import type {
   CreateConversationParams,
   SaveMessageParams,
   MobilePairingStatus,
+  FileDiffAttachment,
 } from '@shared/types'
 import type {
   RuntimeEvent,
@@ -198,6 +199,8 @@ const api = {
     relaunch: () => transport.invoke(AppChannels.RELAUNCH),
     saveMessage: (params: SaveMessageParams) =>
       transport.invoke(AppChannels.SAVE_MESSAGE, params),
+    setFileDiffStatus: (conversationId: string, messageId: string, status: FileDiffAttachment['status']): Promise<{ ok: boolean }> =>
+      transport.invoke(AppChannels.SET_FILE_DIFF_STATUS, conversationId, messageId, status),
     renameConversation: (id: string, title: string) =>
       transport.invoke(AppChannels.RENAME_CONVERSATION, id, title),
     getConversationRuntimeMode: (id: string): Promise<{ mode: RuntimeMode | null }> =>
@@ -337,6 +340,8 @@ const api = {
       subPath: string,
       content: string,
       expectedMtimeMs?: number,
+      /** Refuse unless the file holds this now (null = absent). */
+      expected?: { content: string | null },
     ): Promise<
       | { ok: true; mtimeMs: number }
       | { ok: false; error: string; conflict?: boolean }
@@ -347,12 +352,15 @@ const api = {
         subPath,
         content,
         expectedMtimeMs,
+        expected,
       ),
     deleteFile: (
       repoRoot: string,
       subPath: string,
+      /** Refuse unless the file holds this now. */
+      expected?: { content: string },
     ): Promise<{ ok: true } | { ok: false; error: string }> =>
-      transport.invoke(FilesChannels.DELETE_FILE, repoRoot, subPath),
+      transport.invoke(FilesChannels.DELETE_FILE, repoRoot, subPath, expected),
   },
 
   // ─── Git (per-thread branch picker) ───────────────────────────

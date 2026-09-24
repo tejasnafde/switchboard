@@ -59,6 +59,65 @@ class RemoteHistoryDecoderTest {
         )
     }
 
+    @Test
+    fun `loaded session decodes a mirrored changed-file card`() {
+        val loaded = RemoteDecoders.loadedSession(
+            obj(
+                "messages" to JsonArray(
+                    listOf(
+                        obj(
+                            "id" to JsonString("filediff_ab-1:src/a.ts"),
+                            "role" to JsonString("assistant"),
+                            "content" to JsonString(""),
+                            "timestamp" to JsonNumber("42"),
+                            "fileDiff" to obj(
+                                "fileEditId" to JsonString("ab-1:src/a.ts"),
+                                "repoRoot" to JsonString("/repo"),
+                                "relPath" to JsonString("src/a.ts"),
+                                "changeKind" to JsonString("add"),
+                                "oldContent" to JsonString(""),
+                                "newContent" to JsonString("b"),
+                                "status" to JsonString("accepted"),
+                            ),
+                        ),
+                    ),
+                ),
+                "meta" to JsonNull,
+                "total" to JsonNumber("1"),
+                "truncated" to JsonBoolean(false),
+            ),
+        )
+
+        assertEquals(
+            MessageFileDiff("ab-1:src/a.ts", "/repo", "src/a.ts", "add", "", "b"),
+            loaded.messages.single().fileDiff,
+        )
+    }
+
+    @Test
+    fun `a malformed changed-file card is dropped, not the whole history`() {
+        val loaded = RemoteDecoders.loadedSession(
+            obj(
+                "messages" to JsonArray(
+                    listOf(
+                        obj(
+                            "id" to JsonString("filediff_ab-1:src/a.ts"),
+                            "role" to JsonString("assistant"),
+                            "content" to JsonString(""),
+                            "timestamp" to JsonNumber("42"),
+                            "fileDiff" to obj("fileEditId" to JsonString("ab-1:src/a.ts")),
+                        ),
+                    ),
+                ),
+                "meta" to JsonNull,
+                "total" to JsonNumber("1"),
+                "truncated" to JsonBoolean(false),
+            ),
+        )
+
+        assertEquals(null, loaded.messages.single().fileDiff)
+    }
+
     private fun obj(vararg fields: Pair<String, app.switchboard.mobile.protocol.JsonValue>) =
         JsonObject(linkedMapOf(*fields))
 }

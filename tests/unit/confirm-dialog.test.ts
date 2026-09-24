@@ -3,7 +3,7 @@
  * The in-app confirm that replaced window.confirm: one promise per request,
  * one dialog at a time, Escape and Cancel both answer false.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { confirm, ConfirmHost, unlessConfirmOpen } from '../../src/renderer/components/ui/confirm'
@@ -47,6 +47,38 @@ describe('confirm', () => {
     await act(async () => button('Delete').click())
     await expect(answer).resolves.toBe(true)
     expect(dialog()).toBeNull()
+  })
+
+  it('returns focus to the element that was focused before it opened', async () => {
+    const opener = document.createElement('button')
+    opener.textContent = 'Remove project'
+    document.body.append(opener)
+    opener.focus()
+    const { answer } = await ask({ title: 'Remove "api"?' })
+    expect(document.activeElement).not.toBe(opener)
+    await act(async () => button('Cancel').click())
+    await answer
+    await vi.waitFor(() => expect(document.activeElement).toBe(opener))
+    opener.remove()
+  })
+
+  it('falls back to the composer when the opener was removed', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const panel = document.createElement('div')
+    panel.setAttribute('data-chat-panel', '')
+    const editor = document.createElement('div')
+    editor.setAttribute('contenteditable', 'true')
+    editor.tabIndex = 0
+    panel.append(editor)
+    document.body.append(panel)
+    const { answer } = await ask({ title: 'Remove "api"?' })
+    opener.remove()
+    await act(async () => button('Cancel').click())
+    await answer
+    await vi.waitFor(() => expect(document.activeElement).toBe(editor))
+    panel.remove()
   })
 
   it('resolves false on Cancel', async () => {

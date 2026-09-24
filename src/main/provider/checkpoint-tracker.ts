@@ -10,6 +10,7 @@
  * Held by the ProviderRegistry, which calls `beginTurn` before dispatching a
  * turn to the adapter and `finishTurn` when it sees a `turn.completed` event.
  */
+import { randomUUID } from 'node:crypto'
 import type { RuntimeFileEditedEvent } from '@shared/provider-events'
 import {
   createCheckpoint as realCreateCheckpoint,
@@ -37,6 +38,8 @@ export class CheckpointTracker {
   private deps: CheckpointTrackerDeps
   // Counter (not the clock) so same-millisecond turns can't collide on turnId.
   private seq = 0
+  // The cards are stored by fileEditId, so a restart must not reuse turn 1.
+  private readonly launch = randomUUID().slice(0, 8)
 
   constructor(deps: Partial<CheckpointTrackerDeps> = {}) {
     this.deps = {
@@ -63,7 +66,7 @@ export class CheckpointTracker {
         this.pending.delete(threadId)
         return
       }
-      this.pending.set(threadId, { turnId: String(++this.seq), tree: res.tree, repoRoot })
+      this.pending.set(threadId, { turnId: `${this.launch}-${++this.seq}`, tree: res.tree, repoRoot })
     } catch (err) {
       log.warn('beginTurn failed', { threadId, err })
       this.pending.delete(threadId)

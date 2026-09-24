@@ -31,13 +31,15 @@ describe('CheckpointTracker', () => {
     const t = new CheckpointTracker(fakeDeps({ files }))
     await t.beginTurn('thread-1', '/repo')
     const events = await t.finishTurn('thread-1')
+    const turnId = events[0]?.turnId
+    expect(turnId).toMatch(/^[0-9a-f]{8}-1$/)
 
     expect(events).toEqual([
       {
         type: 'file.edited',
         threadId: 'thread-1',
-        turnId: '1',
-        fileEditId: '1:a.ts',
+        turnId,
+        fileEditId: `${turnId}:a.ts`,
         repoRoot: '/repo',
         relPath: 'a.ts',
         changeKind: 'modify',
@@ -47,8 +49,8 @@ describe('CheckpointTracker', () => {
       {
         type: 'file.edited',
         threadId: 'thread-1',
-        turnId: '1',
-        fileEditId: '1:b.ts',
+        turnId,
+        fileEditId: `${turnId}:b.ts`,
         repoRoot: '/repo',
         relPath: 'b.ts',
         changeKind: 'add',
@@ -70,6 +72,10 @@ describe('CheckpointTracker', () => {
     await t.beginTurn('thread-1', '/repo')
     const second = await t.finishTurn('thread-1')
     expect(first[0].fileEditId).not.toBe(second[0].fileEditId)
+    // Stored cards are keyed by it, so a second launch must not reuse it.
+    const relaunched = new CheckpointTracker(fakeDeps({ files }))
+    await relaunched.beginTurn('thread-1', '/repo')
+    expect((await relaunched.finishTurn('thread-1'))[0].fileEditId).not.toBe(first[0].fileEditId)
   })
 
   it('returns no events when finishTurn is called without a prior beginTurn', async () => {

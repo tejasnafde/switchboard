@@ -1,8 +1,9 @@
 import { createMainLogger as createLogger } from '../logger'
 import { parseErrorKind } from './parse-error'
 import Database from 'better-sqlite3'
-import type { ChatMessage } from '@shared/types'
+import type { ChatMessage, FileDiffAttachment, ToolCall } from '@shared/types'
 import { getDb } from './database'
+import { threadFamilyIds } from './conversations'
 
 const log = createLogger('db')
 
@@ -102,6 +103,8 @@ export interface MessageRow {
   timestamp: number
   display_body: string | null
   pills_meta: string | null
+  /** Card attachments (`{ fileDiff }`); column added by ensureConversationForkSchema. */
+  attachments_json?: string | null
 }
 
 export function getMessagesForConversation(conversationId: string): MessageRow[] {
@@ -144,7 +147,14 @@ export function messageRowsToChatMessages(rows: MessageRow[]): ChatMessage[] {
     images: row.images ? tryParseJson(row.images) : undefined,
     displayBody: row.display_body ?? undefined,
     pillsMeta: row.pills_meta ? tryParseJson(row.pills_meta) : undefined,
+    ...fileDiffFromAttachments(row.attachments_json),
   }))
+}
+
+/** Only the changed-file card: the other fork attachments are live-only cards. */
+function fileDiffFromAttachments(json: string | null | undefined): Pick<ChatMessage, 'fileDiff'> {
+  const fileDiff = json ? tryParseJson<{ fileDiff?: FileDiffAttachment }>(json)?.fileDiff : undefined
+  return fileDiff ? { fileDiff } : {}
 }
 
 /** Pill enrichments for user messages, keyed by content. See
@@ -215,6 +225,65 @@ export function saveMessageIfAbsent(
     displayBody: displayBody ?? null,
     pillsMeta: null,
   })
+}
+
+let activityStmts: { db: Database.Database; insert: Database.Statement; setStatus: Database.Statement } | null = null
+
+function activityMessageStmts(db: Database.Database) {
+  if (activityStmts?.db !== db) {
+    activityStmts = {
+      db,
+      insert: db.prepare(
+        `INSERT OR IGNORE INTO messages (id, conversation_id, role, content, tool_calls, timestamp, attachments_json)
+         VALUES (?, ?, 'assistant', '', ?, ?, ?)`,
+      ),
+      setStatus: db.prepare(
+        `UPDATE messages SET attachments_json = json_set(attachments_json, '$.fileDiff.status', ?)
+          WHERE id = ? AND conversation_id = ? AND json_extract(attachments_json, '$.fileDiff') IS NOT NULL`,
+      ),
+    }
+  }
+  return activityStmts
+}
+
+/**
+ * Mirror one of a turn's tool or changed-file rows, if that id is absent.
+ * The renderer builds these rows live and never saves them, so without this a
+ * reload shows neither (only Claude's transcript keeps its tool calls). The
+ * card goes in `attachments_json`, where a fork already copies it.
+ */
+export function saveActivityMessageIfAbsent(row: {
+  id: string
+  conversationId: string
+  timestamp: number
+  toolCalls?: ToolCall[]
+  fileDiff?: FileDiffAttachment
+}): boolean {
+  const db = getDb()
+  if (!saveMessageStmts(db).convExists.get(row.conversationId)) {
+    log.warn(`saveActivityMessageIfAbsent: conversation ${row.conversationId} not found, skipping`)
+    return false
+  }
+  return activityMessageStmts(db).insert.run(
+    row.id,
+    row.conversationId,
+    row.toolCalls ? JSON.stringify(row.toolCalls) : null,
+    row.timestamp,
+    row.fileDiff ? JSON.stringify({ fileDiff: row.fileDiff }) : null,
+  ).changes > 0
+}
+
+/**
+ * Record the user's accept/reject on a stored changed-file card. Looked up
+ * across the thread family: the sidebar may hand back a rotated session id.
+ */
+export function setFileDiffStatus(
+  conversationId: string,
+  messageId: string,
+  status: FileDiffAttachment['status'],
+): boolean {
+  const { setStatus } = activityMessageStmts(getDb())
+  return threadFamilyIds(conversationId).some((id) => setStatus.run(status, messageId, id).changes > 0)
 }
 
 export function getSystemMarkerMessages(conversationId: string): Array<{

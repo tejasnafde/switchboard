@@ -27,6 +27,29 @@ export interface WriteOptions {
    * Omit on initial create / first save of a new file.
    */
   expectedMtimeMs?: number
+  /**
+   * What the file must hold now, or null for "must not exist". A diff card
+   * reverting an agent's change passes the content the agent wrote, so a
+   * card reopened after later edits cannot silently undo them.
+   */
+  expectedContent?: string | null
+}
+
+const CONFLICT_SINCE_DIFF = 'File changed on disk after the diff was captured'
+
+/** Whether the file still holds `expected` (null = absent), ignoring line endings. */
+async function holdsContent(absPath: string, expected: string | null): Promise<boolean> {
+  let current: string
+  try {
+    current = await fs.readFile(absPath, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      log.debug('expected-content check: file absent', { absPath })
+      return expected === null
+    }
+    throw err
+  }
+  return expected !== null && current.replace(/\r\n/g, '\n') === expected.replace(/\r\n/g, '\n')
 }
 
 export type WriteResult =
@@ -72,6 +95,10 @@ export async function writeFileSafe(
     return { ok: false, error: 'File changed on disk since open', conflict: true }
   }
 
+  if (opts.expectedContent !== undefined && !(await holdsContent(absPath, opts.expectedContent))) {
+    return { ok: false, error: CONFLICT_SINCE_DIFF, conflict: true }
+  }
+
   const eol = exists ? await detectEol(absPath) : '\n'
   const finalContent = applyEol(content, eol)
 
@@ -100,8 +127,12 @@ export type DeleteResult = { ok: true } | { ok: false; error: string }
  * (writing empty content would leave a stray empty file). A missing file is
  * treated as success - the desired end state (absent) already holds.
  */
-export async function deleteFileSafe(absPath: string): Promise<DeleteResult> {
+export async function deleteFileSafe(absPath: string, expectedContent?: string): Promise<DeleteResult> {
   try {
+    // Already absent is the state a delete wants, so only a changed file conflicts.
+    if (expectedContent !== undefined && !(await holdsContent(absPath, expectedContent)) && !(await holdsContent(absPath, null))) {
+      return { ok: false, error: CONFLICT_SINCE_DIFF }
+    }
     await fs.unlink(absPath)
     return { ok: true }
   } catch (err) {
