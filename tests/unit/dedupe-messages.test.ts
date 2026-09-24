@@ -220,6 +220,17 @@ describe('mergeConversationMessages', () => {
     expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'd1', 'u2', 'msg_b'])
   })
 
+  it('keeps a turn\'s reply when only the next turn\'s equal reply is on disk, under 60s later', () => {
+    const disk = [
+      msg('u1', { role: 'user', content: 'first', timestamp: 0 }),
+      msg('u2', { role: 'user', content: 'second', timestamp: 10_000 }),
+      msg('d2', { content: 'ok', timestamp: 20_000 }),
+    ]
+    const database = [msg('msg_a', { content: 'ok', timestamp: 1_000 })]
+
+    expect(merge(disk, database).map((m) => m.id)).toEqual(['u1', 'msg_a', 'u2', 'd2'])
+  })
+
   it('still matches a reply to its own turn when the two user copies are stamped apart', () => {
     const disk = [
       msg('u1', { role: 'user', content: 'go', timestamp: 10_000 }),

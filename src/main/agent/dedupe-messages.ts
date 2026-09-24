@@ -81,11 +81,19 @@ export function mergeConversationMessages(
     // An assistant row belongs to the turn opened by the last user message
     // before it, and matches only inside that turn. Rows written before
     // 2026-09-24 carry the TURN END time, so an interim text can sit minutes
-    // before its row; the 60s window alone would also let a turn that started
-    // under 60s ago claim the previous turn's equal reply.
-    const lowerBound = message.role === 'assistant' && userCursor > 0
-      ? turnStarts[userCursor - 1].turnStart
-      : message.timestamp - LEGACY_ID_MATCH_WINDOW_MS
+    // before its row; the 60s window alone would also let a turn claim the
+    // previous or the next turn's equal reply when they are under 60s apart.
+    const windowEnd = message.timestamp + LEGACY_ID_MATCH_WINDOW_MS
+    let lowerBound = message.timestamp - LEGACY_ID_MATCH_WINDOW_MS
+    let upperBound = windowEnd
+    if (message.role === 'assistant') {
+      const turnStart = userCursor > 0 ? turnStarts[userCursor - 1].turnStart : -Infinity
+      if (userCursor > 0) lowerBound = turnStart
+      // A later copy of this turn's own user message does not open a new turn.
+      let next = userCursor
+      while (next < turnStarts.length && turnStarts[next].turnStart === turnStart) next++
+      if (next < turnStarts.length) upperBound = Math.min(windowEnd, turnStarts[next].turnStart)
+    }
     const exactIndex = diskIndexesById.get(message.id)
     if (exactIndex !== undefined) {
       disk[exactIndex] = enrichDiskMessage(disk[exactIndex], message)
@@ -101,7 +109,7 @@ export function mergeConversationMessages(
     )) {
       cursor++
     }
-    if (cursor < candidates.length && candidates[cursor].timestamp <= message.timestamp + LEGACY_ID_MATCH_WINDOW_MS) {
+    if (cursor < candidates.length && candidates[cursor].timestamp <= upperBound) {
       const diskIndex = candidates[cursor].index
       disk[diskIndex] = enrichDiskMessage(disk[diskIndex], message)
       matchedDiskIndexes.add(diskIndex)
