@@ -257,6 +257,25 @@ async function kanbanModals() {
   await win.getByRole('button', { name: 'Chats', exact: true }).click()
 }
 
+async function workspaceOrganizer() {
+  const opener = win.getByRole('button', { name: 'Organize workspaces and projects' })
+  await opener.click()
+  const organizer = win.getByRole('dialog', { name: 'Organize sidebar' })
+  await organizer.waitFor({ state: 'visible' })
+  check('organizer: the selected workspace has focus',
+    await focusSettlesOn(`!!document.activeElement?.closest('.workspace-organizer-nav-row[data-selected], .workspace-organizer-ungrouped[data-selected]')`))
+  await organizer.getByRole('button', { name: 'New', exact: true }).click()
+  check('organizer: New focuses the name field', await focusSettlesOn(`document.activeElement?.getAttribute('name') === 'workspace-name'`))
+  await win.keyboard.press('Escape')
+  check('organizer: Escape backs out of the name field first',
+    await organizer.getByLabel('Workspace name').waitFor({ state: 'hidden', timeout: 2000 }).then(() => true, () => false) && await organizer.isVisible())
+  await win.keyboard.press('Tab')
+  check('organizer: Tab stays inside it', await win.evaluate(() => !!document.activeElement?.closest('.workspace-organizer')))
+  await win.keyboard.press('Escape')
+  check('organizer: Escape then closes it', await hidden(organizer))
+  check('organizer: focus returns to its button', await focusSettlesOn(`document.activeElement?.getAttribute('aria-label') === 'Organize workspaces and projects'`))
+}
+
 await openConversation('Debug auth callback')
 await providerPicker()
 await branchPicker()
@@ -265,6 +284,7 @@ await sessionPicker()
 await searchModal()
 await quickPrompt()
 await kanbanModals()
+await workspaceOrganizer()
 
 await app.close()
 const failed = results.filter((ok) => !ok).length

@@ -1905,13 +1905,16 @@ html, body, #root {
   position: fixed;
   inset: 0;
   z-index: 1200;
-  display: grid;
-  place-items: center;
-  padding: 32px;
   background: rgba(0, 0, 0, 0.42);
 }
 
+/* A Radix dialog: the overlay is its sibling, not its container, so it
+   centres itself. Its size is fixed, so this matches the old grid centring. */
 .workspace-organizer {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  margin: auto;
   display: flex;
   flex-direction: column;
   width: min(760px, 94vw);
@@ -2373,10 +2376,6 @@ html, body, #root {
 }
 
 @media (max-width: 620px) {
-  .workspace-organizer-overlay {
-    padding: 14px;
-  }
-
   .workspace-organizer-content {
     grid-template-columns: 154px minmax(0, 1fr);
   }
