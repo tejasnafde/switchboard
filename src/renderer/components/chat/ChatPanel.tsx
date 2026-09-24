@@ -66,6 +66,7 @@ import {
   withDraftProvenance,
 } from '../../services/draftTransfer'
 import { providerKindFor } from '@shared/types'
+import { confirm } from '../ui/confirm'
 
 interface ChatPanelProps {
   /**
@@ -81,17 +82,22 @@ interface ChatPanelProps {
   onOpenBeside?: () => void
 }
 
+function slotSessions(
+  state: { primarySessionId: string | null; secondarySessionId: string | null },
+  chatSlot: ChatSlot | undefined,
+): { own: string | null; other: string | null } {
+  if (chatSlot === 'primary') return { own: state.primarySessionId, other: state.secondarySessionId }
+  if (chatSlot === 'secondary') return { own: state.secondarySessionId, other: state.primarySessionId }
+  return { own: null, other: null }
+}
+
 export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFocusIndicator = false, onClose, onOpenBeside }: ChatPanelProps = {}) {
   const [agentType, setAgentType] = useState<AgentType>('claude-code')
   const [editingTitle, setEditingTitle] = useState(false)
   const [editTitleValue, setEditTitleValue] = useState('')
   const titleInputRef = useRef<HTMLInputElement>(null)
 
-  const slotSessionId = useLayoutStore((state) => {
-    if (chatSlot === 'primary') return state.primarySessionId
-    if (chatSlot === 'secondary') return state.secondarySessionId
-    return null
-  })
+  const slotSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).own)
   const focusedChatSlot = useLayoutStore((state) => state.focusedChatSlot)
   const focusChatSlot = useLayoutStore((state) => state.focusChatSlot)
   const activeSession = useAgentStore((s) => {
@@ -146,11 +152,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
   const projectPath = activeSession?.projectPath
   const resumeSessionId = activeSession?.resumeSessionId
   const chatTitle = activeSession?.title ?? 'New conversation'
-  const otherSessionId = useLayoutStore((state) => {
-    if (chatSlot === 'primary') return state.secondarySessionId
-    if (chatSlot === 'secondary') return state.primarySessionId
-    return null
-  })
+  const otherSessionId = useLayoutStore((state) => slotSessions(state, chatSlot).other)
   const hasDraftPayload = useDraftStore((state) => Boolean(sessionId && (
     state.drafts[sessionId]
     || state.pillsBySession[sessionId]?.length
@@ -160,7 +162,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     if (chatSlot) focusChatSlot(chatSlot)
   }, [chatSlot, focusChatSlot])
   const isVisiblyFocused = showFocusIndicator && chatSlot === focusedChatSlot
-  const copyPromptToOtherChat = useCallback(() => {
+  const copyPromptToOtherChat = useCallback(async () => {
     if (!sessionId || !otherSessionId || !activeSession) return
     const draftStore = useDraftStore.getState()
     const source = {
@@ -177,10 +179,14 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       || draftStore.imagesBySession[otherSessionId]?.length,
     )
     const crossesBoundary = requiresDraftTransferConfirmation(activeSession, targetSession)
-    if ((targetHasDraft || crossesBoundary) && !window.confirm([
+    const [title, body] = [
       targetHasDraft ? 'Replace the other chat’s existing draft?' : '',
       crossesBoundary ? 'This copies prompt context across a machine or provider profile boundary.' : '',
-    ].filter(Boolean).join('\n\n'))) return
+    ].filter(Boolean)
+    if (title && !(await confirm({ title, body, confirmLabel: 'Copy' }))) return
+    // Either panel can switch chats while the dialog is open.
+    const now = slotSessions(useLayoutStore.getState(), chatSlot)
+    if ((sessionIdOverride ?? now.own) !== sessionId || now.other !== otherSessionId) return
     const clone = cloneDraftPayload(source, {
       nextId: () => crypto.randomUUID(),
       createPreviewUrl: (file) => URL.createObjectURL(file),
@@ -194,7 +200,7 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
     })
     useLayoutStore.getState().selectChatSession(otherSessionId)
     setTimeout(() => focusComposer(otherSessionId), 0)
-  }, [activeSession, chatTitle, otherSessionId, sessionId])
+  }, [activeSession, chatSlot, chatTitle, otherSessionId, sessionId, sessionIdOverride])
   const remoteMachineName = useMachineStore((state) =>
     state.remotes.find((machine) => machine.id === activeSession?.machineId)?.name,
   )
@@ -322,9 +328,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
         expectedCurrentInstanceId: prevInstanceId ?? null,
       })
       if (!result.ok && result.code === 'context-conflict') {
-        const startFresh = window.confirm(
-          `${result.message}\n\nThe current profile is still active. Start the selected profile as a fresh native session and carry the visible conversation into the next turn?`,
-        )
+        const startFresh = await confirm({
+          title: result.message,
+          body: 'The current profile is still active. Start the selected profile as a fresh native session and carry the visible conversation into the next turn?',
+          confirmLabel: 'Start fresh',
+        })
         if (!startFresh) return
         result = await window.api.provider.switchInstance(sessionId, {
           targetInstanceId: nextInstanceId,
@@ -910,9 +918,11 @@ export function ChatPanel({ sessionIdOverride, chatSlot, visible = true, showFoc
       let outcome = await submitDesktopUserTurn(turn, submissionDependencies)
       if (!outcome.accepted && outcome.recoveryOrigin && outcome.recoveryOrigin !== origin) {
         const recoveryOrigin = outcome.recoveryOrigin
-        const confirmed = extras?.confirmedRecoveryOrigin === recoveryOrigin || window.confirm(
-          'An earlier message has unconfirmed delivery and is blocking this send. Continue without resending the earlier message?',
-        )
+        const confirmed = extras?.confirmedRecoveryOrigin === recoveryOrigin || await confirm({
+          title: 'An earlier message has unconfirmed delivery and is blocking this send.',
+          body: 'Continue without resending the earlier message?',
+          confirmLabel: 'Continue',
+        })
         if (confirmed) {
           let resolution
           try {

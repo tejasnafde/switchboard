@@ -118,11 +118,6 @@ async function launch(userData, recordDir) {
     timeout: 30_000,
   })
   const win = await app.firstWindow({ timeout: 20_000 })
-  // Electron shows window.confirm as a native macOS alert, which Playwright can
-  // neither see nor click, so a run that reaches one hangs for ever. Accept it.
-  const acceptConfirm = () => { window.confirm = () => true }
-  await app.context().addInitScript(acceptConfirm)
-  await win.evaluate(acceptConfirm)
   win.on('pageerror', (error) => console.error(`renderer error: ${error.message}`))
   win.on('console', (message) => {
     if (message.type() === 'error') console.error(`renderer console: ${message.text()}`)
@@ -355,10 +350,15 @@ const scenes = {
     await pause(win, 500)
     await chip.click()
     await pause(win, 900)
-    // Switching kills panes that printed in the last 30s, so the app asks
-    // first. Answer yes, as a user would.
-    win.once('dialog', (dialog) => void dialog.accept())
     await win.getByRole('button').filter({ hasText: /^backend$/ }).first().click()
+    // Switching kills panes that printed in the last 30s, so the app may ask
+    // first. Answer yes, as a user would.
+    const ask = win.getByRole('alertdialog', { name: /^Switch to launch config/ })
+    const first = await Promise.race([
+      ask.waitFor({ state: 'visible', timeout: 10_000 }).then(() => 'ask'),
+      chip.filter({ hasText: /backend/ }).waitFor({ timeout: 10_000 }).then(() => 'switched'),
+    ])
+    if (first === 'ask') await ask.getByRole('button', { name: 'OK', exact: true }).click()
     await pause(win, 3600)
   },
 

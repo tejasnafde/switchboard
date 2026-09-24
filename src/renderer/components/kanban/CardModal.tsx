@@ -23,6 +23,7 @@ import {
   type KanbanStatus,
 } from '@shared/kanban'
 import type { RuntimeMode } from '@shared/provider-events'
+import { confirm } from '../ui/confirm'
 
 const RUNTIME_MODE_OPTIONS: ReadonlyArray<{ value: RuntimeMode; label: string; hint: string }> = [
   { value: 'plan', label: 'Plan', hint: 'Read-only - agent proposes but does not edit' },
@@ -198,7 +199,12 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
   const handleDelete = async () => {
     if (submittingRef.current) return
     if (!card) return
-    const removeWt = !!card.worktreePath && confirm('Also delete the linked git worktree?')
+    const removeWt = !!card.worktreePath && await confirm({
+      title: 'Also delete the linked git worktree?',
+      confirmLabel: 'Delete worktree',
+      cancelLabel: 'Keep worktree',
+      destructive: true,
+    })
     submittingRef.current = true
     setSubmitting(true)
     try {
@@ -229,7 +235,12 @@ export function CardModal({ mode, projectPath, availableProjects, card, onClose 
 
   const handleDetachWorktree = async () => {
     if (!card) return
-    if (!confirm('Delete this worktree? Uncommitted files will be lost. The conversation and its history will remain in the project checkout.')) return
+    if (!(await confirm({
+      title: 'Delete this worktree?',
+      body: 'Uncommitted files will be lost. The conversation and its history will remain in the project checkout.',
+      confirmLabel: 'Delete',
+      destructive: true,
+    }))) return
     setWorktreeBusy('detach')
     setError(null)
     try {

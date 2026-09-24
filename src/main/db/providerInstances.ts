@@ -19,6 +19,7 @@ import { getSafeStorage } from '../runtime'
 import { seal, unseal } from '../crypto/secret-box'
 import { getDb } from './database'
 import { createMainLogger as createLogger } from '../logger'
+import { parseErrorKind } from './parse-error'
 import { isAbsolute } from 'path'
 import { isAgentType, defaultInstanceId, type AgentType, type EffectiveOauthDirSource } from '@shared/types'
 import { canonicalizeOauthPath } from '../provider/oauth-path'
@@ -203,7 +204,7 @@ function parseEnvOrNull(json: string): Record<string, string> | null {
   } catch (err) {
     // Never log `json`, nor the parse error: its message can quote the
     // decrypted text it failed on. The error's type is enough to diagnose.
-    log.warn('provider instance env blob is malformed JSON (contents not logged)', err instanceof Error ? err.name : typeof err)
+    log.warn('provider instance env blob is malformed JSON (contents not logged)', parseErrorKind(err))
   }
   return null
 }
@@ -232,7 +233,7 @@ function rowToFull(r: DbRow): ProviderInstanceRow {
     try {
       configJson = JSON.parse(r.config_json)
     } catch (err) {
-      log.warn('provider instance config_json is malformed - ignoring', { id: r.id, err })
+      log.warn('provider instance config_json is malformed - ignoring', { id: r.id, error: parseErrorKind(err) })
     }
   }
   return {

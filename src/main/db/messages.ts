@@ -1,4 +1,5 @@
 import { createMainLogger as createLogger } from '../logger'
+import { parseErrorKind } from './parse-error'
 import Database from 'better-sqlite3'
 import type { ChatMessage, FileDiffAttachment, ToolCall } from '@shared/types'
 import { getDb } from './database'
@@ -125,7 +126,7 @@ function tryParseJson<T>(s: string): T | undefined {
   try {
     return JSON.parse(s) as T
   } catch (err) {
-    log.debug('stored message JSON did not parse', err)
+    log.warn('stored message JSON did not parse (contents not logged)', parseErrorKind(err))
     return undefined
   }
 }

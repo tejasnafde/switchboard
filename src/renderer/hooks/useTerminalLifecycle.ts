@@ -9,6 +9,7 @@ import { launchConfigListReducer } from '../services/launchConfigListReducer'
 import { useLayoutStore } from '../stores/layout-store'
 import { executionRootForSession } from '../services/executionRoot'
 import { createRendererLogger } from '../logger'
+import { confirm } from '../components/ui/confirm'
 
 const log = createRendererLogger('hooks:terminal-lifecycle')
 
@@ -287,11 +288,11 @@ export async function applyLaunchConfig(
     const hot = getRecentOutputPaneLabels(paneIds, layout.panes)
     if (hot.length > 0) {
       const list = hot.map((l) => `  • ${l}`).join('\n')
-      const ok = window.confirm(
-        `Switch to launch config "${resolved.launchConfigName}"?\n\n` +
-        `These panes have produced output in the last 30s and will be killed:\n${list}\n\n` +
-        `Press OK to switch anyway.`,
-      )
+      const ok = await confirm({
+        title: `Switch to launch config "${resolved.launchConfigName}"?`,
+        body: `These panes have produced output in the last 30s and will be killed:\n${list}\n\nPress OK to switch anyway.`,
+        destructive: true,
+      })
       if (!ok) return
     }
   }
