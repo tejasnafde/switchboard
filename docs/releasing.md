@@ -174,6 +174,12 @@ listed here as rationale, not as steps to perform.
 - **CI must pass the tagged tree.** The `gate` job calls `ci.yml`, so this is
   now an ordering property of the pipeline. A tag pushed from a branch whose CI
   never ran cannot publish.
+- **No screen changed by accident.** `ci.yml`'s `visual` job compares eight
+  screens in all three themes with committed baselines, and the `gate` job
+  runs `ci.yml`, so a release cannot ship a tree whose screens drifted. The
+  native translucency check is not in it (it cannot run on the runner): run
+  `SB_VISUAL_SCOPE=behaviour npm run test:e2e:visual` on a Mac before tagging
+  a release that touched a theme.
 - **All six assets must land.** The `verify` job asserts them by name. Two
   parallel build jobs mean one platform can fail while the other publishes, and
   a Release missing a `latest*.yml` makes every client report "up to date" with

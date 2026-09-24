@@ -1669,6 +1669,10 @@ export class ProviderRegistry implements PeerToolHost {
 
     this.host.handle(ProviderChannels.LIST_CATALOG, async (req: { threadId?: string; agentType: string; instanceId?: string | null; remoteConfigDir?: string }) => {
       if (!isAgentProvider(req?.agentType)) return []
+      // The probe starts the real CLI with this machine's credentials, so the
+      // demo adapter's recordings and screenshots would list whatever models
+      // that account has. Empty means the picker's built-in list.
+      if (process.env.SB_DEMO_ADAPTER === '1') return []
       return probeCatalog(req.agentType, req.instanceId, req.remoteConfigDir)
     })
 

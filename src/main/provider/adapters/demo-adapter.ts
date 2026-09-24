@@ -10,6 +10,9 @@
  * The scripts are keyed on runtime mode and on the user text so each tour
  * scene can steer the reply without a side channel:
  *   - plan mode          -> two reads, then a denied Write (denial pill)
+ *   - text says "run"    -> asks approval for `npm test` and holds the turn
+ *                           open until it is answered (ApprovalCard, and the
+ *                           running composer for the visual regression suite)
  *   - text mentions the state check -> a real edit to src/api/auth.ts in the
  *                           session cwd, so the registry's git checkpoint
  *                           emits a genuine `file.edited` (FileDiffCard)
@@ -65,6 +68,18 @@ interface DemoSession {
   onEvent: (event: RuntimeEvent) => void
   cwd: string
   runtimeMode: RuntimeMode
+  /** Runs still going. A steer starts a second one beside the first. */
+  turns: Set<DemoTurn>
+  /** Approvals a script is blocked on, by request id. */
+  approvals: Map<string, (decision: ApprovalDecision | 'cancelled') => void>
+}
+
+/** One script run. */
+interface DemoTurn {
+  session: DemoSession
+  /** Time this run has paused for; reported as the turn duration. */
+  scriptedMs: number
+  /** Set by interrupt or stop; a later message does not clear it. */
   cancelled: boolean
 }
 
@@ -82,7 +97,8 @@ export class DemoAdapter implements ProviderAdapter {
       cwd: opts.cwd,
       runtimeMode: opts.runtimeMode ?? 'sandbox',
       running: Promise.resolve(),
-      cancelled: false,
+      turns: new Set(),
+      approvals: new Map(),
     }
     this.sessions.set(opts.threadId, session)
     onEvent({ type: 'status', threadId: opts.threadId, status: 'connecting' })
@@ -111,7 +127,6 @@ export class DemoAdapter implements ProviderAdapter {
     const session = this.sessions.get(threadId)
     if (!session) throw new Error(`No demo session: ${threadId}`)
     if (runtimeMode) session.runtimeMode = runtimeMode
-    session.cancelled = false
     // Like the real adapters: a queued message runs after the current script.
     const previous = delivery === 'queue' ? session.running : Promise.resolve()
     const task = previous.then(() => this.run(threadId, session, message)).catch((err) => {
@@ -123,91 +138,139 @@ export class DemoAdapter implements ProviderAdapter {
   }
 
   private async run(threadId: string, session: DemoSession, message: string): Promise<void> {
-    const startedAt = Date.now()
+    const turn: DemoTurn = { session, scriptedMs: 0, cancelled: false }
+    session.turns.add(turn)
+    try {
+      await this.script(threadId, turn, message)
+    } finally {
+      session.turns.delete(turn)
+    }
+    if (turn.cancelled) return
+    session.onEvent({ type: 'turn.completed', threadId, durationMs: turn.scriptedMs, numTurns: 1 })
+    // Another run (a steer) may still be going, or blocked on an approval.
+    if (session.turns.size === 0) session.onEvent({ type: 'status', threadId, status: 'idle' })
+  }
+
+  private async script(threadId: string, turn: DemoTurn, message: string): Promise<void> {
+    const { session } = turn
     const emit = (event: RuntimeEvent): void => {
-      if (!session.cancelled) session.onEvent(event)
+      if (!turn.cancelled) session.onEvent(event)
     }
     emit({ type: 'status', threadId, status: 'running' })
-    await sleep(500)
+    await this.pause(turn, 500)
 
     if (session.runtimeMode === 'plan') {
-      await this.say(threadId, session, 'I will start by reading the existing callback handler.')
-      await this.tool(threadId, session, 'Read', { file_path: 'src/api/auth.ts' }, '7 lines')
-      await this.tool(threadId, session, 'Read', { file_path: 'src/components/LoginButton.tsx' }, '3 lines')
+      await this.say(threadId, turn, 'I will start by reading the existing callback handler.')
+      await this.tool(threadId, turn, 'Read', { file_path: 'src/api/auth.ts' }, '7 lines')
+      await this.tool(threadId, turn, 'Read', { file_path: 'src/components/LoginButton.tsx' }, '3 lines')
       await this.say(
         threadId,
-        session,
+        turn,
         'The state token is checked after the exchange. I would move the check ahead of the fetch and keep the callback idempotent.',
       )
-      await sleep(350)
+      await this.pause(turn, 350)
       emit({ type: 'tool.denied', threadId, toolName: 'Write', reason: denialMessage('plan', 'Write'), mode: 'plan' })
-      await sleep(600)
-      await this.say(threadId, session, 'Plan mode blocks writes. Switch to Sandbox or Accept Edits and I will apply the change.')
+      await this.pause(turn, 600)
+      await this.say(threadId, turn, 'Plan mode blocks writes. Switch to Sandbox or Accept Edits and I will apply the change.')
+    } else if (/\brun\b/i.test(message)) {
+      await this.say(threadId, turn, 'Running the auth tests to confirm the fix.')
+      // Interrupted before the approval opened: registering it now would
+      // leave a promise nothing resolves, and a queued turn behind it.
+      if (turn.cancelled) return
+      const requestId = `demo_req_${++this.seq}`
+      const decision = await new Promise<ApprovalDecision | 'cancelled'>((resolve) => {
+        session.approvals.set(requestId, resolve)
+        emit({ type: 'request.opened', threadId, requestId, requestType: 'command', toolName: 'Bash', detail: 'npm test' })
+      })
+      session.approvals.delete(requestId)
+      // Close it even when cancelled, or the registry keeps replaying an
+      // approval nobody can answer.
+      session.onEvent({ type: 'request.closed', threadId, requestId, decision: decision === 'cancelled' ? 'deny' : decision })
+      if (decision === 'cancelled') return
+      if (decision === 'approve') {
+        await this.tool(threadId, turn, 'Bash', { command: 'npm test' }, 'ok 1 - exchanges an OAuth code once\nok 2 - rejects an expired state token')
+        await this.say(threadId, turn, 'Both tests pass.')
+      } else {
+        await this.say(threadId, turn, 'Skipped the test run.')
+      }
     } else if (/state|validat|fix|apply|move/i.test(message)) {
-      await this.say(threadId, session, 'Moving the state check ahead of the token exchange.')
-      await this.tool(threadId, session, 'Edit', { file_path: 'src/api/auth.ts' }, undefined, () => {
+      await this.say(threadId, turn, 'Moving the state check ahead of the token exchange.')
+      await this.tool(threadId, turn, 'Edit', { file_path: 'src/api/auth.ts' }, undefined, () => {
         const target = join(session.cwd, 'src', 'api', 'auth.ts')
         if (existsSync(target)) writeFileSync(target, FIXED_AUTH_TS)
       })
       await this.say(
         threadId,
-        session,
+        turn,
         'Done. The callback now rejects an expired state before any network call. Review the diff below and accept or reject each hunk.',
       )
     } else {
       await this.say(
         threadId,
-        session,
+        turn,
         'Two focused tests cover it: reject an expired state before network I/O, and exchange a valid code exactly once.',
       )
     }
+  }
 
-    emit({ type: 'turn.completed', threadId, durationMs: Date.now() - startedAt, numTurns: 1 })
-    emit({ type: 'status', threadId, status: 'idle' })
+  /**
+   * Sleep as part of the script. The turn reports the sum of these pauses
+   * rather than wall-clock time, so "Worked for 3.2s" is identical on every
+   * run (the visual regression suite captures it).
+   */
+  private async pause(turn: DemoTurn, ms: number): Promise<void> {
+    turn.scriptedMs += ms
+    await sleep(ms)
   }
 
   /** Stream one assistant message word by word, like a real provider does. */
-  private async say(threadId: string, session: DemoSession, text: string): Promise<void> {
+  private async say(threadId: string, turn: DemoTurn, text: string): Promise<void> {
+    const { session } = turn
     const messageId = `demo_${Date.now()}_${++this.seq}`
     const words = text.split(' ')
     for (let i = 0; i < words.length; i++) {
-      if (session.cancelled) return
+      if (turn.cancelled) return
       const chunk = (i === 0 ? '' : ' ') + words[i]
       session.onEvent({ type: 'content', threadId, messageId, streamKind: 'assistant', text: chunk, append: i > 0 })
-      await sleep(28)
+      await this.pause(turn, 28)
     }
-    await sleep(320)
+    await this.pause(turn, 320)
   }
 
   private async tool(
     threadId: string,
-    session: DemoSession,
+    turn: DemoTurn,
     toolName: string,
     input: unknown,
     output?: string,
     sideEffect?: () => void,
   ): Promise<void> {
-    if (session.cancelled) return
+    const { session } = turn
+    if (turn.cancelled) return
     const toolId = `demo_tool_${++this.seq}`
     session.onEvent({ type: 'tool.started', threadId, toolId, toolName, input })
-    await sleep(520)
+    await this.pause(turn, 520)
     sideEffect?.()
     session.onEvent({ type: 'tool.completed', threadId, toolId, output })
-    await sleep(260)
+    await this.pause(turn, 260)
   }
 
   async interruptTurn(threadId: string): Promise<void> {
     const session = this.sessions.get(threadId)
     if (!session) return
-    session.cancelled = true
+    for (const turn of session.turns) turn.cancelled = true
+    for (const resolve of session.approvals.values()) resolve('cancelled')
     session.onEvent({ type: 'status', threadId, status: 'idle' })
   }
 
-  async respondToRequest(_threadId: string, _requestId: string, _decision: ApprovalDecision): Promise<void> {}
+  async respondToRequest(threadId: string, requestId: string, decision: ApprovalDecision): Promise<void> {
+    this.sessions.get(threadId)?.approvals.get(requestId)?.(decision)
+  }
 
   async stopSession(threadId: string): Promise<void> {
     const session = this.sessions.get(threadId)
-    if (session) session.cancelled = true
+    for (const turn of session?.turns ?? []) turn.cancelled = true
+    for (const resolve of session?.approvals.values() ?? []) resolve('cancelled')
     this.sessions.delete(threadId)
   }
 

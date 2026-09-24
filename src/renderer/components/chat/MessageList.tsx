@@ -560,7 +560,7 @@ export function MessageList({ messages, sessionId, visible = true, agentType = '
               })}
 
               {/* Turn timestamp */}
-              <div style={{
+              <div className="turn-timestamp" style={{
                 padding: '0 16px',
                 fontSize: '10px',
                 color: 'var(--text-muted)',
