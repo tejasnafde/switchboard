@@ -13,7 +13,6 @@
         "src/main/git/legacy-session-worktree-lease.ts",
         "tests/unit/dependency-clone.test.ts",
         "tests/unit/worktree.test.ts",
-        "tests/unit/create-session-worktree.test.ts",
         "tests/unit/worktree-creation-git-adapter.test.ts",
         "tests/unit/legacy-session-worktree-lease.test.ts"
       ]
@@ -50,7 +49,7 @@
   "verification": {
     "automated": [
       "npx vitest run tests/unit/dependency-clone.test.ts (18 tests): per-platform command/argv against a staging path (darwin cp -c -R, linux cp -R --reflink=always) followed by an atomic rename into node_modules, unsupported-platform no-op, source-missing skip with no log (ENOENT is the expected no-op case) and confirms the settings DB is never touched in that common case, a non-ENOENT error checking the source is logged and skipped, destination-exists skip, opt-out setting disabled, a cross-device source/worktree pair skips without calling cp and without running the (more expensive) APFS check, a macOS destination not confirmed APFS skips without calling cp, the APFS check does not run at all on linux, a failed clone removes only its staging dir and leaves no node_modules, a node_modules that appears mid-clone (simulating a concurrent npm install) is left completely untouched and the losing staged clone is discarded, the function never rejects even when the runner throws, the fire-and-forget wrapper never throws synchronously, isDependencyCloneEnabled's default-on / literal-'false'-only-disables semantics, and one unmocked end-to-end run on this machine (darwin) exercising the real same-device and real `mount`-based APFS checks together, not just injected fakes.",
-      "npx vitest run tests/unit/worktree.test.ts tests/unit/create-session-worktree.test.ts: existing worktree-creation tests still pass unchanged with the background clone call wired in (fire-and-forget, so it does not interfere with the existing GitRunner stubs).",
+      "npx vitest run tests/unit/worktree.test.ts: existing worktree-creation tests still pass unchanged with the background clone call wired in (fire-and-forget, so it does not interfere with the existing GitRunner stubs).",
       "npx vitest run tests/unit/worktree-creation-git-adapter.test.ts tests/unit/legacy-session-worktree-lease.test.ts tests/unit/fork-worktree-request.test.ts tests/unit/git-legacy-worktree-handler.test.ts: the real ExecFileGitWorktreeAdapter and GitLegacySessionWorktreeMaterializer, exercised against real git in temp fixture repos with no node_modules, still pass - confirming the added call is a true no-op when there is nothing to clone.",
       "npm run typecheck",
       "npm test",

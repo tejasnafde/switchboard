@@ -35,9 +35,14 @@ const current = (): PendingConfirm | undefined => queue[0]
 // The host has no trigger element, so Radix has nothing to hand focus back to.
 // Remember what was focused when the first request opened, and restore it when
 // the last one closes. If that element is gone, fall back to the composer.
+// settle() schedules the restore itself: Radix's close-focus callback does not
+// always fire, because the content unmounts in the same render that closes it.
 let returnFocus: HTMLElement | null = null
+let restorePending = false
 
 function restoreFocus(): void {
+  if (!restorePending) return
+  restorePending = false
   const target = returnFocus?.isConnected
     ? returnFocus
     : document.querySelector<HTMLElement>('[data-chat-panel] [contenteditable="true"]')
@@ -50,6 +55,11 @@ function settle(request: PendingConfirm, confirmed: boolean): void {
   // not answer the request that has just moved to the front.
   if (queue[0] !== request) return
   queue.shift()
+  if (queue.length === 0 && typeof document !== 'undefined') {
+    restorePending = true
+    // After React commits the close, so the dialog cannot take focus back.
+    setTimeout(restoreFocus, 0)
+  }
   request.resolve(confirmed)
   for (const listener of listeners) listener()
 }
