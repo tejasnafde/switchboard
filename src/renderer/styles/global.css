@@ -175,6 +175,18 @@ html[data-fullscreen="true"].theme-translucent .titlebar-drag {
   box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
 }
 
+/* Provider picker: a near-opaque panel with a blur, so in translucent mode
+   the wallpaper only tints it. Light keeps near-white. */
+.sb-provider-picker {
+  background: rgba(22, 22, 26, 0.94);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+.theme-light .sb-provider-picker {
+  background: rgba(255, 255, 255, 0.96);
+}
+
 /* Translucent mode: bump blur + opacity so popovers don't show the
    wallpaper through themselves. */
 .theme-translucent .settings-modal-content,

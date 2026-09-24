@@ -1,12 +1,14 @@
-/* Tailwind for the shadcn/ui primitives in components/ui only.
+/* Tailwind for the shadcn/ui primitives in components/ui and the overlays built on them.
  *
  * - No preflight: the app keeps its own reset in global.css.
  * - No default theme: its variables (--font-sans, --radius-lg, --shadow-md)
  *   would collide with ours. Only the tokens below exist.
- * - Classes are scanned from components/ui only, so a class name used
- *   elsewhere ("hidden", "truncate") only becomes a utility if ui/ uses it
- *   too. The generated ones still apply app-wide: do not reuse utility names
- *   ("flex", "fixed", "border", "outline") as plain class names.
+ * - Classes are scanned from components/ui plus the files listed below,
+ *   which were moved onto Tailwind when they moved onto Radix. A class name
+ *   used anywhere else ("hidden", "truncate") only becomes a utility if one
+ *   of those uses it too. The generated ones still apply app-wide: do not
+ *   reuse utility names ("flex", "fixed", "border", "outline") as plain
+ *   class names. Add a file here when it moves off inline styles.
  *
  * The tokens point at the theme variables in global.css, so every primitive
  * follows the theme picker (.theme-dark / .theme-light / .theme-translucent).
@@ -15,6 +17,7 @@
 
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
 @source '../components/ui';
+@source '../components/chat/UnifiedProviderPicker.tsx';
 
 @theme inline {
   --spacing: 0.25rem;
