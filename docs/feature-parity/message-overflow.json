@@ -39,7 +39,7 @@
   },
   "verification": {
     "automated": [
-      "e2e/message-overflow.e2e.mjs replays the real reply from the report (27 numbered items, inline code, a branch name that resolves to a file pill, a fenced command) at the 800px minimum window, where the chat pane is about 160px wide. It asserts that no bubble descendant outside a code block extends past the bubble, that every ordered list's widest marker fits the list's left padding, that the message list does not scroll sideways, and that the code block still scrolls with white-space: pre. Before the fix it failed on the markers (\"27. needs 21px\" against 20px) and on 40px of sideways scroll.",
+      "e2e/message-overflow.e2e.mjs replays the real reply from the report (27 numbered items, inline code, a branch name that resolves to a file pill, a fenced command) at the 800px minimum window, where the chat pane is about 160px wide. It asserts that no bubble descendant outside a code block extends past the bubble, that every ordered list's widest marker fits the list's left padding, that the message list does not scroll sideways, and that the code block still scrolls with white-space: pre. The prompt @-mentions a file with a long name, and the test asserts that its pill chip (PillChipVisual) in the sent user bubble stays inside that bubble. Before the fix it failed on the markers (\"27. needs 21px\" against 20px) and on 40px of sideways scroll.",
       "e2e/visual-regressions.e2e.mjs has a new chat-narrow screen in Dark, Light and Translucent, and fails if the seeded chat's message list scrolls sideways. Before the pill fix that list scrolled 59px because of the user bubble's pill chips. Every existing baseline still matches.",
       "npm run typecheck",
       "npm test"

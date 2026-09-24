@@ -5,7 +5,9 @@
  *
  * The reply (the demo adapter's "to-dos" script) is a real one that rendered
  * clipped: numbered lists past 9, bold labels, inline code, a branch name that
- * resolves to a file pill, and a fenced command. At the narrowest window the
+ * resolves to a file pill, and a fenced command. The prompt carries an
+ * @-mentioned file with a long name, which the user bubble renders as a
+ * pill chip (PillChipVisual). At the narrowest window the
  * chat pane is ~160px wide. Temp dirs are removed. Takes ~30s.
  */
 import { _electron as electron } from 'playwright'
@@ -24,6 +26,8 @@ const project = realpathSync(mk('sb-overflow-proj-'))
 // `chore/release-0.8.64` in the reply becomes a file pill only if it exists.
 mkdirSync(join(project, 'chore'))
 writeFileSync(join(project, 'chore', 'release-0.8.64'), '')
+const LONG_FILE = 'an-unusually-long-file-name-that-cannot-fit-a-narrow-chat-pane.md'
+writeFileSync(join(project, LONG_FILE), '')
 const db = join(userData, 'data', 'switchboard.db')
 const q = (sql) => execFileSync('sqlite3', [db, sql]).toString().trim()
 
@@ -59,14 +63,17 @@ try {
   await win.getByTestId('draft-workspace').waitFor({ timeout: 5000 })
   await win.getByTestId('draft-workspace').selectOption('project')
   await win.locator('[contenteditable="true"]').last().click()
-  await win.keyboard.type('list the to-dos')
+  await win.keyboard.type('@an-unusually-long')
+  await win.getByRole('listbox', { name: 'File mentions' }).getByText(LONG_FILE).waitFor({ timeout: 10_000 })
+  await win.keyboard.press('Enter')
+  await win.keyboard.type(' list the to-dos')
   await win.keyboard.press('Enter')
   await win.locator('.markdown-content .file-chip').first().waitFor({ timeout: 60_000 })
   // 800 is the window's minimum width, which leaves the chat pane its narrowest.
   await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(800, 800))
   await win.waitForTimeout(800)
 
-  const geometry = await win.evaluate(() => {
+  const geometry = await win.evaluate((longFile) => {
     const md = [...document.querySelectorAll('.markdown-content')].find((e) => e.textContent.includes('Items 1 to 3'))
     const bubble = md.closest('.message-bubble')
     const list = md.closest('[data-message-list-scroll]')
@@ -95,10 +102,19 @@ try {
       listOverflow: list.scrollWidth - list.clientWidth,
       preScrolls: pre.scrollWidth > pre.clientWidth && getComputedStyle(pre).whiteSpace === 'pre',
       chips: md.querySelectorAll('.file-chip').length,
+      userPill: (() => {
+        const pill = [...document.querySelectorAll('.message-bubble span[title]')].find((el) => el.title === longFile)
+        if (!pill) return null
+        const r = pill.getBoundingClientRect()
+        const b = pill.closest('.message-bubble').getBoundingClientRect()
+        return { inside: r.left >= b.left - 0.5 && r.right <= b.right + 0.5, width: r.width | 0, bubble: b.width | 0 }
+      })(),
     }
-  })
+  }, LONG_FILE)
   check('the chat pane is narrow', geometry.bubbleWidth < 260, `bubble=${geometry.bubbleWidth}px`)
   check('the branch name renders as a file pill', geometry.chips > 0, `chips=${geometry.chips}`)
+  check('the @-mentioned file renders as a pill in the user bubble', !!geometry.userPill)
+  check('the user bubble pill stays inside its bubble', !!geometry.userPill?.inside, JSON.stringify(geometry.userPill))
   check('nothing in the message is wider than its bubble', geometry.escapes.length === 0, geometry.escapes.slice(0, 5).join(', '))
   check('two-digit list markers fit the list padding', geometry.clippedMarkers.length === 0, geometry.clippedMarkers.join(', '))
   check('the message list does not scroll sideways', geometry.listOverflow <= 0, `overflow=${geometry.listOverflow}px`)
