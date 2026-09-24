@@ -255,22 +255,25 @@ export const MessageBubble = memo(function MessageBubble({ message, sessionId, k
     ? splitSyntheticUserText(message.content)
     : null
   if (synthetic) {
+    const rows = synthetic.parts.map((part, i) => <SyntheticUserRow key={i} part={part} />)
+    if (synthetic.userText === '' && !message.images?.length) {
+      // No bubble renders, so the rows carry the id a search jump looks up.
+      return <div data-message-id={message.id}>{rows}</div>
+    }
     return (
       <>
-        {synthetic.parts.map((part, i) => <SyntheticUserRow key={i} part={part} />)}
-        {(synthetic.userText !== '' || !!message.images?.length) && (
-          <MessageBubble
-            message={message}
-            typedText={synthetic.userText}
-            sessionId={sessionId}
-            knownSkillNames={knownSkillNames}
-            onApproval={onApproval}
-            onAnswerQuestion={onAnswerQuestion}
-            onPlanAction={onPlanAction}
-            onFileDiffResolve={onFileDiffResolve}
-            hideTurnDuration={hideTurnDuration}
-          />
-        )}
+        {rows}
+        <MessageBubble
+          message={message}
+          typedText={synthetic.userText}
+          sessionId={sessionId}
+          knownSkillNames={knownSkillNames}
+          onApproval={onApproval}
+          onAnswerQuestion={onAnswerQuestion}
+          onPlanAction={onPlanAction}
+          onFileDiffResolve={onFileDiffResolve}
+          hideTurnDuration={hideTurnDuration}
+        />
       </>
     )
   }

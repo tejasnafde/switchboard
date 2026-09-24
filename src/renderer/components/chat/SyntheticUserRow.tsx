@@ -16,9 +16,15 @@ const TONE_COLOR: Record<SyntheticTone, string> = {
   muted: 'var(--text-muted)',
 }
 
-/** A user-role message nobody typed (see @shared/synthetic-message). */
+/**
+ * A user-role message nobody typed (see @shared/synthetic-message). Attached
+ * images still render as a user bubble, so such a message does not count.
+ */
 export function isSyntheticOnlyMessage(message: ChatMessage): boolean {
-  return message.role === 'user' && message.displayBody === undefined && isSyntheticOnlyUserText(message.content)
+  return message.role === 'user'
+    && message.displayBody === undefined
+    && !message.images?.length
+    && isSyntheticOnlyUserText(message.content)
 }
 
 /** Compact, muted row for a provider-generated user-role block. */
