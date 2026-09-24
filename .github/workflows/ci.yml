@@ -119,3 +119,57 @@ jobs:
       # smoke test, which `build:fast` alone would skip.
       - name: Build
         run: npm run build:ci
+
+  # Screenshot regression tests: eight screens in Dark, Light and Translucent
+  # against e2e/snapshots/*-darwin.png (see e2e/visual-regressions.e2e.mjs).
+  # Only the screens phase: the behaviour phase's native-glass check reads the
+  # real desktop through vibrancy, and on this runner the window server does
+  # not transmit the backdrop colours, so it fails there on every run.
+  # Probed on macos-14 before landing: two runs matched each other exactly and
+  # matched baselines generated on a developer Mac within tolerance.
+  visual:
+    name: Visual regressions (macOS)
+    runs-on: macos-14
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        uses: nick-fields/retry@v3
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          retry_wait_seconds: 15
+          command: npm ci
+
+      # The fixture seeds the app's database with the sqlite3 CLI. The runner's
+      # system sqlite3 is built without FTS5, which the schema's search
+      # triggers need.
+      - name: SQLite with FTS5
+        run: |
+          brew list sqlite >/dev/null 2>&1 || brew install sqlite
+          echo "$(brew --prefix sqlite)/bin" >> "$GITHUB_PATH"
+
+      - name: Rebuild native modules for Electron
+        run: npm run rebuild
+
+      - name: Build
+        run: npm run build:fast
+
+      - name: Theme screenshots
+        run: npm run test:e2e:visual
+        env:
+          SB_VISUAL_SCOPE: screens
+
+      - name: Upload actual and diff PNGs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-regressions
+          path: e2e/artifacts/visual

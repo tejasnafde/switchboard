@@ -391,7 +391,8 @@ const UnifiedPickerPopover = (() => {
     // background per palette; light-mode keeps near-white, dark/translucent
     // get a near-black surface. Blur layered on top adds the glass feel.
     const popoverBg = useMemo(() => {
-      const cls = document.body.classList
+      // The theme class lives on <html> (theme-store), not <body>.
+      const cls = document.documentElement.classList
       if (cls.contains('theme-light')) return 'rgba(255, 255, 255, 0.96)'
       // dark + translucent both get a deep panel
       return 'rgba(22, 22, 26, 0.94)'
