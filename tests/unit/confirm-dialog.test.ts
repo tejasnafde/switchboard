@@ -74,7 +74,7 @@ describe('confirm', () => {
     await vi.waitFor(() => expect(dialog()?.textContent).toContain('Second?'))
     // The first close must not pull focus out of the second dialog.
     await act(async () => { await new Promise((r) => setTimeout(r, 20)) })
-    expect(document.activeElement).not.toBe(opener)
+    expect(dialog()?.contains(document.activeElement)).toBe(true)
     await act(async () => button('Cancel').click())
     await chained
     await vi.waitFor(() => expect(document.activeElement).toBe(opener))
