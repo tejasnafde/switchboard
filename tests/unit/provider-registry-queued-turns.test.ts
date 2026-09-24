@@ -132,10 +132,9 @@ const passThroughSubmission = {
   },
 }
 
-async function setup(provider: ProviderKind, steers = true) {
+async function setup(provider: ProviderKind) {
   const host = new FakeHost()
   const adapter = new QueueingAdapter(provider)
-  if (!steers) Reflect.deleteProperty(adapter, 'promoteQueuedTurn')
   const registry = new ProviderRegistry(host, new Map([[provider, adapter]]), undefined, passThroughSubmission)
   registry.registerIpcHandlers()
   await host.invoke(ProviderChannels.START_SESSION, { threadId: 't1', provider, cwd: '/tmp' })
@@ -214,7 +213,7 @@ describe('ProviderRegistry queued messages', () => {
   })
 
   it('refuses to promote on a provider that cannot steer, and says why', async () => {
-    const t = await setup('opencode', false)
+    const t = await setup('opencode')
     await t.submit('a')
     await t.submit('b', 'queue')
     const result = await t.promote('remote_b')

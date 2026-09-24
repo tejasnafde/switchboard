@@ -542,7 +542,6 @@ export function ChatInput({
     : 'send'
   const composerErrorColor = recovery?.ambiguous ? 'var(--warning)' : 'var(--error)'
   const followUpDefault = useLayoutStore((s) => s.followUpDefault)
-  // One round button: its name and tooltip carry what the old text labels did.
   const sendButton = isSubmitting
     ? { label: 'Sending', tooltip: 'Sending…' }
     : recoveryAction === 'retry-safe'
