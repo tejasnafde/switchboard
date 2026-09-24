@@ -20,9 +20,13 @@ beforeEach(() => {
   act(() => root.render(createElement(ConfirmHost)))
 })
 
-afterEach(() => {
+afterEach(async () => {
   act(() => root.unmount())
   container.remove()
+  // Radix hands focus back from a setTimeout after the dialog unmounts. Let it
+  // run here, or on a loaded machine it fires inside the next test and
+  // consumes the focus target that test just recorded.
+  await new Promise((resolve) => setTimeout(resolve, 20))
 })
 
 const dialog = () => document.querySelector('[role="alertdialog"]')

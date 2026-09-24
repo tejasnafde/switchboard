@@ -81,6 +81,7 @@ export function pendingRequestToChatMessage(event: PendingBlockingEvent, timesta
  * that answer older than the store, so it is discarded and asked again.
  */
 export async function recoverPendingRequests(threadId: string, { cards = true } = {}, attempt = 1): Promise<void> {
+  if (attempt === 1) void recoverQueuedTurns(threadId)
   const getPendingRequests = window.api.provider?.getPendingRequests
   if (!getPendingRequests) return
   const revisionOf = () => useAgentStore.getState().sessions.find((s) => s.id === threadId)?.pendingRequestRevision ?? 0
@@ -104,5 +105,25 @@ export async function recoverPendingRequests(threadId: string, { cards = true } 
     }
   } catch (err) {
     log.warn(`pending request recovery failed for ${threadId}`, err)
+  }
+}
+
+/**
+ * Ask the backend which of this thread's messages it still holds until the
+ * running turn ends, so the queued rows survive a reload or a resume gap.
+ * Every caller of `recoverPendingRequests` wants this too, so it runs from
+ * there. An older backend has no such channel, which only means nothing is
+ * listed.
+ */
+async function recoverQueuedTurns(threadId: string): Promise<void> {
+  const listQueuedTurns = window.api.provider?.listQueuedTurns
+  if (!listQueuedTurns) return
+  try {
+    const turns = await listQueuedTurns(threadId) ?? []
+    const session = useAgentStore.getState().sessions.find((s) => s.id === threadId)
+    if (!session || (turns.length === 0 && !session.queuedTurns)) return
+    useAgentStore.getState().setQueuedTurns(threadId, turns)
+  } catch (err) {
+    log.warn(`queued turn recovery failed for ${threadId}`, err)
   }
 }

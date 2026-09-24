@@ -423,9 +423,13 @@ export function reduceProviderEvent(event: RuntimeEvent, ctx: ProviderEventConte
       // and never interprets it. So remote drift is followable now.
       const drifted = useAgentStore.getState().sessions.find((s) => s.id === tid)
       if (drifted?.worktreePath === event.worktreePath) break
+      // Muted with "Not in this chat": say nothing at all.
+      if (event.followSuggestions === 'muted') break
       useAgentStore.getState().setDriftSuggestion(tid, {
         worktreePath: event.worktreePath,
         branch: event.branch,
+        followSuggestions: event.followSuggestions ?? 'auto',
+        workedWorktrees: event.workedWorktrees ?? 0,
       })
       break
     }

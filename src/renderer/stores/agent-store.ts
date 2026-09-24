@@ -11,6 +11,9 @@ import { mergeLiveSessions, toAgentStatus, toAgentType } from './liveSessionMerg
 import type { LiveSessionSummary } from '@shared/live-sessions'
 import { PENDING_REQUEST_EVENT_TYPES, applyPendingRequestEvent, type PendingBlockingEvent } from '@shared/pending-requests'
 import type { RuntimeEvent } from '@shared/provider-events'
+import { NO_QUEUED_TURNS, applyQueuedTurnEvent, seedQueuedTurns, type QueuedTurnsByMessage } from '@shared/queued-turns'
+import type { QueuedTurnSummary } from '@shared/turn-delivery'
+import type { FollowSuggestionMode } from '@shared/follow-suggestions'
 import { isRuntimeMode } from '@shared/session-defaults'
 import { isDraftSessionId, type DraftChatOptions } from '@shared/new-chat-draft'
 import type {
@@ -39,6 +42,15 @@ export function setStoreDefaultRuntimeMode(mode: RuntimeMode): void {
   storeDefaultRuntimeMode = mode
 }
 
+export interface DriftSuggestion {
+  worktreePath: string
+  branch: string
+  /** The conversation's Follow-chip setting, from the backend (absent = auto). */
+  followSuggestions?: FollowSuggestionMode
+  /** Distinct worktrees the conversation has worked in. */
+  workedWorktrees?: number
+}
+
 interface AgentSession {
   id: string
   type: AgentType
@@ -64,7 +76,7 @@ interface AgentSession {
   /** Immutable backend catalog identity for a managed worktree. */
   worktreeId?: string | null
   /** Agent wrote into a different worktree - offer to follow (worktree.drift). */
-  driftSuggestion?: { worktreePath: string; branch: string } | null
+  driftSuggestion?: DriftSuggestion | null
   /** Branch name in `worktreePath` (e.g. `sb/thread-abc123`). */
   worktreeBranch?: string | null
   /**
@@ -93,6 +105,12 @@ interface AgentSession {
    * the backend and must not overwrite it with an older snapshot.
    */
   pendingRequestRevision?: number
+  /**
+   * Messages the backend holds until the running turn ends, keyed by their
+   * chat row id. Seeded from `provider.listQueuedTurns`, advanced by
+   * `turn.queued` / `turn.dequeued`.
+   */
+  queuedTurns?: QueuedTurnsByMessage
   /** Display title (user-editable, auto-generated from first message) */
   title?: string
   /** Permission mode for this session (sandbox / accept-edits / full-access / plan) */
@@ -192,6 +210,8 @@ interface AgentStore {
   setConversationId: (sessionId: string, conversationId: string) => void
   setPendingRequests: (sessionId: string, pending: readonly PendingBlockingEvent[]) => void
   trackPendingRequestEvent: (event: RuntimeEvent) => void
+  setQueuedTurns: (sessionId: string, turns: readonly QueuedTurnSummary[]) => void
+  trackQueuedTurnEvent: (event: RuntimeEvent) => void
   getActiveSession: () => AgentSession | undefined
   getUnreadCount: (sessionId: string) => number
   setTitle: (sessionId: string, title: string) => void
@@ -225,7 +245,7 @@ interface AgentStore {
    * app restart) and to anything that reads `worktreePath` reactively
    * (sidebar tags, future cwd badges).
    */
-  setDriftSuggestion: (sessionId: string, suggestion: { worktreePath: string; branch: string } | null) => void
+  setDriftSuggestion: (sessionId: string, suggestion: DriftSuggestion | null) => void
   setWorktree: (
     sessionId: string,
     worktreePath: string | null,
@@ -421,6 +441,35 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         s.id === sessionId ? { ...s, conversationId } : s
       ),
     })),
+
+  setQueuedTurns: (sessionId, turns) =>
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, queuedTurns: seedQueuedTurns(turns) } : s
+      ),
+    })),
+
+  trackQueuedTurnEvent: (event) =>
+    set((state) => {
+      let changed = false
+      const sessions = state.sessions.map((s) => {
+        if (s.id !== event.threadId) return s
+        const current = s.queuedTurns ?? NO_QUEUED_TURNS
+        const next = applyQueuedTurnEvent(current, event)
+        // A cancelled message never reached the agent, so its row goes too,
+        // on every client (the backend deleted the stored copy).
+        const cancelled = event.type === 'turn.dequeued' && event.reason === 'cancelled'
+          && s.messages.some((m) => m.id === event.messageId)
+        if (next === current && !cancelled) return s
+        changed = true
+        return {
+          ...s,
+          queuedTurns: next,
+          ...(cancelled ? { messages: s.messages.filter((m) => m.id !== event.messageId) } : {}),
+        }
+      })
+      return changed ? { sessions } : state
+    }),
 
   setPendingRequests: (sessionId, pending) =>
     set((state) => ({

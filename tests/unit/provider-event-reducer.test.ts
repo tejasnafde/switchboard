@@ -241,10 +241,18 @@ describe('reduceProviderEvent (desktop)', () => {
 
   it('worktree.drift suggests a new worktree but not the one already followed', () => {
     reduce({ type: 'worktree.drift', worktreePath: '/wt', branch: 'b' })
-    expect(session().driftSuggestion).toEqual({ worktreePath: '/wt', branch: 'b' })
+    expect(session().driftSuggestion).toEqual({ worktreePath: '/wt', branch: 'b', followSuggestions: 'auto', workedWorktrees: 0 })
     useAgentStore.getState().setDriftSuggestion(T, null)
     useAgentStore.getState().setWorktree(T, '/wt', 'b')
     reduce({ type: 'worktree.drift', worktreePath: '/wt', branch: 'b' })
+    expect(session().driftSuggestion ?? null).toBeNull()
+  })
+
+  it('worktree.drift carries the chat setting and says nothing when muted', () => {
+    reduce({ type: 'worktree.drift', worktreePath: '/wt2', branch: 'c', followSuggestions: 'on', workedWorktrees: 4 })
+    expect(session().driftSuggestion).toEqual({ worktreePath: '/wt2', branch: 'c', followSuggestions: 'on', workedWorktrees: 4 })
+    useAgentStore.getState().setDriftSuggestion(T, null)
+    reduce({ type: 'worktree.drift', worktreePath: '/wt3', branch: 'd', followSuggestions: 'muted', workedWorktrees: 1 })
     expect(session().driftSuggestion ?? null).toBeNull()
   })
 
@@ -267,5 +275,32 @@ describe('reduceProviderEvent (desktop)', () => {
     reduce({ type: 'session', sessionId: 's' })
     reduce({ type: 'thread.read', at: 1 })
     expect(messages()).toEqual([])
+  })
+})
+
+describe('agent store queued messages', () => {
+  const track = (event: Record<string, unknown>) =>
+    useAgentStore.getState().trackQueuedTurnEvent({ threadId: T, ...event } as unknown as RuntimeEvent)
+
+  it('marks a row queued even before its echo lands, and unmarks it when it runs', () => {
+    track({ type: 'turn.queued', messageId: 'remote_q', text: 'later', queuedAt: 1 })
+    expect(session().queuedTurns?.remote_q?.text).toBe('later')
+    useAgentStore.getState().appendMessage(T, { id: 'remote_q', role: 'user', content: 'later', timestamp: 1 })
+    track({ type: 'turn.dequeued', messageId: 'remote_q', reason: 'started' })
+    expect(session().queuedTurns).toEqual({})
+    expect(messages().map((m) => m.id)).toEqual(['remote_q'])
+  })
+
+  it('drops the row of a cancelled message on every client', () => {
+    useAgentStore.getState().appendMessage(T, { id: 'remote_q', role: 'user', content: 'take back', timestamp: 1 })
+    track({ type: 'turn.queued', messageId: 'remote_q', text: 'take back', queuedAt: 1 })
+    track({ type: 'turn.dequeued', messageId: 'remote_q', reason: 'cancelled' })
+    expect(messages()).toEqual([])
+    expect(session().queuedTurns).toEqual({})
+  })
+
+  it('seeds from the backend list', () => {
+    useAgentStore.getState().setQueuedTurns(T, [{ threadId: T, messageId: 'remote_x', text: 'x', queuedAt: 2 }])
+    expect(Object.keys(session().queuedTurns ?? {})).toEqual(['remote_x'])
   })
 })

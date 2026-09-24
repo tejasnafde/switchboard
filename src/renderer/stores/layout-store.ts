@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { createRendererLogger } from '../logger'
 import { useAgentStore } from './agent-store'
+import { FOLLOW_UP_DEFAULT_KEY, parseFollowUpDefault, type TurnDelivery } from '@shared/turn-delivery'
 import {
   companionSessionId,
   displayedChatSessionIds,
@@ -155,6 +156,14 @@ interface LayoutStore {
    */
   showFileDiffCards: boolean
   setShowFileDiffCards: (value: boolean) => void
+
+  /**
+   * What Enter (and the Send button) does while the agent works: steer into
+   * the running turn (default, the old behaviour) or queue until it ends.
+   * Alt/Option+Enter does the other. Persisted via settings DB.
+   */
+  followUpDefault: TurnDelivery
+  setFollowUpDefault: (value: TurnDelivery) => void
 
   /**
    * Sidebar disclosure for the "This Mac" workspace tree and the folded
@@ -444,6 +453,12 @@ export const useLayoutStore = create<LayoutStore>((set, get) => ({
     set({ showFileDiffCards: value })
   },
 
+  followUpDefault: 'steer',
+  setFollowUpDefault: (value) => {
+    persistSetting(FOLLOW_UP_DEFAULT_KEY, value)
+    set({ followUpDefault: value })
+  },
+
   sidebarLocalTreeExpanded: false,
   toggleSidebarLocalTree: () => {
     const next = !get().sidebarLocalTreeExpanded
@@ -472,7 +487,7 @@ registerChatWorkspaceController({
 export async function hydrateSidebarCollapse(): Promise<void> {
   if (typeof window === 'undefined' || !window.api?.settings) return
   try {
-    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr, dsModeStr, showFileDiffsStr, localTreeStr, offlineMachinesStr] = await Promise.all([
+    const [projJson, wsJson, modeStr, appViewStr, kanbanWsStr, kanbanProjStr, dsModeStr, showFileDiffsStr, localTreeStr, offlineMachinesStr, followUpStr] = await Promise.all([
       window.api.settings.get(COLLAPSE_PROJECTS_KEY),
       window.api.settings.get(COLLAPSE_WORKSPACES_KEY),
       window.api.settings.get(RIGHT_PANE_MODE_KEY),
@@ -483,6 +498,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       window.api.settings.get(SHOW_FILE_DIFF_CARDS_KEY),
       window.api.settings.get(LOCAL_TREE_EXPANDED_KEY),
       window.api.settings.get(OFFLINE_MACHINES_EXPANDED_KEY),
+      window.api.settings.get(FOLLOW_UP_DEFAULT_KEY),
     ])
     const parse = (s: string | null): string[] => {
       if (!s) return []
@@ -505,6 +521,7 @@ export async function hydrateSidebarCollapse(): Promise<void> {
       showFileDiffCards: showFileDiffsStr === 'true',
       sidebarLocalTreeExpanded: localTreeStr === 'true',
       sidebarOfflineMachinesExpanded: offlineMachinesStr === 'true',
+      followUpDefault: parseFollowUpDefault(followUpStr),
     })
   } catch (err) {
     log.warn('failed to hydrate layout settings from disk - keeping in-memory defaults', err)

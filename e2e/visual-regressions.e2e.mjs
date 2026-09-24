@@ -534,7 +534,7 @@ async function captureThemeScreens(win, theme) {
   await win.getByRole('button', { name: 'Chats', exact: true }).click()
 
   // A turn held open on an approval, with a draft in the composer so it
-  // offers Stop, Queue and Steer.
+  // offers Stop and Steer.
   await openConversation(win, RUNNING_CHAT)
   await editor.click()
   await win.keyboard.type('Run the auth tests.')
@@ -548,6 +548,11 @@ async function captureThemeScreens(win, theme) {
   await sidebar.locator('.sidebar-recent-group[data-group="needs-you"]').waitFor({ state: 'visible' })
   await snapScreen(win, 'sidebar-needs-you', theme, sidebar)
   await snapScreen(win, 'composer-running', theme, win.locator('.chat-composer').first())
+  // The draft queued behind that approval: the dashed Queued bubble.
+  await editor.click()
+  await win.keyboard.press('Alt+Enter')
+  await win.locator('[data-queued-turn]').waitFor({ state: 'visible', timeout: 10_000 })
+  await snapScreen(win, 'queued-message', theme, win.locator('[data-chat-panel]').first(), [turnTimes])
 }
 
 async function runThemeScreens() {
