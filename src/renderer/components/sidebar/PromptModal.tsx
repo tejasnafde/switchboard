@@ -30,6 +30,7 @@ export function PromptModal({ title, initialValue = '', submitLabel = 'OK', onSu
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => {
           e.preventDefault()
+          ref.current?.focus()
           ref.current?.select()
         }}
         overlayClassName="z-[1300]"
