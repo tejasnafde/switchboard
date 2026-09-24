@@ -568,6 +568,11 @@ async function launchSwitchboard({ userData = userDataDir, demo = false } = {}) 
   })
   app = instance
   const win = await instance.firstWindow({ timeout: 20_000 })
+  // Electron shows window.confirm as a native macOS alert, which Playwright can
+  // neither see nor click, so a run that reaches one hangs for ever. Accept it.
+  const acceptConfirm = () => { window.confirm = () => true }
+  await instance.context().addInitScript(acceptConfirm)
+  await win.evaluate(acceptConfirm)
   if (demo) {
     await instance.evaluate(({ BrowserWindow }, size) => {
       BrowserWindow.getAllWindows()[0]?.setBounds({ x: 40, y: 40, ...size })
