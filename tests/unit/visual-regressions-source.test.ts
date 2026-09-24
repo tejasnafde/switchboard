@@ -45,7 +45,7 @@ describe('visual regression harness safety', () => {
   })
 
   it('freezes what varies between runs before capturing', () => {
-    expect(source).toContain('win.clock.setFixedTime(FROZEN_NOW)')
+    expect(source).toContain('addInitScript(pinDate, FROZEN_NOW)')
     expect(source).toContain("TZ: 'UTC'")
     expect(source).toContain('--force-device-scale-factor=1')
     expect(source).toMatch(/animation: none !important/)

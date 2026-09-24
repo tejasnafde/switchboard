@@ -90,7 +90,9 @@ try {
   const seededProjects = await win.evaluate(async ({ projectAPath, projectBPath }) => {
     await window.api.settings.set('tour.autoplay', 'false')
     await window.api.settings.set('sidebar.localTreeExpanded', 'true')
-    // The first-run analytics notice covers the bottom of the sidebar.
+    // The first-run analytics notice covers the bottom of the sidebar. It
+    // reads the flag on mount, so the reload below is what hides it.
+    await window.api.settings.set('analytics.enabled', 'false')
     await window.api.settings.set('analytics.noticeSeen', 'true')
     await window.api.routing.invokeOn('local', 'app:add-project-path', projectAPath)
     await window.api.routing.invokeOn('local', 'app:add-project-path', projectBPath)
@@ -133,6 +135,7 @@ try {
     console.error('renderer body after sidebar timeout', (await win.locator('body').innerText()).slice(0, 4_000))
     throw error
   }
+  assert(!(await win.getByText('Switchboard sends anonymous usage counts').isVisible()), 'first-run analytics notice is not covering the sidebar')
 
   // A cold idle send must acknowledge the click before provider startup
   // finishes. Stub only this renderer's provider boundary: the accepted
