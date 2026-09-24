@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { Command } from 'cmdk'
 import { useLayoutStore } from '../stores/layout-store'
 import { useAgentStore } from '../stores/agent-store'
@@ -6,6 +6,7 @@ import { useTerminalStore } from '../stores/terminal-store'
 import { sessionExecutionRootPath } from '../services/executionRoot'
 import { useThemeStore, type ThemeName } from '../stores/theme-store'
 import { createRendererLogger } from '../logger'
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
 const log = createRendererLogger('command-palette')
 
@@ -177,8 +178,6 @@ export function CommandPalette({
     [onClose, onOpenSettings, onOpenSearch, onOpenSessionPicker, onOpenQuickPrompt, onContextBridge],
   )
 
-  if (!open) return null
-
   const visibleCommands = commands.filter((c) => (c.available ? c.available() : true))
 
   // Group commands for display
@@ -188,116 +187,72 @@ export function CommandPalette({
     groups[c.group].push(c)
   }
 
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const groupHeadingClass = 'px-[8px] py-[4px] text-[10px] font-[600] text-[var(--text-muted)]'
+
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        justifyContent: 'center',
-        paddingTop: '20vh',
-        background: 'rgba(0, 0, 0, 0.4)',
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <Command
-        label="Command Palette"
-        className="palette-modal-content"
-        style={{
-          width: '540px',
-          maxHeight: '520px',
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border)',
-          borderRadius: '10px',
-          overflow: 'hidden',
-          boxShadow: '0 16px 48px rgba(0, 0, 0, 0.3)',
-          display: 'flex',
-          flexDirection: 'column',
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        asChild
+        aria-describedby={undefined}
+        overlayClassName="z-[1000] bg-[rgba(0,0,0,0.4)]"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          inputRef.current?.focus()
         }}
+        className="palette-modal-content inset-x-0 top-[20vh] z-[1000] mx-auto flex max-h-[520px] w-[540px] flex-col overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[0_16px_48px_rgba(0,0,0,0.3)]"
       >
-        <Command.Input
-          autoFocus
-          placeholder="Type a command..."
-          style={{
-            padding: '12px 16px',
-            border: 'none',
-            borderBottom: '1px solid var(--border)',
-            background: 'transparent',
-            color: 'var(--text-primary)',
-            fontSize: '14px',
-            outline: 'none',
-            width: '100%',
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') onClose()
-          }}
-        />
-        <Command.List
-          style={{
-            overflowY: 'auto',
-            padding: '6px',
-            maxHeight: '440px',
-          }}
-        >
-          <Command.Empty style={{
-            padding: '16px',
-            textAlign: 'center',
-            color: 'var(--text-muted)',
-            fontSize: '13px',
-          }}>
-            No results found.
-          </Command.Empty>
+        <Command label="Command Palette">
+          <DialogTitle className="sr-only">Command Palette</DialogTitle>
+          <Command.Input
+            ref={inputRef}
+            placeholder="Type a command..."
+            className="w-full border-0 border-b border-[var(--border)] bg-transparent px-[16px] py-[12px] text-[14px] text-[var(--text-primary)] outline-none"
+          />
+          <Command.List className="max-h-[440px] overflow-y-auto p-[6px]">
+            <Command.Empty className="p-[16px] text-center text-[13px] text-[var(--text-muted)]">
+              No results found.
+            </Command.Empty>
 
-          {Object.entries(groups).map(([group, items]) => (
-            <Command.Group
-              key={group}
-              heading={group}
-              style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 600 }}
-            >
-              {items.map((c) => (
-                <PaletteItem key={c.id} onSelect={c.run} shortcut={c.shortcut}>
-                  {c.label}
-                </PaletteItem>
-              ))}
-            </Command.Group>
-          ))}
-
-          {/* Theme is dynamic (current theme highlighted) so keep inline */}
-          <Command.Group
-            heading="Theme"
-            style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 600 }}
-          >
-            {(['dark', 'light', 'translucent'] as ThemeName[]).map((t) => (
-              <PaletteItem
-                key={t}
-                onSelect={() => { setTheme(t); onClose() }}
-              >
-                Theme: {t.charAt(0).toUpperCase() + t.slice(1)}
-              </PaletteItem>
+            {Object.entries(groups).map(([group, items]) => (
+              <Command.Group key={group} heading={group} className={groupHeadingClass}>
+                {items.map((c) => (
+                  <PaletteItem key={c.id} onSelect={c.run} shortcut={c.shortcut}>
+                    {c.label}
+                  </PaletteItem>
+                ))}
+              </Command.Group>
             ))}
-          </Command.Group>
 
-          {sessions.length > 0 && (
-            <Command.Group
-              heading="Sessions"
-              style={{ fontSize: '10px', color: 'var(--text-muted)', padding: '4px 8px', fontWeight: 600 }}
-            >
-              {sessions.map((s) => (
+            {/* Theme is dynamic (current theme highlighted) so keep inline */}
+            <Command.Group heading="Theme" className={groupHeadingClass}>
+              {(['dark', 'light', 'translucent'] as ThemeName[]).map((t) => (
                 <PaletteItem
-                  key={s.id}
-                  onSelect={() => { selectChatSession(s.id); onClose() }}
+                  key={t}
+                  onSelect={() => { setTheme(t); onClose() }}
                 >
-                  Switch to: {s.title ?? s.projectPath?.split('/').pop() ?? s.id.slice(0, 12)}
+                  Theme: {t.charAt(0).toUpperCase() + t.slice(1)}
                 </PaletteItem>
               ))}
             </Command.Group>
-          )}
-        </Command.List>
-      </Command>
-    </div>
+
+            {sessions.length > 0 && (
+              <Command.Group heading="Sessions" className={groupHeadingClass}>
+                {sessions.map((s) => (
+                  <PaletteItem
+                    key={s.id}
+                    onSelect={() => { selectChatSession(s.id); onClose() }}
+                  >
+                    Switch to: {s.title ?? s.projectPath?.split('/').pop() ?? s.id.slice(0, 12)}
+                  </PaletteItem>
+                ))}
+              </Command.Group>
+            )}
+          </Command.List>
+        </Command>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -313,29 +268,11 @@ function PaletteItem({
   return (
     <Command.Item
       onSelect={onSelect}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        padding: '8px 12px',
-        borderRadius: '6px',
-        cursor: 'pointer',
-        fontSize: '13px',
-        color: 'var(--text-primary)',
-        gap: '8px',
-      }}
-      className="cmdk-item"
+      className="cmdk-item flex cursor-pointer items-center gap-[8px] rounded-[6px] px-[12px] py-[8px] text-[13px] text-[var(--text-primary)]"
     >
-      <span style={{ flex: 1 }}>{children}</span>
+      <span className="flex-1">{children}</span>
       {shortcut && (
-        <span style={{
-          fontSize: '11px',
-          color: 'var(--text-muted)',
-          fontFamily: 'var(--font-mono)',
-          background: 'var(--bg-tertiary)',
-          padding: '2px 6px',
-          borderRadius: '3px',
-          border: '1px solid var(--border)',
-        }}>
+        <span className="rounded-[3px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[6px] py-[2px] text-[11px] [font-family:var(--font-mono)] text-[var(--text-muted)]">
           {shortcut}
         </span>
       )}

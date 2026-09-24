@@ -7,6 +7,8 @@ import {
   sendQuickPrompt,
 } from '../services/contextBridge'
 import { useLayoutStore } from '../stores/layout-store'
+import { cn } from '../lib/utils'
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
 interface QuickPromptModalProps {
   open: boolean
@@ -64,8 +66,6 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
       }
     }
 
-    // Focus after mount so the cursor starts in the input.
-    setTimeout(() => textareaRef.current?.focus(), 20)
   }, [open, ideContext, resolvedSessionId])
 
   const agentLabel = useMemo(() => {
@@ -91,51 +91,32 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
     }
   }
 
-  if (!open) return null
-
   return (
-    <div
-      onClick={onClose}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1300,
-        background: 'rgba(0, 0, 0, 0.4)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'flex-start',
-        paddingTop: '15vh',
-      }}
-    >
-      <div
-        className="sb-floating-surface"
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          width: 'min(620px, 92vw)',
-          display: 'flex',
-          flexDirection: 'column',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg, 10px)',
-          padding: '14px 16px',
-          gap: '10px',
-          boxShadow: '0 20px 60px rgba(0, 0, 0, 0.5)',
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        aria-describedby={undefined}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          textareaRef.current?.focus()
         }}
+        overlayClassName="z-[1300] bg-[rgba(0,0,0,0.4)]"
+        className="sb-floating-surface inset-x-0 top-[15vh] z-[1300] mx-auto flex w-[min(620px,92vw)] flex-col gap-[10px] rounded-[var(--radius-lg,10px)] border border-[var(--border)] px-[16px] py-[14px] shadow-[0_20px_60px_rgba(0,0,0,0.5)]!"
       >
         {/* Target session banner */}
-        <div style={{ fontSize: '10.5px', color: 'var(--text-muted)', display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{ textTransform: 'uppercase', letterSpacing: '0.7px', fontWeight: 600 }}>
+        <div className="flex items-center gap-[8px] text-[10.5px] text-[var(--text-muted)]">
+          <DialogTitle className="text-[10.5px] font-[600] uppercase tracking-[0.7px]">
             Quick prompt
-          </span>
+          </DialogTitle>
           {activeSession ? (
             <span>
-              → <span style={{ color: 'var(--text-secondary)' }}>{agentLabel}</span>
+              → <span className="text-[var(--text-secondary)]">{agentLabel}</span>
               {' · '}
-              <span style={{ fontFamily: 'var(--font-mono)' }}>
+              <span className="[font-family:var(--font-mono)]">
                 {activeSession.title ?? activeSession.id.slice(0, 8)}
               </span>
             </span>
           ) : (
-            <span style={{ color: 'var(--error)' }}>
+            <span className="text-[var(--error)]">
               No active chat - open or create one first.
             </span>
           )}
@@ -143,43 +124,18 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
 
         {/* Context pill (if terminal selection was captured) */}
         {context && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '5px 10px',
-            borderRadius: '4px',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border)',
-            fontSize: '11.5px',
-          }}>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+          <div className="flex items-center gap-[8px] rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[10px] py-[5px] text-[11.5px]">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
               <polyline points="4 17 10 11 4 5" />
               <line x1="12" y1="19" x2="20" y2="19" />
             </svg>
-            <span style={{
-              color: 'var(--text-secondary)',
-              fontFamily: 'var(--font-mono)',
-              fontSize: '10.5px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flex: 1,
-            }}>
+            <span className="flex-1 truncate text-[10.5px] [font-family:var(--font-mono)] text-[var(--text-secondary)]">
               With context · {context.preview}
             </span>
             <button
               onClick={() => setContext(null)}
               title="Remove context"
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--text-muted)',
-                cursor: 'pointer',
-                padding: '0 4px',
-                fontSize: '14px',
-                lineHeight: 1,
-              }}
+              className="cursor-pointer border-0 bg-transparent px-[4px] text-[14px] leading-none text-[var(--text-muted)]"
             >
               ×
             </button>
@@ -192,7 +148,6 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Escape') { e.preventDefault(); onClose() }
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
               if (canSend) void handleSend()
@@ -200,55 +155,30 @@ export function QuickPromptModal({ open, onClose, ideContext, targetSessionId }:
           }}
           placeholder={`Ask ${agentLabel}…`}
           rows={2}
-          style={{
-            width: '100%',
-            resize: 'none',
-            padding: '10px 12px',
-            borderRadius: 'var(--radius)',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-primary)',
-            color: 'var(--text-primary)',
-            fontSize: '14px',
-            fontFamily: 'var(--font-sans)',
-            lineHeight: 1.5,
-            outline: 'none',
-            maxHeight: '200px',
-          }}
+          className="max-h-[200px] w-full resize-none rounded-[var(--radius)] border border-[var(--border)] bg-[var(--bg-primary)] px-[12px] py-[10px] text-[14px] leading-[1.5] [font-family:var(--font-sans)] text-[var(--text-primary)] outline-none"
         />
 
         {/* Footer */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontSize: '10.5px',
-          color: 'var(--text-muted)',
-        }}>
+        <div className="flex items-center justify-between text-[10.5px] text-[var(--text-muted)]">
           <span>
             Enter to send · Shift+Enter newline · Esc to dismiss
           </span>
           <button
             onClick={handleSend}
             disabled={!canSend}
-            style={{
-              padding: '5px 14px',
-              borderRadius: '4px',
-              border: 'none',
-              background: canSend ? 'var(--accent)' : 'var(--bg-tertiary)',
-              color: canSend ? '#fff' : 'var(--text-muted)',
-              cursor: canSend ? 'pointer' : 'default',
-              fontSize: '11.5px',
-              fontWeight: 600,
-            }}
+            className={cn(
+              'rounded-[4px] border-0 px-[14px] py-[5px] text-[11.5px] font-[600]',
+              canSend ? 'cursor-pointer bg-[var(--accent)] text-[#fff]' : 'cursor-default bg-[var(--bg-tertiary)] text-[var(--text-muted)]',
+            )}
           >
             {status === 'sending' ? 'Sending…' : 'Send'}
           </button>
         </div>
 
         {status === 'error' && errorMsg && (
-          <div style={{ fontSize: '11px', color: 'var(--error)' }}>{errorMsg}</div>
+          <div className="text-[11px] text-[var(--error)]">{errorMsg}</div>
         )}
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

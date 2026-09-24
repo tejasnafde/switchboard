@@ -55,6 +55,9 @@ import {
   type RecentSessionLimit,
 } from './sidebar/recentSessionLimit'
 import { confirm } from './ui/confirm'
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
+import { onEscapeFirst } from './ui/escape-first'
+import { cn } from '../lib/utils'
 
 const log = createRendererLogger('component:settings')
 
@@ -317,95 +320,53 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
     }
   }, [])
 
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    window.addEventListener('keydown', handler)
-    return () => window.removeEventListener('keydown', handler)
-  }, [open, onClose])
-
-  if (!open) return null
+  const contentRef = useRef<HTMLDivElement>(null)
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'rgba(0, 0, 0, 0.5)',
-        backdropFilter: 'blur(4px)',
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose()
-      }}
-    >
-      <div
-        className="settings-modal-content"
-        style={{
-          width: '520px',
-          maxHeight: '70vh',
-          border: '1px solid var(--border)',
-          borderRadius: 'var(--radius-lg)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        ref={contentRef}
+        aria-describedby={undefined}
+        // Focus the dialog itself, not its first control: the close button
+        // would otherwise open with a focus ring.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          contentRef.current?.focus()
         }}
+        // Escape in a launch-config name field cancels that edit (its own
+        // onKeyDown) instead of closing Settings.
+        onEscapeKeyDown={(event) => {
+          if (renamingLaunchConfig !== null || addingLaunchConfig) event.preventDefault()
+        }}
+        overlayClassName="z-[1000] backdrop-blur-[4px]"
+        // Centred without a transform: a transform would make the provider
+        // editor's position: fixed backdrop relative to this box.
+        className="settings-modal-content inset-0 z-[1000] m-auto flex h-fit max-h-[70vh] w-[520px] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)]"
       >
         {/* Header */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '14px 18px',
-          borderBottom: '1px solid var(--border)',
-        }}>
-          <span style={{ fontWeight: 600, fontSize: '14px' }}>Settings</span>
+        <div className="flex items-center justify-between border-b border-[var(--border)] px-[18px] py-[14px]">
+          <DialogTitle className="text-[14px] font-[600]">Settings</DialogTitle>
           <button
             onClick={onClose}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-muted)',
-              cursor: 'pointer',
-              fontSize: '18px',
-              lineHeight: 1,
-              padding: '2px 6px',
-              borderRadius: '4px',
-            }}
+            aria-label="Close settings"
+            className="cursor-pointer rounded-[4px] border-0 bg-transparent px-[6px] py-[2px] text-[18px] leading-none text-[var(--text-muted)]"
           >
             &times;
           </button>
         </div>
 
         {/* Tabs */}
-        <div style={{
-          display: 'flex',
-          borderBottom: '1px solid var(--border)',
-          padding: '0 18px',
-          gap: '0',
-        }}>
+        <div className="flex border-b border-[var(--border)] px-[18px]">
           {(['general', 'providers', 'mobile', 'launchConfigs', 'archived', 'tour', 'about'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              style={{
-                padding: '8px 14px',
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === tab ? '2px solid var(--accent)' : '2px solid transparent',
-                color: activeTab === tab ? 'var(--text-primary)' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                fontSize: '12px',
-                fontWeight: activeTab === tab ? 600 : 400,
-                textTransform: 'capitalize',
-                transition: 'color 0.12s',
-              }}
+              className={cn(
+                'cursor-pointer border-0 border-b-2 border-solid bg-transparent px-[14px] py-[8px] text-[12px] capitalize transition-[color] duration-[120ms]',
+                activeTab === tab
+                  ? 'border-b-[var(--accent)] font-[600] text-[var(--text-primary)]'
+                  : 'border-b-transparent font-[400] text-[var(--text-secondary)]',
+              )}
             >
               {TAB_LABELS[tab] ?? tab}
             </button>
@@ -413,7 +374,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
         </div>
 
         {/* Content */}
-        <div style={{ flex: 1, overflow: 'auto', padding: '16px 18px' }}>
+        <div className="flex-1 overflow-auto px-[18px] py-[16px]">
           {activeTab === 'general' && (
             <div>
               {/* Notifications */}
@@ -952,8 +913,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1827,17 +1788,12 @@ function UpdateCheckRow() {
     const closeOnPointerDown = (event: PointerEvent) => {
       if (!helpRef.current?.contains(event.target as Node)) setHelpOpen(false)
     }
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      event.stopPropagation()
-      setHelpOpen(false)
-    }
+    // Escape dismisses only the help, not Settings around it.
+    const offEscape = onEscapeFirst(() => setHelpOpen(false))
     document.addEventListener('pointerdown', closeOnPointerDown)
-    document.addEventListener('keydown', closeOnEscape)
     return () => {
       document.removeEventListener('pointerdown', closeOnPointerDown)
-      document.removeEventListener('keydown', closeOnEscape)
+      offEscape()
     }
   }, [helpOpen])
 

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { Dialog, DialogContent, DialogTitle } from '../ui/dialog'
 
 interface PromptModalProps {
   title: string
@@ -17,8 +18,6 @@ export function PromptModal({ title, initialValue = '', submitLabel = 'OK', onSu
   const [value, setValue] = useState(initialValue)
   const ref = useRef<HTMLInputElement>(null)
 
-  useEffect(() => { ref.current?.select() }, [])
-
   const submit = () => {
     const trimmed = value.trim()
     if (!trimmed) { onCancel(); return }
@@ -26,35 +25,36 @@ export function PromptModal({ title, initialValue = '', submitLabel = 'OK', onSu
   }
 
   return (
-    <div
-      onClick={onCancel}
-      style={{ position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '18vh' }}
-    >
-      <div
-        className="sb-floating-surface"
-        onClick={(e) => e.stopPropagation()}
-        style={{ width: 'min(420px, 92vw)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden' }}
+    <Dialog open onOpenChange={(open) => { if (!open) onCancel() }}>
+      <DialogContent
+        aria-describedby={undefined}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          ref.current?.focus()
+          ref.current?.select()
+        }}
+        overlayClassName="z-[1300]"
+        className="sb-floating-surface inset-x-0 top-[18vh] z-[1300] mx-auto w-[min(420px,92vw)] overflow-hidden rounded-[var(--radius)] border border-[var(--border)]"
       >
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border)', fontSize: '12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+        <DialogTitle className="border-b border-[var(--border)] px-[14px] py-[10px] text-[12px] font-[600] text-[var(--text-secondary)]">
           {title}
-        </div>
-        <div style={{ padding: '12px 14px', display: 'flex', gap: '6px' }}>
+        </DialogTitle>
+        <div className="flex gap-[6px] px-[14px] py-[12px]">
           <input
             ref={ref}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); submit() }
-              if (e.key === 'Escape') { e.preventDefault(); onCancel() }
             }}
-            style={{ flex: 1, background: 'var(--bg-tertiary)', border: '1px solid var(--border)', borderRadius: '4px', padding: '6px 9px', color: 'var(--text-primary)', fontSize: '12.5px', outline: 'none', fontFamily: 'var(--font-sans)' }}
+            className="flex-1 rounded-[4px] border border-[var(--border)] bg-[var(--bg-tertiary)] px-[9px] py-[6px] text-[12.5px] [font-family:var(--font-sans)] text-[var(--text-primary)] outline-none"
           />
           <button
             onClick={submit}
-            style={{ background: 'var(--accent)', color: '#fff', border: 'none', padding: '5px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}
+            className="cursor-pointer rounded-[4px] border-0 bg-[var(--accent)] px-[12px] py-[5px] text-[12px] text-[#fff]"
           >{submitLabel}</button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

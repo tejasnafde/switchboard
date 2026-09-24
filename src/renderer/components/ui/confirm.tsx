@@ -8,6 +8,7 @@ import {
   AlertDialogTitle,
 } from './alert-dialog'
 import { Button } from './button'
+import { focusReturnTarget } from './focus-return'
 
 export interface ConfirmOptions {
   title: string
@@ -44,9 +45,7 @@ function restoreFocus(): void {
   // A confirm chained from the last one's answer is on screen: its own close restores.
   if (!restorePending || queue.length > 0) return
   restorePending = false
-  const target = returnFocus?.isConnected
-    ? returnFocus
-    : document.querySelector<HTMLElement>('[data-chat-panel] [contenteditable="true"]')
+  const target = focusReturnTarget(returnFocus)
   returnFocus = null
   target?.focus()
 }
@@ -101,7 +100,7 @@ export function confirm(options: ConfirmOptions): Promise<boolean> {
   })
 }
 
-/** True while a confirm dialog is on screen, for host modals that trap keys on the document. */
+/** True while a confirm dialog is on screen. */
 export function isConfirmOpen(): boolean {
   return queue.length > 0
 }

@@ -23,6 +23,7 @@ import {
 import type { AgentProvider } from '@shared/types'
 import { AGENT_PROVIDERS } from '@shared/types'
 import { confirm } from '../ui/confirm'
+import { onEscapeFirst } from '../ui/escape-first'
 
 const AGENT_KINDS = AGENT_PROVIDERS
 
@@ -427,6 +428,9 @@ function ProviderInstanceDialog({
   // backend, this only spares the common case of forgetting to set one.
   // Never runs for an existing row: editing must never auto-repoint a
   // saved instance's credential home.
+  // Escape closes this editor, not the Settings dialog it sits in.
+  useEffect(() => onEscapeFirst(onClose), [onClose])
+
   useEffect(() => {
     if (instance) return
     if (oauthDirTouched) return
