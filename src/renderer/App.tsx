@@ -25,7 +25,7 @@ import { QuickPromptModal } from './components/QuickPromptModal'
 import { FeatureTourModal } from './components/onboarding/FeatureTourModal'
 import { UpdateToast } from './components/UpdateToast'
 import { AnalyticsNotice } from './components/AnalyticsNotice'
-import { ConfirmHost } from './components/ui/confirm'
+import { ConfirmHost, unlessConfirmOpen } from './components/ui/confirm'
 import { TOUR_VERSION, type TryItAction } from './components/onboarding/featureRegistry'
 import { appendIdeSelectionToDraft, appendTerminalSelectionToDraft, captureSelection, formatIdeSelection } from './services/contextBridge'
 import { focusTerminal, destroyTerminal } from './services/terminal-registry'
@@ -432,15 +432,15 @@ export function App() {
   // Listen for settings shortcut from native menu
   useEffect(() => {
     if (typeof window.api?.onOpenSettings !== 'function') return
-    const remove = window.api.onOpenSettings(() => {
+    const remove = window.api.onOpenSettings(unlessConfirmOpen(() => {
       setSettingsOpen(true)
-    })
+    }))
     return () => { remove() }
   }, [])
 
   useEffect(() => {
     if (typeof window.api?.onOpenChatBeside !== 'function') return
-    return window.api.onOpenChatBeside(() => toggleDualChatWorkspace(() => setSessionPickerOpen(true)))
+    return window.api.onOpenChatBeside(unlessConfirmOpen(() => toggleDualChatWorkspace(() => setSessionPickerOpen(true))))
   }, [])
 
   // ⌘W  close active TAB (close window when last tab)
@@ -448,7 +448,7 @@ export function App() {
   // No active window → close the app window.
   useEffect(() => {
     if (typeof window.api?.onClosePaneOrWindow !== 'function') return
-    const remove = window.api.onClosePaneOrWindow((opts: { shift?: boolean }) => {
+    const remove = window.api.onClosePaneOrWindow(unlessConfirmOpen((opts: { shift?: boolean }) => {
       // Route ⌘W by focus context.
       const focus = classifyCloseFocus(document.activeElement as unknown as ClosestEl | null)
       const layoutState = useLayoutStore.getState()
@@ -491,7 +491,7 @@ export function App() {
         window.api.closeWindow?.()
       }
       // 'other' / ambiguous focus → do nothing (no destructive close).
-    })
+    }))
     return () => { remove() }
   }, [])
 

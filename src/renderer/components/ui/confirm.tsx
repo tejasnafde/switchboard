@@ -73,6 +73,17 @@ export function isConfirmOpen(): boolean {
   return queue.length > 0
 }
 
+/**
+ * For input the key guard above never sees: native menu accelerators (⌘, ⌘⇧\ ⌘W)
+ * reach the renderer over IPC, not as keydown. The wrapped handler does nothing
+ * while a confirm is open.
+ */
+export function unlessConfirmOpen<A extends unknown[]>(handler: (...args: A) => void): (...args: A) => void {
+  return (...args) => {
+    if (!isConfirmOpen()) handler(...args)
+  }
+}
+
 export function ConfirmHost() {
   const request = useSyncExternalStore(subscribe, current)
   return (

@@ -6,7 +6,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { act, createElement } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { confirm, ConfirmHost } from '../../src/renderer/components/ui/confirm'
+import { confirm, ConfirmHost, unlessConfirmOpen } from '../../src/renderer/components/ui/confirm'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -108,6 +108,20 @@ describe('confirm', () => {
     } finally {
       window.removeEventListener('keydown', onShortcut, true)
     }
+  })
+
+  it('holds native menu actions back while open', async () => {
+    // Menu accelerators arrive over IPC, so the key guard never sees them.
+    const ran: Array<{ shift?: boolean }> = []
+    const onClosePaneOrWindow = unlessConfirmOpen((opts: { shift?: boolean }) => ran.push(opts))
+    const { answer } = await ask({ title: 'Delete launch config "dev"?' })
+    onClosePaneOrWindow({ shift: true })
+    expect(ran).toEqual([])
+    await act(async () => button('Cancel').click())
+    await expect(answer).resolves.toBe(false)
+
+    onClosePaneOrWindow({ shift: true })
+    expect(ran).toEqual([{ shift: true }])
   })
 
   it('does not let a held Escape cancel the confirm queued behind', async () => {
