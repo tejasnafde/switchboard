@@ -8,7 +8,8 @@
  *   used anywhere else ("hidden", "truncate") only becomes a utility if one
  *   of those uses it too. The generated ones still apply app-wide: do not
  *   reuse utility names ("flex", "fixed", "border", "outline") as plain
- *   class names. Add a file here when it moves off inline styles.
+ *   class names. Add a file here when it moves off inline styles;
+ *   tests/unit/tailwind-sources.test.ts fails when one is missing.
  *
  * The tokens point at the theme variables in global.css, so every primitive
  * follows the theme picker (.theme-dark / .theme-light / .theme-translucent).

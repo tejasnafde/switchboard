@@ -148,8 +148,8 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
             <button
               key={`${r.messageId}_${i}`}
               onClick={() => handleSelect(r)}
-              // The inline background this replaced beat .cmdk-item:hover, so
-              // the transparent reset has to be important to keep that look.
+              // Rows stay untinted on hover; without the important flag
+              // .cmdk-item:hover in global.css would win.
               className="cmdk-item block w-full cursor-pointer rounded-[6px] border-0 bg-transparent! px-[12px] py-[10px] text-left text-[13px] text-[var(--text-primary)]"
             >
               <div className="mb-[4px] flex items-center gap-[6px]">

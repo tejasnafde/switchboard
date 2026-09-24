@@ -1,8 +1,7 @@
 import { cn } from '../../lib/utils'
 
-// The card and worktree dialogs share one look. The surface is the opaque
-// per-theme one: these used var(--bg), which no theme defines, so the board
-// showed through them.
+// The card and worktree dialogs share one look, on the opaque per-theme
+// surface so the board never shows through.
 export const modalClass = (size: string): string => cn(
   'sb-floating-surface inset-0 z-[1000] m-auto flex h-fit max-h-[88vh] flex-col overflow-hidden rounded-[8px] border border-[var(--border)] shadow-[0_12px_48px_rgba(0,0,0,0.4)]!',
   size,
