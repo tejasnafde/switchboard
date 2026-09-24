@@ -17,7 +17,7 @@ import { JsonlParser, type JsonlSource } from '../../src/main/agent/jsonl-parser
 import { mergeConversationMessages } from '../../src/main/agent/dedupe-messages'
 import { projectTurnPresentation } from '../../src/renderer/components/chat/turnPresentation'
 import { groupIntoTurns } from '../../src/renderer/components/chat/MessageList'
-import { fileDiffRowId, historyTailStart, storedToolOutput, STORED_TOOL_OUTPUT_MAX_CHARS, toolRowId } from '../../src/shared/turn-activity'
+import { fileDiffRowId, historyTail, historyTailStart, storedToolText, STORED_TOOL_TEXT_MAX_CHARS, toolRowId } from '../../src/shared/turn-activity'
 import type { ChatMessage, ToolCall } from '../../src/shared/types'
 
 const at = (iso: string) => Date.parse(`2026-09-24T10:00:${iso}Z`)
@@ -124,15 +124,30 @@ describe('a history window', () => {
     expect(messages.slice(historyTailStart(messages, 2)).map((m) => m.id)).toEqual(['b', 't2', 't3', 'c'])
     expect(historyTailStart(messages, 3)).toBe(0)
   })
+
+  it('bounds the tool and changed-file text it carries, dropping the oldest activity first', () => {
+    const text = (id: string): ChatMessage => ({ id, role: 'assistant', content: id, timestamp: 0 })
+    const tool = (id: string, chars: number): ChatMessage => ({
+      id, role: 'assistant', content: '', timestamp: 0, toolCalls: [{ id, name: 'Edit', input: 'x'.repeat(chars) }],
+    })
+    const card = (id: string, chars: number): ChatMessage => ({
+      id, role: 'assistant', content: '', timestamp: 0,
+      fileDiff: { fileEditId: id, repoRoot: '/r', relPath: 'a.ts', changeKind: 'modify', oldContent: 'o'.repeat(chars), newContent: '', status: 'pending' },
+    })
+    const messages = [text('a'), tool('old', 60), text('b'), card('mid', 30), tool('new', 30), text('c')]
+    expect(historyTail(messages, 10, 70).map((m) => m.id)).toEqual(['a', 'b', 'mid', 'new', 'c'])
+    expect(historyTail(messages, 10, 40).map((m) => m.id)).toEqual(['a', 'b', 'new', 'c'])
+    expect(historyTail(messages, 2, 1000).map((m) => m.id)).toEqual(['b', 'mid', 'new', 'c'])
+  })
 })
 
-describe('a stored tool output', () => {
+describe('a stored tool input or output', () => {
   it('keeps a short output whole and the head and tail of a long one', () => {
-    expect(storedToolOutput('ok')).toBe('ok')
-    const long = `${'a'.repeat(STORED_TOOL_OUTPUT_MAX_CHARS)}${'b'.repeat(STORED_TOOL_OUTPUT_MAX_CHARS)}`
-    const stored = storedToolOutput(long)
+    expect(storedToolText('ok')).toBe('ok')
+    const long = `${'a'.repeat(STORED_TOOL_TEXT_MAX_CHARS)}${'b'.repeat(STORED_TOOL_TEXT_MAX_CHARS)}`
+    const stored = storedToolText(long)
     expect(stored.startsWith('a')).toBe(true)
     expect(stored.endsWith('b')).toBe(true)
-    expect(stored).toContain(`[${STORED_TOOL_OUTPUT_MAX_CHARS} chars not stored]`)
+    expect(stored).toContain(`[${STORED_TOOL_TEXT_MAX_CHARS} chars not stored]`)
   })
 })

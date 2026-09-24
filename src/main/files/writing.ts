@@ -43,7 +43,10 @@ async function holdsContent(absPath: string, expected: string | null): Promise<b
   try {
     current = await fs.readFile(absPath, 'utf8')
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return expected === null
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      log.debug('expected-content check: file absent', { absPath })
+      return expected === null
+    }
     throw err
   }
   return expected !== null && current.replace(/\r\n/g, '\n') === expected.replace(/\r\n/g, '\n')

@@ -29,19 +29,55 @@ export function historyTailStart(messages: ChatMessage[], limit: number): number
   return start
 }
 
+/**
+ * Tool and changed-file text a windowed history load may carry in total.
+ * The text window alone does not bound it: 250 turns of Edit calls and diff
+ * cards can each be large.
+ */
+export const HISTORY_ACTIVITY_MAX_CHARS = 8 * 1024 * 1024
+
+function activityChars(message: ChatMessage): number {
+  let chars = 0
+  for (const call of message.toolCalls ?? []) chars += call.input.length + (call.output?.length ?? 0)
+  if (message.fileDiff) chars += message.fileDiff.oldContent.length + message.fileDiff.newContent.length
+  return chars
+}
+
+/**
+ * The last `limit` messages with text, with the tool and changed-file rows
+ * among them while they fit in `activityBudget`. The newest are kept, so an
+ * over-budget window loses its oldest activity rows and none of its text.
+ */
+export function historyTail(
+  messages: ChatMessage[],
+  limit: number,
+  activityBudget = HISTORY_ACTIVITY_MAX_CHARS,
+): ChatMessage[] {
+  const tail = messages.slice(historyTailStart(messages, limit))
+  const kept: ChatMessage[] = []
+  let spent = 0
+  for (let i = tail.length - 1; i >= 0; i--) {
+    if (isActivityRow(tail[i])) {
+      spent += activityChars(tail[i])
+      if (spent > activityBudget) continue
+    }
+    kept.push(tail[i])
+  }
+  return kept.reverse()
+}
+
 /** A tool's input as rendered: adapters send an object or a preformatted string. */
 export function toolInputText(input: unknown): string {
   return typeof input === 'string' ? input : JSON.stringify(input, null, 2)
 }
 
+/** What a stored tool row keeps of its input and of its output. The live row shows all of it. */
+export const STORED_TOOL_TEXT_MAX_CHARS = 32 * 1024
 
-/** What a stored tool row keeps of the output. The live row shows it all. */
-export const STORED_TOOL_OUTPUT_MAX_CHARS = 32 * 1024
-
-/** Head and tail of an output too long to store, with the cut marked. */
-export function storedToolOutput(output: string): string {
-  if (output.length <= STORED_TOOL_OUTPUT_MAX_CHARS) return output
-  const half = STORED_TOOL_OUTPUT_MAX_CHARS / 2
-  const omitted = output.length - STORED_TOOL_OUTPUT_MAX_CHARS
-  return `${output.slice(0, half)}\n[${omitted} chars not stored]\n${output.slice(-half)}`
+/** Head and tail of a tool input or output too long to store, with the cut marked. */
+export function storedToolText(text: string): string {
+  if (text.length <= STORED_TOOL_TEXT_MAX_CHARS) return text
+  const half = STORED_TOOL_TEXT_MAX_CHARS / 2
+  const omitted = text.length - STORED_TOOL_TEXT_MAX_CHARS
+  return `${text.slice(0, half)}\n[${omitted} chars not stored]\n${text.slice(-half)}`
 }

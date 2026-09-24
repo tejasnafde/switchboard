@@ -38,6 +38,7 @@ vi.mock('../../src/main/db/database', () => ({
 
 import { ProviderRegistry } from '../../src/main/provider/provider-registry'
 import type { RuntimeEvent } from '../../src/shared/provider-events'
+import { storedToolText, STORED_TOOL_TEXT_MAX_CHARS } from '../../src/shared/turn-activity'
 
 /** Drives `publish` directly - the mirror is a property of the event stream. */
 function makeRegistry(): { publish: (e: RuntimeEvent) => void; registry: ProviderRegistry } {
@@ -146,6 +147,18 @@ describe('live assistant mirror', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('stores a capped copy of a long tool input, as with the output', () => {
+    const { publish } = makeRegistry()
+    const long = 'x'.repeat(STORED_TOOL_TEXT_MAX_CHARS * 4)
+    publish({ type: 'tool.started', threadId: 't1', toolId: 'edit_1', toolName: 'Edit', input: long })
+    publish({ type: 'tool.completed', threadId: 't1', toolId: 'edit_1', output: long })
+    publish(turnEnd('t1'))
+    const [call] = activity[0].toolCalls as Array<{ input: string; output: string }>
+    expect(call.input).toBe(storedToolText(long))
+    expect(call.output).toBe(storedToolText(long))
+    expect(call.input.length).toBeLessThan(STORED_TOOL_TEXT_MAX_CHARS + 100)
   })
 
   it('mirrors a changed-file card as it is published, and skips an oversized one', async () => {

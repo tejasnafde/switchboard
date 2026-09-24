@@ -62,7 +62,7 @@ import { defaultClaudeDir, prepareClaudeProfileSwitch } from './claude-session-m
 import { prepareCodexProfileSwitch } from './codex-session-migrate'
 import { remoteBlockedProviderLabel, remoteProviderLoginPrompt, remoteProviderConfigDir, checkRemoteProviderAuth } from './remote-gate'
 import type { AgentType, FileDiffAttachment, ToolCall } from '@shared/types'
-import { fileDiffRowId, storedToolOutput, toolInputText, toolRowId } from '@shared/turn-activity'
+import { fileDiffRowId, storedToolText, toolInputText, toolRowId } from '@shared/turn-activity'
 import type {
   ProviderAdapter,
   ProviderKind,
@@ -339,12 +339,12 @@ export class ProviderRegistry implements PeerToolHost {
       }
       const pending = byTool.get(event.toolId)
       byTool.set(event.toolId, {
-        call: { ...pending?.call, id: event.toolId, name: event.toolName, input: toolInputText(event.input) },
+        call: { ...pending?.call, id: event.toolId, name: event.toolName, input: storedToolText(toolInputText(event.input)) },
         at: pending?.at ?? Date.now(),
       })
     } else if (event.type === 'tool.completed') {
       const pending = this.pendingToolCalls.get(event.threadId)?.get(event.toolId)
-      if (pending && event.output !== undefined) pending.call = { ...pending.call, output: storedToolOutput(event.output) }
+      if (pending && event.output !== undefined) pending.call = { ...pending.call, output: storedToolText(event.output) }
     }
   }
 

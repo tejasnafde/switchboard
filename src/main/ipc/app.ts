@@ -2,7 +2,7 @@ import type { BackendHost } from '../backend/host'
 import { stat } from 'fs/promises'
 import { notifyWorktreeSwap, publishRuntimeEvent } from '../provider/provider-registry'
 import { AppChannels, BookmarkChannels } from '@shared/ipc-channels'
-import { historyTailStart } from '@shared/turn-activity'
+import { historyTail } from '@shared/turn-activity'
 import { createMainLogger as createLogger } from '../logger'
 import { scanAllSessions } from '../projects/session-scanner'
 import { projectManagedRootSessions, sessionSummaryToConversationRow } from './terminal-sessions'
@@ -105,8 +105,8 @@ function capTail<T extends { messages: ChatMessage[] }>(
   const total = result.messages.length
   const limit = opts?.limit
   if (!limit || limit <= 0 || total <= limit) return { ...result, total, truncated: false }
-  const start = historyTailStart(result.messages, limit)
-  return { ...result, messages: result.messages.slice(start), total, truncated: start > 0 }
+  const messages = historyTail(result.messages, limit)
+  return { ...result, messages, total, truncated: messages.length < total }
 }
 
 /** One authoritative sidebar projection for desktop and remote clients.
