@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Renames TS/JS files to the repo naming convention and rewrites every
  * reference to them. Idempotent: a second run finds nothing to rename.
