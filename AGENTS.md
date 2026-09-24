@@ -509,17 +509,20 @@ src/
 ├── preload/index.ts                   # Typed window.api (SwitchboardAPI), strongly-typed provider.onEvent
 ├── renderer/
 │   ├── App.tsx                        # Flat flex-row layout, all keybindings, view switching
+│   ├── services/globalKeybindings.ts  # resolveGlobalKeydown: pure keydown → app shortcut action (App dispatches)
 │   ├── components/
 │   │   ├── CommandPalette.tsx (⌘⇧P) · QuickPromptModal.tsx (⌘K) · SearchModal.tsx (⌘⇧F)
 │   │   ├── SettingsModal.tsx · settings/ProvidersTab.tsx · settings/ProviderUsagePanel.tsx · SessionPickerModal.tsx
 │   │   ├── chat/
 │   │   │   ├── ChatPanel.tsx · ChatInput.tsx · MessageList.tsx · MessageBubble.tsx
 │   │   │   ├── providerEventReducer.ts # desktop provider event → agent-store reducer (ChatPanel's listener)
+│   │   │   ├── ChatWorkspacePanels.tsx # primary/secondary ChatPanel slots + ChatSplitHandle
 │   │   │   ├── ApprovalCard · PlanCard · QuestionCard · FileDiffCard · SlashCommandMenu · slashCommands.ts
 │   │   │   ├── UnifiedProviderPicker.tsx # agent tabs → instance rail → model search
 │   │   │   ├── BranchPicker.tsx + branchPickerPolicy.ts · SkillChip · FileChip
 │   │   │   ├── AtMentionMenu.tsx + atMention.ts · renderPillBody.tsx · rotationMarker.ts
 │   │   │   └── lexical/               # RichChatTextarea · PillNode · PillChipVisual
+│   │   ├── layout/                    # ResizeHandle · ViewToggle (Chats/Board title-bar toggle)
 │   │   ├── ide/                       # IdePane (code-server <webview>)
 │   │   ├── kanban/                    # KanbanView (⌘⇧K) · CardModal · WorktreeManagerModal · cardLaunch.ts
 │   │   ├── sidebar/                   # Sidebar · ProjectFavicon · WorkspaceManager · dragLogic
