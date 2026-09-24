@@ -354,13 +354,15 @@ status bar, and the turn-completed notification should be suppressed until
 the whole chain has settled - either the peer replies and this session's
 agent produces its own real completion, or the reply times out.
 
-The backend already has everything needed to detect this state: peer
-messages are tracked end-to-end by `ProviderRegistry.deliverPeerMessage` and
-the pure guards in `src/shared/peer-messaging.ts` (dedupe, hop depth,
-per-sender budget). What's missing is surfacing "this session sent a peer
-message and hasn't seen a reply yet" as UI state, and gating the existing
-`turn.completed` notification (`src/renderer/services/notifications.ts`) on
-it.
+The backend has part of what is needed. `ProviderRegistry.deliverPeerMessage`
+delivers a peer message and publishes `sent` and `received` events, and the
+pure guards in `src/shared/peer-messaging.ts` handle dedupe, hop depth and the
+per-sender budget. It does NOT correlate a reply with the message it answers,
+and it has no reply timeout: the peer tool contract defines delivery as one
+way. So the backend first needs a reply lifecycle (which message is still
+waiting, which reply answers it, when it times out). Only then can the UI show
+"waiting on `<peer>`" and gate the existing `turn.completed` notification
+(`src/renderer/services/notifications.ts`) on it.
 
 **What unblocks this.** Agent-to-agent sends becoming common enough that
 early "done" notifications are a real annoyance - right now peer messaging is

@@ -18,7 +18,7 @@
     },
     "sharedBackendApi": {
       "status": "not_applicable",
-      "reason": "The removed functions were never exposed over the wire protocol, IPC channels, or the WsHost/ElectronIpcHost seam - they were plain internal helpers called only from within src/main/worktree.ts itself. GitChannels and KanbanChannels, and every handler in src/main/ipc/git.ts and src/main/ipc/kanban.ts, are unchanged."
+      "reason": "The removed functions were never exposed over the wire protocol, IPC channels, or the WsHost/ElectronIpcHost seam - they were exported helpers with no production caller. GitChannels and KanbanChannels, and every handler in src/main/ipc/git.ts and src/main/ipc/kanban.ts, are unchanged."
     },
     "storageDataMigration": {
       "status": "not_applicable",
