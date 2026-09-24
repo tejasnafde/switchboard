@@ -171,11 +171,51 @@ async function sessionPicker() {
   check('session picker: the pick opens beside', await win.locator('.chat-identity-title').filter({ hasText: 'Compare retry strategies' }).first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false))
 }
 
+const composerHasFocus = () => focusSettlesOn(`document.activeElement?.getAttribute('aria-label') === 'Chat message'`)
+
+async function searchModal() {
+  await win.locator('.chat-composer [aria-label="Chat message"]').first().click()
+  await win.keyboard.press('Meta+Shift+F')
+  const search = win.getByRole('dialog', { name: 'Search across all conversations' })
+  await search.waitFor({ state: 'visible' })
+  check('search: input has focus', (await focused())?.placeholder === 'Search across all conversations...')
+  await win.keyboard.type('retry')
+  const hit = search.locator('.cmdk-item').first()
+  check('search: finds a message', await hit.waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false))
+  await win.keyboard.press('Escape')
+  check('search: Escape closes it', await hidden(search))
+  check('search: focus returns to the composer', await composerHasFocus())
+  await win.keyboard.press('Meta+Shift+F')
+  await search.waitFor({ state: 'visible' })
+  await win.keyboard.type('backoff with jitter')
+  await search.locator('.cmdk-item').first().click()
+  check('search: a hit opens its chat', await win.locator('.chat-identity-title').filter({ hasText: 'Compare retry strategies' }).first()
+    .waitFor({ state: 'visible', timeout: 5000 }).then(() => true, () => false))
+  check('search: a hit closes it', await hidden(search))
+}
+
+async function quickPrompt() {
+  await win.locator('.chat-composer [aria-label="Chat message"]').first().click()
+  await win.keyboard.press('Meta+K')
+  const prompt = win.getByRole('dialog', { name: 'Quick prompt' })
+  await prompt.waitFor({ state: 'visible' })
+  check('quick prompt: textarea has focus', await win.evaluate(() => document.activeElement?.tagName === 'TEXTAREA'))
+  await win.keyboard.press('Escape')
+  check('quick prompt: Escape closes it', await hidden(prompt))
+  check('quick prompt: focus returns to the composer', await composerHasFocus())
+  await win.keyboard.press('Meta+K')
+  await prompt.waitFor({ state: 'visible' })
+  await win.mouse.click(8, 400)
+  check('quick prompt: an outside click closes it', await hidden(prompt))
+}
+
 await openConversation('Debug auth callback')
 await providerPicker()
 await branchPicker()
 await commandPalette()
 await sessionPicker()
+await searchModal()
+await quickPrompt()
 
 await app.close()
 const failed = results.filter((ok) => !ok).length

@@ -21,6 +21,7 @@
 @source '../components/chat/BranchPicker.tsx';
 @source '../components/CommandPalette.tsx';
 @source '../components/SessionPickerModal.tsx';
+@source '../components/SearchModal.tsx';
 
 @theme inline {
   --spacing: 0.25rem;

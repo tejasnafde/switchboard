@@ -8,6 +8,8 @@ import {
   type LoadedSearchSessionMeta,
 } from '../services/searchSessionProjection'
 import { createRendererLogger } from '../logger'
+import { cn } from '../lib/utils'
+import { Dialog, DialogContent, DialogTitle } from './ui/dialog'
 
 const log = createRendererLogger('search-modal')
 
@@ -37,7 +39,6 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
 
   useEffect(() => {
     if (open) {
-      setTimeout(() => inputRef.current?.focus(), 50)
       setQuery('')
       setResults([])
     }
@@ -57,7 +58,8 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
       try {
         const res = await window.api.app.searchMessages(q.trim())
         setResults(res ?? [])
-      } catch {
+      } catch (err) {
+        log.warn('searchMessages failed', err)
         setResults([])
       } finally {
         setSearching(false)
@@ -103,43 +105,22 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
     onClose()
   }, [setActiveSession, requestScrollToMessage, addSession, setMessages, onClose])
 
-  if (!open) return null
-
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        justifyContent: 'center',
-        paddingTop: '15vh',
-        background: 'rgba(0, 0, 0, 0.4)',
-      }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
-    >
-      <div
-        className="palette-modal-content"
-        style={{
-          width: '560px',
-          maxHeight: '440px',
-          background: 'var(--bg-secondary)',
-          border: '1px solid var(--border)',
-          borderRadius: '10px',
-          overflow: 'hidden',
-          boxShadow: '0 16px 48px rgba(0, 0, 0, 0.3)',
-          display: 'flex',
-          flexDirection: 'column',
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose() }}>
+      <DialogContent
+        aria-describedby={undefined}
+        onOpenAutoFocus={(e) => {
+          e.preventDefault()
+          inputRef.current?.focus()
         }}
+        overlayClassName="z-[1000] bg-[rgba(0,0,0,0.4)]"
+        // A fixed height, not max-height: the box keeps its size while results
+        // come and go, as it did when the backdrop's flex row stretched it.
+        className="palette-modal-content inset-x-0 top-[15vh] z-[1000] mx-auto flex h-[min(440px,85vh)] w-[560px] flex-col overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--bg-secondary)] shadow-[0_16px_48px_rgba(0,0,0,0.3)]"
       >
+        <DialogTitle className="sr-only">Search across all conversations</DialogTitle>
         {/* Search input */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          padding: '12px 16px',
-          borderBottom: '1px solid var(--border)',
-          gap: '8px',
-        }}>
+        <div className="flex items-center gap-[8px] border-b border-[var(--border)] px-[16px] py-[12px]">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
           </svg>
@@ -147,35 +128,18 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
             ref={inputRef}
             value={query}
             onChange={(e) => handleSearch(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}
             placeholder="Search across all conversations..."
-            style={{
-              flex: 1,
-              border: 'none',
-              background: 'transparent',
-              color: 'var(--text-primary)',
-              fontSize: '14px',
-              outline: 'none',
-            }}
+            className="flex-1 border-0 bg-transparent text-[14px] text-[var(--text-primary)] outline-none"
           />
           {searching && (
-            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Searching...</span>
+            <span className="text-[11px] text-[var(--text-muted)]">Searching...</span>
           )}
         </div>
 
         {/* Results */}
-        <div style={{
-          overflowY: 'auto',
-          padding: '4px',
-          flex: 1,
-        }}>
+        <div className="flex-1 overflow-y-auto p-[4px]">
           {results.length === 0 && query.trim().length >= 2 && !searching && (
-            <div style={{
-              padding: '24px',
-              textAlign: 'center',
-              color: 'var(--text-muted)',
-              fontSize: '13px',
-            }}>
+            <div className="p-[24px] text-center text-[13px] text-[var(--text-muted)]">
               No results found
             </div>
           )}
@@ -184,60 +148,29 @@ export function SearchModal({ open, onClose }: SearchModalProps) {
             <button
               key={`${r.messageId}_${i}`}
               onClick={() => handleSelect(r)}
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                textAlign: 'left',
-                color: 'var(--text-primary)',
-                fontSize: '13px',
-              }}
-              className="cmdk-item"
+              // The inline background this replaced beat .cmdk-item:hover, so
+              // the transparent reset has to be important to keep that look.
+              className="cmdk-item block w-full cursor-pointer rounded-[6px] border-0 bg-transparent! px-[12px] py-[10px] text-left text-[13px] text-[var(--text-primary)]"
             >
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                marginBottom: '4px',
-              }}>
-                <span style={{
-                  fontSize: '10px',
-                  padding: '1px 5px',
-                  borderRadius: '3px',
-                  background: r.role === 'user' ? 'var(--accent-subtle)' : 'var(--bg-tertiary)',
-                  color: r.role === 'user' ? 'var(--accent)' : 'var(--text-muted)',
-                  fontWeight: 500,
-                }}>
+              <div className="mb-[4px] flex items-center gap-[6px]">
+                <span className={cn(
+                  'rounded-[3px] px-[5px] py-[1px] text-[10px] font-[500]',
+                  r.role === 'user' ? 'bg-[var(--accent-subtle)] text-[var(--accent)]' : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]',
+                )}>
                   {r.role}
                 </span>
-                <span style={{
-                  fontSize: '10px',
-                  color: 'var(--text-muted)',
-                  fontFamily: 'var(--font-mono)',
-                }}>
+                <span className="text-[10px] [font-family:var(--font-mono)] text-[var(--text-muted)]">
                   {r.conversationId.slice(0, 12)}...
                 </span>
               </div>
-              <div style={{
-                fontSize: '12px',
-                color: 'var(--text-secondary)',
-                lineHeight: 1.5,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                display: '-webkit-box',
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: 'vertical',
-              }}
+              <div
+                className="line-clamp-2 text-[12px] leading-[1.5] text-[var(--text-secondary)]"
                 dangerouslySetInnerHTML={{ __html: renderSnippetHtml(r.snippet) }}
               />
             </button>
           ))}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
